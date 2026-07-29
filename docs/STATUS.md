@@ -37,7 +37,7 @@ This file records proof. [Roadmap](ROADMAP.md) records execution order.
   manifests, one-use pairing, and per-device bearer authentication.
 - Bounded raw observations and typed `cars`, `drives`, `positions`, `charges`,
   and `charge_samples` pack contracts.
-- Local Rust proof (Mac): 98 tests passed (96 library and 2 CLI tests);
+- Local Rust proof (Mac): 99 tests passed (96 library, 2 CLI tests, 1 TLS import e2e test);
   formatting and warning-denying Clippy passed.
 - Hub baseline is committed on `main` (reproducible clean-checkout gates
   recorded). Release signing provenance for public install is still open.

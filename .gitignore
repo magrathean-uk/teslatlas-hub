@@ -7,3 +7,4 @@
 /dist/
 /.teslatlas-hub/
 /.worktrees/
+.DS_Store
