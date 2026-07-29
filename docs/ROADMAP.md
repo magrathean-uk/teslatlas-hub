@@ -4,6 +4,20 @@ Current truth lives in [Current status](STATUS.md). This roadmap is ordered by
 user-visible vertical slices. Work must not move to a later slice while an
 earlier acceptance gate is still open.
 
+## Development host policy
+
+Product work (slices 0–3) is **Mac-first**: Hub logic, collector, migration,
+and Teslatlas iOS Simulator/device proof run on the developer Mac and the
+isolated iOS worktree. Do not use full-system QEMU/TCG as a day-to-day Linux
+compile farm.
+
+**Slice 4 (native packages and install matrix) is last.** Build Linux packages
+with a native-speed path when possible (for example Colima arm64). Prefer
+installing a prebuilt `.deb` on the disposable Debian VM rather than compiling
+the full release under x86 TCG on Apple Silicon. Docker/Colima may be used only
+as a Linux *build* host for packages; the Hub runtime itself remains native
+Debian without Docker.
+
 ## Product boundary
 
 Hub is a native Debian amd64/arm64 service with no Docker runtime. Teslatlas is
@@ -124,16 +138,21 @@ a full snapshot.
 
 ## Slice 4 — one-command native release
 
-Status: **package prototype proven on an earlier amd64 snapshot**.
+Status: **package prototype proven on an earlier amd64 snapshot; deferred until
+product slices 0–3 pass on Mac**.
 
 Implemented:
 
 - Native package, hardened systemd units, encrypted credentials, exact-commit
   source bootstrap, signed release-manifest verification, and local verifier.
+- Bootstrap `--dry-run` contract aligned with install dry-run; shell contract
+  tests. Colima arm64 package construction proven from committed source as a
+  build-host path (install matrix still open).
 
-Required:
+Required (after slices 0–3):
 
-- Repeat clean amd64 proof from the committed source.
+- Repeat clean amd64 proof from the committed source (install prebuilt package
+  preferred over TCG full compiles on Apple Silicon).
 - Build and prove arm64 on Raspberry Pi-class Debian.
 - Align the Git bootstrap `--dry-run` documentation and CLI contract, then add
   script-level contract tests.
