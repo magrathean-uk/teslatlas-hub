@@ -7,6 +7,7 @@ pub mod crypto;
 pub mod db;
 pub mod http_range;
 pub mod hub_pack;
+pub mod lifecycle;
 mod manifest_signing;
 pub mod owner_api;
 pub mod protocol;

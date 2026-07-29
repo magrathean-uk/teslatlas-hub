@@ -62,11 +62,13 @@ impl TlsListenerConfig {
     }
 }
 
-/// Explicit settings for a manual legacy owner-token compatibility read.
+/// Explicit settings for a manual or supervised legacy owner-token read.
 ///
 /// There is no default remote endpoint. Leaving `owner_api_base_url` unset
 /// keeps collection unavailable while the ordinary Hub service remains fully
 /// usable. The URL cannot contain credentials, query parameters, or a token.
+/// Supervised collection is opt-in: `interval_seconds` must be set explicitly
+/// and is never implied by the oneshot collect unit.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CollectorConfig {
@@ -74,10 +76,20 @@ pub struct CollectorConfig {
     pub owner_api_base_url: Option<String>,
     #[serde(default = "default_owner_api_timeout_seconds")]
     pub request_timeout_seconds: u64,
+    /// When set to a positive value, `collect-supervised` polls on this period.
+    /// Omitted or zero keeps only the manual oneshot path available.
+    #[serde(default)]
+    pub interval_seconds: u64,
+    #[serde(default = "default_collector_max_backoff_seconds")]
+    pub max_backoff_seconds: u64,
 }
 
 const fn default_owner_api_timeout_seconds() -> u64 {
     20
+}
+
+const fn default_collector_max_backoff_seconds() -> u64 {
+    900
 }
 
 impl Default for CollectorConfig {
@@ -85,6 +97,8 @@ impl Default for CollectorConfig {
         Self {
             owner_api_base_url: None,
             request_timeout_seconds: default_owner_api_timeout_seconds(),
+            interval_seconds: 0,
+            max_backoff_seconds: default_collector_max_backoff_seconds(),
         }
     }
 }
@@ -102,6 +116,16 @@ impl CollectorConfig {
             return Err(ConfigError::InvalidOwnerApiTimeout);
         }
         Ok(OwnerApiOptions::new(base_url, request_timeout))
+    }
+
+    pub fn supervised_interval(&self) -> Result<Duration, ConfigError> {
+        if self.interval_seconds == 0 {
+            return Err(ConfigError::SupervisedIntervalRequired);
+        }
+        if self.interval_seconds < 15 {
+            return Err(ConfigError::SupervisedIntervalTooShort);
+        }
+        Ok(Duration::from_secs(self.interval_seconds))
     }
 }
 
@@ -232,6 +256,12 @@ impl HubConfig {
         if self.collector.request_timeout_seconds == 0 {
             return Err(ConfigError::InvalidOwnerApiTimeout);
         }
+        if self.collector.interval_seconds != 0 && self.collector.interval_seconds < 15 {
+            return Err(ConfigError::SupervisedIntervalTooShort);
+        }
+        if self.collector.max_backoff_seconds == 0 {
+            return Err(ConfigError::InvalidCollectorBackoff);
+        }
         if let Some(base_url) = self.collector.owner_api_base_url.as_deref() {
             OwnerApiBase::parse(base_url).map_err(|_| ConfigError::InvalidOwnerApiBase)?;
         }
@@ -272,6 +302,12 @@ pub enum ConfigError {
     InvalidOwnerApiBase,
     #[error("collector owner API timeout must be greater than zero")]
     InvalidOwnerApiTimeout,
+    #[error("supervised collector requires an explicit interval_seconds")]
+    SupervisedIntervalRequired,
+    #[error("supervised collector interval_seconds must be at least 15")]
+    SupervisedIntervalTooShort,
+    #[error("collector max_backoff_seconds must be greater than zero")]
+    InvalidCollectorBackoff,
     #[error("non-loopback bind requires configured TLS")]
     NonLoopbackBind,
     #[error("TLS certificate and private-key paths must be absolute")]

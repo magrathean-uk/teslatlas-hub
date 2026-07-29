@@ -14,7 +14,7 @@ use std::{
 };
 
 use rusqlite::{Connection, OpenFlags, params};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
@@ -69,7 +69,7 @@ impl ProjectionSnapshot {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectionCar {
     pub id: i64,
     pub name: String,
@@ -79,7 +79,7 @@ pub struct ProjectionCar {
     pub efficiency_wh_per_km: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectionDrive {
     pub id: i64,
     pub car_id: i64,
@@ -105,7 +105,7 @@ pub struct ProjectionDrive {
     pub end_rated_range_km: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectionPosition {
     pub id: i64,
     pub drive_id: i64,
@@ -126,7 +126,7 @@ pub struct ProjectionPosition {
     pub outside_temp: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectionCharge {
     pub id: i64,
     pub car_id: i64,
@@ -147,7 +147,7 @@ pub struct ProjectionCharge {
     pub end_rated_range_km: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectionChargeSample {
     pub id: i64,
     pub charge_process_id: i64,

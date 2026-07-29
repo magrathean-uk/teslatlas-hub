@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::protocol::{Sha256Digest, SyncManifest, TransportPack};
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 4;
+pub const SCHEMA_VERSION: i32 = 5;
 pub const VENDORED_SQLITE_VERSION: &str = "3.53.4";
 
 /// Hard upper bound for one persisted source response. A collector must split
@@ -750,6 +750,248 @@ impl HubStore {
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::Query)
     }
+
+    /// Load durable open-session state for crash-safe lifecycle recovery.
+    pub fn load_lifecycle_state(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<LifecycleStateRecord>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open()?;
+        connection
+            .query_row(
+                "SELECT vehicle_id, car_id, last_observation_id, open_session_json, \
+                        quarantined, updated_at_ms \
+                 FROM vehicle_lifecycle_state WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |row| {
+                    let value: String = row.get(0)?;
+                    let vehicle_id = Uuid::parse_str(&value).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?;
+                    Ok(LifecycleStateRecord {
+                        vehicle_id,
+                        car_id: row.get(1)?,
+                        last_observation_id: row.get(2)?,
+                        open_session_json: row.get(3)?,
+                        quarantined: row.get::<_, i64>(4)? != 0,
+                        updated_at_ms: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StoreError::Query)
+    }
+
+    /// Persist open-session state and append newly completed history rows.
+    pub fn commit_lifecycle_delta(&self, commit: &LifecycleCommit<'_>) -> Result<(), StoreError> {
+        if commit.vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if commit.car_id <= 0 {
+            return Err(StoreError::InvalidLifecycleCarId);
+        }
+        if commit.last_observation_id < 0 {
+            return Err(StoreError::InvalidLifecycleCursor);
+        }
+        validate_timestamp("lifecycle updated_at_ms", commit.updated_at_ms)?;
+        if commit.open_session_json.len() < 2 || commit.open_session_json.len() > 65_536 {
+            return Err(StoreError::InvalidLifecycleSession);
+        }
+
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+
+        transaction
+            .execute(
+                "INSERT INTO vehicle_lifecycle_state(
+                    vehicle_id, car_id, last_observation_id, open_session_json,
+                    quarantined, updated_at_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(vehicle_id) DO UPDATE SET
+                    car_id = excluded.car_id,
+                    last_observation_id = excluded.last_observation_id,
+                    open_session_json = excluded.open_session_json,
+                    quarantined = excluded.quarantined,
+                    updated_at_ms = excluded.updated_at_ms",
+                params![
+                    commit.vehicle_id.to_string(),
+                    commit.car_id,
+                    commit.last_observation_id,
+                    commit.open_session_json,
+                    i64::from(commit.quarantined),
+                    commit.updated_at_ms,
+                ],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+
+        for drive in &commit.delta.drives {
+            let drive_json =
+                serde_json::to_string(drive).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO materialised_drives(
+                        vehicle_id, drive_id, car_id, drive_json
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        commit.vehicle_id.to_string(),
+                        drive.id,
+                        commit.car_id,
+                        drive_json
+                    ],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+        for position in &commit.delta.positions {
+            let position_json =
+                serde_json::to_string(position).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO materialised_positions(
+                        vehicle_id, position_id, drive_id, car_id, position_json
+                     ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        commit.vehicle_id.to_string(),
+                        position.id,
+                        position.drive_id,
+                        commit.car_id,
+                        position_json
+                    ],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+        for charge in &commit.delta.charges {
+            let charge_json =
+                serde_json::to_string(charge).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO materialised_charges(
+                        vehicle_id, charge_id, car_id, charge_json
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        commit.vehicle_id.to_string(),
+                        charge.id,
+                        commit.car_id,
+                        charge_json
+                    ],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+        for sample in &commit.delta.charge_samples {
+            let sample_json =
+                serde_json::to_string(sample).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO materialised_charge_samples(
+                        vehicle_id, sample_id, charge_id, sample_json
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        commit.vehicle_id.to_string(),
+                        sample.id,
+                        sample.charge_process_id,
+                        sample_json
+                    ],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        Ok(())
+    }
+
+    /// Load completed history used when publishing a phone snapshot.
+    pub fn materialised_history(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<MaterialisedHistory, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open()?;
+        let vehicle_key = vehicle_id.to_string();
+
+        let drives = load_json_rows(
+            &connection,
+            "SELECT drive_json FROM materialised_drives WHERE vehicle_id = ?1 ORDER BY drive_id ASC",
+            &vehicle_key,
+        )?;
+        let positions = load_json_rows(
+            &connection,
+            "SELECT position_json FROM materialised_positions WHERE vehicle_id = ?1 ORDER BY position_id ASC",
+            &vehicle_key,
+        )?;
+        let charges = load_json_rows(
+            &connection,
+            "SELECT charge_json FROM materialised_charges WHERE vehicle_id = ?1 ORDER BY charge_id ASC",
+            &vehicle_key,
+        )?;
+        let charge_samples = load_json_rows(
+            &connection,
+            "SELECT sample_json FROM materialised_charge_samples WHERE vehicle_id = ?1 ORDER BY sample_id ASC",
+            &vehicle_key,
+        )?;
+        Ok(MaterialisedHistory {
+            drives,
+            positions,
+            charges,
+            charge_samples,
+        })
+    }
+}
+
+fn load_json_rows<T: serde::de::DeserializeOwned>(
+    connection: &Connection,
+    sql: &str,
+    vehicle_id: &str,
+) -> Result<Vec<T>, StoreError> {
+    let mut statement = connection.prepare(sql).map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map(params![vehicle_id], |row| row.get::<_, String>(0))
+        .map_err(StoreError::Query)?;
+    let mut values = Vec::new();
+    for row in rows {
+        let json = row.map_err(StoreError::Query)?;
+        values.push(serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)?);
+    }
+    Ok(values)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LifecycleStateRecord {
+    pub vehicle_id: Uuid,
+    pub car_id: i64,
+    pub last_observation_id: i64,
+    pub open_session_json: Vec<u8>,
+    pub quarantined: bool,
+    pub updated_at_ms: i64,
+}
+
+/// One transactional lifecycle write: open-session snapshot plus completed rows.
+#[derive(Debug, Clone)]
+pub struct LifecycleCommit<'a> {
+    pub vehicle_id: Uuid,
+    pub car_id: i64,
+    pub open_session_json: &'a [u8],
+    pub last_observation_id: i64,
+    pub quarantined: bool,
+    pub updated_at_ms: i64,
+    pub delta: &'a crate::lifecycle::LifecycleDelta,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MaterialisedHistory {
+    pub drives: Vec<crate::hub_pack::ProjectionDrive>,
+    pub positions: Vec<crate::hub_pack::ProjectionPosition>,
+    pub charges: Vec<crate::hub_pack::ProjectionCharge>,
+    pub charge_samples: Vec<crate::hub_pack::ProjectionChargeSample>,
 }
 
 /// Non-secret source identity presented by an independent collector. The Hub
@@ -1439,6 +1681,61 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 4;
     }
 
+    if version == 4 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS vehicle_lifecycle_state (
+                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
+                    car_id INTEGER NOT NULL CHECK(car_id > 0),
+                    last_observation_id INTEGER NOT NULL CHECK(last_observation_id >= 0),
+                    open_session_json BLOB NOT NULL
+                        CHECK(length(open_session_json) BETWEEN 2 AND 65536),
+                    quarantined INTEGER NOT NULL DEFAULT 0 CHECK(quarantined IN (0, 1)),
+                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0)
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS materialised_drives (
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
+                    drive_id INTEGER NOT NULL CHECK(drive_id > 0),
+                    car_id INTEGER NOT NULL CHECK(car_id > 0),
+                    drive_json TEXT NOT NULL CHECK(json_valid(drive_json)),
+                    PRIMARY KEY (vehicle_id, drive_id)
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS materialised_positions (
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
+                    position_id INTEGER NOT NULL CHECK(position_id > 0),
+                    drive_id INTEGER NOT NULL CHECK(drive_id > 0),
+                    car_id INTEGER NOT NULL CHECK(car_id > 0),
+                    position_json TEXT NOT NULL CHECK(json_valid(position_json)),
+                    PRIMARY KEY (vehicle_id, position_id)
+                ) STRICT;
+                CREATE INDEX IF NOT EXISTS materialised_positions_drive
+                    ON materialised_positions(vehicle_id, drive_id);
+                CREATE TABLE IF NOT EXISTS materialised_charges (
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
+                    charge_id INTEGER NOT NULL CHECK(charge_id > 0),
+                    car_id INTEGER NOT NULL CHECK(car_id > 0),
+                    charge_json TEXT NOT NULL CHECK(json_valid(charge_json)),
+                    PRIMARY KEY (vehicle_id, charge_id)
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS materialised_charge_samples (
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
+                    sample_id INTEGER NOT NULL CHECK(sample_id > 0),
+                    charge_id INTEGER NOT NULL CHECK(charge_id > 0),
+                    sample_json TEXT NOT NULL CHECK(json_valid(sample_json)),
+                    PRIMARY KEY (vehicle_id, sample_id)
+                ) STRICT;
+                CREATE INDEX IF NOT EXISTS materialised_charge_samples_charge
+                    ON materialised_charge_samples(vehicle_id, charge_id);
+                PRAGMA user_version = 5;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 5;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {
@@ -1546,6 +1843,18 @@ pub enum StoreError {
     UnsupportedSchema(i32),
     #[error("database integrity check failed: {0}")]
     Integrity(String),
+    #[error("lifecycle car id must be positive")]
+    InvalidLifecycleCarId,
+    #[error("lifecycle observation cursor is invalid")]
+    InvalidLifecycleCursor,
+    #[error("lifecycle open-session payload is invalid")]
+    InvalidLifecycleSession,
+    #[error("cannot write lifecycle history: {0}")]
+    LifecycleWrite(rusqlite::Error),
+    #[error("cannot serialize lifecycle history row: {0}")]
+    SerializeLifecycleRow(serde_json::Error),
+    #[error("cannot deserialize lifecycle history row: {0}")]
+    DeserializeLifecycleRow(serde_json::Error),
 }
 
 #[cfg(test)]

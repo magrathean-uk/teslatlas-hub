@@ -1,27 +1,34 @@
 //! Persistence boundary for an explicit legacy owner-token compatibility read.
 //!
-//! Networking lives in `owner_api`; this module turns one already-completed
-//! manual read into bounded, append-only Hub observations. It deliberately has
-//! no scheduler and no mutable token state.
+//! Networking lives in `owner_api`; this module turns completed reads into
+//! bounded, append-only Hub observations, materialises durable drive/charge
+//! history through the pure lifecycle projector, and optionally runs a
+//! supervised no-wake schedule. The owner token is never held in configuration
+//! or argv.
 
 use std::{
     collections::HashMap,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
 use serde_json::{Map, Value};
 use thiserror::Error;
+use tokio::time::{Instant, sleep};
 use uuid::Uuid;
 
 use crate::{
     config::{ConfigError, HubConfig},
     credentials::{CredentialDirectory, CredentialError},
-    db::{HubStore, ObservationInput, SourceDescriptor, StoreError, VehicleDescriptor},
+    db::{
+        HubStore, ObservationInput, ObservationQuery, SourceDescriptor, StoreError,
+        VehicleDescriptor,
+    },
     hub_pack::{
         ProjectionBinding, ProjectionCar, ProjectionPackError, ProjectionPackRequest,
         ProjectionPackWriter, ProjectionSnapshot,
     },
+    lifecycle::{LifecycleError, LifecycleSample, OpenSessionState, apply_sample},
     owner_api::{ManualCollection, OwnerApi, OwnerApiConfigError, OwnerApiError, VehicleData},
     protocol::{CursorKey, SequenceRange},
 };
@@ -43,6 +50,11 @@ pub struct ManualCollectionReport {
     pub observations_already_present: usize,
     pub snapshots_published: usize,
     pub vehicle_failures: usize,
+    pub drives_closed: usize,
+    pub charges_closed: usize,
+    pub positions_materialised: usize,
+    pub charge_samples_materialised: usize,
+    pub lifecycle_quarantines: usize,
 }
 
 /// Read the decrypted systemd credential only for this explicit operation,
@@ -62,9 +74,53 @@ pub async fn collect_once_from_systemd(
     let collection = client.collect_once(&token).await?;
     let received_at_ms = current_epoch_millis()?;
     let mut report = persist_collection(store, &collection, received_at_ms)?;
+    let lifecycle = materialise_lifecycle_for_collection(store, &collection, received_at_ms)?;
+    report.drives_closed = lifecycle.drives_closed;
+    report.charges_closed = lifecycle.charges_closed;
+    report.positions_materialised = lifecycle.positions_materialised;
+    report.charge_samples_materialised = lifecycle.charge_samples_materialised;
+    report.lifecycle_quarantines = lifecycle.lifecycle_quarantines;
     report.snapshots_published =
         publish_compatibility_snapshots(store, &cursor_key, &collection, received_at_ms)?;
     Ok(report)
+}
+
+/// Supervised, opt-in no-wake collector. Requires an explicit positive interval
+/// in configuration. Uses exponential backoff on transport failures and never
+/// issues wake or command requests.
+pub async fn run_supervised_from_systemd(
+    store: &HubStore,
+    config: &HubConfig,
+) -> Result<(), CollectorError> {
+    let interval = config.collector.supervised_interval()?;
+    let max_backoff = Duration::from_secs(config.collector.max_backoff_seconds.max(1));
+    let mut backoff = interval;
+    loop {
+        let started = Instant::now();
+        match collect_once_from_systemd(store, config).await {
+            Ok(report) => {
+                tracing::info!(
+                    vehicles = report.vehicles_seen,
+                    online = report.online_vehicles_seen,
+                    inserted = report.observations_inserted,
+                    drives = report.drives_closed,
+                    charges = report.charges_closed,
+                    "compatibility collection completed"
+                );
+                backoff = interval;
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "compatibility collection failed; backing off");
+                sleep(backoff).await;
+                backoff = (backoff.saturating_mul(2)).min(max_backoff);
+                continue;
+            }
+        }
+        let elapsed = started.elapsed();
+        if elapsed < interval {
+            sleep(interval - elapsed).await;
+        }
+    }
 }
 
 /// Persist one completed compatibility collection. The supplied receipt time
@@ -130,19 +186,135 @@ pub fn persist_collection(
         observations_already_present,
         snapshots_published: 0,
         vehicle_failures: collection.failures.len(),
+        drives_closed: 0,
+        charges_closed: 0,
+        positions_materialised: 0,
+        charge_samples_materialised: 0,
+        lifecycle_quarantines: 0,
     })
 }
 
-/// Publish a complete, typed first-party mirror for every discovered owner
-/// vehicle. Compatibility reads provide present-state data, not a durable
-/// closed-drive history, so this first projection publishes only the vehicle
-/// row. Raw observations retain the precise source material until the Fleet
-/// Telemetry normalizer owns drive and charge lifecycle construction.
-///
-/// A car-only typed pack is still a real, verifiable Hub mirror: it lets an
-/// iPhone pair, select this vehicle, and establish the same durable identity
-/// and atomic import path used for later telemetry snapshots. No location,
-/// drive, or charge row is fabricated from one point-in-time response.
+#[derive(Debug, Default)]
+pub struct LifecycleMaterialisationReport {
+    pub drives_closed: usize,
+    pub charges_closed: usize,
+    pub positions_materialised: usize,
+    pub charge_samples_materialised: usize,
+    pub lifecycle_quarantines: usize,
+}
+
+/// Project newly stored observations into durable drive/charge history and
+/// crash-safe open-session state. Pure projection lives in `lifecycle`; this
+/// function only loads the cursor, applies samples, and commits the delta.
+pub fn materialise_lifecycle_for_collection(
+    store: &HubStore,
+    collection: &ManualCollection,
+    received_at_ms: i64,
+) -> Result<LifecycleMaterialisationReport, CollectorError> {
+    let source = store.register_source(
+        &SourceDescriptor::new(OWNER_API_SOURCE_KIND, OWNER_API_SOURCE_KEY),
+        received_at_ms,
+    )?;
+    let mut report = LifecycleMaterialisationReport::default();
+    for vehicle in &collection.vehicles {
+        let mut descriptor = VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string());
+        descriptor.vin = clean_optional_text(Some(&vehicle.vin));
+        descriptor.display_name = clean_optional_text(vehicle.display_name.as_deref());
+        let registered = store.register_vehicle(&descriptor, received_at_ms)?;
+        let car_id = compatibility_car_id(vehicle.id.get());
+        let materialised = materialise_vehicle_lifecycle(
+            store,
+            registered.vehicle_id,
+            car_id,
+            &vehicle.state,
+            received_at_ms,
+        )?;
+        report.drives_closed += materialised.drives_closed;
+        report.charges_closed += materialised.charges_closed;
+        report.positions_materialised += materialised.positions_materialised;
+        report.charge_samples_materialised += materialised.charge_samples_materialised;
+        report.lifecycle_quarantines += materialised.lifecycle_quarantines;
+    }
+    Ok(report)
+}
+
+fn materialise_vehicle_lifecycle(
+    store: &HubStore,
+    vehicle_id: Uuid,
+    car_id: i64,
+    vehicle_state: &str,
+    received_at_ms: i64,
+) -> Result<LifecycleMaterialisationReport, CollectorError> {
+    let existing = store.load_lifecycle_state(vehicle_id)?;
+    let mut state = match existing.as_ref() {
+        Some(record) => match OpenSessionState::decode(&record.open_session_json) {
+            Ok(state) => state,
+            Err(_) => {
+                // Corrupt open state is quarantined and rebuilt from a clean
+                // cursor so prior completed history remains untouched.
+                let mut clean = OpenSessionState::new();
+                clean.last_observation_id = record.last_observation_id;
+                clean
+            }
+        },
+        None => OpenSessionState::new(),
+    };
+
+    let observations = store.observations_for_vehicle(
+        vehicle_id,
+        ObservationQuery {
+            from_observed_at_ms: None,
+            until_observed_at_ms: None,
+            limit: crate::db::MAX_OBSERVATION_QUERY_LIMIT,
+        },
+    )?;
+
+    let mut report = LifecycleMaterialisationReport::default();
+    let mut total_delta = crate::lifecycle::LifecycleDelta::default();
+    let mut quarantined = existing.as_ref().is_some_and(|record| record.quarantined);
+
+    for observation in observations {
+        if observation.observation_id <= state.last_observation_id {
+            continue;
+        }
+        let sample = LifecycleSample {
+            observation_id: observation.observation_id,
+            observed_at_ms: observation.observed_at_ms,
+            vehicle_state: vehicle_state.to_owned(),
+            payload: observation.payload,
+        };
+        let step = apply_sample(state, car_id, &sample)?;
+        state = step.state;
+        quarantined |= step.quarantined;
+        if step.quarantined {
+            report.lifecycle_quarantines += 1;
+        }
+        report.drives_closed += step.delta.drives.len();
+        report.charges_closed += step.delta.charges.len();
+        report.positions_materialised += step.delta.positions.len();
+        report.charge_samples_materialised += step.delta.charge_samples.len();
+        total_delta.drives.extend(step.delta.drives);
+        total_delta.positions.extend(step.delta.positions);
+        total_delta.charges.extend(step.delta.charges);
+        total_delta.charge_samples.extend(step.delta.charge_samples);
+    }
+
+    let encoded = state.encode().map_err(CollectorError::Lifecycle)?;
+    store.commit_lifecycle_delta(&crate::db::LifecycleCommit {
+        vehicle_id,
+        car_id,
+        open_session_json: &encoded,
+        last_observation_id: state.last_observation_id,
+        quarantined,
+        updated_at_ms: received_at_ms,
+        delta: &total_delta,
+    })?;
+    Ok(report)
+}
+
+/// Publish a typed first-party mirror for every discovered owner vehicle.
+/// Completed drive, position, charge, and charge-sample rows come only from
+/// the materialised lifecycle store — never fabricated from a single sample.
 fn publish_compatibility_snapshots(
     store: &HubStore,
     cursor_key: &CursorKey,
@@ -169,16 +341,17 @@ fn publish_compatibility_snapshots(
         descriptor.display_name = clean_optional_text(vehicle.display_name.as_deref());
         let registered = store.register_vehicle(&descriptor, published_at_ms)?;
         let selected_car_id = compatibility_car_id(source_vehicle_id);
+        let history = store.materialised_history(registered.vehicle_id)?;
         let snapshot = ProjectionSnapshot {
             cars: vec![compatibility_car(
                 vehicle,
                 snapshots.get(&source_vehicle_id).copied(),
                 selected_car_id,
             )],
-            drives: Vec::new(),
-            positions: Vec::new(),
-            charges: Vec::new(),
-            charge_samples: Vec::new(),
+            drives: history.drives,
+            positions: history.positions,
+            charges: history.charges,
+            charge_samples: history.charge_samples,
         };
         let sequence = store.next_full_snapshot_sequence(registered.vehicle_id)?;
         let request = ProjectionPackRequest {
@@ -324,6 +497,8 @@ pub enum CollectorError {
     #[error(transparent)]
     Projection(#[from] ProjectionPackError),
     #[error(transparent)]
+    Lifecycle(#[from] LifecycleError),
+    #[error(transparent)]
     Store(#[from] StoreError),
 }
 
@@ -332,7 +507,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::owner_api::{Vehicle, VehicleData};
+    use crate::{
+        lifecycle::OpenSessionState,
+        owner_api::{Vehicle, VehicleData},
+    };
 
     #[test]
     fn persists_a_collected_snapshot_and_retries_without_duplication() {
@@ -408,6 +586,8 @@ mod tests {
         };
 
         persist_collection(&store, &collection, collected_at_ms).expect("raw observation");
+        materialise_lifecycle_for_collection(&store, &collection, collected_at_ms)
+            .expect("lifecycle");
         let published = publish_compatibility_snapshots(
             &store,
             &CursorKey::from_bytes([7; 32]),
@@ -437,5 +617,140 @@ mod tests {
             vec![crate::protocol::MirrorTable::Car]
         );
         assert_eq!(store.published_vehicles().expect("published cars").len(), 1);
+    }
+
+    #[test]
+    fn synthetic_drive_and_charge_survive_mid_session_restart() {
+        let temp = tempfile::tempdir().expect("temporary store");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let t0 = 1_800_000_500_000_i64;
+        let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
+
+        // Open a drive.
+        let open_drive = ManualCollection {
+            vehicles: vec![vehicle.clone()],
+            snapshots: vec![VehicleData::for_test(
+                9,
+                json!({
+                    "drive_state": {
+                        "shift_state": "D",
+                        "speed": 25,
+                        "latitude": 47.0,
+                        "longitude": 19.0,
+                        "timestamp": t0
+                    },
+                    "charge_state": {"battery_level": 70, "battery_range": 200.0}
+                }),
+            )],
+            failures: vec![],
+        };
+        persist_collection(&store, &open_drive, t0).expect("persist open");
+        materialise_lifecycle_for_collection(&store, &open_drive, t0).expect("materialise open");
+
+        let vehicle_id = store
+            .open()
+            .expect("db")
+            .query_row("SELECT vehicle_id FROM vehicles", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .expect("id")
+            .parse::<Uuid>()
+            .expect("uuid");
+        let open_state = store
+            .load_lifecycle_state(vehicle_id)
+            .expect("load")
+            .expect("open state exists");
+        let decoded = OpenSessionState::decode(&open_state.open_session_json).expect("decode");
+        assert!(decoded.open_drive.is_some());
+
+        // Simulate process restart: reopen store path and finish the drive.
+        let store = HubStore::initialize(temp.path()).expect("reopen store");
+        let close_drive = ManualCollection {
+            vehicles: vec![vehicle.clone()],
+            snapshots: vec![VehicleData::for_test(
+                9,
+                json!({
+                    "drive_state": {
+                        "shift_state": "P",
+                        "speed": 0,
+                        "latitude": 47.01,
+                        "longitude": 19.01,
+                        "timestamp": t0 + 120_000
+                    },
+                    "charge_state": {"battery_level": 68, "battery_range": 195.0}
+                }),
+            )],
+            failures: vec![],
+        };
+        persist_collection(&store, &close_drive, t0 + 120_000).expect("persist close");
+        let lifecycle = materialise_lifecycle_for_collection(&store, &close_drive, t0 + 120_000)
+            .expect("materialise close");
+        assert_eq!(lifecycle.drives_closed, 1);
+        assert_eq!(lifecycle.positions_materialised, 1);
+
+        // Charge lifecycle on the same durable vehicle.
+        let charge_open = ManualCollection {
+            vehicles: vec![vehicle.clone()],
+            snapshots: vec![VehicleData::for_test(
+                9,
+                json!({
+                    "charge_state": {
+                        "charging_state": "Charging",
+                        "battery_level": 40,
+                        "charge_energy_added": 1.0,
+                        "charger_power": 11.0,
+                        "battery_range": 120.0
+                    },
+                    "drive_state": {"shift_state": "P", "speed": 0, "timestamp": t0 + 200_000}
+                }),
+            )],
+            failures: vec![],
+        };
+        persist_collection(&store, &charge_open, t0 + 200_000).expect("persist charge open");
+        materialise_lifecycle_for_collection(&store, &charge_open, t0 + 200_000)
+            .expect("materialise charge open");
+
+        let store = HubStore::initialize(temp.path()).expect("second reopen");
+        let charge_close = ManualCollection {
+            vehicles: vec![vehicle],
+            snapshots: vec![VehicleData::for_test(
+                9,
+                json!({
+                    "charge_state": {
+                        "charging_state": "Complete",
+                        "battery_level": 80,
+                        "charge_energy_added": 12.0,
+                        "charger_power": 0.0,
+                        "battery_range": 220.0
+                    },
+                    "drive_state": {"shift_state": "P", "speed": 0, "timestamp": t0 + 800_000}
+                }),
+            )],
+            failures: vec![],
+        };
+        persist_collection(&store, &charge_close, t0 + 800_000).expect("persist charge close");
+        let lifecycle = materialise_lifecycle_for_collection(&store, &charge_close, t0 + 800_000)
+            .expect("materialise charge close");
+        assert_eq!(lifecycle.charges_closed, 1);
+        assert!(lifecycle.charge_samples_materialised >= 1);
+
+        let history = store.materialised_history(vehicle_id).expect("history");
+        assert_eq!(history.drives.len(), 1);
+        assert_eq!(history.charges.len(), 1);
+        assert_eq!(history.charges[0].end_battery_level, Some(80));
+        assert_eq!(history.charges[0].charge_energy_added, Some(12.0));
+
+        publish_compatibility_snapshots(
+            &store,
+            &CursorKey::from_bytes([9; 32]),
+            &charge_close,
+            t0 + 800_000,
+        )
+        .expect("publish");
+        let manifest = store
+            .manifest_for_vehicle(vehicle_id)
+            .expect("manifest")
+            .expect("published");
+        assert!(manifest.total_rows > 1);
     }
 }

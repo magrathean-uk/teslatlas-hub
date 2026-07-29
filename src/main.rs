@@ -41,6 +41,8 @@ enum Command {
     Serve,
     /// Perform one explicit, no-wake compatibility collection through systemd.
     CollectOnce,
+    /// Run the opt-in supervised no-wake collector loop through systemd.
+    CollectSupervised,
     /// Read and publish one full TeslaMate history snapshot through systemd.
     ImportTeslaMate {
         /// TeslaMate local car ID selected for this migration source.
@@ -97,6 +99,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::CollectOnce => {
             let report = collector::collect_once_from_systemd(&store, &config).await?;
             println!("{}", serde_json::to_string(&report)?);
+        }
+        Command::CollectSupervised => {
+            collector::run_supervised_from_systemd(&store, &config).await?;
         }
         Command::ImportTeslaMate { car_id } => {
             let import_config = config.teslamate.import_config()?;
