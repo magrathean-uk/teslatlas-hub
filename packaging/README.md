@@ -47,9 +47,11 @@ Fleet authorization is deliberately later. The first native bootstrap accepts
 only the token-safe path, leaving no plaintext token in its arguments or
 configuration.
 
-`scripts/install.sh --dry-run` performs no package, filesystem, service,
-credential, or network change. The Git bootstrap does not yet implement a
-dry-run contract. `--no-start` leaves the package installed but inactive.
+`scripts/install.sh --dry-run` and `scripts/bootstrap-from-git.sh --dry-run`
+perform no package, filesystem, service, credential, or network change. The
+bootstrap dry-run still validates `--repo`, `--ref`, and `--commit` before
+printing the planned actions. `--no-start` leaves the package installed but
+inactive.
 
 ## Signed release install
 

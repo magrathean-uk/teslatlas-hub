@@ -31,6 +31,7 @@ Credential options (passed directly to install.sh):
   --prompt-token          Prompt with systemd-ask-password
 
 Other options:
+  --dry-run               Validate arguments and print actions; change nothing
   --no-start              Install without starting the service
   --keep-source           Retain the checked-out build directory on success
   --help                  Show this text
@@ -62,6 +63,7 @@ token_file=""
 prompt_token=0
 no_start=0
 keep_source=0
+dry_run=0
 
 while (($#)); do
   case "$1" in
@@ -89,6 +91,10 @@ while (($#)); do
       prompt_token=1
       shift
       ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
     --no-start)
       no_start=1
       shift
@@ -105,7 +111,6 @@ while (($#)); do
   esac
 done
 
-[[ "${EUID}" -eq 0 ]] || die "run as root, for example: sudo bash $PROGRAM_NAME"
 [[ "$repo" =~ ^https://[^/@?#[:space:]]+(/[^?#[:space:]]*)?\.git$ ]] || \
   die "--repo must be a credential-free HTTPS Git URL ending in .git"
 [[ "$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && "$ref" != *..* && "$ref" != */. && "$ref" != ./* ]] || \
@@ -117,6 +122,25 @@ done
 [[ -z "$token_file" || ( -f "$token_file" && ! -L "$token_file" ) ]] || \
   die "--token-file must be a regular non-symlink file"
 
+if ((dry_run)); then
+  note "dry-run: would clone ${repo} at ${ref}"
+  note "dry-run: would require exact commit ${commit}"
+  note "dry-run: would build release binary and package with packaging/build-deb.sh"
+  if [[ -n "$token_file" ]]; then
+    note "dry-run: would pass --token-file (path redacted) to install.sh"
+  elif ((prompt_token)); then
+    note "dry-run: would pass --prompt-token to install.sh"
+  else
+    note "dry-run: would install without an owner token"
+  fi
+  if ((no_start)); then
+    note "dry-run: would pass --no-start to install.sh"
+  fi
+  note "dry-run: no packages, network package installs, credentials, or services changed"
+  exit 0
+fi
+
+[[ "${EUID}" -eq 0 ]] || die "run as root, for example: sudo bash $PROGRAM_NAME"
 [[ -r /etc/os-release ]] || die "unsupported host: /etc/os-release missing"
 # shellcheck disable=SC1091
 . /etc/os-release
