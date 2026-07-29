@@ -1,0 +1,56 @@
+[package]
+name = "teslatlas-hub"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "AGPL-3.0-or-later"
+description = "Native Tesla telemetry hub and high-speed Teslatlas sync server"
+
+[lib]
+name = "teslatlas_hub"
+path = "src/lib.rs"
+
+[[bin]]
+name = "teslatlas-hub"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8.9"
+axum-server = { version = "0.8.0", features = ["tls-rustls-no-provider"] }
+base64 = "0.22.1"
+clap = { version = "4", features = ["derive"] }
+ed25519-dalek = "=2.2.0"
+futures-util = "0.3"
+hex = "0.4"
+http = "1"
+reqwest = { version = "0.13.4", default-features = false, features = ["http2", "rustls-no-provider", "stream"] }
+rust_decimal = { version = "1.42.1", features = ["db-tokio-postgres"] }
+rustix = { version = "1.1.4", features = ["fs"] }
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+rustls = { version = "0.23.42", default-features = false, features = ["ring", "std", "tls12"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "rt-multi-thread", "signal", "net", "time"] }
+tokio-postgres = { version = "0.7.18", features = ["with-time-0_3"] }
+tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["native-certs", "ring"] }
+tokio-util = { version = "0.7", features = ["io"] }
+toml = "1"
+tower-http = { version = "0.6", features = ["request-id", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+time = "0.3.54"
+url = { version = "2", features = ["serde"] }
+uuid = { version = "1", features = ["serde", "v4", "v5"] }
+zstd = "0.13"
+
+[patch.crates-io]
+# The Hub ships the current, verified SQLite amalgamation. Native packages do
+# not depend on the Debian SQLite version installed by the host.
+libsqlite3-sys = { path = "vendor/libsqlite3-sys" }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tempfile = "3"
+tower = "0.5"

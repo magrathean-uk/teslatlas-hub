@@ -1,0 +1,38 @@
+# Teslatlas Hub default configuration.
+#
+# Keep this service bound to loopback until a reverse proxy, VPN or firewall
+# policy is configured. The installer never overwrites this conffile.
+
+bind = "127.0.0.1:4000"
+data_dir = "/var/lib/teslatlas"
+
+# Remote iPhone access needs a direct TLS listener. Pairing and bearer access
+# are available only through this listener. Keep private_key_path readable by
+# the teslatlas service account and inaccessible to other users.
+#
+# [tls]
+# certificate_path = "/etc/teslatlas/tls/fullchain.pem"
+# private_key_path = "/etc/teslatlas/tls/privkey.pem"
+# public_url = "https://hub.example"
+
+# Optional explicit compatibility collector. There is no default Tesla URL.
+# Set only a public HTTPS API base; use the separate collect service manually.
+# A token never belongs in this file, an environment variable, or an argument.
+#
+# [collector]
+# owner_api_base_url = "https://example.invalid/"
+# request_timeout_seconds = 20
+
+# Optional read-only TeslaMate history migration. The source URL deliberately
+# has no password, query parameters or TLS override. `source_key` is a durable
+# local label; keep it if the database hostname changes. The password lives
+# only in the host-encrypted `teslamate-postgres-password` systemd credential.
+#
+# [teslamate]
+# source_url = "postgresql://teslamate_reader@db.internal/teslamate"
+# source_key = "home-teslamate"
+# connect_timeout_seconds = 10
+# page_size = 2000
+# maximum_rows = 1000000 # selected-car stage row ceiling
+# maximum_stage_bytes = 4294967296 # private sealed source capture ceiling
+# minimum_free_bytes = 536870912 # untouched disk reserve for the host

@@ -1,0 +1,12 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Teslatlas Hub
+Source: https://github.com/teslatlas-org/teslatlas-hub
+
+Files: *
+Copyright: 2026 Teslatlas Contributors
+License: AGPL-3.0-or-later
+
+License: AGPL-3.0-or-later
+ This package is distributed under the GNU Affero General Public License,
+ version 3 or later. On Debian systems, the full license text is available at
+ /usr/share/common-licenses/AGPL-3.

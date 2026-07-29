@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+# Database and credential material are deliberately preserved on remove and
+# purge. They are user data; removal requires an explicit data-destruction
+# command outside dpkg.
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload || true
+fi
+
+exit 0

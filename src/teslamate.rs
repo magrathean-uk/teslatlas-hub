@@ -1,0 +1,160 @@
+//! TeslaMate is a migration-only source. This module intentionally contains no
+//! source writes and no credential transport.
+
+use std::fmt;
+
+use thiserror::Error;
+use url::Url;
+
+use crate::teslamate_schema::READ_ONLY_SESSION_SQL;
+
+pub const REQUIRED_TABLES: &[&str] = &[
+    "cars",
+    "drives",
+    "positions",
+    "charging_processes",
+    "charges",
+    "addresses",
+    "geofences",
+    "states",
+    "updates",
+];
+
+/// A credential-free PostgreSQL endpoint for a TeslaMate read-only import.
+/// Database credentials are intentionally supplied out-of-band through a
+/// systemd credential file when an actual importer is added.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadOnlySource {
+    url: Url,
+}
+
+impl ReadOnlySource {
+    pub fn parse(value: &str) -> Result<Self, TeslaMateSourceError> {
+        let url = Url::parse(value).map_err(TeslaMateSourceError::Url)?;
+        if !matches!(url.scheme(), "postgres" | "postgresql") {
+            return Err(TeslaMateSourceError::Scheme);
+        }
+        if url.host_str().is_none() {
+            return Err(TeslaMateSourceError::Host);
+        }
+        if url.password().is_some() {
+            return Err(TeslaMateSourceError::EmbeddedSecret);
+        }
+        if url.path().trim_matches('/').is_empty() {
+            return Err(TeslaMateSourceError::Database);
+        }
+        if url.query().is_some() || url.fragment().is_some() {
+            return Err(TeslaMateSourceError::Parameters);
+        }
+        Ok(Self { url })
+    }
+
+    pub fn database_name(&self) -> &str {
+        self.url.path().trim_start_matches('/')
+    }
+
+    pub fn host(&self) -> &str {
+        self.url.host_str().expect("validated host")
+    }
+
+    pub fn port(&self) -> u16 {
+        self.url
+            .port_or_known_default()
+            .expect("postgres has default port")
+    }
+
+    pub fn user(&self) -> Option<&str> {
+        let user = self.url.username();
+        (!user.is_empty()).then_some(user)
+    }
+
+    /// Session setup that must execute before inspecting the source schema.
+    pub fn session_sql(&self) -> [&'static str; 4] {
+        READ_ONLY_SESSION_SQL
+    }
+
+    /// Schema check that never invokes an unqualified source relation.
+    pub fn schema_check_sql(&self) -> &'static str {
+        "SELECT relname FROM pg_catalog.pg_class \
+         WHERE relnamespace = 'public'::pg_catalog.regnamespace \
+         AND relkind = 'r' \
+         AND relname = ANY(ARRAY['cars','drives','positions','charging_processes','charges','addresses','geofences','states','updates']) \
+         ORDER BY relname"
+    }
+}
+
+impl fmt::Display for ReadOnlySource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "postgresql://")?;
+        if let Some(user) = self.user() {
+            write!(formatter, "{user}@")?;
+        }
+        write!(
+            formatter,
+            "{}:{}/{}",
+            self.host(),
+            self.port(),
+            self.database_name()
+        )
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum TeslaMateSourceError {
+    #[error("invalid PostgreSQL source URL: {0}")]
+    Url(url::ParseError),
+    #[error("TeslaMate migration requires a postgres or postgresql URL")]
+    Scheme,
+    #[error("TeslaMate migration source requires a host")]
+    Host,
+    #[error("TeslaMate migration source requires a database name")]
+    Database,
+    #[error("embedded source credentials are not permitted")]
+    EmbeddedSecret,
+    #[error("source URL query parameters and fragments are not permitted")]
+    Parameters,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_a_credential_free_postgres_source() {
+        let source = ReadOnlySource::parse("postgresql://teslamate@db.internal:5433/teslamate")
+            .expect("valid source");
+        assert_eq!(source.host(), "db.internal");
+        assert_eq!(source.port(), 5433);
+        assert_eq!(source.database_name(), "teslamate");
+        assert_eq!(
+            source.to_string(),
+            "postgresql://teslamate@db.internal:5433/teslamate"
+        );
+        assert!(source.session_sql()[1].contains("REPEATABLE READ, READ ONLY"));
+        assert!(source.session_sql()[2].contains("TIME ZONE 'UTC'"));
+    }
+
+    #[test]
+    fn rejects_embedded_secrets_and_connection_options() {
+        let secret = ReadOnlySource::parse("postgresql://reader:secret@localhost/teslamate")
+            .expect_err("password must be rejected");
+        assert!(matches!(secret, TeslaMateSourceError::EmbeddedSecret));
+
+        let option =
+            ReadOnlySource::parse("postgresql://reader@localhost/teslamate?sslmode=disable")
+                .expect_err("parameters must be rejected");
+        assert!(matches!(option, TeslaMateSourceError::Parameters));
+    }
+
+    #[test]
+    fn schema_check_is_fully_qualified() {
+        let source = ReadOnlySource::parse("postgres://localhost/teslamate").expect("source");
+        assert!(source.schema_check_sql().contains("pg_catalog.pg_class"));
+        assert!(
+            source
+                .schema_check_sql()
+                .contains("'public'::pg_catalog.regnamespace")
+        );
+        assert_eq!(REQUIRED_TABLES.len(), 9);
+    }
+}

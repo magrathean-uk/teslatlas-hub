@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+  configure)
+    if ! getent group teslatlas >/dev/null 2>&1; then
+      addgroup --system teslatlas
+    fi
+
+    if ! getent passwd teslatlas >/dev/null 2>&1; then
+      adduser --system --ingroup teslatlas --home /nonexistent --no-create-home \
+        --shell /usr/sbin/nologin teslatlas
+    fi
+
+    install -d -m 0700 -o root -g root /etc/teslatlas/credentials
+    install -d -m 0750 -o teslatlas -g teslatlas /var/lib/teslatlas
+    install -d -m 0750 -o teslatlas -g teslatlas /run/teslatlas
+
+    # The daemon runs as teslatlas but configuration stays root-owned.
+    if [ -f /etc/teslatlas/config.toml ]; then
+      chown root:teslatlas /etc/teslatlas/config.toml
+      chmod 0640 /etc/teslatlas/config.toml
+    fi
+
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl daemon-reload || true
+    fi
+    ;;
+esac
+
+# A package install never enables or starts collection. The bootstrap command
+# owns activation after it has completed its checks.
+
+exit 0
