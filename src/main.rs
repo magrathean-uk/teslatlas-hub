@@ -58,6 +58,8 @@ enum Command {
         #[arg(long, default_value_t = 300)]
         expires_in_seconds: u64,
     },
+    /// Validate database integrity, clear quarantined sessions, and clean orphaned packs.
+    Repair,
 }
 
 #[tokio::main]
@@ -172,6 +174,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "pairingUri": pairing_uri,
                 })
             );
+        }
+        Command::Repair => {
+            let report = store.repair()?;
+            println!("{}", serde_json::to_string(&report)?);
         }
     }
     Ok(())

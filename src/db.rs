@@ -945,6 +945,70 @@ impl HubStore {
             charge_samples,
         })
     }
+
+    /// Check database integrity, clear quarantined open sessions, and remove
+    /// orphaned transport packs that are not referenced in the manifest catalog.
+    pub fn repair(&self) -> Result<RepairReport, StoreError> {
+        self.quick_check()?;
+        let connection = self.open()?;
+        let cleared_quarantines = connection
+            .execute(
+                "UPDATE vehicle_lifecycle_state SET quarantined = 0 WHERE quarantined != 0",
+                [],
+            )
+            .map_err(StoreError::Query)?;
+
+        let mut catalog_shas = std::collections::HashSet::new();
+        let mut statement = connection
+            .prepare("SELECT sha256 FROM sync_packs")
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(StoreError::Query)?;
+        for row in rows {
+            let sha = row.map_err(StoreError::Query)?;
+            catalog_shas.insert(sha);
+        }
+
+        let mut orphaned_packs_removed = 0;
+        let mut freed_bytes = 0;
+        let packs_dir = self.packs_dir();
+        if let Ok(entries) = std::fs::read_dir(packs_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let is_orphaned = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .and_then(|name| name.strip_suffix(".sqlite.zst"))
+                    .is_some_and(|sha| !catalog_shas.contains(sha));
+                if is_orphaned {
+                    if let Ok(metadata) = entry.metadata() {
+                        freed_bytes += metadata.len();
+                    }
+                    if std::fs::remove_file(&path).is_ok() {
+                        orphaned_packs_removed += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(RepairReport {
+            status: "ok".to_owned(),
+            sqlite_integrity: "ok".to_owned(),
+            quarantined_sessions_cleared: cleared_quarantines,
+            orphaned_packs_removed,
+            freed_bytes,
+        })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct RepairReport {
+    pub status: String,
+    pub sqlite_integrity: String,
+    pub quarantined_sessions_cleared: usize,
+    pub orphaned_packs_removed: usize,
+    pub freed_bytes: u64,
 }
 
 fn load_json_rows<T: serde::de::DeserializeOwned>(
@@ -2425,5 +2489,46 @@ mod tests {
             chunks: vec![pack],
             terminal_cursor: cursor,
         }
+    }
+
+    #[test]
+    fn repair_clears_quarantined_sessions_and_removes_orphaned_packs() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let (_, vehicle) = test_registered_vehicle(&store);
+
+        let connection = store.open().expect("open");
+        connection
+            .execute(
+                "INSERT INTO vehicle_lifecycle_state(
+                    vehicle_id, car_id, last_observation_id, open_session_json, quarantined, updated_at_ms
+                 ) VALUES (?1, 1, 1, x'7b7d', 1, 1000)",
+                params![vehicle.vehicle_id.to_string()],
+            )
+            .expect("insert quarantined");
+        drop(connection);
+
+        let orphaned_pack = store
+            .packs_dir()
+            .join("0000000000000000000000000000000000000000000000000000000000000000.sqlite.zst");
+        std::fs::write(&orphaned_pack, b"orphaned bytes").expect("write pack");
+
+        let report = store.repair().expect("repair");
+        assert_eq!(report.status, "ok");
+        assert_eq!(report.sqlite_integrity, "ok");
+        assert_eq!(report.quarantined_sessions_cleared, 1);
+        assert_eq!(report.orphaned_packs_removed, 1);
+        assert_eq!(report.freed_bytes, 14);
+        assert!(!orphaned_pack.exists());
+
+        let connection = store.open().expect("open");
+        let quarantined: i64 = connection
+            .query_row(
+                "SELECT quarantined FROM vehicle_lifecycle_state WHERE vehicle_id = ?1",
+                params![vehicle.vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("query quarantined");
+        assert_eq!(quarantined, 0);
     }
 }
