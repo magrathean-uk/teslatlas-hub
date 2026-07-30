@@ -25,6 +25,10 @@ bridge described in `docs/V0_1_DEVELOPMENT_PLAN.md`.
   import E2E test passes. Focused Hub iOS tests pass on the iPhone 17 Pro
   Simulator with `/Applications/Xcode-beta.app`; framework provenance reports
   `TeslatlasCore.xcframework is fresh.`
+- The single `scripts/mac-local-tls-hub.sh release-candidate` owner command
+  completed against the same local source, generated the one-use pairing
+  artifact, detected endpoint host `172.17.17.111`, started Hub, and passed
+  `/readyz`. The pairing secret was not printed.
 
 macOS is now the primary Hub development host and Simulator is the primary app
 proof environment for the complete happy path, real-history import, resume,
