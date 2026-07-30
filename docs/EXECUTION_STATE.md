@@ -6,6 +6,26 @@ Slices 0 through 3 have a complete real-data happy-path proof on 2026-07-30.
 The v0.1 is the single TeslaMate PostgreSQL to signed Hub packs to Teslatlas
 bridge described in `docs/V0_1_DEVELOPMENT_PLAN.md`.
 
+## Release-candidate evidence: 2026-07-30
+
+- The repeatable command was run from `codex/hub-v0.1` with
+  `scripts/test-simulator-tracer.sh`, using the local copied PostgreSQL source
+  `tm_contrib_import_verify_20260716_1155`, car `1`, `PGSSLMODE=disable`, and
+  `TESLATLAS_HUB_TEST_RUNS=2`. No production source was used.
+- The selected source contains exactly 1 car, 2,644 drives, 8,812,983 raw
+  positions with 8,764,495 attached to drives, 604 charging processes, and
+  216,296 charge samples. Hub publishes exactly 1 car, 2,644 drives,
+  8,764,495 positions, 604 charges, and 216,296 charge samples in 367 packs.
+- Simulator pass 1 completed in 51.178 seconds. Hub was stopped and restarted;
+  pass 2 completed in 50.105 seconds. The injected pairing URI was generated
+  from the active Hub for each pass. XCTest also reopened the activated mirror
+  through fresh Keychain credentials and a fresh Rust bridge.
+- `cargo fmt --all -- --check`, `cargo test --workspace` (105 tests), and
+  `cargo clippy --workspace --all-targets -- -D warnings` pass. The Rust TLS
+  import E2E test passes. Focused Hub iOS tests pass on the iPhone 17 Pro
+  Simulator with `/Applications/Xcode-beta.app`; framework provenance reports
+  `TeslatlasCore.xcframework is fresh.`
+
 macOS is now the primary Hub development host and Simulator is the primary app
 proof environment for the complete happy path, real-history import, resume,
 corruption, cancellation, retry, and restart matrix. Debian is limited to one
@@ -135,8 +155,8 @@ completed direct import from the read-only copied TeslaMate PostgreSQL source.
 
 ## Remaining gates
 
-- Finish with one short physical QR-camera, LAN TLS, representative import, and
-  relaunch smoke test.
+- Physical QR-camera, LAN TLS, and Debian deployment work are outside this
+  Mac-first release-candidate scope and were not started.
 
 Delta synchronization, the owner-token collector, Fleet, comparative
 benchmarks, public release signing, arm64/Pi, and the broad install matrix are
@@ -149,4 +169,4 @@ deferred beyond the bridge-first v0.1.
 
 ## Next action
 
-Run the short physical iPhone QR-camera, LAN TLS, import, and relaunch smoke.
+Commit the release-candidate evidence on the two isolated branches.

@@ -5,7 +5,7 @@
 //! connection, pins the source to a repeatable-read transaction, checks the
 //! reviewed schema, then fetches only fixed projections with keyset pages.
 
-use std::{path::Path, time::Duration};
+use std::{env, path::Path, time::Duration};
 
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Serialize, de::DeserializeOwned};
@@ -109,6 +109,7 @@ async fn connect_source(
         .user(user)
         .password(password.as_str())
         .dbname(source.database_name());
+    let ssl_mode = source_ssl_mode();
 
     if source.is_loopback() {
         configuration.ssl_mode(SslMode::Disable);
@@ -130,7 +131,18 @@ async fn connect_source(
             "some native TLS certificates could not be loaded"
         );
     }
-    configuration.ssl_mode(SslMode::Require);
+    configuration.ssl_mode(ssl_mode);
+
+    if ssl_mode == SslMode::Disable {
+        let (client, connection) = timeout(limits.connect_timeout, configuration.connect(NoTls))
+            .await
+            .map_err(|_| TeslaMateReaderError::ConnectTimedOut)??;
+        let connection_task = tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        return Ok((client, connection_task));
+    }
+
     let (client, connection) = timeout(limits.connect_timeout, configuration.connect(tls))
         .await
         .map_err(|_| TeslaMateReaderError::ConnectTimedOut)??;
@@ -138,6 +150,23 @@ async fn connect_source(
         let _ = connection.await;
     });
     Ok((client, connection_task))
+}
+
+fn source_ssl_mode() -> SslMode {
+    match env::var("PGSSLMODE")
+        .ok()
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("disable") => SslMode::Disable,
+        Some("prefer") => SslMode::Prefer,
+        Some("require") => SslMode::Require,
+        Some(value) => {
+            tracing::warn!(pgsslmode = value, "unsupported PGSSLMODE value ignored");
+            SslMode::Require
+        }
+        None => SslMode::Require,
+    }
 }
 
 pub(crate) async fn open_snapshot_session(
