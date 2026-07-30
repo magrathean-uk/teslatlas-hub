@@ -76,6 +76,11 @@ async fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("teslatlas-hub: {error}");
+            let mut source = error.source();
+            while let Some(cause) = source {
+                eprintln!("caused by: {cause}");
+                source = cause.source();
+            }
             ExitCode::FAILURE
         }
     }

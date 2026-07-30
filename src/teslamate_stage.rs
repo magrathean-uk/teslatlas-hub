@@ -544,17 +544,11 @@ impl TeslaMateStage {
         if charging_process_id <= 0 {
             return Err(TeslaMateStageError::InvalidSourceId);
         }
-        self.page_where_i64(
-            TeslaMateStageTable::Charges,
-            charging_process_id,
-            after_id,
-            limit,
-        )
+        self.page_charge_samples(charging_process_id, after_id, limit)
     }
 
-    fn page_where_i64<T: DeserializeOwned>(
+    fn page_charge_samples<T: DeserializeOwned>(
         &self,
-        table: TeslaMateStageTable,
         value: i64,
         after_id: i64,
         limit: u32,
@@ -572,22 +566,21 @@ impl TeslaMateStage {
         let mut statement = self.connection.prepare(
             "SELECT source_id, row_json
              FROM stage_rows
-             WHERE table_name = ?1
-               AND json_extract(row_json, '$.charging_process_id') = ?2
-               AND source_id > ?3
+             WHERE table_name = 'charges'
+               AND json_extract(row_json, '$.charging_process_id') = ?1
+               AND source_id > ?2
              ORDER BY source_id ASC
-             LIMIT ?4",
+             LIMIT ?3",
         )?;
         let mut output = statement
-            .query_map(
-                params![table.as_str(), value, after_id, query_limit],
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
-            )?
+            .query_map(params![value, after_id, query_limit], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
             .map(|row| {
                 let (source_id, json) = row?;
                 let value = serde_json::from_str(&json).map_err(|source| {
                     TeslaMateStageError::StoredRowDecode {
-                        table: table.as_str(),
+                        table: TeslaMateStageTable::Charges.as_str(),
                         source_id,
                         source,
                     }

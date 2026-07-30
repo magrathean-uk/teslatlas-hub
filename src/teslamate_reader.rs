@@ -396,11 +396,12 @@ async fn capture_smallint_pages<T: Serialize>(
 ) -> Result<usize, TeslaMateReaderError> {
     let mut last_id = 0_i16;
     let mut captured_rows = 0_usize;
+    let page_size = i64::from(limits.page_size);
     loop {
         let page = client
             .query(
                 projection(projection_descriptor.source_table).sql,
-                &[&last_id, &limits.page_size, &selected_car_id],
+                &[&last_id, &page_size, &selected_car_id],
             )
             .await?;
         let page_len = page.len();
@@ -438,11 +439,12 @@ async fn capture_integer_pages<T: Serialize>(
 ) -> Result<usize, TeslaMateReaderError> {
     let mut last_id = 0_i32;
     let mut captured_rows = 0_usize;
+    let page_size = i64::from(limits.page_size);
     loop {
         let page = client
             .query(
                 projection(projection_descriptor.source_table).sql,
-                &[&last_id, &limits.page_size, &selected_car_id],
+                &[&last_id, &page_size, &selected_car_id],
             )
             .await?;
         let page_len = page.len();
@@ -682,11 +684,12 @@ async fn read_smallint_pages(
 ) -> Result<Vec<Row>, TeslaMateReaderError> {
     let mut last_id = 0_i16;
     let mut result = Vec::new();
+    let page_size = i64::from(limits.page_size);
     loop {
         let page = client
             .query(
                 projection(table).sql,
-                &[&last_id, &limits.page_size, &selected_car_id],
+                &[&last_id, &page_size, &selected_car_id],
             )
             .await?;
         let page_len = page.len();
@@ -716,11 +719,12 @@ async fn read_integer_pages(
 ) -> Result<Vec<Row>, TeslaMateReaderError> {
     let mut last_id = 0_i32;
     let mut result = Vec::new();
+    let page_size = i64::from(limits.page_size);
     loop {
         let page = client
             .query(
                 projection(table).sql,
-                &[&last_id, &limits.page_size, &selected_car_id],
+                &[&last_id, &page_size, &selected_car_id],
             )
             .await?;
         let page_len = page.len();

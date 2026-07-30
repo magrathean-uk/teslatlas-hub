@@ -22,7 +22,7 @@ pub const READ_ONLY_SESSION_SQL: [&str; 4] = [
     "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
     "BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY",
     "SET LOCAL TIME ZONE 'UTC'",
-    "SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '60s'",
+    "SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '10min'",
 ];
 
 /// Read the installed Ecto migration high-water mark from the exact source

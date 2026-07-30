@@ -6,7 +6,7 @@
 //! drive or charge rows required by its children. The manifest is published by
 //! the caller only after this module has verified every immutable pack.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 use thiserror::Error;
@@ -170,16 +170,31 @@ fn write_position_fragments(
     limits: TeslaMateFragmentLimits,
     report: &mut ProjectionReport,
 ) -> Result<(), TeslaMateFragmentError> {
+    let mut projected_drives = HashMap::new();
+    for_each_page::<TeslaMateDrive, _>(stage, TeslaMateStageTable::Drives, |drive| {
+        if let Some(projected) = project_drive_from_stage(stage, &drive, car.id)? {
+            projected_drives.insert(drive.id, projected);
+        }
+        Ok(())
+    })?;
     let mut accumulator = FragmentAccumulator::new(car.clone(), limits)?;
     for_each_page::<TeslaMatePosition, _>(stage, TeslaMateStageTable::Positions, |position| {
-        let Some((drive, projected)) = project_position_from_stage(stage, &position, car.id)?
-        else {
+        let Some(drive_id) = position.drive_id else {
             report.skipped_unattached_positions = report
                 .skipped_unattached_positions
                 .checked_add(1)
                 .ok_or(TeslaMateFragmentError::ReportOverflow)?;
             return Ok(());
         };
+        let Some(drive) = projected_drives.get(&drive_id) else {
+            report.skipped_unattached_positions = report
+                .skipped_unattached_positions
+                .checked_add(1)
+                .ok_or(TeslaMateFragmentError::ReportOverflow)?;
+            return Ok(());
+        };
+        let projected = project_position(&position, car.id, true)?
+            .expect("position with a completed drive must project");
         accumulator.prepare(sink, |current| {
             let drive_is_new = !current.drive_ids.contains(&drive.id);
             let added_rows = 1 + u64::from(drive_is_new);
@@ -193,7 +208,7 @@ fn write_position_fragments(
             Ok((added_rows, added_bytes))
         })?;
         if accumulator.drive_ids.insert(drive.id) {
-            accumulator.drives.push(drive);
+            accumulator.drives.push(drive.clone());
         }
         accumulator.positions.push(projected);
         Ok(())
@@ -330,23 +345,6 @@ fn project_drive_from_stage(
         },
     )
     .map_err(Into::into)
-}
-
-fn project_position_from_stage(
-    stage: &TeslaMateStage,
-    position: &TeslaMatePosition,
-    selected_car_id: i64,
-) -> Result<Option<(ProjectionDrive, ProjectionPosition)>, TeslaMateFragmentError> {
-    let Some(drive_id) = position.drive_id else {
-        return Ok(None);
-    };
-    let drive = required_row::<TeslaMateDrive>(stage, TeslaMateStageTable::Drives, drive_id)?;
-    let Some(projected_drive) = project_drive_from_stage(stage, &drive, selected_car_id)? else {
-        return Ok(None);
-    };
-    let projected_position = project_position(position, selected_car_id, true)?
-        .expect("position with a completed drive must project");
-    Ok(Some((projected_drive, projected_position)))
 }
 
 fn project_charge_from_stage(
