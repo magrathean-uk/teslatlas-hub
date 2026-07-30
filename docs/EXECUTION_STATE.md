@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Scope reset in progress on 2026-07-30. The recommended v0.1 is the single
+Slices 0 and 1 are complete and Slice 2 is in progress on 2026-07-30. The v0.1 is the single
 TeslaMate PostgreSQL to signed Hub packs to Teslatlas bridge described in
 `docs/V0_1_DEVELOPMENT_PLAN.md`.
 
@@ -22,18 +22,18 @@ measurement. It does not block the scope reset.
 
 ## Verified existing work
 
-- Hub `main` at `f4093ed` has uncommitted in-scope work. Rust suite has 100 passing tests; format,
-  Clippy, bootstrap contract, and TLS end-to-end checks pass.
+- Hub v0.1 is isolated on `codex/hub-v0.1`. Rust suite has 103 passing tests;
+  format, Clippy, bootstrap contract, and TLS end-to-end checks pass.
 - Token credential adapter, supervised no-wake collection, pairing, signed
   packs, range resume, restart recovery, quarantine, repair, native TLS,
   bundled SQLite, and hardened systemd unit foundations exist.
-- Teslatlas `main` is clean and aligned with `origin/main` at `a2499f10`.
+- Teslatlas `origin/main` is at `ec831cff`.
   The app has a Hub onboarding path with pairing URI paste, leaf pinning,
   selected-vehicle manifests, resumable transfer, Rust staging, atomic
   activation, Keychain storage, foreground refresh, and overnight refresh.
 - The exact isolated Teslatlas worktree exists at
-  `/Users/bolyki/dev/source/teslatlas-hub-test` on `teslatlas-hub-test`, based
-  on `origin/main` at `a2499f10`.
+  `/Users/bolyki/dev/source/teslatlas-hub-test` on `teslatlas-hub-test`, one
+  commit ahead of `origin/main`.
 - The iPhone-only pairing flow now offers QR scanning as well as paste. It is
   unavailable on Catalyst by design; camera permission is declared.
 - Repair now discovers orphan objects in the actual `packs/sha256` layout and
@@ -73,15 +73,27 @@ measurement. It does not block the scope reset.
 
 ## Branch and commit state
 
-- Hub: `main`, `f4093ed` (ahead of the checked Teslatlas app state).
-- Teslatlas: `main...origin/main`, `a2499f10`.
-- Teslatlas proof: `teslatlas-hub-test...origin/main`, `a2499f10`, with local
-  uncommitted Hub onboarding proof work.
+- Hub v0.1: `codex/hub-v0.1`, setup baseline `03cdcd1`.
+- Preserved pre-reset Hub work:
+  `codex/hub-pre-reset-snapshot`, `fe3820d`.
+- Teslatlas proof: `teslatlas-hub-test`, `82d88c44`, clean and one commit
+  ahead of current `origin/main` at `ec831cff`.
 
 ## Completed proof
 
-- Hub unit/integration test suite: 100 passing.
-- Hub format, Clippy, bootstrap contract, and TLS end-to-end validation.
+- Hub v0.1 format, 100 tests, warning-denying Clippy, and real TLS
+  claim/manifest/range-resume test pass from the clean branch.
+- Proven VM import corrections are present in v0.1; deferred collector and
+  delta work remains only on the preserved snapshot branch.
+- Teslatlas proof branch was rebased across 23 newer main commits.
+- Fresh Xcode 27 Rust framework rebuild completed for device, Simulator,
+  Catalyst, and macOS slices.
+- Ten focused Hub client and Rust staging tests pass on iPhone 17 Pro
+  Simulator after the rebase.
+- The live Hub-to-Simulator tracer passes through the production pairing URI
+  parser, one-use claim, exact private TLS leaf pin, vehicle discovery, signed
+  manifest verification, pack download, Rust staging, atomic activation, and
+  live SQLite row checks.
 - `Teslatlas (Dev)` XCTest passed on the available iPhone 17 Pro Simulator.
 - `db::tests::repair_clears_quarantined_sessions_and_removes_orphaned_packs`
   passes after the content-addressed repair check; Hub formatting passes.
@@ -94,10 +106,6 @@ measurement. It does not block the scope reset.
 
 ## Remaining gates
 
-- Freeze reproducible Hub and Teslatlas integration baselines.
-- Complete one-command local identity, TLS, service setup, and terminal QR.
-- Run the exact Hub HTTP and pack contract through the real Teslatlas client
-  and Rust staging path in Simulator.
 - Replace JSON staging with bounded direct typed-pack generation and verify the
   complete copied history in Simulator.
 - Pass the full automated failure matrix in Simulator.
@@ -116,10 +124,7 @@ deferred beyond the bridge-first v0.1.
 
 ## Next three actions
 
-1. Freeze reproducible Hub and Teslatlas baselines around the exact v0.1 HTTP
-   and pack contract.
-2. Complete the one-command setup, protected local identity, terminal QR, and
-   fully automated tiny-snapshot Hub-to-Simulator tracer.
-3. Replace the multi-gigabyte JSON staging import with direct bounded typed
-   pack generation, then prove the full copied TeslaMate history through the
-   Simulator.
+1. Replace the multi-gigabyte JSON staging import with direct bounded typed
+   pack generation.
+2. Prove the complete copied TeslaMate history through the Simulator.
+3. Run the Simulator failure matrix, then Debian install/reboot/LAN proof.

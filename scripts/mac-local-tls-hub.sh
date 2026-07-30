@@ -54,7 +54,7 @@ case "$CMD" in
   prepare)
     "$BIN" --config "$WORKDIR/config.toml" init >/dev/null
     cargo run -q --example seed_local_hub -- "$WORKDIR/data" | tee "$WORKDIR/last-seed.json" >/dev/null
-    PAIRING_JSON="$("$BIN" --config "$WORKDIR/config.toml" create-pairing --label "Mac local" --expires-in-seconds 3600)"
+    PAIRING_JSON="$("$BIN" --config "$WORKDIR/config.toml" pair --label "Mac local" --expires-in-seconds 3600 --json)"
     printf '%s\n' "$PAIRING_JSON" >"$WORKDIR/last-pairing.json"
     python3 - <<PY
 import json, pathlib
