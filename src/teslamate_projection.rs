@@ -154,8 +154,19 @@ pub struct ProjectionReport {
     pub completed_drives: u64,
     pub skipped_open_drives: u64,
     pub skipped_unattached_positions: u64,
+    pub projected_positions: u64,
     pub projected_charges: u64,
     pub projected_charge_samples: u64,
+}
+
+impl ProjectionReport {
+    pub fn logical_row_count(&self) -> Option<u64> {
+        1_u64
+            .checked_add(self.completed_drives)?
+            .checked_add(self.projected_positions)?
+            .checked_add(self.projected_charges)?
+            .checked_add(self.projected_charge_samples)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -171,6 +182,8 @@ pub struct TeslaMateProjection {
 pub struct ChargeProjectionFacts {
     is_dc: Option<bool>,
     max_charger_power_kw: Option<f64>,
+    first_sample: Option<(i64, i64)>,
+    last_sample: Option<(i64, i64)>,
     first_energy: Option<((i64, i64), f64)>,
     last_energy: Option<((i64, i64), f64)>,
     last_battery_level: Option<((i64, i64), i64)>,
@@ -181,6 +194,11 @@ pub struct ChargeProjectionFacts {
 impl ChargeProjectionFacts {
     pub fn observe(&mut self, sample: &TeslaMateCharge) {
         let order = (sample.date_ms, sample.id);
+        self.first_sample = Some(
+            self.first_sample
+                .map_or(order, |current| current.min(order)),
+        );
+        self.last_sample = Some(self.last_sample.map_or(order, |current| current.max(order)));
         if let Some(value) = sample.fast_charger_present {
             self.is_dc = Some(self.is_dc.unwrap_or(false).max(value));
         }
@@ -414,11 +432,21 @@ pub fn project_charge(
     let end_rated_range_km = process
         .end_rated_range_km
         .or_else(|| sample_facts.last_rated_range_km.map(|(_, value)| value));
+    let start_date_ms = sample_facts
+        .first_sample
+        .map_or(process.start_date_ms, |(date_ms, _)| {
+            process.start_date_ms.min(date_ms)
+        });
+    let end_date_ms = process.end_date_ms.map(|end_date_ms| {
+        sample_facts
+            .last_sample
+            .map_or(end_date_ms, |(date_ms, _)| end_date_ms.max(date_ms))
+    });
     Ok(ProjectionCharge {
         id: process.id,
         car_id: selected_car_id,
-        start_date_ms: process.start_date_ms,
-        end_date_ms: process.end_date_ms,
+        start_date_ms,
+        end_date_ms,
         charge_energy_added,
         start_battery_level: process.start_battery_level,
         end_battery_level,
@@ -578,6 +606,7 @@ pub fn project_vehicle(
             continue;
         };
         positions.push(projected);
+        report.projected_positions += 1;
     }
 
     let mut samples_by_process = HashMap::<i64, Vec<&TeslaMateCharge>>::new();
@@ -1084,9 +1113,29 @@ mod tests {
                 completed_drives: 1,
                 skipped_open_drives: 1,
                 skipped_unattached_positions: 1,
+                projected_positions: 1,
                 projected_charges: 1,
                 projected_charge_samples: 1,
             }
+        );
+    }
+
+    #[test]
+    fn charge_interval_contains_all_source_samples() {
+        let mut before = history();
+        before.charges[0].date_ms = before.charging_processes[0].start_date_ms - 1_000;
+        let projected = project_vehicle(&before, 1).unwrap();
+        assert_eq!(
+            projected.snapshot.charges[0].start_date_ms,
+            before.charges[0].date_ms
+        );
+
+        let mut after = history();
+        after.charges[0].date_ms = after.charging_processes[0].end_date_ms.unwrap() + 1_000;
+        let projected = project_vehicle(&after, 1).unwrap();
+        assert_eq!(
+            projected.snapshot.charges[0].end_date_ms,
+            Some(after.charges[0].date_ms)
         );
     }
 

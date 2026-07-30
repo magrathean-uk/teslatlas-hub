@@ -12,7 +12,7 @@ use crate::{
     credentials::TeslaMatePostgresPassword,
     db::{HubStore, SourceDescriptor, VehicleDescriptor},
     hub_pack::{
-        ProjectionBinding, ProjectionPackRequest, ProjectionPackWriter,
+        ProjectionBinding, ProjectionPackError, ProjectionPackRequest, ProjectionPackWriter,
         signed_full_snapshot_manifest,
     },
     protocol::{CursorKey, SequenceRange},
@@ -101,8 +101,18 @@ pub async fn import_from_postgres(
         range,
     )
     .await?;
-    let manifest =
-        signed_full_snapshot_manifest(&binding, snapshot_id, range, &direct.chunks, cursor_key)?;
+    let logical_rows = direct
+        .report
+        .logical_row_count()
+        .ok_or(ProjectionPackError::ManifestTotalsOverflow)?;
+    let manifest = signed_full_snapshot_manifest(
+        &binding,
+        snapshot_id,
+        range,
+        &direct.chunks,
+        logical_rows,
+        cursor_key,
+    )?;
     store.publish_manifest(&manifest)?;
     Ok(TeslaMateImportReport {
         source_id: registered_source.source_id,
@@ -165,8 +175,18 @@ pub fn publish_staged_history(
         snapshot_id,
         range,
     )?;
-    let manifest =
-        signed_full_snapshot_manifest(&binding, snapshot_id, range, &staged.chunks, cursor_key)?;
+    let logical_rows = staged
+        .report
+        .logical_row_count()
+        .ok_or(ProjectionPackError::ManifestTotalsOverflow)?;
+    let manifest = signed_full_snapshot_manifest(
+        &binding,
+        snapshot_id,
+        range,
+        &staged.chunks,
+        logical_rows,
+        cursor_key,
+    )?;
     store.publish_manifest(&manifest)?;
     Ok(TeslaMateImportReport {
         source_id: source.source_id,

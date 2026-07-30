@@ -600,7 +600,8 @@ impl SyncManifest {
         }
         if compressed_total != self.total_compressed_bytes
             || uncompressed_total != self.total_uncompressed_bytes
-            || row_total != self.total_rows
+            || self.total_rows == 0
+            || self.total_rows > row_total
         {
             return Err(ProtocolError::ManifestTotalsMismatch);
         }

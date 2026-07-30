@@ -208,6 +208,7 @@ impl ProjectionPackRequest<'_> {
             self.snapshot_id,
             self.sequence,
             std::slice::from_ref(built),
+            self.snapshot.row_count()?,
             cursor_key,
         )
     }
@@ -226,6 +227,7 @@ pub fn signed_full_snapshot_manifest(
     snapshot_id: Uuid,
     sequence: SequenceRange,
     chunks: &[BuiltProjectionPack],
+    total_rows: u64,
     cursor_key: &CursorKey,
 ) -> Result<SyncManifest, ProjectionPackError> {
     validate_binding(binding)?;
@@ -241,7 +243,7 @@ pub fn signed_full_snapshot_manifest(
 
     let mut total_compressed_bytes = 0_u64;
     let mut total_uncompressed_bytes = 0_u64;
-    let mut total_rows = 0_u64;
+    let mut transport_rows = 0_u64;
     let mut metadata = Vec::with_capacity(chunks.len());
     for (expected_ordinal, built) in chunks.iter().enumerate() {
         let pack = &built.metadata;
@@ -261,12 +263,15 @@ pub fn signed_full_snapshot_manifest(
         total_uncompressed_bytes = total_uncompressed_bytes
             .checked_add(pack.uncompressed_bytes)
             .ok_or(ProjectionPackError::ManifestTotalsOverflow)?;
-        total_rows = total_rows
+        transport_rows = transport_rows
             .checked_add(pack.row_count)
             .ok_or(ProjectionPackError::ManifestTotalsOverflow)?;
         metadata.push(pack.clone());
     }
 
+    if total_rows == 0 || total_rows > transport_rows {
+        return Err(invalid("logical row total exceeds transport rows"));
+    }
     let terminal_cursor = OpaqueCursor::issue(
         cursor_key,
         CursorClaims {
@@ -1560,16 +1565,14 @@ mod tests {
             first_request.snapshot_id,
             first_request.sequence,
             &[first.clone(), second.clone()],
+            first_request.snapshot.row_count().unwrap(),
             &key,
         )
         .unwrap();
         assert_eq!(manifest.chunk_count, 2);
         assert_eq!(manifest.chunks[0].ordinal, 0);
         assert_eq!(manifest.chunks[1].ordinal, 1);
-        assert_eq!(
-            manifest.total_rows,
-            first.metadata.row_count + second.metadata.row_count
-        );
+        assert_eq!(manifest.total_rows, first.metadata.row_count);
         manifest.validate_terminal_cursor(&key).unwrap();
     }
 

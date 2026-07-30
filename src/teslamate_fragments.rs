@@ -211,6 +211,10 @@ fn write_position_fragments(
             accumulator.drives.push(drive.clone());
         }
         accumulator.positions.push(projected);
+        report.projected_positions = report
+            .projected_positions
+            .checked_add(1)
+            .ok_or(TeslaMateFragmentError::ReportOverflow)?;
         Ok(())
     })?;
     accumulator.flush(sink)
@@ -911,10 +915,19 @@ mod tests {
             snapshot_id,
             sequence,
             &built.chunks,
+            built.report.logical_row_count().unwrap(),
             &CursorKey::from_bytes([7; 32]),
         )
         .unwrap();
         assert_eq!(manifest.chunk_count as usize, built.chunks.len());
-        assert_eq!(manifest.total_rows, 8);
+        assert_eq!(manifest.total_rows, 5);
+        assert!(
+            built
+                .chunks
+                .iter()
+                .map(|chunk| chunk.metadata.row_count)
+                .sum::<u64>()
+                > 5
+        );
     }
 }

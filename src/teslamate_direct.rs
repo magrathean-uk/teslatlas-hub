@@ -255,6 +255,7 @@ async fn write_positions(
                 accumulator.drives.push(drive.clone());
             }
             accumulator.positions.push(projected);
+            report.projected_positions = checked_increment(report.projected_positions)?;
             Ok(())
         },
     )
