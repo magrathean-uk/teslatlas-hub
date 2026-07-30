@@ -16,8 +16,13 @@ cleanup() {
     wait "$SERVER_PID" 2>/dev/null || true
   fi
   if [[ -n "${SIMULATOR_UDID:-}" ]]; then
-    DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl spawn "$SIMULATOR_UDID" \
-      launchctl unsetenv TESLATLAS_HUB_TEST_PAIRING_URI >/dev/null 2>&1 || true
+    for variable in \
+      TESLATLAS_HUB_TEST_PAIRING_URI \
+      TESLATLAS_HUB_TEST_EXPECTED_MANIFEST_ROWS
+    do
+      DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl spawn "$SIMULATOR_UDID" \
+        launchctl unsetenv "$variable" >/dev/null 2>&1 || true
+    done
   fi
   /usr/bin/trash "$WORKDIR" 2>/dev/null || true
 }
@@ -67,6 +72,8 @@ DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null |
 DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl bootstatus "$SIMULATOR_UDID" -b
 DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl spawn "$SIMULATOR_UDID" \
   launchctl setenv TESLATLAS_HUB_TEST_PAIRING_URI "$PAIRING_URI"
+DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl spawn "$SIMULATOR_UDID" \
+  launchctl setenv TESLATLAS_HUB_TEST_EXPECTED_MANIFEST_ROWS 4
 
 DEVELOPER_DIR="$DEVELOPER_DIR" xcodebuild test \
   -project "$TESLATLAS_WORKTREE/Teslatlas.xcodeproj" \
