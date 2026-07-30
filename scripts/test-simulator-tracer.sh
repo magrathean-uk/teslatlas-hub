@@ -7,6 +7,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TESLATLAS_WORKTREE="${TESLATLAS_WORKTREE:-$ROOT/../teslatlas-hub-test}"
 DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
 SIMULATOR_NAME="${TESLATLAS_SIMULATOR_NAME:-iPhone 17 Pro}"
+CODE_SIGNING_ALLOWED="${TESLATLAS_CODE_SIGNING_ALLOWED:-YES}"
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-hub-tracer.XXXXXX")"
 SERVER_PID=""
 
@@ -75,10 +76,10 @@ DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl spawn "$SIMULATOR_UDID" \
 DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl spawn "$SIMULATOR_UDID" \
   launchctl setenv TESLATLAS_HUB_TEST_EXPECTED_MANIFEST_ROWS 4
 
-DEVELOPER_DIR="$DEVELOPER_DIR" xcodebuild test \
+DEVELOPER_DIR="$DEVELOPER_DIR" xcodebuild test -quiet \
   -project "$TESLATLAS_WORKTREE/Teslatlas.xcodeproj" \
   -scheme "Teslatlas (Dev)" \
   -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
   -parallel-testing-enabled NO \
   -only-testing:TeslatlasTests/TeslatlasHubLiveTracerTests \
-  CODE_SIGNING_ALLOWED=NO
+  CODE_SIGNING_ALLOWED="$CODE_SIGNING_ALLOWED"

@@ -12,7 +12,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 use time::PrimitiveDateTime;
 use tokio::time::timeout;
-use tokio_postgres::{Client, Config, Row, config::SslMode};
+use tokio_postgres::{Client, Config, NoTls, Row, config::SslMode};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
 use crate::{
@@ -94,6 +94,52 @@ impl TeslaMateSnapshotSession {
     }
 }
 
+async fn connect_source(
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    limits: TeslaMateReadLimits,
+) -> Result<(Client, tokio::task::JoinHandle<()>), TeslaMateReaderError> {
+    let user = source
+        .user()
+        .ok_or(TeslaMateReaderError::SourceUserRequired)?;
+    let mut configuration = Config::new();
+    configuration
+        .host(source.host())
+        .port(source.port())
+        .user(user)
+        .password(password.as_str())
+        .dbname(source.database_name());
+
+    if source.is_loopback() {
+        configuration.ssl_mode(SslMode::Disable);
+        let (client, connection) = timeout(limits.connect_timeout, configuration.connect(NoTls))
+            .await
+            .map_err(|_| TeslaMateReaderError::ConnectTimedOut)??;
+        let connection_task = tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        return Ok((client, connection_task));
+    }
+
+    crate::crypto::install_default_provider();
+    let (tls, certificate_errors) = MakeRustlsConnect::with_native_certs()
+        .map_err(|_| TeslaMateReaderError::NativeTrustStoreUnavailable)?;
+    if !certificate_errors.is_empty() {
+        tracing::warn!(
+            count = certificate_errors.len(),
+            "some native TLS certificates could not be loaded"
+        );
+    }
+    configuration.ssl_mode(SslMode::Require);
+    let (client, connection) = timeout(limits.connect_timeout, configuration.connect(tls))
+        .await
+        .map_err(|_| TeslaMateReaderError::ConnectTimedOut)??;
+    let connection_task = tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    Ok((client, connection_task))
+}
+
 pub(crate) async fn open_snapshot_session(
     source: &ReadOnlySource,
     password: &TeslaMatePostgresPassword,
@@ -104,33 +150,8 @@ pub(crate) async fn open_snapshot_session(
     if selected_car_id <= 0 {
         return Err(TeslaMateReaderError::InvalidSelectedCarId);
     }
-    crate::crypto::install_default_provider();
     let selected_car_id = selected_source_car_id(selected_car_id)?;
-    let user = source
-        .user()
-        .ok_or(TeslaMateReaderError::SourceUserRequired)?;
-    let (tls, certificate_errors) = MakeRustlsConnect::with_native_certs()
-        .map_err(|_| TeslaMateReaderError::NativeTrustStoreUnavailable)?;
-    if !certificate_errors.is_empty() {
-        tracing::warn!(
-            count = certificate_errors.len(),
-            "some native TLS certificates could not be loaded"
-        );
-    }
-    let mut configuration = Config::new();
-    configuration
-        .host(source.host())
-        .port(source.port())
-        .user(user)
-        .password(password.as_str())
-        .dbname(source.database_name())
-        .ssl_mode(SslMode::Require);
-    let (client, connection) = timeout(limits.connect_timeout, configuration.connect(tls))
-        .await
-        .map_err(|_| TeslaMateReaderError::ConnectTimedOut)??;
-    let connection_task = tokio::spawn(async move {
-        let _ = connection.await;
-    });
+    let (client, connection_task) = connect_source(source, password, limits).await?;
     if let Err(error) = prepare_read_only_snapshot(&client, source).await {
         drop(client);
         let _ = connection_task.await;
@@ -187,36 +208,8 @@ pub async fn read_history(
     if selected_car_id <= 0 {
         return Err(TeslaMateReaderError::InvalidSelectedCarId);
     }
-    crate::crypto::install_default_provider();
     let selected_car_id = selected_source_car_id(selected_car_id)?;
-    let user = source
-        .user()
-        .ok_or(TeslaMateReaderError::SourceUserRequired)?;
-    let (tls, certificate_errors) = MakeRustlsConnect::with_native_certs()
-        .map_err(|_| TeslaMateReaderError::NativeTrustStoreUnavailable)?;
-    if !certificate_errors.is_empty() {
-        tracing::warn!(
-            count = certificate_errors.len(),
-            "some native TLS certificates could not be loaded"
-        );
-    }
-
-    let mut configuration = Config::new();
-    configuration
-        .host(source.host())
-        .port(source.port())
-        .user(user)
-        .password(password.as_str())
-        .dbname(source.database_name())
-        .ssl_mode(SslMode::Require);
-    let (client, connection) = timeout(limits.connect_timeout, configuration.connect(tls))
-        .await
-        .map_err(|_| TeslaMateReaderError::ConnectTimedOut)??;
-    let connection_task = tokio::spawn(async move {
-        // Query operations surface their own errors to the caller. This task
-        // only keeps the protocol I/O alive and must never render credentials.
-        let _ = connection.await;
-    });
+    let (client, connection_task) = connect_source(source, password, limits).await?;
 
     let result = read_history_in_session(&client, source, selected_car_id, limits).await;
     let rollback = client.batch_execute("ROLLBACK").await;
@@ -245,19 +238,7 @@ pub async fn capture_history_to_stage(
     if selected_car_id <= 0 {
         return Err(TeslaMateReaderError::InvalidSelectedCarId);
     }
-    crate::crypto::install_default_provider();
     let selected_car_id = selected_source_car_id(selected_car_id)?;
-    let user = source
-        .user()
-        .ok_or(TeslaMateReaderError::SourceUserRequired)?;
-    let (tls, certificate_errors) = MakeRustlsConnect::with_native_certs()
-        .map_err(|_| TeslaMateReaderError::NativeTrustStoreUnavailable)?;
-    if !certificate_errors.is_empty() {
-        tracing::warn!(
-            count = certificate_errors.len(),
-            "some native TLS certificates could not be loaded"
-        );
-    }
     let mut stage = TeslaMateStage::create(
         imports_dir,
         TeslaMateStageLimits {
@@ -267,29 +248,13 @@ pub async fn capture_history_to_stage(
         },
     )?;
 
-    let mut configuration = Config::new();
-    configuration
-        .host(source.host())
-        .port(source.port())
-        .user(user)
-        .password(password.as_str())
-        .dbname(source.database_name())
-        .ssl_mode(SslMode::Require);
-    let (client, connection) =
-        match timeout(limits.connect_timeout, configuration.connect(tls)).await {
-            Ok(Ok(connection)) => connection,
-            Ok(Err(error)) => {
-                let _ = stage.discard();
-                return Err(TeslaMateReaderError::Postgres(error));
-            }
-            Err(_) => {
-                let _ = stage.discard();
-                return Err(TeslaMateReaderError::ConnectTimedOut);
-            }
-        };
-    let connection_task = tokio::spawn(async move {
-        let _ = connection.await;
-    });
+    let (client, connection_task) = match connect_source(source, password, limits).await {
+        Ok(connection) => connection,
+        Err(error) => {
+            let _ = stage.discard();
+            return Err(error);
+        }
+    };
 
     let capture =
         capture_history_in_session(&client, source, selected_car_id, limits, &mut stage).await;

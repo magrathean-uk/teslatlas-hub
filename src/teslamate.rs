@@ -1,7 +1,7 @@
 //! TeslaMate is a migration-only source. This module intentionally contains no
 //! source writes and no credential transport.
 
-use std::fmt;
+use std::{fmt, net::IpAddr};
 
 use thiserror::Error;
 use url::Url;
@@ -58,14 +58,20 @@ impl ReadOnlySource {
     }
 
     pub fn port(&self) -> u16 {
-        self.url
-            .port_or_known_default()
-            .expect("postgres has default port")
+        self.url.port().unwrap_or(5432)
     }
 
     pub fn user(&self) -> Option<&str> {
         let user = self.url.username();
         (!user.is_empty()).then_some(user)
+    }
+
+    pub fn is_loopback(&self) -> bool {
+        self.host().eq_ignore_ascii_case("localhost")
+            || self
+                .host()
+                .parse::<IpAddr>()
+                .is_ok_and(|address| address.is_loopback())
     }
 
     /// Session setup that must execute before inspecting the source schema.
@@ -132,6 +138,14 @@ mod tests {
         );
         assert!(source.session_sql()[1].contains("REPEATABLE READ, READ ONLY"));
         assert!(source.session_sql()[2].contains("TIME ZONE 'UTC'"));
+    }
+
+    #[test]
+    fn defaults_postgres_urls_to_the_standard_port() {
+        let source =
+            ReadOnlySource::parse("postgresql://reader@localhost/teslamate").expect("valid source");
+        assert_eq!(source.port(), 5432);
+        assert!(source.is_loopback());
     }
 
     #[test]

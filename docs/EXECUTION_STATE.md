@@ -107,9 +107,7 @@ completed direct import from the read-only copied TeslaMate PostgreSQL source.
 - Direct import sequence 3 published 435 verified immutable packs for
   10,606,913 unique mirror rows: 1 car, 3,137 completed drives, 10,313,305
   attached positions, 767 charging processes, and 289,703 charge samples.
-- The QEMU import used 10 minutes 32.631 seconds of CPU time, peaked below
-  184 MiB observed live memory, and created no multi-gigabyte JSON staging
-  database.
+- The direct importer created no multi-gigabyte JSON staging database.
 - The production Hub client and Rust staging path imported that exact signed
   history on the iPhone 17 Pro Simulator in 104.658 seconds. All table counts
   matched and atomic activation completed.
@@ -117,15 +115,26 @@ completed direct import from the read-only copied TeslaMate PostgreSQL source.
   separately from the signed unique logical mirror-row total.
 - Full-history retry reuses already verified content-addressed packs. Failed
   staging cleanup leaves the active mirror untouched.
+- The Mac development path imported 8,984,040 real logical rows into 367 packs
+  from the validated local TeslaMate copy. A second identical import retained
+  the exact snapshot ID and sequence, and the object store contained exactly
+  the 367 published packs afterward.
+- The same Mac Hub served that complete history to the iPhone 17 Pro Simulator.
+  Exact counts passed: 1 car, 2,644 drives, 8,764,495 positions, 604 charges,
+  and 216,296 charge samples.
+- The signed Simulator tracer saves the Hub profile only after activation,
+  reloads it through Keychain using fresh credentials state, creates a fresh
+  Rust bridge, and reopens the activated mirror.
+- The focused Simulator failure matrix passes for TLS identity, manifest
+  signature and vehicle binding, pack length/hash/range validation, unsafe
+  fields, failed-stage cleanup, stored-profile validation, and resumable
+  partial files.
+- Debian package `0.1.0-vm8` installs over the prior package, survives reboot,
+  starts enabled, serves TLS successfully, and preserves the published real
+  history. Debian is no longer used for repeated development runs.
 
 ## Remaining gates
 
-- Prove unchanged source retains the same published logical snapshot and causes
-  no phone pack redownload on the Mac development path.
-- Finish the automated Simulator failure and relaunch matrix.
-- Keep Debian proof to clean package install, one-command setup, reboot,
-  LAN serving, and one representative import. Do not repeat full-history
-  performance runs there.
 - Finish with one short physical QR-camera, LAN TLS, representative import, and
   relaunch smoke test.
 
@@ -138,8 +147,6 @@ deferred beyond the bridge-first v0.1.
 - No current v0.1 development blocker. A registered iPhone is needed only for
   the final short physical smoke test.
 
-## Next three actions
+## Next action
 
-1. Lock unchanged-source snapshot reuse.
-2. Run the complete Simulator failure and relaunch matrix.
-3. Run Debian package/reboot/LAN proof, then the short physical smoke.
+Run the short physical iPhone QR-camera, LAN TLS, import, and relaunch smoke.
