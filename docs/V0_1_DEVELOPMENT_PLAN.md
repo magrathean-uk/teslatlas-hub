@@ -23,7 +23,14 @@ systemd drop-in, or pairing payload.
 
 ## Proof policy
 
-Simulator is the primary development and release-candidate environment.
+macOS is the primary Hub development environment. The iOS Simulator is the
+primary Teslatlas development and release-candidate environment.
+
+The native Hub process, fixture PostgreSQL source, TLS endpoint, pairing,
+manifest publication, pack serving, failure injection, and test orchestration
+run on the Mac during normal development. Platform-neutral Rust owns the
+service behavior. Linux-specific code is restricted to packaging, filesystem
+locations, permissions, and systemd integration.
 
 All repeatable Hub-to-Teslatlas behavior runs there:
 
@@ -172,7 +179,7 @@ Time box: one day.
 
 ### Slice 3 — direct real-history importer
 
-Type: AFK.
+Type: AFK on macOS with Simulator.
 
 - Replace the JSON staging/projection lane with direct bounded typed pack
   generation from one read-only PostgreSQL snapshot.
@@ -192,20 +199,20 @@ Acceptance:
   pack redownload.
 - Kill during import leaves the previous manifest live.
 - No multi-gigabyte JSON staging database is created.
-- Peak memory, temporary disk, output bytes, and elapsed time are recorded.
+- No multi-gigabyte temporary stage is created.
 
 Time box: one to two days. If the direct path cannot beat the staged path
 within two days, stop and inspect the pack contract instead of adding patches.
 
-### Slice 4 — Linux release candidate and physical smoke
+### Slice 4 — Debian compatibility and physical smoke
 
-Type: AFK for Debian and Simulator proof; short HITL for camera/LAN smoke only.
+Type: AFK for one Debian compatibility smoke; short HITL for camera/LAN smoke
+only.
 
+- Build and prove the complete bridge on macOS and Simulator first.
 - Install the committed package in the Debian VM.
-- Use 8 virtual CPUs on the next VM launch; build with `-j4`.
-- Run setup, reboot, import the copied real database, and serve it over LAN.
-- Complete real-history import, interruption, resume, corruption, and restart
-  proof in the Simulator.
+- Use 8 virtual CPUs and build with `-j4` only when a Linux build is required.
+- Run setup, reboot, perform one representative import, and serve it over LAN.
 - Only after those pass, scan on the physical iPhone and complete one
   representative import over real Wi-Fi.
 
@@ -213,10 +220,13 @@ Acceptance:
 
 - Linux starts from one owner command and displays a usable QR.
 - Phone needs no manual endpoint, key, or server setting.
-- Simulator counts match the full source and data remains available after Hub
-  or app restart.
+- Mac plus Simulator counts match the full source and data remains available
+  after Hub or app restart.
 - Simulator proves a cut download resumes and an injected corrupt pack
-  preserves prior data.
+  preserves prior data before Debian is involved.
+- Debian proves package install, setup, reboot autostart, TLS serving, and one
+  representative import. It does not repeat the development failure matrix or
+  collect performance measurements.
 - Physical iPhone proves camera scan, LAN TLS, one successful import, and
   relaunch only.
 
@@ -244,7 +254,9 @@ single bridge path.
 - Each slice ends with executable proof, not a percentage.
 - Simulator is the default proof target; hardware is used only for
   hardware-specific behavior.
-- QEMU proves Linux behavior; it is not a performance benchmark.
+- macOS and Simulator own development, iteration, and the full proof matrix.
+- QEMU proves only Linux packaging and service compatibility; it is not a
+  development host or performance benchmark.
 - The real TeslaMate copy is read-only source data.
 - Existing mirror data remains live until a complete verified activation.
 - A failed time box triggers scope or architecture review, not another layer.

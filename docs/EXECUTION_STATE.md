@@ -6,9 +6,11 @@ Slices 0 through 3 have a complete real-data happy-path proof on 2026-07-30.
 The v0.1 is the single TeslaMate PostgreSQL to signed Hub packs to Teslatlas
 bridge described in `docs/V0_1_DEVELOPMENT_PLAN.md`.
 
-Simulator is now the primary proof environment for the complete happy path,
-real-history import, resume, corruption, cancellation, retry, and restart
-matrix. Physical iPhone work is limited to one final camera, Wi-Fi/LAN TLS,
+macOS is now the primary Hub development host and Simulator is the primary app
+proof environment for the complete happy path, real-history import, resume,
+corruption, cancellation, retry, and restart matrix. Debian is limited to one
+final package, setup, reboot, TLS, and representative-import compatibility
+smoke. Physical iPhone work is limited to one final camera, Wi-Fi/LAN TLS,
 representative import, and relaunch smoke test.
 
 The previous objective combined history migration, owner-token collection,
@@ -119,10 +121,11 @@ completed direct import from the read-only copied TeslaMate PostgreSQL source.
 ## Remaining gates
 
 - Prove unchanged source retains the same published logical snapshot and causes
-  no phone pack redownload.
+  no phone pack redownload on the Mac development path.
 - Finish the automated Simulator failure and relaunch matrix.
-- Pass Debian clean package install, one-command setup, reboot, and LAN serving
-  proof.
+- Keep Debian proof to clean package install, one-command setup, reboot,
+  LAN serving, and one representative import. Do not repeat full-history
+  performance runs there.
 - Finish with one short physical QR-camera, LAN TLS, representative import, and
   relaunch smoke test.
 
