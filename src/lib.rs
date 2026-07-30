@@ -12,6 +12,7 @@ mod manifest_signing;
 pub mod owner_api;
 pub mod protocol;
 pub mod server;
+pub mod setup;
 pub mod teslamate;
 pub mod teslamate_fragments;
 pub mod teslamate_import;

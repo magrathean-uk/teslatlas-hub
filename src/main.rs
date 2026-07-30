@@ -1,12 +1,14 @@
 use std::{
     fs,
+    net::IpAddr,
     path::PathBuf,
-    process::ExitCode,
-    time::{SystemTime, UNIX_EPOCH},
+    process::{Command as ProcessCommand, ExitCode},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use base64::Engine;
 use clap::{Parser, Subcommand};
+use qrcode::{QrCode, render::unicode::Dense1x2};
 use sha2::{Digest, Sha256};
 use teslatlas_hub::{
     collector,
@@ -14,6 +16,7 @@ use teslatlas_hub::{
     credentials::CredentialDirectory,
     db::HubStore,
     server,
+    setup::{self, SetupOptions},
     teslamate_import::{TeslaMateImportRequest, import_from_postgres},
 };
 use tracing_subscriber::EnvFilter;
@@ -33,6 +36,18 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Create or reuse the protected LAN identity and start Hub.
+    Setup {
+        /// Reachable LAN IP advertised to the phone. Auto-detected when omitted.
+        #[arg(long)]
+        lan_address: Option<IpAddr>,
+        /// Direct TLS listener port.
+        #[arg(long, default_value_t = 8443)]
+        port: u16,
+        /// Write and validate setup without changing systemd state.
+        #[arg(long)]
+        no_start: bool,
+    },
     /// Initialize or migrate the local Hub database.
     Init,
     /// Validate the database and print a machine-readable health report.
@@ -49,14 +64,18 @@ enum Command {
         #[arg(long)]
         car_id: i64,
     },
-    /// Make one short-lived, single-use device pairing invitation.
-    CreatePairing {
+    /// Display one short-lived, single-use device pairing QR.
+    #[command(alias = "create-pairing")]
+    Pair {
         /// Human label shown only to the Hub owner, such as "Bolyki iPhone".
-        #[arg(long)]
+        #[arg(long, default_value = "Teslatlas iPhone")]
         label: String,
         /// Lifetime before the invitation becomes unusable.
-        #[arg(long, default_value_t = 300)]
+        #[arg(long, default_value_t = 900)]
         expires_in_seconds: u64,
+        /// Print the secret-bearing machine-readable payload for explicit debugging.
+        #[arg(long, hide = true)]
+        json: bool,
     },
     /// Validate database integrity, clear quarantined sessions, and clean orphaned packs.
     Repair,
@@ -87,9 +106,41 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+    if let Command::Setup {
+        lan_address,
+        port,
+        no_start,
+    } = cli.command
+    {
+        let report = setup::configure(&SetupOptions {
+            config_path: cli.config,
+            lan_address,
+            port,
+        })?;
+        if !no_start {
+            protect_service_identity(&report)?;
+            systemctl(&["daemon-reload"])?;
+            systemctl(&["enable", "teslatlas-hub.service"])?;
+            systemctl(&["restart", "teslatlas-hub.service"])?;
+            wait_for_service(&report).await?;
+        }
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": if report.created { "created" } else { "ready" },
+                "endpoint": report.public_url,
+                "certificatePath": report.certificate_path,
+                "privateKeyPath": report.private_key_path,
+                "serviceStarted": !no_start,
+            })
+        );
+        return Ok(());
+    }
+
     let config = HubConfig::load(&cli.config)?;
     let store = HubStore::initialize(&config.data_dir)?;
     match cli.command {
+        Command::Setup { .. } => unreachable!("setup returns before loading Hub state"),
         Command::Init => {
             println!("initialized {}", store.database_path().display());
         }
@@ -139,9 +190,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 })
             );
         }
-        Command::CreatePairing {
+        Command::Pair {
             label,
             expires_in_seconds,
+            json,
         } => {
             let tls = config
                 .tls
@@ -166,19 +218,25 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 invitation.pairing_id,
                 invitation.secret(),
             );
-            // This is intentionally a local, one-time console result. The
-            // Hub never stores the raw pairing secret or writes it to logs.
-            println!(
-                "{}",
-                serde_json::json!({
-                    "pairingId": invitation.pairing_id,
-                    "secret": invitation.secret(),
-                    "expiresAtMs": invitation.expires_at_ms,
-                    "endpoint": tls.public_url,
-                    "tlsPin": tls_pin,
-                    "pairingUri": pairing_uri,
-                })
-            );
+            if json {
+                // Explicit debug mode only. The Hub never stores the raw
+                // pairing secret or writes it to service logs.
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "pairingId": invitation.pairing_id,
+                        "secret": invitation.secret(),
+                        "expiresAtMs": invitation.expires_at_ms,
+                        "endpoint": tls.public_url,
+                        "tlsPin": tls_pin,
+                        "pairingUri": pairing_uri,
+                    })
+                );
+            } else {
+                let qr = render_pairing_qr(&pairing_uri)?;
+                println!("Scan with Teslatlas:\n{qr}");
+                println!("Expires in {expires_in_seconds} seconds.");
+            }
         }
         Command::Repair => {
             let report = store.repair()?;
@@ -186,6 +244,85 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn protect_service_identity(report: &setup::SetupResult) -> Result<(), std::io::Error> {
+    let identity_directory = report
+        .certificate_path
+        .parent()
+        .ok_or_else(|| std::io::Error::other("TLS identity has no parent directory"))?;
+    run_process(
+        "chown",
+        &[
+            std::ffi::OsStr::new("root:teslatlas"),
+            identity_directory.as_os_str(),
+            report.certificate_path.as_os_str(),
+            report.private_key_path.as_os_str(),
+        ],
+    )
+}
+
+fn systemctl(arguments: &[&str]) -> Result<(), std::io::Error> {
+    let status = ProcessCommand::new("systemctl").args(arguments).status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "systemctl {} failed with {status}",
+            arguments.join(" ")
+        )))
+    }
+}
+
+async fn wait_for_service(report: &setup::SetupResult) -> Result<(), std::io::Error> {
+    teslatlas_hub::crypto::install_default_provider();
+    let certificate_pem = fs::read(&report.certificate_path)?;
+    let certificate = reqwest::Certificate::from_pem(&certificate_pem)
+        .map_err(|error| std::io::Error::other(format!("cannot load Hub certificate: {error}")))?;
+    let client = reqwest::Client::builder()
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .add_root_certificate(certificate)
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|error| std::io::Error::other(format!("cannot build health client: {error}")))?;
+    let ready_url = format!("{}/readyz", report.public_url.trim_end_matches('/'));
+    for _ in 0..30 {
+        let active = ProcessCommand::new("systemctl")
+            .args(["is-active", "--quiet", "teslatlas-hub.service"])
+            .status()?;
+        if active.success()
+            && client
+                .get(&ready_url)
+                .send()
+                .await
+                .is_ok_and(|response| response.status().is_success())
+        {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    Err(std::io::Error::other(
+        "teslatlas-hub.service did not become ready over TLS",
+    ))
+}
+
+fn run_process(program: &str, arguments: &[&std::ffi::OsStr]) -> Result<(), std::io::Error> {
+    let status = ProcessCommand::new(program).args(arguments).status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "{program} failed with {status}"
+        )))
+    }
+}
+
+fn render_pairing_qr(pairing_uri: &str) -> Result<String, qrcode::types::QrError> {
+    Ok(QrCode::new(pairing_uri.as_bytes())?
+        .render::<Dense1x2>()
+        .quiet_zone(true)
+        .build())
 }
 
 /// SHA-256 pin for the first PEM certificate (the server leaf) in the active
@@ -249,7 +386,7 @@ mod tests {
     use base64::Engine;
     use sha2::Digest;
 
-    use super::{leaf_certificate_sha256, pairing_uri};
+    use super::{leaf_certificate_sha256, pairing_uri, render_pairing_qr};
     use uuid::Uuid;
 
     #[test]
@@ -284,5 +421,18 @@ mod tests {
             leaf_certificate_sha256(temporary.path()).expect("leaf pin"),
             hex::encode(sha2::Sha256::digest(leaf))
         );
+    }
+
+    #[test]
+    fn pairing_qr_renders_without_printing_the_raw_secret() {
+        let uri = pairing_uri(
+            "https://192.168.1.10:8443",
+            &"a".repeat(64),
+            Uuid::nil(),
+            "0123456789abcdef",
+        );
+        let qr = render_pairing_qr(&uri).expect("render QR");
+        assert!(qr.contains('█') || qr.contains('▀') || qr.contains('▄'));
+        assert!(!qr.contains("0123456789abcdef"));
     }
 }

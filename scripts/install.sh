@@ -475,3 +475,4 @@ fi
 /usr/bin/teslatlas-hub-verify --config /etc/teslatlas/config.toml
 
 note "Teslatlas Hub is active and ready."
+note "Run once on the Hub machine: sudo teslatlas-hub-setup"

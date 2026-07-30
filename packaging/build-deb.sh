@@ -105,6 +105,8 @@ install -m 0644 "$PROJECT_ROOT/packaging/debian/conffiles" "$control_dir/conffil
 install -m 0755 "$binary" "$package_dir/usr/bin/teslatlas-hub"
 install -m 0755 "$PROJECT_ROOT/scripts/verify-native-install.sh" \
   "$package_dir/usr/bin/teslatlas-hub-verify"
+install -m 0755 "$PROJECT_ROOT/scripts/setup.sh" \
+  "$package_dir/usr/bin/teslatlas-hub-setup"
 install -m 0644 "$PROJECT_ROOT/packaging/teslatlas-hub.service" \
   "$package_dir/usr/lib/systemd/system/teslatlas-hub.service"
 install -m 0644 "$PROJECT_ROOT/packaging/teslatlas-hub-collect.service" \

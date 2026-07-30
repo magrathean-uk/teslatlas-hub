@@ -29,6 +29,12 @@ Use this before any public release:
 sudo scripts/install.sh --local-artifact ./dist/teslatlas-hub_0.1.0_amd64.deb
 ```
 
+Then create the protected LAN identity, start Hub, and display the pairing QR:
+
+```sh
+sudo teslatlas-hub-setup
+```
+
 ## Native Git bootstrap
 
 For a reviewed immutable source commit, a single native command can fetch,

@@ -68,6 +68,20 @@ Health: `GET /healthz`.
 Readiness: `GET /readyz`.
 Capabilities: `GET /.well-known/teslatlas-hub`.
 
+## Native Linux setup
+
+After installing the Debian package, run one owner command on the Hub machine:
+
+```sh
+sudo teslatlas-hub-setup
+```
+
+It creates or reuses the protected local TLS identity, starts the service on
+the detected LAN address, verifies readiness over that exact certificate, and
+displays a short-lived pairing QR. Use `--lan-address ADDRESS` only when the
+machine has several network routes and automatic selection is not the desired
+one.
+
 Credentials do not belong in `config.toml`, command arguments, environment
 variables, logs, or this repository.
 
