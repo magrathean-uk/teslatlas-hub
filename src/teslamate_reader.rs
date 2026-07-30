@@ -80,6 +80,100 @@ impl TeslaMateReadLimits {
     }
 }
 
+pub(crate) struct TeslaMateSnapshotSession {
+    pub(crate) client: Client,
+    connection_task: tokio::task::JoinHandle<()>,
+}
+
+impl TeslaMateSnapshotSession {
+    pub(crate) async fn finish(self) -> Result<(), TeslaMateReaderError> {
+        let rollback = self.client.batch_execute("ROLLBACK").await;
+        drop(self.client);
+        let _ = self.connection_task.await;
+        rollback.map_err(Into::into)
+    }
+}
+
+pub(crate) async fn open_snapshot_session(
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    selected_car_id: i64,
+    limits: TeslaMateReadLimits,
+) -> Result<(TeslaMateSnapshotSession, i16), TeslaMateReaderError> {
+    limits.validate()?;
+    if selected_car_id <= 0 {
+        return Err(TeslaMateReaderError::InvalidSelectedCarId);
+    }
+    crate::crypto::install_default_provider();
+    let selected_car_id = selected_source_car_id(selected_car_id)?;
+    let user = source
+        .user()
+        .ok_or(TeslaMateReaderError::SourceUserRequired)?;
+    let (tls, certificate_errors) = MakeRustlsConnect::with_native_certs()
+        .map_err(|_| TeslaMateReaderError::NativeTrustStoreUnavailable)?;
+    if !certificate_errors.is_empty() {
+        tracing::warn!(
+            count = certificate_errors.len(),
+            "some native TLS certificates could not be loaded"
+        );
+    }
+    let mut configuration = Config::new();
+    configuration
+        .host(source.host())
+        .port(source.port())
+        .user(user)
+        .password(password.as_str())
+        .dbname(source.database_name())
+        .ssl_mode(SslMode::Require);
+    let (client, connection) = timeout(limits.connect_timeout, configuration.connect(tls))
+        .await
+        .map_err(|_| TeslaMateReaderError::ConnectTimedOut)??;
+    let connection_task = tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    if let Err(error) = prepare_read_only_snapshot(&client, source).await {
+        drop(client);
+        let _ = connection_task.await;
+        return Err(error);
+    }
+    Ok((
+        TeslaMateSnapshotSession {
+            client,
+            connection_task,
+        },
+        selected_car_id,
+    ))
+}
+
+pub async fn read_selected_car(
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    selected_car_id: i64,
+    limits: TeslaMateReadLimits,
+) -> Result<TeslaMateCar, TeslaMateReaderError> {
+    let (session, selected_car_id_i16) =
+        open_snapshot_session(source, password, selected_car_id, limits).await?;
+    let mut retained_rows = 0_usize;
+    let result = read_cars(
+        &session.client,
+        selected_car_id_i16,
+        limits,
+        &mut retained_rows,
+    )
+    .await
+    .and_then(|cars| {
+        cars.into_iter()
+            .next()
+            .ok_or(TeslaMateReaderError::SelectedCarMissing { selected_car_id })
+    });
+    let finish = session.finish().await;
+    match (result, finish) {
+        (Ok(car), Ok(())) => Ok(car),
+        (Err(error), _) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+    }
+}
+
 /// Read every fixed history projection inside one repeatable-read, read-only
 /// transaction. It neither writes to PostgreSQL nor receives a source URL
 /// containing credentials.
@@ -508,7 +602,7 @@ async fn read_history_in_session(
     })
 }
 
-async fn prepare_read_only_snapshot(
+pub(crate) async fn prepare_read_only_snapshot(
     client: &Client,
     source: &ReadOnlySource,
 ) -> Result<(), TeslaMateReaderError> {
@@ -539,7 +633,7 @@ async fn prepare_read_only_snapshot(
     Ok(())
 }
 
-async fn read_cars(
+pub(crate) async fn read_cars(
     client: &Client,
     selected_car_id: i16,
     limits: TeslaMateReadLimits,
@@ -556,7 +650,7 @@ async fn read_cars(
     rows.iter().map(decode_car).collect()
 }
 
-async fn read_drives(
+pub(crate) async fn read_drives(
     client: &Client,
     selected_car_id: i16,
     limits: TeslaMateReadLimits,
@@ -590,7 +684,7 @@ async fn read_positions(
     rows.iter().map(decode_position).collect()
 }
 
-async fn read_charging_processes(
+pub(crate) async fn read_charging_processes(
     client: &Client,
     selected_car_id: i16,
     limits: TeslaMateReadLimits,
@@ -624,7 +718,7 @@ async fn read_charges(
     rows.iter().map(decode_charge).collect()
 }
 
-async fn read_addresses(
+pub(crate) async fn read_addresses(
     client: &Client,
     selected_car_id: i16,
     limits: TeslaMateReadLimits,
@@ -641,7 +735,7 @@ async fn read_addresses(
     rows.iter().map(decode_address).collect()
 }
 
-async fn read_geofences(
+pub(crate) async fn read_geofences(
     client: &Client,
     selected_car_id: i16,
     limits: TeslaMateReadLimits,
@@ -658,7 +752,7 @@ async fn read_geofences(
     rows.iter().map(decode_geofence).collect()
 }
 
-async fn read_updates(
+pub(crate) async fn read_updates(
     client: &Client,
     selected_car_id: i16,
     limits: TeslaMateReadLimits,
@@ -791,7 +885,7 @@ fn decode_drive(row: &Row) -> Result<TeslaMateDrive, TeslaMateReaderError> {
     })
 }
 
-fn decode_position(row: &Row) -> Result<TeslaMatePosition, TeslaMateReaderError> {
+pub(crate) fn decode_position(row: &Row) -> Result<TeslaMatePosition, TeslaMateReaderError> {
     Ok(TeslaMatePosition {
         id: i64::from(required_i32(row, "positions", "id")?),
         car_id: i64::from(required_i16(row, "positions", "car_id")?),
@@ -835,7 +929,7 @@ fn decode_charging_process(row: &Row) -> Result<TeslaMateChargingProcess, TeslaM
     })
 }
 
-fn decode_charge(row: &Row) -> Result<TeslaMateCharge, TeslaMateReaderError> {
+pub(crate) fn decode_charge(row: &Row) -> Result<TeslaMateCharge, TeslaMateReaderError> {
     Ok(TeslaMateCharge {
         id: i64::from(required_i32(row, "charges", "id")?),
         charging_process_id: i64::from(required_i32(row, "charges", "charging_process_id")?),

@@ -484,16 +484,16 @@ where
     }
 }
 
-struct PackSink<'a> {
+pub(crate) struct PackSink<'a> {
     writer: &'a ProjectionPackWriter,
     binding: ProjectionBinding,
     snapshot_id: Uuid,
     sequence: SequenceRange,
-    chunks: Vec<BuiltProjectionPack>,
+    pub(crate) chunks: Vec<BuiltProjectionPack>,
 }
 
 impl<'a> PackSink<'a> {
-    fn new(
+    pub(crate) fn new(
         writer: &'a ProjectionPackWriter,
         binding: ProjectionBinding,
         snapshot_id: Uuid,
@@ -508,7 +508,10 @@ impl<'a> PackSink<'a> {
         }
     }
 
-    fn write(&mut self, snapshot: ProjectionSnapshot) -> Result<(), TeslaMateFragmentError> {
+    pub(crate) fn write(
+        &mut self,
+        snapshot: ProjectionSnapshot,
+    ) -> Result<(), TeslaMateFragmentError> {
         if self.chunks.len() >= ProtocolLimits::default().max_chunks {
             return Err(TeslaMateFragmentError::TooManyFragments);
         }
@@ -522,25 +525,31 @@ impl<'a> PackSink<'a> {
             sequence: self.sequence,
             snapshot: &snapshot,
         })?;
+        tracing::info!(
+            ordinal = built.metadata.ordinal,
+            rows = built.metadata.row_count,
+            compressed_bytes = built.metadata.compressed_bytes,
+            "wrote verified TeslaMate import pack"
+        );
         self.chunks.push(built);
         Ok(())
     }
 }
 
-struct FragmentAccumulator {
+pub(crate) struct FragmentAccumulator {
     car: ProjectionCar,
     limits: TeslaMateFragmentLimits,
     payload_bytes: u64,
-    drives: Vec<ProjectionDrive>,
-    positions: Vec<ProjectionPosition>,
-    charges: Vec<ProjectionCharge>,
-    charge_samples: Vec<ProjectionChargeSample>,
-    drive_ids: HashSet<i64>,
-    charge_ids: HashSet<i64>,
+    pub(crate) drives: Vec<ProjectionDrive>,
+    pub(crate) positions: Vec<ProjectionPosition>,
+    pub(crate) charges: Vec<ProjectionCharge>,
+    pub(crate) charge_samples: Vec<ProjectionChargeSample>,
+    pub(crate) drive_ids: HashSet<i64>,
+    pub(crate) charge_ids: HashSet<i64>,
 }
 
 impl FragmentAccumulator {
-    fn new(
+    pub(crate) fn new(
         car: ProjectionCar,
         limits: TeslaMateFragmentLimits,
     ) -> Result<Self, TeslaMateFragmentError> {
@@ -557,7 +566,7 @@ impl FragmentAccumulator {
         })
     }
 
-    fn prepare<F>(
+    pub(crate) fn prepare<F>(
         &mut self,
         sink: &mut PackSink<'_>,
         addition: F,
@@ -601,7 +610,7 @@ impl FragmentAccumulator {
         )
     }
 
-    fn has_data(&self) -> bool {
+    pub(crate) fn has_data(&self) -> bool {
         !(self.drives.is_empty()
             && self.positions.is_empty()
             && self.charges.is_empty()
@@ -615,7 +624,7 @@ impl FragmentAccumulator {
             + u64::try_from(self.charge_samples.len()).expect("usize fits u64")
     }
 
-    fn flush(&mut self, sink: &mut PackSink<'_>) -> Result<(), TeslaMateFragmentError> {
+    pub(crate) fn flush(&mut self, sink: &mut PackSink<'_>) -> Result<(), TeslaMateFragmentError> {
         if self.has_data() {
             sink.write(self.finish())?;
             self.reset()?;
@@ -645,7 +654,7 @@ impl FragmentAccumulator {
     }
 }
 
-fn serialized_bytes<T: Serialize>(value: &T) -> Result<u64, TeslaMateFragmentError> {
+pub(crate) fn serialized_bytes<T: Serialize>(value: &T) -> Result<u64, TeslaMateFragmentError> {
     serde_json::to_vec(value)
         .map(|encoded| u64::try_from(encoded.len()).expect("usize fits u64"))
         .map_err(TeslaMateFragmentError::SerializeProjectedValue)

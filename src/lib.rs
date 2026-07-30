@@ -14,6 +14,7 @@ pub mod protocol;
 pub mod server;
 pub mod setup;
 pub mod teslamate;
+pub mod teslamate_direct;
 pub mod teslamate_fragments;
 pub mod teslamate_import;
 pub mod teslamate_projection;

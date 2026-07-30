@@ -17,9 +17,10 @@ use crate::{
     },
     protocol::{CursorKey, SequenceRange},
     teslamate::ReadOnlySource,
+    teslamate_direct::write_direct_full_snapshot,
     teslamate_fragments::write_staged_full_snapshot,
     teslamate_projection::{ProjectionReport, TeslaMateCar, TeslaMateHistory, project_vehicle},
-    teslamate_reader::{TeslaMateReadLimits, capture_history_to_stage},
+    teslamate_reader::{TeslaMateReadLimits, read_selected_car},
     teslamate_stage::{TeslaMateStage, TeslaMateStageTable},
 };
 
@@ -55,19 +56,62 @@ pub async fn import_from_postgres(
     request: &TeslaMateImportRequest,
     limits: TeslaMateReadLimits,
 ) -> Result<TeslaMateImportReport, TeslaMateImportError> {
-    let stage = capture_history_to_stage(
+    if request.selected_car_id <= 0 {
+        return Err(TeslaMateImportError::InvalidSelectedCarId);
+    }
+    let car = read_selected_car(source, password, request.selected_car_id, limits).await?;
+    let registered_source = store.register_source(
+        &SourceDescriptor::new("teslamate", request.source_key.clone()),
+        request.imported_at_ms,
+    )?;
+    let source_vehicle_key = stable_vehicle_key_for_car(&car)?;
+    let deterministic_vehicle_id =
+        Uuid::new_v5(&registered_source.source_id, source_vehicle_key.as_bytes());
+    let vehicle = store.register_vehicle_with_id(
+        &VehicleDescriptor {
+            source_id: registered_source.source_id,
+            source_vehicle_key,
+            vin: nonblank(car.vin.as_deref()).map(ToOwned::to_owned),
+            display_name: nonblank(car.name.as_deref()).map(ToOwned::to_owned),
+        },
+        request.imported_at_ms,
+        deterministic_vehicle_id,
+    )?;
+    let sequence = store.next_full_snapshot_sequence(vehicle.vehicle_id)?;
+    let snapshot_id = Uuid::new_v4();
+    let binding = ProjectionBinding {
+        installation_id: store.installation_id()?,
+        account_id: registered_source.source_id,
+        vehicle_id: vehicle.vehicle_id,
+        generation: registered_source.generation,
+        selected_car_id: request.selected_car_id,
+    };
+    let range = SequenceRange {
+        from_exclusive: sequence,
+        to_inclusive: sequence,
+    };
+    let direct = write_direct_full_snapshot(
         source,
         password,
         request.selected_car_id,
         limits,
-        &store.imports_dir(),
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding.clone(),
+        snapshot_id,
+        range,
     )
     .await?;
-    let published = publish_staged_history(store, cursor_key, request, &stage);
-    let cleanup = stage.discard();
-    let report = published?;
-    cleanup?;
-    Ok(report)
+    let manifest =
+        signed_full_snapshot_manifest(&binding, snapshot_id, range, &direct.chunks, cursor_key)?;
+    store.publish_manifest(&manifest)?;
+    Ok(TeslaMateImportReport {
+        source_id: registered_source.source_id,
+        vehicle_id: vehicle.vehicle_id,
+        snapshot_id,
+        sequence,
+        projection: direct.report,
+        projected_rows: manifest.total_rows,
+    })
 }
 
 /// Publish a complete sealed capture without materialising its historical
@@ -252,6 +296,8 @@ pub enum TeslaMateImportError {
     StableVehicleIdentityMissing,
     #[error(transparent)]
     Reader(#[from] crate::teslamate_reader::TeslaMateReaderError),
+    #[error(transparent)]
+    Direct(#[from] crate::teslamate_direct::TeslaMateDirectError),
     #[error(transparent)]
     Stage(#[from] crate::teslamate_stage::TeslaMateStageError),
     #[error(transparent)]

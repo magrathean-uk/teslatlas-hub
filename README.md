@@ -30,9 +30,9 @@ TeslaMate migration is explicit and read-only. It uses a TLS PostgreSQL
 connection, a reviewed schema probe, and one repeatable-read transaction. A
 full snapshot is published only after the typed pack passes local integrity
 and cursor-binding checks. Each fixed query is scoped to the selected car before
-keyset pagination. Source pages first enter a private, bounded, sealed SQLite
-stage. It then produces independently verified, parent-complete fragments
-without rebuilding the selected-car history in memory; only a fully verified
+keyset pagination. Large position and charge tables stream directly into
+bounded, independently verified, parent-complete typed fragments; no whole
+history vector or JSON staging database is created. Only a fully verified
 fragment set receives a cursor-bound manifest. iPhone authenticity starts with
 paired TLS and the certificate fingerprint carried in the one-use pairing URI.
 TLS Hub responses also expose a paired manifest public key and sign the exact

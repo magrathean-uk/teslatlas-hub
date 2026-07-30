@@ -176,8 +176,9 @@ sudo systemctl start teslatlas-hub-import@CAR_ID.service
 
 The installer attaches an existing encrypted migration password automatically
 on upgrade. The template also receives the cursor signing key. The first
-release imports full snapshots only; it rejects a selected-car history above
-one million rows rather than overcommitting small hosts.
+release imports full snapshots only. Source rows stream directly into bounded
+typed fragments, and the configured row ceiling rejects unexpectedly large
+selected-car histories.
 
 ## Bench validation
 
