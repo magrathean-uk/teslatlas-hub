@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -73,6 +74,7 @@ impl TeslaMateFragmentLimits {
 pub struct StagedProjectionPacks {
     pub chunks: Vec<BuiltProjectionPack>,
     pub report: ProjectionReport,
+    pub fingerprint: crate::protocol::Sha256Digest,
 }
 
 /// Produce all typed packs for a complete staged TeslaMate snapshot. This
@@ -130,9 +132,11 @@ pub fn write_staged_full_snapshot_with_limits(
         let accumulator = FragmentAccumulator::new(projected_car, limits)?;
         sink.write(accumulator.finish())?;
     }
+    let fingerprint = sink.fingerprint();
     Ok(StagedProjectionPacks {
         chunks: sink.chunks,
         report,
+        fingerprint,
     })
 }
 
@@ -493,6 +497,7 @@ pub(crate) struct PackSink<'a> {
     binding: ProjectionBinding,
     snapshot_id: Uuid,
     sequence: SequenceRange,
+    fingerprint: Sha256,
     pub(crate) chunks: Vec<BuiltProjectionPack>,
 }
 
@@ -503,13 +508,20 @@ impl<'a> PackSink<'a> {
         snapshot_id: Uuid,
         sequence: SequenceRange,
     ) -> Self {
+        let mut fingerprint = Sha256::new();
+        fingerprint.update(b"teslatlas-hub/teslamate-logical-snapshot/v1");
         Self {
             writer,
             binding,
             snapshot_id,
             sequence,
+            fingerprint,
             chunks: Vec::new(),
         }
+    }
+
+    pub(crate) fn fingerprint(&self) -> crate::protocol::Sha256Digest {
+        crate::protocol::Sha256Digest::from_bytes(self.fingerprint.clone().finalize().into())
     }
 
     pub(crate) fn write(
@@ -521,6 +533,14 @@ impl<'a> PackSink<'a> {
         }
         let ordinal = u32::try_from(self.chunks.len())
             .map_err(|_| TeslaMateFragmentError::TooManyFragments)?;
+        let canonical = serde_json::to_vec(&snapshot)
+            .map_err(TeslaMateFragmentError::SerializeProjectedValue)?;
+        self.fingerprint.update(
+            u64::try_from(canonical.len())
+                .map_err(|_| TeslaMateFragmentError::FragmentSizeOverflow)?
+                .to_be_bytes(),
+        );
+        self.fingerprint.update(&canonical);
         let built = self.writer.write_full_snapshot(&ProjectionPackRequest {
             pack_id: Uuid::new_v4(),
             snapshot_id: self.snapshot_id,

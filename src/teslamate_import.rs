@@ -12,10 +12,10 @@ use crate::{
     credentials::TeslaMatePostgresPassword,
     db::{HubStore, SourceDescriptor, VehicleDescriptor},
     hub_pack::{
-        ProjectionBinding, ProjectionPackError, ProjectionPackRequest, ProjectionPackWriter,
-        signed_full_snapshot_manifest,
+        BuiltProjectionPack, ProjectionBinding, ProjectionPackError, ProjectionPackRequest,
+        ProjectionPackWriter, signed_full_snapshot_manifest,
     },
-    protocol::{CursorKey, SequenceRange},
+    protocol::{CursorKey, SequenceRange, SyncManifest},
     teslamate::ReadOnlySource,
     teslamate_direct::write_direct_full_snapshot,
     teslamate_fragments::write_staged_full_snapshot,
@@ -105,6 +105,20 @@ pub async fn import_from_postgres(
         .report
         .logical_row_count()
         .ok_or(ProjectionPackError::ManifestTotalsOverflow)?;
+    if store.snapshot_fingerprint_is_current(vehicle.vehicle_id, direct.fingerprint)? {
+        let current = store
+            .manifest_for_vehicle(vehicle.vehicle_id)?
+            .ok_or(TeslaMateImportError::CurrentSnapshotMissing)?;
+        discard_unpublished_chunks(&direct.chunks, &current)?;
+        return Ok(TeslaMateImportReport {
+            source_id: registered_source.source_id,
+            vehicle_id: vehicle.vehicle_id,
+            snapshot_id: current.snapshot_id,
+            sequence: current.head_sequence,
+            projection: direct.report,
+            projected_rows: current.total_rows,
+        });
+    }
     let manifest = signed_full_snapshot_manifest(
         &binding,
         snapshot_id,
@@ -114,6 +128,7 @@ pub async fn import_from_postgres(
         cursor_key,
     )?;
     store.publish_manifest(&manifest)?;
+    store.record_snapshot_fingerprint(vehicle.vehicle_id, direct.fingerprint)?;
     Ok(TeslaMateImportReport {
         source_id: registered_source.source_id,
         vehicle_id: vehicle.vehicle_id,
@@ -179,6 +194,20 @@ pub fn publish_staged_history(
         .report
         .logical_row_count()
         .ok_or(ProjectionPackError::ManifestTotalsOverflow)?;
+    if store.snapshot_fingerprint_is_current(vehicle.vehicle_id, staged.fingerprint)? {
+        let current = store
+            .manifest_for_vehicle(vehicle.vehicle_id)?
+            .ok_or(TeslaMateImportError::CurrentSnapshotMissing)?;
+        discard_unpublished_chunks(&staged.chunks, &current)?;
+        return Ok(TeslaMateImportReport {
+            source_id: source.source_id,
+            vehicle_id: vehicle.vehicle_id,
+            snapshot_id: current.snapshot_id,
+            sequence: current.head_sequence,
+            projection: staged.report,
+            projected_rows: current.total_rows,
+        });
+    }
     let manifest = signed_full_snapshot_manifest(
         &binding,
         snapshot_id,
@@ -188,6 +217,7 @@ pub fn publish_staged_history(
         cursor_key,
     )?;
     store.publish_manifest(&manifest)?;
+    store.record_snapshot_fingerprint(vehicle.vehicle_id, staged.fingerprint)?;
     Ok(TeslaMateImportReport {
         source_id: source.source_id,
         vehicle_id: vehicle.vehicle_id,
@@ -306,12 +336,45 @@ fn nonblank(value: Option<&str>) -> Option<&str> {
     value.filter(|value| !value.trim().is_empty())
 }
 
+fn discard_unpublished_chunks(
+    chunks: &[BuiltProjectionPack],
+    current: &SyncManifest,
+) -> Result<(), TeslaMateImportError> {
+    for chunk in chunks {
+        if current
+            .chunks
+            .iter()
+            .any(|published| published.sha256 == chunk.metadata.sha256)
+        {
+            continue;
+        }
+        match std::fs::remove_file(&chunk.path) {
+            Ok(()) => {}
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(TeslaMateImportError::DiscardUnpublishedPack {
+                    path: chunk.path.clone(),
+                    source,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Error)]
 pub enum TeslaMateImportError {
     #[error("TeslaMate selected car id must be positive")]
     InvalidSelectedCarId,
     #[error("TeslaMate selected car disappeared before publication")]
     SelectedCarMissing,
+    #[error("current TeslaMate snapshot fingerprint has no published manifest")]
+    CurrentSnapshotMissing,
+    #[error("cannot discard unchanged unpublished pack {path}: {source}")]
+    DiscardUnpublishedPack {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
     #[error("TeslaMate selected car has neither a VIN nor a valid EID")]
     StableVehicleIdentityMissing,
     #[error(transparent)]
@@ -438,5 +501,26 @@ mod tests {
         assert_eq!(manifest.chunk_count, 1);
         assert_eq!(manifest.total_rows, 1);
         assert_eq!(report.projection, ProjectionReport::default());
+
+        let unchanged = publish_staged_history(
+            &store,
+            &CursorKey::from_bytes([9; 32]),
+            &TeslaMateImportRequest {
+                source_key: "home-teslamate".into(),
+                selected_car_id: 1,
+                imported_at_ms: 1_700_000_060_000,
+            },
+            &stage,
+        )
+        .unwrap();
+        assert_eq!(unchanged.snapshot_id, report.snapshot_id);
+        assert_eq!(unchanged.sequence, report.sequence);
+        assert_eq!(
+            store
+                .manifest_for_vehicle(report.vehicle_id)
+                .unwrap()
+                .unwrap(),
+            manifest
+        );
     }
 }

@@ -2,9 +2,9 @@
 
 ## Current phase
 
-Slices 0 and 1 are complete and Slice 2 is in progress on 2026-07-30. The v0.1 is the single
-TeslaMate PostgreSQL to signed Hub packs to Teslatlas bridge described in
-`docs/V0_1_DEVELOPMENT_PLAN.md`.
+Slices 0 through 3 have a complete real-data happy-path proof on 2026-07-30.
+The v0.1 is the single TeslaMate PostgreSQL to signed Hub packs to Teslatlas
+bridge described in `docs/V0_1_DEVELOPMENT_PLAN.md`.
 
 Simulator is now the primary proof environment for the complete happy path,
 real-history import, resume, corruption, cancellation, retry, and restart
@@ -16,9 +16,8 @@ delta synchronization, iPhone integration, and multi-architecture release
 engineering. Those remain long-term roadmap work, but they no longer share the
 first executable gate.
 
-A Debian amd64 VM is currently running package `0.1.0-vm7`. Hub is healthy and
-the real copied TeslaMate history import is still running as a background
-measurement. It does not block the scope reset.
+A Debian amd64 VM is running with 8 vCPUs. Hub is healthy and serves the
+completed direct import from the read-only copied TeslaMate PostgreSQL source.
 
 ## Verified existing work
 
@@ -103,13 +102,27 @@ measurement. It does not block the scope reset.
   publication keeps the original manifest.
 - `Teslatlas (Dev)` iPhone Simulator build and XCTest pass with Xcode 27.
   This is not a physical-device proof.
+- Direct import sequence 3 published 435 verified immutable packs for
+  10,606,913 unique mirror rows: 1 car, 3,137 completed drives, 10,313,305
+  attached positions, 767 charging processes, and 289,703 charge samples.
+- The QEMU import used 10 minutes 32.631 seconds of CPU time, peaked below
+  184 MiB observed live memory, and created no multi-gigabyte JSON staging
+  database.
+- The production Hub client and Rust staging path imported that exact signed
+  history on the iPhone 17 Pro Simulator in 104.658 seconds. All table counts
+  matched and atomic activation completed.
+- Parent rows repeated across FK-complete transport fragments are now accounted
+  separately from the signed unique logical mirror-row total.
+- Full-history retry reuses already verified content-addressed packs. Failed
+  staging cleanup leaves the active mirror untouched.
 
 ## Remaining gates
 
-- Replace JSON staging with bounded direct typed-pack generation and verify the
-  complete copied history in Simulator.
-- Pass the full automated failure matrix in Simulator.
-- Pass Debian install, setup, reboot, and LAN serving proof.
+- Prove unchanged source retains the same published logical snapshot and causes
+  no phone pack redownload.
+- Finish the automated Simulator failure and relaunch matrix.
+- Pass Debian clean package install, one-command setup, reboot, and LAN serving
+  proof.
 - Finish with one short physical QR-camera, LAN TLS, representative import, and
   relaunch smoke test.
 
@@ -124,7 +137,6 @@ deferred beyond the bridge-first v0.1.
 
 ## Next three actions
 
-1. Replace the multi-gigabyte JSON staging import with direct bounded typed
-   pack generation.
-2. Prove the complete copied TeslaMate history through the Simulator.
-3. Run the Simulator failure matrix, then Debian install/reboot/LAN proof.
+1. Lock unchanged-source snapshot reuse.
+2. Run the complete Simulator failure and relaunch matrix.
+3. Run Debian package/reboot/LAN proof, then the short physical smoke.

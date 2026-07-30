@@ -153,9 +153,11 @@ async fn write_from_session(
             charge_samples: Vec::new(),
         })?;
     }
+    let fingerprint = sink.fingerprint();
     Ok(StagedProjectionPacks {
         chunks: sink.chunks,
         report,
+        fingerprint,
     })
 }
 

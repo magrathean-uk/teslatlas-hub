@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::protocol::{Sha256Digest, SyncManifest, TransportPack};
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 5;
+pub const SCHEMA_VERSION: i32 = 6;
 pub const VENDORED_SQLITE_VERSION: &str = "3.53.4";
 
 /// Hard upper bound for one persisted source response. A collector must split
@@ -275,6 +275,53 @@ impl HubStore {
             .optional()
             .map_err(StoreError::Query)?;
         payload.map(decode_manifest).transpose()
+    }
+
+    pub fn snapshot_fingerprint_is_current(
+        &self,
+        vehicle_id: Uuid,
+        fingerprint: Sha256Digest,
+    ) -> Result<bool, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open()?;
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM snapshot_fingerprints AS fingerprints
+                    WHERE fingerprints.vehicle_id = ?1
+                      AND fingerprints.fingerprint_sha256 = ?2
+                      AND EXISTS(
+                          SELECT 1 FROM sync_manifests
+                          WHERE sync_manifests.vehicle_id = fingerprints.vehicle_id
+                      )
+                )",
+                params![vehicle_id.to_string(), fingerprint.as_bytes().as_slice()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)
+    }
+
+    pub fn record_snapshot_fingerprint(
+        &self,
+        vehicle_id: Uuid,
+        fingerprint: Sha256Digest,
+    ) -> Result<(), StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open()?;
+        connection
+            .execute(
+                "INSERT INTO snapshot_fingerprints(vehicle_id, fingerprint_sha256)
+                 VALUES (?1, ?2)
+                 ON CONFLICT(vehicle_id) DO UPDATE SET
+                    fingerprint_sha256 = excluded.fingerprint_sha256",
+                params![vehicle_id.to_string(), fingerprint.as_bytes().as_slice()],
+            )
+            .map_err(StoreError::PublishManifest)?;
+        Ok(())
     }
 
     /// Allocate the next full-snapshot marker for one Hub vehicle. Full
@@ -1798,6 +1845,23 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
             )
             .map_err(StoreError::Migrate)?;
         version = 5;
+    }
+
+    if version == 5 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS snapshot_fingerprints (
+                    vehicle_id TEXT PRIMARY KEY NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    fingerprint_sha256 BLOB NOT NULL CHECK(length(fingerprint_sha256) = 32)
+                ) STRICT;
+                PRAGMA user_version = 6;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 6;
     }
 
     if version == SCHEMA_VERSION {
