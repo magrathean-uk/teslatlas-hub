@@ -10,6 +10,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, Write},
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
@@ -601,7 +602,7 @@ fn publish_immutable(
     limits: ProtocolLimits,
 ) -> Result<(), TransportError> {
     match fs::hard_link(temporary_path, final_path) {
-        Ok(()) => Ok(()),
+        Ok(()) => sync_parent_directory(final_path),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             if verify_file(metadata, final_path, limits).is_ok() {
                 Ok(())
@@ -618,6 +619,19 @@ fn publish_immutable(
     }
 }
 
+fn sync_parent_directory(path: &Path) -> Result<(), TransportError> {
+    let parent = path.parent().ok_or_else(|| TransportError::Publish {
+        path: path.to_path_buf(),
+        source: io::Error::other("immutable pack has no parent directory"),
+    })?;
+    File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|source| TransportError::Publish {
+            path: path.to_path_buf(),
+            source,
+        })
+}
+
 struct TemporaryPath {
     path: PathBuf,
 }
@@ -626,7 +640,12 @@ impl TemporaryPath {
     fn create(directory: &Path, extension: &str) -> Result<Self, TransportError> {
         for _ in 0..32 {
             let path = directory.join(format!("{}.{}.tmp", Uuid::new_v4(), extension));
-            match OpenOptions::new().write(true).create_new(true).open(&path) {
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&path)
+            {
                 Ok(file) => {
                     drop(file);
                     return Ok(Self { path });

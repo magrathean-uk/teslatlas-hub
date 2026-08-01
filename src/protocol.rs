@@ -21,6 +21,9 @@ use uuid::Uuid;
 /// The protocol identifier exposed in discovery documents and manifests.
 pub const PROTOCOL_NAME: &str = "teslatlas-sync";
 pub const PROTOCOL_V1: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
+/// Additive lineage envelope. This is separate from `SyncManifest` so v1
+/// manifest bytes and schema remain unchanged forever.
+pub const LINEAGE_PROTOCOL_V2: ProtocolVersion = ProtocolVersion { major: 2, minor: 0 };
 
 /// The first stable layout for a SQLite transport pack.
 pub const TRANSPORT_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 1, minor: 0 };
@@ -29,6 +32,9 @@ pub const TRANSPORT_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 1, minor: 
 /// layout, this has fixed `cars`, `drives`, `positions`, `charges`, and
 /// `charge_samples` tables for the Teslatlas core importer.
 pub const HUB_PROJECTION_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 2, minor: 0 };
+
+/// Additive typed Hub projection layout with state history.
+pub const HUB_PROJECTION_SCHEMA_V2: SchemaVersion = SchemaVersion { major: 2, minor: 1 };
 
 /// SQLite `application_id` for a Teslatlas Sync Protocol v1 transport pack.
 ///
@@ -75,7 +81,8 @@ impl SchemaVersion {
     pub const fn is_supported(self) -> bool {
         (self.major == TRANSPORT_SCHEMA_V1.major && self.minor == TRANSPORT_SCHEMA_V1.minor)
             || (self.major == HUB_PROJECTION_SCHEMA_V1.major
-                && self.minor == HUB_PROJECTION_SCHEMA_V1.minor)
+                && (self.minor == HUB_PROJECTION_SCHEMA_V1.minor
+                    || self.minor == HUB_PROJECTION_SCHEMA_V2.minor))
     }
 
     /// Stored in the SQLite `user_version` field of every transport pack.
@@ -87,7 +94,8 @@ impl SchemaVersion {
         if self.major == TRANSPORT_SCHEMA_V1.major && self.minor == TRANSPORT_SCHEMA_V1.minor {
             Some(SQLITE_TRANSPORT_APPLICATION_ID)
         } else if self.major == HUB_PROJECTION_SCHEMA_V1.major
-            && self.minor == HUB_PROJECTION_SCHEMA_V1.minor
+            && (self.minor == HUB_PROJECTION_SCHEMA_V1.minor
+                || self.minor == HUB_PROJECTION_SCHEMA_V2.minor)
         {
             Some(SQLITE_HUB_PROJECTION_APPLICATION_ID)
         } else {
@@ -237,7 +245,14 @@ impl MirrorTable {
     const fn is_hub_projection(self) -> bool {
         matches!(
             self,
-            Self::Car | Self::Drive | Self::Position | Self::Charge | Self::ChargeSample
+            Self::Car
+                | Self::Drive
+                | Self::Position
+                | Self::Charge
+                | Self::ChargeSample
+                | Self::State
+                | Self::Update
+                | Self::Tombstone
         )
     }
 }
@@ -297,7 +312,10 @@ impl TransportPack {
             PackFormat::SqliteTransport if self.schema != TRANSPORT_SCHEMA_V1 => {
                 return Err(ProtocolError::FormatSchemaMismatch);
             }
-            PackFormat::HubProjectionSqlite if self.schema != HUB_PROJECTION_SCHEMA_V1 => {
+            PackFormat::HubProjectionSqlite
+                if self.schema != HUB_PROJECTION_SCHEMA_V1
+                    && self.schema != HUB_PROJECTION_SCHEMA_V2 =>
+            {
                 return Err(ProtocolError::FormatSchemaMismatch);
             }
             _ => {}
@@ -487,6 +505,113 @@ pub struct SyncManifest {
     pub total_rows: u64,
     pub chunks: Vec<TransportPack>,
     pub terminal_cursor: OpaqueCursor,
+}
+
+/// Capability discriminator for the additive base-plus-deltas protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LineageCapability {
+    ImmutableBaseOrderedDeltas,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LineageBase {
+    pub snapshot_id: Uuid,
+    pub sequence: u64,
+    pub digest: Sha256Digest,
+    pub packs: Vec<TransportPack>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LineageDelta {
+    pub from_sequence: u64,
+    pub to_sequence: u64,
+    pub parent_chain_digest: Sha256Digest,
+    pub chain_digest: Sha256Digest,
+    pub pack_digest: Sha256Digest,
+    pub pack: TransportPack,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LineageManifestV2 {
+    pub protocol: ProtocolVersion,
+    pub capability: LineageCapability,
+    pub schema: SchemaVersion,
+    pub installation_id: Uuid,
+    pub account_id: Uuid,
+    pub vehicle_id: Uuid,
+    pub generation: u64,
+    pub base: LineageBase,
+    pub deltas: Vec<LineageDelta>,
+    pub head_sequence: u64,
+    pub head_digest: Sha256Digest,
+    pub terminal_cursor: OpaqueCursor,
+}
+
+impl LineageManifestV2 {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if self.protocol != LINEAGE_PROTOCOL_V2 {
+            return Err(ProtocolError::UnsupportedLineageProtocol(self.protocol));
+        }
+        if self.capability != LineageCapability::ImmutableBaseOrderedDeltas {
+            return Err(ProtocolError::UnsupportedLineageCapability);
+        }
+        if !self.schema.is_supported() {
+            return Err(ProtocolError::UnsupportedSchema(self.schema));
+        }
+        require_non_nil_uuid("installation_id", self.installation_id)?;
+        require_non_nil_uuid("account_id", self.account_id)?;
+        require_non_nil_uuid("vehicle_id", self.vehicle_id)?;
+        require_non_nil_uuid("base snapshot_id", self.base.snapshot_id)?;
+        if self.generation == 0 || self.base.packs.is_empty() {
+            return Err(ProtocolError::LineageBaseRequired);
+        }
+        if self.base.digest.is_zero() {
+            return Err(ProtocolError::LineageDigestRequired);
+        }
+        for (ordinal, pack) in self.base.packs.iter().enumerate() {
+            pack.validate(ProtocolLimits::default())?;
+            if pack.ordinal != ordinal as u32
+                || pack.snapshot_id != self.base.snapshot_id
+                || pack.sequence != (SequenceRange {
+                    from_exclusive: self.base.sequence,
+                    to_inclusive: self.base.sequence,
+                })
+            {
+                return Err(ProtocolError::LineageBasePackMismatch);
+            }
+        }
+        let mut expected_from = self.base.sequence;
+        let mut parent = self.base.digest;
+        let mut seen_packs = HashSet::new();
+        for delta in &self.deltas {
+            if delta.from_sequence != expected_from || delta.to_sequence <= delta.from_sequence {
+                return Err(ProtocolError::LineageSequenceGap);
+            }
+            if delta.parent_chain_digest != parent
+                || delta.pack_digest != delta.pack.sha256
+                || !seen_packs.insert(delta.pack.pack_id)
+            {
+                return Err(ProtocolError::LineageChainMismatch);
+            }
+            delta.pack.validate(ProtocolLimits::default())?;
+            if delta.pack.sequence != (SequenceRange {
+                from_exclusive: delta.from_sequence,
+                to_inclusive: delta.to_sequence,
+            }) {
+                return Err(ProtocolError::LineageDeltaPackMismatch);
+            }
+            expected_from = delta.to_sequence;
+            parent = delta.chain_digest;
+        }
+        if self.head_sequence != expected_from || self.head_digest != parent {
+            return Err(ProtocolError::LineageHeadMismatch);
+        }
+        self.terminal_cursor.validate_shape()
+    }
 }
 
 impl SyncManifest {
@@ -862,6 +987,24 @@ pub enum ProtocolError {
     InvalidCursorSignature,
     #[error("cursor does not match manifest checkpoint")]
     CursorDoesNotMatchManifest,
+    #[error("unsupported lineage protocol version {0:?}")]
+    UnsupportedLineageProtocol(ProtocolVersion),
+    #[error("unsupported lineage capability")]
+    UnsupportedLineageCapability,
+    #[error("lineage requires a complete immutable base")]
+    LineageBaseRequired,
+    #[error("lineage digest is required")]
+    LineageDigestRequired,
+    #[error("lineage base pack does not match its base")]
+    LineageBasePackMismatch,
+    #[error("lineage delta sequence has a gap or overlap")]
+    LineageSequenceGap,
+    #[error("lineage parent or pack digest chain is invalid")]
+    LineageChainMismatch,
+    #[error("lineage delta pack does not match its range")]
+    LineageDeltaPackMismatch,
+    #[error("lineage head does not match the ordered chain")]
+    LineageHeadMismatch,
 }
 
 fn checked_add(left: u64, right: u64) -> Result<u64, ProtocolError> {
@@ -1429,5 +1572,107 @@ mod tests {
             tampered.verify(&key),
             Err(ProtocolError::InvalidCursorSignature)
         ));
+    }
+
+    fn lineage_manifest() -> LineageManifestV2 {
+        let (_, account_id, vehicle_id, snapshot_id) = ids();
+        let base_pack = pack(
+            0,
+            SequenceRange {
+                from_exclusive: 40,
+                to_inclusive: 40,
+            },
+            vec![MirrorTable::Vehicle],
+        );
+        let delta_pack = pack(
+            0,
+            SequenceRange {
+                from_exclusive: 40,
+                to_inclusive: 41,
+            },
+            vec![MirrorTable::Position],
+        );
+        let base_digest = Sha256Digest::of_bytes(b"base");
+        let chain_digest = Sha256Digest::of_bytes(b"delta-chain");
+        LineageManifestV2 {
+            protocol: LINEAGE_PROTOCOL_V2,
+            capability: LineageCapability::ImmutableBaseOrderedDeltas,
+            schema: TRANSPORT_SCHEMA_V1,
+            installation_id: ids().0,
+            account_id,
+            vehicle_id,
+            generation: 7,
+            base: LineageBase {
+                snapshot_id,
+                sequence: 40,
+                digest: base_digest,
+                packs: vec![base_pack],
+            },
+            deltas: vec![LineageDelta {
+                from_sequence: 40,
+                to_sequence: 41,
+                parent_chain_digest: base_digest,
+                chain_digest,
+                pack_digest: delta_pack.sha256,
+                pack: delta_pack,
+            }],
+            head_sequence: 41,
+            head_digest: chain_digest,
+            terminal_cursor: cursor(41),
+        }
+    }
+
+    #[test]
+    fn lineage_requires_full_base_and_contiguous_digest_chain() {
+        let mut value = lineage_manifest();
+        value.validate().expect("valid lineage");
+
+        value.base.packs.clear();
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::LineageBaseRequired)
+        ));
+
+        let mut value = lineage_manifest();
+        value.deltas[0].from_sequence = 39;
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::LineageSequenceGap)
+        ));
+
+        let mut value = lineage_manifest();
+        value.deltas[0].parent_chain_digest = Sha256Digest::of_bytes(b"wrong-parent");
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::LineageChainMismatch)
+        ));
+    }
+
+    #[test]
+    fn lineage_rejects_overlapping_pack_ranges_and_wrong_head() {
+        let mut value = lineage_manifest();
+        value.deltas[0].pack.sequence.to_inclusive = 42;
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::LineageDeltaPackMismatch)
+        ));
+
+        let mut value = lineage_manifest();
+        value.head_digest = Sha256Digest::of_bytes(b"wrong-head");
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::LineageHeadMismatch)
+        ));
+    }
+
+    #[test]
+    fn v2_golden_manifest_round_trips_with_client_wire_shape() {
+        let bytes = include_bytes!("../fixtures/lineage_manifest_v2.json");
+        let manifest: LineageManifestV2 =
+            serde_json::from_slice(bytes).expect("golden v2 manifest parses");
+        manifest.validate().expect("golden v2 manifest validates");
+        let expected: serde_json::Value =
+            serde_json::from_slice(bytes).expect("golden JSON value");
+        assert_eq!(serde_json::to_value(&manifest).expect("serialize"), expected);
     }
 }

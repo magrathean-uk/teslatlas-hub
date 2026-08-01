@@ -1,0 +1,49 @@
+[Unit]
+Description=Teslatlas Hub read-only TeslaMate owner-token import
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+WorkingDirectory=/var/lib/teslatlas
+StateDirectory=teslatlas
+StateDirectoryMode=0700
+RuntimeDirectory=teslatlas
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/teslatlas-hub --config /etc/teslatlas/config.toml import-tesla-mate-owner-tokens
+TimeoutStartSec=90s
+TimeoutStopSec=30s
+LimitNOFILE=65536
+TasksMax=512
+
+# This unit receives only Hub credentials through encrypted systemd credential
+# drop-ins. It reads the TeslaMate source through Hub's read-only PostgreSQL
+# connection and atomically writes the new encrypted Hub owner-token credential.
+# It never invokes or changes TeslaMate, Docker, or PostgreSQL.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/teslatlas/credentials
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=~@mount @swap @reboot @obsolete @privileged
+ProcSubset=pid
+

@@ -12,15 +12,23 @@ umask 077
 readonly PROGRAM_NAME="${0##*/}"
 readonly DEFAULT_MIN_FREE_KIB=$((2 * 1024 * 1024))
 readonly OWNER_TOKEN_CREDENTIAL="owner-token"
+readonly TESLAMATE_OWNER_TOKENS_CREDENTIAL="teslamate-owner-tokens"
+readonly TESLAMATE_OWNER_TOKENS_PREVIOUS_CREDENTIAL="teslamate-owner-tokens-previous"
 readonly CURSOR_KEY_CREDENTIAL="cursor-key"
 readonly TESLAMATE_POSTGRES_PASSWORD_CREDENTIAL="teslamate-postgres-password"
+readonly TESLAMATE_ENCRYPTION_KEY_CREDENTIAL="teslamate-encryption-key"
 readonly CREDENTIAL_DIRECTORY="/etc/teslatlas/credentials"
 readonly OWNER_TOKEN_PATH="${CREDENTIAL_DIRECTORY}/${OWNER_TOKEN_CREDENTIAL}"
+readonly TESLAMATE_OWNER_TOKENS_PATH="${CREDENTIAL_DIRECTORY}/${TESLAMATE_OWNER_TOKENS_CREDENTIAL}"
+readonly TESLAMATE_OWNER_TOKENS_PREVIOUS_PATH="${CREDENTIAL_DIRECTORY}/${TESLAMATE_OWNER_TOKENS_PREVIOUS_CREDENTIAL}"
 readonly CURSOR_KEY_PATH="${CREDENTIAL_DIRECTORY}/${CURSOR_KEY_CREDENTIAL}"
 readonly TESLAMATE_POSTGRES_PASSWORD_PATH="${CREDENTIAL_DIRECTORY}/${TESLAMATE_POSTGRES_PASSWORD_CREDENTIAL}"
-readonly CURSOR_KEY_SERVICES=("teslatlas-hub.service" "teslatlas-hub-collect.service" "teslatlas-hub-import@.service")
-readonly OWNER_TOKEN_SERVICES=("teslatlas-hub.service" "teslatlas-hub-collect.service")
-readonly TESLAMATE_PASSWORD_SERVICES=("teslatlas-hub-import@.service")
+readonly TESLAMATE_ENCRYPTION_KEY_PATH="${CREDENTIAL_DIRECTORY}/${TESLAMATE_ENCRYPTION_KEY_CREDENTIAL}"
+readonly CURSOR_KEY_SERVICES=("teslatlas-hub.service" "teslatlas-hub-collect.service" "teslatlas-hub-supervised.service" "teslatlas-hub-import@.service")
+readonly OWNER_TOKEN_SERVICES=("teslatlas-hub.service" "teslatlas-hub-collect.service" "teslatlas-hub-supervised.service")
+readonly TESLAMATE_OWNER_TOKENS_SERVICES=("teslatlas-hub.service" "teslatlas-hub-collect.service" "teslatlas-hub-supervised.service")
+readonly TESLAMATE_PASSWORD_SERVICES=("teslatlas-hub-import@.service" "teslatlas-hub-token-import.service")
+readonly TESLAMATE_ENCRYPTION_KEY_SERVICES=("teslatlas-hub-token-import.service")
 
 usage() {
   cat <<'EOF'
@@ -39,6 +47,10 @@ Common options:
   --dry-run                Check and print actions; change nothing
   --no-start               Install but do not enable or start the service
   --token-file FILE        Import exact token bytes from a protected file
+  --teslamate-tokens-file FILE
+                            Import a protected TeslaMate access/refresh pair JSON file
+  --teslamate-encryption-key-file FILE
+                            Import a protected TeslaMate ENCRYPTION_KEY file
   --prompt-token           Prompt through systemd-ask-password
   --help                   Show this text
 
@@ -74,6 +86,8 @@ release_key=""
 version="latest"
 local_artifact=""
 token_file=""
+teslamate_tokens_file=""
+teslamate_encryption_key_file=""
 prompt_token=0
 dry_run=0
 no_start=0
@@ -105,6 +119,16 @@ while (($#)); do
       token_file="$2"
       shift 2
       ;;
+    --teslamate-tokens-file)
+      (($# >= 2)) || die "--teslamate-tokens-file requires a file"
+      teslamate_tokens_file="$2"
+      shift 2
+      ;;
+    --teslamate-encryption-key-file)
+      (($# >= 2)) || die "--teslamate-encryption-key-file requires a file"
+      teslamate_encryption_key_file="$2"
+      shift 2
+      ;;
     --prompt-token)
       prompt_token=1
       shift
@@ -134,6 +158,10 @@ done
 [[ -z "$version" || "$version" =~ ^[A-Za-z0-9._-]+$ ]] || die "unsafe release tag"
 [[ -z "$token_file" || "$prompt_token" -eq 0 ]] || \
   die "--token-file and --prompt-token are mutually exclusive"
+[[ -z "$teslamate_tokens_file" || (-z "$token_file" && "$prompt_token" -eq 0) ]] || \
+  die "--teslamate-tokens-file cannot be combined with owner-token input"
+[[ -z "$teslamate_encryption_key_file" || -n "$teslamate_tokens_file" ]] || \
+  die "--teslamate-encryption-key-file requires --teslamate-tokens-file"
 
 if [[ -n "$local_artifact" ]]; then
   [[ -f "$local_artifact" ]] || die "local artifact not found"
@@ -150,6 +178,22 @@ if [[ -n "$token_file" ]]; then
   (( (8#$token_mode & 8#077) == 0 )) || die "token file must not be group/world accessible"
 fi
 
+if [[ -n "$teslamate_tokens_file" ]]; then
+  [[ -f "$teslamate_tokens_file" && ! -L "$teslamate_tokens_file" ]] || \
+    die "TeslaMate tokens file must be a regular non-symlink file"
+  tokens_mode="$(file_mode "$teslamate_tokens_file")"
+  (( (8#$tokens_mode & 8#077) == 0 )) || \
+    die "TeslaMate tokens file must not be group/world accessible"
+fi
+
+if [[ -n "$teslamate_encryption_key_file" ]]; then
+  [[ -f "$teslamate_encryption_key_file" && ! -L "$teslamate_encryption_key_file" ]] || \
+    die "TeslaMate encryption-key file must be a regular non-symlink file"
+  encryption_key_mode="$(file_mode "$teslamate_encryption_key_file")"
+  (( (8#$encryption_key_mode & 8#077) == 0 )) || \
+    die "TeslaMate encryption-key file must not be group/world accessible"
+fi
+
 if ((dry_run)); then
   note "Dry run. No files, packages, services, or credentials will change."
   if [[ -n "$local_artifact" ]]; then
@@ -164,9 +208,13 @@ if ((dry_run)); then
   ((no_start)) || note "Would enable and start teslatlas-hub.service after installation."
   if [[ -n "$token_file" ]]; then
     note "Would encrypt the protected token file with this host's systemd credential key."
+  elif [[ -n "$teslamate_tokens_file" ]]; then
+    note "Would encrypt the protected TeslaMate token-pair file with this host's systemd credential key."
   elif ((prompt_token)); then
     note "Would prompt through systemd-ask-password and encrypt directly with this host's systemd credential key."
   fi
+  [[ -z "$teslamate_encryption_key_file" ]] || \
+    note "Would encrypt the protected TeslaMate ENCRYPTION_KEY file with this host's systemd credential key."
   note "Would create or retain a host-encrypted binary cursor signing key for both Hub services."
   exit 0
 fi
@@ -217,6 +265,8 @@ validate_encrypted_credential() {
   credential_mode="$(file_mode "$credential_path")"
   (( (8#$credential_mode & 8#077) == 0 )) || \
     die "${credential_label} credential must not be group/world accessible"
+  credential_uid="$(stat -c '%u' -- "$credential_path" 2>/dev/null || stat -f '%u' "$credential_path")"
+  [[ "$credential_uid" == "0" ]] || die "${credential_label} credential must be root-owned"
 }
 
 write_credential_dropin() {
@@ -288,6 +338,17 @@ reconcile_credential_dropins() {
     clear_credential_dropin "$OWNER_TOKEN_CREDENTIAL" "${OWNER_TOKEN_SERVICES[@]}"
   fi
 
+  if [[ -e "$TESLAMATE_OWNER_TOKENS_PATH" ]]; then
+    write_credential_dropin "$TESLAMATE_OWNER_TOKENS_CREDENTIAL" "$TESLAMATE_OWNER_TOKENS_PATH" \
+      "TeslaMate owner token pair" "${TESLAMATE_OWNER_TOKENS_SERVICES[@]}"
+  else
+    clear_credential_dropin "$TESLAMATE_OWNER_TOKENS_CREDENTIAL" \
+      "${TESLAMATE_OWNER_TOKENS_SERVICES[@]}"
+  fi
+
+  clear_credential_dropin "$TESLAMATE_OWNER_TOKENS_PREVIOUS_CREDENTIAL" \
+    "${TESLAMATE_OWNER_TOKENS_SERVICES[@]}"
+
   if [[ -e "$TESLAMATE_POSTGRES_PASSWORD_PATH" ]]; then
     write_credential_dropin "$TESLAMATE_POSTGRES_PASSWORD_CREDENTIAL" \
       "$TESLAMATE_POSTGRES_PASSWORD_PATH" "TeslaMate PostgreSQL password" \
@@ -295,6 +356,15 @@ reconcile_credential_dropins() {
   else
     clear_credential_dropin "$TESLAMATE_POSTGRES_PASSWORD_CREDENTIAL" \
       "${TESLAMATE_PASSWORD_SERVICES[@]}"
+  fi
+
+  if [[ -e "$TESLAMATE_ENCRYPTION_KEY_PATH" ]]; then
+    write_credential_dropin "$TESLAMATE_ENCRYPTION_KEY_CREDENTIAL" \
+      "$TESLAMATE_ENCRYPTION_KEY_PATH" "TeslaMate encryption key" \
+      "${TESLAMATE_ENCRYPTION_KEY_SERVICES[@]}"
+  else
+    clear_credential_dropin "$TESLAMATE_ENCRYPTION_KEY_CREDENTIAL" \
+      "${TESLAMATE_ENCRYPTION_KEY_SERVICES[@]}"
   fi
 }
 
@@ -339,6 +409,42 @@ import_owner_token() {
   else
     encrypt_owner_token_from_prompt
   fi
+}
+
+import_teslamate_owner_tokens() {
+  install -d -m 0700 "$CREDENTIAL_DIRECTORY"
+  local ciphertext_tmp
+  ciphertext_tmp="$(mktemp "${CREDENTIAL_DIRECTORY}/.${TESLAMATE_OWNER_TOKENS_CREDENTIAL}.XXXXXX")"
+  if ! systemd-creds encrypt --with-key=host --name="$TESLAMATE_OWNER_TOKENS_CREDENTIAL" \
+    "$teslamate_tokens_file" "$ciphertext_tmp"; then
+    rm -f -- "$ciphertext_tmp"
+    die "host-encrypted TeslaMate token-pair creation failed"
+  fi
+  chmod 0600 "$ciphertext_tmp"
+  chown root:root "$ciphertext_tmp"
+  sync -f "$ciphertext_tmp"
+  if [[ -e "$TESLAMATE_OWNER_TOKENS_PATH" ]]; then
+    previous_tmp="$(mktemp "${CREDENTIAL_DIRECTORY}/.${TESLAMATE_OWNER_TOKENS_PREVIOUS_CREDENTIAL}.XXXXXX")"
+    cp -p -- "$TESLAMATE_OWNER_TOKENS_PATH" "$previous_tmp"
+    chown root:root "$previous_tmp"
+    chmod 0600 "$previous_tmp"
+    sync -f "$previous_tmp"
+    mv -f -- "$previous_tmp" "$TESLAMATE_OWNER_TOKENS_PREVIOUS_PATH"
+  fi
+  mv -f -- "$ciphertext_tmp" "$TESLAMATE_OWNER_TOKENS_PATH"
+}
+
+import_teslamate_encryption_key() {
+  install -d -m 0700 "$CREDENTIAL_DIRECTORY"
+  local ciphertext_tmp
+  ciphertext_tmp="$(mktemp "${CREDENTIAL_DIRECTORY}/.${TESLAMATE_ENCRYPTION_KEY_CREDENTIAL}.XXXXXX")"
+  if ! systemd-creds encrypt --with-key=host --name="$TESLAMATE_ENCRYPTION_KEY_CREDENTIAL" \
+    "$teslamate_encryption_key_file" "$ciphertext_tmp"; then
+    rm -f -- "$ciphertext_tmp"
+    die "host-encrypted TeslaMate encryption-key creation failed"
+  fi
+  chmod 0600 "$ciphertext_tmp"
+  mv -f -- "$ciphertext_tmp" "$TESLAMATE_ENCRYPTION_KEY_PATH"
 }
 
 verify_local_artifact() {
@@ -410,6 +516,12 @@ dpkg -i "$artifact"
 
 if [[ -n "$token_file" ]] || ((prompt_token)); then
   import_owner_token
+fi
+if [[ -n "$teslamate_tokens_file" ]]; then
+  import_teslamate_owner_tokens
+fi
+if [[ -n "$teslamate_encryption_key_file" ]]; then
+  import_teslamate_encryption_key
 fi
 ensure_cursor_key
 reconcile_credential_dropins

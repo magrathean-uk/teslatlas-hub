@@ -13,8 +13,8 @@ case "${1:-}" in
     fi
 
     install -d -m 0700 -o root -g root /etc/teslatlas/credentials
-    install -d -m 0750 -o teslatlas -g teslatlas /var/lib/teslatlas
-    install -d -m 0750 -o teslatlas -g teslatlas /run/teslatlas
+    install -d -m 0700 -o teslatlas -g teslatlas /var/lib/teslatlas
+    install -d -m 0700 -o teslatlas -g teslatlas /run/teslatlas
 
     # The daemon runs as teslatlas but configuration stays root-owned.
     if [ -f /etc/teslatlas/config.toml ]; then

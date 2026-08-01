@@ -4,7 +4,7 @@ Section: utils
 Priority: optional
 Architecture: @ARCH@
 Maintainer: Teslatlas Contributors <opensource@teslatlas.app>
-Depends: adduser (>= 3.118), ca-certificates, libc6 (>= 2.31), libgcc-s1, systemd (>= 252)
+Depends: adduser (>= 3.118), ca-certificates, libc6 (>= 2.31), libgcc-s1, python3-minimal, systemd (>= 252)
 Description: native Teslatlas synchronization hub
  Teslatlas Hub is a native Linux service for collecting and synchronizing
  Tesla vehicle data with Teslatlas clients.

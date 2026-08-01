@@ -1,9 +1,11 @@
 # Native Debian delivery
 
 Status: package prototype. An earlier amd64 Debian 12 bench snapshot passed
-installation and verification. Current committed-source, arm64, signed public
-release, and stable one-command bootstrap proof remain open. See
-[Current status](../docs/STATUS.md).
+installation and verification. Current committed-source, local Apple
+Virtualization Debian arm64, signed public release, and stable one-command
+bootstrap proof remain open. Debian amd64 native proof waits for the supplied
+x86 host. See the ordered
+[Wayfinder map](../roadmap/000-map.md).
 
 The Hub is installed as a normal Debian package and supervised by systemd. It
 does not require Docker, a language toolchain, or a database daemon on the
@@ -58,6 +60,21 @@ perform no package, filesystem, service, credential, or network change. The
 bootstrap dry-run still validates `--repo`, `--ref`, and `--commit` before
 printing the planned actions. `--no-start` leaves the package installed but
 inactive.
+
+## Owner cutover gate
+
+After the migration, backup, and verification gates pass, run the packaged
+gate with the selected TeslaMate car ID:
+
+```sh
+sudo teslatlas-hub-cutover --car-id 1
+```
+
+It starts Hub only, runs the read-only import, asks the owner to wake the car
+manually, waits one minute, and requires a new durable Hub observation. It
+writes a redacted Hub-only report under `/var/lib/teslatlas/cutover-reports`.
+It never starts, stops, restarts, reconfigures, schedules, or otherwise
+controls TeslaMate, Docker, or PostgreSQL.
 
 ## Signed release install
 
@@ -128,6 +145,15 @@ configuration file, or plaintext temporary file. Omitting both token options
 still creates the cursor key, but no owner token credential or owner-token
 drop-in, so the Hub remains usable without a token.
 
+The read-only RPC transfer command activates legacy collection only after the
+root Hub receiver validates and encrypts the pair. It atomically installs the
+Hub credential drop-ins, enables the legacy collector settings, reloads systemd,
+and enables and starts both `teslatlas-hub.service` and
+`teslatlas-hub-supervised.service`. A failed start restores the prior
+Hub configuration, current-only drop-ins, and encrypted credential generation.
+The previous ciphertext remains root-only rollback material with the embedded
+current credential name; systemd never loads it under a previous alias.
+
 ## Explicit compatibility collection
 
 The packaged collector is intentionally a manual systemd unit. It has no
@@ -182,7 +208,8 @@ selected-car histories.
 
 ## Bench validation
 
-On the Debian bench VM after a local package install, run:
+On the local Apple Virtualization Debian arm64 bench VM after a local package
+install, run:
 
 ```sh
 sudo teslatlas-hub-verify

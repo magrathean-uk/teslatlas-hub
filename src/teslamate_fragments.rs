@@ -6,7 +6,10 @@
 //! drive or charge rows required by its children. The manifest is published by
 //! the caller only after this module has verified every immutable pack.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+};
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -17,14 +20,14 @@ use crate::{
     hub_pack::{
         BuiltProjectionPack, ProjectionBinding, ProjectionCar, ProjectionCharge,
         ProjectionChargeSample, ProjectionDrive, ProjectionPackRequest, ProjectionPackWriter,
-        ProjectionPosition, ProjectionSnapshot,
+        ProjectionPosition, ProjectionSnapshot, ProjectionState,
     },
     protocol::{ProtocolLimits, SequenceRange},
     teslamate_projection::{
         ChargeProjectionFacts, DriveRelations, ProjectionReport, TeslaMateAddress, TeslaMateCar,
         TeslaMateCharge, TeslaMateChargingProcess, TeslaMateDrive, TeslaMateGeofence,
-        TeslaMatePosition, TeslaMateProjectionError, TeslaMateUpdate, project_car, project_charge,
-        project_charge_sample, project_drive, project_position,
+        TeslaMatePosition, TeslaMateProjectionError, TeslaMateState, TeslaMateUpdate, project_car,
+        project_charge, project_charge_sample, project_drive, project_position, project_state,
     },
     teslamate_stage::{TeslaMateStage, TeslaMateStageError, TeslaMateStageTable},
 };
@@ -75,6 +78,45 @@ pub struct StagedProjectionPacks {
     pub chunks: Vec<BuiltProjectionPack>,
     pub report: ProjectionReport,
     pub fingerprint: crate::protocol::Sha256Digest,
+    pub geofences: Vec<TeslaMateGeofence>,
+    cleanup_on_drop: bool,
+}
+
+impl StagedProjectionPacks {
+    pub(crate) fn new(
+        chunks: Vec<BuiltProjectionPack>,
+        report: ProjectionReport,
+        fingerprint: crate::protocol::Sha256Digest,
+        geofences: Vec<TeslaMateGeofence>,
+    ) -> Self {
+        Self {
+            chunks,
+            report,
+            fingerprint,
+            geofences,
+            cleanup_on_drop: true,
+        }
+    }
+
+    /// Published chunks are owned by the Hub catalogue, not this candidate.
+    pub(crate) fn keep_chunks(&mut self) {
+        self.cleanup_on_drop = false;
+    }
+}
+
+impl Drop for StagedProjectionPacks {
+    fn drop(&mut self) {
+        if !self.cleanup_on_drop {
+            return;
+        }
+        for chunk in self.chunks.drain(..) {
+            if let Err(error) = fs::remove_file(&chunk.path)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!(path = %chunk.path.display(), %error, "could not remove unpublished TeslaMate candidate pack");
+            }
+        }
+    }
 }
 
 /// Produce all typed packs for a complete staged TeslaMate snapshot. This
@@ -106,6 +148,50 @@ pub fn write_staged_full_snapshot_with_limits(
     limits: TeslaMateFragmentLimits,
 ) -> Result<StagedProjectionPacks, TeslaMateFragmentError> {
     limits.validate()?;
+    let mut effective_limits = limits;
+    loop {
+        match write_staged_full_snapshot_once(
+            stage,
+            writer,
+            binding.clone(),
+            snapshot_id,
+            sequence,
+            effective_limits,
+        ) {
+            Err(TeslaMateFragmentError::TooManyFragments) => {
+                effective_limits = next_fragment_limits(effective_limits)
+                    .ok_or(TeslaMateFragmentError::TooManyFragments)?;
+            }
+            result => return result,
+        }
+    }
+}
+
+pub(crate) fn next_fragment_limits(
+    current: TeslaMateFragmentLimits,
+) -> Option<TeslaMateFragmentLimits> {
+    let protocol = ProtocolLimits::default();
+    let next = TeslaMateFragmentLimits {
+        max_rows_per_fragment: current
+            .max_rows_per_fragment
+            .saturating_mul(2)
+            .min(protocol.max_rows_per_pack),
+        max_projected_json_bytes: current
+            .max_projected_json_bytes
+            .saturating_mul(2)
+            .min(protocol.max_uncompressed_pack_bytes),
+    };
+    (next != current).then_some(next)
+}
+
+fn write_staged_full_snapshot_once(
+    stage: &TeslaMateStage,
+    writer: &ProjectionPackWriter,
+    binding: ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    limits: TeslaMateFragmentLimits,
+) -> Result<StagedProjectionPacks, TeslaMateFragmentError> {
     if snapshot_id.is_nil() {
         return Err(TeslaMateFragmentError::NilSnapshotId);
     }
@@ -116,11 +202,19 @@ pub fn write_staged_full_snapshot_with_limits(
         return Err(TeslaMateFragmentError::UnorderedSequence);
     }
     // `stats` also rejects an unsealed stage before any pack writes occur.
-    let _ = stage.stats()?;
+    let stage_stats = stage.stats()?;
+    writer.ensure_full_snapshot_capacity(stage_stats.limits.minimum_free_bytes)?;
     let car =
         required_row::<TeslaMateCar>(stage, TeslaMateStageTable::Cars, binding.selected_car_id)?;
     let projected_car = project_car(&car, latest_firmware(stage, binding.selected_car_id)?)?;
-    let mut sink = PackSink::new(writer, binding, snapshot_id, sequence);
+    let states = project_staged_states(stage, binding.selected_car_id)?;
+    let geofences = staged_geofences(stage)?;
+    let force_schema_2_1 = has_standalone_positions(stage)?;
+    let mut sink = if force_schema_2_1 {
+        PackSink::new_with_schema_2_1(writer, binding, snapshot_id, sequence, states, true)
+    } else {
+        PackSink::new(writer, binding, snapshot_id, sequence, states)
+    };
     let mut report = ProjectionReport::default();
 
     write_drive_fragments(stage, &projected_car, &mut sink, limits, &mut report)?;
@@ -133,11 +227,48 @@ pub fn write_staged_full_snapshot_with_limits(
         sink.write(accumulator.finish())?;
     }
     let fingerprint = sink.fingerprint();
-    Ok(StagedProjectionPacks {
-        chunks: sink.chunks,
+    Ok(StagedProjectionPacks::new(
+        sink.into_chunks(),
         report,
         fingerprint,
-    })
+        geofences,
+    ))
+}
+
+fn staged_geofences(
+    stage: &TeslaMateStage,
+) -> Result<Vec<TeslaMateGeofence>, TeslaMateFragmentError> {
+    let mut geofences = Vec::new();
+    for_each_page::<TeslaMateGeofence, _>(stage, TeslaMateStageTable::Geofences, |geofence| {
+        geofences.push(geofence);
+        Ok(())
+    })?;
+    Ok(geofences)
+}
+
+fn project_staged_states(
+    stage: &TeslaMateStage,
+    selected_car_id: i64,
+) -> Result<Vec<ProjectionState>, TeslaMateFragmentError> {
+    let mut states = Vec::new();
+    for_each_page::<TeslaMateState, _>(stage, TeslaMateStageTable::States, |state| {
+        if let Some(projected) = project_state(&state, selected_car_id)? {
+            states.push(projected);
+        }
+        Ok(())
+    })?;
+    Ok(states)
+}
+
+fn has_standalone_positions(stage: &TeslaMateStage) -> Result<bool, TeslaMateFragmentError> {
+    let mut found = false;
+    for_each_page::<TeslaMatePosition, _>(stage, TeslaMateStageTable::Positions, |position| {
+        if position.drive_id.is_none() {
+            found = true;
+        }
+        Ok(())
+    })?;
+    Ok(found)
 }
 
 fn write_drive_fragments(
@@ -184,8 +315,11 @@ fn write_position_fragments(
     let mut accumulator = FragmentAccumulator::new(car.clone(), limits)?;
     for_each_page::<TeslaMatePosition, _>(stage, TeslaMateStageTable::Positions, |position| {
         let Some(drive_id) = position.drive_id else {
-            report.skipped_unattached_positions = report
-                .skipped_unattached_positions
+            let projected = crate::lifecycle::imported_position(&position);
+            accumulator.prepare(sink, |_| Ok((1, serialized_bytes(&projected)?)))?;
+            accumulator.positions.push(projected);
+            report.projected_positions = report
+                .projected_positions
                 .checked_add(1)
                 .ok_or(TeslaMateFragmentError::ReportOverflow)?;
             return Ok(());
@@ -497,6 +631,8 @@ pub(crate) struct PackSink<'a> {
     binding: ProjectionBinding,
     snapshot_id: Uuid,
     sequence: SequenceRange,
+    states: Vec<ProjectionState>,
+    schema_2_1: bool,
     fingerprint: Sha256,
     pub(crate) chunks: Vec<BuiltProjectionPack>,
 }
@@ -507,6 +643,18 @@ impl<'a> PackSink<'a> {
         binding: ProjectionBinding,
         snapshot_id: Uuid,
         sequence: SequenceRange,
+        states: Vec<ProjectionState>,
+    ) -> Self {
+        Self::new_with_schema_2_1(writer, binding, snapshot_id, sequence, states, false)
+    }
+
+    pub(crate) fn new_with_schema_2_1(
+        writer: &'a ProjectionPackWriter,
+        binding: ProjectionBinding,
+        snapshot_id: Uuid,
+        sequence: SequenceRange,
+        states: Vec<ProjectionState>,
+        schema_2_1: bool,
     ) -> Self {
         let mut fingerprint = Sha256::new();
         fingerprint.update(b"teslatlas-hub/teslamate-logical-snapshot/v1");
@@ -515,6 +663,8 @@ impl<'a> PackSink<'a> {
             binding,
             snapshot_id,
             sequence,
+            states,
+            schema_2_1,
             fingerprint,
             chunks: Vec::new(),
         }
@@ -522,6 +672,12 @@ impl<'a> PackSink<'a> {
 
     pub(crate) fn fingerprint(&self) -> crate::protocol::Sha256Digest {
         crate::protocol::Sha256Digest::from_bytes(self.fingerprint.clone().finalize().into())
+    }
+
+    /// Transfer verified candidate fragments to the caller. Until this method
+    /// is called, the sink removes its Hub-owned unpublished files on drop.
+    pub(crate) fn into_chunks(mut self) -> Vec<BuiltProjectionPack> {
+        std::mem::take(&mut self.chunks)
     }
 
     pub(crate) fn write(
@@ -541,14 +697,25 @@ impl<'a> PackSink<'a> {
                 .to_be_bytes(),
         );
         self.fingerprint.update(&canonical);
-        let built = self.writer.write_full_snapshot(&ProjectionPackRequest {
+        let request = ProjectionPackRequest {
             pack_id: Uuid::new_v4(),
             snapshot_id: self.snapshot_id,
             ordinal,
             binding: self.binding.clone(),
             sequence: self.sequence,
             snapshot: &snapshot,
-        })?;
+        };
+        let built = if self.states.is_empty() && !self.schema_2_1 {
+            self.writer.write_full_snapshot(&request)?
+        } else {
+            let states = if self.chunks.is_empty() {
+                self.states.as_slice()
+            } else {
+                &[]
+            };
+            self.writer
+                .write_full_snapshot_with_states(&request, states)?
+        };
         tracing::info!(
             ordinal = built.metadata.ordinal,
             rows = built.metadata.row_count,
@@ -557,6 +724,18 @@ impl<'a> PackSink<'a> {
         );
         self.chunks.push(built);
         Ok(())
+    }
+}
+
+impl Drop for PackSink<'_> {
+    fn drop(&mut self) {
+        for chunk in self.chunks.drain(..) {
+            if let Err(error) = fs::remove_file(&chunk.path)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!(path = %chunk.path.display(), %error, "could not remove unpublished TeslaMate pack");
+            }
+        }
     }
 }
 
@@ -738,18 +917,28 @@ pub enum TeslaMateFragmentError {
 mod tests {
     use super::*;
     use crate::{
-        hub_pack::{ProjectionBinding, signed_full_snapshot_manifest},
+        hub_pack::{
+            ProjectionBinding, ProjectionCar, ProjectionSnapshot, signed_full_snapshot_manifest,
+        },
         protocol::CursorKey,
         teslamate_stage::TeslaMateStageLimits,
     };
 
     fn stage() -> (tempfile::TempDir, TeslaMateStage) {
+        stage_with_sealed(true)
+    }
+
+    fn mutable_stage() -> (tempfile::TempDir, TeslaMateStage) {
+        stage_with_sealed(false)
+    }
+
+    fn stage_with_sealed(seal: bool) -> (tempfile::TempDir, TeslaMateStage) {
         let temporary = tempfile::tempdir().unwrap();
         let mut stage = TeslaMateStage::create(
             temporary.path(),
             TeslaMateStageLimits {
-                max_rows: 100,
-                max_stage_bytes: 128 * 1024,
+                max_rows: 2_000,
+                max_stage_bytes: 4 * 1024 * 1024,
                 minimum_free_bytes: 0,
             },
         )
@@ -757,12 +946,17 @@ mod tests {
         let car = TeslaMateCar {
             id: 1,
             eid: 99,
+            vid: Some(199),
             vin: Some("5YJTESTVIN1234567".into()),
             name: Some("Road car".into()),
             model: Some("Model 3".into()),
             trim_badging: None,
             marketing_name: None,
+            exterior_color: None,
+            wheel_type: None,
+            spoiler_type: None,
             efficiency_wh_per_km: Some(0.145),
+            settings: Default::default(),
         };
         let position = TeslaMatePosition {
             id: 20,
@@ -773,15 +967,28 @@ mod tests {
             longitude: -0.1,
             elevation: None,
             speed: Some(50),
-            power: Some(10),
+            power: Some(10.0),
             odometer: None,
             ideal_battery_range_km: None,
+            est_battery_range_km: None,
             rated_battery_range_km: Some(390.0),
             battery_level: Some(78),
             usable_battery_level: Some(77),
+            fan_status: None,
+            driver_temp_setting: None,
+            passenger_temp_setting: None,
             is_climate_on: Some(false),
+            is_rear_defroster_on: None,
+            is_front_defroster_on: None,
             outside_temp: Some(18.0),
             inside_temp: Some(20.0),
+            battery_heater: None,
+            battery_heater_on: None,
+            battery_heater_no_power: None,
+            tpms_pressure_fl: None,
+            tpms_pressure_fr: None,
+            tpms_pressure_rl: None,
+            tpms_pressure_rr: None,
         };
         let drive = TeslaMateDrive {
             id: 10,
@@ -795,13 +1002,20 @@ mod tests {
             start_geofence_id: Some(200),
             end_geofence_id: Some(200),
             outside_temp_avg: Some(18.0),
+            inside_temp_avg: Some(21.0),
             speed_max: Some(80),
+            power_max: Some(36.0),
+            power_min: Some(-7.0),
+            start_ideal_range_km: Some(338.8),
+            end_ideal_range_km: Some(334.8),
             start_rated_range_km: Some(400.0),
             end_rated_range_km: Some(390.0),
             start_km: None,
             end_km: None,
             distance_km: Some(12.0),
             duration_min: Some(10),
+            ascent: Some(60),
+            descent: Some(30),
         };
         let process = TeslaMateChargingProcess {
             id: 30,
@@ -812,6 +1026,10 @@ mod tests {
             start_date_ms: 1_700_001_000_000,
             end_date_ms: Some(1_700_001_360_000),
             charge_energy_added: None,
+            charge_energy_used_kwh: None,
+            start_ideal_range_km: None,
+            end_ideal_range_km: None,
+            cost: None,
             start_battery_level: Some(50),
             end_battery_level: None,
             duration_min: Some(60),
@@ -876,6 +1094,12 @@ mod tests {
                 &TeslaMateGeofence {
                     id: 200,
                     name: "Home".into(),
+                    latitude: Some(51.0),
+                    longitude: Some(-0.1),
+                    radius_m: Some(100.0),
+                    billing_type: Some(crate::hub_pack::GeofenceBillingType::PerKwh),
+                    cost_per_unit: Some(0.30),
+                    session_fee: Some(2.0),
                 },
             )
             .unwrap();
@@ -892,7 +1116,9 @@ mod tests {
                 },
             )
             .unwrap();
-        stage.seal().unwrap();
+        if seal {
+            stage.seal().unwrap();
+        }
         (temporary, stage)
     }
 
@@ -904,6 +1130,140 @@ mod tests {
             generation: 1,
             selected_car_id: 1,
         }
+    }
+
+    #[test]
+    fn dropped_candidate_sink_removes_unpublished_pack() {
+        let temporary = tempfile::tempdir().unwrap();
+        let writer = ProjectionPackWriter::new(temporary.path());
+        let mut sink = PackSink::new(
+            &writer,
+            binding(),
+            Uuid::from_u128(4),
+            SequenceRange {
+                from_exclusive: 0,
+                to_inclusive: 1,
+            },
+            Vec::new(),
+        );
+        sink.write(ProjectionSnapshot {
+            cars: vec![ProjectionCar {
+                id: 1,
+                name: "Corpus One".into(),
+                model: "Model S".into(),
+                vin: None,
+                source_eid: None,
+                source_vid: None,
+                trim_badging: None,
+                marketing_name: None,
+                exterior_color: None,
+                wheel_type: None,
+                spoiler_type: None,
+                firmware_version: None,
+                efficiency_wh_per_km: None,
+                settings: Default::default(),
+            }],
+            drives: Vec::new(),
+            positions: Vec::new(),
+            charges: Vec::new(),
+            charge_samples: Vec::new(),
+        })
+        .unwrap();
+        let candidate = sink.chunks[0].path.clone();
+        assert!(candidate.is_file());
+        drop(sink);
+        assert!(!candidate.exists());
+    }
+
+    #[test]
+    fn dropped_completed_candidate_removes_unpublished_packs() {
+        let temporary = tempfile::tempdir().unwrap();
+        let (_stage_directory, stage) = stage();
+        let candidate = write_staged_full_snapshot(
+            &stage,
+            &ProjectionPackWriter::new(temporary.path()),
+            binding(),
+            Uuid::from_u128(4),
+            SequenceRange {
+                from_exclusive: 0,
+                to_inclusive: 1,
+            },
+        )
+        .unwrap();
+        let paths: Vec<_> = candidate
+            .chunks
+            .iter()
+            .map(|chunk| chunk.path.clone())
+            .collect();
+        assert!(paths.iter().all(|path| path.is_file()));
+        drop(candidate);
+        assert!(paths.iter().all(|path| !path.exists()));
+    }
+
+    #[test]
+    fn adapts_a_snapshot_that_would_exceed_the_legacy_chunk_ceiling() {
+        let temporary = tempfile::tempdir().unwrap();
+        let (_stage_directory, mut stage) = mutable_stage();
+        let base_position = TeslaMatePosition {
+            id: 20,
+            car_id: 1,
+            drive_id: Some(10),
+            date_ms: 1_700_000_030_000,
+            latitude: 51.5,
+            longitude: -0.1,
+            elevation: None,
+            speed: Some(50),
+            power: Some(10.0),
+            odometer: None,
+            ideal_battery_range_km: None,
+            est_battery_range_km: None,
+            rated_battery_range_km: Some(390.0),
+            battery_level: Some(78),
+            usable_battery_level: Some(77),
+            fan_status: None,
+            driver_temp_setting: None,
+            passenger_temp_setting: None,
+            is_climate_on: Some(false),
+            is_rear_defroster_on: None,
+            is_front_defroster_on: None,
+            outside_temp: Some(18.0),
+            inside_temp: Some(20.0),
+            battery_heater: None,
+            battery_heater_on: None,
+            battery_heater_no_power: None,
+            tpms_pressure_fl: None,
+            tpms_pressure_fr: None,
+            tpms_pressure_rl: None,
+            tpms_pressure_rr: None,
+        };
+        for id in 21..=1060 {
+            let mut position = base_position.clone();
+            position.id = id;
+            position.drive_id = None;
+            position.date_ms += i64::from(id);
+            stage
+                .insert(TeslaMateStageTable::Positions, id, &position)
+                .unwrap();
+        }
+        stage.seal().unwrap();
+
+        let built = write_staged_full_snapshot_with_limits(
+            &stage,
+            &ProjectionPackWriter::new(temporary.path()),
+            binding(),
+            Uuid::from_u128(4),
+            SequenceRange {
+                from_exclusive: 0,
+                to_inclusive: 1,
+            },
+            TeslaMateFragmentLimits {
+                max_rows_per_fragment: 3,
+                max_projected_json_bytes: 1024 * 1024,
+            },
+        )
+        .unwrap();
+
+        assert!(built.chunks.len() < ProtocolLimits::default().max_chunks);
     }
 
     #[test]

@@ -2,6 +2,7 @@
 Description=Teslatlas Hub read-only TeslaMate import for car %i
 Wants=network-online.target
 After=network-online.target teslatlas-hub.service
+Before=teslatlas-hub-collect.service teslatlas-hub-supervised.service
 
 [Service]
 Type=oneshot
@@ -10,10 +11,13 @@ Group=teslatlas
 UMask=0077
 WorkingDirectory=/var/lib/teslatlas
 StateDirectory=teslatlas
-StateDirectoryMode=0750
+StateDirectoryMode=0700
 RuntimeDirectory=teslatlas
-RuntimeDirectoryMode=0750
-ExecStart=/usr/bin/teslatlas-hub --config /etc/teslatlas/config.toml import-tesla-mate --car-id %i
+RuntimeDirectoryMode=0700
+# The exclusive gate covers the active-state check and the complete import.
+# Every collector ExecStart takes the shared side of this same gate.
+# Before= keeps direct systemd collector starts ordered behind an import.
+ExecStart=/usr/bin/flock --exclusive --nonblock /run/teslatlas/import-collector.lock /bin/sh -ec 'for unit in teslatlas-hub-collect.service teslatlas-hub-supervised.service; do state=$$(/usr/bin/systemctl show --property=ActiveState --value "$$unit") || exit 1; case "$$state" in inactive|failed) ;; *) exit 1 ;; esac; done; exec /usr/bin/teslatlas-hub --config /etc/teslatlas/config.toml import-tesla-mate --car-id %i'
 TimeoutStartSec=12h
 TimeoutStopSec=30s
 LimitNOFILE=65536

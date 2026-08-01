@@ -75,7 +75,7 @@ impl ReadOnlySource {
     }
 
     /// Session setup that must execute before inspecting the source schema.
-    pub fn session_sql(&self) -> [&'static str; 4] {
+    pub fn session_sql(&self) -> [&'static str; 3] {
         READ_ONLY_SESSION_SQL
     }
 

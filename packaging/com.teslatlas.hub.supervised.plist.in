@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.teslatlas.hub.supervised</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@SERVICE_WRAPPER@</string>
+    <string>collect-supervised</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>WorkingDirectory</key>
+  <string>@APP_ROOT@</string>
+  <key>StandardOutPath</key>
+  <string>@LOG_ROOT@/supervised.log</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG_ROOT@/supervised.log</string>
+  <key>Umask</key>
+  <integer>63</integer>
+</dict>
+</plist>

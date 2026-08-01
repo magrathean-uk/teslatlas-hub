@@ -95,7 +95,7 @@ package_dir="$stage_dir/teslatlas-hub_${version}_${arch}"
 control_dir="$package_dir/DEBIAN"
 mkdir -p "$control_dir" "$package_dir/usr/bin" \
   "$package_dir/etc/teslatlas" "$package_dir/usr/lib/systemd/system" \
-  "$package_dir/usr/share/doc/teslatlas-hub"
+  "$package_dir/usr/share/doc/teslatlas-hub" "$package_dir/usr/share/teslatlas-hub"
 
 sed -e "s/@VERSION@/$version/g" -e "s/@ARCH@/$arch/g" \
   "$PROJECT_ROOT/packaging/debian/control.in" > "$control_dir/control"
@@ -107,12 +107,26 @@ install -m 0755 "$PROJECT_ROOT/scripts/verify-native-install.sh" \
   "$package_dir/usr/bin/teslatlas-hub-verify"
 install -m 0755 "$PROJECT_ROOT/scripts/setup.sh" \
   "$package_dir/usr/bin/teslatlas-hub-setup"
+install -m 0755 "$PROJECT_ROOT/scripts/teslamate-cutover.sh" \
+  "$package_dir/usr/bin/teslatlas-hub-cutover"
 install -m 0644 "$PROJECT_ROOT/packaging/teslatlas-hub.service" \
   "$package_dir/usr/lib/systemd/system/teslatlas-hub.service"
 install -m 0644 "$PROJECT_ROOT/packaging/teslatlas-hub-collect.service" \
   "$package_dir/usr/lib/systemd/system/teslatlas-hub-collect.service"
+install -m 0644 "$PROJECT_ROOT/packaging/teslatlas-hub-supervised.service" \
+  "$package_dir/usr/lib/systemd/system/teslatlas-hub-supervised.service"
 install -m 0644 "$PROJECT_ROOT/packaging/teslatlas-hub-import@.service" \
   "$package_dir/usr/lib/systemd/system/teslatlas-hub-import@.service"
+install -m 0644 "$PROJECT_ROOT/packaging/teslatlas-hub-token-import.service" \
+  "$package_dir/usr/lib/systemd/system/teslatlas-hub-token-import.service"
+install -m 0755 "$PROJECT_ROOT/scripts/import-teslamate-legacy-token.sh" \
+  "$package_dir/usr/bin/teslatlas-hub-import-teslamate-token"
+install -m 0755 "$PROJECT_ROOT/scripts/import-teslamate-fleet-proxy.sh" \
+  "$package_dir/usr/bin/teslatlas-hub-import-teslamate-fleet-proxy"
+install -m 0755 "$PROJECT_ROOT/scripts/import-teslamate-rpc.sh" \
+  "$package_dir/usr/bin/teslatlas-hub-import-teslamate-rpc"
+install -m 0755 "$PROJECT_ROOT/scripts/test-systemd-credential-activation.sh" \
+  "$package_dir/usr/share/teslatlas-hub/test-systemd-credential-activation.sh"
 install -m 0644 "$PROJECT_ROOT/packaging/config.toml" \
   "$package_dir/etc/teslatlas/config.toml"
 install -m 0644 "$PROJECT_ROOT/packaging/debian/copyright" \

@@ -2,7 +2,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 
@@ -192,6 +192,7 @@ fn write_new_file(path: &Path, bytes: &[u8], mode: u32) -> Result<(), SetupError
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(mode)
         .open(path)
         .map_err(|source| SetupError::Io {
             operation: "create identity file",

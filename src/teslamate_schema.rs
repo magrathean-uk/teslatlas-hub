@@ -17,12 +17,13 @@ pub const MIN_SUPPORTED_MIGRATION: i64 = 20_260_411_070_212;
 /// Last TeslaMate migration version reviewed for this adapter.
 pub const MAX_VALIDATED_MIGRATION: i64 = 20_260_718_160_000;
 
-/// The only session statements a PostgreSQL reader may execute before probing.
-pub const READ_ONLY_SESSION_SQL: [&str; 4] = [
+/// Fixed read-only session statements. The COPY statement timeout is supplied
+/// separately from validated import limits so large historical reads can be
+/// configured without weakening the short lock-wait bound.
+pub const READ_ONLY_SESSION_SQL: [&str; 3] = [
     "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
     "BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY",
-    "SET LOCAL TIME ZONE 'UTC'",
-    "SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '10min'",
+    "SET LOCAL TIME ZONE 'UTC'; SET LOCAL lock_timeout = '5s'",
 ];
 
 /// Read the installed Ecto migration high-water mark from the exact source
@@ -53,6 +54,7 @@ WHERE "namespace"."nspname" = 'public'
   AND "relation"."relname" = ANY (
     ARRAY[
       'cars',
+      'car_settings',
       'drives',
       'positions',
       'charging_processes',
@@ -73,6 +75,7 @@ ORDER BY "relation"."relname", "attribute"."attnum"
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SourceTable {
     Cars,
+    CarSettings,
     Drives,
     Positions,
     ChargingProcesses,
@@ -99,6 +102,7 @@ impl SourceTable {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Cars => "cars",
+            Self::CarSettings => "car_settings",
             Self::Drives => "drives",
             Self::Positions => "positions",
             Self::ChargingProcesses => "charging_processes",
@@ -164,6 +168,9 @@ impl ValueType {
 /// data, not whether the relation column itself must exist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProjectionColumn {
+    /// `None` means the column belongs to the projection's primary table.
+    /// Joined fields name their actual source relation explicitly.
+    pub source_table: Option<SourceTable>,
     pub source_name: &'static str,
     pub output_name: &'static str,
     pub value_type: ValueType,
@@ -183,6 +190,19 @@ pub struct TableProjection {
 macro_rules! column {
     ($name:literal, $type:ident, $nullable:expr) => {
         ProjectionColumn {
+            source_table: None,
+            source_name: $name,
+            output_name: $name,
+            value_type: ValueType::$type,
+            nullable: $nullable,
+        }
+    };
+}
+
+macro_rules! settings_column {
+    ($name:literal, $type:ident, $nullable:expr) => {
+        ProjectionColumn {
+            source_table: Some(SourceTable::CarSettings),
             source_name: $name,
             output_name: $name,
             value_type: ValueType::$type,
@@ -199,6 +219,13 @@ const CARS_COLUMNS: &[ProjectionColumn] = &[
     column!("name", Text, true),
     column!("model", Text, true),
     column!("efficiency", Floating, true),
+    settings_column!("suspend_min", SmallInt, true),
+    settings_column!("suspend_after_idle_min", SmallInt, true),
+    settings_column!("req_not_unlocked", Boolean, true),
+    settings_column!("free_supercharging", Boolean, true),
+    settings_column!("use_streaming_api", Boolean, true),
+    settings_column!("enabled", Boolean, true),
+    settings_column!("lfp_battery", Boolean, true),
     column!("trim_badging", Text, true),
     column!("marketing_name", Text, true),
     column!("exterior_color", Text, true),
@@ -352,6 +379,13 @@ SELECT
   "source"."name" AS "name",
   "source"."model" AS "model",
   "source"."efficiency" AS "efficiency",
+  "settings"."suspend_min"::integer AS "suspend_min",
+  "settings"."suspend_after_idle_min"::integer AS "suspend_after_idle_min",
+  "settings"."req_not_unlocked" AS "req_not_unlocked",
+  "settings"."free_supercharging" AS "free_supercharging",
+  "settings"."use_streaming_api" AS "use_streaming_api",
+  "settings"."enabled" AS "enabled",
+  "settings"."lfp_battery" AS "lfp_battery",
   "source"."trim_badging" AS "trim_badging",
   "source"."marketing_name" AS "marketing_name",
   "source"."exterior_color" AS "exterior_color",
@@ -361,6 +395,8 @@ SELECT
   "source"."inserted_at" AS "inserted_at",
   "source"."updated_at" AS "updated_at"
 FROM "public"."cars" AS "source"
+LEFT JOIN "public"."car_settings" AS "settings"
+  ON "settings"."id" = "source"."settings_id"
 WHERE "source"."id" > $1
   AND "source"."id" = $3
 ORDER BY "source"."id" ASC
@@ -403,36 +439,36 @@ LIMIT $2
 
 const POSITIONS_SQL: &str = r#"
 SELECT
-  "source"."id" AS "id",
-  "source"."car_id" AS "car_id",
-  "source"."drive_id" AS "drive_id",
+  "source"."id"::integer AS "id",
+  "source"."car_id"::smallint AS "car_id",
+  "source"."drive_id"::bigint AS "drive_id",
   "source"."date" AS "date",
-  "source"."latitude" AS "latitude",
-  "source"."longitude" AS "longitude",
-  "source"."elevation" AS "elevation",
-  "source"."speed" AS "speed",
-  "source"."power" AS "power",
-  "source"."odometer" AS "odometer",
-  "source"."ideal_battery_range_km" AS "ideal_battery_range_km",
-  "source"."est_battery_range_km" AS "est_battery_range_km",
-  "source"."rated_battery_range_km" AS "rated_battery_range_km",
-  "source"."battery_level" AS "battery_level",
-  "source"."usable_battery_level" AS "usable_battery_level",
+  "source"."latitude"::numeric AS "latitude",
+  "source"."longitude"::numeric AS "longitude",
+  "source"."elevation"::bigint AS "elevation",
+  "source"."speed"::bigint AS "speed",
+  "source"."power"::double precision AS "power",
+  "source"."odometer"::double precision AS "odometer",
+  "source"."ideal_battery_range_km"::numeric AS "ideal_battery_range_km",
+  "source"."est_battery_range_km"::numeric AS "est_battery_range_km",
+  "source"."rated_battery_range_km"::numeric AS "rated_battery_range_km",
+  "source"."battery_level"::bigint AS "battery_level",
+  "source"."usable_battery_level"::bigint AS "usable_battery_level",
   "source"."battery_heater" AS "battery_heater",
   "source"."battery_heater_on" AS "battery_heater_on",
   "source"."battery_heater_no_power" AS "battery_heater_no_power",
-  "source"."outside_temp" AS "outside_temp",
-  "source"."inside_temp" AS "inside_temp",
-  "source"."fan_status" AS "fan_status",
-  "source"."driver_temp_setting" AS "driver_temp_setting",
-  "source"."passenger_temp_setting" AS "passenger_temp_setting",
+  "source"."outside_temp"::numeric AS "outside_temp",
+  "source"."inside_temp"::numeric AS "inside_temp",
+  "source"."fan_status"::bigint AS "fan_status",
+  "source"."driver_temp_setting"::numeric AS "driver_temp_setting",
+  "source"."passenger_temp_setting"::numeric AS "passenger_temp_setting",
   "source"."is_climate_on" AS "is_climate_on",
   "source"."is_rear_defroster_on" AS "is_rear_defroster_on",
   "source"."is_front_defroster_on" AS "is_front_defroster_on",
-  "source"."tpms_pressure_fl" AS "tpms_pressure_fl",
-  "source"."tpms_pressure_fr" AS "tpms_pressure_fr",
-  "source"."tpms_pressure_rl" AS "tpms_pressure_rl",
-  "source"."tpms_pressure_rr" AS "tpms_pressure_rr"
+  "source"."tpms_pressure_fl"::numeric AS "tpms_pressure_fl",
+  "source"."tpms_pressure_fr"::numeric AS "tpms_pressure_fr",
+  "source"."tpms_pressure_rl"::numeric AS "tpms_pressure_rl",
+  "source"."tpms_pressure_rr"::numeric AS "tpms_pressure_rr"
 FROM "public"."positions" AS "source"
 WHERE "source"."id" > $1
   AND "source"."car_id" = $3
@@ -629,6 +665,7 @@ const UPDATES_PROJECTION: TableProjection = TableProjection {
 pub const fn projection(table: SourceTable) -> &'static TableProjection {
     match table {
         SourceTable::Cars => &CARS_PROJECTION,
+        SourceTable::CarSettings => panic!("car_settings is a joined source relation"),
         SourceTable::Drives => &DRIVES_PROJECTION,
         SourceTable::Positions => &POSITIONS_PROJECTION,
         SourceTable::ChargingProcesses => &CHARGING_PROCESSES_PROJECTION,
@@ -710,18 +747,26 @@ pub fn validate_observed_schema(
         }
 
         for expected_column in expected.columns {
+            let source_table = expected_column.source_table.unwrap_or(table);
             let Some(actual) = observed.iter().find(|column| {
-                column.table == table.name() && column.name == expected_column.source_name
+                column.table == source_table.name() && column.name == expected_column.source_name
             }) else {
                 return Err(SchemaCompatibilityError::MissingColumn {
-                    table: table.name(),
+                    table: source_table.name(),
                     column: expected_column.source_name,
                 });
             };
 
-            if !expected_column.value_type.accepts_udt(actual.type_name) {
+            let compatible_type = if source_table == SourceTable::CarSettings
+                && expected_column.value_type == ValueType::SmallInt
+            {
+                matches!(actual.type_name, "int2" | "int4")
+            } else {
+                expected_column.value_type.accepts_udt(actual.type_name)
+            };
+            if !compatible_type {
                 return Err(SchemaCompatibilityError::IncompatibleColumnType {
-                    table: table.name(),
+                    table: source_table.name(),
                     column: expected_column.source_name,
                     expected: expected_column.value_type,
                 });
@@ -741,7 +786,7 @@ mod tests {
         for table in SourceTable::ALL {
             for column in projection(table).columns {
                 result.push(ObservedColumn {
-                    table: table.name(),
+                    table: column.source_table.unwrap_or(table).name(),
                     name: column.source_name,
                     type_name: column.value_type.canonical_udt(),
                     nullable: column.nullable,
@@ -771,10 +816,73 @@ mod tests {
             assert!(!descriptor.sql.contains("postgres://"));
 
             for column in descriptor.columns {
-                assert!(descriptor.sql.contains(&format!(
-                    "\"source\".\"{}\" AS \"{}\"",
-                    column.source_name, column.output_name
-                )));
+                let source_alias = if column.source_table == Some(SourceTable::CarSettings) {
+                    "settings"
+                } else {
+                    "source"
+                };
+                let expected_expression = if column.source_table == Some(SourceTable::CarSettings)
+                    && column.value_type == ValueType::SmallInt
+                {
+                    format!(
+                        "\"{}\".\"{}\"::integer AS \"{}\"",
+                        source_alias, column.source_name, column.output_name
+                    )
+                } else if table == SourceTable::Positions {
+                    let cast_type = if column.source_name == "power" {
+                        Some("double precision")
+                    } else {
+                        match column.value_type {
+                            ValueType::Integer => {
+                                if table == SourceTable::Positions
+                                    && matches!(
+                                        column.source_name,
+                                        "drive_id" | "fan_status"
+                                    )
+                                {
+                                    Some("bigint")
+                                } else {
+                                    Some("integer")
+                                }
+                            }
+                            ValueType::SmallInt => {
+                                if table == SourceTable::Positions
+                                    && matches!(
+                                        column.source_name,
+                                        "elevation"
+                                            | "speed"
+                                            | "battery_level"
+                                            | "usable_battery_level"
+                                    )
+                                {
+                                    Some("bigint")
+                                } else {
+                                    Some("smallint")
+                                }
+                            }
+                            ValueType::Numeric => Some("numeric"),
+                            ValueType::Floating => Some("double precision"),
+                            _ => None,
+                        }
+                    };
+                    if let Some(cast_type) = cast_type {
+                        format!(
+                            "\"{}\".\"{}\"::{} AS \"{}\"",
+                            source_alias, column.source_name, cast_type, column.output_name
+                        )
+                    } else {
+                        format!(
+                            "\"{}\".\"{}\" AS \"{}\"",
+                            source_alias, column.source_name, column.output_name
+                        )
+                    }
+                } else {
+                    format!(
+                        "\"{}\".\"{}\" AS \"{}\"",
+                        source_alias, column.source_name, column.output_name
+                    )
+                };
+                assert!(descriptor.sql.contains(&expected_expression));
             }
         }
     }
@@ -796,7 +904,7 @@ mod tests {
                 "updates",
             ]
         );
-        assert_eq!(projection(SourceTable::Cars).columns.len(), 15);
+        assert_eq!(projection(SourceTable::Cars).columns.len(), 22);
         assert_eq!(projection(SourceTable::Drives).columns.len(), 25);
         assert_eq!(projection(SourceTable::Positions).columns.len(), 30);
         assert_eq!(projection(SourceTable::ChargingProcesses).columns.len(), 18);
@@ -830,6 +938,59 @@ mod tests {
     #[test]
     fn valid_current_schema_is_accepted() {
         assert_eq!(validate_observed_schema(&complete_schema()), Ok(()));
+    }
+
+    #[test]
+    fn joined_car_settings_columns_are_required_at_their_source_table() {
+        let mut missing_settings_column = complete_schema();
+        missing_settings_column
+            .retain(|column| !(column.table == "car_settings" && column.name == "suspend_min"));
+        assert_eq!(
+            validate_observed_schema(&missing_settings_column),
+            Err(SchemaCompatibilityError::MissingColumn {
+                table: "car_settings",
+                column: "suspend_min",
+            })
+        );
+    }
+
+    #[test]
+    fn legacy_car_settings_integer_columns_accept_int4_but_not_unrelated_types() {
+        let mut legacy_schema = complete_schema();
+        for column in &mut legacy_schema {
+            if column.table == "car_settings"
+                && matches!(column.name, "suspend_min" | "suspend_after_idle_min")
+            {
+                column.type_name = "int4";
+            }
+        }
+        assert_eq!(validate_observed_schema(&legacy_schema), Ok(()));
+
+        let mut unrelated_type = legacy_schema;
+        unrelated_type
+            .iter_mut()
+            .find(|column| column.table == "car_settings" && column.name == "suspend_min")
+            .expect("suspend_min exists")
+            .type_name = "int8";
+        assert_eq!(
+            validate_observed_schema(&unrelated_type),
+            Err(SchemaCompatibilityError::IncompatibleColumnType {
+                table: "car_settings",
+                column: "suspend_min",
+                expected: ValueType::SmallInt,
+            })
+        );
+    }
+
+    #[test]
+    fn legacy_position_power_is_normalized_to_the_float_decoder_type() {
+        let sql = projection(SourceTable::Positions).sql;
+        assert!(sql.contains("\"source\".\"power\"::double precision AS \"power\""));
+        assert!(sql.contains("\"source\".\"odometer\"::double precision AS \"odometer\""));
+        assert!(sql.contains("\"source\".\"latitude\"::numeric AS \"latitude\""));
+        assert!(sql.contains("\"source\".\"fan_status\"::bigint AS \"fan_status\""));
+        assert!(sql.contains("\"source\".\"drive_id\"::bigint AS \"drive_id\""));
+        assert!(sql.contains("\"source\".\"battery_level\"::bigint AS \"battery_level\""));
     }
 
     #[test]

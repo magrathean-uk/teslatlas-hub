@@ -10,10 +10,12 @@ Group=teslatlas
 UMask=0077
 WorkingDirectory=/var/lib/teslatlas
 StateDirectory=teslatlas
-StateDirectoryMode=0750
+StateDirectoryMode=0700
 RuntimeDirectory=teslatlas
-RuntimeDirectoryMode=0750
-ExecStart=/usr/bin/teslatlas-hub --config /etc/teslatlas/config.toml collect-once
+RuntimeDirectoryMode=0700
+# Do not overlap an import. A contending manual or timer start fails closed;
+# its caller may retry after the importing process releases the exclusive gate.
+ExecStart=/usr/bin/flock --shared --nonblock --no-fork /run/teslatlas/import-collector.lock /usr/bin/teslatlas-hub --config /etc/teslatlas/config.toml collect-once
 TimeoutStartSec=90s
 TimeoutStopSec=30s
 LimitNOFILE=65536

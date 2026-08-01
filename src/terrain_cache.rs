@@ -1,0 +1,454 @@
+//! Bounded, restart-safe SRTM tile acquisition.
+
+use std::{
+    collections::HashMap,
+    fs::{self, File, OpenOptions},
+    io::{self, Read, Write},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+
+use flate2::read::GzDecoder;
+use futures_util::StreamExt;
+use reqwest::Client;
+use sha2::{Digest, Sha256};
+use thiserror::Error;
+use tokio::{io::AsyncWriteExt, sync::Mutex as AsyncMutex, time::timeout};
+use url::Url;
+use zip::ZipArchive;
+
+use crate::{config::TerrainConfig, terrain::{HgtTile, TileId, TerrainError, SRTM1_BYTES, SRTM3_BYTES}};
+
+pub const AWS_SKADI_BASE: &str = "https://elevation-tiles-prod.s3.amazonaws.com/";
+pub const ESA_SRTM_BASE: &str = "https://step.esa.int/auxdata/dem/SRTMGL1/";
+const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_HGT_BYTES: u64 = SRTM1_BYTES;
+
+#[derive(Debug, Error)]
+pub enum TerrainCacheError {
+    #[error("terrain cache configuration is invalid")]
+    InvalidConfig,
+    #[error("terrain cache filesystem operation failed")]
+    Io(#[source] io::Error),
+    #[error("terrain cache network operation failed")]
+    Network(#[source] reqwest::Error),
+    #[error("terrain source returned an unusable response")]
+    BadResponse,
+    #[error("terrain source archive is invalid or too large")]
+    InvalidArchive,
+    #[error("terrain cache has insufficient free space")]
+    InsufficientSpace,
+    #[error("terrain cache lookup timed out")]
+    Timeout,
+    #[error("terrain tile is invalid")]
+    InvalidTile(#[source] TerrainError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerrainLookupResult {
+    pub elevation_m: Option<i16>,
+    pub tile_name: String,
+    pub tile_hash: String,
+    pub dataset_source: String,
+    pub dataset_version: String,
+}
+
+#[derive(Clone)]
+pub struct TerrainCacheOptions {
+    pub root: PathBuf,
+    pub min_free_bytes: u64,
+    pub connect_timeout: Duration,
+    pub read_timeout: Duration,
+    #[cfg(test)]
+    pub aws_base: String,
+    #[cfg(test)]
+    pub esa_base: String,
+    #[cfg(test)]
+    pub free_space_override: Option<u64>,
+}
+
+impl TerrainCacheOptions {
+    pub fn from_config(config: &TerrainConfig, data_dir: &Path) -> Result<Self, TerrainCacheError> {
+        config.validate().map_err(|_| TerrainCacheError::InvalidConfig)?;
+        Ok(Self {
+            root: config.resolved_cache_dir(data_dir),
+            min_free_bytes: config.min_free_bytes,
+            connect_timeout: Duration::from_secs(config.connect_timeout_seconds),
+            read_timeout: Duration::from_secs(config.read_timeout_seconds),
+            #[cfg(test)]
+            aws_base: AWS_SKADI_BASE.to_owned(),
+            #[cfg(test)]
+            esa_base: ESA_SRTM_BASE.to_owned(),
+            #[cfg(test)]
+            free_space_override: None,
+        })
+    }
+}
+
+pub struct TerrainCache {
+    options: TerrainCacheOptions,
+    client: Client,
+    locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+}
+
+impl TerrainCache {
+    pub fn new(options: TerrainCacheOptions) -> Result<Self, TerrainCacheError> {
+        if options.min_free_bytes == 0 || options.connect_timeout.is_zero() || options.read_timeout.is_zero() {
+            return Err(TerrainCacheError::InvalidConfig);
+        }
+        fs::create_dir_all(&options.root).map_err(TerrainCacheError::Io)?;
+        crate::crypto::install_default_provider();
+        let client = Client::builder()
+            .connect_timeout(options.connect_timeout)
+            .timeout(options.read_timeout)
+            .https_only(!cfg!(test))
+            .build()
+            .map_err(TerrainCacheError::Network)?;
+        Ok(Self { options, client, locks: Mutex::new(HashMap::new()) })
+    }
+
+    pub async fn get(&self, tile: TileId) -> Result<HgtTile, TerrainCacheError> {
+        self.ensure_tile(tile).await?;
+        HgtTile::open(&tile.name(), self.tile_path(tile))
+            .map_err(TerrainCacheError::InvalidTile)
+    }
+
+    pub async fn lookup(
+        &self,
+        latitude: f64,
+        longitude: f64,
+        budget: Duration,
+    ) -> Result<TerrainLookupResult, TerrainCacheError> {
+        timeout(budget, self.lookup_unbounded(latitude, longitude))
+            .await
+            .map_err(|_| TerrainCacheError::Timeout)?
+    }
+
+    async fn lookup_unbounded(
+        &self,
+        latitude: f64,
+        longitude: f64,
+    ) -> Result<TerrainLookupResult, TerrainCacheError> {
+        let tile = TileId::from_coordinates(latitude, longitude)
+            .map_err(TerrainCacheError::InvalidTile)?;
+        let source = self.ensure_tile(tile).await?;
+        let path = self.tile_path(tile);
+        let hgt = HgtTile::open(&tile.name(), &path)
+            .map_err(TerrainCacheError::InvalidTile)?;
+        Ok(TerrainLookupResult {
+            elevation_m: hgt
+                .elevation_at(latitude, longitude)
+                .map_err(TerrainCacheError::InvalidTile)?,
+            tile_name: tile.name(),
+            tile_hash: hash_file(&path).map_err(TerrainCacheError::Io)?,
+            dataset_source: source,
+            dataset_version: crate::terrain::TERRAIN_DATASET_VERSION.to_owned(),
+        })
+    }
+
+    async fn ensure_tile(&self, tile: TileId) -> Result<String, TerrainCacheError> {
+        let lock = {
+            let mut locks = self.locks.lock().map_err(|_| TerrainCacheError::InvalidConfig)?;
+            locks.entry(tile.name()).or_insert_with(|| Arc::new(AsyncMutex::new(()))).clone()
+        };
+        let _guard = lock.lock().await;
+        let path = self.tile_path(tile);
+        if path.exists() {
+            match HgtTile::open(&tile.name(), &path) {
+                Ok(_) => return Ok(self.read_source(tile)),
+                Err(_) => self.quarantine(&path),
+            }
+        }
+        self.ensure_space()?;
+        let source = match self.download(&tile, &path, true).await {
+            Ok(source) => source,
+            Err(_) => self.download(&tile, &path, false).await?,
+        };
+        write_source_atomic(&self.source_path(tile), source)?;
+        Ok(source.to_owned())
+    }
+
+    fn tile_path(&self, tile: TileId) -> PathBuf { self.options.root.join(format!("{}.hgt", tile.name())) }
+
+    fn source_path(&self, tile: TileId) -> PathBuf {
+        self.options.root.join(format!("{}.source", tile.name()))
+    }
+
+    fn read_source(&self, tile: TileId) -> String {
+        fs::read_to_string(self.source_path(tile))
+            .ok()
+            .filter(|source| !source.trim().is_empty())
+            .unwrap_or_else(|| "cache".to_owned())
+    }
+
+    fn ensure_space(&self) -> Result<(), TerrainCacheError> {
+        let required = self
+            .options
+            .min_free_bytes
+            .saturating_add(MAX_HGT_BYTES);
+        #[cfg(test)]
+        if let Some(bytes) = self.options.free_space_override { if bytes < required { return Err(TerrainCacheError::InsufficientSpace); } }
+        #[cfg(not(test))]
+        let available = rustix::fs::statvfs(&self.options.root)
+            .map_err(|error| {
+                TerrainCacheError::Io(io::Error::from_raw_os_error(error.raw_os_error()))
+            })
+            .map(|stat| stat.f_bavail.saturating_mul(stat.f_frsize))?;
+        #[cfg(not(test))]
+        if available < required { return Err(TerrainCacheError::InsufficientSpace); }
+        Ok(())
+    }
+
+    async fn download(&self, tile: &TileId, destination: &Path, aws: bool) -> Result<&'static str, TerrainCacheError> {
+        let base = if aws {
+            #[cfg(test)] { &self.options.aws_base }
+            #[cfg(not(test))] { AWS_SKADI_BASE }
+        } else {
+            #[cfg(test)] { &self.options.esa_base }
+            #[cfg(not(test))] { ESA_SRTM_BASE }
+        };
+        let base = Url::parse(base).map_err(|_| TerrainCacheError::InvalidConfig)?;
+        let name = tile.name();
+        let relative = if aws {
+            format!("skadi/{}/{name}.hgt.gz", &name[..3])
+        } else {
+            format!("{name}.hgt.zip")
+        };
+        let url = base.join(&relative).map_err(|_| TerrainCacheError::InvalidConfig)?;
+        if !cfg!(test) && url.scheme() != "https" { return Err(TerrainCacheError::InvalidConfig); }
+        let response = timeout(self.options.connect_timeout, self.client.get(url).send())
+            .await.map_err(|_| TerrainCacheError::BadResponse)?
+            .map_err(TerrainCacheError::Network)?;
+        if !response.status().is_success() { return Err(TerrainCacheError::BadResponse); }
+        if response.content_length().is_some_and(|len| len > MAX_ARCHIVE_BYTES) { return Err(TerrainCacheError::InvalidArchive); }
+        let (compressed, compressed_path) = create_private_temp(&self.options.root, "archive")?;
+        let mut output = tokio::fs::File::from_std(compressed);
+        let mut total = 0_u64;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(TerrainCacheError::Network)?;
+            total = total.saturating_add(chunk.len() as u64);
+            if total > MAX_ARCHIVE_BYTES { let _ = fs::remove_file(&compressed_path); return Err(TerrainCacheError::InvalidArchive); }
+            timeout(self.options.read_timeout, output.write_all(&chunk))
+                .await.map_err(|_| TerrainCacheError::BadResponse)?.map_err(TerrainCacheError::Io)?;
+        }
+        output.sync_all().await.map_err(TerrainCacheError::Io)?;
+        drop(output);
+        let result = decompress_to_hgt(&compressed_path, destination, aws);
+        let _ = fs::remove_file(&compressed_path);
+        result.map(|_| if aws { "aws" } else { "esa" })
+    }
+
+    fn quarantine(&self, path: &Path) {
+        let quarantine = path.with_extension(format!("hgt.corrupt.{}", std::process::id()));
+        if fs::rename(path, quarantine).is_err() { let _ = fs::remove_file(path); }
+    }
+}
+
+fn write_source_atomic(path: &Path, source: &str) -> Result<(), TerrainCacheError> {
+    let parent = path.parent().ok_or(TerrainCacheError::InvalidConfig)?;
+    let (mut file, temporary) = create_private_temp(parent, "source")?;
+    file.write_all(source.as_bytes()).map_err(TerrainCacheError::Io)?;
+    file.sync_all().map_err(TerrainCacheError::Io)?;
+    drop(file);
+    fs::rename(temporary, path).map_err(TerrainCacheError::Io)
+}
+
+fn hash_file(path: &Path) -> io::Result<String> {
+    let mut file = File::open(path)?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 { break; }
+        digest.update(&buffer[..read]);
+    }
+    Ok(hex::encode(digest.finalize()))
+}
+
+fn create_private_temp(dir: &Path, label: &str) -> Result<(File, PathBuf), TerrainCacheError> {
+    for attempt in 0..16_u32 {
+        let path = dir.join(format!(".{label}.{}.{}.tmp", std::process::id(), attempt));
+        match OpenOptions::new().write(true).read(true).create_new(true).open(&path) {
+            Ok(file) => {
+                #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600)); }
+                return Ok((file, path));
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(TerrainCacheError::Io(error)),
+        }
+    }
+    Err(TerrainCacheError::Io(io::Error::new(io::ErrorKind::AlreadyExists, "temporary file collision")))
+}
+
+fn decompress_to_hgt(archive: &Path, destination: &Path, gzip: bool) -> Result<(), TerrainCacheError> {
+    let (mut output, temp_path) = create_private_temp(destination.parent().ok_or(TerrainCacheError::InvalidConfig)?, "hgt")?;
+    if gzip {
+        let input = File::open(archive).map_err(TerrainCacheError::Io)?;
+        let mut decoder = GzDecoder::new(input);
+        copy_limited(&mut decoder, &mut output)?;
+    } else {
+        let input = File::open(archive).map_err(TerrainCacheError::Io)?;
+        let mut zip = ZipArchive::new(input).map_err(|_| TerrainCacheError::InvalidArchive)?;
+        let mut found = false;
+        for index in 0..zip.len() {
+            let mut entry = zip.by_index(index).map_err(|_| TerrainCacheError::InvalidArchive)?;
+            if entry.is_dir() { continue; }
+            let enclosed = entry.enclosed_name().ok_or(TerrainCacheError::InvalidArchive)?;
+            if enclosed.components().count() != 1 || entry.size() != SRTM3_BYTES && entry.size() != SRTM1_BYTES { return Err(TerrainCacheError::InvalidArchive); }
+            if found { return Err(TerrainCacheError::InvalidArchive); }
+            found = true;
+            copy_limited(&mut entry, &mut output)?;
+        }
+        if !found { return Err(TerrainCacheError::InvalidArchive); }
+    }
+    output.sync_all().map_err(TerrainCacheError::Io)?;
+    drop(output);
+    let length = fs::metadata(&temp_path).map_err(TerrainCacheError::Io)?.len();
+    if length != SRTM3_BYTES && length != SRTM1_BYTES { let _ = fs::remove_file(&temp_path); return Err(TerrainCacheError::InvalidArchive); }
+    fs::rename(&temp_path, destination).map_err(TerrainCacheError::Io)?;
+    if let Ok(dir) = File::open(destination.parent().ok_or(TerrainCacheError::InvalidConfig)?) { let _ = dir.sync_all(); }
+    Ok(())
+}
+
+fn copy_limited<R: Read, W: Write>(reader: &mut R, writer: &mut W) -> Result<u64, TerrainCacheError> {
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut total = 0_u64;
+    loop {
+        let read = reader.read(&mut buffer).map_err(TerrainCacheError::Io)?;
+        if read == 0 { break; }
+        total = total.saturating_add(read as u64);
+        if total > MAX_HGT_BYTES { return Err(TerrainCacheError::InvalidArchive); }
+        writer.write_all(&buffer[..read]).map_err(TerrainCacheError::Io)?;
+    }
+    Ok(total)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use axum::{Router, body::Body, http::{StatusCode, Uri}, response::Response, routing::any};
+    use tempfile::tempdir;
+
+    use super::*;
+    use crate::terrain::SRTM3_SIDE;
+
+    fn hgt_bytes() -> Vec<u8> { vec![0; SRTM3_BYTES as usize] }
+
+    fn zip_bytes() -> Vec<u8> {
+        let mut output = std::io::Cursor::new(Vec::new());
+        let mut archive = zip::ZipWriter::new(&mut output);
+        archive
+            .start_file("N51W001.hgt", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive.write_all(&hgt_bytes()).unwrap();
+        archive.finish().unwrap();
+        output.into_inner()
+    }
+
+    fn options(root: &Path, endpoint: &str) -> TerrainCacheOptions {
+        TerrainCacheOptions {
+            root: root.to_owned(),
+            min_free_bytes: 1,
+            connect_timeout: Duration::from_secs(2),
+            read_timeout: Duration::from_secs(2),
+            aws_base: endpoint.to_owned(),
+            esa_base: endpoint.to_owned(),
+            free_space_override: None,
+        }
+    }
+
+    async fn server<F>(handler: F) -> (String, tokio::task::JoinHandle<()>)
+    where
+        F: Fn(Uri) -> Response<Body> + Clone + Send + Sync + 'static,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let app = Router::new().route("/{*path}", any(move |uri: Uri| async move { handler(uri) }));
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+        (endpoint, task)
+    }
+
+    #[tokio::test]
+    async fn cache_hit_does_not_use_network() {
+        let dir = tempdir().unwrap();
+        let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
+        fs::write(dir.path().join(format!("{}.hgt", tile.name())), hgt_bytes()).unwrap();
+        let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+        assert_eq!(cache.get(tile).await.unwrap().side(), SRTM3_SIDE);
+    }
+
+    #[tokio::test]
+    async fn active_lookup_returns_cached_provenance_without_network() {
+        let dir = tempdir().unwrap();
+        let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
+        fs::write(dir.path().join(format!("{}.hgt", tile.name())), hgt_bytes()).unwrap();
+        fs::write(dir.path().join(format!("{}.source", tile.name())), "aws").unwrap();
+        let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+        let result = cache.lookup(51.5, -0.1, Duration::from_secs(1)).await.unwrap();
+        assert_eq!(result.elevation_m, Some(0));
+        assert_eq!(result.tile_name, tile.name());
+        assert_eq!(result.dataset_source, "aws");
+        assert_eq!(result.dataset_version, crate::terrain::TERRAIN_DATASET_VERSION);
+        assert_eq!(result.tile_hash.len(), 64);
+    }
+
+    #[test]
+    fn production_sources_are_https_only() {
+        assert!(AWS_SKADI_BASE.starts_with("https://"));
+        assert!(ESA_SRTM_BASE.starts_with("https://"));
+        assert!(!AWS_SKADI_BASE.contains("http://"));
+        assert!(!ESA_SRTM_BASE.contains("http://"));
+    }
+
+    #[tokio::test]
+    async fn active_lookup_enforces_budget() {
+        let dir = tempdir().unwrap();
+        let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+        assert!(matches!(
+            cache.lookup(51.5, -0.1, Duration::ZERO).await,
+            Err(TerrainCacheError::Timeout)
+        ));
+    }
+
+    #[tokio::test]
+    async fn aws_failure_falls_back_to_esa_and_concurrent_requests_share_lock() {
+        let dir = tempdir().unwrap();
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_for_server = Arc::clone(&count);
+        let (endpoint, task) = server(move |uri| {
+            count_for_server.fetch_add(1, Ordering::SeqCst);
+            if uri.path().ends_with(".gz") {
+                Response::builder().status(StatusCode::NOT_FOUND).body(Body::empty()).unwrap()
+            } else {
+                Response::new(Body::from(zip_bytes()))
+            }
+        }).await;
+        let mut opts = options(dir.path(), &endpoint);
+        opts.esa_base = endpoint.clone();
+        let cache = Arc::new(TerrainCache::new(opts).unwrap());
+        let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
+        let (left, right) = tokio::join!(cache.get(tile), cache.get(tile));
+        assert_eq!(left.unwrap().side(), SRTM3_SIDE);
+        assert_eq!(right.unwrap().side(), SRTM3_SIDE);
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn corrupt_zip_and_low_space_are_rejected() {
+        let dir = tempdir().unwrap();
+        let (endpoint, task) = server(|_| Response::new(Body::from(b"not-a-zip".to_vec()))).await;
+        let cache = TerrainCache::new(options(dir.path(), &endpoint)).unwrap();
+        let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
+        assert!(matches!(cache.get(tile).await, Err(TerrainCacheError::InvalidArchive)));
+        task.abort();
+
+        let mut low = options(dir.path(), "http://127.0.0.1:1/");
+        low.free_space_override = Some(0);
+        let cache = TerrainCache::new(low).unwrap();
+        assert!(matches!(cache.get(tile).await, Err(TerrainCacheError::InsufficientSpace)));
+    }
+}

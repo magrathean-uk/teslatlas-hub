@@ -15,20 +15,23 @@ name = "teslatlas-hub"
 path = "src/main.rs"
 
 [dependencies]
+aes-gcm = "0.10"
 axum = "0.8.9"
 axum-server = { version = "0.8.0", features = ["tls-rustls-no-provider"] }
 base64 = "0.22.1"
 clap = { version = "4", features = ["derive"] }
 ed25519-dalek = "=2.2.0"
+flate2 = "1"
 futures-util = "0.3"
 hex = "0.4"
 http = "1"
 qrcode = { version = "0.14.1", default-features = false }
 rcgen = { version = "0.14.8", default-features = false, features = ["crypto", "pem", "ring"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["http2", "rustls-no-provider", "stream"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["http2", "query", "rustls-no-provider", "stream"] }
+rumqttc = "0.25.1"
 rust_decimal = { version = "1.42.1", features = ["db-tokio-postgres"] }
 rustix = { version = "1.1.4", features = ["fs"] }
-rusqlite = { version = "0.40.1", features = ["bundled"] }
+rusqlite = { version = "0.40.1", features = ["backup", "bundled"] }
 rustls = { version = "0.23.42", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -38,14 +41,17 @@ tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "rt-multi-t
 tokio-postgres = { version = "0.7.18", features = ["with-time-0_3"] }
 tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["native-certs", "ring"] }
 tokio-util = { version = "0.7", features = ["io"] }
+tokio-tungstenite = { version = "0.27", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 toml = "1"
 tower-http = { version = "0.6", features = ["request-id", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-time = "0.3.54"
+time = { version = "0.3.54", features = ["formatting"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 zstd = "0.13"
+zeroize = "1"
 
 [patch.crates-io]
 # The Hub ships the current, verified SQLite amalgamation. Native packages do

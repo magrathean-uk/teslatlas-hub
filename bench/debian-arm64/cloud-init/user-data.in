@@ -1,0 +1,23 @@
+#cloud-config
+hostname: teslatlas-hub-arm64
+manage_etc_hosts: true
+users:
+  - name: teslatlas
+    gecos: Teslatlas Bench
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+      - __SSH_PUBLIC_KEY__
+ssh_pwauth: false
+disable_root: true
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - qemu-guest-agent
+  - openssh-server
+runcmd:
+  - [systemctl, enable, --now, ssh]
+final_message: "Teslatlas Hub ARM64 bench ready"

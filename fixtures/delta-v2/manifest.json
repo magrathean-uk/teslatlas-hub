@@ -1,0 +1,117 @@
+{
+  "protocol": {
+    "major": 2,
+    "minor": 0
+  },
+  "capability": "immutable_base_ordered_deltas",
+  "schema": {
+    "major": 2,
+    "minor": 1
+  },
+  "installation_id": "11111111-1111-4111-8111-111111111111",
+  "account_id": "22222222-2222-4222-8222-222222222222",
+  "vehicle_id": "33333333-3333-4333-8333-333333333333",
+  "generation": 1,
+  "base": {
+    "snapshot_id": "55555555-5555-4555-8555-555555555555",
+    "sequence": 7,
+    "digest": "0acfb58848f7a0ea66827d87d7b16dadcec7e5daf5081d100b158b77798a29f6",
+    "packs": [
+      {
+        "pack_id": "44444444-4444-4444-8444-444444444444",
+        "snapshot_id": "55555555-5555-4555-8555-555555555555",
+        "ordinal": 0,
+        "schema": {
+          "major": 2,
+          "minor": 1
+        },
+        "format": "hub_projection_sqlite",
+        "compression": "zstd",
+        "relative_path": "/v1/packs/sha256/0acfb58848f7a0ea66827d87d7b16dadcec7e5daf5081d100b158b77798a29f6.sqlite.zst",
+        "sha256": "0acfb58848f7a0ea66827d87d7b16dadcec7e5daf5081d100b158b77798a29f6",
+        "compressed_bytes": 3048,
+        "uncompressed_bytes": 61440,
+        "row_count": 6,
+        "sequence": {
+          "from_exclusive": 7,
+          "to_inclusive": 7
+        },
+        "tables": [
+          "car",
+          "drive",
+          "charge",
+          "position",
+          "charge_sample"
+        ]
+      }
+    ]
+  },
+  "deltas": [
+    {
+      "from_sequence": 7,
+      "to_sequence": 8,
+      "parent_chain_digest": "0acfb58848f7a0ea66827d87d7b16dadcec7e5daf5081d100b158b77798a29f6",
+      "chain_digest": "0a40bf923867215a4cbf135be895ea641b199cd42963a2f47573340dd60bb955",
+      "pack_digest": "fcdb373b70c73601cbe30662e2d767dcb0e678cd180e26efab95540782f77c54",
+      "pack": {
+        "pack_id": "88888888-8888-4888-8888-888888888881",
+        "snapshot_id": "88888888-8888-4888-8888-888888888882",
+        "ordinal": 0,
+        "schema": {
+          "major": 2,
+          "minor": 1
+        },
+        "format": "hub_projection_sqlite",
+        "compression": "zstd",
+        "relative_path": "/v1/packs/sha256/fcdb373b70c73601cbe30662e2d767dcb0e678cd180e26efab95540782f77c54.sqlite.zst",
+        "sha256": "fcdb373b70c73601cbe30662e2d767dcb0e678cd180e26efab95540782f77c54",
+        "compressed_bytes": 2951,
+        "uncompressed_bytes": 65536,
+        "row_count": 2,
+        "sequence": {
+          "from_exclusive": 7,
+          "to_inclusive": 8
+        },
+        "tables": [
+          "drive",
+          "position"
+        ]
+      }
+    },
+    {
+      "from_sequence": 8,
+      "to_sequence": 9,
+      "parent_chain_digest": "0a40bf923867215a4cbf135be895ea641b199cd42963a2f47573340dd60bb955",
+      "chain_digest": "80269dd69e2f5195032960e9ec953d415be65e9cd38e11bd27fb4b3d2a82c472",
+      "pack_digest": "c8cda377e6dc26073b3e2bd7de97186224ebb58ad64311867136d34401c5ed13",
+      "pack": {
+        "pack_id": "99999999-9999-4999-8999-999999999991",
+        "snapshot_id": "99999999-9999-4999-8999-999999999992",
+        "ordinal": 0,
+        "schema": {
+          "major": 2,
+          "minor": 1
+        },
+        "format": "hub_projection_sqlite",
+        "compression": "zstd",
+        "relative_path": "/v1/packs/sha256/c8cda377e6dc26073b3e2bd7de97186224ebb58ad64311867136d34401c5ed13.sqlite.zst",
+        "sha256": "c8cda377e6dc26073b3e2bd7de97186224ebb58ad64311867136d34401c5ed13",
+        "compressed_bytes": 2954,
+        "uncompressed_bytes": 65536,
+        "row_count": 4,
+        "sequence": {
+          "from_exclusive": 8,
+          "to_inclusive": 9
+        },
+        "tables": [
+          "car",
+          "drive",
+          "tombstone"
+        ]
+      }
+    }
+  ],
+  "head_sequence": 9,
+  "head_digest": "80269dd69e2f5195032960e9ec953d415be65e9cd38e11bd27fb4b3d2a82c472",
+  "terminal_cursor": "tsp1.5453504301000100000002000111111111111141118111111111111111222222222222422282222222222222223333333333334333833333333333333300000000000000010000000000000009.98bf34bcb5cd3d7e21e9d143a616628fb6fe20255e9bb753d01a5f4d51b507b7"
+}

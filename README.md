@@ -4,9 +4,8 @@ Native Tesla telemetry backend for Teslatlas. It is being built to replace the
 Docker-shaped TeslaMate deployment path with a small Rust service, SQLite
 storage, systemd, and a binary sync path made for iPhone transfer.
 
-> Development status: approximately 30% of the requested token-first v0.1.
-> This is not yet a usable TeslaMate replacement or public installer. See
-> [Current status](docs/STATUS.md) and [Roadmap](docs/ROADMAP.md).
+> Development status: the bridge foundation exists, but full TeslaMate backend
+> parity is not complete. Follow the ordered [Wayfinder map](roadmap/000-map.md).
 
 This is a ground-up, AGPL-compatible fork in product direction from the
 TeslaMate ecosystem. It credits TeslaMate for the source-migration contract
@@ -100,6 +99,6 @@ SQLite `3.53.4` is vendored from the official amalgamation, hash-checked during
 release engineering, and compiled statically into the Hub binary. Normal
 builds and installs never download it.
 
-The technical boundary and data-flow design is in [Architecture](docs/ARCHITECTURE.md).
-Proof and remaining work are tracked in [Current status](docs/STATUS.md) and
-[Roadmap](docs/ROADMAP.md).
+The technical boundary and data-flow design is in
+[Architecture](docs/ARCHITECTURE.md). Remaining decisions and proof gates are
+tracked in the ordered [Wayfinder map](roadmap/000-map.md).

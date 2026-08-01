@@ -1,0 +1,50 @@
+[Unit]
+Description=Teslatlas Hub supervised no-wake collection
+Wants=network-online.target
+After=network-online.target teslatlas-hub.service
+
+[Service]
+Type=exec
+User=teslatlas
+Group=teslatlas
+UMask=0077
+WorkingDirectory=/var/lib/teslatlas
+StateDirectory=teslatlas
+StateDirectoryMode=0700
+RuntimeDirectory=teslatlas
+RuntimeDirectoryMode=0700
+# Hold the shared gate for the supervised collector lifetime. If an import owns
+# the exclusive gate, this start fails safely and Restart=on-failure retries it.
+ExecStart=/usr/bin/flock --shared --nonblock --no-fork /run/teslatlas/import-collector.lock /usr/bin/teslatlas-hub --config /etc/teslatlas/config.toml collect-supervised
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=90s
+TimeoutStopSec=30s
+LimitNOFILE=65536
+TasksMax=512
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=~@mount @swap @reboot @obsolete @privileged
+ProcSubset=pid
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "referenceCommit": "7054517c10475f39f480edeae8f90c6f717985a3",
+  "format": "deterministic-typed-source-rows",
+  "cases": [
+    {"id": "minimum-supported-schema", "kind": "synthetic", "migration": 20260411070212, "shape": "one-complete-car", "expect": "publish"},
+    {"id": "pinned-current-schema", "kind": "synthetic", "migration": 20260411070212, "shape": "full-selected-car", "expect": "publish"},
+    {"id": "multiple-cars-selected-scope", "kind": "synthetic", "migration": 20260411070212, "shape": "three-cars-cross-scope", "expect": "publish-selected-car-only"},
+    {"id": "large-positions-10m", "kind": "synthetic-generated", "migration": 20260411070212, "shape": "approximately-10000000-rows-large-position-history", "expect": "publish-and-benchmark"},
+    {"id": "open-drive-and-charge", "kind": "synthetic", "migration": 20260411070212, "shape": "incomplete-sessions", "expect": "accepted-open-evidence"},
+    {"id": "unusual-charging", "kind": "synthetic", "migration": 20260411070212, "shape": "dc-ac-zero-null-and-boundary-samples", "expect": "publish-or-named-validation"},
+    {"id": "custom-settings-and-metadata", "kind": "synthetic", "migration": 20260411070212, "shape": "settings-units-and-vehicle-options", "expect": "publish-provenance-only"},
+    {"id": "invalid-schema-or-migration", "kind": "synthetic", "migration": 0, "shape": "missing-or-changed-required-column", "expect": "reject-preflight"},
+    {"id": "broken-relationships-and-types", "kind": "synthetic", "migration": 20260411070212, "shape": "orphan-duplicate-invalid-time-coordinate-numeric", "expect": "reject-unpublished"},
+    {"id": "redacted-real-shape", "kind": "redacted-optional", "migration": 20260411070212, "shape": "reviewed-sanitized-production-shape", "expect": "recorded-per-case"}
+  ]
+}
