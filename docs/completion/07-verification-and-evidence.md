@@ -23,7 +23,8 @@ store a token, password, pairing secret, or source connection secret.
 | Import staging/race/outbox | Multi-car staging, second-tail reconciliation, rollback, retry publication | Completed local focused implementation/tests; final rehearsal unverified. |
 | PerformanceProfile v1 | CPU/filesystem measurement, bounded direct-import lane selection, deterministic override, non-secret receipt | Implemented in dev73; runtime/profile proof not yet captured. Memory-pressure and write-throughput profiling are deferred. |
 | macOS arm64 | Current artifact full platform matrix | Earlier evidence only; fresh proof unverified. |
-| Debian arm64 | Fresh install, space/database, service, backup, restore | Debian 13 ARM64 cloud-init/headless VM with 8 vCPUs/8 GiB has `0.1.0-dev78` installed. The credentialed production collector completed with correlation `3478e1ab-e125-4734-b43e-c7ab3289ccdc`, seeing one vehicle, zero online vehicles, snapshots, observations, and failures. `verify-no-wake` against audit watermark `2` returned `verified: true`, with 3 matching receipts, 0 direct wake, 0 unresolved requests, and 0 unresolved stream sessions. Encrypted state metadata is under `/var/lib/teslatlas/legacy-auth` mode `600`; physical persistence and remaining recovery/platform gates are open. |
+| Debian arm64 | Fresh install, space/database, service, backup, restore | Debian 13 ARM64 cloud-init/headless VM with 8 vCPUs/8 GiB has `0.1.0-dev80` compiled and installed with no compiler warnings. The second real credentialed offline collector completed with correlation `a5e00dc8-c263-47c3-8ceb-b5e72dfcf0ea`, seeing one vehicle, zero online vehicles, snapshots, observations, and failures. `verify-no-wake` against audit watermark `5` returned `verified: true`, with 0 direct wake, 0 unresolved requests, and 0 unresolved stream sessions. Encrypted state metadata is under `/var/lib/teslatlas/legacy-auth` mode `600`; physical persistence and remaining recovery/platform gates are open. |
+| P1 integrity corrections | Open-parent transition, states/geofences identity, single publication gate, pack metadata, exact stream closure, in-flight audit scope | Completed implementation slice; this does not replace the outstanding runtime and migration evidence gates. |
 | Cutover | Disposable operator-owned rehearsal and rollback | Unverified. |
 
 ## Implemented but unproven profile slice
@@ -37,20 +38,20 @@ claimed yet. Memory-pressure and write-throughput profiling remain deferred.
 ## Exact latest local evidence
 
 ```text
-package: 0.1.0-dev78
+package: 0.1.0-dev80
 collector: teslatlas-hub-collect.service
-correlation: 3478e1ab-e125-4734-b43e-c7ab3289ccdc
+correlation: a5e00dc8-c263-47c3-8ceb-b5e72dfcf0ea
 vehicle_count: 1
 online: 0
 snapshots: 0
 observations: 0
 failures: 0
-audit_watermark: 2
+audit_watermark: 5
 no_wake_verified: true
-matching_receipts: 3
 direct_wake_receipts: 0
 unresolved_requests: 0
 unresolved_stream_sessions: 0
+compiler_warnings: 0
 encrypted_state_metadata: /var/lib/teslatlas/legacy-auth (mode 600)
 ```
 

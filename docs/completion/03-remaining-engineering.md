@@ -12,13 +12,14 @@ passing narrow test as proof for a larger row in the evidence matrix.
 | Import staging and multi-car result handling | Focused importer, direct, database, pack, and main test coverage; per-car partial failure and rerun semantics are implemented. |
 | Open-session race reconciliation | Focused second-snapshot fixtures cover open child tails, close-between-snapshots, duplicate rows, restart, and rollback. |
 | Durable export outbox | Collector/database focused coverage covers claim, sparse publication, exact completion, retry, and newer dirty mutations. |
+| P1 import, publication, pack, stream, and audit integrity corrections | Open-parent transition reconciliation; states/geofences identity; single publication gate; schema 2.1 pack metadata; exact stream closure; and in-flight audit scope are corrected and recorded as complete. |
+| Debian ARM64 dev80 offline collector and no-wake receipt | Package compiled and installed with no compiler warnings; second real credentialed offline receipt and audit watermark 5 are recorded. |
 | PerformanceProfile v1 | Implemented in dev73: measures available CPU parallelism plus filesystem capacity, safely reduces only direct-import COPY lanes, supports a deterministic lane override, never raises configured or hard safety limits, and logs a non-secret profile receipt. Runtime/profile proof remains open. |
 
 ## Remaining small steps
 
 | ID | Small engineering step | Evidence gate |
 | --- | --- | --- |
-| E01 | Capture one current dev45 offline receipt and record request audit. | Redacted receipt proves real offline discovery and no wake request. |
 | E02 | Run owner-authorized wake, wait 60 seconds, run one Hub collection. | New durable observation, timestamp, database/pack identity, and no-wake audit. |
 | E05 | Make one exported PostgreSQL repeatable-read snapshot lease explicit. | Native source test proves lease retention and source write refusal. |
 | E06 | Attach one bounded reader lane to that lease with fixed binary COPY. | Second native lane sees the same selected-car view and cannot interpolate SQL. |

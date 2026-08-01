@@ -181,6 +181,7 @@ struct LegacyAuthStateWire {
 }
 
 enum LegacyAuthPersistence {
+    #[cfg(any(target_os = "macos", test))]
     Callback(Arc<dyn Fn(&str, &str, i64, i64) -> Result<(), CredentialError> + Send + Sync>),
     #[cfg(target_os = "linux")]
     LinuxState(Arc<LegacyTokenState>),
@@ -294,6 +295,7 @@ impl LegacyAuthManager {
         force: bool,
     ) -> Result<(), LegacyAuthManagerError> {
         match &self.persistence {
+            #[cfg(any(target_os = "macos", test))]
             LegacyAuthPersistence::Callback(persist) => {
                 let persist = Arc::clone(persist);
                 let result = if force {

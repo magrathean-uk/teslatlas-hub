@@ -387,6 +387,9 @@ impl ProjectionReport {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TeslaMateProjection {
     pub snapshot: ProjectionSnapshot,
+    /// State rows live in the first pack fragment rather than the projection
+    /// snapshot payload, so callers cannot accidentally omit them at publish.
+    pub states: Vec<ProjectionState>,
     pub report: ProjectionReport,
 }
 
@@ -933,6 +936,19 @@ pub fn project_vehicle(
         charge_samples.push(project_charge_sample(sample));
     }
 
+    let mut source_states = source
+        .states
+        .iter()
+        .filter(|state| state.car_id == selected_car_id)
+        .collect::<Vec<_>>();
+    source_states.sort_unstable_by_key(|state| (state.start_date_ms, state.id));
+    let mut states = Vec::with_capacity(source_states.len());
+    for state in source_states {
+        if let Some(projected) = project_state(state, selected_car_id)? {
+            states.push(projected);
+        }
+    }
+
     Ok(TeslaMateProjection {
         snapshot: ProjectionSnapshot {
             cars: vec![projected_car],
@@ -941,6 +957,7 @@ pub fn project_vehicle(
             charges,
             charge_samples,
         },
+        states,
         report,
     })
 }

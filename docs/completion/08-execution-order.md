@@ -10,13 +10,14 @@ rewrite, unbounded benchmark, or multi-feature batch is allowed.
 | --- | --- |
 | Delta v2 backend, server, catalogue, client transport, staged apply, atomic activation, resume, and v1 fallback | Hub/core release checks plus `teslatlas-core/tests/hub_delta_e2e.rs`; all latest gates passed. |
 | Import staging, multi-car outcomes, open-session second-tail reconciliation, race handling, and export outbox retry | Focused importer/direct/database/collector/pack coverage; final disposable rehearsal still open. |
+| P1 integrity corrections: open-parent transition, states/geofences identity, single publication gate, pack metadata, exact stream closure, and in-flight audit scope | Completed implementation slice; physical, macOS, and full migration proof remain open. |
+| Debian ARM64 dev80 package and second credentialed offline collector/no-wake receipt | Package compiled and installed with no compiler warnings; correlation and audit watermark 5 are recorded. |
 
 ## Remaining order
 
 | Order | One small step | Exit gate |
 | --- | --- | --- |
-| 1 | Record current dev78 cloud VM profile, credentialed collection receipt, no-wake audit, and encrypted-state metadata. | Debian ARM runtime slice recorded; physical and remaining platform gates stay open. |
-| 2 | Obtain manual owner wake and observe persistence for 60 seconds. | New durable live fact, no wake request, and matching audit receipt. |
+| 1 | Obtain manual owner wake and observe persistence for 60 seconds. | New durable live fact, no wake request, and matching audit receipt. |
 | 3 | Establish source snapshot lease. | Source write refusal and lease-loss fail closed. |
 | 4 | Attach one binary COPY lane. | Same snapshot visibility from two readers. |
 | 5 | Stream one source relation at a time. | Count/checksum/projection gate for each relation. |

@@ -3005,13 +3005,34 @@ impl HubStore {
             .map_err(StoreError::StreamSessionReceipt)?;
         let (started_at_ms, correlation_id, vehicle_tesla_id) =
             session.ok_or(StoreError::StreamSessionReceiptNotStarted)?;
+        // A receipt from an earlier supervisor attempt under the same
+        // correlation/car is not evidence that this session shut down
+        // cleanly. The control request must both start and finish after this
+        // exact session began; any later session, including one that already
+        // completed, makes this session non-terminal. Callers therefore fail
+        // closed rather than attaching an unsubscribe to the wrong attempt.
         let unsubscribe_ok: Option<i64> = transaction
             .query_row(
                 "SELECT 1 FROM outbound_request_receipts
                  WHERE id = ?1 AND correlation_id = ?2 AND vehicle_tesla_id = ?3
                    AND transport = 'stream' AND operation = 'stream_unsubscribe'
-                   AND outcome = 'success'",
-                params![unsubscribe_receipt_id.0, correlation_id, vehicle_tesla_id],
+                   AND outcome = 'success'
+                   AND started_at_ms >= ?4 AND completed_at_ms >= ?4
+                   AND NOT EXISTS (
+                       SELECT 1 FROM stream_session_receipts AS newer
+                       WHERE newer.correlation_id = ?2
+                         AND newer.vehicle_tesla_id = ?3
+                         AND newer.id <> ?5
+                         AND (newer.started_at_ms > ?4
+                              OR (newer.started_at_ms = ?4 AND newer.id > ?5))
+                   )",
+                params![
+                    unsubscribe_receipt_id.0,
+                    correlation_id,
+                    vehicle_tesla_id,
+                    started_at_ms,
+                    session_id.0,
+                ],
                 |row| row.get(0),
             )
             .optional()
@@ -3100,7 +3121,7 @@ impl HubStore {
                                        OR safety_class <> 'conditional_read')
                              THEN 1 ELSE 0 END), 0)
                  FROM outbound_request_receipts
-                 WHERE id > ?1 AND correlation_id = ?2",
+                 WHERE correlation_id = ?2",
                 params![after_receipt_id, correlation_id.to_string()],
                 |row| Ok((
                     row.get::<_, i64>(0)?,

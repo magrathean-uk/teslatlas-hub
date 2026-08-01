@@ -91,6 +91,12 @@ pub fn reconcile_open_session_cutover(
         same_id(first.drive.as_ref(), second.drive.as_ref()) && has_new_positions(first, second);
     let charge_continues =
         same_id(first.charge.as_ref(), second.charge.as_ref()) && has_new_samples(first, second);
+    // Never merge children across different source parents. A parent change
+    // means the first parent may have just completed while the next began; the
+    // caller must refresh completed history before it publishes either tail.
+    let drive_parent_changed = active_parent_changed(first.drive.as_ref(), second.drive.as_ref());
+    let charge_parent_changed =
+        active_parent_changed(first.charge.as_ref(), second.charge.as_ref());
     let standalone_continues = second.standalone_positions.iter().any(|row| {
         !first
             .standalone_positions
@@ -109,7 +115,11 @@ pub fn reconcile_open_session_cutover(
     session.watermarks = observed_open_watermarks(&session);
     Ok(TeslaMateCutoverReconciliation {
         session,
-        cutover_unsettled: drive_continues || charge_continues || standalone_continues,
+        cutover_unsettled: drive_continues
+            || charge_continues
+            || standalone_continues
+            || drive_parent_changed
+            || charge_parent_changed,
     })
 }
 
@@ -120,6 +130,15 @@ where
     first
         .zip(second)
         .is_some_and(|(left, right)| left.source_id() == right.source_id())
+}
+
+fn active_parent_changed<T>(first: Option<&T>, second: Option<&T>) -> bool
+where
+    T: HasSourceId,
+{
+    first
+        .zip(second)
+        .is_some_and(|(left, right)| left.source_id() != right.source_id())
 }
 
 trait HasSourceId {
@@ -337,6 +356,19 @@ pub async fn import_from_postgres(
         store,
         run_id: Some(run_id),
     };
+    let mut open_session = match read_open_session(source, password, selected_car_id, limits).await {
+        Ok(value) => value,
+        Err(error) => {
+            store.abort_import_generation(run_id)?;
+            return Err(error.into());
+        }
+    };
+    open_session.watermarks = observed_open_watermarks(&open_session);
+    store.stage_import_generation_session(run_id, &open_session)?;
+    // Capture completed history only after the first bounded tail read. If an
+    // earlier active parent A already closed and B opened before this import
+    // reached the tail, this repeatable-read snapshot includes completed A
+    // rather than treating it as an open row to omit.
     let mut direct = match write_direct_full_snapshot(
         source,
         password,
@@ -355,15 +387,6 @@ pub async fn import_from_postgres(
             return Err(error.into());
         }
     };
-    let mut open_session = match read_open_session(source, password, selected_car_id, limits).await {
-        Ok(value) => value,
-        Err(error) => {
-            store.abort_import_generation(run_id)?;
-            return Err(error.into());
-        }
-    };
-    open_session.watermarks = observed_open_watermarks(&open_session);
-    store.stage_import_generation_session(run_id, &open_session)?;
     let mut second_open_session = match read_open_session(source, password, selected_car_id, limits).await {
         Ok(value) => value,
         Err(error) => {
@@ -379,9 +402,21 @@ pub async fn import_from_postgres(
             return Err(error.into());
         }
     };
-    if open_session.drive.is_some() && second_open_session.drive.is_none()
+    let active_parent_changed = active_parent_changed(
+        open_session.drive.as_ref(),
+        second_open_session.drive.as_ref(),
+    ) || active_parent_changed(
+        open_session.charge.as_ref(),
+        second_open_session.charge.as_ref(),
+    );
+    if active_parent_changed
+        || open_session.drive.is_some() && second_open_session.drive.is_none()
         || open_session.charge.is_some() && second_open_session.charge.is_none()
     {
+        // A parent either completed or was replaced between the two bounded
+        // tail reads. Re-read completed history before committing the second
+        // tail so the first parent cannot be lost. The reconciliation remains
+        // unsettled, requiring the next bounded import to prove stability.
         direct = match write_direct_full_snapshot(
             source,
             password,
@@ -405,6 +440,7 @@ pub async fn import_from_postgres(
     // that the source kept changing during the bounded pass; it must not
     // discard rows already observed in that pass.
     store.stage_import_generation_session(run_id, &cutover.session)?;
+    direct.fingerprint = direct_snapshot_fingerprint(&direct.fingerprint, &direct.geofences)?;
     let logical_rows = direct
         .report
         .logical_row_count()
@@ -740,7 +776,7 @@ pub fn publish_history(
     let sequence = store.reserve_next_full_snapshot_sequence(&publication_gate, vehicle.vehicle_id)?;
     let snapshot_id = Uuid::new_v4();
     let pack_id = Uuid::new_v4();
-    let pack = ProjectionPackWriter::new(store.packs_dir()).write_full_snapshot(
+    let pack = ProjectionPackWriter::new(store.packs_dir()).write_full_snapshot_with_states(
         &ProjectionPackRequest {
             pack_id,
             snapshot_id,
@@ -760,6 +796,7 @@ pub fn publish_history(
             },
             snapshot: &projected.snapshot,
         },
+        &projected.states,
     )?;
     let manifest = ProjectionPackRequest {
         pack_id,
@@ -818,6 +855,27 @@ fn source_history_fingerprint(
     let canonical = serde_json::to_vec(&(selected_car_id, history))?;
     let mut digest = Sha256::new();
     digest.update(b"teslatlas-hub/teslamate-source-history/v2-standalone-positions");
+    digest.update(
+        u64::try_from(canonical.len())
+            .map_err(|_| TeslaMateImportError::SourceFingerprintTooLarge)?
+            .to_be_bytes(),
+    );
+    digest.update(canonical);
+    Ok(Sha256Digest::from_bytes(digest.finalize().into()))
+}
+
+/// Bind side-channel geofence metadata to the direct pack identity. The pack
+/// stream itself is intentionally history-only, but the metadata is committed
+/// in the same import transaction and must therefore participate in duplicate
+/// suppression as well.
+fn direct_snapshot_fingerprint(
+    snapshot_fingerprint: &Sha256Digest,
+    geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+) -> Result<Sha256Digest, TeslaMateImportError> {
+    let canonical = serde_json::to_vec(geofences)?;
+    let mut digest = Sha256::new();
+    digest.update(b"teslatlas-hub/teslamate-direct-snapshot-with-geofences/v1");
+    digest.update(snapshot_fingerprint.as_bytes());
     digest.update(
         u64::try_from(canonical.len())
             .map_err(|_| TeslaMateImportError::SourceFingerprintTooLarge)?

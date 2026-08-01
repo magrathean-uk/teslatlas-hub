@@ -1556,7 +1556,13 @@ fn tables_for_snapshot(snapshot: &ProjectionSnapshot, includes_states: bool) -> 
     if !snapshot.charge_samples.is_empty() {
         tables.push(MirrorTable::ChargeSample);
     }
-    let _ = includes_states;
+    // Schema 2.1 writes the state/update pair together. Advertise both
+    // tables whenever that extension is present so consumers can discover
+    // every table emitted by the pack without inferring it from SQLite.
+    if includes_states {
+        tables.push(MirrorTable::State);
+        tables.push(MirrorTable::Update);
+    }
     tables
 }
 

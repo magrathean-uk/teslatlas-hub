@@ -661,7 +661,7 @@ async fn finish_collection(
             "owner API vehicle collection failed"
         );
     }
-    let _publication_gate = store.acquire_publication_gate().await?;
+    let publication_gate = store.acquire_publication_gate().await?;
     let received_at_ms = current_epoch_millis()?;
     let mut report = persist_collection_atomic(store, &collection, received_at_ms)?;
     let lifecycle = materialise_lifecycle_for_collection(store, &collection, received_at_ms)?;
@@ -671,7 +671,13 @@ async fn finish_collection(
     report.charge_samples_materialised += lifecycle.charge_samples_materialised;
     report.lifecycle_quarantines += lifecycle.lifecycle_quarantines;
     report.snapshots_published =
-        publish_compatibility_snapshots(store, &cursor_key, &collection, received_at_ms)?;
+        publish_compatibility_snapshots(
+            store,
+            &publication_gate,
+            &cursor_key,
+            &collection,
+            received_at_ms,
+        )?;
     Ok(report)
 }
 
@@ -1055,7 +1061,7 @@ async fn replay_export_outbox(
     vehicles: &[Vehicle],
     now_ms: i64,
 ) -> Result<usize, CollectorError> {
-    let _publication_gate = store.acquire_publication_gate().await?;
+    let publication_gate = store.acquire_publication_gate().await?;
     let Some(claim) = store.claim_export_outbox(now_ms)? else {
         return Ok(0);
     };
@@ -1097,7 +1103,13 @@ async fn replay_export_outbox(
         snapshots: vec![],
         failures: vec![],
     };
-    match publish_compatibility_snapshots(store, cursor_key, &collection, now_ms) {
+    match publish_compatibility_snapshots(
+        store,
+        &publication_gate,
+        cursor_key,
+        &collection,
+        now_ms,
+    ) {
         Ok(_) => {
             store.complete_export_outbox(&claim)?;
             Ok(1)
@@ -1194,7 +1206,7 @@ pub async fn run_address_enrichment_once(
     };
     match result {
         Ok(address) => {
-            let _publication_gate = store.acquire_publication_gate().await?;
+            let publication_gate = store.acquire_publication_gate().await?;
             let completion =
                 store.complete_address_enrichment(&job, Some(&address.display_name), now_ms)?;
             if completion.changed {
@@ -1206,6 +1218,7 @@ pub async fn run_address_enrichment_once(
                 {
                     publish_compatibility_snapshots(
                         store,
+            &publication_gate,
                         cursor_key,
                         &ManualCollection {
                             vehicles: vec![vehicle.clone()],
@@ -2203,7 +2216,7 @@ async fn persist_discovery_events(
     cursor_key: &CursorKey,
     vehicles: &[Vehicle],
 ) -> Result<(), CollectorError> {
-    let _publication_gate = store.acquire_publication_gate().await?;
+    let publication_gate = store.acquire_publication_gate().await?;
     let observed_at_ms = current_epoch_millis()?;
     let source = store.register_source(
         &SourceDescriptor::new(OWNER_API_SOURCE_KIND, OWNER_API_SOURCE_KEY),
@@ -2238,7 +2251,13 @@ async fn persist_discovery_events(
         snapshots: Vec::new(),
         failures: Vec::new(),
     };
-    publish_compatibility_snapshots(store, cursor_key, &collection, observed_at_ms)?;
+    publish_compatibility_snapshots(
+        store,
+        &publication_gate,
+        cursor_key,
+        &collection,
+        observed_at_ms,
+    )?;
     Ok(())
 }
 
@@ -2653,6 +2672,7 @@ fn force_close_vehicle_for_service(
 /// the materialised lifecycle store — never fabricated from a single sample.
 fn publish_compatibility_snapshots(
     store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
     cursor_key: &CursorKey,
     collection: &ManualCollection,
     published_at_ms: i64,
@@ -2720,7 +2740,6 @@ fn publish_compatibility_snapshots(
             )
             .into(),
         );
-        let publication_gate = store.try_acquire_publication_gate()?;
         if store.snapshot_fingerprint_is_current(registered.vehicle_id, fingerprint)? {
             continue;
         }
@@ -3188,8 +3207,12 @@ mod tests {
         persist_collection(&store, &collection, collected_at_ms).expect("raw observation");
         materialise_lifecycle_for_collection(&store, &collection, collected_at_ms)
             .expect("lifecycle");
+        let publication_gate = store
+            .try_acquire_publication_gate()
+            .expect("publication gate");
         let published = publish_compatibility_snapshots(
             &store,
+            &publication_gate,
             &CursorKey::from_bytes([7; 32]),
             &collection,
             collected_at_ms,
@@ -3244,8 +3267,12 @@ mod tests {
         persist_collection(&store, &first, first_time).expect("first raw observation");
         materialise_lifecycle_for_collection(&store, &first, first_time)
             .expect("first lifecycle");
-        publish_compatibility_snapshots(&store, &cursor_key, &first, first_time)
+        let publication_gate = store
+            .try_acquire_publication_gate()
+            .expect("publication gate");
+        publish_compatibility_snapshots(&store, &publication_gate, &cursor_key, &first, first_time)
             .expect("base publication");
+        drop(publication_gate);
         let vehicle_id = store
             .open()
             .expect("database")
@@ -3369,8 +3396,18 @@ mod tests {
         persist_collection(&store, &full, 1_800_000_000_000).expect("persist full");
         materialise_lifecycle_for_collection(&store, &full, 1_800_000_000_000)
             .expect("materialise full");
-        publish_compatibility_snapshots(&store, &CursorKey::from_bytes([11; 32]), &full, 1_800_000_000_000)
+        let publication_gate = store
+            .try_acquire_publication_gate()
+            .expect("publication gate");
+        publish_compatibility_snapshots(
+            &store,
+            &publication_gate,
+            &CursorKey::from_bytes([11; 32]),
+            &full,
+            1_800_000_000_000,
+        )
             .expect("publish full");
+        drop(publication_gate);
         let vehicle_id = store
             .open().expect("db")
             .query_row("SELECT vehicle_id FROM vehicles", [], |row| row.get::<_, String>(0))
@@ -3393,7 +3430,16 @@ mod tests {
         persist_collection(&store, &sparse, 1_800_000_060_000).expect("persist sparse");
         materialise_lifecycle_for_collection(&store, &sparse, 1_800_000_060_000)
             .expect("materialise sparse");
-        publish_compatibility_snapshots(&store, &CursorKey::from_bytes([11; 32]), &sparse, 1_800_000_060_000)
+        let publication_gate = store
+            .try_acquire_publication_gate()
+            .expect("publication gate");
+        publish_compatibility_snapshots(
+            &store,
+            &publication_gate,
+            &CursorKey::from_bytes([11; 32]),
+            &sparse,
+            1_800_000_060_000,
+        )
             .expect("publish sparse");
         let after = store.materialised_history(vehicle_id).expect("history").car.expect("car");
         assert_eq!(before, after);
@@ -3489,8 +3535,12 @@ mod tests {
                 .expect("materialise fixture");
         }
 
+        let publication_gate = store
+            .try_acquire_publication_gate()
+            .expect("publication gate");
         publish_compatibility_snapshots(
             &store,
+            &publication_gate,
             &CursorKey::from_bytes([8; 32]),
             &collections[3].0,
             t3,
@@ -3690,8 +3740,12 @@ mod tests {
         assert_eq!(history.charges[0].end_battery_level, Some(80));
         assert_eq!(history.charges[0].charge_energy_added, Some(11.0));
 
+        let publication_gate = store
+            .try_acquire_publication_gate()
+            .expect("publication gate");
         publish_compatibility_snapshots(
             &store,
+            &publication_gate,
             &CursorKey::from_bytes([9; 32]),
             &charge_close,
             t0 + 800_000,

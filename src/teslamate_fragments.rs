@@ -632,6 +632,7 @@ pub(crate) struct PackSink<'a> {
     snapshot_id: Uuid,
     sequence: SequenceRange,
     states: Vec<ProjectionState>,
+    states_fingerprinted: bool,
     schema_2_1: bool,
     fingerprint: Sha256,
     pub(crate) chunks: Vec<BuiltProjectionPack>,
@@ -664,6 +665,7 @@ impl<'a> PackSink<'a> {
             snapshot_id,
             sequence,
             states,
+            states_fingerprinted: false,
             schema_2_1,
             fingerprint,
             chunks: Vec::new(),
@@ -689,6 +691,19 @@ impl<'a> PackSink<'a> {
         }
         let ordinal = u32::try_from(self.chunks.len())
             .map_err(|_| TeslaMateFragmentError::TooManyFragments)?;
+        if !self.states_fingerprinted {
+            let canonical_states = serde_json::to_vec(&self.states)
+                .map_err(TeslaMateFragmentError::SerializeProjectedValue)?;
+            self.fingerprint
+                .update(b"teslatlas-hub/teslamate-logical-states/v1");
+            self.fingerprint.update(
+                u64::try_from(canonical_states.len())
+                    .map_err(|_| TeslaMateFragmentError::FragmentSizeOverflow)?
+                    .to_be_bytes(),
+            );
+            self.fingerprint.update(&canonical_states);
+            self.states_fingerprinted = true;
+        }
         let canonical = serde_json::to_vec(&snapshot)
             .map_err(TeslaMateFragmentError::SerializeProjectedValue)?;
         self.fingerprint.update(
