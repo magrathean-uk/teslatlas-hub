@@ -20,7 +20,13 @@ use crate::teslamate_projection::{
 };
 
 /// Maximum UTF-8 bytes retained for one vehicle's open-session blob.
-pub const MAX_OPEN_SESSION_BYTES: usize = 64 * 1024;
+///
+/// An active drive retains positions at the driving cadence and an active
+/// charge retains charge samples at the charging cadence. 64 KiB can be
+/// exceeded by an ordinary long session, preventing the collector from
+/// checkpointing and therefore from recovering safely. Keep a finite corrupt
+/// input guard, but size it for multi-day real-world continuations.
+pub const MAX_OPEN_SESSION_BYTES: usize = 128 * 1024 * 1024;
 
 /// One ordered observation already validated and stored by the Hub.
 #[derive(Debug, Clone, PartialEq)]

@@ -9,7 +9,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, QoS, Transport};
+use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, Outgoing, QoS, Transport};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -95,6 +95,8 @@ enum MqttRuntimeError {
     Connection,
     #[error("MQTT broker acknowledgement timed out")]
     AckTimeout,
+    #[error("MQTT broker acknowledgement did not match the published packet")]
+    AckMismatch,
     #[error("MQTT durable delivery failed")]
     Store,
 }
@@ -207,10 +209,14 @@ async fn run_session(
                 Ok(Err(_)) => return Err(MqttRuntimeError::Connection),
             }
         }
-        for claim in claims {
+        for (index, claim) in claims.iter().enumerate() {
             if let Err(_) = publish_and_wait(&client, &mut event_loop, &claim).await {
                 store
-                    .fail_mqtt_delivery(&claim, "transport_unavailable")
+                    .fail_mqtt_delivery_and_release_following(
+                        claim,
+                        &claims[index.saturating_add(1)..],
+                        "transport_unavailable",
+                    )
                     .map_err(|_| MqttRuntimeError::Store)?;
                 return Err(MqttRuntimeError::Connection);
             }
@@ -237,7 +243,7 @@ async fn publish_and_wait(
     client: &AsyncClient,
     event_loop: &mut EventLoop,
     claim: &MqttDeliveryClaim,
-) -> Result<(), MqttRuntimeError> {
+) -> Result<u16, MqttRuntimeError> {
     client
         .publish(
             claim.publication.topic.clone(),
@@ -247,10 +253,46 @@ async fn publish_and_wait(
         )
         .await
         .map_err(|_| MqttRuntimeError::Connection)?;
+
+    let packet_id = wait_for_outgoing_publish(event_loop).await?;
+    wait_for_matching_puback(event_loop, packet_id).await?;
+    Ok(packet_id)
+}
+
+/// `AsyncClient::publish` only confirms that the request was queued. The
+/// event loop assigns the MQTT packet ID when it emits the actual QoS-1
+/// publish, so wait for that event before accepting a broker acknowledgement.
+async fn wait_for_outgoing_publish(event_loop: &mut EventLoop) -> Result<u16, MqttRuntimeError> {
     loop {
         match timeout(MQTT_ACK_TIMEOUT, event_loop.poll()).await {
-            Ok(Ok(Event::Incoming(Incoming::PubAck(_)))) => return Ok(()),
-            Ok(Ok(_)) => continue,
+            Ok(Ok(Event::Outgoing(Outgoing::Publish(packet_id)))) if packet_id != 0 => {
+                return Ok(packet_id);
+            }
+            // A PubAck before this delivery has a packet ID is stale or
+            // unrelated. Never let it stand in for the queued publication.
+            Ok(Ok(Event::Incoming(Incoming::PubAck(_)))) => return Err(MqttRuntimeError::AckMismatch),
+            Ok(Ok(Event::Outgoing(Outgoing::PingReq)))
+            | Ok(Ok(Event::Incoming(Incoming::PingResp))) => continue,
+            Ok(Ok(_)) => return Err(MqttRuntimeError::Connection),
+            Ok(Err(_)) => return Err(MqttRuntimeError::Connection),
+            Err(_) => return Err(MqttRuntimeError::AckTimeout),
+        }
+    }
+}
+
+async fn wait_for_matching_puback(
+    event_loop: &mut EventLoop,
+    packet_id: u16,
+) -> Result<(), MqttRuntimeError> {
+    loop {
+        match timeout(MQTT_ACK_TIMEOUT, event_loop.poll()).await {
+            Ok(Ok(Event::Incoming(Incoming::PubAck(ack)))) if ack.pkid == packet_id => return Ok(()),
+            // An acknowledgement for another packet, including an old packet
+            // from a disrupted session, is not delivery proof for this claim.
+            Ok(Ok(Event::Incoming(Incoming::PubAck(_)))) => return Err(MqttRuntimeError::AckMismatch),
+            Ok(Ok(Event::Outgoing(Outgoing::PingReq)))
+            | Ok(Ok(Event::Incoming(Incoming::PingResp))) => continue,
+            Ok(Ok(_)) => return Err(MqttRuntimeError::Connection),
             Ok(Err(_)) => return Err(MqttRuntimeError::Connection),
             Err(_) => return Err(MqttRuntimeError::AckTimeout),
         }

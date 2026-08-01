@@ -14,6 +14,7 @@ passing narrow test as proof for a larger row in the evidence matrix.
 | Durable export outbox | Collector/database focused coverage covers claim, sparse publication, exact completion, retry, and newer dirty mutations. |
 | P1 import, publication, pack, stream, and audit integrity corrections | Open-parent transition reconciliation; states/geofences identity; single publication gate; schema 2.1 pack metadata; exact stream closure; and in-flight audit scope are corrected and recorded as complete. |
 | Debian ARM64 dev80 offline collector and no-wake receipt | Package compiled and installed with no compiler warnings; second real credentialed offline receipt and audit watermark 5 are recorded. |
+| Protocol, terrain cache, and MQTT integrity | Lineage packs are schema/snapshot/identity/resource bound; terrain cache accounts for temporary space, cleans failures, and validates tile identity; MQTT confirms the matching packet acknowledgement and releases following claims on failure. |
 | PerformanceProfile v1 | Implemented in dev73: measures available CPU parallelism plus filesystem capacity, safely reduces only direct-import COPY lanes, supports a deterministic lane override, never raises configured or hard safety limits, and logs a non-secret profile receipt. Runtime/profile proof remains open. |
 
 ## Remaining small steps
@@ -28,6 +29,7 @@ passing narrow test as proof for a larger row in the evidence matrix.
 | E11 | Reconcile source/destination with set-based counts, digests, parent links, and open-session watermarks. | Zero unexplained differences on complete and pathological corpus. |
 | E12 | Complete TeslaMate differential fixture runner by behavior family. | Pinned reference and Hub traces are compared automatically and filed as artifacts. |
 | E13 | Inject crash, storage-full, corrupt pack, network loss, lease loss, and repeated observation failures. | Truthful recovery in 60 seconds, no lost acknowledged fact, no duplicate projection. |
+| E13a | Replace unbounded open-drive/open-charge continuation vectors with bounded durable incremental state. | Long multi-day session remains recoverable without unbounded memory or silent truncation. |
 | E14 | Implement or decide optional MQTT/updater scope. | Product decision record plus either compatible proof or signed exclusion. |
 | E15 | Extend profiling only if needed after v1 evidence; memory-pressure and write-throughput profiling remain deferred. | Any extension changes only safe bounds and retains correctness; no extension is currently claimed. |
 | E16 | Repeat fresh macOS arm64 proof against the current release artifact. | Current install, service, backup, restore, and restart matrix passes. |

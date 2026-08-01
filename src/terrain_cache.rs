@@ -186,6 +186,7 @@ impl TerrainCache {
         let required = self
             .options
             .min_free_bytes
+            .saturating_add(MAX_ARCHIVE_BYTES)
             .saturating_add(MAX_HGT_BYTES);
         #[cfg(test)]
         if let Some(bytes) = self.options.free_space_override { if bytes < required { return Err(TerrainCacheError::InsufficientSpace); } }
@@ -224,18 +225,29 @@ impl TerrainCache {
         if response.content_length().is_some_and(|len| len > MAX_ARCHIVE_BYTES) { return Err(TerrainCacheError::InvalidArchive); }
         let (compressed, compressed_path) = create_private_temp(&self.options.root, "archive")?;
         let mut output = tokio::fs::File::from_std(compressed);
-        let mut total = 0_u64;
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(TerrainCacheError::Network)?;
-            total = total.saturating_add(chunk.len() as u64);
-            if total > MAX_ARCHIVE_BYTES { let _ = fs::remove_file(&compressed_path); return Err(TerrainCacheError::InvalidArchive); }
-            timeout(self.options.read_timeout, output.write_all(&chunk))
-                .await.map_err(|_| TerrainCacheError::BadResponse)?.map_err(TerrainCacheError::Io)?;
+        let download_result = async {
+            let mut total = 0_u64;
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(TerrainCacheError::Network)?;
+                total = total.saturating_add(chunk.len() as u64);
+                if total > MAX_ARCHIVE_BYTES {
+                    return Err(TerrainCacheError::InvalidArchive);
+                }
+                timeout(self.options.read_timeout, output.write_all(&chunk))
+                    .await
+                    .map_err(|_| TerrainCacheError::BadResponse)?
+                    .map_err(TerrainCacheError::Io)?;
+            }
+            output.sync_all().await.map_err(TerrainCacheError::Io)
         }
-        output.sync_all().await.map_err(TerrainCacheError::Io)?;
+        .await;
         drop(output);
-        let result = decompress_to_hgt(&compressed_path, destination, aws);
+        if let Err(error) = download_result {
+            let _ = fs::remove_file(&compressed_path);
+            return Err(error);
+        }
+        let result = decompress_to_hgt(&compressed_path, destination, aws, &name);
         let _ = fs::remove_file(&compressed_path);
         result.map(|_| if aws { "aws" } else { "esa" })
     }
@@ -282,34 +294,57 @@ fn create_private_temp(dir: &Path, label: &str) -> Result<(File, PathBuf), Terra
     Err(TerrainCacheError::Io(io::Error::new(io::ErrorKind::AlreadyExists, "temporary file collision")))
 }
 
-fn decompress_to_hgt(archive: &Path, destination: &Path, gzip: bool) -> Result<(), TerrainCacheError> {
+fn decompress_to_hgt(
+    archive: &Path,
+    destination: &Path,
+    gzip: bool,
+    expected_tile_name: &str,
+) -> Result<(), TerrainCacheError> {
     let (mut output, temp_path) = create_private_temp(destination.parent().ok_or(TerrainCacheError::InvalidConfig)?, "hgt")?;
-    if gzip {
-        let input = File::open(archive).map_err(TerrainCacheError::Io)?;
-        let mut decoder = GzDecoder::new(input);
-        copy_limited(&mut decoder, &mut output)?;
-    } else {
-        let input = File::open(archive).map_err(TerrainCacheError::Io)?;
-        let mut zip = ZipArchive::new(input).map_err(|_| TerrainCacheError::InvalidArchive)?;
-        let mut found = false;
-        for index in 0..zip.len() {
-            let mut entry = zip.by_index(index).map_err(|_| TerrainCacheError::InvalidArchive)?;
-            if entry.is_dir() { continue; }
-            let enclosed = entry.enclosed_name().ok_or(TerrainCacheError::InvalidArchive)?;
-            if enclosed.components().count() != 1 || entry.size() != SRTM3_BYTES && entry.size() != SRTM1_BYTES { return Err(TerrainCacheError::InvalidArchive); }
-            if found { return Err(TerrainCacheError::InvalidArchive); }
-            found = true;
-            copy_limited(&mut entry, &mut output)?;
+    let write_result = (|| -> Result<(), TerrainCacheError> {
+        if gzip {
+            let input = File::open(archive).map_err(TerrainCacheError::Io)?;
+            let mut decoder = GzDecoder::new(input);
+            copy_limited(&mut decoder, &mut output)?;
+        } else {
+            let input = File::open(archive).map_err(TerrainCacheError::Io)?;
+            let mut zip = ZipArchive::new(input).map_err(|_| TerrainCacheError::InvalidArchive)?;
+            let expected_entry = format!("{expected_tile_name}.hgt");
+            let mut found = false;
+            for index in 0..zip.len() {
+                let mut entry = zip.by_index(index).map_err(|_| TerrainCacheError::InvalidArchive)?;
+                if entry.is_dir() { continue; }
+                let enclosed = entry.enclosed_name().ok_or(TerrainCacheError::InvalidArchive)?;
+                if enclosed.components().count() != 1
+                    || enclosed.as_os_str() != std::ffi::OsStr::new(&expected_entry)
+                    || entry.size() != SRTM3_BYTES && entry.size() != SRTM1_BYTES
+                {
+                    return Err(TerrainCacheError::InvalidArchive);
+                }
+                if found { return Err(TerrainCacheError::InvalidArchive); }
+                found = true;
+                copy_limited(&mut entry, &mut output)?;
+            }
+            if !found { return Err(TerrainCacheError::InvalidArchive); }
         }
-        if !found { return Err(TerrainCacheError::InvalidArchive); }
-    }
-    output.sync_all().map_err(TerrainCacheError::Io)?;
+        output.sync_all().map_err(TerrainCacheError::Io)
+    })();
     drop(output);
-    let length = fs::metadata(&temp_path).map_err(TerrainCacheError::Io)?.len();
-    if length != SRTM3_BYTES && length != SRTM1_BYTES { let _ = fs::remove_file(&temp_path); return Err(TerrainCacheError::InvalidArchive); }
-    fs::rename(&temp_path, destination).map_err(TerrainCacheError::Io)?;
-    if let Ok(dir) = File::open(destination.parent().ok_or(TerrainCacheError::InvalidConfig)?) { let _ = dir.sync_all(); }
-    Ok(())
+    let result = write_result.and_then(|()| {
+        let length = fs::metadata(&temp_path).map_err(TerrainCacheError::Io)?.len();
+        if length != SRTM3_BYTES && length != SRTM1_BYTES {
+            return Err(TerrainCacheError::InvalidArchive);
+        }
+        fs::rename(&temp_path, destination).map_err(TerrainCacheError::Io)?;
+        if let Ok(dir) = File::open(destination.parent().ok_or(TerrainCacheError::InvalidConfig)?) {
+            let _ = dir.sync_all();
+        }
+        Ok(())
+    });
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+    result
 }
 
 fn copy_limited<R: Read, W: Write>(reader: &mut R, writer: &mut W) -> Result<u64, TerrainCacheError> {

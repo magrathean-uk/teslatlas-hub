@@ -13,7 +13,7 @@ live-proven TeslaMate replacement. No final signoff exists and this is not a
 | --- | --- | --- |
 | Reference | Proven | TeslaMate `4.1.0-dev`, pinned commit `7054517c10475f39f480edeae8f90c6f717985a3`; see [mapping](../TESLAMATE_MIGRATION_MAPPING.md). |
 | Read-only source stance | Proven design and implementation boundary | Hub scripts and import paths preserve source read-only behavior. Final native negative-request audit remains required. |
-| Debian ARM runtime | Verified bounded runtime slice | Debian 13 ARM64 cloud-init/headless VM, 8 vCPUs and 8 GiB, with `0.1.0-dev80` compiled and installed with no compiler warnings. The second real credentialed offline collector completed with correlation `a5e00dc8-c263-47c3-8ceb-b5e72dfcf0ea`; one vehicle was seen, with zero online vehicles, snapshots, observations, and failures. |
+| Debian ARM runtime | Verified bounded runtime slice | Debian 13 ARM64 cloud-init/headless VM, 8 vCPUs and 8 GiB, with `0.1.0-dev81` compiled and installed with no compiler warnings. The second real credentialed offline collector completed with correlation `a5e00dc8-c263-47c3-8ceb-b5e72dfcf0ea`; one vehicle was seen, with zero online vehicles, snapshots, observations, and failures. |
 | Durability path | Local and native-arm evidence | Pack verification, 438-pack backup, fresh-root restore, reboot, and preservation reinstall were recorded for the earlier Debian arm64 run. |
 | Collector lifecycle | Local and fixture evidence | Lifecycle, state, drive, charge, update, sleep, stream-health, and no-wake seams have executable Rust coverage. Physical online/drive/charge proof remains open. |
 | Import staging, race, and outbox | Implemented locally | Multi-car staging, open-session second-snapshot reconciliation, atomic failure cleanup, and durable outbox publication are covered by the focused import/direct/db/collector/pack suites. Final disposable rehearsal remains open. |
@@ -22,6 +22,7 @@ live-proven TeslaMate replacement. No final signoff exists and this is not a
 | Debian cloud VM | Directly observed | Generic cloud-init Debian 13 ARM64 VM is running headless by SSH under the 8-vCPU/8-GiB profile. Native install of `0.1.0-dev78` succeeded. |
 | No-wake audit | Verified bounded technical proof | Against audit watermark `5`, `verify-no-wake` returned `verified: true`: zero direct-wake receipts, zero unresolved requests, and zero unresolved stream sessions. |
 | P1 integrity corrections | Implemented and reviewed | Open-parent transition reconciliation, states/geofences snapshot identity, single publication-gate ownership, schema 2.1 pack metadata, exact stream-session closure, and in-flight audit scope corrections are recorded as completed. |
+| Protocol, terrain, and MQTT integrity | Implemented and reviewed | Lineage pack/schema/resource validation, terrain cache admission and cleanup, and packet-correlated MQTT acknowledgement/retry are implemented. Long-session lifecycle continuation remains open. |
 | Rotated credential state | Metadata verified | Encrypted state metadata is under `/var/lib/teslatlas/legacy-auth` with mode `600`. Token contents are not recorded here. |
 | Real vehicle state | Live, bounded | Real offline discovery occurred. It does not prove online, driving, charging, stream, or one-minute collection behavior. |
 
@@ -64,3 +65,9 @@ success, the pending manual-wake plus 60-second no-wake observation, fresh
 macOS proof, the remaining Debian ARM platform matrix,
 Debian amd64 proof, optional backend integrations, or a completed cutover
 rehearsal.
+
+## Open engineering risk
+
+Long active drives and charges still need a bounded durable continuation design
+that preserves every accepted sample across process failure. This is an open P1
+implementation item; the `dev81` package does not claim to close it.

@@ -553,6 +553,16 @@ pub struct LineageManifestV2 {
 
 impl LineageManifestV2 {
     pub fn validate(&self) -> Result<(), ProtocolError> {
+        self.validate_with_limits(ProtocolLimits::default())
+    }
+
+    /// Validates the lineage envelope against the receiver's release bounds.
+    ///
+    /// Lineage has no aggregate fields on the wire, so the aggregate ceiling
+    /// is derived from the same per-pack limits and maximum pack count used by
+    /// [`SyncManifest`]. This keeps an authenticated but corrupt lineage from
+    /// consuming unbounded validation or staging resources.
+    pub fn validate_with_limits(&self, limits: ProtocolLimits) -> Result<(), ProtocolError> {
         if self.protocol != LINEAGE_PROTOCOL_V2 {
             return Err(ProtocolError::UnsupportedLineageProtocol(self.protocol));
         }
@@ -569,13 +579,41 @@ impl LineageManifestV2 {
         if self.generation == 0 || self.base.packs.is_empty() {
             return Err(ProtocolError::LineageBaseRequired);
         }
+        let total_pack_count = self
+            .base
+            .packs
+            .len()
+            .checked_add(self.deltas.len())
+            .ok_or(ProtocolError::LineageAggregateLimitExceeded)?;
+        if total_pack_count > limits.max_chunks {
+            return Err(ProtocolError::LineageAggregateLimitExceeded);
+        }
+        let maximum_lineage_compressed_bytes = lineage_aggregate_limit(
+            limits.max_compressed_pack_bytes,
+            limits.max_chunks,
+        )?;
+        let maximum_lineage_uncompressed_bytes = lineage_aggregate_limit(
+            limits.max_uncompressed_pack_bytes,
+            limits.max_chunks,
+        )?;
+        let maximum_lineage_rows =
+            lineage_aggregate_limit(limits.max_rows_per_pack, limits.max_chunks)?;
         if self.base.digest.is_zero() {
             return Err(ProtocolError::LineageDigestRequired);
         }
+        let mut seen_packs = HashSet::with_capacity(total_pack_count);
+        let mut compressed_total = 0_u64;
+        let mut uncompressed_total = 0_u64;
+        let mut row_total = 0_u64;
         for (ordinal, pack) in self.base.packs.iter().enumerate() {
-            pack.validate(ProtocolLimits::default())?;
+            if pack.schema != self.schema || pack.snapshot_id != self.base.snapshot_id {
+                return Err(ProtocolError::LineageBasePackMismatch);
+            }
+            if !seen_packs.insert(pack.pack_id) {
+                return Err(ProtocolError::DuplicatePackId);
+            }
+            pack.validate(limits)?;
             if pack.ordinal != ordinal as u32
-                || pack.snapshot_id != self.base.snapshot_id
                 || pack.sequence != (SequenceRange {
                     from_exclusive: self.base.sequence,
                     to_inclusive: self.base.sequence,
@@ -583,27 +621,58 @@ impl LineageManifestV2 {
             {
                 return Err(ProtocolError::LineageBasePackMismatch);
             }
+            compressed_total = checked_lineage_total(
+                compressed_total,
+                pack.compressed_bytes,
+                maximum_lineage_compressed_bytes,
+            )?;
+            uncompressed_total = checked_lineage_total(
+                uncompressed_total,
+                pack.uncompressed_bytes,
+                maximum_lineage_uncompressed_bytes,
+            )?;
+            row_total = checked_lineage_total(row_total, pack.row_count, maximum_lineage_rows)?;
         }
         let mut expected_from = self.base.sequence;
         let mut parent = self.base.digest;
-        let mut seen_packs = HashSet::new();
         for delta in &self.deltas {
             if delta.from_sequence != expected_from || delta.to_sequence <= delta.from_sequence {
                 return Err(ProtocolError::LineageSequenceGap);
             }
             if delta.parent_chain_digest != parent
                 || delta.pack_digest != delta.pack.sha256
-                || !seen_packs.insert(delta.pack.pack_id)
             {
                 return Err(ProtocolError::LineageChainMismatch);
             }
-            delta.pack.validate(ProtocolLimits::default())?;
-            if delta.pack.sequence != (SequenceRange {
-                from_exclusive: delta.from_sequence,
-                to_inclusive: delta.to_sequence,
-            }) {
+            if delta.pack.schema != self.schema
+                || delta.pack.snapshot_id != self.base.snapshot_id
+                || delta.pack.sequence
+                    != (SequenceRange {
+                        from_exclusive: delta.from_sequence,
+                        to_inclusive: delta.to_sequence,
+                    })
+            {
                 return Err(ProtocolError::LineageDeltaPackMismatch);
             }
+            if !seen_packs.insert(delta.pack.pack_id) {
+                return Err(ProtocolError::DuplicatePackId);
+            }
+            delta.pack.validate(limits)?;
+            compressed_total = checked_lineage_total(
+                compressed_total,
+                delta.pack.compressed_bytes,
+                maximum_lineage_compressed_bytes,
+            )?;
+            uncompressed_total = checked_lineage_total(
+                uncompressed_total,
+                delta.pack.uncompressed_bytes,
+                maximum_lineage_uncompressed_bytes,
+            )?;
+            row_total = checked_lineage_total(
+                row_total,
+                delta.pack.row_count,
+                maximum_lineage_rows,
+            )?;
             expected_from = delta.to_sequence;
             parent = delta.chain_digest;
         }
@@ -725,8 +794,7 @@ impl SyncManifest {
         }
         if compressed_total != self.total_compressed_bytes
             || uncompressed_total != self.total_uncompressed_bytes
-            || self.total_rows == 0
-            || self.total_rows > row_total
+            || self.total_rows != row_total
         {
             return Err(ProtocolError::ManifestTotalsMismatch);
         }
@@ -993,6 +1061,8 @@ pub enum ProtocolError {
     UnsupportedLineageCapability,
     #[error("lineage requires a complete immutable base")]
     LineageBaseRequired,
+    #[error("lineage exceeds aggregate protocol limits")]
+    LineageAggregateLimitExceeded,
     #[error("lineage digest is required")]
     LineageDigestRequired,
     #[error("lineage base pack does not match its base")]
@@ -1009,6 +1079,24 @@ pub enum ProtocolError {
 
 fn checked_add(left: u64, right: u64) -> Result<u64, ProtocolError> {
     left.checked_add(right).ok_or(ProtocolError::TotalsOverflow)
+}
+
+fn lineage_aggregate_limit(per_pack: u64, max_packs: usize) -> Result<u64, ProtocolError> {
+    per_pack
+        .checked_mul(
+            u64::try_from(max_packs).map_err(|_| ProtocolError::LineageAggregateLimitExceeded)?,
+        )
+        .ok_or(ProtocolError::LineageAggregateLimitExceeded)
+}
+
+fn checked_lineage_total(current: u64, added: u64, limit: u64) -> Result<u64, ProtocolError> {
+    let total = current
+        .checked_add(added)
+        .ok_or(ProtocolError::LineageAggregateLimitExceeded)?;
+    if total > limit {
+        return Err(ProtocolError::LineageAggregateLimitExceeded);
+    }
+    Ok(total)
 }
 
 fn require_non_nil_uuid(field: &'static str, value: Uuid) -> Result<(), ProtocolError> {
@@ -1369,6 +1457,26 @@ mod tests {
     }
 
     #[test]
+    fn accepts_zero_row_no_op_manifests_but_requires_exact_row_totals() {
+        let no_op = manifest(TransferMode::Incremental, vec![]);
+        no_op.validate().expect("zero-row no-op");
+
+        let range = SequenceRange {
+            from_exclusive: 40,
+            to_inclusive: 80,
+        };
+        let mut value = manifest(
+            TransferMode::FullSnapshot,
+            vec![pack(0, range, vec![MirrorTable::Vehicle])],
+        );
+        value.total_rows = 0;
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::ManifestTotalsMismatch)
+        ));
+    }
+
+    #[test]
     fn rejects_snapshot_dependency_regression() {
         let range = SequenceRange {
             from_exclusive: 40,
@@ -1662,6 +1770,67 @@ mod tests {
         assert!(matches!(
             value.validate(),
             Err(ProtocolError::LineageHeadMismatch)
+        ));
+    }
+
+    #[test]
+    fn lineage_binds_all_packs_to_its_schema_snapshot_and_unique_identity() {
+        let mut value = lineage_manifest();
+        value.base.packs[0].schema = HUB_PROJECTION_SCHEMA_V1;
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::LineageBasePackMismatch)
+        ));
+
+        let mut value = lineage_manifest();
+        value.base.packs[0].snapshot_id = Uuid::new_v4();
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::LineageBasePackMismatch)
+        ));
+
+        let mut value = lineage_manifest();
+        value.deltas[0].pack.schema = HUB_PROJECTION_SCHEMA_V1;
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::LineageDeltaPackMismatch)
+        ));
+
+        let mut value = lineage_manifest();
+        value.deltas[0].pack.snapshot_id = Uuid::new_v4();
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::LineageDeltaPackMismatch)
+        ));
+
+        let mut value = lineage_manifest();
+        value.deltas[0].pack.pack_id = value.base.packs[0].pack_id;
+        assert!(matches!(
+            value.validate(),
+            Err(ProtocolError::DuplicatePackId)
+        ));
+    }
+
+    #[test]
+    fn lineage_fails_closed_for_aggregate_limits_and_limit_overflow() {
+        let value = lineage_manifest();
+        let single_pack_limit = ProtocolLimits {
+            max_chunks: 1,
+            ..ProtocolLimits::default()
+        };
+        assert!(matches!(
+            value.validate_with_limits(single_pack_limit),
+            Err(ProtocolError::LineageAggregateLimitExceeded)
+        ));
+
+        let overflowing_byte_limit = ProtocolLimits {
+            max_chunks: 2,
+            max_compressed_pack_bytes: u64::MAX,
+            ..ProtocolLimits::default()
+        };
+        assert!(matches!(
+            value.validate_with_limits(overflowing_byte_limit),
+            Err(ProtocolError::LineageAggregateLimitExceeded)
         ));
     }
 

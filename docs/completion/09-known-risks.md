@@ -8,13 +8,14 @@
 | Partial all-car success | Implementation reports per-car success, skip, and failure; final rehearsal is open. | Sealed stages, truthful batch report, and disposable interruption rehearsal. |
 | Open session race | Second-snapshot child reconciliation is implemented and fixture-covered. | Native source race rehearsal and final migration evidence. |
 | Duplicate or lost facts | Delta/import/outbox transactions and replay paths are locally covered. | Crash, storage, corruption, network, and full replay matrix. |
+| Long-session continuation exhaustion | Open drive/charge continuation currently retains unbounded in-memory samples. | Replace it with bounded durable incremental state before release; do not claim long-session crash recovery. |
 | Secret exposure | Token handoff, logs, process lists, and reports remain sensitive surfaces. | Protected native storage, secret scans, and redacted artifact review. |
 | Wake violation | A request or retry could wake a sleeping vehicle. | Request audit across sleep/offline/live traces; owner-only physical wake. |
 | Missing live streaming proof | Real offline discovery exists; online, driving, charging, and stream behavior are not live-proven. | Owner wake, one-minute collection, and stream receipt. |
 | Misleading speed result | WAN or warm-cache result can look like baseline proof. | Record path/cache/profile; qualify only direct low-latency baseline. |
 | Storage exhaustion | Stage, pack, WAL, backup, and recovery may exceed host space. | Fresh Debian free-byte/inode reservation, database validation, and low-space fault cases. |
 | Delta inconsistency | Local contiguous validation and atomic apply pass; hostile/live server conditions remain unverified. | Preserve signed lineage, digest, range, tombstone, replay, and fallback gates. |
-| Package regression | `dev45` may differ from earlier verified dev11. | Fresh Debian reinstall and exact-artifact platform gates. |
+| Package regression | `dev81` may differ from earlier verified artifacts. | Fresh Debian reinstall and exact-artifact platform gates. |
 | macOS evidence staleness | Earlier local proof may not match current code/artifact. | Fresh arm64 release-bound evidence. |
 | Debian amd64 gap | No x86 host currently supplied. | Keep deferred, do not claim completion; run when host arrives. |
 | Optional backend integrations | MQTT/updater behavior is not finally scoped. | Explicit product decision and documented proof or exclusion. |

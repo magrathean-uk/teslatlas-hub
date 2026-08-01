@@ -479,6 +479,51 @@ impl HubStore {
         Ok(())
     }
 
+    /// Fail the publication that lost transport and immediately release the
+    /// later claims from the same ordered batch. They were never submitted to
+    /// MQTT, so retaining their lease would delay their at-least-once retry.
+    pub fn fail_mqtt_delivery_and_release_following(
+        &self,
+        claim: &MqttDeliveryClaim,
+        following: &[MqttDeliveryClaim],
+        error: &str,
+    ) -> Result<(), StoreError> {
+        let safe_error = if error.is_empty() || error.len() > 128 || error.chars().any(char::is_control) {
+            "publisher_failed"
+        } else {
+            error
+        };
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        transaction
+            .execute(
+                "UPDATE mqtt_delivery_state
+                 SET claimed_until_ms = 0, last_error = ?1
+                 WHERE vehicle_id = ?2 AND field = ?3 AND fingerprint = ?4
+                   AND pending = 1",
+                params![safe_error, claim.vehicle_id.to_string(), claim.field, claim.fingerprint],
+            )
+            .map_err(StoreError::MqttDelivery)?;
+        for later_claim in following {
+            transaction
+                .execute(
+                    "UPDATE mqtt_delivery_state
+                     SET claimed_until_ms = 0
+                     WHERE vehicle_id = ?1 AND field = ?2 AND fingerprint = ?3
+                       AND pending = 1",
+                    params![
+                        later_claim.vehicle_id.to_string(),
+                        later_claim.field,
+                        later_claim.fingerprint,
+                    ],
+                )
+                .map_err(StoreError::MqttDelivery)?;
+        }
+        transaction.commit().map_err(StoreError::MqttDelivery)
+    }
+
     pub fn upsert_car_settings(
         &self,
         vehicle_id: Uuid,
