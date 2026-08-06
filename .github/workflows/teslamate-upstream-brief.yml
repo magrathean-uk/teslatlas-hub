@@ -1,0 +1,51 @@
+name: TeslaMate upstream impact brief
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+      timezone: "Europe/London"
+  workflow_dispatch:
+  push:
+    branches:
+      - "codex/hub-v0.1"
+    paths:
+      - .github/workflows/teslamate-upstream-brief.yml
+      - scripts/teslamate_upstream_brief.py
+
+permissions:
+  contents: read
+  issues: write
+  models: read
+
+concurrency:
+  group: teslamate-upstream-impact-brief
+  cancel-in-progress: false
+
+jobs:
+  analyse-and-notify:
+    name: Analyse upstream and notify
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Check out analyser only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: scripts/teslamate_upstream_brief.py
+          sparse-checkout-cone-mode: false
+
+      - name: Validate analyser
+        run: python3 -m py_compile scripts/teslamate_upstream_brief.py
+
+      - name: Generate and post daily brief
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: "1"
+          TRACKING_ISSUE_NUMBER: "1"
+          UPSTREAM_REPOSITORY: teslamate-org/teslamate
+          RECIPIENT_LOGIN: magrathean-uk
+          REPORT_TIMEZONE: Europe/London
+          GITHUB_MODELS_MODEL: openai/gpt-4.1
+        run: python3 scripts/teslamate_upstream_brief.py
