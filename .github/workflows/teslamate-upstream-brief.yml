@@ -11,6 +11,7 @@ on:
     paths:
       - .github/workflows/teslamate-upstream-brief.yml
       - scripts/teslamate_upstream_brief.py
+      - scripts/run_teslamate_upstream_brief.py
 
 permissions:
   contents: read
@@ -33,11 +34,13 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
-          sparse-checkout: scripts/teslamate_upstream_brief.py
+          sparse-checkout: |
+            scripts/teslamate_upstream_brief.py
+            scripts/run_teslamate_upstream_brief.py
           sparse-checkout-cone-mode: false
 
       - name: Validate analyser
-        run: python3 -m py_compile scripts/teslamate_upstream_brief.py
+        run: python3 -m py_compile scripts/teslamate_upstream_brief.py scripts/run_teslamate_upstream_brief.py
 
       - name: Generate and post daily brief
         env:
@@ -48,4 +51,4 @@ jobs:
           RECIPIENT_LOGIN: magrathean-uk
           REPORT_TIMEZONE: Europe/London
           GITHUB_MODELS_MODEL: openai/gpt-4.1
-        run: python3 scripts/teslamate_upstream_brief.py
+        run: python3 scripts/run_teslamate_upstream_brief.py
