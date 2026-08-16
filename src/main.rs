@@ -1,0 +1,2153 @@
+use std::{
+    fs,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    process::ExitCode,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+#[cfg(target_os = "macos")]
+use std::future::Future;
+
+use base64::Engine;
+use clap::{Parser, Subcommand};
+use qrcode::{QrCode, render::unicode::Dense1x2};
+use sha2::{Digest, Sha256};
+#[cfg(target_os = "macos")]
+use teslatlas_hub::hub_user_process::AdmittedUserHub;
+#[cfg(target_os = "macos")]
+use teslatlas_hub::protocol::CursorKey;
+use teslatlas_hub::{
+    collector,
+    config::HubConfig,
+    credentials::TeslaMatePostgresPassword,
+    data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
+    db::{HubStore, ObservationVerificationError, TeslaMateLegacyTokenStore},
+    server,
+    teslamate::ReadOnlySource,
+    teslamate_credentials::{
+        load_or_create_cursor_key, random_encryption_key, replace_key_and_tokens,
+    },
+    teslamate_import::{
+        TeslaMateImportReport, TeslaMateImportRequest, TeslaMateImportScope,
+        publish_staged_history_with_session,
+    },
+    teslamate_reader::{
+        capture_history_to_stage_with_legacy_token_and_session,
+        capture_history_to_stage_with_session,
+    },
+    teslamate_stage::TeslaMateStageStats,
+    teslamate_token::{decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files},
+};
+use tracing_subscriber::EnvFilter;
+
+/// A worker owned by the macOS Serve supervisor.  Normal exits request
+/// shutdown and await the task; cancellation of the supervisor aborts the
+/// owned task rather than silently detaching it.
+#[cfg(target_os = "macos")]
+struct MacServeWorker {
+    label: &'static str,
+    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+    task: tokio::task::JoinHandle<std::io::Result<()>>,
+}
+
+// Unit tests use a short stop bound so a non-cooperative fake worker can prove
+// the abort path without a real wait.
+#[cfg(all(target_os = "macos", not(test)))]
+const MACOS_SERVE_STOP_TIMEOUT: Duration = Duration::from_secs(120);
+#[cfg(all(target_os = "macos", test))]
+const MACOS_SERVE_STOP_TIMEOUT: Duration = Duration::from_millis(50);
+
+#[cfg(target_os = "macos")]
+#[derive(Debug)]
+struct MacServeWorkerStopTimeout {
+    label: &'static str,
+}
+
+#[cfg(target_os = "macos")]
+impl std::fmt::Display for MacServeWorkerStopTimeout {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "macOS {} worker did not stop within {} milliseconds",
+            self.label,
+            MACOS_SERVE_STOP_TIMEOUT.as_millis()
+        )
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl std::error::Error for MacServeWorkerStopTimeout {}
+
+#[cfg(target_os = "macos")]
+impl MacServeWorker {
+    fn start<F>(label: &'static str, shutdown: tokio::sync::oneshot::Sender<()>, future: F) -> Self
+    where
+        F: Future<Output = std::io::Result<()>> + Send + 'static,
+    {
+        Self {
+            label,
+            shutdown: Some(shutdown),
+            task: tokio::spawn(future),
+        }
+    }
+
+    fn request_stop(&mut self) {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+    }
+
+    async fn wait(&mut self) -> std::io::Result<()> {
+        let result = (&mut self.task).await;
+        self.join_result(result)
+    }
+
+    async fn stop_and_wait(&mut self) -> std::io::Result<()> {
+        self.request_stop();
+        match tokio::time::timeout(MACOS_SERVE_STOP_TIMEOUT, &mut self.task).await {
+            Ok(result) => self.join_result(result),
+            Err(_) => {
+                self.task.abort();
+                let _ = (&mut self.task).await;
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    MacServeWorkerStopTimeout { label: self.label },
+                ))
+            }
+        }
+    }
+
+    fn join_result(
+        &self,
+        result: Result<std::io::Result<()>, tokio::task::JoinError>,
+    ) -> std::io::Result<()> {
+        result.map_err(|error| {
+            std::io::Error::other(format!("macOS {} worker task failed: {error}", self.label))
+        })?
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for MacServeWorker {
+    fn drop(&mut self) {
+        self.request_stop();
+        self.task.abort();
+    }
+}
+
+#[cfg(target_os = "macos")]
+enum MacServeControl {
+    Shutdown,
+    AdmissionInvalidated(std::io::Error),
+}
+
+#[cfg(target_os = "macos")]
+enum MacServeActiveOutcome {
+    Server(std::io::Result<()>),
+    Collector(std::io::Result<()>),
+    Control(MacServeControl),
+}
+
+#[cfg(target_os = "macos")]
+fn is_macos_serve_stop_timeout(result: &std::io::Result<()>) -> bool {
+    matches!(
+        result,
+        Err(error)
+            if error.kind() == std::io::ErrorKind::TimedOut
+                && error
+                    .get_ref()
+                    .is_some_and(|source| source.is::<MacServeWorkerStopTimeout>())
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn preserve_active_result_after_stop(
+    primary: std::io::Result<()>,
+    stop_result: std::io::Result<()>,
+) -> std::io::Result<()> {
+    if is_macos_serve_stop_timeout(&stop_result) {
+        stop_result
+    } else {
+        primary
+    }
+}
+
+/// Own the Mac process's collector and listener as one cancellation-safe
+/// lifecycle.  The collector is constructed only for a positive cadence; the
+/// listener is constructed only after the collector hands over its exact
+/// cursor key. This accepts factories so ordering and exit can be tested
+/// without real network work.
+#[cfg(target_os = "macos")]
+async fn run_macos_serve_supervisor<C, S, CF, SF, Control>(
+    collector_enabled: bool,
+    collector_start: CF,
+    server_start: SF,
+    control: Control,
+) -> std::io::Result<()>
+where
+    C: Future<Output = std::io::Result<()>> + Send + 'static,
+    S: Future<Output = std::io::Result<()>> + Send + 'static,
+    CF: FnOnce(tokio::sync::oneshot::Sender<CursorKey>, tokio::sync::oneshot::Receiver<()>) -> C,
+    SF: FnOnce(Option<CursorKey>, tokio::sync::oneshot::Receiver<()>) -> S,
+    Control: Future<Output = MacServeControl>,
+{
+    tokio::pin!(control);
+
+    // A collector-disabled runtime has no legacy Owner collector or Tesla
+    // client construction path. The server may still use its configured TLS
+    // cursor credential.
+    if !collector_enabled {
+        let (server_shutdown_tx, server_shutdown_rx) = tokio::sync::oneshot::channel();
+        let mut server = MacServeWorker::start(
+            "server",
+            server_shutdown_tx,
+            server_start(None, server_shutdown_rx),
+        );
+        return tokio::select! {
+            result = server.wait() => result,
+            control = &mut control => {
+                let server_result = server.stop_and_wait().await;
+                match control {
+                    MacServeControl::Shutdown => server_result,
+                    MacServeControl::AdmissionInvalidated(error) => {
+                        if is_macos_serve_stop_timeout(&server_result) {
+                            server_result
+                        } else {
+                            Err(error)
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    let (collector_shutdown_tx, collector_shutdown_rx) = tokio::sync::oneshot::channel();
+    let (ready_tx, mut ready_rx) = tokio::sync::oneshot::channel();
+    let mut collector = MacServeWorker::start(
+        "collector",
+        collector_shutdown_tx,
+        collector_start(ready_tx, collector_shutdown_rx),
+    );
+
+    // The listener stays unconstructed until the collector completes its
+    // startup custody and hands back the very cursor key it will use.
+    let cursor_key = tokio::select! {
+        received = &mut ready_rx => match received {
+            Ok(cursor_key) => cursor_key,
+            Err(_) => match collector.stop_and_wait().await {
+                Ok(()) => return Err(std::io::Error::other("macOS collector exited before readiness")),
+                Err(error) => return Err(error),
+            },
+        },
+        result = collector.wait() => match result {
+            Ok(()) => return Err(std::io::Error::other("macOS collector exited before readiness")),
+            Err(error) => return Err(error),
+        },
+        control = &mut control => {
+            let stop_result = collector.stop_and_wait().await;
+            return match control {
+                MacServeControl::Shutdown => {
+                    if is_macos_serve_stop_timeout(&stop_result) {
+                        stop_result
+                    } else {
+                        Ok(())
+                    }
+                }
+                MacServeControl::AdmissionInvalidated(error) => {
+                    if is_macos_serve_stop_timeout(&stop_result) {
+                        stop_result
+                    } else {
+                        Err(error)
+                    }
+                }
+            };
+        }
+    };
+
+    let (server_shutdown_tx, server_shutdown_rx) = tokio::sync::oneshot::channel();
+    let mut server = MacServeWorker::start(
+        "server",
+        server_shutdown_tx,
+        server_start(Some(cursor_key), server_shutdown_rx),
+    );
+
+    let outcome = tokio::select! {
+        result = server.wait() => MacServeActiveOutcome::Server(result),
+        result = collector.wait() => MacServeActiveOutcome::Collector(result),
+        control = &mut control => MacServeActiveOutcome::Control(control),
+    };
+
+    match outcome {
+        MacServeActiveOutcome::Server(result) => {
+            server.request_stop();
+            let collector_stop_result = collector.stop_and_wait().await;
+            preserve_active_result_after_stop(result, collector_stop_result)
+        }
+        MacServeActiveOutcome::Collector(result) => {
+            collector.request_stop();
+            let server_stop_result = server.stop_and_wait().await;
+            let collector_result = match result {
+                Ok(()) => Err(std::io::Error::other(
+                    "macOS collector exited while Serve was active",
+                )),
+                Err(error) => Err(error),
+            };
+            preserve_active_result_after_stop(collector_result, server_stop_result)
+        }
+        MacServeActiveOutcome::Control(control) => {
+            server.request_stop();
+            collector.request_stop();
+            let server_result = server.stop_and_wait().await;
+            let collector_result = collector.stop_and_wait().await;
+            if is_macos_serve_stop_timeout(&server_result) {
+                return server_result;
+            }
+            if is_macos_serve_stop_timeout(&collector_result) {
+                return collector_result;
+            }
+            match control {
+                MacServeControl::AdmissionInvalidated(error) => Err(error),
+                MacServeControl::Shutdown => match collector_result {
+                    Ok(()) => server_result,
+                    Err(error) => Err(error),
+                },
+            }
+        }
+    }
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "teslatlas-hub",
+    version,
+    about = "Native Teslatlas Hub service"
+)]
+struct Cli {
+    #[arg(long, global = true)]
+    config: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Print licence, source, and independence notices.
+    Legal,
+    /// Initialize or migrate the local Hub database.
+    Init,
+    /// Read-only validate the database and print a machine-readable health report.
+    Doctor,
+    /// Print the redacted local status consumed by the native control app.
+    Status,
+    /// Validate that one imported car and its credentials are ready to serve.
+    #[cfg(target_os = "macos")]
+    Preflight,
+    /// Capture the current durable observation watermark for one source car.
+    #[command(name = "observation-watermark")]
+    ObservationWatermark {
+        /// Source/import car id selected for the cutover.
+        #[arg(long)]
+        car_id: i64,
+    },
+    /// Verify that a strictly newer observation is durably committed.
+    #[command(name = "verify-observation")]
+    VerifyObservation {
+        /// Source/import car id selected for the cutover.
+        #[arg(long)]
+        car_id: i64,
+        /// Observation id returned by observation-watermark.
+        #[arg(long)]
+        watermark: i64,
+    },
+    /// Start the Hub HTTP service.
+    Serve,
+    /// Observe one admitted car for a bounded period without installing a LaunchAgent.
+    #[cfg(target_os = "macos")]
+    Observe {
+        /// Observation duration in seconds.
+        #[arg(long, default_value_t = 3_600, value_parser = clap::value_parser!(u64).range(1..))]
+        duration_seconds: u64,
+    },
+    /// Install and start the minimal per-user macOS Hub LaunchAgent.
+    #[cfg(target_os = "macos")]
+    Install,
+    /// Import one TeslaMate car, its history, and its opaque legacy token pair.
+    #[cfg(target_os = "macos")]
+    Migrate {
+        /// Password-free PostgreSQL URL. Password is read from a file or stdin.
+        #[arg(long)]
+        source: String,
+        /// Positive TeslaMate car id to import.
+        #[arg(long)]
+        car_id: i64,
+        /// PostgreSQL password file, or `-` for stdin.
+        #[arg(long)]
+        postgres_password_file: PathBuf,
+        /// TeslaMate ENCRYPTION_KEY file, or `-` for stdin. Omit only with both fresh-token files.
+        #[arg(long)]
+        encryption_key_file: Option<PathBuf>,
+        /// Fresh legacy access-token file when the TeslaMate key is unavailable.
+        #[arg(
+            long,
+            requires = "refresh_token_file",
+            conflicts_with = "encryption_key_file"
+        )]
+        access_token_file: Option<PathBuf>,
+        /// Fresh legacy refresh-token file when the TeslaMate key is unavailable.
+        #[arg(
+            long,
+            requires = "access_token_file",
+            conflicts_with = "encryption_key_file"
+        )]
+        refresh_token_file: Option<PathBuf>,
+    },
+    /// Display one short-lived, single-use device pairing QR.
+    #[command(alias = "create-pairing")]
+    Pair {
+        /// Human label shown only to the Hub owner, such as "Bolyki iPhone".
+        #[arg(long, default_value = "Teslatlas iPhone")]
+        label: String,
+        /// Lifetime before the invitation becomes unusable.
+        #[arg(long, default_value_t = 900)]
+        expires_in_seconds: u64,
+        /// Print the secret-bearing machine-readable payload for explicit debugging.
+        #[arg(long, hide = true)]
+        json: bool,
+    },
+    /// Validate database integrity, report quarantined sessions, and clean orphaned packs.
+    Repair,
+    /// Create a data-only catalogue and immutable-pack backup generation.
+    Backup {
+        /// New private directory that will contain the data-backup generation.
+        #[arg(long)]
+        destination: PathBuf,
+    },
+    /// Immutably verify one completed data-backup generation.
+    #[command(name = "verify-backup")]
+    VerifyBackup {
+        /// Existing private data-backup generation to verify without mutation.
+        #[arg(long)]
+        source: PathBuf,
+    },
+    /// Restore data and the pairing database into a new private directory.
+    #[command(name = "restore-data")]
+    RestoreData {
+        /// Existing verified data-backup generation.
+        #[arg(long)]
+        source: PathBuf,
+        /// New Hub data directory. Credentials and collector authority stay absent.
+        #[arg(long)]
+        destination: PathBuf,
+    },
+}
+
+#[tokio::main]
+async fn main() -> ExitCode {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .with_target(false)
+        .init();
+
+    let cli = Cli::parse();
+    match run(cli).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("teslatlas-hub: {error}");
+            let mut source = error.source();
+            while let Some(cause) = source {
+                eprintln!("caused by: {cause}");
+                source = cause.source();
+            }
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+    let config_path = cli.config.unwrap_or_else(default_config_path);
+
+    #[cfg(target_os = "macos")]
+    if matches!(&cli.command, Command::Install) {
+        let config = HubConfig::load(&config_path)?;
+        let admission = AdmittedUserHub::admit(&config.data_dir)?;
+        let installed =
+            teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, &config_path)?;
+        drop(admission);
+        teslatlas_hub::macos_launch_agent::start_prepared(&installed)?;
+        println!("installed {}; launch requested", installed.binary.display());
+        return Ok(());
+    }
+
+    // Every command that mutates or serves the live data directory takes the
+    // same local instance lock. Config is loaded once here
+    // only to find that directory; normal loading below remains unchanged.
+    #[cfg(target_os = "macos")]
+    let admitted_user_hub = if command_requires_user_hub_admission(&cli.command) {
+        let config = HubConfig::load(&config_path)?;
+        Some(AdmittedUserHub::admit(&config.data_dir)?)
+    } else {
+        None
+    };
+
+    #[cfg(target_os = "macos")]
+    if let Command::Migrate {
+        source,
+        car_id,
+        postgres_password_file,
+        encryption_key_file,
+        access_token_file,
+        refresh_token_file,
+    } = &cli.command
+    {
+        let prepared_install = run_macos_migration(
+            admitted_user_hub
+                .as_ref()
+                .ok_or("macOS migrate reached runtime without native user admission")?,
+            MacMigrationInput {
+                config_path: &config_path,
+                source_url: source,
+                car_id: *car_id,
+                postgres_password_file,
+                encryption_key_file: encryption_key_file.as_deref(),
+                access_token_file: access_token_file.as_deref(),
+                refresh_token_file: refresh_token_file.as_deref(),
+            },
+        )
+        .await?;
+        drop(admitted_user_hub);
+        if let Some(installed) = prepared_install {
+            teslatlas_hub::macos_launch_agent::start_prepared(&installed)?;
+            println!("installed {}; launch requested", installed.binary.display());
+        }
+        return Ok(());
+    }
+
+    match &cli.command {
+        Command::VerifyBackup { source } => {
+            let report = verify_data_backup(source)?;
+            println!("{}", serde_json::to_string(&report)?);
+            return Ok(());
+        }
+        Command::RestoreData {
+            source,
+            destination,
+        } => {
+            let report = restore_data_backup(source, destination)?;
+            println!("{}", serde_json::to_string(&report)?);
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    match &cli.command {
+        Command::Legal => {
+            println!(
+                "Teslatlas Hub {}\nLicense: AGPL-3.0-or-later\nSource: https://github.com/magrathean-uk/teslatlas-hub\nUnofficial; not affiliated with Tesla or TeslaMate; no warranty.",
+                teslatlas_hub::BUILD_VERSION
+            );
+            return Ok(());
+        }
+        Command::Doctor => {
+            let config = HubConfig::load(&config_path)?;
+            let store = HubStore::open_immutable_read_only(&config.data_dir)?;
+            store.catalogue_check()?;
+            let sqlite_version = store.sqlite_version()?;
+            store.verify_immutable_snapshot_unchanged()?;
+            println!(
+                "{{\"status\":\"ok\",\"version\":\"{}\",\"sqlite\":\"{}\",\"database\":\"{}\"}}",
+                teslatlas_hub::BUILD_VERSION,
+                sqlite_version,
+                store.database_path().display()
+            );
+            return Ok(());
+        }
+        Command::Status => {
+            let config = HubConfig::load(&config_path)?;
+            let store = HubStore::open_read_only(&config.data_dir)?;
+            let vehicles = store.published_vehicles()?;
+            if vehicles.len() > 1 {
+                return Err("native control status requires exactly one published car".into());
+            }
+            let selected = store.selected_imported_tesla_eid()?;
+            let vehicle = match vehicles.first() {
+                Some(vehicle) => {
+                    let binding = store.v2_projection_binding(vehicle.vehicle_id)?;
+                    let watermark = store.observation_watermark(binding.selected_car_id)?;
+                    Some(serde_json::json!({
+                        "vehicleId": vehicle.vehicle_id,
+                        "displayName": vehicle.display_name,
+                        "sourceCarId": binding.selected_car_id,
+                        "teslaEid": selected.as_ref().map(|(eid, _)| *eid),
+                        "latestObservationId": watermark.observation_id,
+                        "latestObservedAtMs": watermark.observed_at_ms,
+                        "latestReceivedAtMs": watermark.received_at_ms,
+                    }))
+                }
+                None => None,
+            };
+            let credentials = store.load_teslamate_legacy_tokens()?;
+            let readiness = store
+                .service_readiness_at(config.collector.interval_seconds > 0, current_epoch_ms()?);
+            let database_bytes = fs::metadata(store.database_path())?.len();
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "ok",
+                    "version": teslatlas_hub::BUILD_VERSION,
+                    "database": {
+                        "path": store.database_path(),
+                        "bytes": database_bytes,
+                    },
+                    "ready": readiness.is_ok(),
+                    "readinessReason": readiness.err().map(|failure| failure.code),
+                    "vehicle": vehicle,
+                    "legacyCredentials": {
+                        "present": credentials.is_some(),
+                        "expiresAt": credentials.as_ref().map(TeslaMateLegacyTokenStore::expires_at),
+                        "nextRefreshAt": credentials
+                            .as_ref()
+                            .map(TeslaMateLegacyTokenStore::next_refresh_at),
+                    },
+                })
+            );
+            return Ok(());
+        }
+        #[cfg(target_os = "macos")]
+        Command::Preflight => {
+            let config = HubConfig::load(&config_path)?;
+            teslatlas_hub::macos_launch_agent::preflight_migrated_hub(&config.data_dir)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "ready",
+                    "version": teslatlas_hub::BUILD_VERSION,
+                })
+            );
+            return Ok(());
+        }
+        Command::ObservationWatermark { car_id } => {
+            let config = HubConfig::load(&config_path)?;
+            let store = HubStore::open_read_only(&config.data_dir)?;
+            let watermark = match store.observation_watermark(*car_id) {
+                Ok(watermark) => watermark,
+                Err(error) => {
+                    return Err(observation_command_error(
+                        "observation-watermark",
+                        *car_id,
+                        error,
+                    ));
+                }
+            };
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "captured",
+                    "command": "observation-watermark",
+                    "carId": watermark.source_car_id,
+                    "sourceId": watermark.source_id,
+                    "vehicleId": watermark.vehicle_id,
+                    "watermark": watermark.observation_id,
+                    "observedAtMs": watermark.observed_at_ms,
+                    "receivedAtMs": watermark.received_at_ms,
+                })
+            );
+            return Ok(());
+        }
+        Command::VerifyObservation { car_id, watermark } => {
+            let config = HubConfig::load(&config_path)?;
+            let store = HubStore::open_read_only(&config.data_dir)?;
+            let verification = match store.verify_observation_after(*car_id, *watermark) {
+                Ok(verification) => verification,
+                Err(error) => {
+                    return Err(observation_command_error(
+                        "verify-observation",
+                        *car_id,
+                        error,
+                    ));
+                }
+            };
+            let verified = verification.verified();
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": if verified { "verified" } else { "not_verified" },
+                    "command": "verify-observation",
+                    "verified": verified,
+                    "carId": verification.source_car_id,
+                    "sourceId": verification.source_id,
+                    "vehicleId": verification.vehicle_id,
+                    "afterWatermark": verification.after_observation_id,
+                    "latestObservationId": verification.latest_observation_id,
+                    "latestObservedAtMs": verification.latest_observed_at_ms,
+                    "latestReceivedAtMs": verification.latest_received_at_ms,
+                })
+            );
+            if !verified {
+                return Err("no strictly newer durable observation".into());
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Some(admission) = admitted_user_hub.as_ref() {
+        admission.assert_sensitive_access()?;
+    }
+    let (config, config_sha256) = HubConfig::load_with_digest(&config_path)?;
+    #[cfg(target_os = "macos")]
+    if let Some(admission) = admitted_user_hub.as_ref() {
+        admission.assert_store_path(&config.data_dir)?;
+    }
+    let store = HubStore::initialize(&config.data_dir)?;
+    match cli.command {
+        Command::Init => {
+            println!("initialized {}", store.database_path().display());
+        }
+        Command::Legal
+        | Command::Doctor
+        | Command::Status
+        | Command::ObservationWatermark { .. }
+        | Command::VerifyObservation { .. } => {
+            unreachable!("read-only commands return before opening writable Hub state")
+        }
+        #[cfg(target_os = "macos")]
+        Command::Preflight => {
+            unreachable!("macOS preflight returns before opening writable Hub state")
+        }
+        Command::Serve => {
+            #[cfg(target_os = "macos")]
+            {
+                teslatlas_hub::macos_launch_agent::preflight_migrated_hub(&config.data_dir)?;
+                let admission = admitted_user_hub
+                    .ok_or("macOS Serve reached runtime without native user admission")?;
+                admission.assert_sensitive_access()?;
+                use tokio::signal::unix::{SignalKind, signal};
+                let mut sigterm = signal(SignalKind::terminate())?;
+
+                let collector_enabled = config.collector.interval_seconds > 0;
+                let collector_store = store.clone();
+                let collector_config = config.clone();
+                let collector_admission = std::sync::Arc::clone(&admission);
+                let server_config = config;
+                let server_admission = std::sync::Arc::clone(&admission);
+                let control_admission = std::sync::Arc::clone(&admission);
+                run_macos_serve_supervisor(
+                    collector_enabled,
+                    move |ready, shutdown| async move {
+                        collector::run_supervised_for_admitted_user(
+                            &collector_store,
+                            &collector_config,
+                            collector_admission,
+                            ready,
+                            async move {
+                                let _ = shutdown.await;
+                            },
+                        )
+                        .await
+                        .map_err(std::io::Error::other)
+                    },
+                    move |cursor_key, shutdown| async move {
+                        server::serve_for_admitted_user(
+                            store,
+                            &server_config,
+                            config_sha256,
+                            server_admission,
+                            cursor_key,
+                            async move {
+                                let _ = shutdown.await;
+                            },
+                        )
+                        .await
+                    },
+                    async move {
+                        tokio::select! {
+                            error = control_admission.wait_until_invalid() => {
+                                MacServeControl::AdmissionInvalidated(std::io::Error::other(error))
+                            }
+                            _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
+                            _ = sigterm.recv() => MacServeControl::Shutdown,
+                        }
+                    },
+                )
+                .await?;
+            }
+        }
+        #[cfg(target_os = "macos")]
+        Command::Observe { duration_seconds } => {
+            let admission = admitted_user_hub
+                .ok_or("macOS Observe reached runtime without native user admission")?;
+            admission.assert_sensitive_access()?;
+            use tokio::signal::unix::{SignalKind, signal};
+            let mut sigterm = signal(SignalKind::terminate())?;
+
+            let collector_store = store.clone();
+            let collector_config = config.clone();
+            let collector_admission = std::sync::Arc::clone(&admission);
+            let server_config = config;
+            let server_admission = std::sync::Arc::clone(&admission);
+            let control_admission = std::sync::Arc::clone(&admission);
+            run_macos_serve_supervisor(
+                true,
+                move |ready, shutdown| async move {
+                    collector::run_observer_for_admitted_user(
+                        &collector_store,
+                        &collector_config,
+                        collector_admission,
+                        ready,
+                        async move {
+                            let _ = shutdown.await;
+                        },
+                    )
+                    .await
+                    .map_err(std::io::Error::other)
+                },
+                move |cursor_key, shutdown| async move {
+                    server::serve_for_admitted_user(
+                        store,
+                        &server_config,
+                        config_sha256,
+                        server_admission,
+                        cursor_key,
+                        async move {
+                            let _ = shutdown.await;
+                        },
+                    )
+                    .await
+                },
+                async move {
+                    tokio::select! {
+                        error = control_admission.wait_until_invalid() => {
+                            MacServeControl::AdmissionInvalidated(std::io::Error::other(error))
+                        }
+                        _ = tokio::signal::ctrl_c() => MacServeControl::Shutdown,
+                        _ = sigterm.recv() => MacServeControl::Shutdown,
+                        _ = tokio::time::sleep(Duration::from_secs(duration_seconds)) => MacServeControl::Shutdown,
+                    }
+                },
+            )
+            .await?;
+        }
+        #[cfg(target_os = "macos")]
+        Command::Install => unreachable!("install returns before opening Hub state"),
+        #[cfg(target_os = "macos")]
+        Command::Migrate { .. } => {
+            unreachable!("macOS migrate returns before opening common Hub state")
+        }
+        Command::Pair {
+            label,
+            expires_in_seconds,
+            json,
+        } => {
+            let tls = config
+                .tls
+                .as_ref()
+                .ok_or("device pairing requires configured TLS")?;
+            if expires_in_seconds == 0 {
+                return Err("pairing expiry must be greater than zero".into());
+            }
+            let created_at_ms = current_epoch_ms()?;
+            let ttl_ms = expires_in_seconds
+                .checked_mul(1_000)
+                .ok_or("pairing expiry is too large")?;
+            let ttl_ms = i64::try_from(ttl_ms).map_err(|_| "pairing expiry is too large")?;
+            let expires_at_ms = created_at_ms
+                .checked_add(ttl_ms)
+                .ok_or("pairing expiry is too large")?;
+            let invitation = store.create_pairing(&label, created_at_ms, expires_at_ms)?;
+            let tls_pin = leaf_certificate_sha256(&tls.certificate_path)?;
+            let pairing_uri = pairing_uri(
+                &tls.public_url,
+                &tls_pin,
+                invitation.pairing_id,
+                invitation.secret(),
+            );
+            if json {
+                // Explicit debug mode only. The Hub never stores the raw
+                // pairing secret or writes it to service logs.
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "pairingId": invitation.pairing_id,
+                        "secret": invitation.secret(),
+                        "expiresAtMs": invitation.expires_at_ms,
+                        "endpoint": tls.public_url,
+                        "tlsPin": tls_pin,
+                        "pairingUri": pairing_uri,
+                    })
+                );
+            } else {
+                let qr = render_pairing_qr(&pairing_uri)?;
+                println!("Scan with Teslatlas:\n{qr}");
+                println!("Expires in {expires_in_seconds} seconds.");
+            }
+        }
+        Command::Repair => {
+            let report = store.repair()?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        Command::Backup { destination } => {
+            let report = create_data_backup(&store, &destination)?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        Command::VerifyBackup { .. } | Command::RestoreData { .. } => {
+            unreachable!("immutable data-recovery commands return before writable Hub state")
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn command_requires_user_hub_admission(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Serve | Command::Observe { .. } | Command::Migrate { .. }
+    )
+}
+
+fn default_config_path() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    if let Some(home) = std::env::var_os("HOME") {
+        return PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("Teslatlas Hub")
+            .join("config.toml");
+    }
+    PathBuf::from("config.toml")
+}
+
+#[cfg(target_os = "macos")]
+struct MacMigrationInput<'a> {
+    config_path: &'a Path,
+    source_url: &'a str,
+    car_id: i64,
+    postgres_password_file: &'a Path,
+    encryption_key_file: Option<&'a Path>,
+    access_token_file: Option<&'a Path>,
+    refresh_token_file: Option<&'a Path>,
+}
+
+#[cfg(target_os = "macos")]
+async fn run_macos_migration(
+    admission: &AdmittedUserHub,
+    MacMigrationInput {
+        config_path,
+        source_url,
+        car_id,
+        postgres_password_file,
+        encryption_key_file,
+        access_token_file,
+        refresh_token_file,
+    }: MacMigrationInput<'_>,
+) -> Result<Option<teslatlas_hub::macos_launch_agent::InstallPaths>, Box<dyn std::error::Error>> {
+    if car_id <= 0 {
+        return Err("--car-id must be a positive TeslaMate car id".into());
+    }
+    let secret_paths = std::iter::once(Some(postgres_password_file))
+        .chain([encryption_key_file, access_token_file, refresh_token_file])
+        .flatten()
+        .collect::<Vec<_>>();
+    if secret_paths
+        .iter()
+        .filter(|path| **path == Path::new("-"))
+        .count()
+        > 1
+    {
+        return Err("only one migration secret may be read from stdin".into());
+    }
+
+    let config = HubConfig::load(config_path)?;
+    admission.assert_sensitive_access()?;
+    admission.assert_store_path(&config.data_dir)?;
+    let source = ReadOnlySource::parse(source_url)?;
+    let postgres_password =
+        TeslaMatePostgresPassword::from_bytes(&read_migration_secret(postgres_password_file)?)?;
+    let limits = config.teslamate.read_limits()?;
+    let copy_teslamate_ciphertext = match (
+        encryption_key_file,
+        access_token_file,
+        refresh_token_file,
+    ) {
+        (Some(_), None, None) => true,
+        (None, Some(_), Some(_)) => false,
+        _ => {
+            return Err(
+                "provide --encryption-key-file, or both --access-token-file and --refresh-token-file"
+                    .into(),
+            );
+        }
+    };
+
+    let store = HubStore::initialize(&config.data_dir)?;
+    let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
+    let (initial_stage_stats, initial_report, _) = capture_and_publish_migration_snapshot(
+        &store,
+        &cursor_key,
+        &source,
+        &postgres_password,
+        car_id,
+        limits,
+        false,
+    )
+    .await?;
+
+    println!(
+        "{}",
+        serde_json::json!({
+            "status": "initial-copy-complete",
+            "selectedCarId": car_id,
+            "stageRows": initial_stage_stats.row_count,
+            "stageBytes": initial_stage_stats.payload_bytes,
+            "projectedRows": initial_report.projected_rows,
+            "snapshotId": initial_report.snapshot_id,
+            "sequence": initial_report.sequence,
+        })
+    );
+    print!("Stop TeslaMate now. Start Teslatlas Hub after final sync? [y/N] ");
+    std::io::stdout().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    let start_hub = matches!(answer.trim(), "y" | "Y");
+
+    // The operator has now stopped TeslaMate. Re-capture from one new
+    // repeatable-read snapshot so no history row or rotated token can fall in
+    // the interval between the long initial copy and cutover.
+    let (stage_stats, report, captured_ciphertexts) = capture_and_publish_migration_snapshot(
+        &store,
+        &cursor_key,
+        &source,
+        &postgres_password,
+        car_id,
+        limits,
+        copy_teslamate_ciphertext,
+    )
+    .await?;
+
+    // The encrypted source pair came from the same final snapshot as history.
+    let (encryption_key, access_ciphertext, refresh_ciphertext) = if copy_teslamate_ciphertext {
+        let key_path = encryption_key_file.expect("validated encrypted-token input");
+        let key = zeroize::Zeroizing::new(read_migration_secret(key_path)?);
+        if key.is_empty() {
+            return Err("TeslaMate ENCRYPTION_KEY is empty".into());
+        }
+        let ciphertexts = captured_ciphertexts
+            .ok_or("final migration snapshot did not retain TeslaMate credentials")?;
+        // Validate compatibility without exposing either plaintext token.
+        drop(decrypt_legacy_owner_tokens(
+            &key,
+            &ciphertexts.access,
+            &ciphertexts.refresh,
+        )?);
+        (key, ciphertexts.access, ciphertexts.refresh)
+    } else {
+        let access_path = access_token_file.expect("validated access-token input");
+        let refresh_path = refresh_token_file.expect("validated refresh-token input");
+        let key = random_encryption_key();
+        let (access, refresh) = encrypt_legacy_owner_token_files(
+            &key,
+            read_migration_secret(access_path)?,
+            read_migration_secret(refresh_path)?,
+        )?;
+        (key, access, refresh)
+    };
+    let stored = TeslaMateLegacyTokenStore::imported(access_ciphertext, refresh_ciphertext)?;
+    replace_key_and_tokens(&config.data_dir, &store, &encryption_key, &stored)?;
+
+    println!(
+        "{}",
+        serde_json::json!({
+            "status": "imported",
+            "selectedCarId": car_id,
+            "stageRows": stage_stats.row_count,
+            "stageBytes": stage_stats.payload_bytes,
+            "projectedRows": report.projected_rows,
+            "snapshotId": report.snapshot_id,
+            "sequence": report.sequence,
+            "accessCiphertextBytes": stored.access().len(),
+            "refreshCiphertextBytes": stored.refresh().len(),
+        })
+    );
+
+    start_hub
+        .then(|| teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, config_path))
+        .transpose()
+        .map_err(Into::into)
+}
+
+#[cfg(target_os = "macos")]
+async fn capture_and_publish_migration_snapshot(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    source: &ReadOnlySource,
+    postgres_password: &TeslaMatePostgresPassword,
+    car_id: i64,
+    limits: teslatlas_hub::teslamate_reader::TeslaMateReadLimits,
+    include_legacy_token: bool,
+) -> Result<
+    (
+        TeslaMateStageStats,
+        TeslaMateImportReport,
+        Option<teslatlas_hub::teslamate_reader::TeslaMateLegacyTokenCiphertexts>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let (stage, open_session, captured_ciphertexts) = if include_legacy_token {
+        let (stage, open_session, ciphertexts) =
+            capture_history_to_stage_with_legacy_token_and_session(
+                source,
+                postgres_password,
+                car_id,
+                limits,
+                &store.imports_dir(),
+            )
+            .await?;
+        (stage, open_session, Some(ciphertexts))
+    } else {
+        let (stage, open_session) = capture_history_to_stage_with_session(
+            source,
+            postgres_password,
+            car_id,
+            limits,
+            &store.imports_dir(),
+        )
+        .await?;
+        (stage, open_session, None)
+    };
+    let stage_stats = stage.stats()?;
+    let report = match publish_staged_history_with_session(
+        store,
+        cursor_key,
+        &TeslaMateImportRequest {
+            source_key: "teslamate".to_owned(),
+            scope: TeslaMateImportScope::Selected(car_id),
+            imported_at_ms: current_epoch_ms()?,
+        },
+        &stage,
+        &open_session,
+    ) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = stage.discard();
+            return Err(error.into());
+        }
+    };
+    stage.discard()?;
+    Ok((stage_stats, report, captured_ciphertexts))
+}
+
+#[cfg(target_os = "macos")]
+fn read_migration_secret(path: &Path) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    if path == Path::new("-") {
+        let mut bytes = Vec::new();
+        std::io::stdin().read_to_end(&mut bytes)?;
+        return Ok(bytes);
+    }
+    Ok(fs::read(path)?)
+}
+
+fn observation_command_error(
+    command: &str,
+    car_id: i64,
+    error: ObservationVerificationError,
+) -> Box<dyn std::error::Error> {
+    println!(
+        "{}",
+        serde_json::json!({
+            "status": "error",
+            "command": command,
+            "carId": car_id,
+            "errorCode": error.code(),
+        })
+    );
+    Box::new(std::io::Error::other(error.to_string()))
+}
+
+fn render_pairing_qr(pairing_uri: &str) -> Result<String, qrcode::types::QrError> {
+    Ok(QrCode::new(pairing_uri.as_bytes())?
+        .render::<Dense1x2>()
+        .quiet_zone(true)
+        .build())
+}
+
+/// SHA-256 pin for the first PEM certificate (the server leaf) in the active
+/// TLS chain. Pairing carries this non-secret value so an iPhone can pin the
+/// exact identity before it sends its single-use claim secret.
+fn leaf_certificate_sha256(certificate_path: &std::path::Path) -> Result<String, std::io::Error> {
+    let pem = fs::read_to_string(certificate_path)?;
+    let begin = "-----BEGIN CERTIFICATE-----";
+    let end = "-----END CERTIFICATE-----";
+    let Some(after_begin) = pem.split_once(begin).map(|(_, rest)| rest) else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "TLS certificate has no PEM leaf",
+        ));
+    };
+    let Some((encoded, _)) = after_begin.split_once(end) else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "TLS certificate leaf PEM is incomplete",
+        ));
+    };
+    let encoded: String = encoded
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    let der = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "TLS leaf PEM is invalid")
+        })?;
+    if der.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "TLS leaf PEM is empty",
+        ));
+    }
+    Ok(hex::encode(Sha256::digest(der)))
+}
+
+fn pairing_uri(endpoint: &str, tls_pin: &str, pairing_id: uuid::Uuid, secret: &str) -> String {
+    let mut query = url::form_urlencoded::Serializer::new(String::new());
+    query.append_pair("endpoint", endpoint);
+    query.append_pair("pairing_id", &pairing_id.to_string());
+    query.append_pair("secret", secret);
+    query.append_pair("tls_pin", tls_pin);
+    format!("teslatlas-hub://pair?{}", query.finish())
+}
+
+fn current_epoch_ms() -> Result<i64, std::io::Error> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(std::io::Error::other)?;
+    i64::try_from(elapsed.as_millis())
+        .map_err(|_| std::io::Error::other("system clock exceeds epoch milliseconds"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, io::Write, path::PathBuf};
+    #[cfg(target_os = "macos")]
+    use std::{
+        future::pending,
+        net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
+        path::Path,
+        process::{Child, Command as ProcessCommand, Stdio},
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
+
+    use base64::Engine;
+    use clap::Parser;
+    use sha2::Digest;
+    #[cfg(target_os = "macos")]
+    use sha2::Sha256;
+
+    use super::{Cli, Command, leaf_certificate_sha256, pairing_uri, render_pairing_qr, run};
+    #[cfg(target_os = "macos")]
+    use super::{
+        MacServeControl, MacServeWorkerStopTimeout, command_requires_user_hub_admission,
+        run_macos_serve_supervisor,
+    };
+    #[cfg(target_os = "macos")]
+    use teslatlas_hub::protocol::{
+        CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor, PROTOCOL_V1,
+    };
+    use uuid::Uuid;
+
+    #[cfg(target_os = "macos")]
+    fn supervisor_cursor_proof(cursor_key: &CursorKey) -> String {
+        OpaqueCursor::issue(
+            cursor_key,
+            CursorClaims {
+                protocol: PROTOCOL_V1,
+                schema: HUB_PROJECTION_SCHEMA_V3,
+                installation_id: Uuid::from_u128(0x11111111_1111_4111_8111_111111111111),
+                account_id: Uuid::from_u128(0x22222222_2222_4222_8222_222222222222),
+                vehicle_id: Uuid::from_u128(0x33333333_3333_4333_8333_333333333333),
+                generation: 7,
+                sequence: 11,
+            },
+        )
+        .expect("test cursor")
+        .as_str()
+        .to_owned()
+    }
+
+    #[cfg(target_os = "macos")]
+    struct MacServeDropWitness {
+        label: &'static str,
+        drops: tokio::sync::mpsc::UnboundedSender<&'static str>,
+    }
+
+    #[cfg(target_os = "macos")]
+    impl Drop for MacServeDropWitness {
+        fn drop(&mut self) {
+            let _ = self.drops.send(self.label);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    const MACOS_SUPERVISOR_SIGTERM_CHILD_ENV: &str =
+        "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_CHILD";
+    #[cfg(target_os = "macos")]
+    const MACOS_SUPERVISOR_SIGTERM_CHILD_BIND_ENV: &str =
+        "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_BIND";
+    #[cfg(target_os = "macos")]
+    const MACOS_SUPERVISOR_SIGTERM_CHILD_RECEIPT_ENV: &str =
+        "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_RECEIPT";
+    #[cfg(target_os = "macos")]
+    const MACOS_SUPERVISOR_SIGTERM_CHILD_FIXTURE_ENV: &str =
+        "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_FIXTURE";
+    #[cfg(target_os = "macos")]
+    const MACOS_SUPERVISOR_SIGTERM_CHILD_RUN_ENV: &str =
+        "TESLATLAS_HUB_TEST_MACOS_SUPERVISOR_SIGTERM_RUN";
+    #[cfg(target_os = "macos")]
+    const MACOS_SUPERVISOR_SIGTERM_CHILD_TEST: &str = "tests::macos_supervisor_sigterm_child";
+    #[cfg(target_os = "macos")]
+    const MACOS_SUPERVISOR_SIGTERM_BOUND: Duration = Duration::from_secs(3);
+
+    #[cfg(target_os = "macos")]
+    fn macos_supervisor_sigterm_receipt(
+        phase: &str,
+        run: u8,
+        bind: SocketAddr,
+        fixture_heads_sha256: &str,
+        cursor_proof: &str,
+        collector_stopped: usize,
+        listener_stopped: usize,
+    ) -> String {
+        format!(
+            "phase={phase}\nrun={run}\nbind={bind}\nfixture_heads_sha256={fixture_heads_sha256}\ncursor_proof={cursor_proof}\nfake_collector_outbound=0\ncollector_stopped={collector_stopped}\nlistener_stopped={listener_stopped}\n"
+        )
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn wait_for_macos_supervisor_sigterm_receipt(
+        receipt_path: &Path,
+        expected: &str,
+    ) -> Result<(), String> {
+        tokio::time::timeout(MACOS_SUPERVISOR_SIGTERM_BOUND, async {
+            loop {
+                match fs::read(receipt_path) {
+                    Ok(receipt) if receipt == expected.as_bytes() => return Ok(()),
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(format!(
+                            "read SIGTERM child receipt {}: {error}",
+                            receipt_path.display()
+                        ));
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .map_err(|_| {
+            format!(
+                "timed out waiting for SIGTERM child receipt {}",
+                receipt_path.display()
+            )
+        })?
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn wait_for_macos_supervisor_sigterm_child(
+        child: &mut Child,
+        phase: &str,
+    ) -> Result<std::process::ExitStatus, String> {
+        tokio::time::timeout(MACOS_SUPERVISOR_SIGTERM_BOUND, async {
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => return Ok(status),
+                    Ok(None) => tokio::time::sleep(Duration::from_millis(5)).await,
+                    Err(error) => {
+                        return Err(format!("inspect SIGTERM child during {phase}: {error}"));
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|_| format!("SIGTERM child did not exit during {phase}"))?
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn reap_macos_supervisor_sigterm_child(child: &mut Child) -> Result<(), String> {
+        if child
+            .try_wait()
+            .map_err(|error| format!("inspect SIGTERM child cleanup: {error}"))?
+            .is_some()
+        {
+            return Ok(());
+        }
+        let _ = child.kill();
+        wait_for_macos_supervisor_sigterm_child(child, "forced cleanup")
+            .await
+            .map(|_| ())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn send_sigterm_to_macos_supervisor_child(child: &Child) -> Result<(), String> {
+        let raw_pid = i32::try_from(child.id())
+            .map_err(|_| "SIGTERM child PID does not fit i32".to_owned())?;
+        let pid = rustix::process::Pid::from_raw(raw_pid)
+            .ok_or_else(|| "SIGTERM child has an invalid PID".to_owned())?;
+        rustix::process::kill_process(pid, rustix::process::Signal::TERM)
+            .map_err(|error| format!("send SIGTERM to child: {error}"))
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn run_macos_supervisor_sigterm_child_cycle(
+        test_binary: &Path,
+        fixture_path: &Path,
+        bind: SocketAddr,
+        run: u8,
+    ) -> Result<(), String> {
+        let fixture = fs::read(fixture_path)
+            .map_err(|error| format!("read stable fixture {}: {error}", fixture_path.display()))?;
+        let fixture_heads_sha256 = hex::encode(Sha256::digest(&fixture));
+        let expected_cursor_proof = supervisor_cursor_proof(&CursorKey::from_bytes([0xB7; 32]));
+        let receipt_path = fixture_path.with_extension(format!("sigterm-receipt-{run}"));
+        let mut child = ProcessCommand::new(test_binary)
+            .args([
+                "--exact",
+                MACOS_SUPERVISOR_SIGTERM_CHILD_TEST,
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(MACOS_SUPERVISOR_SIGTERM_CHILD_ENV, "1")
+            .env(MACOS_SUPERVISOR_SIGTERM_CHILD_BIND_ENV, bind.to_string())
+            .env(MACOS_SUPERVISOR_SIGTERM_CHILD_RECEIPT_ENV, &receipt_path)
+            .env(MACOS_SUPERVISOR_SIGTERM_CHILD_FIXTURE_ENV, fixture_path)
+            .env(MACOS_SUPERVISOR_SIGTERM_CHILD_RUN_ENV, run.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| format!("spawn SIGTERM child: {error}"))?;
+
+        let ready = macos_supervisor_sigterm_receipt(
+            "ready",
+            run,
+            bind,
+            &fixture_heads_sha256,
+            &expected_cursor_proof,
+            0,
+            0,
+        );
+        let completed = macos_supervisor_sigterm_receipt(
+            "stopped",
+            run,
+            bind,
+            &fixture_heads_sha256,
+            &expected_cursor_proof,
+            1,
+            1,
+        );
+        let result = async {
+            wait_for_macos_supervisor_sigterm_receipt(&receipt_path, &ready).await?;
+            TcpStream::connect_timeout(&bind, Duration::from_millis(250)).map_err(|error| {
+                format!("SIGTERM child did not expose its loopback listener: {error}")
+            })?;
+            match TcpListener::bind(bind) {
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {}
+                Err(error) => {
+                    return Err(format!(
+                        "unexpected loopback bind error while SIGTERM child is live: {error}"
+                    ));
+                }
+                Ok(listener) => {
+                    drop(listener);
+                    return Err("SIGTERM child wrote ready before binding its listener".to_owned());
+                }
+            }
+            send_sigterm_to_macos_supervisor_child(&child)?;
+            let status = wait_for_macos_supervisor_sigterm_child(&mut child, "SIGTERM").await?;
+            if !status.success() {
+                return Err(format!("SIGTERM child exited unsuccessfully: {status}"));
+            }
+            wait_for_macos_supervisor_sigterm_receipt(&receipt_path, &completed).await?;
+            let after = fs::read(fixture_path).map_err(|error| {
+                format!(
+                    "read fixture after SIGTERM child {}: {error}",
+                    fixture_path.display()
+                )
+            })?;
+            if after != fixture {
+                return Err("SIGTERM child changed stable fixture heads".to_owned());
+            }
+            Ok(())
+        }
+        .await;
+
+        if result.is_err() {
+            reap_macos_supervisor_sigterm_child(&mut child).await?;
+        }
+        result
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_sigterm_child() {
+        if std::env::var_os(MACOS_SUPERVISOR_SIGTERM_CHILD_ENV).is_none() {
+            return;
+        }
+
+        let bind = std::env::var(MACOS_SUPERVISOR_SIGTERM_CHILD_BIND_ENV)
+            .expect("SIGTERM child bind")
+            .parse::<SocketAddr>()
+            .expect("SIGTERM child loopback bind");
+        assert!(bind.ip().is_loopback(), "SIGTERM child must bind loopback");
+        let receipt_path = PathBuf::from(
+            std::env::var_os(MACOS_SUPERVISOR_SIGTERM_CHILD_RECEIPT_ENV)
+                .expect("SIGTERM child receipt path"),
+        );
+        let fixture_path = PathBuf::from(
+            std::env::var_os(MACOS_SUPERVISOR_SIGTERM_CHILD_FIXTURE_ENV)
+                .expect("SIGTERM child fixture path"),
+        );
+        let run = std::env::var(MACOS_SUPERVISOR_SIGTERM_CHILD_RUN_ENV)
+            .expect("SIGTERM child run")
+            .parse::<u8>()
+            .expect("SIGTERM child run number");
+        let fixture_heads_sha256 = hex::encode(Sha256::digest(
+            fs::read(&fixture_path).expect("read SIGTERM child stable fixture"),
+        ));
+        let cursor_key = CursorKey::from_bytes([0xB7; 32]);
+        let cursor_proof = supervisor_cursor_proof(&cursor_key);
+        let ready = macos_supervisor_sigterm_receipt(
+            "ready",
+            run,
+            bind,
+            &fixture_heads_sha256,
+            &cursor_proof,
+            0,
+            0,
+        );
+        let stopped = macos_supervisor_sigterm_receipt(
+            "stopped",
+            run,
+            bind,
+            &fixture_heads_sha256,
+            &cursor_proof,
+            1,
+            1,
+        );
+        let collector_stopped = Arc::new(AtomicUsize::new(0));
+        let server_stopped = Arc::new(AtomicUsize::new(0));
+        let collector_stopped_for_task = Arc::clone(&collector_stopped);
+        let server_stopped_for_task = Arc::clone(&server_stopped);
+        let ready_receipt_path = receipt_path.clone();
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM listener in child");
+
+        run_macos_serve_supervisor(
+            true,
+            move |ready_tx, shutdown| async move {
+                ready_tx
+                    .send(cursor_key)
+                    .map_err(|_| std::io::Error::other("SIGTERM child lost collector readiness"))?;
+                let _ = shutdown.await;
+                collector_stopped_for_task.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            move |received_cursor_key, shutdown| async move {
+                let received_cursor_key = received_cursor_key.ok_or_else(|| {
+                    std::io::Error::other("SIGTERM child server started without collector cursor")
+                })?;
+                if supervisor_cursor_proof(&received_cursor_key) != cursor_proof {
+                    return Err(std::io::Error::other(
+                        "SIGTERM child server did not receive collector cursor",
+                    ));
+                }
+                let listener = tokio::net::TcpListener::bind(bind).await?;
+                fs::write(&ready_receipt_path, ready.as_bytes())?;
+                let mut shutdown = shutdown;
+                loop {
+                    tokio::select! {
+                        _ = &mut shutdown => break,
+                        accepted = listener.accept() => {
+                            let _ = accepted?;
+                        }
+                    }
+                }
+                drop(listener);
+                server_stopped_for_task.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            async move {
+                let _ = sigterm.recv().await;
+                MacServeControl::Shutdown
+            },
+        )
+        .await
+        .expect("SIGTERM child supervisor shutdown");
+
+        assert_eq!(collector_stopped.load(Ordering::SeqCst), 1);
+        assert_eq!(server_stopped.load(Ordering::SeqCst), 1);
+        fs::write(receipt_path, stopped.as_bytes()).expect("write SIGTERM child stopped receipt");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_sigterm_releases_listener_and_reruns_same_fixture() {
+        let temporary = tempfile::tempdir().expect("SIGTERM lifecycle temporary root");
+        let fixture_path = temporary.path().join("stable-installation-heads");
+        let fixture = format!(
+            "installation_id={}\nhead_id={}\n",
+            Uuid::new_v4(),
+            Uuid::new_v4()
+        );
+        fs::write(&fixture_path, fixture.as_bytes()).expect("write stable fixture heads");
+        let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve loopback");
+        let bind = reservation.local_addr().expect("reserved loopback address");
+        drop(reservation);
+        let test_binary = std::env::current_exe().expect("current test executable");
+
+        run_macos_supervisor_sigterm_child_cycle(&test_binary, &fixture_path, bind, 1)
+            .await
+            .expect("first SIGTERM lifecycle child");
+        let rebound = TcpListener::bind(bind).expect("listener rebinds after first SIGTERM");
+        drop(rebound);
+
+        run_macos_supervisor_sigterm_child_cycle(&test_binary, &fixture_path, bind, 2)
+            .await
+            .expect("second SIGTERM lifecycle child");
+        let rebound = TcpListener::bind(bind).expect("listener rebinds after second SIGTERM");
+        drop(rebound);
+        assert_eq!(
+            fs::read(&fixture_path).expect("read stable fixture after rerun"),
+            fixture.as_bytes(),
+            "SIGTERM lifecycle changed stable installation/head fixture"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_zero_cadence_never_constructs_collector() {
+        let collector_calls = Arc::new(AtomicUsize::new(0));
+        let collector_calls_for_factory = Arc::clone(&collector_calls);
+        let (server_started_tx, server_started_rx) = tokio::sync::oneshot::channel();
+        let (server_stopped_tx, server_stopped_rx) = tokio::sync::oneshot::channel();
+        let (control_tx, control_rx) = tokio::sync::oneshot::channel();
+
+        let supervisor = tokio::spawn(run_macos_serve_supervisor(
+            false,
+            move |_ready, _shutdown| {
+                collector_calls_for_factory.fetch_add(1, Ordering::SeqCst);
+                async { Ok(()) }
+            },
+            move |cursor_key, shutdown| async move {
+                assert!(
+                    cursor_key.is_none(),
+                    "collector-disabled Serve received a cursor key"
+                );
+                let _ = server_started_tx.send(());
+                let _ = shutdown.await;
+                let _ = server_stopped_tx.send(());
+                Ok(())
+            },
+            async move { control_rx.await.expect("test control") },
+        ));
+
+        server_started_rx.await.expect("server started");
+        assert_eq!(collector_calls.load(Ordering::SeqCst), 0);
+        assert!(control_tx.send(MacServeControl::Shutdown).is_ok());
+        supervisor
+            .await
+            .expect("supervisor task")
+            .expect("clean API-only shutdown");
+        server_stopped_rx
+            .await
+            .expect("server stopped before return");
+        assert_eq!(collector_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_waits_for_ready_cursor_before_constructing_server() {
+        let expected_key = CursorKey::from_bytes([61; 32]);
+        let expected_proof = supervisor_cursor_proof(&expected_key);
+        let (collector_started_tx, collector_started_rx) = tokio::sync::oneshot::channel();
+        let (allow_ready_tx, allow_ready_rx) = tokio::sync::oneshot::channel();
+        let (collector_stopped_tx, collector_stopped_rx) = tokio::sync::oneshot::channel();
+        let (server_started_tx, mut server_started_rx) = tokio::sync::oneshot::channel();
+        let (server_stopped_tx, server_stopped_rx) = tokio::sync::oneshot::channel();
+        let (control_tx, control_rx) = tokio::sync::oneshot::channel();
+
+        let supervisor = tokio::spawn(run_macos_serve_supervisor(
+            true,
+            move |ready, shutdown| async move {
+                let _ = collector_started_tx.send(());
+                let _ = allow_ready_rx.await;
+                ready
+                    .send(expected_key)
+                    .map_err(|_| std::io::Error::other("test readiness receiver disappeared"))?;
+                let _ = shutdown.await;
+                let _ = collector_stopped_tx.send(());
+                Ok(())
+            },
+            move |cursor_key, shutdown| async move {
+                let cursor_key = cursor_key.expect("collector cursor key");
+                let _ = server_started_tx.send(supervisor_cursor_proof(&cursor_key));
+                let _ = shutdown.await;
+                let _ = server_stopped_tx.send(());
+                Ok(())
+            },
+            async move { control_rx.await.expect("test control") },
+        ));
+
+        collector_started_rx.await.expect("collector started");
+        assert!(
+            server_started_rx.try_recv().is_err(),
+            "server started before collector readiness"
+        );
+        assert!(allow_ready_tx.send(()).is_ok());
+        assert_eq!(
+            server_started_rx
+                .await
+                .expect("server started after readiness"),
+            expected_proof,
+            "server did not receive the collector's exact cursor key"
+        );
+
+        assert!(control_tx.send(MacServeControl::Shutdown).is_ok());
+        supervisor
+            .await
+            .expect("supervisor task")
+            .expect("clean shutdown");
+        collector_stopped_rx
+            .await
+            .expect("collector stopped before return");
+        server_stopped_rx
+            .await
+            .expect("server stopped before return");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_server_error_stops_and_awaits_collector() {
+        let (collector_stopped_tx, collector_stopped_rx) = tokio::sync::oneshot::channel();
+        let (server_finished_tx, server_finished_rx) = tokio::sync::oneshot::channel();
+        let result = run_macos_serve_supervisor(
+            true,
+            move |ready, shutdown| async move {
+                ready
+                    .send(CursorKey::from_bytes([62; 32]))
+                    .map_err(|_| std::io::Error::other("test readiness receiver disappeared"))?;
+                let _ = shutdown.await;
+                let _ = collector_stopped_tx.send(());
+                Ok(())
+            },
+            move |_cursor_key, _shutdown| async move {
+                let _ = server_finished_tx.send(());
+                Err(std::io::Error::other("test server failure"))
+            },
+            pending(),
+        )
+        .await
+        .expect_err("server failure returns");
+
+        assert!(result.to_string().contains("test server failure"));
+        server_finished_rx.await.expect("server completed");
+        collector_stopped_rx
+            .await
+            .expect("collector stopped before server error returned");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_collector_error_stops_and_awaits_server() {
+        let (release_collector_tx, release_collector_rx) = tokio::sync::oneshot::channel();
+        let (server_started_tx, server_started_rx) = tokio::sync::oneshot::channel();
+        let (server_stopped_tx, server_stopped_rx) = tokio::sync::oneshot::channel();
+        let supervisor = tokio::spawn(run_macos_serve_supervisor(
+            true,
+            move |ready, _shutdown| async move {
+                ready
+                    .send(CursorKey::from_bytes([63; 32]))
+                    .map_err(|_| std::io::Error::other("test readiness receiver disappeared"))?;
+                let _ = release_collector_rx.await;
+                Err(std::io::Error::other("test collector failure"))
+            },
+            move |_cursor_key, shutdown| async move {
+                let _ = server_started_tx.send(());
+                let _ = shutdown.await;
+                let _ = server_stopped_tx.send(());
+                Ok(())
+            },
+            pending(),
+        ));
+
+        server_started_rx
+            .await
+            .expect("server started after readiness");
+        assert!(release_collector_tx.send(()).is_ok());
+        let result = supervisor
+            .await
+            .expect("supervisor task")
+            .expect_err("collector failure returns");
+        assert!(result.to_string().contains("test collector failure"));
+        server_stopped_rx
+            .await
+            .expect("server stopped before collector error returned");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_admission_invalidation_stops_and_awaits_workers() {
+        let (collector_stopped_tx, collector_stopped_rx) = tokio::sync::oneshot::channel();
+        let (server_started_tx, server_started_rx) = tokio::sync::oneshot::channel();
+        let (server_stopped_tx, server_stopped_rx) = tokio::sync::oneshot::channel();
+        let (control_tx, control_rx) = tokio::sync::oneshot::channel();
+        let supervisor = tokio::spawn(run_macos_serve_supervisor(
+            true,
+            move |ready, shutdown| async move {
+                ready
+                    .send(CursorKey::from_bytes([64; 32]))
+                    .map_err(|_| std::io::Error::other("test readiness receiver disappeared"))?;
+                let _ = shutdown.await;
+                let _ = collector_stopped_tx.send(());
+                Ok(())
+            },
+            move |_cursor_key, shutdown| async move {
+                let _ = server_started_tx.send(());
+                let _ = shutdown.await;
+                let _ = server_stopped_tx.send(());
+                Ok(())
+            },
+            async move { control_rx.await.expect("test control") },
+        ));
+
+        server_started_rx.await.expect("server started");
+        assert!(
+            control_tx
+                .send(MacServeControl::AdmissionInvalidated(
+                    std::io::Error::other("test admission invalidated",)
+                ))
+                .is_ok()
+        );
+        let result = supervisor
+            .await
+            .expect("supervisor task")
+            .expect_err("admission invalidation returns");
+        assert!(result.to_string().contains("test admission invalidated"));
+        collector_stopped_rx
+            .await
+            .expect("collector stopped before invalidation returned");
+        server_stopped_rx
+            .await
+            .expect("server stopped before invalidation returned");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_shutdown_stops_and_awaits_workers() {
+        let (collector_stopped_tx, collector_stopped_rx) = tokio::sync::oneshot::channel();
+        let (server_started_tx, server_started_rx) = tokio::sync::oneshot::channel();
+        let (server_stopped_tx, server_stopped_rx) = tokio::sync::oneshot::channel();
+        let (control_tx, control_rx) = tokio::sync::oneshot::channel();
+        let supervisor = tokio::spawn(run_macos_serve_supervisor(
+            true,
+            move |ready, shutdown| async move {
+                ready
+                    .send(CursorKey::from_bytes([65; 32]))
+                    .map_err(|_| std::io::Error::other("test readiness receiver disappeared"))?;
+                let _ = shutdown.await;
+                let _ = collector_stopped_tx.send(());
+                Ok(())
+            },
+            move |_cursor_key, shutdown| async move {
+                let _ = server_started_tx.send(());
+                let _ = shutdown.await;
+                let _ = server_stopped_tx.send(());
+                Ok(())
+            },
+            async move { control_rx.await.expect("test control") },
+        ));
+
+        server_started_rx.await.expect("server started");
+        assert!(control_tx.send(MacServeControl::Shutdown).is_ok());
+        supervisor
+            .await
+            .expect("supervisor task")
+            .expect("shutdown returns after both workers");
+        collector_stopped_rx
+            .await
+            .expect("collector stopped before shutdown returned");
+        server_stopped_rx
+            .await
+            .expect("server stopped before shutdown returned");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_shutdown_aborts_uncooperative_worker_after_stop_bound() {
+        let (drops_tx, mut drops_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (server_started_tx, server_started_rx) = tokio::sync::oneshot::channel();
+        let (server_stopped_tx, server_stopped_rx) = tokio::sync::oneshot::channel();
+        let (control_tx, control_rx) = tokio::sync::oneshot::channel();
+        let supervisor = tokio::spawn(run_macos_serve_supervisor(
+            true,
+            move |ready, _shutdown| async move {
+                let _drop_witness = MacServeDropWitness {
+                    label: "collector",
+                    drops: drops_tx,
+                };
+                ready
+                    .send(CursorKey::from_bytes([67; 32]))
+                    .map_err(|_| std::io::Error::other("test readiness receiver disappeared"))?;
+                pending::<()>().await;
+                Ok(())
+            },
+            move |_cursor_key, shutdown| async move {
+                let _ = server_started_tx.send(());
+                let _ = shutdown.await;
+                let _ = server_stopped_tx.send(());
+                Ok(())
+            },
+            async move { control_rx.await.expect("test control") },
+        ));
+
+        server_started_rx.await.expect("server started");
+        assert!(control_tx.send(MacServeControl::Shutdown).is_ok());
+        let error = supervisor
+            .await
+            .expect("supervisor task")
+            .expect_err("uncooperative collector times out");
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            error
+                .get_ref()
+                .is_some_and(|source| source.is::<MacServeWorkerStopTimeout>()),
+            "stop timeout lost its typed source"
+        );
+        assert!(error.to_string().contains("collector worker did not stop"));
+        server_stopped_rx
+            .await
+            .expect("cooperative server stopped before timeout returned");
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), drops_rx.recv())
+                .await
+                .expect("collector abort timeout"),
+            Some("collector"),
+            "uncooperative collector was not aborted and dropped"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_supervisor_cancellation_aborts_owned_workers_without_detaching() {
+        let (drops_tx, mut drops_rx) = tokio::sync::mpsc::unbounded_channel();
+        let collector_drops = drops_tx.clone();
+        let server_drops = drops_tx.clone();
+        let (server_started_tx, server_started_rx) = tokio::sync::oneshot::channel();
+        let supervisor = tokio::spawn(run_macos_serve_supervisor(
+            true,
+            move |ready, _shutdown| async move {
+                let _drop_witness = MacServeDropWitness {
+                    label: "collector",
+                    drops: collector_drops,
+                };
+                ready
+                    .send(CursorKey::from_bytes([66; 32]))
+                    .map_err(|_| std::io::Error::other("test readiness receiver disappeared"))?;
+                pending::<()>().await;
+                Ok(())
+            },
+            move |_cursor_key, _shutdown| async move {
+                let _drop_witness = MacServeDropWitness {
+                    label: "server",
+                    drops: server_drops,
+                };
+                let _ = server_started_tx.send(());
+                pending::<()>().await;
+                Ok(())
+            },
+            pending(),
+        ));
+
+        server_started_rx.await.expect("server started");
+        supervisor.abort();
+        assert!(
+            supervisor
+                .await
+                .expect_err("supervisor cancelled")
+                .is_cancelled(),
+            "cancellation did not terminate the supervisor"
+        );
+
+        let mut dropped = vec![
+            tokio::time::timeout(Duration::from_secs(1), drops_rx.recv())
+                .await
+                .expect("collector/server drop timeout")
+                .expect("drop witness"),
+            tokio::time::timeout(Duration::from_secs(1), drops_rx.recv())
+                .await
+                .expect("collector/server drop timeout")
+                .expect("drop witness"),
+        ];
+        dropped.sort_unstable();
+        assert_eq!(dropped, ["collector", "server"]);
+    }
+
+    #[tokio::test]
+    async fn doctor_does_not_create_or_initialize_a_missing_data_directory() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let data_dir = temporary.path().join("missing-hub-state");
+        let config_path = temporary.path().join("config.toml");
+        fs::write(
+            &config_path,
+            format!("data_dir = {:?}\nbind = '127.0.0.1:18443'\n", data_dir),
+        )
+        .expect("write config");
+
+        let error = run(Cli {
+            config: Some(config_path),
+            command: Command::Doctor,
+        })
+        .await
+        .expect_err("doctor must fail on missing state");
+
+        assert!(error.to_string().contains("cannot inspect hub catalogue"));
+        assert!(!data_dir.exists());
+    }
+
+    #[test]
+    fn observation_commands_parse_their_machine_readable_inputs() {
+        let watermark =
+            Cli::try_parse_from(["teslatlas-hub", "observation-watermark", "--car-id", "17"])
+                .expect("watermark CLI");
+        assert!(matches!(
+            watermark.command,
+            Command::ObservationWatermark { car_id: 17 }
+        ));
+
+        let verify = Cli::try_parse_from([
+            "teslatlas-hub",
+            "verify-observation",
+            "--car-id",
+            "17",
+            "--watermark",
+            "42",
+        ])
+        .expect("verification CLI");
+        assert!(matches!(
+            verify.command,
+            Command::VerifyObservation {
+                car_id: 17,
+                watermark: 42
+            }
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn observe_command_requires_positive_duration() {
+        let cli = Cli::try_parse_from(["teslatlas-hub", "observe", "--duration-seconds", "3600"])
+            .expect("observe CLI");
+        assert!(matches!(
+            cli.command,
+            Command::Observe {
+                duration_seconds: 3600
+            }
+        ));
+        assert!(
+            Cli::try_parse_from(["teslatlas-hub", "observe", "--duration-seconds", "0",]).is_err()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migrate_serve_and_observe_share_the_instance_lock() {
+        assert!(command_requires_user_hub_admission(&Command::Serve));
+        assert!(command_requires_user_hub_admission(&Command::Observe {
+            duration_seconds: 1,
+        }));
+        assert!(command_requires_user_hub_admission(&Command::Migrate {
+            source: "postgresql://localhost/teslamate".to_owned(),
+            car_id: 1,
+            postgres_password_file: PathBuf::from("password"),
+            encryption_key_file: Some(PathBuf::from("key")),
+            access_token_file: None,
+            refresh_token_file: None,
+        }));
+        assert!(!command_requires_user_hub_admission(&Command::Doctor));
+        assert!(!command_requires_user_hub_admission(&Command::Legal));
+        assert!(!command_requires_user_hub_admission(&Command::Status));
+        assert!(!command_requires_user_hub_admission(&Command::Preflight));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn observe_supervisor_stops_server_after_control_shutdown() {
+        run_macos_serve_supervisor(
+            false,
+            |_ready, _shutdown| async { Ok(()) },
+            |_cursor_key, shutdown| async move {
+                let _ = shutdown.await;
+                Ok(())
+            },
+            async {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                MacServeControl::Shutdown
+            },
+        )
+        .await
+        .expect("observe supervisor shutdown");
+    }
+
+    #[test]
+    fn pairing_uri_encodes_its_endpoint_as_one_query_value() {
+        let pin = "a".repeat(64);
+        let uri = pairing_uri(
+            "https://hub.example/",
+            &pin,
+            Uuid::nil(),
+            "0123456789abcdef",
+        );
+        assert!(uri.contains("endpoint=https%3A%2F%2Fhub.example%2F"));
+        assert!(uri.contains("pairing_id=00000000-0000-0000-0000-000000000000"));
+        assert!(uri.contains(&format!("tls_pin={pin}")));
+    }
+
+    #[test]
+    fn leaf_certificate_pin_hashes_first_pem_certificate() {
+        let leaf = [1_u8, 2, 3, 4, 5];
+        let temporary = tempfile::NamedTempFile::new().expect("temporary PEM");
+        let mut pem = temporary.reopen().expect("reopen PEM");
+        writeln!(
+            pem,
+            "ignored\n-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
+            base64::engine::general_purpose::STANDARD.encode(leaf),
+            base64::engine::general_purpose::STANDARD.encode([9_u8, 8, 7])
+        )
+        .expect("write PEM");
+        pem.flush().expect("flush PEM");
+
+        assert_eq!(
+            leaf_certificate_sha256(temporary.path()).expect("leaf pin"),
+            hex::encode(sha2::Sha256::digest(leaf))
+        );
+    }
+
+    #[test]
+    fn pairing_qr_renders_without_printing_the_raw_secret() {
+        let uri = pairing_uri(
+            "https://192.168.1.10:8443",
+            &"a".repeat(64),
+            Uuid::nil(),
+            "0123456789abcdef",
+        );
+        let qr = render_pairing_qr(&uri).expect("render QR");
+        assert!(qr.contains('█') || qr.contains('▀') || qr.contains('▄'));
+        assert!(!qr.contains("0123456789abcdef"));
+    }
+}

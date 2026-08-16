@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
+# shellcheck source=common.sh
+. "$SCRIPT_DIR/common.sh"
+
+require_root
+read_console_user
+bootout_if_loaded

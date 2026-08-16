@@ -1,0 +1,160 @@
+#!/bin/sh
+
+set -eu
+
+umask 022
+
+PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+MACOSX_DEPLOYMENT_TARGET=12.0
+export MACOSX_DEPLOYMENT_TARGET
+COPYFILE_DISABLE=1
+export COPYFILE_DISABLE
+
+die() {
+    printf '%s\n' "build-macos-app: $*" >&2
+    exit 1
+}
+
+ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
+APP_SOURCE="$ROOT/macos/TeslatlasHubApp"
+DERIVED="$ROOT/target/macos-app"
+GENERATED="$DERIVED/generated"
+PROJECT="$APP_SOURCE/TeslatlasHubApp.xcodeproj"
+RUST_BINARY="$ROOT/target/release/teslatlas-hub"
+SERVICE_PACKAGE="$GENERATED/TeslatlasHubService.pkg"
+PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
+DIST="$ROOT/dist"
+DIST_APP="$DIST/Teslatlas Hub.app"
+
+ensure_real_directory() {
+    directory=$1
+    if [ -e "$directory" ] || [ -L "$directory" ]; then
+        [ -d "$directory" ] && [ ! -L "$directory" ] \
+            || die "unsafe build directory: $directory"
+    else
+        /bin/mkdir -p "$directory"
+    fi
+}
+
+minimum_macos() {
+    /usr/bin/otool -l "$1" | /usr/bin/awk '
+        $1 == "cmd" { command = $2 }
+        command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit }
+        command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }
+    '
+}
+
+require_macos_12_or_earlier() {
+    version=$(minimum_macos "$1")
+    case "$version" in
+        ''|*[!0-9.]*) die "cannot read macOS deployment target: $1" ;;
+    esac
+    major=${version%%.*}
+    [ "$major" -le 12 ] \
+        || die "requires macOS $version, not macOS 12: $1"
+}
+
+reject_appledouble() {
+    path=$1
+    metadata=$(/usr/bin/find "$path" \( -name '._*' -o -name '.DS_Store' \) -print -quit)
+    [ -z "$metadata" ] || die "AppleDouble metadata in $path"
+}
+
+command -v cargo >/dev/null 2>&1 || die "cargo is required"
+command -v xcodegen >/dev/null 2>&1 || die "xcodegen is required"
+command -v xcodebuild >/dev/null 2>&1 || die "xcodebuild is required"
+[ "$(/usr/bin/uname -m)" = arm64 ] || die "an Apple-silicon Mac is required"
+
+version=$(
+    /usr/bin/sed -nE '/^version = "[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?"$/ {
+        s/^version = "([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)"$/\1/
+        p
+        q
+    }' "$ROOT/Cargo.toml"
+)
+[ -n "$version" ] || die "cannot read Cargo package version"
+/usr/bin/printf '%s\n' "$version" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+    || die "invalid package version: $version"
+marketing_version=${version%%-*}
+
+ensure_real_directory "$DERIVED"
+ensure_real_directory "$GENERATED"
+ensure_real_directory "$DIST"
+
+(
+    cd "$ROOT"
+    # The Xcode 27 linker corrupts optimized Rust proc-macro dylibs. Keep only
+    # build-time helpers unoptimized; the shipped Hub binary remains optimized.
+    CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_OPT_LEVEL=0 \
+        cargo build --locked --release --bin teslatlas-hub
+)
+
+"$ROOT/scripts/build-macos-service-package.sh" \
+    --binary "$RUST_BINARY" \
+    --version "$version" \
+    --output "$SERVICE_PACKAGE" >/dev/null
+
+xcodegen generate --quiet --spec "$APP_SOURCE/project.yml" --project "$APP_SOURCE"
+xcodebuild \
+    -project "$PROJECT" \
+    -scheme TeslatlasHubApp \
+    -configuration Release \
+    -derivedDataPath "$DERIVED" \
+    clean >/dev/null
+xcodebuild \
+    -project "$PROJECT" \
+    -scheme TeslatlasHubApp \
+    -configuration Release \
+    -derivedDataPath "$DERIVED" \
+    ARCHS=arm64 \
+    ONLY_ACTIVE_ARCH=YES \
+    MACOSX_DEPLOYMENT_TARGET=12.0 \
+    MARKETING_VERSION="$marketing_version" \
+    CURRENT_PROJECT_VERSION=1 \
+    CODE_SIGNING_ALLOWED=NO \
+    build >/dev/null
+
+[ -d "$PRODUCT" ] || die "Xcode did not produce the app"
+resources="$PRODUCT/Contents/Resources"
+/bin/mkdir -p "$resources"
+/usr/bin/install -m 0755 "$RUST_BINARY" "$resources/teslatlas-hub"
+/usr/bin/install -m 0644 "$SERVICE_PACKAGE" "$resources/TeslatlasHubService.pkg"
+for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md; do
+    if [ -f "$ROOT/$legal_file" ]; then
+        /usr/bin/install -m 0644 "$ROOT/$legal_file" "$resources/$legal_file"
+    fi
+done
+/usr/bin/xattr -cr "$resources" >/dev/null 2>&1 \
+    || die "cannot clear resource metadata"
+[ "$(/usr/bin/lipo -archs "$resources/teslatlas-hub")" = arm64 ] \
+    || die "embedded Hub binary is not arm64-only"
+require_macos_12_or_earlier "$resources/teslatlas-hub"
+[ -f "$resources/TeslatlasHubService.pkg" ] \
+    || die "service package resource is missing"
+reject_appledouble "$resources"
+app_binary="$PRODUCT/Contents/MacOS/Teslatlas Hub"
+[ "$(/usr/bin/lipo -archs "$app_binary")" = arm64 ] \
+    || die "App binary is not arm64-only"
+require_macos_12_or_earlier "$app_binary"
+
+/usr/bin/codesign --force --sign - --timestamp=none "$resources/teslatlas-hub" >/dev/null
+/usr/bin/codesign --force --deep --sign - --timestamp=none "$PRODUCT" >/dev/null
+/usr/bin/codesign --verify --deep --strict "$PRODUCT"
+
+case "$DIST_APP" in
+    "$ROOT/dist/Teslatlas Hub.app") ;;
+    *) die "refusing unsafe distribution destination" ;;
+esac
+if [ -e "$DIST_APP" ] || [ -L "$DIST_APP" ]; then
+    [ -d "$DIST_APP" ] && [ ! -L "$DIST_APP" ] \
+        || die "refusing unsafe distribution app destination"
+    /bin/rm -rf "$DIST_APP"
+fi
+/usr/bin/ditto --noextattr --norsrc "$PRODUCT" "$DIST_APP"
+/usr/bin/xattr -cr "$DIST_APP" >/dev/null 2>&1 \
+    || die "cannot clear distribution metadata"
+reject_appledouble "$DIST_APP"
+/usr/bin/codesign --verify --deep --strict "$DIST_APP"
+
+printf '%s\n' "$DIST_APP"

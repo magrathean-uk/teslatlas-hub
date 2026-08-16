@@ -1,0 +1,691 @@
+//! Small local credential helpers. Hub owns one encrypted TeslaMate pair.
+
+use crate::legacy_auth::{LegacyAuth, LegacyAuthError};
+use reqwest::Client;
+use std::{path::Path, sync::Arc, time::SystemTime};
+use thiserror::Error;
+
+const MAX_TOKEN_BYTES: usize = 16 * 1024;
+const MAX_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
+
+type SensitiveAccessGuard = Arc<dyn Fn() -> Result<(), CredentialError> + Send + Sync>;
+
+fn permitted_sensitive_access() -> SensitiveAccessGuard {
+    Arc::new(|| Ok(()))
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct OwnerTokens {
+    access_token: String,
+    refresh_token: String,
+}
+impl OwnerTokens {
+    pub(crate) fn access_token(&self) -> &str {
+        &self.access_token
+    }
+    pub(crate) fn refresh_token(&self) -> &str {
+        &self.refresh_token
+    }
+    pub(crate) fn from_secret_parts(
+        access_token: String,
+        refresh_token: String,
+    ) -> Result<Self, CredentialError> {
+        validate_token_component(&access_token)?;
+        validate_token_component(&refresh_token)?;
+        Ok(Self {
+            access_token,
+            refresh_token,
+        })
+    }
+}
+impl std::fmt::Debug for OwnerTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OwnerTokens([redacted])")
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum LegacyAuthManagerError {
+    #[error("legacy credential error: {0}")]
+    Credential(#[from] CredentialError),
+    #[error("legacy auth error: {0}")]
+    Auth(#[from] LegacyAuthError),
+    #[error("legacy token refresh is disabled for observer mode")]
+    ObserverRefreshDisabled,
+}
+impl LegacyAuthManagerError {
+    pub(crate) fn is_sensitive_access_failure(&self) -> bool {
+        matches!(self, Self::Credential(_))
+            || matches!(
+                self,
+                Self::Auth(
+                    LegacyAuthError::Persistence
+                        | LegacyAuthError::SensitivePersistenceUnavailable
+                        | LegacyAuthError::SensitiveAccessUnavailable
+                )
+            )
+    }
+}
+
+#[derive(Clone)]
+enum LegacyAuthPersistence {
+    HubTeslaMate(Arc<HubTeslaMatePersistence>),
+    #[cfg(test)]
+    TestCallback(Arc<dyn Fn(&str, &str) -> Result<(), CredentialError> + Send + Sync>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LegacyAuthRefreshPolicy {
+    Managed,
+    Observer,
+}
+#[derive(Clone)]
+struct HubTeslaMatePersistence {
+    store: crate::db::HubStore,
+    encryption_key: Arc<crate::teslamate_credentials::TeslaMateEncryptionKey>,
+}
+impl HubTeslaMatePersistence {
+    fn persist_refreshed(
+        &self,
+        access: &str,
+        refresh: &str,
+        expires_at: i64,
+        next_refresh_at: i64,
+    ) -> Result<(), CredentialError> {
+        let tokens = OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned())?;
+        let (access, refresh) = crate::teslamate_token::encrypt_legacy_owner_tokens(
+            self.encryption_key.as_bytes(),
+            &tokens,
+        )
+        .map_err(CredentialError::TeslaMateTokenCipher)?;
+        let stored = crate::db::TeslaMateLegacyTokenStore::refreshed(
+            access,
+            refresh,
+            expires_at,
+            next_refresh_at,
+        )
+        .map_err(CredentialError::TeslaMateTokenStore)?;
+        self.store
+            .replace_teslamate_legacy_tokens(&stored)
+            .map_err(CredentialError::TeslaMateTokenStore)
+    }
+}
+
+pub(crate) struct LegacyAuthManager {
+    auth: LegacyAuth,
+    persistence: LegacyAuthPersistence,
+    refresh_policy: LegacyAuthRefreshPolicy,
+    sensitive_access: SensitiveAccessGuard,
+}
+impl std::fmt::Debug for LegacyAuthManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.auth.fmt(f)
+    }
+}
+impl LegacyAuthManager {
+    pub(crate) fn from_hub_teslamate_store(
+        store: crate::db::HubStore,
+        data_dir: &Path,
+    ) -> Result<Self, LegacyAuthManagerError> {
+        Self::from_hub_teslamate_store_with_policy(
+            store,
+            data_dir,
+            LegacyAuthRefreshPolicy::Managed,
+            |tokens, stored| {
+                LegacyAuth::from_persisted_state(
+                    tokens.access_token(),
+                    tokens.refresh_token(),
+                    stored.expires_at(),
+                    stored.next_refresh_at(),
+                )
+            },
+        )
+    }
+
+    /// Load the same local token pair for a bounded observer. This manager can
+    /// use its current access token, but will never submit its refresh token.
+    pub(crate) fn from_hub_teslamate_store_observer(
+        store: crate::db::HubStore,
+        data_dir: &Path,
+    ) -> Result<Self, LegacyAuthManagerError> {
+        Self::from_hub_teslamate_store_with_policy(
+            store,
+            data_dir,
+            LegacyAuthRefreshPolicy::Observer,
+            |tokens, stored| {
+                LegacyAuth::from_persisted_state(
+                    tokens.access_token(),
+                    tokens.refresh_token(),
+                    stored.expires_at(),
+                    stored.next_refresh_at(),
+                )
+            },
+        )
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn from_hub_teslamate_store_for_admitted_user(
+        store: crate::db::HubStore,
+        data_dir: &Path,
+        admission: Arc<crate::hub_user_process::AdmittedUserHub>,
+    ) -> Result<Self, LegacyAuthManagerError> {
+        Self::from_hub_teslamate_store(store, data_dir)
+            .map(|manager| manager.with_runtime_admission(admission))
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn from_hub_teslamate_store_observer_for_admitted_user(
+        store: crate::db::HubStore,
+        data_dir: &Path,
+        admission: Arc<crate::hub_user_process::AdmittedUserHub>,
+    ) -> Result<Self, LegacyAuthManagerError> {
+        Self::from_hub_teslamate_store_observer(store, data_dir)
+            .map(|manager| manager.with_runtime_admission(admission))
+    }
+
+    fn from_hub_teslamate_store_with_policy(
+        store: crate::db::HubStore,
+        data_dir: &Path,
+        refresh_policy: LegacyAuthRefreshPolicy,
+        build_auth: impl FnOnce(
+            &OwnerTokens,
+            &crate::db::TeslaMateLegacyTokenStore,
+        ) -> Result<LegacyAuth, LegacyAuthError>,
+    ) -> Result<Self, LegacyAuthManagerError> {
+        let stored = store
+            .load_teslamate_legacy_tokens()
+            .map_err(CredentialError::TeslaMateTokenStore)?
+            .ok_or(CredentialError::TeslaMateTokenStoreMissing)?;
+        let encryption_key = Arc::new(
+            crate::teslamate_credentials::load_key_for_tokens(data_dir, &stored)
+                .map_err(CredentialError::TeslaMateCredentialFile)?,
+        );
+        let tokens = crate::teslamate_token::decrypt_legacy_owner_tokens(
+            encryption_key.as_bytes(),
+            stored.access(),
+            stored.refresh(),
+        )
+        .map_err(CredentialError::TeslaMateTokenCipher)?;
+        let auth = build_auth(&tokens, &stored)?;
+        Ok(Self {
+            auth,
+            persistence: LegacyAuthPersistence::HubTeslaMate(Arc::new(HubTeslaMatePersistence {
+                store,
+                encryption_key,
+            })),
+            refresh_policy,
+            sensitive_access: permitted_sensitive_access(),
+        })
+    }
+
+    #[cfg(target_os = "macos")]
+    fn with_runtime_admission(
+        mut self,
+        admission: Arc<crate::hub_user_process::AdmittedUserHub>,
+    ) -> Self {
+        self.sensitive_access = Arc::new(move || {
+            admission
+                .assert_sensitive_access()
+                .map_err(|_| CredentialError::SensitiveAccessUnavailable)
+        });
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_hub_teslamate_store_with_issuer(
+        store: crate::db::HubStore,
+        data_dir: &Path,
+        issuer: url::Url,
+    ) -> Result<Self, LegacyAuthManagerError> {
+        Self::from_hub_teslamate_store_with_policy(
+            store,
+            data_dir,
+            LegacyAuthRefreshPolicy::Managed,
+            move |tokens, stored| {
+                if stored.expires_at() <= 0
+                    || stored.next_refresh_at() <= 0
+                    || stored.next_refresh_at() >= stored.expires_at()
+                {
+                    return Err(LegacyAuthError::InvalidPersistedSchedule);
+                }
+                Ok(
+                    LegacyAuth::for_test(issuer, tokens.access_token(), tokens.refresh_token())
+                        .with_test_schedule(stored.expires_at(), stored.next_refresh_at()),
+                )
+            },
+        )
+    }
+    #[cfg(test)]
+    pub(crate) fn from_hub_teslamate_store_observer_with_issuer(
+        store: crate::db::HubStore,
+        data_dir: &Path,
+        issuer: url::Url,
+    ) -> Result<Self, LegacyAuthManagerError> {
+        Self::from_hub_teslamate_store_with_policy(
+            store,
+            data_dir,
+            LegacyAuthRefreshPolicy::Observer,
+            move |tokens, stored| {
+                if stored.expires_at() <= 0
+                    || stored.next_refresh_at() <= 0
+                    || stored.next_refresh_at() >= stored.expires_at()
+                {
+                    return Err(LegacyAuthError::InvalidPersistedSchedule);
+                }
+                Ok(
+                    LegacyAuth::for_test(issuer, tokens.access_token(), tokens.refresh_token())
+                        .with_test_schedule(stored.expires_at(), stored.next_refresh_at()),
+                )
+            },
+        )
+    }
+    #[cfg(test)]
+    pub(crate) fn access_token(&self) -> &str {
+        self.auth.access_token()
+    }
+    pub(crate) fn assert_sensitive_access(&self) -> Result<(), LegacyAuthManagerError> {
+        (self.sensitive_access)().map_err(Into::into)
+    }
+    pub(crate) fn access_token_for_sensitive_use(&self) -> Result<&str, LegacyAuthManagerError> {
+        self.assert_sensitive_access()?;
+        Ok(self.auth.access_token())
+    }
+    #[cfg(test)]
+    pub(crate) fn refresh_token(&self) -> &str {
+        self.auth.refresh_token()
+    }
+    #[cfg(test)]
+    pub(crate) fn next_refresh_at(&self) -> i64 {
+        self.auth.next_refresh_at()
+    }
+    pub(crate) fn region(&self) -> crate::tesla_stream::StreamRegion {
+        self.auth.region()
+    }
+    pub(crate) async fn refresh_if_due(
+        &mut self,
+        client: &Client,
+        now: SystemTime,
+    ) -> Result<(), LegacyAuthManagerError> {
+        self.refresh(client, now, false).await
+    }
+    pub(crate) async fn refresh_now(
+        &mut self,
+        client: &Client,
+        now: SystemTime,
+    ) -> Result<(), LegacyAuthManagerError> {
+        self.refresh(client, now, true).await
+    }
+    async fn refresh(
+        &mut self,
+        client: &Client,
+        now: SystemTime,
+        force: bool,
+    ) -> Result<(), LegacyAuthManagerError> {
+        if self.refresh_policy == LegacyAuthRefreshPolicy::Observer {
+            return if force {
+                Err(LegacyAuthManagerError::ObserverRefreshDisabled)
+            } else {
+                Ok(())
+            };
+        }
+        self.assert_sensitive_access()?;
+        #[cfg(test)]
+        if let LegacyAuthPersistence::TestCallback(persist) = &self.persistence {
+            let persist = Arc::clone(persist);
+            let sensitive_access = Arc::clone(&self.sensitive_access);
+            return self
+                .auth
+                .refresh_persisted_with_bound_audit_guarded(
+                    client,
+                    now,
+                    force,
+                    move || {
+                        sensitive_access().map_err(|_| LegacyAuthError::SensitiveAccessUnavailable)
+                    },
+                    move |a, r, _, _| persist(a, r).map_err(|_| LegacyAuthError::Persistence),
+                )
+                .await
+                .map_err(Into::into);
+        }
+        let persistence = match &self.persistence {
+            LegacyAuthPersistence::HubTeslaMate(persistence) => Arc::clone(persistence),
+            #[cfg(test)]
+            LegacyAuthPersistence::TestCallback(_) => unreachable!("handled above"),
+        };
+        let sensitive_access = Arc::clone(&self.sensitive_access);
+        self.auth
+            .refresh_persisted_with_bound_audit_guarded(
+                client,
+                now,
+                force,
+                move || sensitive_access().map_err(|_| LegacyAuthError::SensitiveAccessUnavailable),
+                move |a, r, expires, next| {
+                    persistence
+                        .persist_refreshed(a, r, expires, next)
+                        .map_err(|_| LegacyAuthError::Persistence)
+                },
+            )
+            .await
+            .map_err(Into::into)
+    }
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        auth: LegacyAuth,
+        persist: Arc<dyn Fn(&str, &str) -> Result<(), CredentialError> + Send + Sync>,
+    ) -> Self {
+        Self {
+            auth,
+            persistence: LegacyAuthPersistence::TestCallback(persist),
+            refresh_policy: LegacyAuthRefreshPolicy::Managed,
+            sensitive_access: permitted_sensitive_access(),
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn for_test_with_sensitive_access(
+        auth: LegacyAuth,
+        persist: Arc<dyn Fn(&str, &str) -> Result<(), CredentialError> + Send + Sync>,
+        sensitive_access: Arc<dyn Fn() -> Result<(), CredentialError> + Send + Sync>,
+    ) -> Self {
+        let mut manager = Self::for_test(auth, persist);
+        manager.sensitive_access = sensitive_access;
+        manager
+    }
+    #[cfg(test)]
+    pub(crate) fn for_test_with_active_pair(
+        auth: LegacyAuth,
+    ) -> Result<Self, LegacyAuthManagerError> {
+        Ok(Self::for_test(auth, Arc::new(|_, _| Ok(()))))
+    }
+    #[cfg(test)]
+    pub(crate) fn test_pair_matches(
+        &self,
+        access: &str,
+        refresh: &str,
+    ) -> Result<bool, LegacyAuthManagerError> {
+        Ok(self.auth.access_token() == access && self.auth.refresh_token() == refresh)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct TeslaMatePostgresPassword(String);
+impl TeslaMatePostgresPassword {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CredentialError> {
+        let bytes = bytes
+            .strip_suffix(b"\r\n")
+            .or_else(|| bytes.strip_suffix(b"\n"))
+            .unwrap_or(bytes);
+        if bytes.is_empty() {
+            return Err(CredentialError::EmptyPostgresPassword);
+        }
+        if bytes.len() > MAX_POSTGRES_PASSWORD_BYTES {
+            return Err(CredentialError::PostgresPasswordTooLarge);
+        }
+        if bytes.contains(&0) || bytes.contains(&b'\r') || bytes.contains(&b'\n') {
+            return Err(CredentialError::InvalidPostgresPasswordBytes);
+        }
+        String::from_utf8(bytes.to_vec())
+            .map(Self)
+            .map_err(|_| CredentialError::InvalidPostgresPasswordEncoding)
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+impl std::fmt::Debug for TeslaMatePostgresPassword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TeslaMatePostgresPassword([redacted])")
+    }
+}
+
+fn validate_token_component(value: &str) -> Result<(), CredentialError> {
+    if value.is_empty() {
+        return Err(CredentialError::EmptyToken);
+    }
+    if value.len() > MAX_TOKEN_BYTES {
+        return Err(CredentialError::TokenTooLarge);
+    }
+    if value
+        .bytes()
+        .any(|b| b == 0 || b == b'\r' || b == b'\n' || b.is_ascii_control())
+    {
+        return Err(CredentialError::InvalidTokenBytes);
+    }
+    Ok(())
+}
+#[derive(Debug, Error)]
+pub enum CredentialError {
+    #[error("owner token is empty")]
+    EmptyToken,
+    #[error("owner token exceeds the size limit")]
+    TokenTooLarge,
+    #[error("owner token contains unsupported bytes")]
+    InvalidTokenBytes,
+    #[error("TeslaMate PostgreSQL password is empty")]
+    EmptyPostgresPassword,
+    #[error("TeslaMate PostgreSQL password exceeds the size limit")]
+    PostgresPasswordTooLarge,
+    #[error("TeslaMate PostgreSQL password contains unsupported bytes")]
+    InvalidPostgresPasswordBytes,
+    #[error("TeslaMate PostgreSQL password is not UTF-8")]
+    InvalidPostgresPasswordEncoding,
+    #[error("Hub TeslaMate token pair is missing")]
+    TeslaMateTokenStoreMissing,
+    #[error("Hub TeslaMate token store failed: {0}")]
+    TeslaMateTokenStore(#[source] crate::db::StoreError),
+    #[error("Hub TeslaMate key file failed: {0}")]
+    TeslaMateCredentialFile(#[source] crate::teslamate_credentials::TeslaMateCredentialError),
+    #[error("TeslaMate token operation failed: {0}")]
+    TeslaMateTokenCipher(#[source] crate::teslamate_token::TeslaMateTokenError),
+    #[error("Hub runtime admission is unavailable")]
+    SensitiveAccessUnavailable,
+    #[cfg(test)]
+    #[error("test sensitive access check failed")]
+    MacKeychainHelperInvalid,
+    #[cfg(test)]
+    #[error("test persistence failed")]
+    LegacyTokenStateWrite,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn observer_never_posts_a_refresh_token() {
+        let data = tempfile::tempdir().expect("data directory");
+        let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
+        crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key")
+            .expect("private key");
+        let key = crate::teslamate_credentials::load_key(data.path()).expect("load private key");
+        let tokens = OwnerTokens::from_secret_parts(
+            "observer-access".to_owned(),
+            "observer-refresh".to_owned(),
+        )
+        .expect("observer tokens");
+        let (access, refresh) =
+            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+                .expect("encrypt observer tokens");
+        store
+            .replace_teslamate_legacy_tokens(
+                &crate::db::TeslaMateLegacyTokenStore::refreshed(
+                    access,
+                    refresh,
+                    2_000_000_000,
+                    1_900_000_000,
+                )
+                .expect("schedule"),
+            )
+            .expect("store observer tokens");
+
+        let fake = crate::fake_tesla::FakeTeslaSource::spawn_canonical(
+            crate::fake_tesla::AdvanceMode::Manual,
+        )
+        .await
+        .expect("fake Tesla");
+        let mut manager = LegacyAuthManager::from_hub_teslamate_store_observer_with_issuer(
+            store,
+            data.path(),
+            fake.oauth_issuer_url(),
+        )
+        .expect("load observer");
+
+        crate::crypto::install_default_provider();
+        manager
+            .refresh_if_due(&Client::new(), SystemTime::now())
+            .await
+            .expect("observer skips scheduled refresh");
+        assert!(matches!(
+            manager.refresh_now(&Client::new(), SystemTime::now()).await,
+            Err(LegacyAuthManagerError::ObserverRefreshDisabled)
+        ));
+        assert_eq!(fake.token_refresh_request_count(), 0);
+        fake.shutdown().await;
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn replaced_runtime_admission_blocks_refresh_before_token_transport() {
+        let root = tempfile::tempdir().expect("test root");
+        let data_dir = root.path().join("data");
+        std::fs::create_dir(&data_dir).expect("data directory");
+        let admission = crate::hub_user_process::AdmittedUserHub::for_test(&data_dir)
+            .expect("admit data directory");
+        let fake = crate::fake_tesla::FakeTeslaSource::spawn_canonical(
+            crate::fake_tesla::AdvanceMode::Manual,
+        )
+        .await
+        .expect("fake Tesla");
+        let auth = LegacyAuth::for_test(
+            fake.oauth_issuer_url(),
+            "admitted-access",
+            "admitted-refresh",
+        );
+        let mut manager = LegacyAuthManager::for_test(auth, Arc::new(|_, _| Ok(())))
+            .with_runtime_admission(admission);
+
+        std::fs::rename(&data_dir, root.path().join("replaced-data"))
+            .expect("replace admitted directory");
+        std::fs::create_dir(&data_dir).expect("replacement directory");
+
+        crate::crypto::install_default_provider();
+        assert!(matches!(
+            manager.refresh_now(&Client::new(), SystemTime::now()).await,
+            Err(LegacyAuthManagerError::Credential(
+                CredentialError::SensitiveAccessUnavailable
+            ))
+        ));
+        assert_eq!(fake.token_refresh_request_count(), 0);
+        fake.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn hub_teslamate_store_refreshes_and_reopens_with_the_successor() {
+        let data = tempfile::tempdir().expect("data directory");
+        let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
+        crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key")
+            .expect("private key");
+        let key = crate::teslamate_credentials::load_key(data.path()).expect("load private key");
+        let initial = OwnerTokens::from_secret_parts(
+            "initial-access".to_owned(),
+            "initial-refresh".to_owned(),
+        )
+        .expect("initial tokens");
+        let (access, refresh) =
+            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+                .expect("encrypt initial tokens");
+        let stored = crate::db::TeslaMateLegacyTokenStore::refreshed(
+            access,
+            refresh,
+            2_000_000_000,
+            1_900_000_000,
+        )
+        .expect("initial schedule");
+        store
+            .replace_teslamate_legacy_tokens(&stored)
+            .expect("store initial pair");
+
+        let fake = crate::fake_tesla::FakeTeslaSource::spawn_canonical(
+            crate::fake_tesla::AdvanceMode::Manual,
+        )
+        .await
+        .expect("fake Tesla");
+        let mut manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+            store.clone(),
+            data.path(),
+            fake.oauth_issuer_url(),
+        )
+        .expect("load initial pair");
+        crate::crypto::install_default_provider();
+        manager
+            .refresh_now(&Client::new(), SystemTime::now())
+            .await
+            .expect("refresh and persist successor");
+        assert_eq!(fake.token_refresh_request_count(), 1);
+        let expected_expires = manager.auth.expires_at();
+        let expected_next_refresh = manager.next_refresh_at();
+
+        let stored = store
+            .load_teslamate_legacy_tokens()
+            .expect("load stored pair")
+            .expect("stored pair");
+        let decrypted = crate::teslamate_token::decrypt_legacy_owner_tokens(
+            key.as_bytes(),
+            stored.access(),
+            stored.refresh(),
+        )
+        .expect("decrypt successor");
+        assert_eq!(
+            decrypted.access_token(),
+            crate::fake_tesla::FAKE_REFRESHED_ACCESS_TOKEN
+        );
+        assert_eq!(
+            decrypted.refresh_token(),
+            crate::fake_tesla::FAKE_REFRESHED_REFRESH_TOKEN
+        );
+        assert_eq!(stored.expires_at(), expected_expires);
+        assert_eq!(stored.next_refresh_at(), expected_next_refresh);
+
+        let reopened = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+            store,
+            data.path(),
+            fake.oauth_issuer_url(),
+        )
+        .expect("reopen successor");
+        assert_eq!(
+            reopened.access_token(),
+            crate::fake_tesla::FAKE_REFRESHED_ACCESS_TOKEN
+        );
+        assert_eq!(
+            reopened.refresh_token(),
+            crate::fake_tesla::FAKE_REFRESHED_REFRESH_TOKEN
+        );
+        assert_eq!(reopened.next_refresh_at(), expected_next_refresh);
+    }
+
+    #[test]
+    fn postgres_password_parsing() {
+        assert_eq!(
+            TeslaMatePostgresPassword::from_bytes(b"postgres")
+                .unwrap()
+                .as_str(),
+            "postgres"
+        );
+        assert_eq!(
+            TeslaMatePostgresPassword::from_bytes(b"postgres\n")
+                .unwrap()
+                .as_str(),
+            "postgres"
+        );
+        assert!(TeslaMatePostgresPassword::from_bytes(b"bad\n\n").is_err());
+    }
+
+    #[test]
+    fn refreshed_pair_persistence_failure_is_terminal() {
+        for error in [
+            LegacyAuthManagerError::Auth(LegacyAuthError::Persistence),
+            LegacyAuthManagerError::Auth(LegacyAuthError::SensitivePersistenceUnavailable),
+        ] {
+            assert!(error.is_sensitive_access_failure());
+        }
+    }
+}
