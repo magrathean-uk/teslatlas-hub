@@ -1,15 +1,46 @@
 Teslatlas Hub
-Copyright (C) 2026 Teslatlas Hub contributors.
+=============
 
-This program is free software: you can redistribute it and/or modify it under
-the terms of the GNU Affero General Public License as published by the Free
-Software Foundation, either version 3 of the License, or (at your option) any
-later version. See LICENSE.
+Copyright © 2026 Magrathean UK Ltd.
+Portions copyright their respective contributors and third-party copyright holders.
 
-Contributors are identified by the Git history. No employer or company
-ownership is asserted by this notice.
+Required attribution for Magrathean-owned material
+--------------------------------------------------
 
-Teslatlas Hub is an independently authored compatibility implementation. It is
-not affiliated with, endorsed by, sponsored by, or approved by Tesla, Inc. or
-TeslaMate. Tesla, TeslaMate, and related marks belong to their respective
-owners. See PROVENANCE.md and TRADEMARKS.md.
+Teslatlas Hub — originally authored by Gyorgy Bolyki and published by
+Magrathean UK Ltd. Source: https://github.com/magrathean-uk/teslatlas-hub
+
+This attribution is a reasonable author and legal notice under section 7(b)
+of GNU AGPL version 3. Preserve it in source distributions and, where a work
+already provides an About, Legal, Credits or equivalent notice facility, in
+that facility. It does not require advertising, a splash screen, endorsement
+or use of any Magrathean or Teslatlas trade mark.
+
+TeslaMate compatibility material
+--------------------------------
+
+Optional migration and compatibility modules were developed with reference to
+the publicly available TeslaMate source, database schema, migration history and
+observable behaviour. TeslaMate is licensed under GNU AGPL version 3.
+
+Upstream project: https://github.com/teslamate-org/teslamate
+Pinned compatibility revision:
+7054517c10475f39f480edeae8f90c6f717985a3
+
+Copyright in TeslaMate belongs to its contributors and other applicable
+rightsholders. Upstream rights and notices apply only to material in which
+those rightsholders hold rights.
+
+No affiliation or endorsement is claimed.
+
+Third-party notices
+-------------------
+
+Third-party dependencies and data have their own licences and notices. See
+THIRD_PARTY_NOTICES.md and the release-generated dependency notice bundle.
+
+Trade marks
+-----------
+
+No licence is granted to use Teslatlas, Magrathean, Tesla, TeslaMate or any
+other trade mark except as permitted by applicable law. See TRADEMARKS.md.
