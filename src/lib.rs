@@ -48,3 +48,55 @@ pub mod updates_logical;
 pub(crate) mod user_lifetime_lock;
 
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/teslatlas-hub";
+
+/// Interactive legal notice printed by `teslatlas-hub legal`.
+pub fn legal_notice() -> String {
+    format!(
+        "Teslatlas Hub {BUILD_VERSION}\n\
+         Copyright © 2026 Magrathean UK Ltd\n\
+         License: AGPL-3.0-only\n\
+         Teslatlas Hub — originally authored by Gyorgy Bolyki and published by Magrathean UK Ltd. Source: {SOURCE_URL}\n\
+         Unofficial; not affiliated with Tesla or TeslaMate; no warranty."
+    )
+}
+
+#[cfg(test)]
+mod legal_notice_tests {
+    use super::{legal_notice, BUILD_VERSION, SOURCE_URL};
+
+    #[test]
+    fn legal_notice_identifies_agpl_only_and_notice_facts() {
+        let notice = legal_notice();
+        assert!(
+            notice.starts_with(&format!("Teslatlas Hub {BUILD_VERSION}\n")),
+            "notice must identify the running package version: {notice}"
+        );
+        assert!(
+            notice.contains("License: AGPL-3.0-only"),
+            "notice must name AGPL-3.0-only: {notice}"
+        );
+        assert!(
+            !notice.contains("AGPL-3.0-or-later"),
+            "notice must not offer or-later: {notice}"
+        );
+        assert!(
+            notice.contains("Copyright © 2026 Magrathean UK Ltd"),
+            "notice must name the company copyright: {notice}"
+        );
+        assert!(
+            notice.contains("originally authored by Gyorgy Bolyki")
+                && notice.contains("published by Magrathean UK Ltd"),
+            "notice must carry the founder/company attribution: {notice}"
+        );
+        assert!(
+            notice.contains(SOURCE_URL),
+            "notice must offer the source URL: {notice}"
+        );
+        assert!(
+            notice.contains("no warranty")
+                && notice.contains("not affiliated with Tesla or TeslaMate"),
+            "notice must state no-warranty and unofficial status: {notice}"
+        );
+    }
+}

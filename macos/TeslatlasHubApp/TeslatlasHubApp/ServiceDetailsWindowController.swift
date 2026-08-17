@@ -18,7 +18,7 @@ final class ServiceDetailsWindowController: NSWindowController {
         field.lineBreakMode = .byCharWrapping
         field.translatesAutoresizingMaskIntoConstraints = false
 
-        let legal = NSTextField(labelWithString: "License: AGPL-3.0-or-later\nUnofficial project. No Tesla affiliation or warranty.")
+        let legal = NSTextField(labelWithString: "License: AGPL-3.0-only\nUnofficial project. No Tesla affiliation or warranty.")
         legal.font = .systemFont(ofSize: 11)
         legal.textColor = .secondaryLabelColor
         legal.lineBreakMode = .byWordWrapping

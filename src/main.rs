@@ -544,10 +544,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     match &cli.command {
         Command::Legal => {
-            println!(
-                "Teslatlas Hub {}\nLicense: AGPL-3.0-or-later\nSource: https://github.com/magrathean-uk/teslatlas-hub\nUnofficial; not affiliated with Tesla or TeslaMate; no warranty.",
-                teslatlas_hub::BUILD_VERSION
-            );
+            println!("{}", teslatlas_hub::legal_notice());
             return Ok(());
         }
         Command::Doctor => {
