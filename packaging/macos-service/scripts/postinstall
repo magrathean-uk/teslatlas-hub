@@ -1,0 +1,84 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
+# shellcheck source=common.sh
+. "$SCRIPT_DIR/common.sh"
+
+require_root
+read_console_user
+
+BINARY='/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub'
+CONFIG="$CONSOLE_HOME/Library/Application Support/Teslatlas Hub/config.toml"
+LAUNCH_AGENTS="$CONSOLE_HOME/Library/LaunchAgents"
+PLIST="$LAUNCH_AGENTS/$LABEL.plist"
+LOG_DIRECTORY="$CONSOLE_HOME/Library/Logs/Teslatlas Hub"
+STDOUT="$LOG_DIRECTORY/hub.out.log"
+STDERR="$LOG_DIRECTORY/hub.err.log"
+TEMPLATE="$SCRIPT_DIR/com.teslatlas.hub.plist.in"
+
+[ -f "$BINARY" ] && [ ! -L "$BINARY" ] \
+    || installer_error "installed Hub binary is missing or unsafe"
+[ "$(/usr/bin/stat -f '%u:%g' "$BINARY")" = '0:0' ] \
+    || installer_error "installed Hub binary is not root-owned"
+[ -x "$BINARY" ] || installer_error "installed Hub binary is not executable"
+[ -f "$TEMPLATE" ] || installer_error "LaunchAgent template is missing"
+
+# Preinstall already stopped an old job. Repeat the exact check here so an
+# interrupted prior install cannot leave two collectors running.
+bootout_if_loaded
+
+ensure_user_directory "$CONSOLE_HOME/Library" 0700
+ensure_user_directory "$LAUNCH_AGENTS" 0700
+ensure_user_directory "$CONSOLE_HOME/Library/Logs" 0700
+ensure_user_directory "$LOG_DIRECTORY" 0700
+
+for log in "$STDOUT" "$STDERR"; do
+    if [ -e "$log" ] || [ -L "$log" ]; then
+        [ -f "$log" ] && [ ! -L "$log" ] \
+            || installer_error "unsafe Hub log path"
+        [ "$(/usr/bin/stat -f '%u' "$log")" = "$CONSOLE_UID" ] \
+            || installer_error "Hub log has unexpected owner"
+    else
+        /usr/bin/install -o "$CONSOLE_UID" -g "$CONSOLE_GID" -m 0600 /dev/null "$log" \
+            || installer_error "cannot create Hub log"
+    fi
+done
+
+temporary_plist=$(/usr/bin/mktemp "$LAUNCH_AGENTS/.${LABEL}.XXXXXX") \
+    || installer_error "cannot create temporary LaunchAgent plist"
+cleanup() {
+    /bin/rm -f "$temporary_plist"
+}
+trap cleanup EXIT HUP INT TERM
+
+/usr/bin/sed \
+    -e "s|@BINARY@|$(xml_sed_replacement "$BINARY")|g" \
+    -e "s|@CONFIG@|$(xml_sed_replacement "$CONFIG")|g" \
+    -e "s|@STDOUT@|$(xml_sed_replacement "$STDOUT")|g" \
+    -e "s|@STDERR@|$(xml_sed_replacement "$STDERR")|g" \
+    "$TEMPLATE" >"$temporary_plist" \
+    || installer_error "cannot render LaunchAgent plist"
+/usr/bin/plutil -lint "$temporary_plist" >/dev/null \
+    || installer_error "rendered LaunchAgent plist is invalid"
+/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_plist" \
+    || installer_error "cannot set LaunchAgent ownership"
+/bin/chmod 0600 "$temporary_plist" || installer_error "cannot protect LaunchAgent plist"
+/bin/mv -f "$temporary_plist" "$PLIST" || installer_error "cannot install LaunchAgent plist"
+trap - EXIT HUP INT TERM
+
+domain=$(service_domain)
+target=$(service_target)
+
+# A first install may happen before TeslaMate data and credentials are
+# imported. Do not create a KeepAlive crash loop in that state. Reinstalls of
+# an already configured Hub restart automatically; the app starts a newly
+# configured service after migration.
+if /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
+    "$BINARY" --config "$CONFIG" preflight >/dev/null 2>&1; then
+    /bin/launchctl bootstrap "$domain" "$PLIST" \
+        || installer_error "cannot bootstrap Hub service"
+    /bin/launchctl kickstart -k "$target" \
+        || installer_error "cannot start Hub service"
+fi

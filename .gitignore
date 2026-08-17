@@ -1,0 +1,22 @@
+/target/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.zst
+*.deb
+/dist/
+# Private Hub state and sanitized VPS-derived development data.
+/.teslatlas-hub/
+/.worktrees/
+.DS_Store
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+credentials/
+secrets/
+
+# Track committed golden pack fixtures used by M06/lineage tests.
+!fixtures/delta-v2/**/*.zst

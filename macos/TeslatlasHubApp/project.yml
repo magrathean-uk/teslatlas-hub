@@ -1,0 +1,60 @@
+name: TeslatlasHubApp
+
+options:
+  deploymentTarget:
+    macOS: "12.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "12.0"
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: NO
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGN_IDENTITY: ""
+
+targets:
+  TeslatlasHubApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "12.0"
+    sources:
+      - path: TeslatlasHubApp
+    info:
+      path: TeslatlasHubApp/Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.hub.app
+        PRODUCT_NAME: Teslatlas Hub
+        INFOPLIST_KEY_CFBundleDisplayName: Teslatlas Hub
+        INFOPLIST_KEY_LSMinimumSystemVersion: "12.0"
+  TeslatlasHubAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "12.0"
+    sources:
+      - path: TeslatlasHubAppTests
+    dependencies:
+      - target: TeslatlasHubApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.hub.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Teslatlas Hub.app/Contents/MacOS/Teslatlas Hub"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  TeslatlasHubApp:
+    build:
+      targets:
+        TeslatlasHubApp: all
+        TeslatlasHubAppTests: [test]
+    test:
+      gatherCoverageData: false
+      targets:
+        - name: TeslatlasHubAppTests
