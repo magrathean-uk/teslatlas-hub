@@ -24,7 +24,7 @@ Nothing in this document excludes or limits liability where exclusion or limitat
 
 The software is not designed, tested or certified for emergency response, life support, autonomous driving, vehicle safety functions, remote operation where failure may cause injury, regulatory compliance evidence, billing accuracy or forensic preservation.
 
-Do not rely on it to decide whether a vehicle is safe to operate or to issue safety-critical commands.
+Do not rely on it to decide whether a vehicle is safe to operate or to issue safety-critical commands. See `SAFETY_AND_USE_LIMITS.md`.
 
 ## 5. Third-party services and credentials
 

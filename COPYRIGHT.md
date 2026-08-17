@@ -2,15 +2,15 @@
 
 ## Copyright holder
 
-Subject to documented third-party and contributor rights, original project material first authored for Teslatlas Hub in 2026 is claimed by:
+Subject to documented third-party and contributor rights, original project material first authored for Teslatlas Hub in 2026 is owned by:
 
 **Magrathean UK Ltd**  
 Company number 16955343  
 16 Caledonian Court, West Street, Watford, England, WD17 1RY
 
-The original project and principal implementation were created by Gyorgy Bolyki for Magrathean UK Ltd.
+The original project creator and lead developer is Gyorgy Bolyki. That work is company-owned. Public Git author and committer identity for this repository is Magrathean UK Ltd (`magrathean-uk`). Personal developer names in local history do not change the company copyright.
 
-This statement does not transfer rights that remain with a contributor or third party. Signed assignments, employment terms and contribution agreements—not a repository statement alone—determine ownership.
+This statement does not transfer rights that remain with a later contributor or third party. Signed assignments, employment terms and contribution agreements determine ownership of those later contributions.
 
 ## Contributors
 

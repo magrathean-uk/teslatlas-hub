@@ -2,6 +2,13 @@
 
 This file records material changes to licensing, attribution, provenance, privacy and governance documents. It is not a substitute for the Git history.
 
+## 17 August 2026 — ownership, attribution and safety files
+
+- recorded that original Hub material is owned by Magrathean UK Ltd;
+- recorded Gyorgy Bolyki as original project creator and lead developer;
+- recorded that public Git identity for this repository is Magrathean UK Ltd;
+- added `ATTRIBUTION.md` and `SAFETY_AND_USE_LIMITS.md`.
+
 ## 17 August 2026 — name correction
 
 - corrected the product and project name to **Teslatlas** throughout the legal material;

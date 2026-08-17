@@ -171,6 +171,8 @@ No trade mark licence is granted. See [TRADEMARKS.md](TRADEMARKS.md).
 
 - [Legal framework](LEGAL.md)
 - [Copyright and ownership](COPYRIGHT.md)
+- [Attribution](ATTRIBUTION.md)
+- [Safety and use limits](SAFETY_AND_USE_LIMITS.md)
 - [Provenance](PROVENANCE.md)
 - [Migration](MIGRATION.md)
 - [Privacy and deployment roles](PRIVACY.md)
