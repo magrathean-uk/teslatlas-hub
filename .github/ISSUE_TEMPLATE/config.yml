@@ -2,7 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Security report
     url: mailto:contact@magrathean.uk?subject=SECURITY
-    about: Report undisclosed vulnerabilities privately.
+    about: Report undisclosed vulnerabilities privately. Do not include secrets in a public issue.
   - name: Legal notice
     url: mailto:contact@magrathean.uk?subject=LEGAL%20NOTICE
     about: Send substantiated copyright, trade mark or legal notices privately.

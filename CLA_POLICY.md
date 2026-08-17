@@ -8,17 +8,17 @@ The project needs clear rights to distribute, enforce, maintain and, for Company
 
 A non-trivial external contribution requires:
 
-- DCO sign-off on each commit;
-- an executed individual or corporate CLA;
+- DCO 1.1 sign-off on each commit;
+- an executed individual or corporate contributor assignment agreement;
 - identity and authority verification;
 - a provenance disclosure;
 - entry in the private contributor register.
 
-Executed CLAs are stored privately by Magrathean UK Ltd. GitHub contains templates and status only, never signatures, home addresses or identity documents.
+Canonical instruments: `INDIVIDUAL_CONTRIBUTOR_ASSIGNMENT_AGREEMENT.md` and `CORPORATE_CONTRIBUTOR_ASSIGNMENT_AGREEMENT.md`. Executed agreements are stored privately by Magrathean UK Ltd. GitHub contains templates and status only, never signatures, home addresses or identity documents.
 
 ## Company-owned contributions
 
-No separate CLA is required where a contribution is already Company-owned through employment, director duties, contractor assignment or another executed title instrument. DCO sign-off remains required.
+No separate assignment is required where a contribution is already Company-owned through employment, director duties, contractor assignment or another executed title instrument. DCO sign-off remains required. The founder does not sign an assignment to the Company for each commit; the private confirmatory deed is the chain-of-title instrument.
 
 ## Trivial changes
 

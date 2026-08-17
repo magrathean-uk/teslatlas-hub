@@ -1,39 +1,30 @@
 ## Change
 
-Describe the outcome and affected components.
+Describe the outcome, affected components and rollback.
 
-## Provenance
+## Provenance and rights
 
-- [ ] Written originally by me/us.
-- [ ] Every source, implementation, specification and repository consulted is listed below.
+- [ ] Every commit has `Signed-off-by:` DCO certification.
+- [ ] The applicable contributor assignment is recorded privately, or employment/contract/founder deed coverage is confirmed.
+- [ ] Every consulted source, implementation and exact revision is listed below.
 - [ ] Copied, translated, adapted or generated material is identified.
-- [ ] Third-party licences and notices are attached.
-- [ ] No confidential, employer-owned or unauthorised material is included.
-- [ ] No credentials, personal data, VINs or precise travel history are included.
+- [ ] Third-party licences/notices are identified.
+- [ ] No confidential information, credentials, personal data, VINs or precise travel history are included.
+- [ ] No code was copied from the proprietary Teslatlas repository without documented Magrathean rights and boundary approval.
 
-Sources and exact revisions:
+Sources and revisions:
 
-## Public/proprietary boundary
+## Security, privacy and operations
 
-- [ ] No code was copied from or to the proprietary `magrathean-uk/teslatlas` repository.
-- [ ] Shared material is Magrathean-owned and has a recorded dual-licensing basis.
-- [ ] Contributor CLA status is confirmed where proprietary reuse may occur.
-
-## Security and privacy
-
-- [ ] Threat and abuse cases were considered.
-- [ ] Secrets are redacted.
+- [ ] Least privilege and secret redaction are preserved.
 - [ ] Resource use is bounded.
-- [ ] Rollback and recovery are documented.
-- [ ] Data-flow and retention documentation remain accurate.
+- [ ] Migration, rollback and recovery are documented.
+- [ ] Data-flow and retention documentation remains accurate.
+- [ ] Tests cover success and failure paths.
 
-## Tests
+## Licence and release impact
 
-List exact commands and results.
-
-## Licence
-
-- [ ] Commits include DCO sign-off.
-- [ ] SPDX/provenance classification is correct.
-- [ ] Dependency and notice generation passes.
-- [ ] I understand submission does not guarantee merge.
+- [ ] AGPL-3.0-only notices remain consistent.
+- [ ] Corresponding Source requirements are satisfied.
+- [ ] Dependency/SBOM/notice generation has been reviewed.
+- [ ] Modified upstream material is marked and attributed where applicable.

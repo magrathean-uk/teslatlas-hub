@@ -1,65 +1,40 @@
-# Contributing to Teslatlas Hub
+# Contributing
 
-## Before contributing
+Discuss substantial protocol, storage, authentication, migration, licensing or branding work before implementation.
 
-Discuss substantial architecture, protocol, storage, authentication, migration, API, licensing or branding changes before implementation. A maintainer may reject a contribution that creates security, legal, compatibility or support risk even if the code works.
+## Required legal path
 
-## Licence and contributor agreement
+An external contribution is merged only after:
 
-By submitting a contribution, you certify the Developer Certificate of Origin below and agree that the contribution is licensed under GNU Affero General Public License version 3 only, together with applicable section 7 notices.
+1. DCO 1.1 sign-off on every commit;
+2. a signed individual or corporate contributor assignment, unless a recorded employment/contractor instrument already transfers title;
+3. a provenance declaration; and
+4. security, dependency and licence review.
 
-Before a non-trivial contribution is merged, the contributor must sign the applicable Individual or Corporate Contributor Licence Agreement. The CLA gives Magrathean UK Ltd sufficient rights to maintain, enforce and, where expressly covered, dual-license the contribution. It does not permit Magrathean to claim authorship falsely.
-
-## Developer Certificate of Origin
-
-By adding `Signed-off-by: Name <email>` to each commit, you certify that:
-
-1. the contribution was created by you, or you have the right to submit it under the stated licence;
-2. the contribution is based on earlier work that you reasonably believe is appropriately licensed and you have identified it;
-3. you understand the contribution and sign-off are public and may be retained indefinitely;
-4. you have not included confidential information, secrets, personal data or employer-owned material without authority.
-
-Use:
-
-```text
-git commit -s
-```
+The founder does not sign a CLA to himself or to his own company. The founder is covered by the private confirmatory deed, but still uses DCO sign-off for public Hub commits.
 
 ## Provenance declaration
 
-Every pull request must state:
+A pull request must identify:
 
-- whether code was written from scratch;
-- every source, repository, document, model or implementation consulted;
-- whether generated code or AI assistance was used;
-- whether any code was copied, translated or adapted;
-- applicable third-party licences;
-- whether similar code exists in the proprietary Teslatlas repository;
-- whether the contributor is acting within employment or contracting duties.
+- whether it was written from scratch;
+- every implementation, specification and repository consulted;
+- copied, translated, adapted or generated material;
+- licences and notices;
+- AI assistance;
+- employment/client restrictions;
+- any relationship to the proprietary app.
 
-“Publicly visible” does not mean “free to copy”.
-
-## TeslaMate compatibility work
-
-A contribution based on TeslaMate must identify the exact upstream revision and paths. Preserve applicable upstream notices and mark modifications. Do not use TeslaMate names or logos as product branding.
+“Visible online” does not mean free to copy.
 
 ## Security and privacy
 
-Do not include live credentials, VINs, precise journeys, production databases or other personal data. Use synthetic fixtures. Security issues must be reported under `SECURITY.md`, not in a public pull request.
+Use synthetic fixtures. Never submit credentials, VINs, precise journeys or production databases.
 
-## Code requirements
+Report vulnerabilities under `SECURITY.md`.
 
-A contribution must include:
+## Technical requirements
 
-- tests for success and failure paths;
-- migration and rollback instructions where state changes;
-- bounded resource use;
-- least-privilege behaviour;
-- stable error handling without secret leakage;
-- documentation and release-note impact;
-- SPDX/provenance classification;
-- dependency and licence review for every new package.
+Include tests, rollback, bounded resource use, least privilege, stable redacted errors, documentation, SPDX classification and dependency review.
 
-## Acceptance
-
-Submission does not guarantee review or acceptance. Maintainers may request restructuring, provenance evidence or a separate specification before code review.
+Submission does not guarantee acceptance.

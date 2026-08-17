@@ -56,7 +56,7 @@ pub fn legal_notice() -> String {
         "Teslatlas Hub {BUILD_VERSION}\n\
          Copyright © 2026 Magrathean UK Ltd\n\
          License: AGPL-3.0-only\n\
-         Teslatlas Hub — originally developed and published by Magrathean UK Ltd. Source: {SOURCE_URL}\n\
+         Teslatlas Hub — originally authored by Gyorgy Bolyki and published by Magrathean UK Ltd. Source: {SOURCE_URL}\n\
          Unofficial; not affiliated with Tesla or TeslaMate; no warranty."
     )
 }
@@ -85,8 +85,9 @@ mod legal_notice_tests {
             "notice must name the company copyright: {notice}"
         );
         assert!(
-            notice.contains("originally developed and published by Magrathean UK Ltd"),
-            "notice must carry Company attribution: {notice}"
+            notice.contains("originally authored by Gyorgy Bolyki")
+                && notice.contains("published by Magrathean UK Ltd"),
+            "notice must carry the founder/company attribution: {notice}"
         );
         assert!(
             notice.contains(SOURCE_URL),

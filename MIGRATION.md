@@ -1,68 +1,35 @@
 # Migration from a user-controlled TeslaMate database
 
-## Scope
+Migration exists to move authorised historical data and, where expressly selected, encrypted legacy credentials into Teslatlas-owned storage.
 
-The migration adapter exists to help an operator move selected historical data from a PostgreSQL database the operator is authorised to access into Teslatlas-owned storage. New Teslatlas installations do not require TeslaMate.
+New Hub installations do not require TeslaMate.
 
-Migration is one-way unless a tagged release expressly states otherwise.
+**This project is an unofficial community tool and is not affiliated with, endorsed by or supported by the official TeslaMate project.**
 
-## Non-affiliation
-
-**This project is an unofficial community tool and is not affiliated with, endorsed by, or supported by the official TeslaMate project.**
-
-Do not request support for this migration from the TeslaMate maintainers.
-
-## Read-only design
+## Source protection
 
 The importer must:
 
-- accept an operator-supplied endpoint and credentials;
-- establish a read-only, repeatable-read transaction;
-- validate the supported schema and migration set;
-- query only fixed, reviewed tables and columns;
-- avoid `private.tokens` and other credential relations;
-- never alter, lock for write, migrate or repair the source;
-- fail closed on an unknown schema;
+- use an operator-supplied endpoint and credentials;
+- use a read-only transaction and least-privilege source role;
+- validate a supported schema/migration set;
+- query only reviewed relations;
+- never repair, migrate or write to the source;
+- fail closed on unknown schema;
 - stage output separately;
-- verify row counts and integrity before cutover;
-- retain a rollback path.
+- verify integrity and counts before cutover;
+- preserve rollback.
 
-Read-only behaviour reduces risk but does not make a backup unnecessary.
+The explicit credential-transfer path may read the relevant encrypted token relation only where requested and authorised.
 
-## Operator responsibility
+## Operator duties
 
-The operator must:
-
-- own the data or have authority from the relevant controller and users;
-- take a tested backup before migration;
-- use a dedicated read-only PostgreSQL role where possible;
-- restrict network exposure;
-- preserve the source until validation is complete;
-- verify time zones, units, selected vehicle and row counts;
-- decide retention and deletion after cutover;
-- comply with data-protection and employment rules.
-
-## Compatibility
-
-Compatibility is pinned to reviewed schema revisions. Later TeslaMate releases are rejected until reviewed. Supporting a schema does not imply support for every extension, custom migration, corrupted database or third-party fork.
+The operator must have authority, back up and test recovery, stop concurrent credential refresh during cutover, preserve the source until validation, and comply with privacy/employment rules.
 
 ## Data differences
 
-Teslatlas and TeslaMate do not have identical internal models. A release must disclose:
-
-- records imported;
-- records intentionally omitted;
-- transformations and unit conversions;
-- handling of open drives and charging sessions;
-- precision and timestamp treatment;
-- deduplication behaviour;
-- unsupported customisations;
-- validation output.
-
-## Evidence and logs
-
-Migration logs must avoid secrets and precise location unless needed for a local validation report. A support bundle must be redacted before transmission.
+A tagged release must disclose imported and omitted records, transformations, units, time treatment, precision, open-session handling, deduplication and unsupported customisations.
 
 ## No write-back
 
-The Hub must not use the migration adapter as a continuing write-back bridge to TeslaMate. Any future bidirectional feature requires a separate design, legal and data-integrity review.
+Migration is not a continuing write-back bridge. Any bidirectional feature requires a new security, data-integrity and legal review.

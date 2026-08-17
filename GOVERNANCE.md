@@ -1,39 +1,38 @@
-# Project governance
+# Governance
 
-## Maintainer
+MAGRATHEAN UK LTD is the initial project steward and release authority.
 
-Magrathean UK Ltd is the initial project steward and release authority. Stewardship does not give Magrathean ownership of a contributor's copyright unless ownership is separately assigned.
+## Priorities
 
-## Decision priorities
-
-Maintainer decisions should prioritise:
-
-1. user safety and credential protection;
-2. legal and licence compliance;
-3. data integrity and recoverability;
+1. safety and credential protection;
+2. licence and legal compliance;
+3. data integrity and recovery;
 4. protocol stability;
 5. security and least privilege;
-6. operability, observability and rollback;
+6. operability and rollback;
 7. maintainability and portability.
 
-## Release authority
+## Reserved decisions
 
-Only authorised Magrathean maintainers may publish an official build, sign a release, change the project name, accept a contributor agreement, make a trade mark permission statement or issue a legal counter-notice.
+Only authorised Company maintainers may:
 
-## Licence changes
+- publish an official release;
+- sign release artefacts;
+- alter licensing policy;
+- accept contributor assignments;
+- grant trade mark permission;
+- issue a legal counter-notice;
+- settle an IP claim;
+- move code between Hub and the proprietary app.
 
-No maintainer may relicense third-party or contributor-owned code without authority from every relevant rightsholder. A future licence change may apply only to material for which the project has the necessary rights.
+## Relicensing
 
-## Community code and proprietary products
+The Company may relicense only material for which it owns or controls sufficient rights. Open-source grants already made remain effective.
 
-A community contribution is accepted for the public project under GNU AGPL. It may be reused in a proprietary Magrathean product only where the contributor has granted a separate sufficient licence through the project CLA or another signed agreement.
+## Public/proprietary movement
 
-Reviewers must keep a provenance record when code moves between public and proprietary repositories.
+Every code movement requires a provenance record and rights check. Protocol facts may be shared; covered implementation may not be assumed transferable.
 
-## Conflict disclosures
+## Conflicts
 
-A maintainer should disclose a material personal or commercial conflict when deciding a contribution or enforcement matter and should obtain independent review where practicable.
-
-## Changes to governance
-
-Governance changes must be made in a reviewed pull request and recorded in the legal changelog.
+A maintainer should disclose a material conflict and obtain independent review where practicable.

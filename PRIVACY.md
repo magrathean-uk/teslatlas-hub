@@ -1,57 +1,39 @@
 # Privacy and data-protection roles
 
-## Local software
+## Self-hosted software
 
-Teslatlas Hub is intended to run under the operator's control. The software can process highly sensitive practical data, including precise location, journeys, charging history, vehicle identifiers, account tokens, IP addresses, device identifiers and security logs.
+Teslatlas Hub is intended to run under the operator's control. It can process precise location, journeys, charging, vehicle identifiers, account tokens, network information and security logs.
 
-The public source code does not by itself determine the legal role of every deployment.
+The public source code does not make MAGRATHEAN UK LTD controller or processor for data that never reaches Magrathean.
 
-## Self-hosting operator
+## Operator responsibility
 
-A person or organisation that deploys the Hub and decides why and how personal data is processed will ordinarily be the controller, business or equivalent responsible party for that deployment. The operator must determine:
+A person or organisation deciding why and how deployment data is processed ordinarily acts as controller or equivalent responsible party. The operator must address:
 
-- lawful basis and, where required, consent;
-- user and driver notices;
-- data minimisation;
-- access permissions;
-- retention and deletion;
-- rights handling;
-- processor and subprocessor contracts;
-- international transfers;
-- incident response;
-- whether a data-protection impact assessment is required;
-- rules applying to employees, family members, passengers and fleet users.
+- lawful basis and notices;
+- drivers, employees, family and passengers;
+- access control and least privilege;
+- retention, export and deletion;
+- processor contracts and transfers;
+- incident response and rights requests;
+- employee monitoring and DPIA requirements.
 
-A software licence is not a privacy notice for a deployment.
+## Magrathean processing
 
-## Magrathean UK Ltd
+MAGRATHEAN UK LTD is responsible for personal data it actually receives for its own purposes, including support, website, security reports, commercial services or hosted infrastructure.
 
-Magrathean UK Ltd is not automatically controller or processor for data stored solely on an operator's machine. Magrathean becomes responsible for personal data it actually receives and processes for its own purposes, including data submitted through its website, email, support, security reporting, crash reporting if enabled, hosted infrastructure or commercial services.
+The applicable Magrathean notice must describe the actual flow.
 
-The applicable Magrathean privacy notice is published at `https://magrathean.uk/privacy/`. Product-specific notices prevail for a product-specific processing activity.
+## Default product expectations
 
-## Default data-flow rules
+Hub should, unless clearly disclosed otherwise:
 
-Unless a feature and its notice expressly state otherwise, the Hub should:
+- function without a Magrathean account;
+- avoid advertising and analytics identifiers;
+- keep vehicle history under operator control;
+- redact credentials and precise location from ordinary logs;
+- require affirmative action before a diagnostic transfer;
+- expose outbound destinations;
+- provide retention and deletion controls.
 
-- operate without a Magrathean account;
-- avoid telemetry and advertising identifiers;
-- keep vehicle data local;
-- avoid uploading logs automatically;
-- make outbound destinations visible and configurable;
-- redact tokens, VINs, coordinates and user identifiers from routine logs;
-- require an affirmative action before transmitting a diagnostic bundle;
-- provide deletion, export and retention controls;
-- fail closed where consent or credentials are absent.
-
-Code and release documentation must be corrected if actual behaviour differs.
-
-## Security reports and support submissions
-
-Do not send live access tokens, passwords, refresh tokens, unredacted database dumps or full travel history in an issue. Use the private security channel in `SECURITY.md`.
-
-Support material may be retained for the period needed to investigate and defend the matter, then deleted or anonymised in accordance with the applicable notice and legal obligations.
-
-## Deployers
-
-A deployment-ready notice and checklist are in `docs/DATA_PROTECTION_FOR_DEPLOYERS.md`. They are a starting point, not a substitute for a notice reflecting the actual deployment.
+Correct documentation if code differs.

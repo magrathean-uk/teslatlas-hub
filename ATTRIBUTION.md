@@ -1,17 +1,19 @@
 # Attribution
 
-Teslatlas Hub uses standard open-source attribution mechanisms rather than an additional advertising clause.
+Copyright in original project material is held by **MAGRATHEAN UK LTD**, subject to identified third-party and contributor rights.
 
-Copyright in original project material is held by **Magrathean UK Ltd**. The original project creator and lead developer is **Gyorgy Bolyki**. Public Git commits for this repository are made as Magrathean UK Ltd. Commit authorship records the company publication identity; it does not replace the founder credit below.
+The original project creator and lead developer is **Gyorgy Bolyki**.
 
-Downstream users must preserve the copyright, licence, warranty and other legal notices required by the GNU AGPL. Modified interactive versions must retain appropriate legal notices as required by the licence, and network users of modified versions must receive the section 13 source opportunity.
+Public credit:
 
-Distributions should preserve the following factual creator line in About/Legal and source notices:
+> Original project creator and lead developer: **Gyorgy Bolyki**, MAGRATHEAN UK LTD.
 
-> Original project creator and lead developer: **Gyorgy Bolyki**, Magrathean UK Ltd.
+Licence notice:
 
-The same notice appears in `NOTICE` and `ADDITIONAL_TERMS.md`:
+> Teslatlas Hub — originally authored by Gyorgy Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
 
-> Teslatlas Hub — originally authored by Gyorgy Bolyki and published by Magrathean UK Ltd. Source: https://github.com/magrathean-uk/teslatlas-hub
+Downstream users must preserve copyright, licence, warranty, attribution and other legal notices required by GNU AGPL and `ADDITIONAL_TERMS.md`.
 
-That request is not an extra restriction on rights granted under the GNU AGPL. Trade mark use remains governed separately by `TRADEMARKS.md`.
+The credit is a factual author notice, not an advertising clause. It does not limit the rights GNU AGPL grants.
+
+Third-party authorship and notices remain with the relevant rightsholders.

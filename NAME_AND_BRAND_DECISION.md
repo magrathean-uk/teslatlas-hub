@@ -1,13 +1,24 @@
-# Name and brand decision
+# Teslatlas name and brand decision
 
-The product and project name is **Teslatlas** and will remain **Teslatlas**.
+## Fixed product identity
 
-The canonical written forms are:
+The product and project name is **Teslatlas**.
 
-- Product/project: `Teslatlas`
-- OSS service: `Teslatlas Hub`
-- Repository and package identifiers where lowercase is required: `teslatlas`, `teslatlas-hub`
+Approved forms:
 
-Any other capitalisation is incorrect and must not appear in product copy, legal documents, source notices, release artefacts or file names.
+- `Teslatlas`
+- `Teslatlas Hub`
+- `teslatlas` where a lowercase technical identifier is required
+- `teslatlas-hub` where a package, binary or repository identifier requires lowercase/hyphenated form
 
-Trade-mark work concerns protection and clearance of the Teslatlas name through registration where appropriate, consistent use, accurate third-party disclaimers, provenance records and enforcement. No alternative product name is contemplated by this project.
+Do not use alternative capitalisation, spelling, spacing or hyphenation in public product copy.
+
+## No rebranding decision
+
+MAGRATHEAN UK LTD has decided that the product will not be renamed or rebranded as part of this legal framework.
+
+Trade-mark clearance, monitoring, registration strategy, disclaimers and enforcement are risk controls for the existing **Teslatlas** name. They are not a direction to change it.
+
+## Third-party names
+
+Use `TeslaMate` only in its correct CamelCase form and only for truthful compatibility, migration, provenance or attribution statements. Do not use a third-party logo or imply endorsement.

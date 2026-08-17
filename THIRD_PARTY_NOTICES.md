@@ -1,39 +1,33 @@
 # Third-party notices
 
-This repository uses third-party software and may include compatibility material. Every release must contain a machine-generated notice bundle based on the exact lockfile and artefacts distributed. This file is the policy and high-level notice; it is not a substitute for the generated inventory.
+Every release must include a generated notice bundle based on its exact lockfile and distributed artefacts. This policy is not a substitute for that inventory.
 
-## TeslaMate compatibility material
+## TeslaMate compatibility
 
-Upstream: TeslaMate  
-Repository: `https://github.com/teslamate-org/teslamate`  
-Reviewed compatibility revision: `7054517c10475f39f480edeae8f90c6f717985a3`  
+Upstream: https://github.com/teslamate-org/teslamate  
+Reviewed revision: `7054517c10475f39f480edeae8f90c6f717985a3`  
 Licence: GNU Affero General Public License version 3  
-Copyright: TeslaMate contributors and other applicable rightsholders
+Copyright: applicable TeslaMate contributors and rightsholders
 
-Teslatlas Hub includes optional compatibility logic informed by public TeslaMate source, schema, migrations and behaviour. See `PROVENANCE.md`. No affiliation or endorsement is claimed.
+Teslatlas Hub includes compatibility logic informed by public TeslaMate source, schema, migrations and behaviour. No affiliation or endorsement is claimed.
 
-## Rust dependencies
+## Dependencies
 
-The exact dependency set is fixed by `Cargo.lock`. A release must generate and publish:
+For every dependency record:
 
-- package name and version;
+- name and version;
 - source and checksum;
-- declared licence expression;
-- applicable licence text;
-- required notice;
-- dependency relationship;
-- whether code is linked, bundled, vendored, build-only or test-only.
+- licence expression and text;
+- copyright/NOTICE requirements;
+- link/bundle/vendor/build/test status;
+- modifications;
+- source-offer duties;
+- transitive relationship.
 
-Dependencies with an unknown, unapproved, non-redistributable or source-unavailable licence must block release.
-
-## Vendored material
-
-A vendored dependency must retain its upstream licence, copyright and notices in its directory. Modification must be recorded. A package-manager declaration alone is not enough.
+Unknown or incompatible licensing blocks release.
 
 ## Data and services
 
-Map, geocoding, elevation, time-zone, certificate, API and other data providers may impose attribution, caching, rate, database-right or redistribution conditions separate from software copyright. A release or deployment must record the provider and applicable terms.
+Map, elevation, geocoding, weather, timezone, certificate and API providers may impose attribution, caching, database-right and rate conditions independent of software copyright.
 
-## No implied endorsement
-
-Third-party names are used only for identification, attribution or compatibility. Their owners do not sponsor or endorse Teslatlas Hub.
+Record the actual provider and terms for each release/deployment.

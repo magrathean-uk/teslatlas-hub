@@ -2,6 +2,17 @@
 
 This file records material changes to licensing, attribution, provenance, privacy and governance documents. It is not a substitute for the Git history.
 
+## 17 August 2026 — complete Hub public pack
+
+- applied the public Teslatlas Hub legal pack to `main`;
+- fixed the public founder spelling as `Gyorgy Bolyki`;
+- confirmed MAGRATHEAN UK LTD as copyright holder for original Company material;
+- standardised `AGPL-3.0-only` while preserving prior `or-later` grants;
+- replaced CLA templates with individual and corporate contributor assignment agreements;
+- adopted DCO 1.1 plus private contributor-assignment storage;
+- recorded that founder contributions use the private confirmatory deed, not a self-CLA;
+- added licensing map, SPDX policy, enforcement policy and GitHub settings note.
+
 ## 17 August 2026 — ownership, attribution and safety files
 
 - recorded that original Hub material is owned by Magrathean UK Ltd;

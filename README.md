@@ -153,23 +153,28 @@ A release is complete only when its binary, exact source archive, checksums, bui
 
 ## Legal notices
 
-Copyright © 2026 Magrathean UK Ltd and contributors.
+Copyright © 2026 MAGRATHEAN UK LTD and identified contributors.
 
-Teslatlas Hub is licensed under the **GNU Affero General Public License version 3 only**. The canonical, unmodified licence is in [LICENSE](LICENSE).
+Teslatlas Hub is free software licensed under the **GNU Affero General Public License, version 3 only** (`AGPL-3.0-only`). See [LICENSE](LICENSE).
 
 Magrathean-owned material is also subject to the permitted GNU AGPL section 7 notices in [ADDITIONAL_TERMS.md](ADDITIONAL_TERMS.md). Those notices require preservation of reasonable attribution and origin statements; they do not restrict commercial use, competition, modification or interoperability.
 
-Required attribution:
+Required factual attribution:
 
-> Teslatlas Hub — originally authored by Gyorgy Bolyki and published by Magrathean UK Ltd. Source: https://github.com/magrathean-uk/teslatlas-hub
+> Teslatlas Hub — originally authored by Gyorgy Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
 
-Users interacting remotely with a modified network deployment must be offered the complete Corresponding Source of the version actually running. See [AGPL compliance](docs/AGPL_COMPLIANCE.md) and [Corresponding Source availability](docs/SOURCE_AVAILABILITY.md).
+The attribution is not an advertising requirement and does not prohibit commercial or competitive use.
+
+Users interacting remotely with a modified network deployment must be offered the complete Corresponding Source of the version actually running. See [AGPL compliance](AGPL_COMPLIANCE.md) and [Corresponding Source availability](SOURCE_AVAILABILITY.md).
+
+External contributions require DCO 1.1 sign-off and a completed individual or corporate contributor assignment, unless employment or contractor records already cover the contributor. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 No trade mark licence is granted. See [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Documentation
 
 - [Legal framework](LEGAL.md)
+- [Licensing map](LICENSING.md)
 - [Copyright and ownership](COPYRIGHT.md)
 - [Attribution](ATTRIBUTION.md)
 - [Safety and use limits](SAFETY_AND_USE_LIMITS.md)
@@ -178,6 +183,11 @@ No trade mark licence is granted. See [TRADEMARKS.md](TRADEMARKS.md).
 - [Privacy and deployment roles](PRIVACY.md)
 - [Security policy](SECURITY.md)
 - [Contribution rules](CONTRIBUTING.md)
+- [DCO 1.1](DCO-1.1.md)
+- [Contributor assignment process](DCO_AND_CONTRIBUTOR_ASSIGNMENT_PROCESS.md)
+- [Individual contributor assignment](INDIVIDUAL_CONTRIBUTOR_ASSIGNMENT_AGREEMENT.md)
+- [Corporate contributor assignment](CORPORATE_CONTRIBUTOR_ASSIGNMENT_AGREEMENT.md)
+- [Founder contribution policy](FOUNDER_CONTRIBUTION_POLICY.md)
 - [Dependency policy](DEPENDENCY_POLICY.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Release compliance](RELEASE_COMPLIANCE.md)
@@ -185,6 +195,7 @@ No trade mark licence is granted. See [TRADEMARKS.md](TRADEMARKS.md).
 - [Branding guidelines](docs/BRANDING_GUIDELINES.md)
 - [Support policy](SUPPORT.md)
 - [Governance](GOVERNANCE.md)
+- [Enforcement policy](ENFORCEMENT_POLICY.md)
 
 ## Contact
 

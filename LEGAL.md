@@ -1,63 +1,35 @@
 # Legal framework
 
-## 1. Licence controls copying, modification and distribution
+## Licence
 
-Teslatlas Hub is distributed under GNU Affero General Public License version 3 only. `LICENSE` is the controlling grant for copying, modifying and conveying the covered work. `ADDITIONAL_TERMS.md` contains only section 7 notices for material that Magrathean UK Ltd is authorised to license.
+Copying, modification and distribution are governed by GNU AGPL version 3 only and the permitted section 7 notices.
 
-No repository document may be read to remove a freedom granted by the GNU AGPL. Where this document conflicts with the GNU AGPL, the GNU AGPL controls.
+No repository document removes a freedom granted by the GNU AGPL.
 
-## 2. No contract merely from possession or ordinary execution
+## No warranty
 
-GNU AGPL section 9 does not require acceptance merely to receive or run a copy. This document is not intended to create clickwrap-style obligations merely because a person possesses or executes the unmodified program.
+The software is supplied without warranty to the maximum extent permitted by law, including without warranties of satisfactory quality, fitness, compatibility, uninterrupted operation, data accuracy, security or recovery.
 
-Separate services, support, hosted offerings, app-store products, contributor agreements and third-party APIs may be governed by separate contracts.
+Nothing excludes liability that cannot lawfully be excluded, including fraud, fraudulent misrepresentation, death or personal injury caused by negligence, and mandatory consumer rights.
 
-## 3. No warranty and assumption of operational risk
+## Operational responsibility
 
-The software is supplied without warranty to the maximum extent permitted by applicable law, including without a warranty of merchantability, satisfactory quality, fitness for purpose, non-infringement, uninterrupted operation, data accuracy, compatibility, availability, security or recovery.
+Operators are responsible for authority to access accounts and databases, credentials, backups, restore testing, network exposure, monitoring, retention, lawful processing and compliance with third-party terms.
 
-Vehicle telemetry, authentication, location history, database conversion and network services can fail or change. An operator is responsible for testing, access control, backups, restoration, monitoring, lawful processing, third-party authorisation and safe rollback.
+## Third-party services
 
-Nothing in this document excludes or limits liability where exclusion or limitation is prohibited, including liability that cannot lawfully be excluded for fraud, fraudulent misrepresentation, death or personal injury caused by negligence, or mandatory consumer rights.
+The GNU AGPL does not grant access to Tesla or another provider's systems. Technical capability, reverse-engineering rights or database ownership does not by itself create contractual permission to use a service.
 
-## 4. Not safety-critical software
+## Interoperability
 
-The software is not designed, tested or certified for emergency response, life support, autonomous driving, vehicle safety functions, remote operation where failure may cause injury, regulatory compliance evidence, billing accuracy or forensic preservation.
+The project may implement interfaces, schemas and observable behaviours for lawful interoperability. Compatibility does not imply affiliation and does not authorise copying of protectable expression outside the applicable licence.
 
-Do not rely on it to decide whether a vehicle is safe to operate or to issue safety-critical commands. See `SAFETY_AND_USE_LIMITS.md`.
+## Non-licence disputes
 
-## 5. Third-party services and credentials
+For non-consumer matters not governed by GNU AGPL and capable of a valid choice, English law applies and the courts of England and Wales have exclusive jurisdiction.
 
-The GNU AGPL does not grant permission to access Tesla or any other third-party system. Operators must use only access methods and credentials they are authorised to use and must comply with applicable law and binding terms.
+Mandatory consumer, statutory and forum rights remain unaffected.
 
-Availability of source code, technical ability to communicate, reverse-engineering rights or database ownership does not by itself prevent a service provider from suspending access under an applicable contract or platform policy.
+## Notices
 
-## 6. Data protection
-
-A self-hosting operator ordinarily decides why and how vehicle and user data are processed and is responsible for the resulting controller or business obligations. Magrathean is controller only for personal data it actually receives for its own purposes, such as website, support, security or hosted-service data.
-
-See `PRIVACY.md` and `docs/DATA_PROTECTION_FOR_DEPLOYERS.md`.
-
-## 7. Interoperability
-
-The project may implement interfaces, protocols and schema compatibility for lawful interoperability. It does not claim ownership of third-party interfaces or imply affiliation. Copying of protectable source expression is governed by the applicable licence and provenance records.
-
-See `docs/INDEPENDENCE_AND_INTEROPERABILITY.md`.
-
-## 8. Trade marks
-
-Copyright permission is not trade mark permission. No trade mark licence is granted. See `TRADEMARKS.md`.
-
-## 9. Contributions
-
-Contributions are accepted only under `CONTRIBUTING.md` and the applicable contributor agreement. A contribution must not include confidential material, code taken from an employer, output subject to incompatible terms, personal data, secrets or copied third-party material without a recorded licence.
-
-## 10. Applicable law for non-licence matters
-
-To the extent a non-consumer dispute concerning Magrathean's publication or administration of this repository is not governed by the GNU AGPL and may validly be subject to a chosen law, English law applies and the courts of England and Wales have exclusive jurisdiction.
-
-This clause does not override the GNU AGPL, mandatory rights, a valid statutory forum, or the rights of consumers who are entitled to bring proceedings elsewhere.
-
-## 11. Notices
-
-Legal notices concerning this repository may be sent to `contact@magrathean.uk` with subject `LEGAL NOTICE`. A notice should identify the sender, the right asserted, the exact material, its location, the requested action, the legal basis and evidence of authority.
+Send legal notices to `contact@magrathean.uk` with subject `LEGAL NOTICE`. Include sender identity, authority, exact material, legal basis, evidence and requested action.

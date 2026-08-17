@@ -1,33 +1,29 @@
 # Copyright and ownership
 
-## Copyright holder
+## Original material
 
-Subject to documented third-party and contributor rights, original project material first authored for Teslatlas Hub in 2026 is owned by:
+Copyright © 2026 MAGRATHEAN UK LTD.
 
-**Magrathean UK Ltd**  
-Company number 16955343  
-16 Caledonian Court, West Street, Watford, England, WD17 1RY
+The original project creator and lead developer is Gyorgy Bolyki. Economic rights in founder-created Product material are held by the Company under the Company's chain-of-title instruments.
 
-The original project creator and lead developer is Gyorgy Bolyki. That work is company-owned. Public Git author and committer identity for this repository is Magrathean UK Ltd (`magrathean-uk`). Personal developer names in local history do not change the company copyright.
+## Contributions
 
-This statement does not transfer rights that remain with a later contributor or third party. Signed assignments, employment terms and contribution agreements determine ownership of those later contributions.
+A contribution is Company-owned only where employment terms, a contractor agreement or a contributor assignment transfers title.
 
-## Contributors
+Do not remove a contributor's valid notice or claim Company ownership over a contribution where the Company has only a licence.
 
-A contributor retains copyright in a contribution unless a signed agreement validly assigns it. By submitting a contribution, a contributor must provide the licences described in `CONTRIBUTING.md` and the applicable contributor agreement.
+## Third-party material
 
-Repository commit authorship is evidence of contribution history but is not conclusive proof of copyright ownership.
+Copyright in TeslaMate, dependencies, fixtures, datasets and other third-party works remains with their rightsholders.
 
-## Third-party and compatibility material
+Ideas, facts, methods of operation, interfaces and data formats may receive different legal treatment from source-code expression. File-level provenance determines the applicable notice.
 
-Copyright in TeslaMate and other third-party works remains with the relevant rightsholders. Where the repository contains copied or adapted protectable expression, its upstream licence and notices continue to apply.
+## Open-source publication
 
-Facts, ideas, methods of operation, protocols and interfaces may not be protected in the same way as source expression. That distinction is fact-specific. The project therefore uses file-level provenance rather than relying on a blanket “clean room” assertion.
+Open-source publication is a licence grant, not abandonment of copyright.
 
-## No abandonment
-
-Publication as open source is a licence grant, not abandonment or transfer of copyright. Magrathean reserves all rights not granted under the GNU AGPL or another express written licence.
+MAGRATHEAN UK LTD reserves all rights not expressly granted by GNU AGPL or another signed licence.
 
 ## Corrections
 
-Send a substantiated ownership or attribution correction to `contact@magrathean.uk` with subject `LEGAL NOTICE`. Include the affected path, commit, asserted rightsholder, source, licence and evidence.
+Send a substantiated attribution or ownership correction to `contact@magrathean.uk` with subject `LEGAL NOTICE`. Identify the path, commit, right asserted, source, licence and evidence of authority.

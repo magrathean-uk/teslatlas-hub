@@ -1,66 +1,29 @@
 # Security policy
 
-## Supported versions
-
-Security fixes are provided only for release lines expressly marked as supported. Alpha and development branches may change without compatibility support. The current support matrix must be stated in each release.
-
 ## Private reporting
 
-Report a suspected vulnerability to:
+Report vulnerabilities through GitHub private vulnerability reporting or email `contact@magrathean.uk` with subject `SECURITY`.
 
-GitHub private vulnerability reporting, or `contact@magrathean.uk` with subject `SECURITY`
+Do not publish credentials, VINs, precise travel history, database dumps, signing keys or exploit details.
 
-Include:
+Include affected version/commit, platform, topology, reproduction, impact, preconditions and redacted evidence.
 
-- affected version and commit;
-- operating system and architecture;
-- deployment topology;
-- reproduction steps;
-- impact and realistic attack preconditions;
-- logs or proof with secrets removed;
-- whether the issue has been disclosed elsewhere;
-- a safe contact method.
+## Safe harbour
 
-Do not open a public issue for an undisclosed vulnerability.
+MAGRATHEAN UK LTD will not pursue a good-faith researcher solely for authorised testing that:
 
-## Do not include
+- targets the researcher's own deployment or a Magrathean-controlled test system;
+- avoids persistence, destructive changes, denial of service and personal data;
+- stops when vehicle safety, credentials or third-party systems could be affected;
+- reports promptly and permits reasonable remediation time; and
+- does not condition non-disclosure on payment.
 
-Never send live passwords, refresh tokens, access tokens, signing keys, unredacted VINs, precise travel history, private certificates or a production database unless Magrathean has expressly requested a secure transfer method.
+This does not authorise testing of Tesla, TeslaMate, Apple, GitHub, a vehicle, another user's system or another provider.
 
-## Research safe harbour
+## Excluded conduct
 
-Magrathean will not pursue a good-faith researcher solely for testing that:
-
-- targets only a Magrathean-controlled test instance or an instance the researcher owns or has explicit authority to test;
-- avoids personal data beyond the minimum proof;
-- avoids persistence, destructive changes, denial of service and material service degradation;
-- avoids social engineering and physical intrusion;
-- stops when sensitive data or unsafe vehicle behaviour could be affected;
-- reports promptly and allows reasonable remediation time;
-- does not demand payment as a condition of withholding harmful disclosure.
-
-This statement does **not** authorise testing of Tesla, TeslaMate, Apple, GitHub, a vehicle, another user's deployment, an app-store service, a cloud provider or any other third-party system. Magrathean cannot waive another person's rights or terms.
-
-## Excluded activity
-
-The safe harbour does not cover:
-
-- sending vehicle commands;
-- attempting to wake, move, unlock or control a vehicle;
-- credential stuffing, phishing or interception;
-- accessing another person's telemetry;
-- persistence, ransomware, destructive payloads or supply-chain compromise;
-- large-scale automated scanning;
-- denial of service;
-- public release of secrets or exploit code before remediation;
-- conduct prohibited by applicable criminal law.
-
-## Handling
-
-Receipt will be acknowledged where practicable. Triage priority depends on exploitability, affected data, default exposure and supported versions. Magrathean may request a CVE, coordinate disclosure and credit a reporter who asks to be credited.
-
-No bounty or reward is promised unless agreed in writing before payment.
+No safe harbour covers vehicle commands, phishing, credential stuffing, access to another person's telemetry, destructive payloads, large-scale scanning, denial of service or unlawful conduct.
 
 ## Release integrity
 
-Official releases should include signed checksums, an SBOM, source archive, dependency notices and reproducible build instructions. Verify release artefacts before installation.
+Official releases should provide signed checksums, exact source, SBOM, dependency notices and verification instructions.
