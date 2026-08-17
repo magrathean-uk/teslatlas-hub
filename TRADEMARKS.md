@@ -1,5 +1,11 @@
 # Trade marks and branding
 
+## Fixed project name
+
+The product and project name is **Teslatlas** and will remain **Teslatlas**. The canonical service name is **Teslatlas Hub**. Lowercase forms such as `teslatlas` and `teslatlas-hub` are used only where repository, package, domain or command syntax requires lowercase.
+
+Legal and brand work must protect and clear the Teslatlas name through consistent use, appropriate registrations, accurate third-party disclaimers, provenance evidence and enforcement. This policy does not contemplate an alternative product name.
+
 ## Magrathean marks
 
 Magrathean UK Ltd claims rights, subject to applicable law and third-party rights, in the names and branding it uses for **Magrathean** and **Teslatlas**. A copyright licence to software does not grant a trade mark licence.
@@ -25,7 +31,7 @@ Written permission is required to:
 - use a confusingly similar name or get-up for a competing distribution;
 - register a domain, account, company or product name that is likely to imply Magrathean control.
 
-Forks should adopt their own name and visual identity and describe origin in a secondary factual notice.
+Forks should use their own identity and describe origin in a secondary factual notice.
 
 ## Third-party marks
 
@@ -33,11 +39,11 @@ Tesla, Tesla vehicle model names, associated logos and other Tesla branding are 
 
 Use of a third-party name is for truthful identification or compatibility only. No affiliation, sponsorship or endorsement is claimed.
 
-## Material unresolved risk
+## Clearance and protection work
 
-The project name **Teslatlas** includes the word element “Tesla”. Disclaimers do not eliminate trade mark, passing-off, platform or contract risk. In particular, an agreement governing an official API may impose naming rules broader than trade mark law.
+The Teslatlas name includes the word element “Tesla”. Disclaimers alone do not eliminate trade mark, passing-off, platform or contract risk. An agreement governing an official API may also impose naming rules broader than trade mark law.
 
-Before a stable commercial launch, Magrathean must complete UK and EU clearance, consider United States clearance, review platform rules and decide whether to rename. No contributor or distributor should rely on this policy as a representation that the name is cleared.
+Before stable commercial launch, Magrathean should complete UK and EU clearance, consider United States clearance, review relevant platform and API rules, preserve first-use evidence, assess registration strategy and maintain consistent non-affiliation wording. These steps protect the fixed Teslatlas name; they are not a proposal to change it.
 
 ## Reporting
 
