@@ -2,6 +2,13 @@
 
 This file records material changes to licensing, attribution, provenance, privacy and governance documents. It is not a substitute for the Git history.
 
+## 17 August 2026 — name correction
+
+- corrected the product and project name to **Teslatlas** throughout the legal material;
+- confirmed that **Teslatlas** is a fixed project decision;
+- removed the alternative-name contingency from the trade-mark analysis;
+- redirected trade-mark work to clearance, registration, consistent use, evidence preservation and enforcement of the Teslatlas name.
+
 ## 16 August 2026 — proposed next-release legal baseline
 
 - retained the canonical, unmodified GNU Affero General Public License version 3 text;
@@ -12,7 +19,7 @@ This file records material changes to licensing, attribution, provenance, privac
 - added TeslaMate compatibility attribution and the requested non-affiliation disclaimer without treating the separate TeslaMate trade mark policy as part of the GNU AGPL;
 - separated the public Hub from the proprietary client and prohibited proprietary reuse of community contributions without separate rights;
 - added CLA, DCO, dependency, release, source-availability, privacy, security, support, governance and trade mark controls;
-- identified Teslatlas naming and legacy Tesla-service access as unresolved release risks.
+- identified legacy Tesla-service access and trade-mark clearance as release risks to be managed while retaining the Teslatlas name.
 
 ## Historical grants
 
