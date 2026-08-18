@@ -469,6 +469,14 @@ async fn main() -> ExitCode {
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
 
+    #[cfg(not(target_os = "macos"))]
+    if matches!(&cli.command, Command::Serve) {
+        return Err(
+            "serve is not yet supported on this platform; Linux runtime support is planned"
+                .into(),
+        );
+    }
+
     #[cfg(target_os = "macos")]
     if matches!(&cli.command, Command::Install) {
         let config = HubConfig::load(&config_path)?;
@@ -901,7 +909,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 fn command_requires_user_hub_admission(command: &Command) -> bool {
     matches!(
         command,
-        Command::Serve | Command::Observe { .. } | Command::Migrate { .. }
+        Command::Init
+            | Command::Serve
+            | Command::Observe { .. }
+            | Command::Migrate { .. }
+            | Command::Pair { .. }
+            | Command::Repair
+            | Command::Backup { .. }
     )
 }
 
@@ -2017,6 +2031,29 @@ mod tests {
         assert!(!data_dir.exists());
     }
 
+    #[cfg(not(target_os = "macos"))]
+    #[tokio::test]
+    async fn serve_fails_before_initialising_state_on_an_unsupported_platform() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let data_dir = temporary.path().join("missing-hub-state");
+        let config_path = temporary.path().join("config.toml");
+        fs::write(
+            &config_path,
+            format!("data_dir = {:?}\nbind = '127.0.0.1:18443'\n", data_dir),
+        )
+        .expect("write config");
+
+        let error = run(Cli {
+            config: Some(config_path),
+            command: Command::Serve,
+        })
+        .await
+        .expect_err("unsupported Serve must fail explicitly");
+
+        assert!(error.to_string().contains("not yet supported"));
+        assert!(!data_dir.exists());
+    }
+
     #[test]
     fn observation_commands_parse_their_machine_readable_inputs() {
         let watermark =
@@ -2063,7 +2100,8 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn migrate_serve_and_observe_share_the_instance_lock() {
+    fn every_live_mutation_and_service_command_requires_the_instance_lock() {
+        assert!(command_requires_user_hub_admission(&Command::Init));
         assert!(command_requires_user_hub_admission(&Command::Serve));
         assert!(command_requires_user_hub_admission(&Command::Observe {
             duration_seconds: 1,
@@ -2075,6 +2113,15 @@ mod tests {
             encryption_key_file: Some(PathBuf::from("key")),
             access_token_file: None,
             refresh_token_file: None,
+        }));
+        assert!(command_requires_user_hub_admission(&Command::Pair {
+            label: "test phone".to_owned(),
+            expires_in_seconds: 900,
+            json: false,
+        }));
+        assert!(command_requires_user_hub_admission(&Command::Repair));
+        assert!(command_requires_user_hub_admission(&Command::Backup {
+            destination: PathBuf::from("backup"),
         }));
         assert!(!command_requires_user_hub_admission(&Command::Doctor));
         assert!(!command_requires_user_hub_admission(&Command::Legal));
