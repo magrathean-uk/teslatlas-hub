@@ -577,19 +577,24 @@ impl TeslaMateConfig {
         limits
             .validate()
             .map_err(|_| ConfigError::InvalidTeslaMateLimits)?;
-        let limits = if let Some(max_parallel_copy_lanes) =
-            self.performance_profile.max_parallel_copy_lanes
-        {
-            let mut overridden = limits;
-            overridden.parallel_copy_lanes = max_parallel_copy_lanes;
-            overridden
+
+        let maximum = self.performance_profile.max_parallel_copy_lanes;
+        if let Some(maximum) = maximum {
+            let mut validation_probe = limits;
+            validation_probe.parallel_copy_lanes = maximum;
+            validation_probe
                 .validate()
                 .map_err(|_| ConfigError::InvalidTeslaMateLimits)?;
-            overridden
-        } else {
-            limits
-        };
-        Ok(limits)
+        }
+        if !self.performance_profile.enabled {
+            return Ok(limits);
+        }
+
+        let mut effective = limits;
+        if let Some(maximum) = maximum {
+            effective.parallel_copy_lanes = effective.parallel_copy_lanes.min(maximum);
+        }
+        Ok(effective)
     }
 
     pub fn import_config(&self) -> Result<TeslaMateImportConfig, ConfigError> {
@@ -868,7 +873,7 @@ mod tests {
     }
 
     #[test]
-    fn teslamate_read_limits_apply_parallel_lane_override() {
+    fn teslamate_read_limits_only_apply_a_non_raising_parallel_lane_cap() {
         let mut config = TeslaMateConfig::default();
         config.performance_profile.max_parallel_copy_lanes = Some(8);
         assert_eq!(
@@ -876,8 +881,37 @@ mod tests {
                 .read_limits()
                 .expect("valid read limits")
                 .parallel_copy_lanes,
-            8
+            4,
+            "an upper bound must not raise the configured lane count"
         );
+
+        config.performance_profile.max_parallel_copy_lanes = Some(2);
+        assert_eq!(
+            config
+                .read_limits()
+                .expect("valid read limits")
+                .parallel_copy_lanes,
+            2,
+            "an enabled profile may lower the configured lane count"
+        );
+
+        config.performance_profile.enabled = false;
+        config.performance_profile.max_parallel_copy_lanes = Some(1);
+        assert_eq!(
+            config
+                .read_limits()
+                .expect("valid disabled profile")
+                .parallel_copy_lanes,
+            4,
+            "a disabled profile must preserve the configured lane count"
+        );
+
+        config.performance_profile.enabled = true;
+        config.performance_profile.max_parallel_copy_lanes = Some(0);
+        assert!(matches!(
+            config.read_limits(),
+            Err(ConfigError::InvalidTeslaMateLimits)
+        ));
     }
 
     #[test]
