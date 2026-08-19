@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use aes_gcm::aead::{OsRng, rand_core::RngCore};
+
 use thiserror::Error;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -21,7 +21,7 @@ const PREVIOUS_KEY_FILE_NAME: &str = ".teslamate-encryption.previous.key";
 /// Generate a new local key for a user-supplied legacy token pair.
 pub fn random_encryption_key() -> Zeroizing<Vec<u8>> {
     let mut key = Zeroizing::new(vec![0_u8; 32]);
-    OsRng.fill_bytes(key.as_mut_slice());
+    getrandom::getrandom(key.as_mut_slice()).expect("system entropy");
     key
 }
 
@@ -317,8 +317,7 @@ fn create_cursor_key_once(
 ) -> Result<crate::protocol::CursorKey, TeslaMateCredentialError> {
     let temporary = secrets_dir.join(format!(".hub-cursor-{}.tmp", Uuid::new_v4()));
     let mut bytes = [0_u8; CURSOR_KEY_BYTES];
-    let mut rng = OsRng;
-    rng.fill_bytes(&mut bytes);
+    getrandom::getrandom(&mut bytes).expect("system entropy");
     let created = (|| {
         let mut file = OpenOptions::new()
             .write(true)

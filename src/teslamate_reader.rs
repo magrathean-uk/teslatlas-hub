@@ -2281,7 +2281,7 @@ async fn validate_source_schema(
         maximum_validated_migration_version: MAX_VALIDATED_MIGRATION,
         pinned_source_revision: TESLAMATE_V4_SOURCE_REVISION,
         pinned_migration_set_sha256: TESLAMATE_V4_MIGRATION_SET_SHA256,
-        fingerprint: format!("{:x}", digest.finalize()),
+        fingerprint: hex::encode(digest.finalize()),
     })
 }
 

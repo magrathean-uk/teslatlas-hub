@@ -245,7 +245,7 @@ fn summary_from_ordered_rows(
 }
 
 pub fn hex_sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 fn read_tag(bytes: &[u8], cursor: &mut usize, label: &str) -> Result<u8, UpdatesLogicalError> {

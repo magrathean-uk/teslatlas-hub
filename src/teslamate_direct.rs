@@ -2619,7 +2619,7 @@ mod tests {
                 "fixture counts digest must be hexadecimal"
             );
             assert_eq!(
-                format!("{:x}", Sha256::digest(&bytes)),
+                hex::encode(Sha256::digest(&bytes)),
                 expected_sha256.to_ascii_lowercase(),
                 "fixture counts digest"
             );

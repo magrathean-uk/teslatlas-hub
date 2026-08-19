@@ -7,7 +7,7 @@
 
 use aes_gcm::{
     Aes256Gcm, Nonce,
-    aead::{Aead, AeadCore, KeyInit, OsRng, Payload},
+    aead::{Aead, KeyInit, Payload},
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -116,9 +116,11 @@ fn decrypt_cloak_value(
     ));
     ciphertext.extend_from_slice(&encrypted[ciphertext_start..]);
     ciphertext.extend_from_slice(&encrypted[auth_tag_start..ciphertext_start]);
+    let nonce = Nonce::try_from(&encrypted[nonce_end..auth_tag_start])
+        .map_err(|_| TeslaMateTokenError::UnsupportedEnvelope)?;
     cipher
         .decrypt(
-            Nonce::from_slice(&encrypted[nonce_end..auth_tag_start]),
+            &nonce,
             Payload {
                 msg: ciphertext.as_slice(),
                 aad: ASSOCIATED_DATA,
@@ -131,7 +133,9 @@ fn encrypt_cloak_value(
     cipher: &Aes256Gcm,
     plaintext: &[u8],
 ) -> Result<Vec<u8>, TeslaMateTokenError> {
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let mut nonce_bytes = [0_u8; NONCE_BYTES];
+    getrandom::getrandom(&mut nonce_bytes).expect("system entropy");
+    let nonce = Nonce::from(nonce_bytes);
     let mut ciphertext_and_tag = cipher
         .encrypt(
             &nonce,
@@ -209,7 +213,7 @@ mod tests {
         let cipher = Aes256Gcm::new_from_slice(&key).expect("fixed key is valid");
         let encrypted = cipher
             .encrypt(
-                Nonce::from_slice(&nonce_bytes),
+                &Nonce::from(nonce_bytes),
                 Payload {
                     msg: plaintext,
                     aad: ASSOCIATED_DATA,
