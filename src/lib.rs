@@ -63,7 +63,7 @@ pub fn legal_notice() -> String {
 
 #[cfg(test)]
 mod legal_notice_tests {
-    use super::{legal_notice, BUILD_VERSION, SOURCE_URL};
+    use super::{BUILD_VERSION, SOURCE_URL, legal_notice};
 
     #[test]
     fn legal_notice_identifies_agpl_only_and_notice_facts() {

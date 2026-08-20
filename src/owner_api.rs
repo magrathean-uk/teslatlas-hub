@@ -10,6 +10,7 @@
 
 use std::{
     fmt,
+    net::IpAddr,
     time::{Duration, SystemTime},
 };
 
@@ -55,10 +56,13 @@ impl OwnerApiBase {
     }
 
     fn from_url(mut url: Url, require_https: bool) -> Result<Self, OwnerApiConfigError> {
+        if url.scheme() == "http" && !is_loopback_owner_api_host(url.host_str()) {
+            return Err(OwnerApiConfigError::HttpsRequired);
+        }
         if require_https && url.scheme() != "https" {
             // Local replacement proof uses a loopback fake Tesla source over
             // plaintext HTTP. Remote hosts remain HTTPS-only.
-            if url.scheme() != "http" || !is_loopback_owner_api_host(url.host_str()) {
+            if url.scheme() != "http" {
                 return Err(OwnerApiConfigError::HttpsRequired);
             }
         }
@@ -155,7 +159,8 @@ pub(crate) struct OwnerApi {
 }
 
 fn is_loopback_owner_api_host(host: Option<&str>) -> bool {
-    matches!(host, Some("127.0.0.1" | "localhost" | "::1"))
+    host.and_then(|host| host.parse::<IpAddr>().ok())
+        .is_some_and(|address| address.is_loopback())
 }
 
 impl OwnerApi {
@@ -987,7 +992,7 @@ mod tests {
 
     #[test]
     fn vehicle_data_endpoint_preserves_provider_path_and_encodes_only_the_endpoint_query() {
-        let base = Url::parse("http://provider.example/owner-proxy/").expect("base URL");
+        let base = Url::parse("https://provider.example/owner-proxy/").expect("base URL");
         let client = OwnerApi::for_fake_http(base, Duration::from_secs(2)).expect("fake client");
         let endpoint = client
             .vehicle_data_endpoint(VehicleId(7))
@@ -1035,8 +1040,10 @@ mod tests {
         let base = OwnerApiBase::parse("http://127.0.0.1:9/").expect("loopback http");
         assert!(base.is_loopback_http());
         assert_eq!(base.as_str(), "http://127.0.0.1:9/");
-        let localhost = OwnerApiBase::parse("http://localhost:9/owner/").expect("localhost http");
-        assert!(localhost.is_loopback_http());
+        assert!(matches!(
+            OwnerApiBase::parse("http://localhost:9/owner/"),
+            Err(OwnerApiConfigError::HttpsRequired)
+        ));
         assert!(matches!(
             OwnerApiBase::parse("http://192.168.1.2/"),
             Err(OwnerApiConfigError::HttpsRequired)

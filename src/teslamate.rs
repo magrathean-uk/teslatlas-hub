@@ -43,8 +43,17 @@ impl ReadOnlySource {
         if url.path().trim_matches('/').is_empty() {
             return Err(TeslaMateSourceError::Database);
         }
-        if url.query().is_some() || url.fragment().is_some() {
+        if url.fragment().is_some() {
             return Err(TeslaMateSourceError::Parameters);
+        }
+        if let Some(query) = url.query() {
+            let literal_loopback = url
+                .host_str()
+                .and_then(|host| host.parse::<IpAddr>().ok())
+                .is_some_and(|address| address.is_loopback());
+            if !literal_loopback || query != "sslmode=disable" {
+                return Err(TeslaMateSourceError::Parameters);
+            }
         }
         Ok(Self { url })
     }
@@ -67,11 +76,9 @@ impl ReadOnlySource {
     }
 
     pub fn is_loopback(&self) -> bool {
-        self.host().eq_ignore_ascii_case("localhost")
-            || self
-                .host()
-                .parse::<IpAddr>()
-                .is_ok_and(|address| address.is_loopback())
+        self.host()
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
     }
 
     /// Session setup that must execute before inspecting the source schema.
@@ -143,7 +150,7 @@ mod tests {
     #[test]
     fn defaults_postgres_urls_to_the_standard_port() {
         let source =
-            ReadOnlySource::parse("postgresql://reader@localhost/teslamate").expect("valid source");
+            ReadOnlySource::parse("postgresql://reader@127.0.0.1/teslamate").expect("valid source");
         assert_eq!(source.port(), 5432);
         assert!(source.is_loopback());
     }
@@ -156,8 +163,17 @@ mod tests {
 
         let option =
             ReadOnlySource::parse("postgresql://reader@localhost/teslamate?sslmode=disable")
-                .expect_err("parameters must be rejected");
+                .expect_err("hostname plaintext must be rejected");
         assert!(matches!(option, TeslaMateSourceError::Parameters));
+
+        assert!(
+            ReadOnlySource::parse("postgresql://reader@127.0.0.1/teslamate?sslmode=disable")
+                .is_ok()
+        );
+        assert!(
+            ReadOnlySource::parse("postgresql://reader@192.168.1.2/teslamate?sslmode=disable")
+                .is_err()
+        );
     }
 
     #[test]

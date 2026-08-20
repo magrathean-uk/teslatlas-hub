@@ -472,8 +472,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(target_os = "macos"))]
     if matches!(&cli.command, Command::Serve) {
         return Err(
-            "serve is not yet supported on this platform; Linux runtime support is planned"
-                .into(),
+            "serve is not yet supported on this platform; Linux runtime support is planned".into(),
         );
     }
 

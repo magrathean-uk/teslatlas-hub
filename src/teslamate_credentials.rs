@@ -7,7 +7,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-
 use thiserror::Error;
 use uuid::Uuid;
 use zeroize::Zeroizing;
