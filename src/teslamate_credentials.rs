@@ -2,18 +2,23 @@
 
 use std::{
     fs::{self, File, OpenOptions},
-    io::Write,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    io::{Read, Write},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 
+use rustix::{
+    fs::{FileType, Mode, OFlags, fstat, open},
+    io::Errno,
+    process::getuid,
+};
 use thiserror::Error;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 const SECRETS_DIRECTORY_MODE: u32 = 0o700;
 const KEY_FILE_MODE: u32 = 0o600;
-const MAX_KEY_BYTES: usize = 4 * 1024;
+const MAX_KEY_BYTES: usize = 16 * 1024;
 const CURSOR_KEY_BYTES: usize = 32;
 const PREVIOUS_KEY_FILE_NAME: &str = ".teslamate-encryption.previous.key";
 
@@ -221,7 +226,7 @@ fn begin_key_replacement(
     let current = key_path(data_dir);
     let previous = previous_key_path(data_dir);
     if path_exists(&previous)? {
-        return Err(TeslaMateCredentialError::PendingKeyReplacement(previous));
+        return Err(TeslaMateCredentialError::PendingKeyReplacement);
     }
     let had_previous = path_exists(&current)?;
     if had_previous {
@@ -299,15 +304,13 @@ pub(crate) fn load_key(
     let secrets_dir = data_dir.join("secrets");
     validate_secrets_directory(&secrets_dir)?;
     let path = key_path(data_dir);
-    validate_key_file(&path)?;
     load_key_file(&path)
 }
 
 fn load_key_file(path: &Path) -> Result<TeslaMateEncryptionKey, TeslaMateCredentialError> {
-    validate_key_file(path)?;
-    let key = fs::read(path).map_err(TeslaMateCredentialError::ReadKey)?;
+    let key = read_checked_key_file(path, MAX_KEY_BYTES)?;
     validate_key(&key)?;
-    Ok(TeslaMateEncryptionKey(Zeroizing::new(key)))
+    Ok(TeslaMateEncryptionKey(key))
 }
 
 fn create_cursor_key_once(
@@ -353,18 +356,9 @@ fn create_cursor_key_once(
 fn load_cursor_key_file(
     path: &Path,
 ) -> Result<crate::protocol::CursorKey, TeslaMateCredentialError> {
-    let metadata =
-        fs::symlink_metadata(path).map_err(TeslaMateCredentialError::InspectCursorKey)?;
-    if metadata.file_type().is_symlink()
-        || !metadata.file_type().is_file()
-        || metadata.permissions().mode() & 0o777 != KEY_FILE_MODE
-    {
-        return Err(TeslaMateCredentialError::UnsafeCursorKeyFile(
-            path.to_path_buf(),
-        ));
-    }
-    let bytes = fs::read(path).map_err(TeslaMateCredentialError::ReadCursorKey)?;
+    let bytes = read_checked_cursor_key_file(path)?;
     let bytes: [u8; CURSOR_KEY_BYTES] = bytes
+        .as_slice()
         .try_into()
         .map_err(|_| TeslaMateCredentialError::InvalidCursorKeyLength)?;
     Ok(crate::protocol::CursorKey::from_bytes(bytes))
@@ -395,9 +389,7 @@ fn validate_secrets_directory(path: &Path) -> Result<(), TeslaMateCredentialErro
         || !metadata.is_dir()
         || metadata.permissions().mode() & 0o777 != SECRETS_DIRECTORY_MODE
     {
-        return Err(TeslaMateCredentialError::UnsafeSecretsDirectory(
-            path.to_path_buf(),
-        ));
+        return Err(TeslaMateCredentialError::UnsafeSecretsDirectory);
     }
     Ok(())
 }
@@ -416,10 +408,121 @@ fn validate_key_file(path: &Path) -> Result<(), TeslaMateCredentialError> {
     if metadata.file_type().is_symlink()
         || !metadata.file_type().is_file()
         || metadata.permissions().mode() & 0o777 != KEY_FILE_MODE
+        || metadata.uid() != getuid().as_raw()
     {
-        return Err(TeslaMateCredentialError::UnsafeKeyFile(path.to_path_buf()));
+        return Err(TeslaMateCredentialError::UnsafeKeyFile);
     }
     Ok(())
+}
+
+fn read_checked_key_file(
+    path: &Path,
+    maximum: usize,
+) -> Result<Zeroizing<Vec<u8>>, TeslaMateCredentialError> {
+    read_checked_secret_file(path, maximum, false)
+}
+
+fn read_checked_cursor_key_file(
+    path: &Path,
+) -> Result<Zeroizing<Vec<u8>>, TeslaMateCredentialError> {
+    read_checked_secret_file(path, CURSOR_KEY_BYTES, true)
+}
+
+fn read_checked_secret_file(
+    path: &Path,
+    maximum: usize,
+    cursor: bool,
+) -> Result<Zeroizing<Vec<u8>>, TeslaMateCredentialError> {
+    read_checked_secret_file_after_open(path, maximum, cursor, || {})
+}
+
+fn read_checked_secret_file_after_open(
+    path: &Path,
+    maximum: usize,
+    cursor: bool,
+    after_open: impl FnOnce(),
+) -> Result<Zeroizing<Vec<u8>>, TeslaMateCredentialError> {
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|error| match error {
+        Errno::LOOP => {
+            if cursor {
+                TeslaMateCredentialError::UnsafeCursorKeyFile
+            } else {
+                TeslaMateCredentialError::UnsafeKeyFile
+            }
+        }
+        _ => {
+            if cursor {
+                TeslaMateCredentialError::ReadCursorKey
+            } else {
+                TeslaMateCredentialError::ReadKey
+            }
+        }
+    })?;
+    let held = fstat(&descriptor).map_err(|_| {
+        if cursor {
+            TeslaMateCredentialError::ReadCursorKey
+        } else {
+            TeslaMateCredentialError::ReadKey
+        }
+    })?;
+    if !FileType::from_raw_mode(held.st_mode).is_file()
+        || (held.st_mode as u32 & 0o777) != KEY_FILE_MODE
+        || held.st_uid != getuid().as_raw()
+    {
+        return Err(if cursor {
+            TeslaMateCredentialError::UnsafeCursorKeyFile
+        } else {
+            TeslaMateCredentialError::UnsafeKeyFile
+        });
+    }
+
+    after_open();
+
+    let file: File = descriptor.into();
+    let mut bytes = Zeroizing::new(Vec::with_capacity(maximum.min(8 * 1024)));
+    file.take(u64::try_from(maximum + 1).expect("key cap fits u64"))
+        .read_to_end(&mut bytes)
+        .map_err(|_| {
+            if cursor {
+                TeslaMateCredentialError::ReadCursorKey
+            } else {
+                TeslaMateCredentialError::ReadKey
+            }
+        })?;
+    if bytes.len() > maximum {
+        return Err(if cursor {
+            TeslaMateCredentialError::InvalidCursorKeyLength
+        } else {
+            TeslaMateCredentialError::KeyTooLarge
+        });
+    }
+
+    let current = fs::symlink_metadata(path).map_err(|_| {
+        if cursor {
+            TeslaMateCredentialError::CursorKeyIdentityChanged
+        } else {
+            TeslaMateCredentialError::KeyIdentityChanged
+        }
+    })?;
+    if current.file_type().is_symlink()
+        || !current.file_type().is_file()
+        || current.uid() != held.st_uid
+        || current.dev() != held.st_dev as u64
+        || current.ino() != held.st_ino
+        || current.permissions().mode() & 0o777 != KEY_FILE_MODE
+    {
+        return Err(if cursor {
+            TeslaMateCredentialError::CursorKeyIdentityChanged
+        } else {
+            TeslaMateCredentialError::KeyIdentityChanged
+        });
+    }
+    Ok(bytes)
 }
 
 fn validate_key(key: &[u8]) -> Result<(), TeslaMateCredentialError> {
@@ -449,12 +552,12 @@ pub enum TeslaMateCredentialError {
     CreateSecretsDirectory(std::io::Error),
     #[error("cannot inspect TeslaMate secrets directory: {0}")]
     InspectSecretsDirectory(std::io::Error),
-    #[error("TeslaMate secrets directory has unsafe type or mode: {0}")]
-    UnsafeSecretsDirectory(PathBuf),
+    #[error("TeslaMate secrets directory has unsafe type or mode")]
+    UnsafeSecretsDirectory,
     #[error("cannot inspect TeslaMate encryption key file: {0}")]
     InspectKey(std::io::Error),
-    #[error("TeslaMate encryption key file has unsafe type or mode: {0}")]
-    UnsafeKeyFile(PathBuf),
+    #[error("TeslaMate encryption key file has unsafe type or mode")]
+    UnsafeKeyFile,
     #[error("cannot create temporary TeslaMate encryption key: {0}")]
     CreateTemporaryKey(std::io::Error),
     #[error("cannot protect temporary TeslaMate encryption key: {0}")]
@@ -469,8 +572,8 @@ pub enum TeslaMateCredentialError {
     RemoveKey(std::io::Error),
     #[error("cannot restore previous TeslaMate encryption key: {0}")]
     RestoreKey(std::io::Error),
-    #[error("an interrupted TeslaMate key replacement must be recovered first: {0}")]
-    PendingKeyReplacement(PathBuf),
+    #[error("an interrupted TeslaMate key replacement must be recovered first")]
+    PendingKeyReplacement,
     #[error("an interrupted TeslaMate key replacement has no committed token pair")]
     PendingKeyReplacementWithoutTokens,
     #[error("neither private TeslaMate key generation decrypts the committed token pair")]
@@ -479,12 +582,14 @@ pub enum TeslaMateCredentialError {
     OpenSecretsDirectory(std::io::Error),
     #[error("cannot sync TeslaMate secrets directory: {0}")]
     SyncSecretsDirectory(std::io::Error),
-    #[error("cannot read TeslaMate encryption key: {0}")]
-    ReadKey(std::io::Error),
+    #[error("cannot read TeslaMate encryption key")]
+    ReadKey,
+    #[error("TeslaMate encryption key identity changed while reading")]
+    KeyIdentityChanged,
     #[error("cannot inspect Hub cursor key: {0}")]
     InspectCursorKey(std::io::Error),
-    #[error("Hub cursor key has unsafe type or mode: {0}")]
-    UnsafeCursorKeyFile(PathBuf),
+    #[error("Hub cursor key has unsafe type or mode")]
+    UnsafeCursorKeyFile,
     #[error("Hub cursor key must be exactly 32 bytes")]
     InvalidCursorKeyLength,
     #[error("cannot create temporary Hub cursor key: {0}")]
@@ -499,8 +604,10 @@ pub enum TeslaMateCredentialError {
     PublishCursorKey(std::io::Error),
     #[error("cannot remove temporary Hub cursor key: {0}")]
     RemoveTemporaryCursorKey(std::io::Error),
-    #[error("cannot read Hub cursor key: {0}")]
-    ReadCursorKey(std::io::Error),
+    #[error("cannot read Hub cursor key")]
+    ReadCursorKey,
+    #[error("Hub cursor key identity changed while reading")]
+    CursorKeyIdentityChanged,
 }
 
 #[derive(Debug, Error)]
@@ -607,11 +714,11 @@ mod tests {
 
         assert!(matches!(
             load_key(temporary.path()),
-            Err(TeslaMateCredentialError::UnsafeKeyFile(_))
+            Err(TeslaMateCredentialError::UnsafeKeyFile)
         ));
         assert!(matches!(
             replace_key(temporary.path(), b"replacement"),
-            Err(TeslaMateCredentialError::UnsafeKeyFile(_))
+            Err(TeslaMateCredentialError::UnsafeKeyFile)
         ));
     }
 
@@ -625,6 +732,35 @@ mod tests {
         assert!(matches!(
             replace_key(temporary.path(), &vec![0; MAX_KEY_BYTES + 1]),
             Err(TeslaMateCredentialError::KeyTooLarge)
+        ));
+    }
+
+    #[test]
+    fn key_reader_rejects_oversized_and_replaced_files_after_open() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let secrets = temporary.path().join("secrets");
+        fs::create_dir(&secrets).expect("secrets directory");
+        fs::set_permissions(&secrets, fs::Permissions::from_mode(SECRETS_DIRECTORY_MODE))
+            .expect("protect secrets directory");
+        let path = key_path(temporary.path());
+        fs::write(&path, vec![7_u8; MAX_KEY_BYTES + 1]).expect("oversized key");
+        fs::set_permissions(&path, fs::Permissions::from_mode(KEY_FILE_MODE)).expect("key mode");
+        assert!(matches!(
+            load_key(temporary.path()),
+            Err(TeslaMateCredentialError::KeyTooLarge)
+        ));
+
+        fs::write(&path, b"original").expect("key");
+        fs::set_permissions(&path, fs::Permissions::from_mode(KEY_FILE_MODE)).expect("key mode");
+        let replacement = secrets.join("replacement");
+        fs::write(&replacement, b"replacement").expect("replacement key");
+        fs::set_permissions(&replacement, fs::Permissions::from_mode(KEY_FILE_MODE))
+            .expect("replacement mode");
+        assert!(matches!(
+            read_checked_secret_file_after_open(&path, MAX_KEY_BYTES, false, || {
+                fs::rename(&replacement, &path).expect("replace key")
+            }),
+            Err(TeslaMateCredentialError::KeyIdentityChanged)
         ));
     }
 
@@ -667,12 +803,34 @@ mod tests {
             Err(TeslaMateCredentialError::InvalidCursorKeyLength)
         ));
 
+        fs::write(&path, [0_u8; CURSOR_KEY_BYTES + 1]).expect("oversized cursor key");
+        fs::set_permissions(&path, fs::Permissions::from_mode(KEY_FILE_MODE))
+            .expect("protect oversized cursor key");
+        assert!(matches!(
+            load_or_create_cursor_key(temporary.path()),
+            Err(TeslaMateCredentialError::InvalidCursorKeyLength)
+        ));
+
         fs::write(&path, [0_u8; CURSOR_KEY_BYTES]).expect("cursor key");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o640))
             .expect("weaken cursor key mode");
         assert!(matches!(
             load_or_create_cursor_key(temporary.path()),
-            Err(TeslaMateCredentialError::UnsafeCursorKeyFile(_))
+            Err(TeslaMateCredentialError::UnsafeCursorKeyFile)
+        ));
+
+        fs::write(&path, [0_u8; CURSOR_KEY_BYTES]).expect("cursor key");
+        fs::set_permissions(&path, fs::Permissions::from_mode(KEY_FILE_MODE))
+            .expect("cursor key mode");
+        let replacement = secrets.join("replacement-cursor");
+        fs::write(&replacement, [1_u8; CURSOR_KEY_BYTES]).expect("replacement cursor key");
+        fs::set_permissions(&replacement, fs::Permissions::from_mode(KEY_FILE_MODE))
+            .expect("replacement cursor key mode");
+        assert!(matches!(
+            read_checked_secret_file_after_open(&path, CURSOR_KEY_BYTES, true, || {
+                fs::rename(&replacement, &path).expect("replace cursor key")
+            }),
+            Err(TeslaMateCredentialError::CursorKeyIdentityChanged)
         ));
     }
 
@@ -690,7 +848,7 @@ mod tests {
 
         assert!(matches!(
             load_or_create_cursor_key(temporary.path()),
-            Err(TeslaMateCredentialError::UnsafeCursorKeyFile(_))
+            Err(TeslaMateCredentialError::UnsafeCursorKeyFile)
         ));
     }
 }

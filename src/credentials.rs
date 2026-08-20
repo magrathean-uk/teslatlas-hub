@@ -4,6 +4,7 @@ use crate::legacy_auth::{LegacyAuth, LegacyAuthError};
 use reqwest::Client;
 use std::{path::Path, sync::Arc, time::SystemTime};
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 const MAX_TOKEN_BYTES: usize = 16 * 1024;
 const MAX_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
@@ -407,7 +408,7 @@ impl LegacyAuthManager {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct TeslaMatePostgresPassword(String);
+pub struct TeslaMatePostgresPassword(Zeroizing<String>);
 impl TeslaMatePostgresPassword {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CredentialError> {
         let bytes = bytes
@@ -424,11 +425,12 @@ impl TeslaMatePostgresPassword {
             return Err(CredentialError::InvalidPostgresPasswordBytes);
         }
         String::from_utf8(bytes.to_vec())
+            .map(Zeroizing::new)
             .map(Self)
             .map_err(|_| CredentialError::InvalidPostgresPasswordEncoding)
     }
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 impl std::fmt::Debug for TeslaMatePostgresPassword {

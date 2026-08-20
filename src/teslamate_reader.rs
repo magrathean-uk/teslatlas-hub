@@ -272,12 +272,16 @@ pub struct TeslaMateLegacyTokenCiphertexts {
     pub refresh: Vec<u8>,
 }
 
+const MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES: i64 = 16 * 1024;
+
 const PRIVATE_LEGACY_TOKENS_SQL: &str = "SELECT \"token\".\"access\" AS \"access\", \"token\".\"refresh\" AS \"refresh\" \
      FROM \"private\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
 const PUBLIC_LEGACY_TOKENS_SQL: &str = "SELECT \"token\".\"access\" AS \"access\", \"token\".\"refresh\" AS \"refresh\" \
      FROM \"public\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
 const PRIVATE_LEGACY_TOKENS_EXISTS_SQL: &str =
     "SELECT pg_catalog.to_regclass('private.tokens') IS NOT NULL AS \"private_tokens_exists\"";
+const PRIVATE_LEGACY_TOKEN_LENGTHS_SQL: &str = "SELECT pg_catalog.octet_length(\"token\".\"access\")::bigint AS \"access_length\", pg_catalog.octet_length(\"token\".\"refresh\")::bigint AS \"refresh_length\" FROM \"private\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
+const PUBLIC_LEGACY_TOKEN_LENGTHS_SQL: &str = "SELECT pg_catalog.octet_length(\"token\".\"access\")::bigint AS \"access_length\", pg_catalog.octet_length(\"token\".\"refresh\")::bigint AS \"refresh_length\" FROM \"public\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
 
 impl std::fmt::Debug for TeslaMateLegacyTokenCiphertexts {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -413,7 +417,24 @@ async fn read_legacy_token_ciphertexts_in_client(
         .query_one(PRIVATE_LEGACY_TOKENS_EXISTS_SQL, &[])
         .await?
         .try_get("private_tokens_exists")?;
-    let (query, relation) = legacy_token_query(private_tokens_exists);
+    let (length_query, query, relation) = legacy_token_queries(private_tokens_exists);
+    let length_rows = client.query(length_query, &[]).await?;
+    if length_rows.is_empty() {
+        return Err(TeslaMateReaderError::LegacyTokenPairMissing);
+    }
+    if length_rows.len() != 1 {
+        return Err(TeslaMateReaderError::LegacyTokenPairAmbiguous);
+    }
+    let lengths = &length_rows[0];
+    let access_length: i64 = lengths
+        .try_get("access_length")
+        .map_err(|source| cell(relation, "access", source))?;
+    let refresh_length: i64 = lengths
+        .try_get("refresh_length")
+        .map_err(|source| cell(relation, "refresh", source))?;
+    validate_legacy_ciphertext_length(relation, "access", access_length)?;
+    validate_legacy_ciphertext_length(relation, "refresh", refresh_length)?;
+
     let rows = client.query(query, &[]).await?;
     if rows.is_empty() {
         return Err(TeslaMateReaderError::LegacyTokenPairMissing);
@@ -434,12 +455,36 @@ async fn read_legacy_token_ciphertexts_in_client(
     Ok(TeslaMateLegacyTokenCiphertexts { access, refresh })
 }
 
-fn legacy_token_query(private_tokens_exists: bool) -> (&'static str, &'static str) {
+fn legacy_token_queries(private_tokens_exists: bool) -> (&'static str, &'static str, &'static str) {
     if private_tokens_exists {
-        (PRIVATE_LEGACY_TOKENS_SQL, "private.tokens")
+        (
+            PRIVATE_LEGACY_TOKEN_LENGTHS_SQL,
+            PRIVATE_LEGACY_TOKENS_SQL,
+            "private.tokens",
+        )
     } else {
-        (PUBLIC_LEGACY_TOKENS_SQL, "public.tokens")
+        (
+            PUBLIC_LEGACY_TOKEN_LENGTHS_SQL,
+            PUBLIC_LEGACY_TOKENS_SQL,
+            "public.tokens",
+        )
     }
+}
+
+fn validate_legacy_ciphertext_length(
+    relation: &'static str,
+    column: &'static str,
+    actual: i64,
+) -> Result<(), TeslaMateReaderError> {
+    if !(0..=MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES).contains(&actual) {
+        return Err(TeslaMateReaderError::LegacyTokenCiphertextTooLarge {
+            relation,
+            column,
+            maximum: MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+            actual,
+        });
+    }
+    Ok(())
 }
 
 pub(crate) async fn open_snapshot_session(
@@ -3756,6 +3801,13 @@ pub enum TeslaMateReaderError {
     LegacyTokenPairAmbiguous,
     #[error("TeslaMate legacy OAuth token pair is empty")]
     LegacyTokenPairEmpty,
+    #[error("TeslaMate {relation}.{column} ciphertext exceeds {maximum} bytes (actual {actual})")]
+    LegacyTokenCiphertextTooLarge {
+        relation: &'static str,
+        column: &'static str,
+        maximum: i64,
+        actual: i64,
+    },
     #[error("TeslaMate source role has USAGE on the private schema")]
     PrivateSchemaUsageGranted,
     #[error("TeslaMate source witness transaction is not read-only")]
@@ -3908,12 +3960,20 @@ mod tests {
     #[test]
     fn token_reader_selects_public_only_when_private_relation_probe_is_false() {
         assert_eq!(
-            legacy_token_query(true),
-            (PRIVATE_LEGACY_TOKENS_SQL, "private.tokens")
+            legacy_token_queries(true),
+            (
+                PRIVATE_LEGACY_TOKEN_LENGTHS_SQL,
+                PRIVATE_LEGACY_TOKENS_SQL,
+                "private.tokens"
+            )
         );
         assert_eq!(
-            legacy_token_query(false),
-            (PUBLIC_LEGACY_TOKENS_SQL, "public.tokens")
+            legacy_token_queries(false),
+            (
+                PUBLIC_LEGACY_TOKEN_LENGTHS_SQL,
+                PUBLIC_LEGACY_TOKENS_SQL,
+                "public.tokens"
+            )
         );
         assert!(PRIVATE_LEGACY_TOKENS_EXISTS_SQL.contains("pg_catalog.to_regclass"));
         assert!(PRIVATE_LEGACY_TOKENS_EXISTS_SQL.contains("'private.tokens'"));
@@ -3933,6 +3993,44 @@ mod tests {
             assert!(!sql.contains("WHERE"));
             assert!(!sql.contains(';'));
         }
+        for sql in [
+            PRIVATE_LEGACY_TOKEN_LENGTHS_SQL,
+            PUBLIC_LEGACY_TOKEN_LENGTHS_SQL,
+        ] {
+            assert!(sql.contains("pg_catalog.octet_length"));
+            assert!(sql.ends_with("LIMIT 2"));
+            assert!(!sql.contains(';'));
+        }
+    }
+
+    #[test]
+    fn ciphertext_lengths_allow_the_limit_and_reject_the_next_byte() {
+        assert!(
+            validate_legacy_ciphertext_length(
+                "private.tokens",
+                "access",
+                MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
+            )
+            .is_ok()
+        );
+        match validate_legacy_ciphertext_length(
+            "private.tokens",
+            "access",
+            MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES + 1,
+        ) {
+            Err(TeslaMateReaderError::LegacyTokenCiphertextTooLarge {
+                relation,
+                column,
+                maximum,
+                actual,
+            }) => {
+                assert_eq!(relation, "private.tokens");
+                assert_eq!(column, "access");
+                assert_eq!(maximum, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES);
+                assert_eq!(actual, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES + 1);
+            }
+            other => panic!("expected length error, got {other:?}"),
+        }
     }
 
     #[test]
@@ -3942,8 +4040,8 @@ mod tests {
                 .expect("validated snapshot")
                 .starts_with("SET TRANSACTION SNAPSHOT '")
         );
-        assert_eq!(legacy_token_query(true).1, "private.tokens");
-        assert_eq!(legacy_token_query(false).1, "public.tokens");
+        assert_eq!(legacy_token_queries(true).2, "private.tokens");
+        assert_eq!(legacy_token_queries(false).2, "public.tokens");
         assert!(PRIVATE_LEGACY_TOKENS_SQL.ends_with("LIMIT 2"));
         assert!(PUBLIC_LEGACY_TOKENS_SQL.ends_with("LIMIT 2"));
     }

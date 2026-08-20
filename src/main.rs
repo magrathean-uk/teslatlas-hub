@@ -17,6 +17,8 @@ use sha2::{Digest, Sha256};
 use teslatlas_hub::hub_user_process::AdmittedUserHub;
 #[cfg(target_os = "macos")]
 use teslatlas_hub::protocol::CursorKey;
+#[cfg(target_os = "macos")]
+use teslatlas_hub::teslamate_import::derive_effective_import_profile;
 use teslatlas_hub::{
     collector,
     config::HubConfig,
@@ -942,6 +944,23 @@ struct MacMigrationInput<'a> {
 }
 
 #[cfg(target_os = "macos")]
+const MAX_MIGRATION_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
+#[cfg(target_os = "macos")]
+const MAX_MIGRATION_TOKEN_BYTES: usize = 16 * 1024;
+#[cfg(target_os = "macos")]
+const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
+
+#[cfg(target_os = "macos")]
+fn migration_stop_confirmed(answer: &str) -> bool {
+    matches!(answer.trim(), "y" | "Y")
+}
+
+#[cfg(target_os = "macos")]
+fn migration_start_requested(answer: &str) -> bool {
+    matches!(answer.trim(), "y" | "Y")
+}
+
+#[cfg(target_os = "macos")]
 async fn run_macos_migration(
     admission: &AdmittedUserHub,
     MacMigrationInput {
@@ -974,9 +993,17 @@ async fn run_macos_migration(
     admission.assert_sensitive_access()?;
     admission.assert_store_path(&config.data_dir)?;
     let source = ReadOnlySource::parse(source_url)?;
-    let postgres_password =
-        TeslaMatePostgresPassword::from_bytes(&read_migration_secret(postgres_password_file)?)?;
-    let limits = config.teslamate.read_limits()?;
+    let postgres_password = TeslaMatePostgresPassword::from_bytes(&read_migration_secret(
+        postgres_password_file,
+        MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
+    )?)?;
+    let mut limits = config.teslamate.read_limits()?;
+    let profile = derive_effective_import_profile(
+        limits.parallel_copy_lanes,
+        &config.teslamate.performance_profile,
+        &config.data_dir,
+    )?;
+    limits.parallel_copy_lanes = profile.parallel_copy_lanes;
     let copy_teslamate_ciphertext = match (
         encryption_key_file,
         access_token_file,
@@ -994,53 +1021,63 @@ async fn run_macos_migration(
 
     let store = HubStore::initialize(&config.data_dir)?;
     let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
-    let (initial_stage_stats, initial_report, _) = capture_and_publish_migration_snapshot(
-        &store,
-        &cursor_key,
-        &source,
-        &postgres_password,
-        car_id,
-        limits,
-        false,
-    )
-    .await?;
+    let (initial_stage_stats, initial_report, _, initial_cleanup_pending) =
+        capture_and_publish_migration_snapshot(
+            &store,
+            &cursor_key,
+            &source,
+            &postgres_password,
+            car_id,
+            limits,
+            false,
+        )
+        .await?;
 
     println!(
         "{}",
         serde_json::json!({
-            "status": "initial-copy-complete",
+            "status": if initial_cleanup_pending { "initial-copy-committed-with-cleanup-pending" } else { "initial-copy-complete" },
             "selectedCarId": car_id,
             "stageRows": initial_stage_stats.row_count,
             "stageBytes": initial_stage_stats.payload_bytes,
             "projectedRows": initial_report.projected_rows,
             "snapshotId": initial_report.snapshot_id,
             "sequence": initial_report.sequence,
+            "profileVersion": profile.version,
+            "parallelCopyLanes": profile.parallel_copy_lanes,
+            "profileReason": profile.reason.as_str(),
+            "cleanupPending": initial_cleanup_pending,
         })
     );
-    print!("Stop TeslaMate now. Start Teslatlas Hub after final sync? [y/N] ");
+    print!("Stop TeslaMate now. Confirm it is stopped before final copy [y/N] ");
     std::io::stdout().flush()?;
     let mut answer = String::new();
     std::io::stdin().read_line(&mut answer)?;
-    let start_hub = matches!(answer.trim(), "y" | "Y");
+    if !migration_stop_confirmed(&answer) {
+        return Err(
+            "TeslaMate stop was not confirmed; final migration capture was not started".into(),
+        );
+    }
 
     // The operator has now stopped TeslaMate. Re-capture from one new
     // repeatable-read snapshot so no history row or rotated token can fall in
     // the interval between the long initial copy and cutover.
-    let (stage_stats, report, captured_ciphertexts) = capture_and_publish_migration_snapshot(
-        &store,
-        &cursor_key,
-        &source,
-        &postgres_password,
-        car_id,
-        limits,
-        copy_teslamate_ciphertext,
-    )
-    .await?;
+    let (stage_stats, report, captured_ciphertexts, final_cleanup_pending) =
+        capture_and_publish_migration_snapshot(
+            &store,
+            &cursor_key,
+            &source,
+            &postgres_password,
+            car_id,
+            limits,
+            copy_teslamate_ciphertext,
+        )
+        .await?;
 
     // The encrypted source pair came from the same final snapshot as history.
     let (encryption_key, access_ciphertext, refresh_ciphertext) = if copy_teslamate_ciphertext {
         let key_path = encryption_key_file.expect("validated encrypted-token input");
-        let key = zeroize::Zeroizing::new(read_migration_secret(key_path)?);
+        let key = read_migration_secret(key_path, MAX_MIGRATION_ENCRYPTION_KEY_BYTES)?;
         if key.is_empty() {
             return Err("TeslaMate ENCRYPTION_KEY is empty".into());
         }
@@ -1059,8 +1096,8 @@ async fn run_macos_migration(
         let key = random_encryption_key();
         let (access, refresh) = encrypt_legacy_owner_token_files(
             &key,
-            read_migration_secret(access_path)?,
-            read_migration_secret(refresh_path)?,
+            read_migration_secret(access_path, MAX_MIGRATION_TOKEN_BYTES)?.to_vec(),
+            read_migration_secret(refresh_path, MAX_MIGRATION_TOKEN_BYTES)?.to_vec(),
         )?;
         (key, access, refresh)
     };
@@ -1070,7 +1107,7 @@ async fn run_macos_migration(
     println!(
         "{}",
         serde_json::json!({
-            "status": "imported",
+            "status": if final_cleanup_pending { "imported-with-cleanup-pending" } else { "imported" },
             "selectedCarId": car_id,
             "stageRows": stage_stats.row_count,
             "stageBytes": stage_stats.payload_bytes,
@@ -1079,8 +1116,18 @@ async fn run_macos_migration(
             "sequence": report.sequence,
             "accessCiphertextBytes": stored.access().len(),
             "refreshCiphertextBytes": stored.refresh().len(),
+            "profileVersion": profile.version,
+            "parallelCopyLanes": profile.parallel_copy_lanes,
+            "profileReason": profile.reason.as_str(),
+            "cleanupPending": final_cleanup_pending,
         })
     );
+
+    print!("Start Teslatlas Hub now? [y/N] ");
+    std::io::stdout().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    let start_hub = migration_start_requested(&answer);
 
     start_hub
         .then(|| teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, config_path))
@@ -1102,6 +1149,7 @@ async fn capture_and_publish_migration_snapshot(
         TeslaMateStageStats,
         TeslaMateImportReport,
         Option<teslatlas_hub::teslamate_reader::TeslaMateLegacyTokenCiphertexts>,
+        bool,
     ),
     Box<dyn std::error::Error>,
 > {
@@ -1141,22 +1189,38 @@ async fn capture_and_publish_migration_snapshot(
     ) {
         Ok(report) => report,
         Err(error) => {
-            let _ = stage.discard();
-            return Err(error.into());
+            return match stage.discard() {
+                Ok(()) => Err(error.into()),
+                Err(_) => Err(format!(
+                    "migration publication failed: {error}; stage cleanup also failed"
+                )
+                .into()),
+            };
         }
     };
-    stage.discard()?;
-    Ok((stage_stats, report, captured_ciphertexts))
+    let cleanup_pending = stage.discard().is_err();
+    Ok((stage_stats, report, captured_ciphertexts, cleanup_pending))
 }
 
 #[cfg(target_os = "macos")]
-fn read_migration_secret(path: &Path) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn read_migration_secret(
+    path: &Path,
+    maximum: usize,
+) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
+    let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(maximum.min(8 * 1024)));
     if path == Path::new("-") {
-        let mut bytes = Vec::new();
-        std::io::stdin().read_to_end(&mut bytes)?;
-        return Ok(bytes);
+        std::io::stdin()
+            .take(u64::try_from(maximum + 1).expect("secret cap fits u64"))
+            .read_to_end(&mut bytes)?;
+    } else {
+        fs::File::open(path)?
+            .take(u64::try_from(maximum + 1).expect("secret cap fits u64"))
+            .read_to_end(&mut bytes)?;
     }
-    Ok(fs::read(path)?)
+    if bytes.len() > maximum {
+        return Err("migration secret exceeds the fixed size limit".into());
+    }
+    Ok(bytes)
 }
 
 fn observation_command_error(
@@ -1262,8 +1326,10 @@ mod tests {
     use super::{Cli, Command, leaf_certificate_sha256, pairing_uri, render_pairing_qr, run};
     #[cfg(target_os = "macos")]
     use super::{
-        MacServeControl, MacServeWorkerStopTimeout, command_requires_user_hub_admission,
-        run_macos_serve_supervisor,
+        MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
+        MAX_MIGRATION_TOKEN_BYTES, MacServeControl, MacServeWorkerStopTimeout,
+        command_requires_user_hub_admission, migration_start_requested, migration_stop_confirmed,
+        read_migration_secret, run_macos_serve_supervisor,
     };
     #[cfg(target_os = "macos")]
     use teslatlas_hub::protocol::{
@@ -1288,6 +1354,39 @@ mod tests {
         .expect("test cursor")
         .as_str()
         .to_owned()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migration_stop_and_start_prompts_are_independent_and_default_to_no() {
+        assert!(!migration_stop_confirmed(""));
+        assert!(!migration_stop_confirmed("n"));
+        assert!(migration_stop_confirmed(" Y\n"));
+        assert!(!migration_start_requested(""));
+        assert!(!migration_start_requested("N"));
+        assert!(migration_start_requested("y"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migration_secret_reader_accepts_each_exact_cap_and_rejects_next_byte() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        for (name, maximum) in [
+            ("postgres", MAX_MIGRATION_POSTGRES_PASSWORD_BYTES),
+            ("token", MAX_MIGRATION_TOKEN_BYTES),
+            ("key", MAX_MIGRATION_ENCRYPTION_KEY_BYTES),
+        ] {
+            let path = temporary.path().join(name);
+            fs::write(&path, vec![b'x'; maximum]).expect("exact secret");
+            assert_eq!(
+                read_migration_secret(&path, maximum)
+                    .expect("exact cap")
+                    .len(),
+                maximum
+            );
+            fs::write(&path, vec![b'x'; maximum + 1]).expect("oversized secret");
+            assert!(read_migration_secret(&path, maximum).is_err());
+        }
     }
 
     #[cfg(target_os = "macos")]

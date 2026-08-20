@@ -1,10 +1,16 @@
 use std::{
     fmt, fs,
+    io::Read,
     net::SocketAddr,
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     time::Duration,
 };
 
+use rustix::{
+    fs::{FileType, Mode, OFlags, fstat, open},
+    process::getuid,
+};
 use serde::Deserialize;
 use thiserror::Error;
 use url::Url;
@@ -15,6 +21,8 @@ use crate::{
     teslamate::ReadOnlySource,
     teslamate_reader::TeslaMateReadLimits,
 };
+
+const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -709,11 +717,7 @@ impl HubConfig {
     /// The returned digest therefore identifies the bytes that produced the
     /// in-memory configuration rather than a second, racy filesystem read.
     pub fn load_with_digest(path: impl AsRef<Path>) -> Result<(Self, Sha256Digest), ConfigError> {
-        let path = path.as_ref();
-        let source = fs::read(path).map_err(|source| ConfigError::Read {
-            path: path.to_path_buf(),
-            source,
-        })?;
+        let source = read_config_file(path.as_ref())?;
         Self::from_exact_bytes(&source)
     }
 
@@ -784,13 +788,62 @@ impl HubConfig {
     }
 }
 
+fn read_config_file(path: &Path) -> Result<Vec<u8>, ConfigError> {
+    read_config_file_after_open(path, || {})
+}
+
+fn read_config_file_after_open(
+    path: &Path,
+    after_open: impl FnOnce(),
+) -> Result<Vec<u8>, ConfigError> {
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|_| ConfigError::Read)?;
+    let held = fstat(&descriptor).map_err(|_| ConfigError::Read)?;
+    if !FileType::from_raw_mode(held.st_mode).is_file()
+        || held.st_uid != getuid().as_raw()
+        || (held.st_mode as u32 & 0o022) != 0
+    {
+        return Err(ConfigError::UnsafeFile);
+    }
+
+    after_open();
+
+    let file: fs::File = descriptor.into();
+    let mut source = Vec::with_capacity(MAX_CONFIG_BYTES.min(8 * 1024));
+    file.take(u64::try_from(MAX_CONFIG_BYTES + 1).expect("config cap fits u64"))
+        .read_to_end(&mut source)
+        .map_err(|_| ConfigError::Read)?;
+    if source.len() > MAX_CONFIG_BYTES {
+        return Err(ConfigError::TooLarge);
+    }
+
+    let current = fs::symlink_metadata(path).map_err(|_| ConfigError::Read)?;
+    if current.file_type().is_symlink()
+        || !current.file_type().is_file()
+        || current.uid() != held.st_uid
+        || current.dev() != held.st_dev as u64
+        || current.ino() != held.st_ino
+        || (current.mode() & 0o022) != 0
+    {
+        return Err(ConfigError::FileIdentityChanged);
+    }
+    Ok(source)
+}
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("cannot read configuration {path}: {source}")]
-    Read {
-        path: PathBuf,
-        source: std::io::Error,
-    },
+    #[error("cannot safely read configuration")]
+    Read,
+    #[error("configuration exceeds the fixed size limit")]
+    TooLarge,
+    #[error("configuration file is unsafe")]
+    UnsafeFile,
+    #[error("configuration file identity changed while reading")]
+    FileIdentityChanged,
     #[error("invalid configuration: {0}")]
     Parse(toml::de::Error),
     #[error("invalid configuration: {0}")]
@@ -841,7 +894,58 @@ pub enum ConfigError {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
     use super::*;
+
+    fn valid_config(data_dir: &Path) -> String {
+        format!(
+            "data_dir = '{}'\nbind = '127.0.0.1:8080'\n",
+            data_dir.display()
+        )
+    }
+
+    #[test]
+    fn load_rejects_oversized_symlinked_and_wrong_mode_config_files() {
+        use std::os::unix::fs::symlink;
+
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let data_dir = temporary.path().join("data");
+        let path = temporary.path().join("config.toml");
+        fs::write(&path, valid_config(&data_dir)).expect("config");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o666)).expect("unsafe mode");
+        assert!(matches!(
+            HubConfig::load(&path),
+            Err(ConfigError::UnsafeFile)
+        ));
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("safe mode");
+        let linked = temporary.path().join("linked.toml");
+        symlink(&path, &linked).expect("config symlink");
+        assert!(matches!(HubConfig::load(&linked), Err(ConfigError::Read)));
+
+        fs::write(&path, vec![b'x'; MAX_CONFIG_BYTES + 1]).expect("oversized config");
+        assert!(matches!(HubConfig::load(&path), Err(ConfigError::TooLarge)));
+    }
+
+    #[test]
+    fn load_rejects_config_path_replacement_after_open() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let data_dir = temporary.path().join("data");
+        let path = temporary.path().join("config.toml");
+        fs::write(&path, valid_config(&data_dir)).expect("config");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("safe mode");
+        let replacement = temporary.path().join("replacement.toml");
+        fs::write(&replacement, valid_config(&data_dir)).expect("replacement");
+        fs::set_permissions(&replacement, fs::Permissions::from_mode(0o600))
+            .expect("replacement mode");
+
+        assert!(matches!(
+            read_config_file_after_open(&path, || fs::rename(&replacement, &path)
+                .expect("replace")),
+            Err(ConfigError::FileIdentityChanged)
+        ));
+    }
 
     #[test]
     fn rejects_unknown_configuration_keys() {

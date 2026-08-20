@@ -87,6 +87,18 @@ pub fn derive_effective_import_profile(
     config: &PerformanceProfileConfig,
     data_dir: &Path,
 ) -> Result<EffectiveImportProfile, PerformanceProfileError> {
+    derive_effective_import_profile_with_capabilities(
+        configured_parallel_copy_lanes,
+        config,
+        HostCapabilities::measure(data_dir),
+    )
+}
+
+pub fn derive_effective_import_profile_with_capabilities(
+    configured_parallel_copy_lanes: usize,
+    config: &PerformanceProfileConfig,
+    capabilities: HostCapabilities,
+) -> Result<EffectiveImportProfile, PerformanceProfileError> {
     if !(MIN_PARALLEL_COPY_LANES..=MAX_PARALLEL_COPY_LANES)
         .contains(&configured_parallel_copy_lanes)
     {
@@ -102,7 +114,6 @@ pub fn derive_effective_import_profile(
         ));
     }
 
-    let capabilities = HostCapabilities::measure(data_dir);
     if !config.enabled {
         return Ok(EffectiveImportProfile {
             version: 1,
@@ -136,4 +147,49 @@ pub fn derive_effective_import_profile(
         parallel_copy_lanes,
         reason,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroUsize;
+
+    use super::*;
+
+    #[test]
+    fn injected_capabilities_only_lower_configured_copy_lanes() {
+        let profile = derive_effective_import_profile_with_capabilities(
+            6,
+            &PerformanceProfileConfig {
+                enabled: true,
+                max_parallel_copy_lanes: Some(4),
+            },
+            HostCapabilities {
+                available_parallelism: NonZeroUsize::new(2),
+                filesystem_free_bytes: None,
+                filesystem_free_inodes: None,
+            },
+        )
+        .expect("valid profile");
+        assert_eq!(profile.parallel_copy_lanes, 2);
+        assert_eq!(profile.reason, ProfileReason::ExplicitMaximumAndHostCpu);
+    }
+
+    #[test]
+    fn disabled_profile_keeps_the_configured_lane_count() {
+        let profile = derive_effective_import_profile_with_capabilities(
+            3,
+            &PerformanceProfileConfig {
+                enabled: false,
+                max_parallel_copy_lanes: Some(1),
+            },
+            HostCapabilities {
+                available_parallelism: NonZeroUsize::new(1),
+                filesystem_free_bytes: None,
+                filesystem_free_inodes: None,
+            },
+        )
+        .expect("valid profile");
+        assert_eq!(profile.parallel_copy_lanes, 3);
+        assert_eq!(profile.reason, ProfileReason::Disabled);
+    }
 }
