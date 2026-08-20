@@ -12,7 +12,7 @@ use std::future::Future;
 
 use clap::{Parser, Subcommand};
 use qrcode::{QrCode, render::unicode::Dense1x2};
-use rustix::fs::{FileType, Mode, OFlags, fstat, open};
+use rustix::fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open};
 use rustix::process::getuid;
 use sha2::{Digest, Sha256};
 #[cfg(target_os = "macos")]
@@ -46,11 +46,7 @@ use teslatlas_hub::{
 use tracing_subscriber::EnvFilter;
 
 #[cfg(target_os = "macos")]
-use rustix::{
-    fs::{fcntl_getfl, fcntl_setfl},
-    io::Errno,
-    process::getuid,
-};
+use rustix::io::Errno;
 
 /// A worker owned by the macOS Serve supervisor.  Normal exits request
 /// shutdown and await the task; cancellation of the supervisor aborts the
