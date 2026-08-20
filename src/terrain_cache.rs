@@ -6,7 +6,7 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use flate2::read::GzDecoder;
@@ -28,6 +28,8 @@ pub const AWS_SKADI_BASE: &str = "https://elevation-tiles-prod.s3.amazonaws.com/
 pub const ESA_SRTM_BASE: &str = "https://step.esa.int/auxdata/dem/SRTMGL1/";
 const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_HGT_BYTES: u64 = SRTM1_BYTES;
+const MAX_SOURCE_BYTES: u64 = 16;
+const MAX_TILE_CACHE_BYTES: u64 = MAX_HGT_BYTES + MAX_SOURCE_BYTES;
 
 #[derive(Debug, Error)]
 pub enum TerrainCacheError {
@@ -43,6 +45,8 @@ pub enum TerrainCacheError {
     InvalidArchive,
     #[error("terrain cache has insufficient free space")]
     InsufficientSpace,
+    #[error("terrain cache quota cannot accommodate another tile")]
+    CacheQuotaExceeded,
     #[error("terrain cache lookup timed out")]
     Timeout,
     #[error("terrain tile is invalid")]
@@ -64,6 +68,7 @@ pub struct TerrainLookupResult {
 pub struct TerrainCacheOptions {
     pub root: PathBuf,
     pub min_free_bytes: u64,
+    pub max_cache_bytes: u64,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     #[cfg(test)]
@@ -82,6 +87,7 @@ impl TerrainCacheOptions {
         Ok(Self {
             root: config.resolved_cache_dir(data_dir),
             min_free_bytes: config.min_free_bytes,
+            max_cache_bytes: config.max_cache_bytes,
             connect_timeout: Duration::from_secs(config.connect_timeout_seconds),
             read_timeout: Duration::from_secs(config.read_timeout_seconds),
             #[cfg(test)]
@@ -98,11 +104,13 @@ pub struct TerrainCache {
     options: TerrainCacheOptions,
     client: Client,
     locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    quota_lock: AsyncMutex<()>,
 }
 
 impl TerrainCache {
     pub fn new(options: TerrainCacheOptions) -> Result<Self, TerrainCacheError> {
         if options.min_free_bytes == 0
+            || options.max_cache_bytes < MAX_TILE_CACHE_BYTES
             || options.connect_timeout.is_zero()
             || options.read_timeout.is_zero()
         {
@@ -121,6 +129,7 @@ impl TerrainCache {
             options,
             client,
             locks: Mutex::new(HashMap::new()),
+            quota_lock: AsyncMutex::new(()),
         })
     }
 
@@ -214,24 +223,41 @@ impl TerrainCache {
                 .or_insert_with(|| Arc::new(AsyncMutex::new(())))
                 .clone()
         };
-        let _guard = lock.lock().await;
-        let path = self.tile_path(tile);
-        if path.exists() {
-            match HgtTile::open(&tile.name(), &path) {
-                Ok(_) => return Ok(self.read_source(tile)),
-                Err(_) => self.quarantine(&path),
+        let guard = lock.lock().await;
+        let result = async {
+            let _quota_guard = self.quota_lock.lock().await;
+            let path = self.tile_path(tile);
+            if path.exists() {
+                match HgtTile::open(&tile.name(), &path) {
+                    Ok(_) => {
+                        self.enforce_cache_quota(Some(&path), 0)?;
+                        return Ok(self.read_source(tile));
+                    }
+                    Err(_) => self.discard_tile(tile),
+                }
             }
-        }
-        self.ensure_space()?;
-        let source = match self.download(&tile, &path, true, egress_guard).await {
-            Ok(source) => source,
-            // Admission failure is not a provider failure.  Do not use a
-            // second provider after the first final egress check denied it.
-            Err(TerrainCacheError::EgressDenied) => return Err(TerrainCacheError::EgressDenied),
-            Err(_) => self.download(&tile, &path, false, egress_guard).await?,
+            self.ensure_space()?;
+            self.enforce_cache_quota(None, MAX_TILE_CACHE_BYTES)?;
+            let source = match self.download(&tile, &path, true, egress_guard).await {
+                Ok(source) => source,
+                // Admission failure is not a provider failure.  Do not use a
+                // second provider after the first final egress check denied it.
+                Err(TerrainCacheError::EgressDenied) => {
+                    return Err(TerrainCacheError::EgressDenied);
+                }
+                Err(_) => self.download(&tile, &path, false, egress_guard).await?,
+            };
+            write_source_atomic(&self.source_path(tile), source)?;
+            Ok(source.to_owned())
         };
-        write_source_atomic(&self.source_path(tile), source)?;
-        Ok(source.to_owned())
+        let result = result.await;
+        drop(guard);
+        if let Ok(mut locks) = self.locks.lock()
+            && Arc::strong_count(&lock) == 2
+        {
+            locks.remove(&tile.name());
+        }
+        result
     }
 
     fn tile_path(&self, tile: TileId) -> PathBuf {
@@ -243,10 +269,90 @@ impl TerrainCache {
     }
 
     fn read_source(&self, tile: TileId) -> String {
-        fs::read_to_string(self.source_path(tile))
+        let path = self.source_path(tile);
+        fs::metadata(&path)
             .ok()
-            .filter(|source| !source.trim().is_empty())
+            .filter(|metadata| metadata.is_file() && metadata.len() <= MAX_SOURCE_BYTES)
+            .and_then(|_| fs::read_to_string(path).ok())
+            .filter(|source| matches!(source.trim(), "aws" | "esa"))
             .unwrap_or_else(|| "cache".to_owned())
+    }
+
+    fn enforce_cache_quota(
+        &self,
+        protected: Option<&Path>,
+        reserved_bytes: u64,
+    ) -> Result<(), TerrainCacheError> {
+        #[derive(Debug)]
+        struct CachedTile {
+            hgt: PathBuf,
+            source: PathBuf,
+            bytes: u64,
+            modified: SystemTime,
+        }
+
+        let mut total = 0_u64;
+        let mut tiles = Vec::new();
+        for entry in fs::read_dir(&self.options.root).map_err(TerrainCacheError::Io)? {
+            let entry = entry.map_err(TerrainCacheError::Io)?;
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("hgt") {
+                continue;
+            }
+            let metadata = match fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.file_type().is_file() => metadata,
+                Ok(_) => continue,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(TerrainCacheError::Io(error)),
+            };
+            let source = path.with_extension("source");
+            let source_bytes = match fs::symlink_metadata(&source) {
+                Ok(metadata) if metadata.file_type().is_file() => metadata.len(),
+                Ok(_) => 0,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
+                Err(error) => return Err(TerrainCacheError::Io(error)),
+            };
+            let bytes = metadata.len().saturating_add(source_bytes);
+            total = total.saturating_add(bytes);
+            tiles.push(CachedTile {
+                hgt: path,
+                source,
+                bytes,
+                modified: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+            });
+        }
+        tiles.sort_by(|left, right| {
+            left.modified
+                .cmp(&right.modified)
+                .then_with(|| left.hgt.cmp(&right.hgt))
+        });
+        for tile in tiles {
+            if total.saturating_add(reserved_bytes) <= self.options.max_cache_bytes {
+                break;
+            }
+            if protected.is_some_and(|path| path == tile.hgt) {
+                continue;
+            }
+            match fs::remove_file(&tile.source) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(TerrainCacheError::Io(error)),
+            }
+            match fs::remove_file(&tile.hgt) {
+                Ok(()) => total = total.saturating_sub(tile.bytes),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    total = total.saturating_sub(tile.bytes);
+                }
+                Err(error) => return Err(TerrainCacheError::Io(error)),
+            }
+        }
+        if total.saturating_add(reserved_bytes) > self.options.max_cache_bytes {
+            return Err(TerrainCacheError::CacheQuotaExceeded);
+        }
+        if let Ok(directory) = File::open(&self.options.root) {
+            let _ = directory.sync_all();
+        }
+        Ok(())
     }
 
     fn ensure_space(&self) -> Result<(), TerrainCacheError> {
@@ -358,11 +464,9 @@ impl TerrainCache {
         result.map(|_| if aws { "aws" } else { "esa" })
     }
 
-    fn quarantine(&self, path: &Path) {
-        let quarantine = path.with_extension(format!("hgt.corrupt.{}", std::process::id()));
-        if fs::rename(path, quarantine).is_err() {
-            let _ = fs::remove_file(path);
-        }
+    fn discard_tile(&self, tile: TileId) {
+        let _ = fs::remove_file(self.source_path(tile));
+        let _ = fs::remove_file(self.tile_path(tile));
     }
 }
 
@@ -515,7 +619,10 @@ fn copy_limited<R: Read, W: Write>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::{
+        fs::FileTimes,
+        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
 
     use axum::{
         Router,
@@ -560,12 +667,27 @@ mod tests {
         TerrainCacheOptions {
             root: root.to_owned(),
             min_free_bytes: 1,
+            max_cache_bytes: 512 * 1024 * 1024,
             connect_timeout: Duration::from_secs(2),
             read_timeout: Duration::from_secs(2),
             aws_base: endpoint.to_owned(),
             esa_base: endpoint.to_owned(),
             free_space_override: None,
         }
+    }
+
+    fn write_cached_tile(root: &Path, tile: TileId, modified_seconds: u64) {
+        let hgt = root.join(format!("{}.hgt", tile.name()));
+        let source = root.join(format!("{}.source", tile.name()));
+        fs::write(&hgt, hgt_bytes()).unwrap();
+        fs::write(&source, "aws").unwrap();
+        let modified = SystemTime::UNIX_EPOCH + Duration::from_secs(modified_seconds);
+        File::options()
+            .write(true)
+            .open(&hgt)
+            .unwrap()
+            .set_times(FileTimes::new().set_modified(modified))
+            .unwrap();
     }
 
     async fn server<F>(handler: F) -> (String, tokio::task::JoinHandle<()>)
@@ -588,6 +710,28 @@ mod tests {
         fs::write(dir.path().join(format!("{}.hgt", tile.name())), hgt_bytes()).unwrap();
         let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
         assert_eq!(cache.get(tile).await.unwrap().side(), SRTM3_SIDE);
+        assert!(cache.locks.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cache_quota_evicts_the_oldest_complete_tile_before_a_download() {
+        let dir = tempdir().unwrap();
+        let old = TileId::from_coordinates(51.5, -0.1).unwrap();
+        let new = TileId::from_coordinates(52.5, -0.1).unwrap();
+        write_cached_tile(dir.path(), old, 1);
+        write_cached_tile(dir.path(), new, 2);
+        let mut opts = options(dir.path(), "http://127.0.0.1:1/");
+        opts.max_cache_bytes = MAX_TILE_CACHE_BYTES + SRTM3_BYTES + 3;
+        let cache = TerrainCache::new(opts).unwrap();
+
+        cache
+            .enforce_cache_quota(None, MAX_TILE_CACHE_BYTES)
+            .unwrap();
+
+        assert!(!cache.tile_path(old).exists());
+        assert!(!cache.source_path(old).exists());
+        assert!(cache.tile_path(new).exists());
+        assert!(cache.source_path(new).exists());
     }
 
     #[tokio::test]

@@ -50,6 +50,8 @@ pub struct TerrainConfig {
     pub cache_dir: Option<PathBuf>,
     #[serde(default = "default_terrain_min_free_bytes")]
     pub min_free_bytes: u64,
+    #[serde(default = "default_terrain_max_cache_bytes")]
+    pub max_cache_bytes: u64,
     #[serde(default = "default_terrain_connect_timeout_seconds")]
     pub connect_timeout_seconds: u64,
     #[serde(default = "default_terrain_read_timeout_seconds")]
@@ -62,6 +64,9 @@ const fn default_terrain_enabled() -> bool {
 
 fn default_terrain_min_free_bytes() -> u64 {
     128 * 1024 * 1024
+}
+fn default_terrain_max_cache_bytes() -> u64 {
+    512 * 1024 * 1024
 }
 fn default_terrain_connect_timeout_seconds() -> u64 {
     15
@@ -76,6 +81,7 @@ impl Default for TerrainConfig {
             enabled: default_terrain_enabled(),
             cache_dir: None,
             min_free_bytes: default_terrain_min_free_bytes(),
+            max_cache_bytes: default_terrain_max_cache_bytes(),
             connect_timeout_seconds: default_terrain_connect_timeout_seconds(),
             read_timeout_seconds: default_terrain_read_timeout_seconds(),
         }
@@ -99,6 +105,7 @@ impl TerrainConfig {
 
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.min_free_bytes == 0
+            || self.max_cache_bytes < crate::terrain::SRTM1_BYTES.saturating_add(16)
             || self.connect_timeout_seconds == 0
             || self.read_timeout_seconds == 0
         {
@@ -1058,7 +1065,18 @@ mod tests {
     #[test]
     fn enrichment_defaults_on() {
         assert!(TerrainConfig::default().enabled);
+        assert_eq!(TerrainConfig::default().max_cache_bytes, 512 * 1024 * 1024);
         assert!(GeocoderConfig::default().enabled);
+    }
+
+    #[test]
+    fn terrain_cache_must_hold_one_srtm1_tile() {
+        let mut config = TerrainConfig::default();
+        config.max_cache_bytes = crate::terrain::SRTM1_BYTES;
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidTerrainConfig)
+        ));
     }
 
     #[test]

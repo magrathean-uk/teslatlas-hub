@@ -2,13 +2,15 @@
 
 Status: active — TeslaMate v4.1.1 parity fixes.
 
-Current: total terrain-cache quota and eviction.
+Current: native settings, geofence, cost, logging, and GPX controls.
 
-Next: current vehicle snapshot, bounded runtime storage, native controls, then one final validation pass.
+Next: remaining verified one-vehicle parity, then one final validation pass.
 
 Blocked: live Tesla Owner API collection and actual LaunchAgent start/restart were not run because real credentials and vehicle access were not authorized; the existing user plist was preserved.
 
 ## Completed
+
+- Bounded terrain storage — added a 512 MiB default cache quota, serialized cache admission, oldest-tile eviction, corrupt-tile removal, bounded provenance reads, and release of unused per-tile locks — 3 focused tests passed.
 
 - Current vehicle and raw-storage parity — added authenticated `GET /v1/vehicles/{vehicle_id}/current` with the TeslaMate v4.1.1 live-summary surface, durable Owner/stream overlay, current geofence and restart state; processed raw observations are transactionally pruned while three bounded current snapshots preserve display and deduplication — 3 focused tests passed.
 

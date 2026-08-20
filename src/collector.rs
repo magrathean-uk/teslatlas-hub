@@ -1158,6 +1158,7 @@ fn terrain_error_code(error: &TerrainCacheError) -> &'static str {
         TerrainCacheError::BadResponse => "invalid_response",
         TerrainCacheError::InvalidArchive => "invalid_archive",
         TerrainCacheError::InsufficientSpace => "insufficient_free_space",
+        TerrainCacheError::CacheQuotaExceeded => "cache_quota_exceeded",
         TerrainCacheError::Io(_) => "io",
         TerrainCacheError::InvalidConfig => "invalid_config",
         TerrainCacheError::EgressDenied => "egress_denied",
