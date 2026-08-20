@@ -9944,20 +9944,40 @@ impl HubStore {
         charge_id: i64,
         cost: f64,
     ) -> Result<crate::hub_pack::ProjectionCharge, StoreError> {
+        self.set_charge_cost_input(vehicle_id, charge_id, cost, None)
+    }
+
+    pub fn set_charge_cost_rate(
+        &self,
+        vehicle_id: Uuid,
+        charge_id: i64,
+        rate: f64,
+        billing_type: crate::hub_pack::GeofenceBillingType,
+    ) -> Result<crate::hub_pack::ProjectionCharge, StoreError> {
+        self.set_charge_cost_input(vehicle_id, charge_id, rate, Some(billing_type))
+    }
+
+    fn set_charge_cost_input(
+        &self,
+        vehicle_id: Uuid,
+        charge_id: i64,
+        value: f64,
+        billing_type: Option<crate::hub_pack::GeofenceBillingType>,
+    ) -> Result<crate::hub_pack::ProjectionCharge, StoreError> {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
         if charge_id <= 0 {
             return Err(StoreError::InvalidChargeId);
         }
-        if !cost.is_finite() || !(0.0..=1_000_000_000.0).contains(&cost) {
+        if !value.is_finite() || !(0.0..=1_000_000_000.0).contains(&value) {
             return Err(StoreError::InvalidChargeCost);
         }
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        let value = transaction
+        let charge_json = transaction
             .query_row(
                 "SELECT charge_json FROM materialised_charges
                  WHERE vehicle_id = ?1 AND charge_id = ?2",
@@ -9968,7 +9988,26 @@ impl HubStore {
             .map_err(StoreError::Query)?
             .ok_or(StoreError::UnknownCharge(charge_id))?;
         let mut charge: crate::hub_pack::ProjectionCharge =
-            serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
+            serde_json::from_str(&charge_json).map_err(StoreError::DeserializeLifecycleRow)?;
+        let cost = match billing_type {
+            None => value,
+            Some(billing_type) => crate::lifecycle::calculate_charge_cost(
+                charge.fast_charger_type.as_deref(),
+                false,
+                charge.charge_energy_added,
+                charge.charge_energy_used_kwh,
+                charge.duration_min,
+                Some(crate::lifecycle::ChargeTariff {
+                    billing_type,
+                    cost_per_unit: Some(value),
+                    session_fee: None,
+                }),
+            )
+            .ok_or(StoreError::ChargeCostBasisUnavailable {
+                charge_id,
+                mode: billing_type.as_str(),
+            })?,
+        };
         if charge.cost == Some(cost) {
             transaction.commit().map_err(StoreError::Query)?;
             return Ok(charge);
@@ -10726,6 +10765,7 @@ impl HubStore {
                 ],
             )
             .map_err(StoreError::LifecycleWrite)?;
+        relabel_materialised_locations_in_transaction(&transaction, vehicle_id)?;
         transaction.commit().map_err(StoreError::LifecycleWrite)?;
         geofence.id = source_geofence_id;
         geofence.name = name;
@@ -10743,8 +10783,11 @@ impl HubStore {
         if source_geofence_id <= 0 {
             return Err(StoreError::InvalidGeofence);
         }
-        let connection = self.open()?;
-        let deleted = connection
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let deleted = transaction
             .execute(
                 "DELETE FROM geofences WHERE vehicle_id = ?1 AND source_geofence_id = ?2",
                 params![vehicle_id.to_string(), source_geofence_id],
@@ -10753,7 +10796,98 @@ impl HubStore {
         if deleted == 0 {
             return Err(StoreError::UnknownGeofence(source_geofence_id));
         }
+        relabel_materialised_locations_in_transaction(&transaction, vehicle_id)?;
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
         Ok(())
+    }
+
+    pub fn recalculate_missing_charge_costs(
+        &self,
+        vehicle_id: Uuid,
+        source_geofence_id: i64,
+    ) -> Result<u64, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if source_geofence_id <= 0 {
+            return Err(StoreError::InvalidGeofence);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let fence = geofence_fence_by_id(&transaction, vehicle_id, source_geofence_id)?
+            .ok_or(StoreError::UnknownGeofence(source_geofence_id))?;
+        let tariff = fence
+            .billing_type
+            .map(|billing_type| crate::lifecycle::ChargeTariff {
+                billing_type,
+                cost_per_unit: fence.cost_per_unit,
+                session_fee: fence.session_fee,
+            });
+        let mut updated = 0_u64;
+        let mut after_id = 0_i64;
+        loop {
+            let page = materialised_charge_page(&transaction, vehicle_id, after_id)?;
+            let Some(last) = page.last().map(|(id, _)| *id) else {
+                break;
+            };
+            after_id = last;
+            for (charge_id, charge_json) in page {
+                let mut charge: crate::hub_pack::ProjectionCharge =
+                    serde_json::from_str(&charge_json)
+                        .map_err(StoreError::DeserializeLifecycleRow)?;
+                if charge.cost.is_some()
+                    || !matches!(
+                        (charge.start_latitude, charge.start_longitude),
+                        (Some(latitude), Some(longitude))
+                            if crate::lifecycle::match_geofence(
+                                latitude,
+                                longitude,
+                                std::slice::from_ref(&fence),
+                            )
+                            .is_some()
+                    )
+                {
+                    continue;
+                }
+                let Some(cost) = crate::lifecycle::calculate_charge_cost(
+                    charge.fast_charger_type.as_deref(),
+                    false,
+                    charge.charge_energy_added,
+                    charge.charge_energy_used_kwh,
+                    charge.duration_min,
+                    tariff,
+                ) else {
+                    continue;
+                };
+                charge.cost = Some(cost);
+                let payload =
+                    serde_json::to_string(&charge).map_err(StoreError::SerializeLifecycleRow)?;
+                transaction
+                    .execute(
+                        "UPDATE materialised_charges SET charge_json = ?3
+                         WHERE vehicle_id = ?1 AND charge_id = ?2",
+                        params![vehicle_id.to_string(), charge_id, payload],
+                    )
+                    .map_err(StoreError::LifecycleWrite)?;
+                record_sync_mutation_in_transaction(
+                    &transaction,
+                    vehicle_id,
+                    "charge",
+                    charge_id,
+                    charge.car_id,
+                    "upsert",
+                    &payload,
+                )?;
+                updated += 1;
+            }
+        }
+        if updated > 0 {
+            mark_export_dirty_in_transaction(&transaction, vehicle_id)?;
+        }
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        Ok(updated)
     }
 
     /// Preserve imported geofence labels and geometry as a durable, append-only
@@ -15871,6 +16005,179 @@ fn load_geofence_fences(
     rows.map(|row| row.map_err(StoreError::Query)).collect()
 }
 
+fn geofence_fence_by_id(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    source_geofence_id: i64,
+) -> Result<Option<crate::lifecycle::GeofenceFence>, StoreError> {
+    connection
+        .query_row(
+            "SELECT name, latitude, longitude, radius_m, billing_type,
+                    cost_per_unit, session_fee
+             FROM geofences WHERE vehicle_id = ?1 AND source_geofence_id = ?2",
+            params![vehicle_id.to_string(), source_geofence_id],
+            |row| {
+                Ok(crate::lifecycle::GeofenceFence {
+                    name: row.get(0)?,
+                    latitude: row.get(1)?,
+                    longitude: row.get(2)?,
+                    radius_m: row.get(3)?,
+                    billing_type: row
+                        .get::<_, Option<String>>(4)?
+                        .and_then(|value| value.parse().ok()),
+                    cost_per_unit: row.get(5)?,
+                    session_fee: row.get(6)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(StoreError::Query)
+}
+
+fn materialised_charge_page(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    after_id: i64,
+) -> Result<Vec<(i64, String)>, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT charge_id, charge_json FROM materialised_charges
+             WHERE vehicle_id = ?1 AND charge_id > ?2
+             ORDER BY charge_id LIMIT 256",
+        )
+        .map_err(StoreError::Query)?;
+    statement
+        .query_map(params![vehicle_id.to_string(), after_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)
+}
+
+fn materialised_drive_page(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    after_id: i64,
+) -> Result<Vec<(i64, String)>, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT drive_id, drive_json FROM materialised_drives
+             WHERE vehicle_id = ?1 AND drive_id > ?2
+             ORDER BY drive_id LIMIT 256",
+        )
+        .map_err(StoreError::Query)?;
+    statement
+        .query_map(params![vehicle_id.to_string(), after_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)
+}
+
+fn relabel_materialised_locations_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+) -> Result<(), StoreError> {
+    let fences = load_geofence_fences(transaction, vehicle_id)?;
+    let mut changed = false;
+    let mut after_id = 0_i64;
+    loop {
+        let page = materialised_drive_page(transaction, vehicle_id, after_id)?;
+        let Some(last) = page.last().map(|(id, _)| *id) else {
+            break;
+        };
+        after_id = last;
+        for (drive_id, drive_json) in page {
+            let mut drive: crate::hub_pack::ProjectionDrive =
+                serde_json::from_str(&drive_json).map_err(StoreError::DeserializeLifecycleRow)?;
+            let start = match (drive.start_latitude, drive.start_longitude) {
+                (Some(latitude), Some(longitude)) => {
+                    crate::lifecycle::match_geofence_name(latitude, longitude, &fences)
+                }
+                _ => drive.start_geofence.clone(),
+            };
+            let end = match (drive.end_latitude, drive.end_longitude) {
+                (Some(latitude), Some(longitude)) => {
+                    crate::lifecycle::match_geofence_name(latitude, longitude, &fences)
+                }
+                _ => drive.end_geofence.clone(),
+            };
+            if drive.start_geofence == start && drive.end_geofence == end {
+                continue;
+            }
+            drive.start_geofence = start;
+            drive.end_geofence = end;
+            let payload =
+                serde_json::to_string(&drive).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "UPDATE materialised_drives SET drive_json = ?3
+                     WHERE vehicle_id = ?1 AND drive_id = ?2",
+                    params![vehicle_id.to_string(), drive_id, payload],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+            record_sync_mutation_in_transaction(
+                transaction,
+                vehicle_id,
+                "drive",
+                drive_id,
+                drive.car_id,
+                "upsert",
+                &payload,
+            )?;
+            changed = true;
+        }
+    }
+
+    after_id = 0;
+    loop {
+        let page = materialised_charge_page(transaction, vehicle_id, after_id)?;
+        let Some(last) = page.last().map(|(id, _)| *id) else {
+            break;
+        };
+        after_id = last;
+        for (charge_id, charge_json) in page {
+            let mut charge: crate::hub_pack::ProjectionCharge =
+                serde_json::from_str(&charge_json).map_err(StoreError::DeserializeLifecycleRow)?;
+            let geofence = match (charge.start_latitude, charge.start_longitude) {
+                (Some(latitude), Some(longitude)) => {
+                    crate::lifecycle::match_geofence_name(latitude, longitude, &fences)
+                }
+                _ => charge.geofence.clone(),
+            };
+            if charge.geofence == geofence {
+                continue;
+            }
+            charge.geofence = geofence;
+            let payload =
+                serde_json::to_string(&charge).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "UPDATE materialised_charges SET charge_json = ?3
+                     WHERE vehicle_id = ?1 AND charge_id = ?2",
+                    params![vehicle_id.to_string(), charge_id, payload],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+            record_sync_mutation_in_transaction(
+                transaction,
+                vehicle_id,
+                "charge",
+                charge_id,
+                charge.car_id,
+                "upsert",
+                &payload,
+            )?;
+            changed = true;
+        }
+    }
+    if changed {
+        mark_export_dirty_in_transaction(transaction, vehicle_id)?;
+    }
+    Ok(())
+}
+
 fn enqueue_address_jobs(
     transaction: &rusqlite::Transaction<'_>,
     vehicle_id: Uuid,
@@ -16351,6 +16658,8 @@ pub enum StoreError {
     InvalidChargeCost,
     #[error("unknown charge {0}")]
     UnknownCharge(i64),
+    #[error("charge {charge_id} has no usable {mode} cost basis")]
+    ChargeCostBasisUnavailable { charge_id: i64, mode: &'static str },
     #[error("geofence values are invalid")]
     InvalidGeofence,
     #[error("unknown geofence {0}")]
@@ -22899,8 +23208,8 @@ mod tests {
             billing_type: None,
             cost_per_unit: None,
             session_fee: None,
-            start_latitude: None,
-            start_longitude: None,
+            start_latitude: Some(47.5),
+            start_longitude: Some(19.0),
             start_battery_level: Some(50),
             end_battery_level: Some(51),
             duration_min: Some(1),
@@ -23776,8 +24085,8 @@ mod tests {
             billing_type: None,
             cost_per_unit: None,
             session_fee: None,
-            start_latitude: None,
-            start_longitude: None,
+            start_latitude: Some(47.5),
+            start_longitude: Some(19.0),
             start_battery_level: None,
             end_battery_level: None,
             duration_min: Some(10),
@@ -23849,12 +24158,78 @@ mod tests {
         let gpx = String::from_utf8(gpx).expect("GPX UTF-8");
         assert!(gpx.contains("<name>2023-11-14T22:13:20Z</name>"));
         assert!(gpx.find("2023-11-14T22:13:20.1Z") < gpx.find("2023-11-14T22:13:20.2Z"));
+        let active_geofence = store
+            .save_geofence(
+                vehicle.vehicle_id,
+                None,
+                crate::teslamate_projection::TeslaMateGeofence {
+                    id: 0,
+                    name: "Tariff".into(),
+                    latitude: Some(47.5),
+                    longitude: Some(19.0),
+                    radius_m: Some(100.0),
+                    billing_type: Some(crate::hub_pack::GeofenceBillingType::PerKwh),
+                    cost_per_unit: Some(0.25),
+                    session_fee: Some(1.0),
+                },
+            )
+            .expect("save active geofence");
+        assert_eq!(
+            store
+                .materialised_drive_for_vehicle(vehicle.vehicle_id, 7)
+                .unwrap()
+                .unwrap()
+                .start_geofence
+                .as_deref(),
+            Some("Tariff")
+        );
+        assert_eq!(
+            store
+                .recalculate_missing_charge_costs(vehicle.vehicle_id, active_geofence.id)
+                .expect("recalculate matching charge"),
+            1
+        );
         assert_eq!(
             store
                 .set_charge_cost(vehicle.vehicle_id, 9, 4.25)
                 .expect("set charge cost")
                 .cost,
             Some(4.25)
+        );
+        assert_eq!(
+            store
+                .set_charge_cost_rate(
+                    vehicle.vehicle_id,
+                    9,
+                    0.5,
+                    crate::hub_pack::GeofenceBillingType::PerKwh,
+                )
+                .expect("set per-kWh cost")
+                .cost,
+            Some(5.5)
+        );
+        assert_eq!(
+            store
+                .set_charge_cost_rate(
+                    vehicle.vehicle_id,
+                    9,
+                    0.25,
+                    crate::hub_pack::GeofenceBillingType::PerMinute,
+                )
+                .expect("set per-minute cost")
+                .cost,
+            Some(2.5)
+        );
+        store
+            .delete_geofence(vehicle.vehicle_id, active_geofence.id)
+            .expect("delete active geofence");
+        assert_eq!(
+            store
+                .materialised_drive_for_vehicle(vehicle.vehicle_id, 7)
+                .unwrap()
+                .unwrap()
+                .start_geofence,
+            None
         );
     }
 

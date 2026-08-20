@@ -402,6 +402,9 @@ enum ControlCommand {
         cost_per_unit: Option<f64>,
         #[arg(long)]
         session_fee: Option<f64>,
+        /// Fill missing costs for matching historical charges after saving.
+        #[arg(long)]
+        recalculate_missing_costs: bool,
     },
     /// Delete a geofence by id.
     #[command(name = "delete-geofence")]
@@ -416,6 +419,8 @@ enum ControlCommand {
         charge_id: i64,
         #[arg(long)]
         cost: f64,
+        #[arg(long, default_value = "total")]
+        mode: String,
     },
     /// Write one completed drive as TeslaMate-compatible GPX to stdout.
     #[command(name = "export-gpx")]
@@ -703,6 +708,7 @@ fn run_control(
             billing_type,
             cost_per_unit,
             session_fee,
+            recalculate_missing_costs,
         } => {
             let billing_type = billing_type
                 .parse::<GeofenceBillingType>()
@@ -721,12 +727,18 @@ fn run_control(
                     session_fee: *session_fee,
                 },
             )?;
+            let recalculated_charge_costs = if *recalculate_missing_costs {
+                store.recalculate_missing_charge_costs(vehicle_id, geofence.id)?
+            } else {
+                0
+            };
             println!(
                 "{}",
                 serde_json::json!({
                     "status": "updated",
                     "vehicleId": vehicle_id,
                     "geofence": geofence,
+                    "recalculatedChargeCosts": recalculated_charge_costs,
                 })
             );
         }
@@ -741,8 +753,27 @@ fn run_control(
                 })
             );
         }
-        ControlCommand::SetChargeCost { charge_id, cost } => {
-            let charge = store.set_charge_cost(vehicle_id, *charge_id, *cost)?;
+        ControlCommand::SetChargeCost {
+            charge_id,
+            cost,
+            mode,
+        } => {
+            let charge = match mode.as_str() {
+                "total" => store.set_charge_cost(vehicle_id, *charge_id, *cost)?,
+                "per_kwh" => store.set_charge_cost_rate(
+                    vehicle_id,
+                    *charge_id,
+                    *cost,
+                    GeofenceBillingType::PerKwh,
+                )?,
+                "per_minute" => store.set_charge_cost_rate(
+                    vehicle_id,
+                    *charge_id,
+                    *cost,
+                    GeofenceBillingType::PerMinute,
+                )?,
+                _ => return Err("--mode must be total, per_kwh, or per_minute".into()),
+            };
             println!(
                 "{}",
                 serde_json::json!({
