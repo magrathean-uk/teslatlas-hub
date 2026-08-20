@@ -274,6 +274,7 @@ fn router_with_access(
         .route("/.well-known/teslatlas-hub", get(capabilities))
         .route("/v1/pairings/{pairing_id}/claim", post(claim_pairing))
         .route("/v1/vehicles", get(vehicles))
+        .route("/v1/vehicles/{vehicle_id}/current", get(current_vehicle))
         .route("/v1/vehicles/{vehicle_id}/sync/manifest", get(manifest))
         .route("/v1/vehicles/{vehicle_id}/sync/noop", get(schema_22_noop))
         .route("/v1/packs/sha256/{object_name}", get(pack))
@@ -523,6 +524,67 @@ async fn vehicles(State(state): State<AppState>, headers: HeaderMap) -> Response
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
+}
+
+async fn current_vehicle(
+    State(state): State<AppState>,
+    Path(vehicle_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if authorize_device(&state, &headers).is_none() {
+        return unauthorized();
+    }
+    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let observations = match state.store.current_observations_for_vehicle(vehicle_id) {
+        Ok(observations) => observations,
+        Err(crate::db::StoreError::UnknownVehicle(_)) => {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load current vehicle observations");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let car = match state.store.materialised_car_for_vehicle(vehicle_id) {
+        Ok(car) => car,
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load current vehicle identity");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let lifecycle = match state.store.load_lifecycle_state(vehicle_id) {
+        Ok(lifecycle) => lifecycle,
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load current vehicle lifecycle");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let mut summary = crate::current_state::build_current_vehicle_summary(
+        vehicle_id,
+        &observations,
+        car,
+        lifecycle.as_ref(),
+        None,
+    );
+    if let (Some(latitude), Some(longitude)) = (summary.latitude, summary.longitude) {
+        summary.geofence = match state
+            .store
+            .geofence_name_at(vehicle_id, latitude, longitude)
+        {
+            Ok(geofence) => geofence,
+            Err(error) => {
+                tracing::error!(%error, %vehicle_id, "cannot match current vehicle geofence");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        };
+    }
+    (
+        [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
+        Json(summary),
+    )
+        .into_response()
 }
 
 async fn claim_pairing(
@@ -2207,6 +2269,84 @@ mod tests {
             .await
             .expect("replay response");
         assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn current_vehicle_serves_the_durable_v4_1_1_summary_without_raw_history() {
+        let temp = tempfile::tempdir().expect("temp directory");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let source = store
+            .register_source(
+                &SourceDescriptor::new("owner_api", "current-summary-test"),
+                1_000,
+            )
+            .expect("source");
+        let vehicle = store
+            .register_vehicle(
+                &VehicleDescriptor::new(source.source_id, "9").with_tesla_identity(Some(9), None),
+                1_000,
+            )
+            .expect("vehicle");
+        store
+            .accept_owner_observation_and_lifecycle(
+                &ObservationInput {
+                    source_id: source.source_id,
+                    vehicle_id: vehicle.vehicle_id,
+                    observed_at_ms: 2_000,
+                    payload: serde_json::json!({
+                        "record_type": "owner_api_vehicle_data_v1",
+                        "source_vehicle_id": "9",
+                        "source_vehicle_state": "online",
+                        "display_name": "Rusty",
+                        "vin": "5YJ3E1EA7NF000001",
+                        "vehicle_data": {
+                            "drive_state": {"latitude": 47.5, "longitude": 19.0, "speed": 10},
+                            "charge_state": {"battery_level": 80, "charging_state": "Disconnected"},
+                            "vehicle_state": {
+                                "timestamp": 2_000,
+                                "service_mode": true,
+                                "software_update": {"status": "downloading", "download_perc": 42}
+                            },
+                            "vehicle_config": {"car_type": "model3", "trim_badging": "50"}
+                        }
+                    }),
+                },
+                2_001,
+                1,
+            )
+            .expect("current observation");
+        let app = router(store.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/vehicles/{}/current", vehicle.vehicle_id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("current response");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let current: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(current["display_name"], "Rusty");
+        assert_eq!(current["battery_level"], 80);
+        assert_eq!(current["download_perc"], 42);
+        assert_eq!(current["service_mode"], true);
+        assert_eq!(current["car"]["marketing_name"], "RWD");
+        assert_eq!(
+            store
+                .open()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
     }
 
     #[test]

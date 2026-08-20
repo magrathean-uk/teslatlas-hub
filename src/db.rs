@@ -53,7 +53,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 49;
+pub const SCHEMA_VERSION: i32 = 50;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 
 /// A supervised collector renews this durable lease from an independent task.
@@ -9691,6 +9691,80 @@ impl HubStore {
             .map_err(StoreError::Query)
     }
 
+    /// Latest durable discovery, Owner API, and streaming observations used by
+    /// the bounded current-state endpoint. Processed raw history can be pruned
+    /// without losing these three replacement snapshots.
+    pub fn current_observations_for_vehicle(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Vec<ObservationRecord>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open()?;
+        let exists = connection
+            .query_row(
+                "SELECT 1 FROM vehicles WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        if exists.is_none() {
+            return Err(StoreError::UnknownVehicle(vehicle_id));
+        }
+        let mut statement = connection
+            .prepare(
+                "SELECT observation_id, source_id, vehicle_id, observed_at_ms, received_at_ms,
+                        payload_sha256, payload_json
+                 FROM current_observations WHERE vehicle_id = ?1
+                 ORDER BY observed_at_ms, observation_id",
+            )
+            .map_err(StoreError::Query)?;
+        statement
+            .query_map(params![vehicle_id.to_string()], observation_from_row)
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)
+    }
+
+    pub fn materialised_car_for_vehicle(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<crate::hub_pack::ProjectionCar>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open()?;
+        connection
+            .query_row(
+                "SELECT car_json FROM materialised_cars WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(StoreError::DeserializeLifecycleRow)
+    }
+
+    pub fn geofence_name_at(
+        &self,
+        vehicle_id: Uuid,
+        latitude: f64,
+        longitude: f64,
+    ) -> Result<Option<String>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open()?;
+        let fences = load_geofence_fences(&connection, vehicle_id)?;
+        Ok(crate::lifecycle::match_geofence_name(
+            latitude, longitude, &fences,
+        ))
+    }
+
     /// Load durable open-session state for crash-safe lifecycle recovery.
     pub fn load_lifecycle_state(
         &self,
@@ -10888,6 +10962,7 @@ impl HubStore {
         }
 
         enqueue_address_jobs(transaction, commit.vehicle_id, &delta)?;
+        prune_processed_observations(transaction, commit.vehicle_id, commit.last_observation_id)?;
 
         Ok(())
     }
@@ -14109,6 +14184,72 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 49;
     }
 
+    if version == 49 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                CREATE TABLE current_observations (
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    record_type TEXT NOT NULL CHECK(record_type IN (
+                        'owner_api_discovery_v1',
+                        'owner_api_vehicle_data_v1',
+                        'tesla_stream_update_v1'
+                    )),
+                    observation_id INTEGER NOT NULL CHECK(observation_id > 0),
+                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,
+                    observed_at_ms INTEGER NOT NULL CHECK(observed_at_ms >= 0),
+                    received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0),
+                    payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
+                    payload_json TEXT NOT NULL CHECK(json_valid(payload_json))
+                        CHECK(length(CAST(payload_json AS BLOB)) <= 262144),
+                    PRIMARY KEY(vehicle_id, record_type)
+                ) STRICT, WITHOUT ROWID;
+                INSERT INTO current_observations(
+                    vehicle_id, record_type, observation_id, source_id,
+                    observed_at_ms, received_at_ms, payload_sha256, payload_json
+                )
+                SELECT r.vehicle_id,
+                       json_extract(r.payload_json, '$.record_type'),
+                       r.observation_id, r.source_id, r.observed_at_ms,
+                       r.received_at_ms, r.payload_sha256, r.payload_json
+                FROM raw_observations AS r
+                WHERE json_extract(r.payload_json, '$.record_type') IN (
+                    'owner_api_discovery_v1',
+                    'owner_api_vehicle_data_v1',
+                    'tesla_stream_update_v1'
+                )
+                  AND r.observation_id = (
+                    SELECT candidate.observation_id
+                    FROM raw_observations AS candidate
+                    WHERE candidate.vehicle_id = r.vehicle_id
+                      AND json_extract(candidate.payload_json, '$.record_type') =
+                          json_extract(r.payload_json, '$.record_type')
+                    ORDER BY candidate.observed_at_ms DESC,
+                             candidate.observation_id DESC
+                    LIMIT 1
+                  );
+                CREATE TABLE raw_observation_prune_guard (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton = 1)
+                ) STRICT;
+                DROP TRIGGER raw_observations_append_only_delete;
+                CREATE TRIGGER raw_observations_append_only_delete
+                BEFORE DELETE ON raw_observations
+                FOR EACH ROW
+                WHEN NOT EXISTS (
+                    SELECT 1 FROM raw_observation_prune_guard WHERE singleton = 1
+                )
+                BEGIN
+                    SELECT RAISE(ABORT, 'raw observations are append-only');
+                END;
+                PRAGMA user_version = 50;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 50;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {
@@ -14458,6 +14599,28 @@ fn append_observation_in_transaction(
     let payload_sha256 = Sha256Digest::of_bytes(&payload_json);
     let payload_json = String::from_utf8(payload_json).expect("serde_json is UTF-8");
     ensure_vehicle_belongs_to_source(transaction, input.vehicle_id, input.source_id)?;
+    let record_type = input
+        .payload
+        .get("record_type")
+        .and_then(Value::as_str)
+        .filter(|value| {
+            matches!(
+                *value,
+                "owner_api_discovery_v1" | "owner_api_vehicle_data_v1" | "tesla_stream_update_v1"
+            )
+        });
+    if let Some(record_type) = record_type
+        && let Some(current) =
+            current_observation_for_type(transaction, input.vehicle_id, record_type)?
+        && (current.observed_at_ms > input.observed_at_ms
+            || (current.observed_at_ms == input.observed_at_ms
+                && current.payload_sha256 == payload_sha256))
+    {
+        return Ok(AppendObservation {
+            observation: current,
+            inserted: false,
+        });
+    }
     let inserted = transaction
         .execute(
             "INSERT INTO raw_observations
@@ -14483,10 +14646,85 @@ fn append_observation_in_transaction(
         payload_sha256,
     )?
     .ok_or(StoreError::ObservationMissingAfterInsert)?;
+    if let Some(record_type) = record_type {
+        transaction
+            .execute(
+                "INSERT INTO current_observations(
+                    vehicle_id, record_type, observation_id, source_id,
+                    observed_at_ms, received_at_ms, payload_sha256, payload_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(vehicle_id, record_type) DO UPDATE SET
+                    observation_id = excluded.observation_id,
+                    source_id = excluded.source_id,
+                    observed_at_ms = excluded.observed_at_ms,
+                    received_at_ms = excluded.received_at_ms,
+                    payload_sha256 = excluded.payload_sha256,
+                    payload_json = excluded.payload_json
+                 WHERE excluded.observed_at_ms > current_observations.observed_at_ms
+                    OR (excluded.observed_at_ms = current_observations.observed_at_ms
+                        AND excluded.observation_id > current_observations.observation_id)",
+                params![
+                    observation.vehicle_id.to_string(),
+                    record_type,
+                    observation.observation_id,
+                    observation.source_id.to_string(),
+                    observation.observed_at_ms,
+                    observation.received_at_ms,
+                    observation.payload_sha256.as_bytes().as_slice(),
+                    payload_json,
+                ],
+            )
+            .map_err(StoreError::AppendObservation)?;
+    }
     Ok(AppendObservation {
         observation,
         inserted,
     })
+}
+
+fn current_observation_for_type(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    record_type: &str,
+) -> Result<Option<ObservationRecord>, StoreError> {
+    transaction
+        .query_row(
+            "SELECT observation_id, source_id, vehicle_id, observed_at_ms, received_at_ms,
+                    payload_sha256, payload_json
+             FROM current_observations
+             WHERE vehicle_id = ?1 AND record_type = ?2",
+            params![vehicle_id.to_string(), record_type],
+            observation_from_row,
+        )
+        .optional()
+        .map_err(StoreError::Query)
+}
+
+fn prune_processed_observations(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    through_observation_id: i64,
+) -> Result<(), StoreError> {
+    if through_observation_id <= 0 {
+        return Ok(());
+    }
+    transaction
+        .execute(
+            "INSERT INTO raw_observation_prune_guard(singleton) VALUES(1)",
+            [],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    transaction
+        .execute(
+            "DELETE FROM raw_observations
+             WHERE vehicle_id = ?1 AND observation_id <= ?2",
+            params![vehicle_id.to_string(), through_observation_id],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    transaction
+        .execute("DELETE FROM raw_observation_prune_guard", [])
+        .map_err(StoreError::LifecycleWrite)?;
+    Ok(())
 }
 
 fn stream_timestamp_is_newer(
@@ -16845,6 +17083,66 @@ mod tests {
             error,
             StoreError::InvalidObservationQueryLimit { .. }
         ));
+    }
+
+    #[test]
+    fn processed_raw_observations_are_pruned_but_current_snapshot_and_dedup_survive() {
+        let temp = tempfile::tempdir().expect("temp directory");
+        let store = HubStore::initialize(temp.path()).expect("store initializes");
+        let (source, vehicle) = test_registered_vehicle(&store);
+        let input = ObservationInput {
+            source_id: source.source_id,
+            vehicle_id: vehicle.vehicle_id,
+            observed_at_ms: 10_000,
+            payload: serde_json::json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "source_vehicle_id": "9",
+                "source_vehicle_state": "online",
+                "vehicle_data": {
+                    "drive_state": {"shift_state": "P", "speed": 0},
+                    "charge_state": {"charging_state": "Disconnected"},
+                    "vehicle_state": {"timestamp": 10_000}
+                }
+            }),
+        };
+        let first = store
+            .accept_owner_observation_and_lifecycle(&input, 10_001, 1)
+            .expect("accept current observation");
+        assert!(first.append.inserted);
+        assert_eq!(
+            store
+                .open()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
+        let current = store
+            .current_observations_for_vehicle(vehicle.vehicle_id)
+            .expect("current observations");
+        assert_eq!(current.len(), 1);
+        assert_eq!(
+            current[0].observation_id,
+            first.append.observation.observation_id
+        );
+
+        let retry = store
+            .accept_owner_observation_and_lifecycle(&input, 99_999, 1)
+            .expect("deduplicated retry");
+        assert!(!retry.append.inserted);
+        assert_eq!(retry.append.observation, current[0]);
+        assert_eq!(
+            store
+                .open()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
     }
 
     #[test]

@@ -7,6 +7,7 @@ pub mod collector;
 pub mod config;
 pub mod credentials;
 pub mod crypto;
+pub mod current_state;
 pub mod data_recovery;
 pub mod db;
 mod durability_fault;
