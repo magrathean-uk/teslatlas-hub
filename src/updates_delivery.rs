@@ -1313,6 +1313,7 @@ fn witnesses_match_published_source(
 
 fn write_verified_production_pack(
     store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
     request: &ProjectionPackRequestV2_2<'_>,
     source: &LogicalUpdatesStream,
     source_capture: &ProductionUpdatesCaptureProof,
@@ -1333,7 +1334,7 @@ fn write_verified_production_pack(
     ) {
         Ok(hub) => hub,
         Err(error) => {
-            discard_unpublished_production_pack(store, &built);
+            discard_unpublished_production_pack(store, publication_gate, &built);
             return Err(error);
         }
     };
@@ -1361,20 +1362,18 @@ fn verify_reopened_production_capture(
     Ok(hub)
 }
 
-fn discard_unpublished_production_pack(store: &HubStore, built: &BuiltProjectionPack) {
+fn discard_unpublished_production_pack(
+    store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
+    built: &BuiltProjectionPack,
+) {
     if !built.may_remove_unpublished_file() {
         return;
     }
-    if matches!(
-        store.pack_sha256_is_retained(&built.metadata.sha256.to_string()),
-        Ok(true)
-    ) {
-        return;
-    }
-    if let Err(error) = fs::remove_file(&built.path)
-        && error.kind() != std::io::ErrorKind::NotFound
+    if let Err(error) =
+        store.remove_unretained_pack(publication_gate, built.metadata.sha256, &built.path)
     {
-        tracing::warn!(path = %built.path.display(), %error, "could not remove unpublished schema-2.2 pack");
+        tracing::warn!(path = %built.path.display(), %error, "could not durably remove unpublished schema-2.2 pack");
     }
 }
 
@@ -1577,8 +1576,13 @@ pub(crate) fn publish_production_updates_schema_22_with_gate(
             sequence: pack.sequence,
             snapshot: &snapshot,
         };
-        let (built, hub) =
-            write_verified_production_pack(store, &current_request, &source, &source_proof)?;
+        let (built, hub) = write_verified_production_pack(
+            store,
+            publication_gate,
+            &current_request,
+            &source,
+            &source_proof,
+        )?;
         let candidate_manifest =
             sign_updates_schema_22_manifest(&current_request, &built, cursor_key)?;
         let candidate_noop = sign_production_updates_schema_22_noop(
@@ -1625,7 +1629,7 @@ pub(crate) fn publish_production_updates_schema_22_with_gate(
                 );
             }
         }
-        discard_unpublished_production_pack(store, &built);
+        discard_unpublished_production_pack(store, publication_gate, &built);
     }
 
     let sequence =
@@ -1642,7 +1646,8 @@ pub(crate) fn publish_production_updates_schema_22_with_gate(
         },
         snapshot: &snapshot,
     };
-    let (built, hub) = write_verified_production_pack(store, &request, &source, &source_proof)?;
+    let (built, hub) =
+        write_verified_production_pack(store, publication_gate, &request, &source, &source_proof)?;
     let manifest = sign_updates_schema_22_manifest(&request, &built, cursor_key)?;
     let noop = sign_production_updates_schema_22_noop(
         binding,
@@ -1660,7 +1665,7 @@ pub(crate) fn publish_production_updates_schema_22_with_gate(
     if let Err(error) =
         publish_updates_schema_22_with_gate(store, publication_gate, &manifest, &noop)
     {
-        discard_unpublished_production_pack(store, &built);
+        discard_unpublished_production_pack(store, publication_gate, &built);
         return Err(error);
     }
     production_publication_report(

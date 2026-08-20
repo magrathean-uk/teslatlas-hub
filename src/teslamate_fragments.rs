@@ -139,18 +139,19 @@ impl StagedProjectionPacks {
 
 impl Drop for StagedProjectionPacks {
     fn drop(&mut self) {
-        if !self.cleanup_on_drop {
-            return;
-        }
-        for chunk in self.chunks.drain(..) {
-            if !chunk.may_remove_unpublished_file() {
-                continue;
-            }
-            if let Err(error) = fs::remove_file(&chunk.path)
-                && error.kind() != std::io::ErrorKind::NotFound
-            {
-                tracing::warn!(path = %chunk.path.display(), %error, "could not remove unpublished TeslaMate candidate pack");
-            }
+        if self.cleanup_on_drop
+            && self
+                .chunks
+                .iter()
+                .any(BuiltProjectionPack::may_remove_unpublished_file)
+        {
+            // A complete candidate may already be visible if SQLite returned
+            // an ambiguous commit outcome. Drop has neither the publication
+            // gate nor a durable catalogue witness, so deleting here would be
+            // unsafe. Startup repair owns proof-based orphan cleanup.
+            tracing::warn!(
+                "retaining unpublished TeslaMate candidate packs for gated startup repair"
+            );
         }
     }
 }
@@ -2652,7 +2653,7 @@ mod tests {
     }
 
     #[test]
-    fn dropped_completed_candidate_removes_unpublished_packs() {
+    fn dropped_completed_candidate_retains_packs_for_gated_repair() {
         let temporary = tempfile::tempdir().unwrap();
         let (_stage_directory, stage) = stage();
         let candidate = write_staged_full_snapshot(
@@ -2680,7 +2681,7 @@ mod tests {
         );
         assert!(paths.iter().all(|path| path.is_file()));
         drop(candidate);
-        assert!(paths.iter().all(|path| !path.exists()));
+        assert!(paths.iter().all(|path| path.is_file()));
     }
 
     #[test]

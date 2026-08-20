@@ -328,14 +328,16 @@ impl Drop for TeslaMateIdentityRegistrationGuard<'_> {
 /// newly-written sparse successor available for accidental later adoption.
 struct UnpublishedDirectDeltaPacks<'a> {
     store: &'a HubStore,
+    publication_gate: &'a PublicationGate,
     chunks: Vec<BuiltProjectionPack>,
     published: bool,
 }
 
 impl<'a> UnpublishedDirectDeltaPacks<'a> {
-    fn new(store: &'a HubStore) -> Self {
+    fn new(store: &'a HubStore, publication_gate: &'a PublicationGate) -> Self {
         Self {
             store,
+            publication_gate,
             chunks: Vec::new(),
             published: false,
         }
@@ -359,21 +361,12 @@ impl Drop for UnpublishedDirectDeltaPacks<'_> {
             if !chunk.may_remove_unpublished_file() {
                 continue;
             }
-            match self
-                .store
-                .pack_sha256_is_retained(&chunk.metadata.sha256.to_string())
-            {
-                Ok(true) => continue,
-                Ok(false) => match std::fs::remove_file(&chunk.path) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => {
-                        tracing::warn!(path = %chunk.path.display(), %error, "could not remove unpublished direct TeslaMate delta pack")
-                    }
-                },
-                Err(error) => {
-                    tracing::warn!(path = %chunk.path.display(), %error, "could not check unpublished direct TeslaMate delta pack catalogue status")
-                }
+            if let Err(error) = self.store.remove_unretained_pack(
+                self.publication_gate,
+                chunk.metadata.sha256,
+                &chunk.path,
+            ) {
+                tracing::warn!(path = %chunk.path.display(), %error, "could not durably remove unpublished direct TeslaMate delta pack");
             }
         }
     }
@@ -882,6 +875,7 @@ async fn import_from_postgres_with_updates_capture(
     if store.source_fingerprint_matches(vehicle.vehicle_id, direct.fingerprint)? {
         promote_unchanged_direct_import(
             store,
+            &publication_gate,
             run_id,
             registered_source.source_id,
             vehicle.vehicle_id,
@@ -933,7 +927,7 @@ async fn import_from_postgres_with_updates_capture(
         // Remove their unreferenced files before writing the sparse typed
         // successor; catalogue checks preserve any coincident object.
         direct.keep_chunks();
-        discard_unpublished_chunks(store, &direct.chunks)?;
+        discard_unpublished_chunks(store, &publication_gate, &direct.chunks)?;
         let selected_car = direct
             .selected_car
             .clone()
@@ -969,7 +963,7 @@ async fn import_from_postgres_with_updates_capture(
         // row here would turn a changed multi-million-row import back into an
         // in-memory history.
         let mut deltas = Vec::new();
-        let mut delta_packs = UnpublishedDirectDeltaPacks::new(store);
+        let mut delta_packs = UnpublishedDirectDeltaPacks::new(store, &publication_gate);
         direct_delta_rows_from_capture(
             &mut capture,
             &binding,
@@ -1044,6 +1038,7 @@ async fn import_from_postgres_with_updates_capture(
             &projection_state,
         )?;
         delta_packs.published();
+        drop(delta_packs);
         run_guard.disarm();
         let projected_rows = deltas.iter().try_fold(0_u64, |total, delta| {
             total
@@ -1288,6 +1283,7 @@ fn publish_staged_history_with_limits(
     if store.source_fingerprint_matches(vehicle.vehicle_id, fingerprint)? {
         promote_unchanged_direct_import(
             store,
+            &publication_gate,
             import_run
                 .run_id
                 .ok_or(TeslaMateImportError::ProjectionStateCaptureMissing)?,
@@ -1432,13 +1428,13 @@ fn publish_staged_history_successor(
         .ok_or(TeslaMateImportError::ProjectionStateCaptureMissing)?;
     capture.seal()?;
     staged.keep_chunks();
-    discard_unpublished_chunks(store, &staged.chunks)?;
+    discard_unpublished_chunks(store, &publication_gate, &staged.chunks)?;
 
     let mut next_ordinal = store.next_v2_pack_ordinal(base_snapshot_id)?;
     let mut prior_sequence = lineage.head_sequence;
     let mut parent_digest = lineage.head_digest;
     let mut deltas = Vec::new();
-    let mut delta_packs = UnpublishedDirectDeltaPacks::new(store);
+    let mut delta_packs = UnpublishedDirectDeltaPacks::new(store, &publication_gate);
     direct_delta_rows_from_capture(
         &mut capture,
         &binding,
@@ -1515,6 +1511,7 @@ fn publish_staged_history_successor(
         &projection_state,
     )?;
     delta_packs.published();
+    drop(delta_packs);
     run_guard.disarm();
     Ok(TeslaMateImportReport {
         source_id,
@@ -2243,25 +2240,14 @@ fn validate_direct_delta_identity(
 
 fn discard_unpublished_chunks(
     store: &HubStore,
+    publication_gate: &PublicationGate,
     chunks: &[BuiltProjectionPack],
 ) -> Result<(), TeslaMateImportError> {
     for chunk in chunks {
         if !chunk.may_remove_unpublished_file() {
             continue;
         }
-        if store.pack_sha256_is_retained(&chunk.metadata.sha256.to_string())? {
-            continue;
-        }
-        match std::fs::remove_file(&chunk.path) {
-            Ok(()) => {}
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {}
-            Err(source) => {
-                return Err(TeslaMateImportError::DiscardUnpublishedPack {
-                    path: chunk.path.clone(),
-                    source,
-                });
-            }
-        }
+        store.remove_unretained_pack(publication_gate, chunk.metadata.sha256, &chunk.path)?;
     }
     Ok(())
 }
@@ -2273,6 +2259,7 @@ fn discard_unpublished_chunks(
 #[allow(clippy::too_many_arguments)]
 fn promote_unchanged_direct_import(
     store: &HubStore,
+    publication_gate: &PublicationGate,
     run_id: Uuid,
     source_id: Uuid,
     vehicle_id: Uuid,
@@ -2284,7 +2271,7 @@ fn promote_unchanged_direct_import(
     // removing the files on drop, then remove only packs which no catalogue
     // entry references before the no-publication generation promotion.
     direct.keep_chunks();
-    discard_unpublished_chunks(store, &direct.chunks)?;
+    discard_unpublished_chunks(store, publication_gate, &direct.chunks)?;
     Ok(store.promote_import_generation(run_id, source_id, vehicle_id, car_id, updated_at_ms)?)
 }
 
@@ -2324,11 +2311,6 @@ pub enum TeslaMateImportError {
     SourceFingerprintTooLarge,
     #[error("cannot serialize TeslaMate source snapshot fingerprint: {0}")]
     SourceFingerprint(#[from] serde_json::Error),
-    #[error("cannot discard unchanged unpublished pack {path}: {source}")]
-    DiscardUnpublishedPack {
-        path: std::path::PathBuf,
-        source: std::io::Error,
-    },
     #[error("TeslaMate selected car has neither a VIN nor a valid EID")]
     StableVehicleIdentityMissing,
     #[error("TeslaMate selected-car VIN/EID/VID changed before the exported snapshot capture")]
@@ -2671,8 +2653,9 @@ mod tests {
             .publish_manifest(&manifest)
             .expect("catalogue first producer pack");
         let path = created.path.clone();
+        let publication_gate = store.try_acquire_publication_gate().expect("gate");
 
-        discard_unpublished_chunks(&store, std::slice::from_ref(&created))
+        discard_unpublished_chunks(&store, &publication_gate, std::slice::from_ref(&created))
             .expect("catalogue check protects a created, now-published pack");
         assert!(path.is_file(), "catalogued created pack remains present");
 
@@ -2680,7 +2663,7 @@ mod tests {
             .write_full_snapshot(&request)
             .expect("second producer reuses catalogued content");
         assert_eq!(reused.ownership(), ProjectionPackOwnership::ReusedExisting);
-        discard_unpublished_chunks(&store, std::slice::from_ref(&reused))
+        discard_unpublished_chunks(&store, &publication_gate, std::slice::from_ref(&reused))
             .expect("reused descriptors are never unlinked by importer cleanup");
         assert!(path.is_file(), "catalogued reused pack remains present");
         store
@@ -2700,7 +2683,7 @@ mod tests {
             .expect("fresh unpublished producer pack");
         assert_eq!(fresh.ownership(), ProjectionPackOwnership::Created);
         let fresh_path = fresh.path.clone();
-        discard_unpublished_chunks(&store, std::slice::from_ref(&fresh))
+        discard_unpublished_chunks(&store, &publication_gate, std::slice::from_ref(&fresh))
             .expect("created unpublished pack is discarded");
         assert!(
             !fresh_path.exists(),
@@ -2868,6 +2851,7 @@ mod tests {
 
         promote_unchanged_direct_import(
             &store,
+            &store.try_acquire_publication_gate().expect("gate"),
             run_id,
             source.source_id,
             base.vehicle_id,
@@ -2938,6 +2922,7 @@ mod tests {
         );
         promote_unchanged_direct_import(
             &restarted,
+            &restarted.try_acquire_publication_gate().expect("gate"),
             repeat_run,
             source.source_id,
             base.vehicle_id,
@@ -3154,15 +3139,18 @@ mod tests {
         )
         .expect("base direct fingerprint");
         let base_pack_path = base_pack.path.clone();
-        let mut base_candidate = StagedProjectionPacks::new(
+        let base_candidate = StagedProjectionPacks::new(
             vec![base_pack],
             ProjectionReport::default(),
             base_fingerprint,
             Vec::new(),
         );
-        // The SQLite transaction has already committed when this injected
-        // cleanup failure occurs. The importer must still retain the created
-        // candidate pack once the catalogue owns it.
+        // Both injected failures happen after the SQLite transaction owns the
+        // candidate. The durable receipt must reconcile the commit to success,
+        // and dropping a still-armed candidate must never unlink its pack.
+        let _commit_fault = crate::durability_fault::inject(
+            crate::durability_fault::DurabilityFaultPoint::CatalogueAfterCommit,
+        );
         store.inject_projection_state_detach_fault();
         store
             .finalize_import_generation_with_projection_state(
@@ -3178,7 +3166,6 @@ mod tests {
                 &base_state,
             )
             .expect("committed direct base survives post-commit detach failure");
-        base_candidate.keep_chunks();
         drop(base_candidate);
         assert!(
             base_pack_path.is_file(),

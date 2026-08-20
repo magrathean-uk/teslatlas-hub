@@ -16,7 +16,8 @@ use std::{
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use rustix::{
     fs::{
-        AtFlags, FileType, Mode, OFlags, fchmod, fstat, mkdirat, open, openat, statvfs, unlinkat,
+        AtFlags, FileType, Mode, OFlags, fchmod, fstat, fsync, mkdirat, open, openat, statvfs,
+        unlinkat,
     },
     process::{getegid, geteuid},
 };
@@ -367,13 +368,25 @@ impl TeslaMateStage {
         if unlink_identity != file_identity {
             return Err(TeslaMateStageError::StagePathIdentityChanged(path));
         }
+        crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::StageDiscardUnlink,
+        )
+        .map_err(TeslaMateStageError::Durability)?;
         unlinkat(&directory.descriptor, &file_name, AtFlags::empty()).map_err(|source| {
             TeslaMateStageError::RemoveStage {
-                path,
+                path: path.clone(),
                 source: std::io::Error::from(source),
             }
         })?;
         drop(unlink_guard);
+        crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::StageDiscardDirectoryFsync,
+        )
+        .map_err(TeslaMateStageError::Durability)?;
+        fsync(&directory.descriptor).map_err(|source| TeslaMateStageError::SyncStageDirectory {
+            path: directory.path,
+            source,
+        })?;
         Ok(())
     }
 
@@ -575,6 +588,10 @@ impl TeslaMateStage {
         drop(statement);
         write_meta(&transaction, META_ROW_COUNT, next_rows)?;
         write_meta(&transaction, META_PAYLOAD_BYTES, next_payload)?;
+        crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::StagePageCommit,
+        )
+        .map_err(TeslaMateStageError::Durability)?;
         transaction
             .commit()
             .map_err(|error| map_write_error(error, stats.limits.max_stage_bytes))?;
@@ -602,6 +619,10 @@ impl TeslaMateStage {
             META_STATE,
             TeslaMateStageState::Sealed.as_str(),
         )?;
+        crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::StageSealCommit,
+        )
+        .map_err(TeslaMateStageError::Durability)?;
         transaction.commit()?;
         self.verify_integrity()?;
         self.stats()
@@ -872,6 +893,10 @@ fn initialise_schema(
     ] {
         write_meta(&transaction, key, value)?;
     }
+    crate::durability_fault::check(
+        crate::durability_fault::DurabilityFaultPoint::StageSchemaCommit,
+    )
+    .map_err(TeslaMateStageError::Durability)?;
     transaction.commit()?;
 
     let page_count: i64 = connection.query_row("PRAGMA page_count", [], |row| row.get(0))?;
@@ -1432,6 +1457,13 @@ pub enum TeslaMateStageError {
         path: PathBuf,
         source: std::io::Error,
     },
+    #[error("could not durably sync private stage directory {path}: {source}")]
+    SyncStageDirectory {
+        path: PathBuf,
+        source: rustix::io::Errno,
+    },
+    #[error("stage durability checkpoint failed: {0}")]
+    Durability(#[source] std::io::Error),
     #[error("stage path may not be a symlink: {0}")]
     SymlinkPath(PathBuf),
     #[error("expected stage directory at {0}")]
@@ -1655,6 +1687,110 @@ mod tests {
                 .map(|row| row.source_id)
                 .collect::<Vec<_>>(),
             vec![1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn schema_commit_fault_never_creates_a_readable_sealed_stage() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        let temporary = tempdir().expect("temp dir");
+        let imports = private_imports(&temporary);
+        let error = {
+            let _fault = inject(DurabilityFaultPoint::StageSchemaCommit);
+            TeslaMateStage::create(&imports, limits()).expect_err("schema commit fault")
+        };
+        assert!(matches!(error, TeslaMateStageError::Durability(_)));
+
+        let staging = imports.join(STAGING_DIRECTORY);
+        let candidates = fs::read_dir(&staging)
+            .expect("staging directory")
+            .map(|entry| entry.expect("stage entry").path())
+            .collect::<Vec<_>>();
+        assert_eq!(candidates.len(), 1, "failed schema remains recoverable");
+        assert!(matches!(
+            TeslaMateStage::open_sealed(&candidates[0]),
+            Err(TeslaMateStageError::MissingMetadata(META_STATE))
+        ));
+    }
+
+    #[test]
+    fn page_commit_fault_rolls_back_rows_and_accounting() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        let temporary = tempdir().expect("temp dir");
+        let mut stage =
+            TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        let row = Row {
+            label: "candidate".into(),
+            ordinal: 1,
+        };
+        let error = {
+            let _fault = inject(DurabilityFaultPoint::StagePageCommit);
+            stage
+                .insert(TeslaMateStageTable::Cars, 1, &row)
+                .expect_err("page commit fault")
+        };
+        assert!(matches!(error, TeslaMateStageError::Durability(_)));
+        assert_eq!(stage.stats().expect("rolled back stats").row_count, 0);
+
+        stage
+            .insert(TeslaMateStageTable::Cars, 1, &row)
+            .expect("retry page");
+        stage.seal().expect("seal retry");
+        let page = stage
+            .page::<Row>(TeslaMateStageTable::Cars, 0, 10)
+            .expect("committed page");
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.rows[0].value, row);
+    }
+
+    #[test]
+    fn seal_commit_fault_leaves_the_stage_open_for_retry() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        let temporary = tempdir().expect("temp dir");
+        let mut stage =
+            TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        let error = {
+            let _fault = inject(DurabilityFaultPoint::StageSealCommit);
+            stage.seal().expect_err("seal commit fault")
+        };
+        assert!(matches!(error, TeslaMateStageError::Durability(_)));
+        assert_eq!(
+            stage.stats().expect("open stats").state,
+            TeslaMateStageState::Open
+        );
+        assert_eq!(
+            stage.seal().expect("seal retry").state,
+            TeslaMateStageState::Sealed
+        );
+    }
+
+    #[test]
+    fn discard_faults_preserve_or_remove_only_the_admitted_stage() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        let temporary = tempdir().expect("temp dir");
+        let stage = TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        let path = stage.path().to_path_buf();
+        let error = {
+            let _fault = inject(DurabilityFaultPoint::StageDiscardUnlink);
+            stage.discard().expect_err("unlink fault")
+        };
+        assert!(matches!(error, TeslaMateStageError::Durability(_)));
+        assert!(path.is_file(), "pre-unlink fault preserves stage");
+
+        let stage = TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        let removed_path = stage.path().to_path_buf();
+        let error = {
+            let _fault = inject(DurabilityFaultPoint::StageDiscardDirectoryFsync);
+            stage.discard().expect_err("directory fsync fault")
+        };
+        assert!(matches!(error, TeslaMateStageError::Durability(_)));
+        assert!(
+            matches!(fs::symlink_metadata(&removed_path), Err(source) if source.kind() == std::io::ErrorKind::NotFound),
+            "post-unlink fault never restores a different path"
         );
     }
 

@@ -3,7 +3,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -106,6 +106,7 @@ const MAX_DEVICE_NAME_BYTES: usize = 128;
 const PAIRING_SECRET_BYTES: usize = 32;
 const ACCESS_TOKEN_BYTES: usize = 32;
 const INSTALLATION_ID_KEY: &str = "installation_id";
+const CATALOGUE_COMMIT_RECEIPT_KEY: &str = "catalogue_commit_receipt_v1";
 const PUBLICATION_GATE_RETRY: Duration = Duration::from_millis(50);
 // One user-owned Hub process owns the entire local tree.
 const SHARED_DATA_DIRECTORY_MODE: u32 = 0o700;
@@ -186,6 +187,13 @@ pub enum StreamObservationResult {
 enum ManifestCommitState {
     Exact,
     Absent,
+    Conflicting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CatalogueCommitReceiptState {
+    Exact,
+    Prior,
     Conflicting,
 }
 
@@ -479,6 +487,52 @@ fn validate_shared_sqlite_file(
 
 fn stat_mode(raw_mode: u16) -> u32 {
     u32::from(Mode::from_raw_mode(raw_mode).as_raw_mode()) & 0o7777
+}
+
+fn open_directory_path_nofollow(path: &Path) -> std::io::Result<File> {
+    let mut absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    #[cfg(target_os = "macos")]
+    {
+        for (alias, canonical) in [
+            ("/tmp", "/private/tmp"),
+            ("/var", "/private/var"),
+            ("/etc", "/private/etc"),
+        ] {
+            if let Ok(suffix) = absolute.strip_prefix(alias) {
+                absolute = Path::new(canonical).join(suffix);
+                break;
+            }
+        }
+    }
+    let mut descriptor = open(
+        "/",
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(std::io::Error::from)?;
+    for component in absolute.components() {
+        let Component::Normal(name) = component else {
+            if matches!(component, Component::RootDir) {
+                continue;
+            }
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "directory path contains a non-normal component",
+            ));
+        };
+        descriptor = openat(
+            &descriptor,
+            name,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(std::io::Error::from)?;
+    }
+    Ok(File::from(descriptor))
 }
 
 fn schema_22_noop_filename(vehicle_id: Uuid, snapshot_id: Uuid) -> String {
@@ -940,6 +994,13 @@ impl Drop for LineagePackInspection {
 #[derive(Debug)]
 pub(crate) struct PublicationGate {
     _file: File,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PackCleanupOutcome {
+    Retained,
+    Missing,
+    Removed,
 }
 
 struct SharedSchema22NoOpDirectory {
@@ -2446,6 +2507,105 @@ impl HubStore {
             };
         }
         Ok(())
+    }
+
+    fn commit_catalogue_receipted_transaction(
+        &self,
+        transaction: Transaction<'_>,
+        domain: &'static str,
+        vehicle_id: Uuid,
+        snapshot_id: Uuid,
+        commit_error: fn(rusqlite::Error) -> StoreError,
+    ) -> Result<(), StoreError> {
+        let prior = transaction
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = ?1",
+                params![CATALOGUE_COMMIT_RECEIPT_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        let operation_id = Uuid::new_v4();
+        let mut digest = Sha256::new();
+        digest.update(b"teslatlas-hub/catalogue-commit-receipt/v1\0");
+        digest.update(domain.as_bytes());
+        digest.update([0]);
+        digest.update(vehicle_id.as_bytes());
+        digest.update(snapshot_id.as_bytes());
+        digest.update(operation_id.as_bytes());
+        let candidate = format!("v1:{operation_id}:{}", hex::encode(digest.finalize()));
+        transaction
+            .execute(
+                "INSERT INTO hub_metadata(key, value) VALUES(?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![CATALOGUE_COMMIT_RECEIPT_KEY, candidate.as_str()],
+            )
+            .map_err(StoreError::Query)?;
+
+        if let Err(source) = crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::CatalogueBeforeCommit,
+        ) {
+            drop(transaction);
+            return match self.catalogue_commit_receipt_state(&candidate, prior.as_deref())? {
+                CatalogueCommitReceiptState::Prior => Err(StoreError::CatalogueDurability(source)),
+                CatalogueCommitReceiptState::Exact | CatalogueCommitReceiptState::Conflicting => {
+                    Err(StoreError::AmbiguousCatalogueCommit {
+                        vehicle_id,
+                        snapshot_id,
+                    })
+                }
+            };
+        }
+
+        if let Err(source) = transaction.commit() {
+            return match self.catalogue_commit_receipt_state(&candidate, prior.as_deref())? {
+                CatalogueCommitReceiptState::Exact => Ok(()),
+                CatalogueCommitReceiptState::Prior => Err(commit_error(source)),
+                CatalogueCommitReceiptState::Conflicting => {
+                    Err(StoreError::AmbiguousCatalogueCommit {
+                        vehicle_id,
+                        snapshot_id,
+                    })
+                }
+            };
+        }
+        if let Err(_source) = crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::CatalogueAfterCommit,
+        ) {
+            return match self.catalogue_commit_receipt_state(&candidate, prior.as_deref())? {
+                CatalogueCommitReceiptState::Exact => Ok(()),
+                CatalogueCommitReceiptState::Prior | CatalogueCommitReceiptState::Conflicting => {
+                    Err(StoreError::AmbiguousCatalogueCommit {
+                        vehicle_id,
+                        snapshot_id,
+                    })
+                }
+            };
+        }
+        Ok(())
+    }
+
+    fn catalogue_commit_receipt_state(
+        &self,
+        candidate: &str,
+        prior: Option<&str>,
+    ) -> Result<CatalogueCommitReceiptState, StoreError> {
+        let connection = self.open()?;
+        let stored = connection
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = ?1",
+                params![CATALOGUE_COMMIT_RECEIPT_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        if stored.as_deref() == Some(candidate) {
+            Ok(CatalogueCommitReceiptState::Exact)
+        } else if stored.as_deref() == prior {
+            Ok(CatalogueCommitReceiptState::Prior)
+        } else {
+            Ok(CatalogueCommitReceiptState::Conflicting)
+        }
     }
 
     fn manifest_commit_state(
@@ -4915,7 +5075,13 @@ impl HubStore {
             {
                 return Err(StoreError::ImportGenerationNotFound);
             }
-            transaction.commit().map_err(StoreError::ImportGeneration)
+            self.commit_catalogue_receipted_transaction(
+                transaction,
+                "import_generation_delta_batch",
+                vehicle_id,
+                final_delta.pack.snapshot_id,
+                StoreError::ImportGeneration,
+            )
         })();
         finish_teslamate_projection_state_transfer(
             result,
@@ -5170,7 +5336,13 @@ impl HubStore {
                 ],
             )
             .map_err(StoreError::PublishManifest)?;
-        transaction.commit().map_err(StoreError::LineageCatalog)
+        self.commit_catalogue_receipted_transaction(
+            transaction,
+            "import_delta_successor",
+            vehicle_id,
+            delta.pack.snapshot_id,
+            StoreError::LineageCatalog,
+        )
     }
 
     /// Load the exact source-owned history rows from the most recent
@@ -5636,6 +5808,7 @@ impl HubStore {
     /// retired lineage inside its physical-delete grace window. Candidate
     /// cleanup must use this stronger predicate: a retired client may still
     /// be reading an immutable object after it leaves `sync_packs`.
+    #[cfg(test)]
     pub(crate) fn pack_sha256_is_retained(&self, sha256: &str) -> Result<bool, StoreError> {
         let now_ms = retired_lineage_clock_ms()?;
         let cutoff_ms = now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS);
@@ -5643,6 +5816,149 @@ impl HubStore {
         Ok(referenced_pack_rows_at(&connection, cutoff_ms)?
             .iter()
             .any(|(candidate, _, _)| candidate == sha256))
+    }
+
+    /// Remove one newly-created but unpublished content object while the
+    /// caller owns the cross-process publication gate. The SQLite immediate
+    /// transaction also blocks older ungated catalogue writers for the whole
+    /// retained-reference check and unlink. Path traversal is descriptor
+    /// relative and the admitted inode must still match after hashing.
+    pub(crate) fn remove_unretained_pack(
+        &self,
+        _publication_gate: &PublicationGate,
+        sha256: Sha256Digest,
+        candidate_path: &Path,
+    ) -> Result<PackCleanupOutcome, StoreError> {
+        let digest = sha256.to_string();
+        let file_name = format!("{digest}.sqlite.zst");
+        let content_dir_path = self.packs_dir.join("sha256");
+        let expected_path = content_dir_path.join(&file_name);
+        if candidate_path != expected_path {
+            return Err(StoreError::UnsafeUnpublishedPackPath(
+                candidate_path.to_path_buf(),
+            ));
+        }
+
+        let cutoff_ms =
+            retired_lineage_clock_ms()?.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS);
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        if referenced_pack_rows_at(&transaction, cutoff_ms)?
+            .iter()
+            .any(|(candidate, _, _)| candidate == &digest)
+        {
+            transaction.commit().map_err(StoreError::LineageCatalog)?;
+            return Ok(PackCleanupOutcome::Retained);
+        }
+
+        let content_directory =
+            open_directory_path_nofollow(&content_dir_path).map_err(|source| {
+                StoreError::CleanupUnpublishedPack {
+                    path: content_dir_path.clone(),
+                    source,
+                }
+            })?;
+        let before = match statat(
+            &content_directory,
+            file_name.as_str(),
+            AtFlags::SYMLINK_NOFOLLOW,
+        ) {
+            Ok(value) => value,
+            Err(Errno::NOENT) => {
+                transaction.commit().map_err(StoreError::LineageCatalog)?;
+                return Ok(PackCleanupOutcome::Missing);
+            }
+            Err(source) => {
+                return Err(StoreError::CleanupUnpublishedPack {
+                    path: expected_path,
+                    source: source.into(),
+                });
+            }
+        };
+        if !FileType::from_raw_mode(before.st_mode).is_file()
+            || before.st_uid != rustix::process::geteuid().as_raw()
+            || stat_mode(before.st_mode) != 0o640
+            || !(1..=2).contains(&before.st_nlink)
+        {
+            return Err(StoreError::UnsafeUnpublishedPackPath(expected_path));
+        }
+        let descriptor = openat(
+            &content_directory,
+            file_name.as_str(),
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|source| StoreError::CleanupUnpublishedPack {
+            path: expected_path.clone(),
+            source: source.into(),
+        })?;
+        let mut file = File::from(descriptor);
+        let opened = fstat(&file).map_err(|source| StoreError::CleanupUnpublishedPack {
+            path: expected_path.clone(),
+            source: source.into(),
+        })?;
+        if opened.st_dev != before.st_dev
+            || opened.st_ino != before.st_ino
+            || opened.st_size != before.st_size
+            || opened.st_mode != before.st_mode
+            || opened.st_uid != before.st_uid
+            || opened.st_gid != before.st_gid
+            || opened.st_nlink != before.st_nlink
+        {
+            return Err(StoreError::UnsafeUnpublishedPackPath(expected_path));
+        }
+        let mut hasher = Sha256::new();
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read =
+                file.read(&mut buffer)
+                    .map_err(|source| StoreError::CleanupUnpublishedPack {
+                        path: expected_path.clone(),
+                        source,
+                    })?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+        if hex::encode(hasher.finalize()) != digest {
+            return Err(StoreError::UnpublishedPackDigestMismatch(expected_path));
+        }
+        let after = statat(
+            &content_directory,
+            file_name.as_str(),
+            AtFlags::SYMLINK_NOFOLLOW,
+        )
+        .map_err(|source| StoreError::CleanupUnpublishedPack {
+            path: expected_path.clone(),
+            source: source.into(),
+        })?;
+        if after.st_dev != opened.st_dev
+            || after.st_ino != opened.st_ino
+            || after.st_size != opened.st_size
+            || after.st_mode != opened.st_mode
+            || after.st_uid != opened.st_uid
+            || after.st_gid != opened.st_gid
+            || after.st_nlink != opened.st_nlink
+        {
+            return Err(StoreError::UnsafeUnpublishedPackPath(expected_path));
+        }
+        unlinkat(&content_directory, file_name.as_str(), AtFlags::empty()).map_err(|source| {
+            StoreError::CleanupUnpublishedPack {
+                path: expected_path.clone(),
+                source: source.into(),
+            }
+        })?;
+        content_directory
+            .sync_all()
+            .map_err(|source| StoreError::CleanupUnpublishedPack {
+                path: expected_path,
+                source,
+            })?;
+        transaction.commit().map_err(StoreError::LineageCatalog)?;
+        Ok(PackCleanupOutcome::Removed)
     }
 
     pub fn record_snapshot_fingerprint(
@@ -5897,7 +6213,13 @@ impl HubStore {
             {
                 return Err(StoreError::ImportGenerationNotFound);
             }
-            transaction.commit().map_err(StoreError::ImportGeneration)
+            self.commit_catalogue_receipted_transaction(
+                transaction,
+                "import_generation_projection_state",
+                vehicle_id,
+                manifest.snapshot_id,
+                StoreError::ImportGeneration,
+            )
         })();
         finish_teslamate_projection_state_transfer(
             result,
@@ -5980,7 +6302,13 @@ impl HubStore {
         {
             return Err(StoreError::ImportGenerationNotFound);
         }
-        transaction.commit().map_err(StoreError::ImportGeneration)
+        self.commit_catalogue_receipted_transaction(
+            transaction,
+            "import_generation",
+            vehicle_id,
+            manifest.snapshot_id,
+            StoreError::ImportGeneration,
+        )
     }
 
     /// Atomically catalogue a sealed import history snapshot and its source
@@ -6117,7 +6445,13 @@ impl HubStore {
         }
         upsert_geofences_in_transaction(&transaction, manifest.vehicle_id, geofences)?;
         record_snapshot_fingerprint_in_transaction(&transaction, manifest, fingerprint)?;
-        transaction.commit().map_err(StoreError::PublishManifest)
+        self.commit_catalogue_receipted_transaction(
+            transaction,
+            "import_snapshot",
+            manifest.vehicle_id,
+            manifest.snapshot_id,
+            StoreError::PublishManifest,
+        )
     }
 
     /// Start an inactive import generation. Nothing in this generation is
@@ -15043,6 +15377,15 @@ pub enum StoreError {
         "catalogue commit outcome is conflicting for vehicle {vehicle_id} snapshot {snapshot_id}"
     )]
     AmbiguousCatalogueCommit { vehicle_id: Uuid, snapshot_id: Uuid },
+    #[error("unpublished pack path is outside its exact content-addressed namespace: {0}")]
+    UnsafeUnpublishedPackPath(PathBuf),
+    #[error("cannot clean unpublished pack {path}: {source}")]
+    CleanupUnpublishedPack {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("unpublished pack bytes do not match its content digest: {0}")]
+    UnpublishedPackDigestMismatch(PathBuf),
     #[error("cannot associate a snapshot fingerprint with uncatalogued manifest {0}")]
     FingerprintManifestMissing(Uuid),
     #[error(
@@ -15990,6 +16333,57 @@ mod tests {
                 .expect("candidate visible"),
             manifest
         );
+    }
+
+    #[test]
+    fn receipted_catalogue_commit_is_exactly_prior_or_committed() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        for (point, expected_value) in [
+            (DurabilityFaultPoint::CatalogueBeforeCommit, None),
+            (
+                DurabilityFaultPoint::CatalogueAfterCommit,
+                Some("candidate"),
+            ),
+        ] {
+            let root = tempfile::tempdir().expect("receipt root");
+            let store = HubStore::initialize(root.path()).expect("store");
+            let mut connection = store.open().expect("connection");
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("transaction");
+            transaction
+                .execute(
+                    "INSERT INTO hub_metadata(key, value) VALUES('receipt_test_candidate', ?1)",
+                    ["candidate"],
+                )
+                .expect("candidate mutation");
+            let result = {
+                let _fault = inject(point);
+                store.commit_catalogue_receipted_transaction(
+                    transaction,
+                    "test_candidate",
+                    Uuid::from_u128(71),
+                    Uuid::from_u128(72),
+                    StoreError::Query,
+                )
+            };
+            match expected_value {
+                None => assert!(matches!(result, Err(StoreError::CatalogueDurability(_)))),
+                Some(_) => result.expect("post-commit receipt proves candidate"),
+            }
+            let stored = store
+                .open()
+                .expect("reopen")
+                .query_row(
+                    "SELECT value FROM hub_metadata WHERE key = 'receipt_test_candidate'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .expect("candidate lookup");
+            assert_eq!(stored.as_deref(), expected_value);
+        }
     }
 
     #[test]
@@ -19412,6 +19806,14 @@ mod tests {
             old_paths.iter().all(|path| path.is_file()),
             "old immutable objects remain available through bounded retention"
         );
+        for delta in &before.deltas {
+            assert!(
+                store
+                    .pack_sha256_is_retained(&delta.pack_digest.to_string())
+                    .expect("cleanup retention lookup"),
+                "candidate cleanup includes every unexpired retired-lineage pack"
+            );
+        }
         assert!(
             store
                 .plan_live_delta_compaction(vehicle.vehicle_id)

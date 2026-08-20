@@ -2046,6 +2046,15 @@ pub enum ProjectionPackOwnership {
     ReusedExisting,
 }
 
+/// Durable cleanup receipt for the private staging name used to install a
+/// verified content object. `PendingStartupRepair` is still a successful pack
+/// publication: the final content name and its directory were synced first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectionPackCleanupState {
+    Complete,
+    PendingStartupRepair,
+}
+
 /// A complete, verified immutable object ready for the existing pack catalog.
 #[derive(Debug)]
 pub struct BuiltProjectionPack {
@@ -2053,12 +2062,17 @@ pub struct BuiltProjectionPack {
     pub path: PathBuf,
     pub verified: VerifiedTransportPack,
     ownership: ProjectionPackOwnership,
+    cleanup_state: ProjectionPackCleanupState,
 }
 
 impl BuiltProjectionPack {
     /// Return whether this value created the on-disk content-addressed object.
     pub fn ownership(&self) -> ProjectionPackOwnership {
         self.ownership
+    }
+
+    pub fn cleanup_state(&self) -> ProjectionPackCleanupState {
+        self.cleanup_state
     }
 
     /// Candidate cleanup has a deletion right only for a newly linked pack.
@@ -2079,6 +2093,7 @@ impl Clone for BuiltProjectionPack {
             path: self.path.clone(),
             verified: self.verified,
             ownership: ProjectionPackOwnership::ReusedExisting,
+            cleanup_state: self.cleanup_state,
         }
     }
 }
@@ -2225,14 +2240,15 @@ impl ProjectionPackWriter {
                 .checked_add(self.minimum_free_bytes)
                 .ok_or(ProjectionPackError::TooManyRows)?,
         )?;
-        let ownership =
+        let publication =
             publish_immutable(&mut compressed_temp, &final_path, &metadata, self.limits)?;
 
         Ok(BuiltProjectionPack {
             metadata,
             path: final_path,
             verified,
-            ownership,
+            ownership: publication.ownership,
+            cleanup_state: publication.cleanup_state,
         })
     }
 
@@ -2317,13 +2333,14 @@ impl ProjectionPackWriter {
                 .checked_add(self.minimum_free_bytes)
                 .ok_or(ProjectionPackError::TooManyRows)?,
         )?;
-        let ownership =
+        let publication =
             publish_immutable(&mut compressed_temp, &final_path, &metadata, self.limits)?;
         Ok(BuiltProjectionPack {
             metadata,
             path: final_path,
             verified,
-            ownership,
+            ownership: publication.ownership,
+            cleanup_state: publication.cleanup_state,
         })
     }
 
@@ -2391,13 +2408,14 @@ impl ProjectionPackWriter {
                 .checked_add(self.minimum_free_bytes)
                 .ok_or(ProjectionPackError::TooManyRows)?,
         )?;
-        let ownership =
+        let publication =
             publish_immutable(&mut compressed_temp, &final_path, &metadata, self.limits)?;
         Ok(BuiltProjectionPack {
             metadata,
             path: final_path,
             verified,
-            ownership,
+            ownership: publication.ownership,
+            cleanup_state: publication.cleanup_state,
         })
     }
 
@@ -2481,13 +2499,14 @@ impl ProjectionPackWriter {
         metadata.validate(self.limits)?;
         let verified = verify_file(&metadata, compressed_temp.path(), self.limits)?;
         let final_path = self.content_path(sha256);
-        let ownership =
+        let publication =
             publish_immutable(&mut compressed_temp, &final_path, &metadata, self.limits)?;
         Ok(BuiltProjectionPack {
             metadata,
             path: final_path,
             verified,
-            ownership,
+            ownership: publication.ownership,
+            cleanup_state: publication.cleanup_state,
         })
     }
 
@@ -6337,12 +6356,17 @@ fn available_bytes(path: &Path) -> Result<u64, ProjectionPackError> {
         .ok_or(ProjectionPackError::CapacityOverflow)
 }
 
+struct ImmutablePublication {
+    ownership: ProjectionPackOwnership,
+    cleanup_state: ProjectionPackCleanupState,
+}
+
 fn publish_immutable(
     temporary: &mut StagedFile,
     final_path: &Path,
     metadata: &TransportPack,
     limits: ProtocolLimits,
-) -> Result<ProjectionPackOwnership, ProjectionPackError> {
+) -> Result<ImmutablePublication, ProjectionPackError> {
     let temporary_path = temporary.path().to_path_buf();
     fs::set_permissions(
         &temporary_path,
@@ -6386,21 +6410,43 @@ fn publish_immutable(
     // The final immutable hard link and its parent have been synced.  Remove
     // the now-public staging name and sync that namespace too, so a normal
     // completed publication never leaves a 0640 temporary file behind.
-    crate::durability_fault::check(
+    if let Err(source) = crate::durability_fault::check(
         crate::durability_fault::DurabilityFaultPoint::PackStagingUnlink,
-    )
-    .map_err(ProjectionPackError::Durability)?;
-    fs::remove_file(&temporary_path).map_err(|source| ProjectionPackError::Publish {
-        path: temporary_path.clone(),
-        source,
-    })?;
+    ) {
+        tracing::warn!(%source, path = %temporary_path.display(), "pack committed with staging cleanup pending");
+        return Ok(ImmutablePublication {
+            ownership,
+            cleanup_state: ProjectionPackCleanupState::PendingStartupRepair,
+        });
+    }
+    if let Err(source) = fs::remove_file(&temporary_path) {
+        tracing::warn!(%source, path = %temporary_path.display(), "pack committed with staging cleanup pending");
+        return Ok(ImmutablePublication {
+            ownership,
+            cleanup_state: ProjectionPackCleanupState::PendingStartupRepair,
+        });
+    }
     temporary.mark_removed();
-    crate::durability_fault::check(
+    if let Err(source) = crate::durability_fault::check(
         crate::durability_fault::DurabilityFaultPoint::PackStagingDirectoryFsync,
-    )
-    .map_err(ProjectionPackError::Durability)?;
-    sync_parent_directory(&temporary_path)?;
-    Ok(ownership)
+    ) {
+        tracing::warn!(%source, path = %temporary_path.display(), "pack committed with staging directory sync pending");
+        return Ok(ImmutablePublication {
+            ownership,
+            cleanup_state: ProjectionPackCleanupState::PendingStartupRepair,
+        });
+    }
+    if let Err(source) = sync_parent_directory(&temporary_path) {
+        tracing::warn!(%source, path = %temporary_path.display(), "pack committed with staging directory sync pending");
+        return Ok(ImmutablePublication {
+            ownership,
+            cleanup_state: ProjectionPackCleanupState::PendingStartupRepair,
+        });
+    }
+    Ok(ImmutablePublication {
+        ownership,
+        cleanup_state: ProjectionPackCleanupState::Complete,
+    })
 }
 
 fn sync_parent_directory(path: &Path) -> Result<(), ProjectionPackError> {
@@ -6988,25 +7034,53 @@ mod tests {
         use crate::durability_fault::{DurabilityFaultPoint, inject};
 
         let cases = [
-            (DurabilityFaultPoint::PackSqliteCommit, false, false),
-            (DurabilityFaultPoint::PackCompressedWrite, false, false),
-            (DurabilityFaultPoint::PackCompressedFsync, false, false),
-            (DurabilityFaultPoint::PackFinalInstall, false, false),
-            (DurabilityFaultPoint::PackFinalDirectoryFsync, true, false),
-            (DurabilityFaultPoint::PackStagingUnlink, true, true),
-            (DurabilityFaultPoint::PackStagingDirectoryFsync, true, false),
+            (DurabilityFaultPoint::PackSqliteCommit, false, false, false),
+            (
+                DurabilityFaultPoint::PackCompressedWrite,
+                false,
+                false,
+                false,
+            ),
+            (
+                DurabilityFaultPoint::PackCompressedFsync,
+                false,
+                false,
+                false,
+            ),
+            (DurabilityFaultPoint::PackFinalInstall, false, false, false),
+            (
+                DurabilityFaultPoint::PackFinalDirectoryFsync,
+                true,
+                false,
+                false,
+            ),
+            (DurabilityFaultPoint::PackStagingUnlink, true, true, true),
+            (
+                DurabilityFaultPoint::PackStagingDirectoryFsync,
+                true,
+                false,
+                true,
+            ),
         ];
-        for (point, expect_final, expect_staging) in cases {
+        for (point, expect_final, expect_staging, expect_cleanup_pending) in cases {
             let temporary = tempfile::tempdir().expect("fault store");
             let source = snapshot();
             let _fault = inject(point);
-            let error = ProjectionPackWriter::new(temporary.path())
-                .write_full_snapshot(&request(&source))
-                .expect_err("armed durability point must fail");
-            assert!(
-                error.to_string().contains("durability fault"),
-                "typed fault for {point:?}: {error}"
-            );
+            let result =
+                ProjectionPackWriter::new(temporary.path()).write_full_snapshot(&request(&source));
+            if expect_cleanup_pending {
+                let built = result.expect("post-publication cleanup is a successful pack receipt");
+                assert_eq!(
+                    built.cleanup_state(),
+                    ProjectionPackCleanupState::PendingStartupRepair
+                );
+            } else {
+                let error = result.expect_err("pre-publication durability point must fail");
+                assert!(
+                    error.to_string().contains("durability fault"),
+                    "typed fault for {point:?}: {error}"
+                );
+            }
 
             let content_directory = temporary.path().join("sha256");
             let content = fs::read_dir(&content_directory)

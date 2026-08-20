@@ -7,6 +7,11 @@ use std::io;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DurabilityFaultPoint {
+    StageSchemaCommit,
+    StagePageCommit,
+    StageSealCommit,
+    StageDiscardUnlink,
+    StageDiscardDirectoryFsync,
     PackSqliteCommit,
     PackCompressedWrite,
     PackCompressedFsync,
@@ -25,6 +30,11 @@ pub(crate) enum DurabilityFaultPoint {
 impl DurabilityFaultPoint {
     const fn label(self) -> &'static str {
         match self {
+            Self::StageSchemaCommit => "stage_schema_commit",
+            Self::StagePageCommit => "stage_page_commit",
+            Self::StageSealCommit => "stage_seal_commit",
+            Self::StageDiscardUnlink => "stage_discard_unlink",
+            Self::StageDiscardDirectoryFsync => "stage_discard_directory_fsync",
             Self::PackSqliteCommit => "pack_sqlite_commit",
             Self::PackCompressedWrite => "pack_compressed_write",
             Self::PackCompressedFsync => "pack_compressed_fsync",
