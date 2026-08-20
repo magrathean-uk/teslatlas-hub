@@ -38,12 +38,69 @@ use crate::{
 pub async fn rustls_config_from_identity(
     tls: &TlsListenerConfig,
 ) -> std::io::Result<axum_server::tls_rustls::RustlsConfig> {
+    let certificate_pem = zeroize::Zeroizing::new(tokio::fs::read(&tls.certificate_path).await?);
+    let private_key_pem = zeroize::Zeroizing::new(tokio::fs::read(&tls.private_key_path).await?);
+    rustls_config_from_pem_identity(certificate_pem, private_key_pem).await
+}
+
+/// Build the exact TLS identity used by `Serve` from already admitted bytes.
+/// Pairing uses this boundary after its stricter no-follow bounded reads so it
+/// cannot pin an identity that the native listener would reject.
+#[doc(hidden)]
+pub async fn rustls_config_from_pem_identity(
+    certificate_pem: zeroize::Zeroizing<Vec<u8>>,
+    private_key_pem: zeroize::Zeroizing<Vec<u8>>,
+) -> std::io::Result<axum_server::tls_rustls::RustlsConfig> {
     crate::crypto::install_default_provider();
-    axum_server::tls_rustls::RustlsConfig::from_pem_file(
-        &tls.certificate_path,
-        &tls.private_key_path,
-    )
+    let server_config = tokio::task::spawn_blocking(move || {
+        rustls_server_config_from_pem_identity(&certificate_pem, &private_key_pem)
+    })
     .await
+    .map_err(|_| std::io::Error::other("TLS identity validation task failed"))??;
+    Ok(axum_server::tls_rustls::RustlsConfig::from_config(
+        Arc::new(server_config),
+    ))
+}
+
+fn rustls_server_config_from_pem_identity(
+    certificate_pem: &[u8],
+    private_key_pem: &[u8],
+) -> std::io::Result<rustls::ServerConfig> {
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
+
+    let certificates = CertificateDer::pem_slice_iter(certificate_pem)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| std::io::Error::other("failed to parse certificate"))?;
+    let mut key_result: Result<zeroize::Zeroizing<PrivateKeyDer<'static>>, std::io::Error> = Err(
+        std::io::Error::other("The private key file contained no keys"),
+    );
+    for item in PrivateKeyDer::pem_slice_iter(private_key_pem) {
+        let key = item
+            .map(zeroize::Zeroizing::new)
+            .map_err(|_| std::io::Error::other("failed to parse PEM"));
+        match key_result {
+            Ok(_) => {
+                if key.is_ok() {
+                    return Err(std::io::Error::other(
+                        "The private key file contains multiple keys",
+                    ));
+                }
+            }
+            Err(_) => key_result = key,
+        }
+    }
+    let key = key_result?;
+    let signing_key =
+        rustls::crypto::ring::sign::any_supported_type(&key).map_err(std::io::Error::other)?;
+    let certified_key = rustls::sign::CertifiedKey::new(certificates, signing_key);
+    certified_key.keys_match().map_err(std::io::Error::other)?;
+    let mut config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_cert_resolver(Arc::new(rustls::sign::SingleCertAndKey::from(
+            certified_key,
+        )));
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    Ok(config)
 }
 
 pub const MANIFEST_SIGNATURE_HEADER: &str = "x-teslatlas-manifest-signature";

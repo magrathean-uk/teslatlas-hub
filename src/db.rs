@@ -26,6 +26,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::{
     hub_pack::{
@@ -12052,13 +12053,10 @@ fn paired_device_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PairedDev
     })
 }
 
-fn random_secret_bytes() -> [u8; PAIRING_SECRET_BYTES] {
-    // UUID v4 uses the operating system CSPRNG. Two UUIDs provide 244 random
-    // bits after their version/variant markers; hashing them yields a fixed
-    // 32-byte opaque credential without depending on another RNG wrapper.
-    let first = Uuid::new_v4();
-    let second = Uuid::new_v4();
-    sha256_bytes(&[first.as_bytes().as_slice(), second.as_bytes().as_slice()].concat())
+fn random_secret_wire() -> String {
+    let mut bytes = Zeroizing::new([0_u8; PAIRING_SECRET_BYTES]);
+    getrandom::getrandom(&mut *bytes).expect("operating system entropy for pairing credential");
+    hex::encode(bytes.as_slice())
 }
 
 fn sha256_bytes(value: &[u8]) -> [u8; PAIRING_SECRET_BYTES] {
@@ -12071,10 +12069,9 @@ fn digest_valid_wire_secret(value: &str) -> Option<[u8; PAIRING_SECRET_BYTES]> {
     {
         return None;
     }
-    // The wire secret is hex text; avoid accepting alternate encodings or
-    // silently truncating malformed inputs before hashing them.
-    let decoded = hex::decode(value).ok()?;
-    let _: [u8; PAIRING_SECRET_BYTES] = decoded.try_into().ok()?;
+    // Length plus the ASCII-hex predicate fully validates the wire shape.
+    // Avoid decoding a second credential-equivalent byte buffer just to
+    // validate text that is hashed exactly as received.
     Some(sha256_bytes(value.as_bytes()))
 }
 
@@ -22528,7 +22525,7 @@ struct PairingSecret(String);
 
 impl PairingSecret {
     fn generate() -> Self {
-        Self(hex::encode(random_secret_bytes()))
+        Self(random_secret_wire())
     }
 
     fn as_wire(&self) -> &str {
@@ -22557,7 +22554,7 @@ pub struct DeviceAccessToken(String);
 
 impl DeviceAccessToken {
     fn generate() -> Self {
-        Self(hex::encode(random_secret_bytes()))
+        Self(random_secret_wire())
     }
 
     pub fn as_bearer(&self) -> &str {
