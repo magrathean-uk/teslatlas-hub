@@ -27,6 +27,8 @@ use teslatlas_hub::{
     credentials::{OwnerTokens, TeslaMatePostgresPassword},
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{HubStore, ObservationVerificationError, TeslaMateLegacyTokenStore},
+    gpx::export_drive_gpx,
+    hub_pack::GeofenceBillingType,
     server,
     teslamate::ReadOnlySource,
     teslamate_credentials::{
@@ -353,6 +355,73 @@ enum ServiceCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum ControlCommand {
+    /// Show or update the selected car's collection settings.
+    Settings {
+        #[arg(long)]
+        enabled: Option<bool>,
+        #[arg(long)]
+        streaming: Option<bool>,
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        suspend_after_idle_min: Option<i64>,
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        suspend_min: Option<i64>,
+        #[arg(long)]
+        require_locked: Option<bool>,
+        #[arg(long)]
+        free_supercharging: Option<bool>,
+        #[arg(long)]
+        lfp_battery: Option<bool>,
+    },
+    /// Pause Owner API and streaming collection for the selected car.
+    Pause,
+    /// Resume Owner API and streaming collection for the selected car.
+    Resume,
+    /// List configured geofences.
+    Geofences,
+    /// Create a geofence, or replace one by id.
+    #[command(name = "set-geofence")]
+    SetGeofence {
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        id: Option<i64>,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        latitude: f64,
+        #[arg(long)]
+        longitude: f64,
+        #[arg(long, default_value_t = 20.0)]
+        radius_m: f64,
+        #[arg(long, default_value = "per_kwh")]
+        billing_type: String,
+        #[arg(long)]
+        cost_per_unit: Option<f64>,
+        #[arg(long)]
+        session_fee: Option<f64>,
+    },
+    /// Delete a geofence by id.
+    #[command(name = "delete-geofence")]
+    DeleteGeofence {
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        id: i64,
+    },
+    /// Replace the total cost of one completed charging session.
+    #[command(name = "set-charge-cost")]
+    SetChargeCost {
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        charge_id: i64,
+        #[arg(long)]
+        cost: f64,
+    },
+    /// Write one completed drive as TeslaMate-compatible GPX to stdout.
+    #[command(name = "export-gpx")]
+    ExportGpx {
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        drive_id: i64,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum Command {
     /// Print licence, source, and independence notices.
     Legal,
@@ -412,6 +481,11 @@ enum Command {
     Service {
         #[command(subcommand)]
         command: ServiceCommand,
+    },
+    /// Inspect or change the one configured car while the service is running.
+    Control {
+        #[command(subcommand)]
+        command: ControlCommand,
     },
     /// Import one TeslaMate car, its history, and its opaque legacy token pair.
     #[cfg(target_os = "macos")]
@@ -507,6 +581,165 @@ async fn main() -> ExitCode {
     }
 }
 
+fn control_target(store: &HubStore) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+    let vehicles = store.published_vehicles()?;
+    if vehicles.len() != 1 {
+        return Err("control commands require exactly one published car".into());
+    }
+    let vehicle_id = vehicles[0].vehicle_id;
+    store.v2_projection_binding(vehicle_id)?;
+    Ok(vehicle_id)
+}
+
+fn run_control(
+    config_path: &Path,
+    command: &ControlCommand,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = HubConfig::load(config_path)?;
+    let store = HubStore::open_existing(&config.data_dir)?;
+    let vehicle_id = control_target(&store)?;
+    match command {
+        ControlCommand::Settings {
+            enabled,
+            streaming,
+            suspend_after_idle_min,
+            suspend_min,
+            require_locked,
+            free_supercharging,
+            lfp_battery,
+        } => {
+            let mut settings = store.load_car_settings(vehicle_id)?;
+            let changed = enabled.is_some()
+                || streaming.is_some()
+                || suspend_after_idle_min.is_some()
+                || suspend_min.is_some()
+                || require_locked.is_some()
+                || free_supercharging.is_some()
+                || lfp_battery.is_some();
+            if let Some(value) = enabled {
+                settings.enabled = *value;
+            }
+            if let Some(value) = streaming {
+                settings.use_streaming_api = *value;
+            }
+            if let Some(value) = suspend_after_idle_min {
+                settings.suspend_after_idle_min = *value;
+            }
+            if let Some(value) = suspend_min {
+                settings.suspend_min = *value;
+                settings.suspend_min_resolved = true;
+            }
+            if let Some(value) = require_locked {
+                settings.req_not_unlocked = *value;
+            }
+            if let Some(value) = free_supercharging {
+                settings.free_supercharging = *value;
+            }
+            if let Some(value) = lfp_battery {
+                settings.lfp_battery = *value;
+            }
+            if changed {
+                store.replace_car_settings(vehicle_id, &settings)?;
+            }
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": if changed { "updated" } else { "ok" },
+                    "vehicleId": vehicle_id,
+                    "settings": settings,
+                })
+            );
+        }
+        ControlCommand::Pause | ControlCommand::Resume => {
+            let mut settings = store.load_car_settings(vehicle_id)?;
+            settings.enabled = matches!(command, ControlCommand::Resume);
+            store.replace_car_settings(vehicle_id, &settings)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": if settings.enabled { "running" } else { "paused" },
+                    "vehicleId": vehicle_id,
+                })
+            );
+        }
+        ControlCommand::Geofences => {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "ok",
+                    "vehicleId": vehicle_id,
+                    "geofences": store.geofences(vehicle_id)?,
+                })
+            );
+        }
+        ControlCommand::SetGeofence {
+            id,
+            name,
+            latitude,
+            longitude,
+            radius_m,
+            billing_type,
+            cost_per_unit,
+            session_fee,
+        } => {
+            let billing_type = billing_type
+                .parse::<GeofenceBillingType>()
+                .map_err(|_| "--billing-type must be per_kwh or per_minute")?;
+            let geofence = store.save_geofence(
+                vehicle_id,
+                *id,
+                teslatlas_hub::teslamate_projection::TeslaMateGeofence {
+                    id: id.unwrap_or_default(),
+                    name: name.clone(),
+                    latitude: Some(*latitude),
+                    longitude: Some(*longitude),
+                    radius_m: Some(*radius_m),
+                    billing_type: Some(billing_type),
+                    cost_per_unit: *cost_per_unit,
+                    session_fee: *session_fee,
+                },
+            )?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "updated",
+                    "vehicleId": vehicle_id,
+                    "geofence": geofence,
+                })
+            );
+        }
+        ControlCommand::DeleteGeofence { id } => {
+            store.delete_geofence(vehicle_id, *id)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "deleted",
+                    "vehicleId": vehicle_id,
+                    "geofenceId": id,
+                })
+            );
+        }
+        ControlCommand::SetChargeCost { charge_id, cost } => {
+            let charge = store.set_charge_cost(vehicle_id, *charge_id, *cost)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "updated",
+                    "vehicleId": vehicle_id,
+                    "charge": charge,
+                })
+            );
+        }
+        ControlCommand::ExportGpx { drive_id } => {
+            let stdout = std::io::stdout();
+            let mut writer = std::io::BufWriter::new(stdout.lock());
+            export_drive_gpx(&store, vehicle_id, *drive_id, &mut writer)?;
+            writer.flush()?;
+        }
+    }
+    Ok(())
+}
+
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
 
@@ -541,6 +774,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    if let Command::Control { command } = &cli.command {
+        return run_control(&config_path, command);
+    }
+
     #[cfg(not(target_os = "macos"))]
     if matches!(&cli.command, Command::Serve) {
         return Err(
@@ -560,9 +797,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Every command that mutates or serves the live data directory takes the
-    // same local instance lock. Config is loaded once here
-    // only to find that directory; normal loading below remains unchanged.
+    // Long-lived service, import, credential, and recovery commands take the
+    // local instance lock. `control` uses short SQLite transactions so it can
+    // intentionally operate while the collector is running.
     #[cfg(target_os = "macos")]
     let admitted_user_hub = if command_requires_user_hub_admission(&cli.command) {
         let config = HubConfig::load(&config_path)?;
@@ -812,6 +1049,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Legal
         | Command::Doctor
         | Command::Status
+        | Command::Control { .. }
         | Command::ObservationWatermark { .. }
         | Command::VerifyObservation { .. } => {
             unreachable!("read-only commands return before opening writable Hub state")
@@ -1884,7 +2122,7 @@ mod tests {
     use sha2::Sha256;
 
     use super::{
-        Cli, Command, MAX_TLS_CERTIFICATE_CHAIN_BYTES, MAX_TLS_PRIVATE_KEY_BYTES,
+        Cli, Command, ControlCommand, MAX_TLS_CERTIFICATE_CHAIN_BYTES, MAX_TLS_PRIVATE_KEY_BYTES,
         PairingCommandError, PairingCommandInput, execute_pairing_at, leaf_certificate_sha256,
         leaf_certificate_sha256_after_open, pairing_uri, persist_and_present_pairing,
         read_tls_identity_file, render_pairing_qr, run,
@@ -2955,6 +3193,35 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn native_control_commands_parse_bounded_values() {
+        let settings = Cli::try_parse_from([
+            "teslatlas-hub",
+            "control",
+            "settings",
+            "--enabled",
+            "false",
+            "--suspend-min",
+            "12",
+        ])
+        .expect("settings CLI");
+        assert!(matches!(
+            settings.command,
+            Command::Control {
+                command: ControlCommand::Settings {
+                    enabled: Some(false),
+                    suspend_min: Some(12),
+                    ..
+                }
+            }
+        ));
+
+        assert!(
+            Cli::try_parse_from(["teslatlas-hub", "control", "export-gpx", "--drive-id", "0",])
+                .is_err()
+        );
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn observe_command_requires_positive_duration() {
@@ -3034,7 +3301,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn every_live_mutation_and_service_command_requires_the_instance_lock() {
+    fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         assert!(command_requires_user_hub_admission(&Command::Init));
         assert!(command_requires_user_hub_admission(&Command::Setup {
             access_token_file: PathBuf::from("access"),
@@ -3068,6 +3335,9 @@ mod tests {
         assert!(!command_requires_user_hub_admission(&Command::Preflight));
         assert!(!command_requires_user_hub_admission(&Command::Service {
             command: ServiceCommand::Status,
+        }));
+        assert!(!command_requires_user_hub_admission(&Command::Control {
+            command: ControlCommand::Pause,
         }));
     }
 

@@ -14,6 +14,7 @@ mod durability_fault;
 #[cfg(test)]
 pub mod fake_tesla;
 pub mod geocoder;
+pub mod gpx;
 pub mod http_range;
 pub mod hub_pack;
 #[cfg(unix)]

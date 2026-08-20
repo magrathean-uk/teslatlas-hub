@@ -1330,9 +1330,10 @@ async fn run_supervised_with_access<F>(
 where
     F: Future<Output = ()>,
 {
-    let selected_vehicle = store
+    let selected_vehicle_eid = store
         .selected_tesla_eid()?
-        .ok_or(CollectorError::SelectedVehicleMissing)?;
+        .ok_or(CollectorError::SelectedVehicleMissing)?
+        .0;
     let collector_lease = store.acquire_supervised_collector_lease(current_epoch_millis()?)?;
     let (collector_state, collector_state_rx) = watch::channel(SupervisedCollectorState::Active);
     let (heartbeat_shutdown, heartbeat_stop) = oneshot::channel();
@@ -1419,6 +1420,15 @@ where
                     // authoritatively fences every later Owner/stream action.
                     sleep(LEGACY_REFRESH_RETRY).await;
                     continue;
+                }
+                let selected_vehicle = store
+                    .selected_tesla_eid()?
+                    .filter(|(eid, _)| *eid == selected_vehicle_eid)
+                    .ok_or(CollectorError::SelectedVehicleMissing)?;
+                for vehicle_id in
+                    scheduler.apply_control_settings(&selected_vehicle.1, Instant::now())
+                {
+                    disconnect_vehicle_stream(&mut streams, vehicle_id).await;
                 }
                 let stream_drain = drain_stream_events_with_cache(
                     store,
@@ -1756,7 +1766,7 @@ where
                         tokio::task::yield_now().await;
                         continue;
                     }
-                    sleep(delay).await;
+                    sleep(delay.min(CONTROL_SETTINGS_REFRESH)).await;
                 }
             }
             #[allow(unreachable_code)]
@@ -2765,6 +2775,7 @@ enum PreOnlineCheck {
 }
 
 const PRE_ONLINE_TIMEOUT: Duration = Duration::from_secs(30);
+const CONTROL_SETTINGS_REFRESH: Duration = Duration::from_secs(30);
 
 struct VehicleScheduler {
     cadence: CollectorCadence,
@@ -2787,6 +2798,36 @@ impl VehicleScheduler {
 
     fn discovery_due(&self, now: Instant) -> bool {
         now >= self.next_discovery
+    }
+
+    fn apply_control_settings(
+        &mut self,
+        settings: &crate::hub_pack::ProjectionCarSettings,
+        now: Instant,
+    ) -> Vec<VehicleId> {
+        let mut disconnect = Vec::new();
+        let mut rediscover = false;
+        for scheduled in self.vehicles.values_mut() {
+            if scheduled.settings == *settings {
+                continue;
+            }
+            let was_enabled = scheduled.settings.enabled;
+            let was_streaming = scheduled.settings.use_streaming_api;
+            scheduled.settings = settings.clone();
+            scheduled.vehicle.settings = settings.clone();
+            if !settings.enabled || !settings.use_streaming_api {
+                scheduled.stream_healthy = false;
+                scheduled.pre_online = PreOnlineCheck::Idle;
+                disconnect.push(scheduled.vehicle.id);
+            } else if scheduled.vehicle.is_online() {
+                scheduled.next_poll = now;
+                rediscover |= !was_enabled || !was_streaming;
+            }
+        }
+        if rediscover {
+            self.next_discovery = now;
+        }
+        disconnect
     }
 
     fn accept_discovery(&mut self, vehicles: Vec<Vehicle>, now: Instant) -> Vec<Vehicle> {
@@ -8131,6 +8172,40 @@ mod tests {
             ),
             true
         ));
+    }
+
+    #[test]
+    fn live_control_settings_pause_streams_and_resume_discovery() {
+        let now = Instant::now();
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let vehicle_id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+        let paused = crate::hub_pack::ProjectionCarSettings {
+            enabled: false,
+            ..crate::hub_pack::ProjectionCarSettings::default()
+        };
+
+        assert_eq!(
+            scheduler.apply_control_settings(&paused, now + Duration::from_secs(1)),
+            vec![vehicle_id]
+        );
+        assert!(
+            scheduler
+                .due_vehicles(now + Duration::from_secs(1))
+                .is_empty()
+        );
+        assert!(!scheduler.should_start_stream(vehicle_id));
+
+        let resumed = crate::hub_pack::ProjectionCarSettings::default();
+        let resumed_at = now + Duration::from_secs(2);
+        assert!(
+            scheduler
+                .apply_control_settings(&resumed, resumed_at)
+                .is_empty()
+        );
+        assert!(scheduler.discovery_due(resumed_at));
+        assert!(scheduler.vehicles[&vehicle_id].settings.enabled);
     }
 
     #[test]

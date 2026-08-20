@@ -540,7 +540,7 @@ impl TeslaMateGeofence {
             && radius_m.is_finite()
             && (-90.0..=90.0).contains(&latitude)
             && (-180.0..=180.0).contains(&longitude)
-            && (0.0..=5_000.0).contains(&radius_m))
+            && (f64::EPSILON..=5_000.0).contains(&radius_m))
         .then_some((latitude, longitude, radius_m))
     }
 }

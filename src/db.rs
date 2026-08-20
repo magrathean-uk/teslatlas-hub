@@ -1252,6 +1252,12 @@ impl HubStore {
         Self::open_read_only_with_mode(data_dir.as_ref(), false)
     }
 
+    /// Open an already-migrated live catalogue for a short local control
+    /// transaction without taking the long-lived collector process lock.
+    pub fn open_existing(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {
+        Self::open_read_only_with_mode(data_dir.as_ref(), false)
+    }
+
     /// Open a byte-stable immutable snapshot for operator diagnosis. This
     /// refuses a pending WAL and must be followed by
     /// [`Self::verify_immutable_snapshot_unchanged`] before reporting success.
@@ -1579,6 +1585,95 @@ impl HubStore {
             "upsert",
             &payload,
         )?;
+        mark_export_dirty_in_transaction(&transaction, vehicle_id)?;
+        transaction.commit().map_err(StoreError::Query)?;
+        Ok(())
+    }
+
+    /// Replace operator-controlled settings exactly. Collector discovery uses
+    /// `upsert_car_settings`, which preserves an already-resolved suspend
+    /// value; this path is the explicit owner override.
+    pub fn replace_car_settings(
+        &self,
+        vehicle_id: Uuid,
+        settings: &ProjectionCarSettings,
+    ) -> Result<(), StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if settings.suspend_after_idle_min <= 0 || settings.suspend_min <= 0 {
+            return Err(StoreError::InvalidCarSettings);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let before = load_car_settings_row(&transaction, vehicle_id)?
+            .ok_or(StoreError::UnknownVehicle(vehicle_id))?;
+        transaction
+            .execute(
+                "UPDATE car_settings SET
+                    enabled = ?2,
+                    use_streaming_api = ?3,
+                    suspend_after_idle_min = ?4,
+                    suspend_min = ?5,
+                    req_not_unlocked = ?6,
+                    free_supercharging = ?7,
+                    lfp_battery = ?8,
+                    suspend_min_resolved = ?9
+                 WHERE vehicle_id = ?1",
+                params![
+                    vehicle_id.to_string(),
+                    settings.enabled,
+                    settings.use_streaming_api,
+                    settings.suspend_after_idle_min,
+                    settings.suspend_min,
+                    settings.req_not_unlocked,
+                    settings.free_supercharging,
+                    settings.lfp_battery,
+                    settings.suspend_min_resolved,
+                ],
+            )
+            .map_err(StoreError::Query)?;
+        let (car_id, effective) = load_car_settings_row(&transaction, vehicle_id)?
+            .ok_or(StoreError::UnknownVehicle(vehicle_id))?;
+        if before == (car_id, effective.clone()) {
+            transaction.commit().map_err(StoreError::Query)?;
+            return Ok(());
+        }
+        let current_car: Option<String> = transaction
+            .query_row(
+                "SELECT car_json FROM materialised_cars WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        if let Some(current_car) = current_car {
+            let mut car: ProjectionCar =
+                serde_json::from_str(&current_car).map_err(StoreError::DeserializeLifecycleRow)?;
+            car.settings = effective.clone();
+            let car_json =
+                serde_json::to_string(&car).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "UPDATE materialised_cars SET car_json = ?1 WHERE vehicle_id = ?2",
+                    params![car_json, vehicle_id.to_string()],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+        let payload =
+            serde_json::to_string(&effective).map_err(StoreError::SerializeLifecycleRow)?;
+        record_sync_mutation_in_transaction(
+            &transaction,
+            vehicle_id,
+            "car_setting",
+            car_id,
+            car_id,
+            "upsert",
+            &payload,
+        )?;
+        mark_export_dirty_in_transaction(&transaction, vehicle_id)?;
         transaction.commit().map_err(StoreError::Query)?;
         Ok(())
     }
@@ -9749,6 +9844,141 @@ impl HubStore {
             .map_err(StoreError::DeserializeLifecycleRow)
     }
 
+    pub fn materialised_drive_for_vehicle(
+        &self,
+        vehicle_id: Uuid,
+        drive_id: i64,
+    ) -> Result<Option<crate::hub_pack::ProjectionDrive>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if drive_id <= 0 {
+            return Err(StoreError::InvalidDriveId);
+        }
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                "SELECT drive_json FROM materialised_drives
+                 WHERE vehicle_id = ?1 AND drive_id = ?2",
+                params![vehicle_id.to_string(), drive_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(StoreError::DeserializeLifecycleRow)
+    }
+
+    /// One bounded page of a drive's positions in TeslaMate GPX order.
+    pub fn drive_positions_page(
+        &self,
+        vehicle_id: Uuid,
+        drive_id: i64,
+        after: Option<(i64, i64)>,
+        limit: u32,
+    ) -> Result<Vec<crate::hub_pack::ProjectionPosition>, StoreError> {
+        const MAXIMUM_PAGE: u32 = 10_000;
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if drive_id <= 0 {
+            return Err(StoreError::InvalidDriveId);
+        }
+        if limit == 0 || limit > MAXIMUM_PAGE {
+            return Err(StoreError::InvalidDrivePositionPageLimit(limit));
+        }
+        let (after_date_ms, after_id) = after.unwrap_or((-1, -1));
+        let connection = self.open_read_only_connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT position_json FROM materialised_positions
+                 WHERE vehicle_id = ?1 AND drive_id = ?2
+                   AND (CAST(json_extract(position_json, '$.date_ms') AS INTEGER) > ?3
+                        OR (CAST(json_extract(position_json, '$.date_ms') AS INTEGER) = ?3
+                            AND position_id > ?4))
+                 ORDER BY CAST(json_extract(position_json, '$.date_ms') AS INTEGER), position_id
+                 LIMIT ?5",
+            )
+            .map_err(StoreError::Query)?;
+        statement
+            .query_map(
+                params![
+                    vehicle_id.to_string(),
+                    drive_id,
+                    after_date_ms,
+                    after_id,
+                    i64::from(limit)
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(StoreError::Query)?
+            .map(|value| {
+                value.map_err(StoreError::Query).and_then(|value| {
+                    serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)
+                })
+            })
+            .collect()
+    }
+
+    pub fn set_charge_cost(
+        &self,
+        vehicle_id: Uuid,
+        charge_id: i64,
+        cost: f64,
+    ) -> Result<crate::hub_pack::ProjectionCharge, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if charge_id <= 0 {
+            return Err(StoreError::InvalidChargeId);
+        }
+        if !cost.is_finite() || !(0.0..=1_000_000_000.0).contains(&cost) {
+            return Err(StoreError::InvalidChargeCost);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let value = transaction
+            .query_row(
+                "SELECT charge_json FROM materialised_charges
+                 WHERE vehicle_id = ?1 AND charge_id = ?2",
+                params![vehicle_id.to_string(), charge_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?
+            .ok_or(StoreError::UnknownCharge(charge_id))?;
+        let mut charge: crate::hub_pack::ProjectionCharge =
+            serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
+        if charge.cost == Some(cost) {
+            transaction.commit().map_err(StoreError::Query)?;
+            return Ok(charge);
+        }
+        charge.cost = Some(cost);
+        let payload = serde_json::to_string(&charge).map_err(StoreError::SerializeLifecycleRow)?;
+        transaction
+            .execute(
+                "UPDATE materialised_charges SET charge_json = ?3
+                 WHERE vehicle_id = ?1 AND charge_id = ?2",
+                params![vehicle_id.to_string(), charge_id, payload],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        record_sync_mutation_in_transaction(
+            &transaction,
+            vehicle_id,
+            "charge",
+            charge_id,
+            charge.car_id,
+            "upsert",
+            &payload,
+        )?;
+        mark_export_dirty_in_transaction(&transaction, vehicle_id)?;
+        transaction.commit().map_err(StoreError::Query)?;
+        Ok(charge)
+    }
+
     pub fn geofence_name_at(
         &self,
         vehicle_id: Uuid,
@@ -10359,6 +10589,156 @@ impl HubStore {
         Ok(Some(session))
     }
 
+    pub fn geofences(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Vec<crate::teslamate_projection::TeslaMateGeofence>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open_read_only_connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT source_geofence_id, name, latitude, longitude, radius_m,
+                        billing_type, cost_per_unit, session_fee
+                 FROM geofences WHERE vehicle_id = ?1 ORDER BY source_geofence_id",
+            )
+            .map_err(StoreError::Query)?;
+        statement
+            .query_map(params![vehicle_id.to_string()], |row| {
+                let billing_type = row
+                    .get::<_, Option<String>>(5)?
+                    .and_then(|value| value.parse().ok());
+                Ok(crate::teslamate_projection::TeslaMateGeofence {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    latitude: Some(row.get(2)?),
+                    longitude: Some(row.get(3)?),
+                    radius_m: Some(row.get(4)?),
+                    billing_type,
+                    cost_per_unit: row.get(6)?,
+                    session_fee: row.get(7)?,
+                })
+            })
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)
+    }
+
+    pub fn save_geofence(
+        &self,
+        vehicle_id: Uuid,
+        source_geofence_id: Option<i64>,
+        mut geofence: crate::teslamate_projection::TeslaMateGeofence,
+    ) -> Result<crate::teslamate_projection::TeslaMateGeofence, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let name = geofence.name.trim().to_owned();
+        let Some((latitude, longitude, radius_m)) = geofence.valid_geometry() else {
+            return Err(StoreError::InvalidGeofence);
+        };
+        if radius_m <= 0.0
+            || name.is_empty()
+            || name.len() > 256
+            || name.chars().any(char::is_control)
+            || geofence.billing_type.is_none()
+            || geofence
+                .cost_per_unit
+                .is_some_and(|value| !value.is_finite() || value < 0.0)
+            || geofence
+                .session_fee
+                .is_some_and(|value| !value.is_finite() || value < 0.0)
+        {
+            return Err(StoreError::InvalidGeofence);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let vehicle_exists = transaction
+            .query_row(
+                "SELECT 1 FROM vehicles WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(StoreError::Query)?
+            .is_some();
+        if !vehicle_exists {
+            return Err(StoreError::UnknownVehicle(vehicle_id));
+        }
+        let source_geofence_id = match source_geofence_id {
+            Some(id) if id > 0 => id,
+            Some(_) => return Err(StoreError::InvalidGeofence),
+            None => transaction
+                .query_row(
+                    "SELECT COALESCE(MAX(source_geofence_id), 0) + 1
+                     FROM geofences WHERE vehicle_id = ?1",
+                    params![vehicle_id.to_string()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(StoreError::Query)?,
+        };
+        transaction
+            .execute(
+                "INSERT INTO geofences(
+                    vehicle_id, source_geofence_id, name, latitude, longitude, radius_m,
+                    billing_type, cost_per_unit, session_fee
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(vehicle_id, source_geofence_id) DO UPDATE SET
+                    name = excluded.name,
+                    latitude = excluded.latitude,
+                    longitude = excluded.longitude,
+                    radius_m = excluded.radius_m,
+                    billing_type = excluded.billing_type,
+                    cost_per_unit = excluded.cost_per_unit,
+                    session_fee = excluded.session_fee",
+                params![
+                    vehicle_id.to_string(),
+                    source_geofence_id,
+                    &name,
+                    latitude,
+                    longitude,
+                    radius_m,
+                    geofence
+                        .billing_type
+                        .map(crate::hub_pack::GeofenceBillingType::as_str),
+                    geofence.cost_per_unit,
+                    geofence.session_fee,
+                ],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        geofence.id = source_geofence_id;
+        geofence.name = name;
+        Ok(geofence)
+    }
+
+    pub fn delete_geofence(
+        &self,
+        vehicle_id: Uuid,
+        source_geofence_id: i64,
+    ) -> Result<(), StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if source_geofence_id <= 0 {
+            return Err(StoreError::InvalidGeofence);
+        }
+        let connection = self.open()?;
+        let deleted = connection
+            .execute(
+                "DELETE FROM geofences WHERE vehicle_id = ?1 AND source_geofence_id = ?2",
+                params![vehicle_id.to_string(), source_geofence_id],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        if deleted == 0 {
+            return Err(StoreError::UnknownGeofence(source_geofence_id));
+        }
+        Ok(())
+    }
+
     /// Preserve imported geofence labels and geometry as a durable, append-only
     /// catalog. Invalid geometry is skipped so unrelated history can proceed.
     pub fn upsert_geofences(
@@ -10826,6 +11206,9 @@ impl HubStore {
                 "upsert",
                 &charge_json,
             )?;
+        }
+        if !delta.charges.is_empty() {
+            recompute_car_efficiency(transaction, commit.vehicle_id, commit.car_id)?;
         }
         for sample in &delta.charge_samples {
             let sample_json =
@@ -15218,6 +15601,117 @@ fn upsert_terrain_provenance(
     Ok(())
 }
 
+fn recompute_car_efficiency(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    car_id: i64,
+) -> Result<(), StoreError> {
+    let mut statement = transaction
+        .prepare(
+            "SELECT charge_json FROM materialised_charges
+             WHERE vehicle_id = ?1 AND car_id = ?2 ORDER BY charge_id",
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    let charges = statement
+        .query_map(params![vehicle_id.to_string(), car_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(StoreError::LifecycleWrite)?;
+    let specifications = [(5_u32, 8_usize), (4, 5), (3, 3), (2, 2)];
+    let mut groups = [
+        HashMap::<i64, usize>::new(),
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+    ];
+    for value in charges {
+        let value = value.map_err(StoreError::LifecycleWrite)?;
+        let charge: crate::hub_pack::ProjectionCharge =
+            serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
+        let (Some(duration_min), Some(end_battery_level), Some(start_range), Some(end_range)) = (
+            charge.duration_min,
+            charge.end_battery_level,
+            charge.start_rated_range_km,
+            charge.end_rated_range_km,
+        ) else {
+            continue;
+        };
+        let Some(energy_added) = charge.charge_energy_added else {
+            continue;
+        };
+        let range_added = end_range - start_range;
+        if duration_min <= 10
+            || end_battery_level > 95
+            || energy_added <= 0.0
+            || !energy_added.is_finite()
+            || !range_added.is_finite()
+            || range_added == 0.0
+        {
+            continue;
+        }
+        let factor = energy_added / range_added;
+        if !factor.is_finite() || factor <= 0.0 {
+            continue;
+        }
+        for ((precision, _), counts) in specifications.iter().zip(&mut groups) {
+            let scale = 10_i64.pow(*precision) as f64;
+            let key = (factor * scale).round() as i64;
+            *counts.entry(key).or_default() += 1;
+        }
+    }
+    let mut selected = None;
+    for ((precision, threshold), groups) in specifications.into_iter().zip(groups) {
+        let scale = 10_i64.pow(precision) as f64;
+        selected = groups
+            .into_iter()
+            .filter(|(_, count)| *count >= threshold)
+            .max_by(|left, right| left.1.cmp(&right.1).then_with(|| right.0.cmp(&left.0)))
+            .map(|(factor, _)| factor as f64 / scale);
+        if selected.is_some() {
+            break;
+        }
+    }
+    let Some(efficiency) = selected else {
+        return Ok(());
+    };
+    let current: Option<String> = transaction
+        .query_row(
+            "SELECT car_json FROM materialised_cars
+             WHERE vehicle_id = ?1 AND car_id = ?2",
+            params![vehicle_id.to_string(), car_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StoreError::LifecycleWrite)?;
+    let Some(current) = current else {
+        return Ok(());
+    };
+    let mut car: ProjectionCar =
+        serde_json::from_str(&current).map_err(StoreError::DeserializeLifecycleRow)?;
+    if car.efficiency_wh_per_km == Some(efficiency) {
+        return Ok(());
+    }
+    car.efficiency_wh_per_km = Some(efficiency);
+    let payload = serde_json::to_string(&car).map_err(StoreError::SerializeLifecycleRow)?;
+    transaction
+        .execute(
+            "UPDATE materialised_cars SET car_json = ?3
+             WHERE vehicle_id = ?1 AND car_id = ?2",
+            params![vehicle_id.to_string(), car_id, payload],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+    record_sync_mutation_in_transaction(
+        transaction,
+        vehicle_id,
+        "car",
+        car_id,
+        car_id,
+        "upsert",
+        &payload,
+    )?;
+    Ok(())
+}
+
 fn recompute_terrain_drive(
     transaction: &Transaction<'_>,
     vehicle_id: &str,
@@ -15828,6 +16322,22 @@ pub enum StoreError {
     UnknownSource(Uuid),
     #[error("unknown vehicle {0}")]
     UnknownVehicle(Uuid),
+    #[error("car settings durations must be positive")]
+    InvalidCarSettings,
+    #[error("drive id must be positive")]
+    InvalidDriveId,
+    #[error("drive position page limit {0} is invalid")]
+    InvalidDrivePositionPageLimit(u32),
+    #[error("charge id must be positive")]
+    InvalidChargeId,
+    #[error("charge cost must be a finite nonnegative value")]
+    InvalidChargeCost,
+    #[error("unknown charge {0}")]
+    UnknownCharge(i64),
+    #[error("geofence values are invalid")]
+    InvalidGeofence,
+    #[error("unknown geofence {0}")]
+    UnknownGeofence(i64),
     #[error("vehicle {vehicle_id} does not belong to source {source_id}")]
     VehicleSourceMismatch { vehicle_id: Uuid, source_id: Uuid },
     #[error("stored vehicle identity {actual} differs from expected identity {expected}")]
@@ -23105,6 +23615,312 @@ mod tests {
         assert_eq!(delta.car_settings.len(), 0);
         assert_eq!(delta.cars.len() + delta.car_settings.len(), 1);
         store.release_sync_mutations(&claim).expect("release");
+    }
+
+    #[test]
+    fn native_controls_update_settings_geofences_charge_cost_and_gpx_pages() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let (_, vehicle) = test_registered_vehicle(&store);
+        let mut settings = ProjectionCarSettings::default();
+        settings.enabled = false;
+        store
+            .upsert_car_settings(vehicle.vehicle_id, 1, &settings)
+            .expect("pause collection");
+        assert!(!store.load_car_settings(vehicle.vehicle_id).unwrap().enabled);
+        settings.suspend_min = 12;
+        store
+            .replace_car_settings(vehicle.vehicle_id, &settings)
+            .expect("owner suspend override");
+        assert_eq!(
+            store
+                .load_car_settings(vehicle.vehicle_id)
+                .unwrap()
+                .suspend_min,
+            12
+        );
+        let pending: i64 = store
+            .open()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM export_outbox WHERE vehicle_id = ?1",
+                params![vehicle.vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pending, 1);
+
+        let geofence = store
+            .save_geofence(
+                vehicle.vehicle_id,
+                None,
+                crate::teslamate_projection::TeslaMateGeofence {
+                    id: 0,
+                    name: " Home ".into(),
+                    latitude: Some(47.5),
+                    longitude: Some(19.0),
+                    radius_m: Some(20.0),
+                    billing_type: Some(crate::hub_pack::GeofenceBillingType::PerKwh),
+                    cost_per_unit: Some(0.25),
+                    session_fee: Some(1.0),
+                },
+            )
+            .expect("create geofence");
+        assert_eq!((geofence.id, geofence.name.as_str()), (1, "Home"));
+        let mut replacement = geofence.clone();
+        replacement.cost_per_unit = None;
+        store
+            .save_geofence(vehicle.vehicle_id, Some(geofence.id), replacement)
+            .expect("replace geofence");
+        assert_eq!(store.geofences(vehicle.vehicle_id).unwrap().len(), 1);
+        assert_eq!(
+            store.geofences(vehicle.vehicle_id).unwrap()[0].cost_per_unit,
+            None
+        );
+        store
+            .delete_geofence(vehicle.vehicle_id, geofence.id)
+            .expect("delete geofence");
+        assert!(store.geofences(vehicle.vehicle_id).unwrap().is_empty());
+
+        let drive = ProjectionDrive {
+            id: 7,
+            car_id: 1,
+            optimized_at_ms: None,
+            start_date_ms: 1_700_000_000_000,
+            end_date_ms: 1_700_000_001_000,
+            distance_km: Some(1.0),
+            duration_min: Some(1),
+            efficiency: None,
+            outside_temp_avg: None,
+            inside_temp_avg: None,
+            speed_max: None,
+            power_max: None,
+            power_min: None,
+            start_ideal_range_km: None,
+            end_ideal_range_km: None,
+            start_address: None,
+            end_address: None,
+            start_geofence: None,
+            end_geofence: None,
+            start_latitude: Some(47.5),
+            start_longitude: Some(19.0),
+            end_latitude: Some(47.6),
+            end_longitude: Some(19.1),
+            start_soc: None,
+            end_soc: None,
+            start_rated_range_km: None,
+            end_rated_range_km: None,
+            ascent: None,
+            descent: None,
+        };
+        let position = |id, date_ms| crate::hub_pack::ProjectionPosition {
+            id,
+            drive_id: Some(7),
+            car_id: 1,
+            date_ms,
+            latitude: 47.5,
+            longitude: 19.0,
+            speed: None,
+            power: None,
+            battery_level: None,
+            usable_battery_level: None,
+            elevation: None,
+            odometer: None,
+            ideal_battery_range_km: None,
+            est_battery_range_km: None,
+            rated_battery_range_km: None,
+            fan_status: None,
+            driver_temp_setting: None,
+            passenger_temp_setting: None,
+            is_climate_on: None,
+            is_rear_defroster_on: None,
+            is_front_defroster_on: None,
+            inside_temp: None,
+            outside_temp: None,
+            battery_heater: None,
+            battery_heater_on: None,
+            battery_heater_no_power: None,
+            tpms_pressure_fl: None,
+            tpms_pressure_fr: None,
+            tpms_pressure_rl: None,
+            tpms_pressure_rr: None,
+        };
+        let charge = crate::hub_pack::ProjectionCharge {
+            id: 9,
+            car_id: 1,
+            start_date_ms: 1_700_000_000_000,
+            end_date_ms: Some(1_700_000_001_000),
+            charge_energy_added: Some(10.0),
+            charge_energy_used_kwh: Some(11.0),
+            start_ideal_range_km: None,
+            end_ideal_range_km: None,
+            cost: None,
+            fast_charger_type: None,
+            billing_type: None,
+            cost_per_unit: None,
+            session_fee: None,
+            start_latitude: None,
+            start_longitude: None,
+            start_battery_level: None,
+            end_battery_level: None,
+            duration_min: Some(10),
+            address: None,
+            location_name: None,
+            geofence: None,
+            is_dc: None,
+            charge_rate_km_per_hour: None,
+            max_charger_power_kw: None,
+            outside_temp_avg: None,
+            start_rated_range_km: None,
+            end_rated_range_km: None,
+        };
+        let connection = store.open().unwrap();
+        connection
+            .execute(
+                "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+                 VALUES (?1, 7, 1, ?2)",
+                params![
+                    vehicle.vehicle_id.to_string(),
+                    serde_json::to_string(&drive).unwrap()
+                ],
+            )
+            .unwrap();
+        for row in [
+            position(2, 1_700_000_000_200),
+            position(1, 1_700_000_000_100),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO materialised_positions(
+                        vehicle_id, position_id, drive_id, car_id, position_json
+                     ) VALUES (?1, ?2, 7, 1, ?3)",
+                    params![
+                        vehicle.vehicle_id.to_string(),
+                        row.id,
+                        serde_json::to_string(&row).unwrap()
+                    ],
+                )
+                .unwrap();
+        }
+        connection
+            .execute(
+                "INSERT INTO materialised_charges(vehicle_id, charge_id, car_id, charge_json)
+                 VALUES (?1, 9, 1, ?2)",
+                params![
+                    vehicle.vehicle_id.to_string(),
+                    serde_json::to_string(&charge).unwrap()
+                ],
+            )
+            .unwrap();
+        drop(connection);
+
+        let page = store
+            .drive_positions_page(vehicle.vehicle_id, 7, None, 1)
+            .expect("first GPX page");
+        assert_eq!(page[0].id, 1);
+        let next = store
+            .drive_positions_page(
+                vehicle.vehicle_id,
+                7,
+                Some((page[0].date_ms, page[0].id)),
+                1,
+            )
+            .expect("second GPX page");
+        assert_eq!(next[0].id, 2);
+        let mut gpx = Vec::new();
+        crate::gpx::export_drive_gpx(&store, vehicle.vehicle_id, 7, &mut gpx).expect("drive GPX");
+        let gpx = String::from_utf8(gpx).expect("GPX UTF-8");
+        assert!(gpx.contains("<name>2023-11-14T22:13:20Z</name>"));
+        assert!(gpx.find("2023-11-14T22:13:20.1Z") < gpx.find("2023-11-14T22:13:20.2Z"));
+        assert_eq!(
+            store
+                .set_charge_cost(vehicle.vehicle_id, 9, 4.25)
+                .expect("set charge cost")
+                .cost,
+            Some(4.25)
+        );
+    }
+
+    #[test]
+    fn rated_range_charge_consensus_updates_live_car_efficiency() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let (_, vehicle) = test_registered_vehicle(&store);
+        let car = ProjectionCar {
+            id: 1,
+            name: "Efficiency car".into(),
+            model: "3".into(),
+            vin: None,
+            source_eid: None,
+            source_vid: None,
+            trim_badging: None,
+            marketing_name: None,
+            exterior_color: None,
+            wheel_type: None,
+            spoiler_type: None,
+            firmware_version: None,
+            efficiency_wh_per_km: None,
+            settings: ProjectionCarSettings::default(),
+        };
+        store
+            .persist_materialised_car_if_absent(vehicle.vehicle_id, &car)
+            .expect("materialised car");
+        let charge = |id| crate::hub_pack::ProjectionCharge {
+            id,
+            car_id: 1,
+            start_date_ms: 1_700_000_000_000 + id * 100_000,
+            end_date_ms: Some(1_700_000_050_000 + id * 100_000),
+            charge_energy_added: Some(10.0),
+            charge_energy_used_kwh: Some(11.0),
+            start_ideal_range_km: Some(100.0),
+            end_ideal_range_km: Some(140.0),
+            cost: None,
+            fast_charger_type: None,
+            billing_type: None,
+            cost_per_unit: None,
+            session_fee: None,
+            start_latitude: None,
+            start_longitude: None,
+            start_battery_level: Some(40),
+            end_battery_level: Some(80),
+            duration_min: Some(30),
+            address: None,
+            location_name: None,
+            geofence: None,
+            is_dc: None,
+            charge_rate_km_per_hour: None,
+            max_charger_power_kw: None,
+            outside_temp_avg: None,
+            start_rated_range_km: Some(100.0),
+            end_rated_range_km: Some(150.0),
+        };
+        let mut connection = store.open().expect("open");
+        for id in 1..=8 {
+            let row = charge(id);
+            connection
+                .execute(
+                    "INSERT INTO materialised_charges(vehicle_id, charge_id, car_id, charge_json)
+                     VALUES (?1, ?2, 1, ?3)",
+                    params![
+                        vehicle.vehicle_id.to_string(),
+                        id,
+                        serde_json::to_string(&row).unwrap()
+                    ],
+                )
+                .expect("charge");
+        }
+        let transaction = connection.transaction().expect("transaction");
+        recompute_car_efficiency(&transaction, vehicle.vehicle_id, 1).expect("efficiency");
+        transaction.commit().expect("commit");
+
+        assert_eq!(
+            store
+                .materialised_car_for_vehicle(vehicle.vehicle_id)
+                .unwrap()
+                .unwrap()
+                .efficiency_wh_per_km,
+            Some(0.2)
+        );
     }
 }
 #[cfg(test)]
