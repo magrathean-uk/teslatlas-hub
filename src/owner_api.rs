@@ -135,7 +135,7 @@ impl fmt::Debug for OwnerApiBase {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_tuple("OwnerApiBase")
-            .field(&self.url.as_str())
+            .field(&"[redacted]")
             .finish()
     }
 }
@@ -171,11 +171,7 @@ fn is_loopback_owner_api_host(host: Option<&str>) -> bool {
 
 impl OwnerApi {
     pub(crate) fn new(options: OwnerApiOptions) -> Result<Self, OwnerApiConfigError> {
-        #[cfg(test)]
-        let allow_insecure_test_base = options.base_url.is_loopback_http();
-        #[cfg(not(test))]
-        let allow_insecure_test_base = false;
-        Self::build(options, allow_insecure_test_base)
+        Self::build(options, false)
     }
 
     pub(crate) fn legacy_auth_http_client(&self) -> Client {
@@ -186,6 +182,11 @@ impl OwnerApi {
         options: OwnerApiOptions,
         allow_insecure_test_base: bool,
     ) -> Result<Self, OwnerApiConfigError> {
+        if options.base_url.url.scheme() != "https"
+            && !(allow_insecure_test_base && options.base_url.is_loopback_http())
+        {
+            return Err(OwnerApiConfigError::HttpsRequired);
+        }
         if options.request_timeout.is_zero() {
             return Err(OwnerApiConfigError::ZeroTimeout);
         }
@@ -1025,10 +1026,16 @@ mod tests {
 
     #[test]
     fn production_base_requires_explicit_https_and_rejects_secret_bearing_forms() {
-        assert!(matches!(
-            OwnerApiBase::parse("http://owner.example"),
-            Err(OwnerApiConfigError::HttpsRequired)
-        ));
+        for base in [
+            "http://owner.example",
+            "http://127.0.0.1:9/",
+            "http://[::1]:9/",
+        ] {
+            assert!(matches!(
+                OwnerApiBase::parse(base),
+                Err(OwnerApiConfigError::HttpsRequired)
+            ));
+        }
         assert!(matches!(
             OwnerApiBase::parse("https://token@owner.example"),
             Err(OwnerApiConfigError::EmbeddedBaseCredential)
@@ -1051,6 +1058,10 @@ mod tests {
             .expect("loopback http");
         assert!(base.is_loopback_http());
         assert_eq!(base.as_str(), "http://127.0.0.1:9/");
+        assert!(matches!(
+            OwnerApi::new(OwnerApiOptions::new(base, Duration::from_secs(1))),
+            Err(OwnerApiConfigError::HttpsRequired)
+        ));
         assert!(matches!(
             OwnerApiBase::parse_loopback_http_for_test("http://localhost:9/owner/"),
             Err(OwnerApiConfigError::HttpsRequired)
@@ -1076,8 +1087,18 @@ mod tests {
             .expect_err("credential-bearing base rejected");
         assert!(!format!("{error}").contains("access-secret"));
         assert!(!format!("{error:?}").contains("access-secret"));
-        let base = OwnerApiBase::parse("https://owner.example/").unwrap();
-        assert!(!format!("{base:?}").contains("refresh-secret"));
+        let base =
+            OwnerApiBase::parse("https://owner.example/access-secret/refresh-secret/").unwrap();
+        let options = OwnerApiOptions::new(base.clone(), Duration::from_secs(1));
+        let client = OwnerApi::new(options.clone()).expect("HTTPS client");
+        for rendered in [
+            format!("{base:?}"),
+            format!("{options:?}"),
+            format!("{client:?}"),
+        ] {
+            assert!(!rendered.contains("access-secret"));
+            assert!(!rendered.contains("refresh-secret"));
+        }
     }
 
     struct FakeServer {

@@ -34,8 +34,9 @@ impl ReadOnlySource {
         if !matches!(url.scheme(), "postgres" | "postgresql") {
             return Err(TeslaMateSourceError::Scheme);
         }
-        if url.host_str().is_none() {
-            return Err(TeslaMateSourceError::Host);
+        let host = url.host_str().ok_or(TeslaMateSourceError::Host)?;
+        if host.contains(',') {
+            return Err(TeslaMateSourceError::MultipleHosts);
         }
         if url.password().is_some() {
             return Err(TeslaMateSourceError::EmbeddedSecret);
@@ -118,6 +119,8 @@ pub enum TeslaMateSourceError {
     Scheme,
     #[error("TeslaMate migration source requires a host")]
     Host,
+    #[error("TeslaMate migration source requires exactly one PostgreSQL host")]
+    MultipleHosts,
     #[error("TeslaMate migration source requires a database name")]
     Database,
     #[error("embedded source credentials are not permitted")]
@@ -166,9 +169,10 @@ mod tests {
         ] {
             assert!(ReadOnlySource::parse(source).is_ok(), "{source}");
         }
-        assert!(
-            ReadOnlySource::parse("postgresql://reader@127.0.0.1,127.0.0.2/teslamate").is_err()
-        );
+        assert!(matches!(
+            ReadOnlySource::parse("postgresql://reader@127.0.0.1,127.0.0.2/teslamate"),
+            Err(TeslaMateSourceError::MultipleHosts)
+        ));
     }
 
     #[test]
@@ -189,6 +193,13 @@ mod tests {
         assert!(
             ReadOnlySource::parse("postgresql://reader@192.168.1.2/teslamate?sslmode=disable")
                 .is_err()
+        );
+        assert!(matches!(
+            ReadOnlySource::parse("postgresql://reader@db.example/teslamate#sslmode=disable"),
+            Err(TeslaMateSourceError::Parameters)
+        ));
+        assert!(
+            ReadOnlySource::parse("postgresql://reader:sec%72et@db.example/teslamate").is_err()
         );
     }
 

@@ -4255,8 +4255,10 @@ pub enum StreamTaskOutcome {
     CompletedNormally,
     #[error("supervisor failed: {0}")]
     Supervisor(#[source] crate::tesla_stream::StreamSupervisorError),
-    #[error("task panicked or was cancelled")]
-    JoinFailure,
+    #[error("task panicked")]
+    Panicked,
+    #[error("task was cancelled")]
+    Cancelled,
 }
 
 fn classify_stream_task_result(
@@ -4265,7 +4267,11 @@ fn classify_stream_task_result(
     let outcome = match result {
         Ok(Ok(())) => StreamTaskOutcome::CompletedNormally,
         Ok(Err(error)) => StreamTaskOutcome::Supervisor(error),
-        Err(_) => StreamTaskOutcome::JoinFailure,
+        Err(error) if error.is_panic() => StreamTaskOutcome::Panicked,
+        Err(error) => {
+            debug_assert!(error.is_cancelled());
+            StreamTaskOutcome::Cancelled
+        }
     };
     CollectorError::StreamTask(outcome)
 }
@@ -4350,7 +4356,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        credentials::LegacyAuthManager,
+        credentials::{LegacyAuthManager, OwnerTokens},
         db::{SourceDescriptor, SyncMutation, SyncMutationClaim, VehicleDescriptor},
         lifecycle::OpenSessionState,
         owner_api::{Vehicle, VehicleData},
@@ -4358,26 +4364,61 @@ mod tests {
 
     #[tokio::test]
     async fn stream_task_completion_outcomes_are_typed_and_secret_safe() {
-        let normal =
-            tokio::spawn(async { Ok::<_, crate::tesla_stream::StreamSupervisorError>(()) }).await;
-        let supervisor = tokio::spawn(async {
-            Err::<(), _>(crate::tesla_stream::StreamSupervisorError::EventQueueFull)
-        })
-        .await;
-        let panic = tokio::spawn(async { panic!("access-secret refresh-secret") }).await;
-        for error in [
-            classify_stream_task_result(normal),
-            classify_stream_task_result(supervisor),
-            classify_stream_task_result(panic),
-        ] {
+        let normal = classify_stream_task_result(
+            tokio::spawn(async { Ok::<_, crate::tesla_stream::StreamSupervisorError>(()) }).await,
+        );
+        let supervisor = classify_stream_task_result(
+            tokio::spawn(async {
+                Err::<(), _>(crate::tesla_stream::StreamSupervisorError::EventQueueFull)
+            })
+            .await,
+        );
+        let panic = classify_stream_task_result(
+            tokio::spawn(async { panic!("access-secret refresh-secret") }).await,
+        );
+        let cancelled_task = tokio::spawn(async {
+            std::future::pending::<Result<(), crate::tesla_stream::StreamSupervisorError>>().await
+        });
+        cancelled_task.abort();
+        let cancelled = classify_stream_task_result(cancelled_task.await);
+
+        assert!(matches!(
+            &normal,
+            CollectorError::StreamTask(StreamTaskOutcome::CompletedNormally)
+        ));
+        assert!(matches!(
+            &supervisor,
+            CollectorError::StreamTask(StreamTaskOutcome::Supervisor(
+                crate::tesla_stream::StreamSupervisorError::EventQueueFull
+            ))
+        ));
+        assert!(matches!(
+            &panic,
+            CollectorError::StreamTask(StreamTaskOutcome::Panicked)
+        ));
+        assert!(matches!(
+            &cancelled,
+            CollectorError::StreamTask(StreamTaskOutcome::Cancelled)
+        ));
+        for error in [&normal, &supervisor, &panic, &cancelled] {
             let rendered = format!("{error} {error:?}");
             assert!(!rendered.contains("access-secret"));
             assert!(!rendered.contains("refresh-secret"));
         }
-        assert!(matches!(
-            classify_stream_task_result(Ok(Ok(()))),
-            CollectorError::StreamTask(StreamTaskOutcome::CompletedNormally)
-        ));
+
+        let tokens =
+            OwnerTokens::from_secret_parts("access-secret".to_owned(), "refresh-secret".to_owned())
+                .expect("bounded bearer pair");
+        let auth = crate::legacy_auth::LegacyAuth::for_test(
+            url::Url::parse("https://auth.tesla.com/oauth2/v3/token").unwrap(),
+            "access-secret",
+            "refresh-secret",
+        );
+        let manager = LegacyAuthManager::for_test(auth, Arc::new(|_, _| Ok(())));
+        for rendered in [format!("{tokens:?}"), format!("{manager:?}")] {
+            assert!(!rendered.contains("access-secret"));
+            assert!(!rendered.contains("refresh-secret"));
+        }
     }
 
     #[test]
@@ -6874,7 +6915,7 @@ mod tests {
         use crate::{
             credentials::{LegacyAuthManager, OwnerTokens},
             fake_tesla::{AdvanceMode, FAKE_REFRESHED_ACCESS_TOKEN, FakeTeslaSource},
-            owner_api::{OwnerApi, OwnerApiBase, OwnerApiOptions},
+            owner_api::OwnerApi,
         };
 
         crate::crypto::install_default_provider();
@@ -6919,12 +6960,8 @@ mod tests {
             allow_refresh: true,
             region,
         };
-        let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
-                .expect("loopback owner API"),
-            Duration::from_secs(2),
-        ))
-        .expect("owner client");
+        let client = OwnerApi::for_fake_http(fake.http_base_url().clone(), Duration::from_secs(2))
+            .expect("owner client");
         let config = supervised_restart_test_config(temporary.path());
         let seam = Arc::new(SupervisedCollectorTestSeam::default());
         let (finished, resume) = seam.arm_paused_collection_completion().await;
@@ -7026,7 +7063,7 @@ mod tests {
         use crate::{
             credentials::{LegacyAuthManager, OwnerTokens},
             fake_tesla::{AdvanceMode, FakeTeslaSource},
-            owner_api::{OwnerApi, OwnerApiBase, OwnerApiOptions},
+            owner_api::OwnerApi,
         };
 
         crate::crypto::install_default_provider();
@@ -7069,12 +7106,8 @@ mod tests {
             allow_refresh: false,
             region: StreamRegion::Global,
         };
-        let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
-                .expect("loopback Owner API"),
-            Duration::from_secs(2),
-        ))
-        .expect("Owner client");
+        let client = OwnerApi::for_fake_http(fake.http_base_url().clone(), Duration::from_secs(2))
+            .expect("Owner client");
         let config = supervised_restart_test_config(temporary.path());
         let seam = Arc::new(SupervisedCollectorTestSeam::default());
         let (finished, resume) = seam.arm_paused_collection_completion().await;
@@ -7149,10 +7182,7 @@ mod tests {
 
     #[tokio::test]
     async fn observer_stream_rejection_does_not_enqueue_refresh() {
-        use crate::{
-            fake_tesla::{AdvanceMode, FakeTeslaSource},
-            owner_api::{OwnerApiBase, OwnerApiOptions},
-        };
+        use crate::fake_tesla::{AdvanceMode, FakeTeslaSource};
 
         let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
             .await
@@ -7173,12 +7203,8 @@ mod tests {
             allow_refresh: false,
             region: StreamRegion::Global,
         };
-        let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
-                .expect("loopback Owner API"),
-            Duration::from_secs(2),
-        ))
-        .expect("Owner client");
+        let client = OwnerApi::for_fake_http(fake.http_base_url().clone(), Duration::from_secs(2))
+            .expect("Owner client");
         assert!(matches!(
             refresh_after_stream_authentication_rejection(
                 &client,
@@ -7197,10 +7223,7 @@ mod tests {
 
     #[tokio::test]
     async fn managed_stream_rejection_enqueues_legacy_refresh() {
-        use crate::{
-            fake_tesla::{AdvanceMode, FakeTeslaSource},
-            owner_api::{OwnerApiBase, OwnerApiOptions},
-        };
+        use crate::fake_tesla::{AdvanceMode, FakeTeslaSource};
 
         crate::crypto::install_default_provider();
         let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
@@ -7222,12 +7245,8 @@ mod tests {
             allow_refresh: true,
             region: StreamRegion::Global,
         };
-        let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
-                .expect("loopback Owner API"),
-            Duration::from_secs(2),
-        ))
-        .expect("Owner client");
+        let client = OwnerApi::for_fake_http(fake.http_base_url().clone(), Duration::from_secs(2))
+            .expect("Owner client");
 
         refresh_after_stream_authentication_rejection(
             &client,
@@ -7252,10 +7271,7 @@ mod tests {
 
     #[tokio::test]
     async fn persisted_refresh_failure_fences_later_collection() {
-        use crate::{
-            fake_tesla::{AdvanceMode, FakeTeslaSource},
-            owner_api::{OwnerApiBase, OwnerApiOptions},
-        };
+        use crate::fake_tesla::{AdvanceMode, FakeTeslaSource};
 
         crate::crypto::install_default_provider();
         let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
@@ -7277,12 +7293,8 @@ mod tests {
             allow_refresh: true,
             region: StreamRegion::Global,
         };
-        let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
-                .expect("loopback Owner API"),
-            Duration::from_secs(2),
-        ))
-        .expect("Owner client");
+        let client = OwnerApi::for_fake_http(fake.http_base_url().clone(), Duration::from_secs(2))
+            .expect("Owner client");
 
         refresh_after_stream_authentication_rejection(
             &client,

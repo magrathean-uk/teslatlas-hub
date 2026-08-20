@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    fmt, fs,
     net::SocketAddr,
     path::{Path, PathBuf},
     time::Duration,
@@ -140,7 +140,7 @@ impl TlsListenerConfig {
 /// for local tests. The URL cannot contain credentials or query parameters.
 /// Supervised collection runs by default. Set `interval_seconds = 0` to
 /// disable it explicitly.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CollectorConfig {
     #[serde(default = "default_owner_api_base_url")]
@@ -181,6 +181,45 @@ pub struct CollectorConfig {
     /// from configuration, and this mode is never used for Fleet TOKEN auth.
     #[serde(default)]
     pub legacy_auth: LegacyAuthConfig,
+}
+
+impl fmt::Debug for CollectorConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CollectorConfig")
+            .field(
+                "owner_api_base_url",
+                &self.owner_api_base_url.as_ref().map(|_| "[redacted]"),
+            )
+            .field("request_timeout_seconds", &self.request_timeout_seconds)
+            .field("interval_seconds", &self.interval_seconds)
+            .field("max_backoff_seconds", &self.max_backoff_seconds)
+            .field("driving_poll_milliseconds", &self.driving_poll_milliseconds)
+            .field("charging_poll_seconds", &self.charging_poll_seconds)
+            .field("online_poll_seconds", &self.online_poll_seconds)
+            .field("sleeping_poll_seconds", &self.sleeping_poll_seconds)
+            .field(
+                "offline_drive_timeout_seconds",
+                &self.offline_drive_timeout_seconds,
+            )
+            .field(
+                "idle_suspend_after_seconds",
+                &self.idle_suspend_after_seconds,
+            )
+            .field("suspended_poll_seconds", &self.suspended_poll_seconds)
+            .field("updating_poll_seconds", &self.updating_poll_seconds)
+            .field(
+                "stream_endpoint_override",
+                &self.stream_endpoint_override.as_ref().map(|_| "[redacted]"),
+            )
+            .field("stream_region", &self.stream_region)
+            .field(
+                "stream_health_timeout_seconds",
+                &self.stream_health_timeout_seconds,
+            )
+            .field("legacy_auth", &self.legacy_auth)
+            .finish()
+    }
 }
 
 const fn default_owner_api_timeout_seconds() -> u64 {
@@ -974,6 +1013,34 @@ mod tests {
             );
             let parsed = toml::from_str::<HubConfig>(&config).expect("parse before validation");
             assert!(parsed.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn collector_debug_redacts_owner_and_stream_endpoint_values() {
+        let mut collector = CollectorConfig {
+            owner_api_base_url: Some("https://owner.example/access-secret/".to_owned()),
+            stream_endpoint_override: Some("wss://stream.example/refresh-secret/".to_owned()),
+            ..CollectorConfig::default()
+        };
+        let rendered = format!("{collector:?}");
+        assert!(!rendered.contains("access-secret"));
+        assert!(!rendered.contains("refresh-secret"));
+        assert_eq!(rendered.matches("[redacted]").count(), 2);
+
+        collector.owner_api_base_url = Some("https://owner.example/?access-secret=1".to_owned());
+        collector.stream_endpoint_override =
+            Some("wss://stream.example/?refresh-secret=1".to_owned());
+        let owner_error = collector.owner_api_options().unwrap_err();
+        let stream_error = collector
+            .stream_endpoint(crate::tesla_stream::StreamRegion::Global)
+            .unwrap_err();
+        for rendered in [
+            format!("{owner_error} {owner_error:?}"),
+            format!("{stream_error} {stream_error:?}"),
+        ] {
+            assert!(!rendered.contains("access-secret"));
+            assert!(!rendered.contains("refresh-secret"));
         }
     }
 
