@@ -2,13 +2,15 @@
 
 Status: active.
 
-Current: verify backup, backup verification, restore, and repair.
+Current: run the one final validation pass and practical macOS smoke.
 
-Next: run the one final validation pass and practical macOS smoke.
+Next: none.
 
 Blocked: none.
 
 ## Completed
+
+- Data recovery — verified immutable backup, backup verification, restore without source mutation, unsafe-destination refusal, and repair that preserves quarantine while deleting proven orphan packs — 2 focused tests passed.
 
 - Pairing and local sync — verified failure-safe invitation persistence, single-use TLS claim, authenticated vehicle/manifest/pack access, Range resume, restart persistence, and wrong-key rejection — 3 focused tests passed.
 
