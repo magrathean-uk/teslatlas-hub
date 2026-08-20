@@ -2,13 +2,15 @@
 
 Status: active.
 
-Current: verify optional bounded read-only TeslaMate import and incompatible-schema rejection.
+Current: verify pairing and authenticated local sync across restart.
 
-Next: verify pairing and authenticated local sync across restart.
+Next: verify backup, backup verification, restore, and repair.
 
 Blocked: none.
 
 ## Completed
+
+- Optional TeslaMate import — verified exact migration-set admission and final-snapshot publication; the local PostgreSQL copy stayed read-only at 99 migrations/2,644 drives and was correctly rejected as incompatible — 2 focused tests and one CLI negative smoke passed; the 632 KiB fixture was removed.
 
 - Fake collection and restart durability — wired the observer acceptance path through native setup, then verified products, vehicle-data, streaming reconnect, encrypted credentials, and durable car/drive/charge/position/state/settings/update behavior across restart — 5 focused tests passed.
 
