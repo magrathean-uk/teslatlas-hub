@@ -45,11 +45,7 @@ use teslatlas_hub::{
 use tracing_subscriber::EnvFilter;
 
 #[cfg(target_os = "macos")]
-use rustix::{
-    fs::{FileType, Mode, OFlags, fstat, open},
-    io::Errno,
-    process::getuid,
-};
+use rustix::{io::Errno, process::getuid};
 
 /// A worker owned by the macOS Serve supervisor.  Normal exits request
 /// shutdown and await the task; cancellation of the supervisor aborts the
@@ -1765,8 +1761,6 @@ mod tests {
     use std::{
         future::pending,
         net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
-        os::unix::fs::{PermissionsExt, symlink},
-        path::Path,
         process::{Child, Command as ProcessCommand, Stdio},
         sync::{
             Arc,
