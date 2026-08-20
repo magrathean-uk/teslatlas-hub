@@ -5,17 +5,17 @@
 //! next. Production TeslaMate is never written.
 
 use std::{
-    fs::{self, OpenOptions},
-    io::{Cursor, Write},
+    fs::{self, File, OpenOptions},
+    io::{self, Cursor, Read, Write},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::Command,
 };
 
 use rusqlite::{Connection, OpenFlags};
+use rustix::fs::{FileType, Mode, OFlags, fstat, open};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use zstd::stream::decode_all;
 
 use crate::{
     db::{HubStore, PublicationGate, StoreError},
@@ -27,7 +27,7 @@ use crate::{
     },
     protocol::{
         CursorKey, HUB_PROJECTION_SCHEMA_V2, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor,
-        ProtocolLimits, SequenceRange, SyncManifest,
+        ProtocolLimits, SequenceRange, SyncManifest, TransportPack,
     },
     teslamate_direct::DirectUpdatesSourceV2_2,
     teslamate_projection::TeslaMateUpdatePhysicalV2_2,
@@ -682,19 +682,31 @@ pub fn sign_updates_schema_22_noop(
 
 /// Read Hub schema-2.2 `updates` rows from an already-built pack file.
 pub fn read_hub_updates_from_pack(
+    pack: &TransportPack,
     pack_path: &Path,
 ) -> Result<Vec<TeslaMateUpdatePhysicalV2_2>, UpdatesDeliveryError> {
-    let compressed = fs::read(pack_path).map_err(|error| reject(error.to_string()))?;
-    let sqlite = decode_all(Cursor::new(compressed)).map_err(|error| reject(error.to_string()))?;
-    read_hub_updates_from_sqlite(&sqlite)
+    let (_directory, path) = private_sqlite_tempfile_from_pack(pack, pack_path)?;
+    read_hub_updates_from_sqlite_path(&path, pack.row_count)
 }
 
 pub fn read_hub_updates_from_sqlite(
     sqlite: &[u8],
 ) -> Result<Vec<TeslaMateUpdatePhysicalV2_2>, UpdatesDeliveryError> {
+    if u64::try_from(sqlite.len()).unwrap_or(u64::MAX)
+        > ProtocolLimits::default().max_uncompressed_pack_bytes
+    {
+        return Err(reject("reopened SQLite pack exceeds its fixed byte bound"));
+    }
     let (_directory, path) = private_sqlite_tempfile(sqlite)?;
+    read_hub_updates_from_sqlite_path(&path, ProtocolLimits::default().max_rows_per_pack)
+}
+
+fn read_hub_updates_from_sqlite_path(
+    path: &Path,
+    maximum_rows: u64,
+) -> Result<Vec<TeslaMateUpdatePhysicalV2_2>, UpdatesDeliveryError> {
     let connection = Connection::open_with_flags(
-        &path,
+        path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|error| reject(error.to_string()))?;
@@ -702,11 +714,15 @@ pub fn read_hub_updates_from_sqlite(
         .prepare(
             "SELECT id, car_id, start_date_pg_us, end_date_pg_us, version
              FROM updates
-             ORDER BY start_date_pg_us, id",
+            ORDER BY start_date_pg_us, id LIMIT ?1",
         )
         .map_err(|error| reject(error.to_string()))?;
+    let query_limit = maximum_rows
+        .checked_add(1)
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or_else(|| reject("reopened SQLite row bound is invalid"))?;
     let rows = statement
-        .query_map([], |row| {
+        .query_map([query_limit], |row| {
             Ok(TeslaMateUpdatePhysicalV2_2 {
                 id: row.get(0)?,
                 car_id: row.get(1)?,
@@ -718,6 +734,9 @@ pub fn read_hub_updates_from_sqlite(
         .map_err(|error| reject(error.to_string()))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| reject(error.to_string()))?;
+    if u64::try_from(rows.len()).unwrap_or(u64::MAX) > maximum_rows {
+        return Err(reject("reopened SQLite pack exceeds its fixed row bound"));
+    }
     drop(statement);
     drop(connection);
     Ok(rows)
@@ -736,11 +755,10 @@ fn exactly_one_capture_row<T>(
 }
 
 fn read_hub_production_capture_from_pack(
+    pack: &TransportPack,
     pack_path: &Path,
 ) -> Result<ProductionUpdatesCaptureProof, UpdatesDeliveryError> {
-    let compressed = fs::read(pack_path).map_err(|error| reject(error.to_string()))?;
-    let sqlite = decode_all(Cursor::new(compressed)).map_err(|error| reject(error.to_string()))?;
-    let (_directory, path) = private_sqlite_tempfile(&sqlite)?;
+    let (_directory, path) = private_sqlite_tempfile_from_pack(pack, pack_path)?;
     let connection = Connection::open_with_flags(
         &path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -852,23 +870,30 @@ fn read_hub_production_capture_from_pack(
         let mut statement = connection
             .prepare(
                 "SELECT id, car_id, start_date_pg_us, end_date_pg_us, version
-                 FROM updates ORDER BY start_date_pg_us, id",
+                 FROM updates ORDER BY start_date_pg_us, id LIMIT ?1",
             )
             .map_err(|error| reject(error.to_string()))?;
         statement
-            .query_map([], |row| {
-                Ok(TeslaMateUpdatePhysicalV2_2 {
-                    id: row.get(0)?,
-                    car_id: row.get(1)?,
-                    start_date_pg_us: row.get(2)?,
-                    end_date_pg_us: row.get(3)?,
-                    version: row.get(4)?,
-                })
-            })
+            .query_map(
+                [i64::try_from(pack.row_count.saturating_add(1))
+                    .map_err(|_| reject("reopened production row bound is invalid"))?],
+                |row| {
+                    Ok(TeslaMateUpdatePhysicalV2_2 {
+                        id: row.get(0)?,
+                        car_id: row.get(1)?,
+                        start_date_pg_us: row.get(2)?,
+                        end_date_pg_us: row.get(3)?,
+                        version: row.get(4)?,
+                    })
+                },
+            )
             .map_err(|error| reject(error.to_string()))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| reject(error.to_string()))?
     };
+    if u64::try_from(updates.len()).unwrap_or(u64::MAX) > pack.row_count {
+        return Err(reject("reopened production pack exceeds its row bound"));
+    }
     Ok(ProductionUpdatesCaptureProof {
         global_settings,
         car,
@@ -880,31 +905,166 @@ fn read_hub_production_capture_from_pack(
 fn private_sqlite_tempfile(
     sqlite: &[u8],
 ) -> Result<(PrivateTempDir, PathBuf), UpdatesDeliveryError> {
-    let root = std::env::temp_dir().join(format!(
-        "teslatlas-updates-hub-{}-{}",
-        std::process::id(),
-        Uuid::new_v4()
-    ));
-    let mut builder = fs::DirBuilder::new();
-    builder.mode(0o700);
-    builder
-        .create(&root)
-        .map_err(|error| reject(error.to_string()))?;
-    let directory = PrivateTempDir { path: root };
-    let path = directory.path.join("hub-updates.sqlite");
+    let directory = PrivateTempDir::create()?;
+    let path = directory.create_file("hub-updates.sqlite")?;
     let mut file = OpenOptions::new()
         .write(true)
-        .create_new(true)
-        .mode(0o600)
+        .truncate(true)
         .open(&path)
-        .map_err(|error| reject(error.to_string()))?;
-    file.set_permissions(fs::Permissions::from_mode(0o600))
         .map_err(|error| reject(error.to_string()))?;
     file.write_all(sqlite)
         .and_then(|()| file.sync_all())
         .map_err(|error| reject(error.to_string()))?;
     drop(file);
     Ok((directory, path))
+}
+
+fn private_sqlite_tempfile_from_pack(
+    pack: &TransportPack,
+    pack_path: &Path,
+) -> Result<(PrivateTempDir, PathBuf), UpdatesDeliveryError> {
+    let limits = ProtocolLimits::default();
+    pack.validate(limits)
+        .map_err(|error| reject(error.to_string()))?;
+    let source_fd = open(
+        pack_path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|_| reject("cannot securely open candidate pack"))?;
+    let source_stat = fstat(&source_fd).map_err(|_| reject("cannot inspect candidate pack"))?;
+    if !FileType::from_raw_mode(source_stat.st_mode).is_file()
+        || source_stat.st_size < 0
+        || u64::try_from(source_stat.st_size).ok() != Some(pack.compressed_bytes)
+    {
+        return Err(reject(
+            "candidate pack size or file type mismatches its descriptor",
+        ));
+    }
+
+    let directory = PrivateTempDir::create()?;
+    let compressed_path = directory.create_file("candidate.sqlite.zst")?;
+    let mut source = File::from(source_fd).take(
+        pack.compressed_bytes
+            .checked_add(1)
+            .ok_or_else(|| reject("candidate compressed byte bound overflowed"))?,
+    );
+    let mut compressed = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&compressed_path)
+        .map_err(|error| reject(error.to_string()))?;
+    let copied =
+        io::copy(&mut source, &mut compressed).map_err(|error| reject(error.to_string()))?;
+    if copied != pack.compressed_bytes {
+        return Err(reject("candidate compressed bytes mismatch its descriptor"));
+    }
+    compressed
+        .sync_all()
+        .map_err(|error| reject(error.to_string()))?;
+    drop(compressed);
+
+    pack.verify_reader(
+        File::open(&compressed_path).map_err(|error| reject(error.to_string()))?,
+        limits,
+    )
+    .map_err(|error| reject(error.to_string()))?;
+
+    let sqlite_path = directory.create_file("hub-updates.sqlite")?;
+    let compressed = File::open(&compressed_path).map_err(|error| reject(error.to_string()))?;
+    let decoder = zstd::stream::read::Decoder::new(compressed)
+        .map_err(|_| reject("candidate pack decompression failed"))?;
+    let mut bounded = decoder.take(
+        pack.uncompressed_bytes
+            .checked_add(1)
+            .ok_or_else(|| reject("candidate uncompressed byte bound overflowed"))?,
+    );
+    let mut sqlite = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&sqlite_path)
+        .map_err(|error| reject(error.to_string()))?;
+    let expanded =
+        io::copy(&mut bounded, &mut sqlite).map_err(|error| reject(error.to_string()))?;
+    if expanded != pack.uncompressed_bytes {
+        return Err(reject(
+            "candidate uncompressed bytes mismatch its descriptor",
+        ));
+    }
+    sqlite
+        .sync_all()
+        .map_err(|error| reject(error.to_string()))?;
+    drop(sqlite);
+    Ok((directory, sqlite_path))
+}
+
+fn read_bounded_pack_bytes(
+    pack: &TransportPack,
+    pack_path: &Path,
+) -> Result<Vec<u8>, UpdatesDeliveryError> {
+    let limits = ProtocolLimits::default();
+    pack.validate(limits)
+        .map_err(|error| reject(error.to_string()))?;
+    let fd = open(
+        pack_path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|_| reject("cannot securely open candidate pack"))?;
+    let stat = fstat(&fd).map_err(|_| reject("cannot inspect candidate pack"))?;
+    if !FileType::from_raw_mode(stat.st_mode).is_file()
+        || stat.st_size < 0
+        || u64::try_from(stat.st_size).ok() != Some(pack.compressed_bytes)
+    {
+        return Err(reject(
+            "candidate pack size or file type mismatches its descriptor",
+        ));
+    }
+    let capacity = usize::try_from(pack.compressed_bytes)
+        .map_err(|_| reject("candidate compressed byte bound exceeds this host"))?;
+    let mut bytes = Vec::with_capacity(capacity);
+    File::from(fd)
+        .take(
+            pack.compressed_bytes
+                .checked_add(1)
+                .ok_or_else(|| reject("candidate compressed byte bound overflowed"))?,
+        )
+        .read_to_end(&mut bytes)
+        .map_err(|error| reject(error.to_string()))?;
+    if bytes.len() != capacity {
+        return Err(reject("candidate compressed bytes mismatch its descriptor"));
+    }
+    Ok(bytes)
+}
+
+impl PrivateTempDir {
+    fn create() -> Result<Self, UpdatesDeliveryError> {
+        let root = std::env::temp_dir().join(format!(
+            "teslatlas-updates-hub-{}-{}",
+            std::process::id(),
+            Uuid::new_v4()
+        ));
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700);
+        builder
+            .create(&root)
+            .map_err(|error| reject(error.to_string()))?;
+        Ok(Self { path: root })
+    }
+
+    fn create_file(&self, name: &str) -> Result<PathBuf, UpdatesDeliveryError> {
+        let path = self.path.join(name);
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .map_err(|error| reject(error.to_string()))?;
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|error| reject(error.to_string()))?;
+        drop(file);
+        Ok(path)
+    }
 }
 
 struct PrivateTempDir {
@@ -1158,12 +1318,19 @@ fn write_verified_production_pack(
     source_capture: &ProductionUpdatesCaptureProof,
 ) -> Result<(BuiltProjectionPack, LogicalUpdatesStream), UpdatesDeliveryError> {
     let built = ProjectionPackWriter::new(store.packs_dir()).write_full_snapshot_2_2(request)?;
-    let compressed = fs::read(&built.path).map_err(|error| reject(error.to_string()))?;
     built
         .metadata
-        .verify_reader(Cursor::new(compressed), ProtocolLimits::default())
+        .verify_reader(
+            File::open(&built.path).map_err(|error| reject(error.to_string()))?,
+            ProtocolLimits::default(),
+        )
         .map_err(|error| reject(error.to_string()))?;
-    let hub = match verify_reopened_production_capture(&built.path, source, source_capture) {
+    let hub = match verify_reopened_production_capture(
+        &built.metadata,
+        &built.path,
+        source,
+        source_capture,
+    ) {
         Ok(hub) => hub,
         Err(error) => {
             discard_unpublished_production_pack(store, &built);
@@ -1174,11 +1341,12 @@ fn write_verified_production_pack(
 }
 
 fn verify_reopened_production_capture(
+    pack: &TransportPack,
     pack_path: &Path,
     source: &LogicalUpdatesStream,
     source_capture: &ProductionUpdatesCaptureProof,
 ) -> Result<LogicalUpdatesStream, UpdatesDeliveryError> {
-    let hub_capture = read_hub_production_capture_from_pack(pack_path)?;
+    let hub_capture = read_hub_production_capture_from_pack(pack, pack_path)?;
     if &hub_capture != source_capture {
         return Err(reject(
             "reopened production Hub roots or updates do not exactly match the exported source snapshot",
@@ -1198,7 +1366,7 @@ fn discard_unpublished_production_pack(store: &HubStore, built: &BuiltProjection
         return;
     }
     if matches!(
-        store.pack_sha256_is_catalogued(&built.metadata.sha256.to_string()),
+        store.pack_sha256_is_retained(&built.metadata.sha256.to_string()),
         Ok(true)
     ) {
         return;
@@ -1562,15 +1730,15 @@ pub fn deliver_pinned_updates_to_hub(
     let (built, snapshot) =
         write_updates_schema_22_pack(work_root.join("packs"), fixture.rows.clone())?;
     let request = updates_pack_request(&snapshot);
+    let pack_bytes = read_bounded_pack_bytes(&built.metadata, &built.path)?;
     built
         .metadata
         .verify_reader(
-            Cursor::new(fs::read(&built.path).map_err(|error| reject(error.to_string()))?),
+            Cursor::new(pack_bytes.as_slice()),
             ProtocolLimits::default(),
         )
         .map_err(|error| reject(error.to_string()))?;
-    let pack_bytes = fs::read(&built.path).map_err(|error| reject(error.to_string()))?;
-    let hub_rows = read_hub_updates_from_pack(&built.path)?;
+    let hub_rows = read_hub_updates_from_pack(&built.metadata, &built.path)?;
     let hub = encode_updates_logical_stream(&hub_rows)?;
     if hub.sha256 != source.sha256 {
         return Err(reject(
@@ -2365,18 +2533,78 @@ mod tests {
         let built = ProjectionPackWriter::new(temporary.path())
             .write_full_snapshot_2_2(&request)
             .expect("write production-shaped pack");
-        verify_reopened_production_capture(&built.path, &source_stream, &source_capture)
-            .expect("all independently reopened roots match");
+        verify_reopened_production_capture(
+            &built.metadata,
+            &built.path,
+            &source_stream,
+            &source_capture,
+        )
+        .expect("all independently reopened roots match");
 
         let mut mismatched_source = source_capture;
         mismatched_source
             .global_settings
             .language
             .push_str("-changed");
-        let error =
-            verify_reopened_production_capture(&built.path, &source_stream, &mismatched_source)
-                .expect_err("source-only root claim must be rejected");
+        let error = verify_reopened_production_capture(
+            &built.metadata,
+            &built.path,
+            &source_stream,
+            &mismatched_source,
+        )
+        .expect_err("source-only root claim must be rejected");
         assert!(error.message.contains("roots or updates"));
+    }
+
+    #[test]
+    fn reopened_pack_rejects_size_bomb_and_row_cap_plus_one() {
+        let temporary = tempfile::tempdir().expect("pack directory");
+        let source = production_source(7);
+        let snapshot = production_updates_snapshot(&source);
+        let mut binding = pinned_updates_binding();
+        binding.selected_car_id = 7;
+        let request = ProjectionPackRequestV2_2 {
+            pack_id: Uuid::new_v4(),
+            snapshot_id: Uuid::new_v4(),
+            ordinal: 0,
+            binding,
+            sequence: SequenceRange {
+                from_exclusive: 1,
+                to_inclusive: 1,
+            },
+            snapshot: &snapshot,
+        };
+        let built = ProjectionPackWriter::new(temporary.path())
+            .write_full_snapshot_2_2(&request)
+            .expect("write production-shaped pack");
+
+        let mut wrong_compressed_size = built.metadata.clone();
+        wrong_compressed_size.compressed_bytes += 1;
+        assert!(
+            private_sqlite_tempfile_from_pack(&wrong_compressed_size, &built.path).is_err(),
+            "advertised compressed size mismatch must fail before allocation"
+        );
+
+        let mut row_capped = built.metadata.clone();
+        row_capped.row_count = 1;
+        let error = read_hub_updates_from_pack(&row_capped, &built.path)
+            .expect_err("two updates exceed an advertised one-row cap");
+        assert!(error.message.contains("row bound"));
+
+        let expanded = (0..4_097)
+            .map(|index| u8::try_from(index % 251).expect("bounded byte"))
+            .collect::<Vec<_>>();
+        let bomb = zstd::stream::encode_all(Cursor::new(&expanded), 1).expect("compress bomb");
+        let bomb_path = temporary.path().join("bounded-bomb.zst");
+        fs::write(&bomb_path, &bomb).expect("write bomb fixture");
+        let mut bomb_metadata = built.metadata;
+        bomb_metadata.compressed_bytes = u64::try_from(bomb.len()).expect("bomb size");
+        bomb_metadata.uncompressed_bytes = 4_096;
+        bomb_metadata.sha256 = crate::protocol::Sha256Digest::of_bytes(&bomb);
+        assert!(
+            private_sqlite_tempfile_from_pack(&bomb_metadata, &bomb_path).is_err(),
+            "expanded cap-plus-one input must fail closed"
+        );
     }
 
     #[test]

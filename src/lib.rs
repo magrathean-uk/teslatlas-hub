@@ -9,6 +9,7 @@ pub mod credentials;
 pub mod crypto;
 pub mod data_recovery;
 pub mod db;
+mod durability_fault;
 #[cfg(test)]
 pub mod fake_tesla;
 pub mod geocoder;

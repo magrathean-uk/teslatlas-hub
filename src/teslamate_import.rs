@@ -361,7 +361,7 @@ impl Drop for UnpublishedDirectDeltaPacks<'_> {
             }
             match self
                 .store
-                .pack_sha256_is_catalogued(&chunk.metadata.sha256.to_string())
+                .pack_sha256_is_retained(&chunk.metadata.sha256.to_string())
             {
                 Ok(true) => continue,
                 Ok(false) => match std::fs::remove_file(&chunk.path) {
@@ -2249,7 +2249,7 @@ fn discard_unpublished_chunks(
         if !chunk.may_remove_unpublished_file() {
             continue;
         }
-        if store.pack_sha256_is_catalogued(&chunk.metadata.sha256.to_string())? {
+        if store.pack_sha256_is_retained(&chunk.metadata.sha256.to_string())? {
             continue;
         }
         match std::fs::remove_file(&chunk.path) {

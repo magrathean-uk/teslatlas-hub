@@ -2370,7 +2370,7 @@ mod tests {
         );
         assert!(
             store
-                .pack_sha256_is_catalogued(&digest.to_string())
+                .pack_sha256_is_retained(&digest.to_string())
                 .expect("catalogue lookup after sink cleanup"),
             "the reused pack remains catalogued after PackSink cleanup"
         );

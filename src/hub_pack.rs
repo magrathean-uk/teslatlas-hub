@@ -2200,7 +2200,7 @@ impl ProjectionPackWriter {
             })?
             .len();
 
-        let compressed_temp = StagedFile::create(&staging_dir, "projection.zst")?;
+        let mut compressed_temp = StagedFile::create(&staging_dir, "projection.zst")?;
         let (sha256, compressed_bytes) = compress_file(sqlite_temp.path(), compressed_temp.path())?;
         let metadata = TransportPack {
             pack_id: request.pack_id,
@@ -2226,7 +2226,7 @@ impl ProjectionPackWriter {
                 .ok_or(ProjectionPackError::TooManyRows)?,
         )?;
         let ownership =
-            publish_immutable(compressed_temp.path(), &final_path, &metadata, self.limits)?;
+            publish_immutable(&mut compressed_temp, &final_path, &metadata, self.limits)?;
 
         Ok(BuiltProjectionPack {
             metadata,
@@ -2292,7 +2292,7 @@ impl ProjectionPackWriter {
                 source,
             })?
             .len();
-        let compressed_temp = StagedFile::create(&staging_dir, "projection.zst")?;
+        let mut compressed_temp = StagedFile::create(&staging_dir, "projection.zst")?;
         let (sha256, compressed_bytes) = compress_file(sqlite_temp.path(), compressed_temp.path())?;
         let metadata = TransportPack {
             pack_id: request.pack_id,
@@ -2318,7 +2318,7 @@ impl ProjectionPackWriter {
                 .ok_or(ProjectionPackError::TooManyRows)?,
         )?;
         let ownership =
-            publish_immutable(compressed_temp.path(), &final_path, &metadata, self.limits)?;
+            publish_immutable(&mut compressed_temp, &final_path, &metadata, self.limits)?;
         Ok(BuiltProjectionPack {
             metadata,
             path: final_path,
@@ -2366,7 +2366,7 @@ impl ProjectionPackWriter {
             })?
             .len();
 
-        let compressed_temp = StagedFile::create(&staging_dir, "projection-2-2.zst")?;
+        let mut compressed_temp = StagedFile::create(&staging_dir, "projection-2-2.zst")?;
         let (sha256, compressed_bytes) = compress_file(sqlite_temp.path(), compressed_temp.path())?;
         let metadata = TransportPack {
             pack_id: request.pack_id,
@@ -2392,7 +2392,7 @@ impl ProjectionPackWriter {
                 .ok_or(ProjectionPackError::TooManyRows)?,
         )?;
         let ownership =
-            publish_immutable(compressed_temp.path(), &final_path, &metadata, self.limits)?;
+            publish_immutable(&mut compressed_temp, &final_path, &metadata, self.limits)?;
         Ok(BuiltProjectionPack {
             metadata,
             path: final_path,
@@ -2461,7 +2461,7 @@ impl ProjectionPackWriter {
                 source,
             })?
             .len();
-        let compressed_temp = StagedFile::create(&staging_dir, "projection-delta.zst")?;
+        let mut compressed_temp = StagedFile::create(&staging_dir, "projection-delta.zst")?;
         let (sha256, compressed_bytes) = compress_file(sqlite_temp.path(), compressed_temp.path())?;
         let metadata = TransportPack {
             pack_id: request.pack_id,
@@ -2482,7 +2482,7 @@ impl ProjectionPackWriter {
         let verified = verify_file(&metadata, compressed_temp.path(), self.limits)?;
         let final_path = self.content_path(sha256);
         let ownership =
-            publish_immutable(compressed_temp.path(), &final_path, &metadata, self.limits)?;
+            publish_immutable(&mut compressed_temp, &final_path, &metadata, self.limits)?;
         Ok(BuiltProjectionPack {
             metadata,
             path: final_path,
@@ -3909,6 +3909,8 @@ fn write_projection_sqlite(
         insert_states(&transaction, states)?;
         insert_updates(&transaction, updates)?;
     }
+    crate::durability_fault::check(crate::durability_fault::DurabilityFaultPoint::PackSqliteCommit)
+        .map_err(ProjectionPackError::Durability)?;
     transaction.commit().map_err(ProjectionPackError::Commit)?;
     connection
         .execute_batch("PRAGMA optimize; VACUUM;")
@@ -4089,6 +4091,8 @@ fn write_projection_sqlite_2_2(
     insert_charges_v2_2(&transaction, &request.snapshot.charges)?;
     insert_states_v2_2(&transaction, &request.snapshot.states)?;
     insert_updates_v2_2(&transaction, &request.snapshot.updates)?;
+    crate::durability_fault::check(crate::durability_fault::DurabilityFaultPoint::PackSqliteCommit)
+        .map_err(ProjectionPackError::Durability)?;
     transaction.commit().map_err(ProjectionPackError::Commit)?;
     ensure_foreign_keys_clean(&connection)?;
     connection
@@ -5480,6 +5484,8 @@ fn write_delta_rows(
     insert_states(&transaction, &request.delta.states)?;
     insert_updates(&transaction, &request.delta.updates)?;
     insert_tombstones(&transaction, &request.delta.tombstones)?;
+    crate::durability_fault::check(crate::durability_fault::DurabilityFaultPoint::PackSqliteCommit)
+        .map_err(ProjectionPackError::Durability)?;
     transaction.commit().map_err(ProjectionPackError::Commit)?;
     connection
         .execute_batch("PRAGMA optimize; VACUUM;")
@@ -6303,10 +6309,18 @@ fn compress_file_with_workers(
         .multithread(workers)
         .map_err(ProjectionPackError::Compress)?;
     io::copy(&mut source, &mut encoder).map_err(ProjectionPackError::Compress)?;
+    crate::durability_fault::check(
+        crate::durability_fault::DurabilityFaultPoint::PackCompressedWrite,
+    )
+    .map_err(ProjectionPackError::Durability)?;
     let (file, digest, bytes) = encoder
         .finish()
         .map_err(ProjectionPackError::Compress)?
         .finish();
+    crate::durability_fault::check(
+        crate::durability_fault::DurabilityFaultPoint::PackCompressedFsync,
+    )
+    .map_err(ProjectionPackError::Durability)?;
     file.sync_all()
         .map_err(ProjectionPackError::SyncCompressed)?;
     Ok((digest, bytes))
@@ -6324,27 +6338,34 @@ fn available_bytes(path: &Path) -> Result<u64, ProjectionPackError> {
 }
 
 fn publish_immutable(
-    temporary_path: &Path,
+    temporary: &mut StagedFile,
     final_path: &Path,
     metadata: &TransportPack,
     limits: ProtocolLimits,
 ) -> Result<ProjectionPackOwnership, ProjectionPackError> {
+    let temporary_path = temporary.path().to_path_buf();
     fs::set_permissions(
-        temporary_path,
+        &temporary_path,
         fs::Permissions::from_mode(SHARED_IMMUTABLE_PACK_MODE),
     )
     .map_err(|source| ProjectionPackError::Publish {
         path: temporary_path.to_path_buf(),
         source,
     })?;
-    File::open(temporary_path)
+    File::open(&temporary_path)
         .and_then(|file| file.sync_all())
         .map_err(|source| ProjectionPackError::Publish {
             path: temporary_path.to_path_buf(),
             source,
         })?;
-    let ownership = match fs::hard_link(temporary_path, final_path) {
+    crate::durability_fault::check(crate::durability_fault::DurabilityFaultPoint::PackFinalInstall)
+        .map_err(ProjectionPackError::Durability)?;
+    let ownership = match fs::hard_link(&temporary_path, final_path) {
         Ok(()) => {
+            crate::durability_fault::check(
+                crate::durability_fault::DurabilityFaultPoint::PackFinalDirectoryFsync,
+            )
+            .map_err(ProjectionPackError::Durability)?;
             sync_parent_directory(final_path)?;
             ProjectionPackOwnership::Created
         }
@@ -6357,14 +6378,28 @@ fn publish_immutable(
             source,
         })?,
     };
+    // Once a final content name exists (or a verified identical object was
+    // reused), an error in staging cleanup is a restart-repairable orphan.
+    // Do not let `Drop` erase the evidence or pretend its directory entry was
+    // durably removed.
+    temporary.retain_for_repair();
     // The final immutable hard link and its parent have been synced.  Remove
     // the now-public staging name and sync that namespace too, so a normal
     // completed publication never leaves a 0640 temporary file behind.
-    fs::remove_file(temporary_path).map_err(|source| ProjectionPackError::Publish {
-        path: temporary_path.to_path_buf(),
+    crate::durability_fault::check(
+        crate::durability_fault::DurabilityFaultPoint::PackStagingUnlink,
+    )
+    .map_err(ProjectionPackError::Durability)?;
+    fs::remove_file(&temporary_path).map_err(|source| ProjectionPackError::Publish {
+        path: temporary_path.clone(),
         source,
     })?;
-    sync_parent_directory(temporary_path)?;
+    temporary.mark_removed();
+    crate::durability_fault::check(
+        crate::durability_fault::DurabilityFaultPoint::PackStagingDirectoryFsync,
+    )
+    .map_err(ProjectionPackError::Durability)?;
+    sync_parent_directory(&temporary_path)?;
     Ok(ownership)
 }
 
@@ -6586,6 +6621,7 @@ fn validate_optional_text_with_source_width(
 
 struct StagedFile {
     path: PathBuf,
+    cleanup_on_drop: bool,
 }
 
 impl StagedFile {
@@ -6600,7 +6636,10 @@ impl StagedFile {
             {
                 Ok(file) => {
                     drop(file);
-                    return Ok(Self { path });
+                    return Ok(Self {
+                        path,
+                        cleanup_on_drop: true,
+                    });
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(source) => return Err(ProjectionPackError::CreateTemporary { path, source }),
@@ -6615,11 +6654,21 @@ impl StagedFile {
     fn path(&self) -> &Path {
         &self.path
     }
+
+    fn retain_for_repair(&mut self) {
+        self.cleanup_on_drop = false;
+    }
+
+    fn mark_removed(&mut self) {
+        self.cleanup_on_drop = false;
+    }
 }
 
 impl Drop for StagedFile {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        if self.cleanup_on_drop {
+            let _ = fs::remove_file(&self.path);
+        }
     }
 }
 
@@ -6715,6 +6764,8 @@ pub enum ProjectionPackError {
     Compress(io::Error),
     #[error("cannot synchronise compressed projection pack: {0}")]
     SyncCompressed(io::Error),
+    #[error("projection durability checkpoint failed: {0}")]
+    Durability(io::Error),
     #[error("cannot open compressed projection pack {path}: {source}")]
     OpenCompressed { path: PathBuf, source: io::Error },
     #[error("cannot publish immutable projection pack {path}: {source}")]
@@ -6929,6 +6980,69 @@ mod tests {
                 to_inclusive: 7,
             },
             snapshot,
+        }
+    }
+
+    #[test]
+    fn fault_matrix_never_leaves_a_partial_content_pack() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        let cases = [
+            (DurabilityFaultPoint::PackSqliteCommit, false, false),
+            (DurabilityFaultPoint::PackCompressedWrite, false, false),
+            (DurabilityFaultPoint::PackCompressedFsync, false, false),
+            (DurabilityFaultPoint::PackFinalInstall, false, false),
+            (DurabilityFaultPoint::PackFinalDirectoryFsync, true, false),
+            (DurabilityFaultPoint::PackStagingUnlink, true, true),
+            (DurabilityFaultPoint::PackStagingDirectoryFsync, true, false),
+        ];
+        for (point, expect_final, expect_staging) in cases {
+            let temporary = tempfile::tempdir().expect("fault store");
+            let source = snapshot();
+            let _fault = inject(point);
+            let error = ProjectionPackWriter::new(temporary.path())
+                .write_full_snapshot(&request(&source))
+                .expect_err("armed durability point must fail");
+            assert!(
+                error.to_string().contains("durability fault"),
+                "typed fault for {point:?}: {error}"
+            );
+
+            let content_directory = temporary.path().join("sha256");
+            let content = fs::read_dir(&content_directory)
+                .map(|entries| {
+                    entries
+                        .map(|entry| entry.expect("content entry").path())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            assert_eq!(
+                !content.is_empty(),
+                expect_final,
+                "final namespace outcome for {point:?}"
+            );
+            for path in content {
+                let bytes = fs::read(&path).expect("read completed content object");
+                let name = path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .expect("UTF-8 content name");
+                let digest = name
+                    .strip_suffix(".sqlite.zst")
+                    .expect("canonical content suffix");
+                assert_eq!(hex::encode(Sha256::digest(&bytes)), digest);
+                assert!(!bytes.is_empty());
+            }
+
+            let staging_directory = temporary.path().join(".staging");
+            let staging_count = fs::read_dir(staging_directory)
+                .map(|entries| entries.count())
+                .unwrap_or(0);
+            assert_eq!(
+                staging_count > 0,
+                expect_staging,
+                "restart-visible staging outcome for {point:?}"
+            );
         }
     }
 

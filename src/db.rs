@@ -183,6 +183,13 @@ pub enum StreamObservationResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ManifestCommitState {
+    Exact,
+    Absent,
+    Conflicting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamFaultPoint {
     RawInsert,
     LifecycleWrite,
@@ -217,6 +224,7 @@ pub struct HubStore {
 
 /// One encrypted TeslaMate legacy OAuth pair plus its refresh schedule.
 /// Schedule values are epoch seconds. Ciphertext must not be logged or formatted.
+#[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 pub struct TeslaMateLegacyTokenStore {
     access: Vec<u8>,
     refresh: Vec<u8>,
@@ -2336,6 +2344,7 @@ impl HubStore {
                 manifest.vehicle_id,
             ));
         }
+        let _publication_gate = self.try_acquire_publication_gate()?;
         self.publish_manifest_catalogue(manifest)
     }
 
@@ -2350,7 +2359,7 @@ impl HubStore {
         // V2 lineage.  Binding-aware import finalizers pass the exact binding
         // into the transactional helper instead.
         publish_manifest_in_transaction(&transaction, manifest, None)?;
-        transaction.commit().map_err(StoreError::PublishManifest)
+        self.commit_manifest_transaction(transaction, manifest)
     }
 
     pub(crate) fn publish_schema_22_manifest(
@@ -2401,7 +2410,122 @@ impl HubStore {
             decode_manifest(stored_manifest)?;
         }
         publish_manifest_in_transaction(&transaction, manifest, None)?;
-        transaction.commit().map_err(StoreError::PublishManifest)
+        self.commit_manifest_transaction(transaction, manifest)
+    }
+
+    fn commit_manifest_transaction(
+        &self,
+        transaction: Transaction<'_>,
+        manifest: &SyncManifest,
+    ) -> Result<(), StoreError> {
+        crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::CatalogueBeforeCommit,
+        )
+        .map_err(StoreError::CatalogueDurability)?;
+        let commit = transaction.commit();
+        if let Err(source) = commit {
+            return match self.manifest_commit_state(manifest)? {
+                ManifestCommitState::Exact => Ok(()),
+                ManifestCommitState::Absent => Err(StoreError::PublishManifest(source)),
+                ManifestCommitState::Conflicting => Err(StoreError::AmbiguousCatalogueCommit {
+                    vehicle_id: manifest.vehicle_id,
+                    snapshot_id: manifest.snapshot_id,
+                }),
+            };
+        }
+        if let Err(source) = crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::CatalogueAfterCommit,
+        ) {
+            return match self.manifest_commit_state(manifest)? {
+                ManifestCommitState::Exact => Ok(()),
+                ManifestCommitState::Absent => Err(StoreError::CatalogueDurability(source)),
+                ManifestCommitState::Conflicting => Err(StoreError::AmbiguousCatalogueCommit {
+                    vehicle_id: manifest.vehicle_id,
+                    snapshot_id: manifest.snapshot_id,
+                }),
+            };
+        }
+        Ok(())
+    }
+
+    fn manifest_commit_state(
+        &self,
+        manifest: &SyncManifest,
+    ) -> Result<ManifestCommitState, StoreError> {
+        let connection = self.open()?;
+        let candidate = serde_json::to_vec(manifest).map_err(StoreError::SerializeManifest)?;
+        let stored = connection
+            .query_row(
+                "SELECT manifest_json FROM sync_manifests WHERE snapshot_id = ?1",
+                params![manifest.snapshot_id.to_string()],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        let pack_rows = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT ordinal, sha256, relative_path, compressed_bytes, uncompressed_bytes
+                       FROM sync_packs WHERE snapshot_id = ?1 ORDER BY ordinal",
+                )
+                .map_err(StoreError::Query)?;
+            statement
+                .query_map(params![manifest.snapshot_id.to_string()], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                })
+                .map_err(StoreError::Query)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(StoreError::Query)?
+        };
+        let Some(stored) = stored else {
+            return Ok(if pack_rows.is_empty() {
+                ManifestCommitState::Absent
+            } else {
+                ManifestCommitState::Conflicting
+            });
+        };
+        if stored != candidate {
+            return Ok(ManifestCommitState::Conflicting);
+        }
+        let current = connection
+            .query_row(
+                "SELECT manifest_json FROM sync_manifests
+                  WHERE vehicle_id = ?1 ORDER BY head_sequence DESC LIMIT 1",
+                params![manifest.vehicle_id.to_string()],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        if current.as_deref() != Some(candidate.as_slice())
+            || pack_rows.len() != manifest.chunks.len()
+        {
+            return Ok(ManifestCommitState::Conflicting);
+        }
+        for (stored, expected) in pack_rows.iter().zip(&manifest.chunks) {
+            let ordinal = i64::from(expected.ordinal);
+            let compressed = i64::try_from(expected.compressed_bytes)
+                .map_err(|_| StoreError::PackSizeTooLarge)?;
+            let uncompressed = i64::try_from(expected.uncompressed_bytes)
+                .map_err(|_| StoreError::PackSizeTooLarge)?;
+            if stored
+                != &(
+                    ordinal,
+                    expected.sha256.to_string(),
+                    expected.relative_path.clone(),
+                    compressed,
+                    uncompressed,
+                )
+            {
+                return Ok(ManifestCommitState::Conflicting);
+            }
+        }
+        Ok(ManifestCommitState::Exact)
     }
 
     fn ensure_schema_22_noop_directory(&self) -> Result<(), StoreError> {
@@ -2651,8 +2775,16 @@ impl HubStore {
                 return Err(StoreError::UnsafeSchema22NoOpPath(temporary_path.clone()));
             }
             file.write_all(&payload)
-                .and_then(|()| file.sync_all())
                 .map_err(StoreError::WriteSchema22NoOp)?;
+            crate::durability_fault::check(
+                crate::durability_fault::DurabilityFaultPoint::Schema22NoOpWrite,
+            )
+            .map_err(StoreError::WriteSchema22NoOp)?;
+            crate::durability_fault::check(
+                crate::durability_fault::DurabilityFaultPoint::Schema22NoOpFsync,
+            )
+            .map_err(StoreError::WriteSchema22NoOp)?;
+            file.sync_all().map_err(StoreError::WriteSchema22NoOp)?;
             fchmod(
                 &file,
                 Mode::from_raw_mode(SHARED_SCHEMA_22_NOOP_FILE_MODE as u16),
@@ -2675,10 +2807,20 @@ impl HubStore {
                 final_name.as_str(),
                 RenameFlags::NOREPLACE,
             ) {
-                Ok(()) => directory
-                    .file
-                    .sync_all()
-                    .map_err(StoreError::WriteSchema22NoOp),
+                Ok(()) => {
+                    crate::durability_fault::check(
+                        crate::durability_fault::DurabilityFaultPoint::Schema22NoOpRename,
+                    )
+                    .map_err(StoreError::WriteSchema22NoOp)?;
+                    crate::durability_fault::check(
+                        crate::durability_fault::DurabilityFaultPoint::Schema22NoOpDirectoryFsync,
+                    )
+                    .map_err(StoreError::WriteSchema22NoOp)?;
+                    directory
+                        .file
+                        .sync_all()
+                        .map_err(StoreError::WriteSchema22NoOp)
+                }
                 Err(Errno::EXIST) => {
                     unlinkat(&directory.file, temporary_name.as_str(), AtFlags::empty())
                         .map_err(|error| StoreError::AccessSchema22NoOp(error.into()))?;
@@ -5490,17 +5632,17 @@ impl HubStore {
             .is_some())
     }
 
-    /// Whether any historical manifest catalogue entry references this pack.
-    /// Import cleanup uses this rather than only the current manifest because
-    /// older snapshots remain valid recovery and sync inputs.
-    pub(crate) fn pack_sha256_is_catalogued(&self, sha256: &str) -> Result<bool, StoreError> {
-        self.open()?
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sync_packs WHERE sha256 = ?1)",
-                params![sha256],
-                |row| row.get(0),
-            )
-            .map_err(StoreError::Query)
+    /// Whether a pack is still authorized by any live catalogue row or by a
+    /// retired lineage inside its physical-delete grace window. Candidate
+    /// cleanup must use this stronger predicate: a retired client may still
+    /// be reading an immutable object after it leaves `sync_packs`.
+    pub(crate) fn pack_sha256_is_retained(&self, sha256: &str) -> Result<bool, StoreError> {
+        let now_ms = retired_lineage_clock_ms()?;
+        let cutoff_ms = now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS);
+        let connection = self.open()?;
+        Ok(referenced_pack_rows_at(&connection, cutoff_ms)?
+            .iter()
+            .any(|(candidate, _, _)| candidate == sha256))
     }
 
     pub fn record_snapshot_fingerprint(
@@ -14895,6 +15037,12 @@ pub enum StoreError {
     PublicationGateBusy,
     #[error("cannot publish sync manifest: {0}")]
     PublishManifest(rusqlite::Error),
+    #[error("catalogue durability checkpoint failed: {0}")]
+    CatalogueDurability(std::io::Error),
+    #[error(
+        "catalogue commit outcome is conflicting for vehicle {vehicle_id} snapshot {snapshot_id}"
+    )]
+    AmbiguousCatalogueCommit { vehicle_id: Uuid, snapshot_id: Uuid },
     #[error("cannot associate a snapshot fingerprint with uncatalogued manifest {0}")]
     FingerprintManifestMissing(Uuid),
     #[error(
@@ -15294,6 +15442,27 @@ mod tests {
             })
             .expect("row count");
         assert_eq!(rows, 1);
+    }
+
+    #[test]
+    fn teslamate_legacy_token_store_zeroizes_ciphertext() {
+        use zeroize::Zeroize;
+
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+        assert_zeroize_on_drop::<TeslaMateLegacyTokenStore>();
+
+        let mut stored = TeslaMateLegacyTokenStore::refreshed(
+            b"access-secret-canary".to_vec(),
+            b"refresh-secret-canary".to_vec(),
+            2,
+            1,
+        )
+        .expect("stored pair");
+        stored.zeroize();
+        assert!(stored.access().iter().all(|byte| *byte == 0));
+        assert!(stored.refresh().iter().all(|byte| *byte == 0));
+        assert_eq!(stored.expires_at(), 0);
+        assert_eq!(stored.next_refresh_at(), 0);
     }
 
     #[test]
@@ -15789,6 +15958,41 @@ mod tests {
     }
 
     #[test]
+    fn manifest_commit_fault_reconciles_exact_pre_or_post_state() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        let before_root = tempfile::tempdir().expect("before-commit root");
+        let before = HubStore::initialize(before_root.path()).expect("before store");
+        let manifest = test_manifest();
+        let _before_fault = inject(DurabilityFaultPoint::CatalogueBeforeCommit);
+        assert!(matches!(
+            before.publish_manifest(&manifest),
+            Err(StoreError::CatalogueDurability(_))
+        ));
+        assert!(
+            before
+                .manifest_for_vehicle(manifest.vehicle_id)
+                .expect("prior lookup")
+                .is_none(),
+            "pre-commit fault retains the exact prior empty state"
+        );
+
+        let after_root = tempfile::tempdir().expect("after-commit root");
+        let after = HubStore::initialize(after_root.path()).expect("after store");
+        let _after_fault = inject(DurabilityFaultPoint::CatalogueAfterCommit);
+        after
+            .publish_manifest(&manifest)
+            .expect("post-commit fault reconciles exact candidate to success");
+        assert_eq!(
+            after
+                .manifest_for_vehicle(manifest.vehicle_id)
+                .expect("candidate lookup")
+                .expect("candidate visible"),
+            manifest
+        );
+    }
+
+    #[test]
     fn schema_22_manifest_is_catalogued_as_full_snapshot() {
         let temp = tempfile::tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
@@ -15840,6 +16044,61 @@ mod tests {
         assert_eq!(loaded.schema, HUB_PROJECTION_SCHEMA_V3);
         assert_eq!(loaded.snapshot_id, manifest.snapshot_id);
         assert_eq!(loaded.chunks[0].sha256, digest);
+    }
+
+    #[test]
+    fn schema_22_noop_fault_matrix_is_old_or_exact_candidate() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        for (point, expect_candidate) in [
+            (DurabilityFaultPoint::Schema22NoOpWrite, false),
+            (DurabilityFaultPoint::Schema22NoOpFsync, false),
+            (DurabilityFaultPoint::Schema22NoOpRename, true),
+            (DurabilityFaultPoint::Schema22NoOpDirectoryFsync, true),
+        ] {
+            let temp = tempfile::tempdir().expect("temp directory");
+            let store = HubStore::initialize(temp.path()).expect("store initializes");
+            let manifest = schema_22_test_manifest();
+            let noop = crate::updates_delivery::SignedNoOpState {
+                schema: "teslatlas-hub-schema-22-noop-v1".into(),
+                projection_schema: "2.2".into(),
+                installation_id: manifest.installation_id,
+                account_id: manifest.account_id,
+                vehicle_id: manifest.vehicle_id,
+                generation: manifest.generation,
+                snapshot_id: manifest.snapshot_id,
+                head_sequence: manifest.head_sequence,
+                pack_sha256: manifest.chunks[0].sha256.to_string(),
+                terminal_cursor: manifest.terminal_cursor.clone(),
+                source_witness: None,
+            };
+            let gate = store.try_acquire_publication_gate().expect("gate");
+            let _fault = inject(point);
+            let error = store
+                .publish_schema_22_noop(&gate, &noop)
+                .expect_err("armed no-op point must fail");
+            assert!(error.to_string().contains("durability fault"));
+            let stored = store
+                .schema_22_noop_for_snapshot(noop.vehicle_id, noop.snapshot_id)
+                .expect("inspect no-op after fault");
+            assert_eq!(stored.is_some(), expect_candidate, "outcome for {point:?}");
+            if let Some(bytes) = stored {
+                assert_eq!(
+                    bytes,
+                    serde_json::to_vec(&noop).expect("canonical candidate")
+                );
+            }
+            assert!(
+                store
+                    .manifest_for_vehicle(noop.vehicle_id)
+                    .expect("manifest lookup")
+                    .is_none(),
+                "a no-op fault must never make a half pair current"
+            );
+            store
+                .publish_schema_22_noop(&gate, &noop)
+                .expect("exact retry converges");
+        }
     }
 
     #[test]
