@@ -2234,7 +2234,6 @@ fn ensure_vehicle_stream(
         return false;
     }
     let refresh_failure = Some(Arc::clone(refresh));
-    streams.retain(|stream| stream.vehicle_id != vehicle_id || !stream.task.is_finished());
     if streams.iter().any(|stream| stream.vehicle_id == vehicle_id) {
         return true;
     }
@@ -2376,6 +2375,12 @@ async fn drain_stream_events_with_cache(
     for stream in streams.iter_mut() {
         if stream.sensitive_access_failure.load(Ordering::Acquire) {
             return Err(CollectorError::SensitiveAccessUnavailable);
+        }
+        if stream.task.is_finished() {
+            // Do not discard a completed stream task. An empty event queue
+            // must never hide a dead supervisor.
+            let _ = (&mut stream.task).await;
+            return Err(CollectorError::StreamTask);
         }
         for _ in 0..MAX_STREAM_EVENTS_PER_DRAIN {
             let Ok(event) = stream.events.try_recv() else {
@@ -4239,6 +4244,8 @@ pub enum CollectorError {
     SupervisedHeartbeatTask,
     #[error("terrain worker stopped unexpectedly")]
     TerrainWorkerTask,
+    #[error("vehicle stream task stopped unexpectedly")]
+    StreamTask,
     #[error("terrain worker failed during local startup")]
     TerrainWorkerStartup,
     #[error("runtime sensitive-access admission is unavailable")]

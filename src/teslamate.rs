@@ -40,20 +40,18 @@ impl ReadOnlySource {
         if url.password().is_some() {
             return Err(TeslaMateSourceError::EmbeddedSecret);
         }
+        if !url
+            .host_str()
+            .and_then(|host| host.trim_matches(['[', ']']).parse::<IpAddr>().ok())
+            .is_some_and(|address| address.is_loopback())
+        {
+            return Err(TeslaMateSourceError::LoopbackRequired);
+        }
         if url.path().trim_matches('/').is_empty() {
             return Err(TeslaMateSourceError::Database);
         }
-        if url.fragment().is_some() {
+        if url.query().is_some() || url.fragment().is_some() {
             return Err(TeslaMateSourceError::Parameters);
-        }
-        if let Some(query) = url.query() {
-            let literal_loopback = url
-                .host_str()
-                .and_then(|host| host.parse::<IpAddr>().ok())
-                .is_some_and(|address| address.is_loopback());
-            if !literal_loopback || query != "sslmode=disable" {
-                return Err(TeslaMateSourceError::Parameters);
-            }
         }
         Ok(Self { url })
     }
@@ -77,6 +75,7 @@ impl ReadOnlySource {
 
     pub fn is_loopback(&self) -> bool {
         self.host()
+            .trim_matches(['[', ']'])
             .parse::<IpAddr>()
             .is_ok_and(|address| address.is_loopback())
     }
@@ -120,6 +119,8 @@ pub enum TeslaMateSourceError {
     Scheme,
     #[error("TeslaMate migration source requires a host")]
     Host,
+    #[error("TeslaMate migration source requires a literal loopback address")]
+    LoopbackRequired,
     #[error("TeslaMate migration source requires a database name")]
     Database,
     #[error("embedded source credentials are not permitted")]
@@ -134,14 +135,14 @@ mod tests {
 
     #[test]
     fn accepts_a_credential_free_postgres_source() {
-        let source = ReadOnlySource::parse("postgresql://teslamate@db.internal:5433/teslamate")
+        let source = ReadOnlySource::parse("postgresql://teslamate@127.0.0.1:5433/teslamate")
             .expect("valid source");
-        assert_eq!(source.host(), "db.internal");
+        assert_eq!(source.host(), "127.0.0.1");
         assert_eq!(source.port(), 5433);
         assert_eq!(source.database_name(), "teslamate");
         assert_eq!(
             source.to_string(),
-            "postgresql://teslamate@db.internal:5433/teslamate"
+            "postgresql://teslamate@127.0.0.1:5433/teslamate"
         );
         assert!(source.session_sql()[1].contains("REPEATABLE READ, READ ONLY"));
         assert!(source.session_sql()[2].contains("TIME ZONE 'UTC'"));
@@ -156,6 +157,26 @@ mod tests {
     }
 
     #[test]
+    fn requires_a_literal_loopback_postgres_host() {
+        let ipv6 = ReadOnlySource::parse("postgresql://reader@[::1]/teslamate")
+            .expect("IPv6 loopback source");
+        assert_eq!(ipv6.host(), "[::1]");
+        for source in [
+            "postgresql://reader@localhost/teslamate",
+            "postgresql://reader@db.example/teslamate",
+            "postgresql://reader@127.0.0.1,127.0.0.2/teslamate",
+            "postgresql://reader@192.168.1.2/teslamate",
+        ] {
+            assert!(matches!(
+                ReadOnlySource::parse(source),
+                Err(TeslaMateSourceError::LoopbackRequired)
+                    | Err(TeslaMateSourceError::Host)
+                    | Err(TeslaMateSourceError::Url(_))
+            ));
+        }
+    }
+
+    #[test]
     fn rejects_embedded_secrets_and_connection_options() {
         let secret = ReadOnlySource::parse("postgresql://reader:secret@localhost/teslamate")
             .expect_err("password must be rejected");
@@ -164,12 +185,12 @@ mod tests {
         let option =
             ReadOnlySource::parse("postgresql://reader@localhost/teslamate?sslmode=disable")
                 .expect_err("hostname plaintext must be rejected");
-        assert!(matches!(option, TeslaMateSourceError::Parameters));
+        assert!(matches!(option, TeslaMateSourceError::LoopbackRequired));
 
-        assert!(
-            ReadOnlySource::parse("postgresql://reader@127.0.0.1/teslamate?sslmode=disable")
-                .is_ok()
-        );
+        assert!(matches!(
+            ReadOnlySource::parse("postgresql://reader@127.0.0.1/teslamate?sslmode=disable"),
+            Err(TeslaMateSourceError::Parameters)
+        ));
         assert!(
             ReadOnlySource::parse("postgresql://reader@192.168.1.2/teslamate?sslmode=disable")
                 .is_err()
@@ -178,7 +199,7 @@ mod tests {
 
     #[test]
     fn schema_check_is_fully_qualified() {
-        let source = ReadOnlySource::parse("postgres://localhost/teslamate").expect("source");
+        let source = ReadOnlySource::parse("postgres://127.0.0.1/teslamate").expect("source");
         assert!(source.schema_check_sql().contains("pg_catalog.pg_class"));
         assert!(
             source

@@ -159,7 +159,7 @@ pub(crate) struct OwnerApi {
 }
 
 fn is_loopback_owner_api_host(host: Option<&str>) -> bool {
-    host.and_then(|host| host.parse::<IpAddr>().ok())
+    host.and_then(|host| host.trim_matches(['[', ']']).parse::<IpAddr>().ok())
         .is_some_and(|address| address.is_loopback())
 }
 
@@ -1048,6 +1048,15 @@ mod tests {
             OwnerApiBase::parse("http://192.168.1.2/"),
             Err(OwnerApiConfigError::HttpsRequired)
         ));
+        assert!(OwnerApiBase::parse("http://[::1]:9/").is_ok());
+        for base in [
+            "http://token@127.0.0.1/",
+            "http://127.0.0.1/?token=bad",
+            "http://127.0.0.1/#token",
+            "http://localhost:9/",
+        ] {
+            assert!(OwnerApiBase::parse(base).is_err());
+        }
     }
 
     struct FakeServer {

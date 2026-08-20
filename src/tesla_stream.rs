@@ -10,7 +10,7 @@ use std::{
 use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use thiserror::Error;
 use tokio::{
     sync::{Mutex, mpsc, oneshot},
@@ -100,7 +100,7 @@ pub fn validate_endpoint_override(value: &str) -> Result<(), StreamError> {
 }
 
 fn is_literal_loopback_host(host: Option<&str>) -> bool {
-    host.and_then(|host| host.parse::<IpAddr>().ok())
+    host.and_then(|host| host.trim_matches(['[', ']']).parse::<IpAddr>().ok())
         .is_some_and(|address| address.is_loopback())
 }
 
@@ -237,6 +237,11 @@ enum StreamRunTermination {
     TransportEnded,
 }
 
+enum EventDelivery {
+    Delivered,
+    Shutdown,
+}
+
 impl TeslaStreamSupervisor {
     pub(crate) fn new_legacy_auth(
         vehicle_id: VehicleId,
@@ -331,8 +336,13 @@ impl TeslaStreamSupervisor {
                         connect_receipt,
                         crate::db::OutboundRequestOutcome::TransportError,
                     )?;
-                    self.emit_event(StreamEvent::TransportUnavailable, shutdown)
-                        .await?;
+                    if self
+                        .emit_event(StreamEvent::TransportUnavailable, shutdown)
+                        .await?
+                        .is_shutdown()
+                    {
+                        return Ok(disconnected_termination(ever_subscribed));
+                    }
                     if wait_or_shutdown(connect_backoff.next(), shutdown).await {
                         return Ok(disconnected_termination(ever_subscribed));
                     }
@@ -352,8 +362,13 @@ impl TeslaStreamSupervisor {
                 }
                 Err(AccessTokenError::Unavailable) => {
                     let _ = socket.close(None).await;
-                    self.emit_event(StreamEvent::TransportUnavailable, shutdown)
-                        .await?;
+                    if self
+                        .emit_event(StreamEvent::TransportUnavailable, shutdown)
+                        .await?
+                        .is_shutdown()
+                    {
+                        return Ok(disconnected_termination(ever_subscribed));
+                    }
                     if wait_or_shutdown(connect_backoff.next(), shutdown).await {
                         return Ok(disconnected_termination(ever_subscribed));
                     }
@@ -377,8 +392,13 @@ impl TeslaStreamSupervisor {
                     subscribe_receipt,
                     crate::db::OutboundRequestOutcome::TransportError,
                 )?;
-                self.emit_event(StreamEvent::TransportUnavailable, shutdown)
-                    .await?;
+                if self
+                    .emit_event(StreamEvent::TransportUnavailable, shutdown)
+                    .await?
+                    .is_shutdown()
+                {
+                    return Ok(disconnected_termination(ever_subscribed));
+                }
                 if wait_or_shutdown(connect_backoff.next(), shutdown).await {
                     return Ok(disconnected_termination(ever_subscribed));
                 }
@@ -398,7 +418,9 @@ impl TeslaStreamSupervisor {
                                 crate::db::OutboundRequestOutcome::TransportError,
                             )?;
                         }
-                        self.emit_event(StreamEvent::TransportUnavailable, shutdown).await?;
+                        if self.emit_event(StreamEvent::TransportUnavailable, shutdown).await?.is_shutdown() {
+                            return Ok(disconnected_termination(ever_subscribed));
+                        }
                         break false;
                     }
                     frame = socket.next() => match frame {
@@ -433,7 +455,9 @@ impl TeslaStreamSupervisor {
                                     };
                                     self.complete_stream_attempt(receipt, outcome)?;
                                 }
-                            self.emit_event(event, shutdown).await?;
+                            if self.emit_event(event, shutdown).await?.is_shutdown() {
+                                return Ok(disconnected_termination(ever_subscribed));
+                            }
                             if terminal { break false; }
                             if !valid_after_handshake {
                                 continue;
@@ -449,7 +473,9 @@ impl TeslaStreamSupervisor {
                                     crate::db::OutboundRequestOutcome::TransportError,
                                 )?;
                             }
-                            self.emit_event(StreamEvent::TransportUnavailable, shutdown).await?;
+                            if self.emit_event(StreamEvent::TransportUnavailable, shutdown).await?.is_shutdown() {
+                                return Ok(disconnected_termination(ever_subscribed));
+                            }
                             break false;
                         }
                     }
@@ -507,14 +533,14 @@ impl TeslaStreamSupervisor {
         &self,
         event: StreamEvent,
         shutdown: &mut oneshot::Receiver<()>,
-    ) -> Result<(), StreamSupervisorError> {
+    ) -> Result<EventDelivery, StreamSupervisorError> {
         if let Some(gate) = self.power_gate.as_ref() {
             gate.observe(&event);
         }
         tokio::select! {
-            result = self.events.send(event) => result.map_err(|_| StreamSupervisorError::EventReceiverClosed),
+            result = self.events.send(event) => result.map(|_| EventDelivery::Delivered).map_err(|_| StreamSupervisorError::EventReceiverClosed),
             _ = sleep(EVENT_SEND_TIMEOUT) => Err(StreamSupervisorError::EventQueueFull),
-            _ = &mut *shutdown => Ok(()),
+            _ = &mut *shutdown => Ok(EventDelivery::Shutdown),
         }
     }
 
@@ -598,14 +624,12 @@ fn endpoint_for_region(region: StreamRegion, endpoint: String) -> Result<String,
 }
 
 fn stream_socket_config() -> WebSocketConfig {
-    WebSocketConfig {
-        read_buffer_size: STREAM_READ_BUFFER_BYTES,
-        write_buffer_size: STREAM_WRITE_BUFFER_BYTES,
-        max_write_buffer_size: STREAM_MAX_WRITE_BUFFER_BYTES,
-        max_message_size: Some(STREAM_MAX_MESSAGE_BYTES),
-        max_frame_size: Some(STREAM_MAX_FRAME_BYTES),
-        ..WebSocketConfig::default()
-    }
+    WebSocketConfig::default()
+        .read_buffer_size(STREAM_READ_BUFFER_BYTES)
+        .write_buffer_size(STREAM_WRITE_BUFFER_BYTES)
+        .max_write_buffer_size(STREAM_MAX_WRITE_BUFFER_BYTES)
+        .max_message_size(Some(STREAM_MAX_MESSAGE_BYTES))
+        .max_frame_size(Some(STREAM_MAX_FRAME_BYTES))
 }
 
 fn equal_jitter(delay: Duration) -> Duration {
@@ -613,10 +637,18 @@ fn equal_jitter(delay: Duration) -> Duration {
     let lower = upper / 2;
     let width = upper.saturating_sub(lower);
     let mut bytes = [0_u8; 8];
-    let random = getrandom::getrandom(&mut bytes)
-        .map(u64::from_le_bytes)
-        .unwrap_or(0) as u128;
+    let random = if getrandom::getrandom(&mut bytes).is_ok() {
+        u64::from_le_bytes(bytes) as u128
+    } else {
+        0
+    };
     Duration::from_nanos(lower.saturating_add(random % width.saturating_add(1)) as u64)
+}
+
+impl EventDelivery {
+    fn is_shutdown(&self) -> bool {
+        matches!(self, Self::Shutdown)
+    }
 }
 
 async fn wait_or_shutdown(delay: Duration, shutdown: &mut oneshot::Receiver<()>) -> bool {
@@ -813,6 +845,7 @@ fn optional_state(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
     use tokio::{net::TcpListener, time::timeout};
     use tokio_tungstenite::{accept_async, tungstenite::Message};
 
@@ -871,6 +904,35 @@ mod tests {
         assert!(
             validate_endpoint_override("wss://streaming.vn.teslamotors.com/streaming/").is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn saturated_event_queue_times_out_or_stops_on_shutdown() {
+        let (events, _receiver) = mpsc::channel(1);
+        events.try_send(StreamEvent::Healthy).expect("fill queue");
+        let supervisor =
+            legacy_supervisor(9, 9, "ws://127.0.0.1:9/".to_owned(), events).expect("supervisor");
+
+        let (_stop, mut shutdown) = oneshot::channel();
+        assert!(matches!(
+            supervisor
+                .emit_event(StreamEvent::TransportUnavailable, &mut shutdown)
+                .await,
+            Err(StreamSupervisorError::EventQueueFull)
+        ));
+
+        let (events, _receiver) = mpsc::channel(1);
+        events.try_send(StreamEvent::Healthy).expect("fill queue");
+        let supervisor =
+            legacy_supervisor(9, 9, "ws://127.0.0.1:9/".to_owned(), events).expect("supervisor");
+        let (stop, mut shutdown) = oneshot::channel();
+        stop.send(()).expect("shutdown");
+        assert!(matches!(
+            supervisor
+                .emit_event(StreamEvent::TransportUnavailable, &mut shutdown)
+                .await,
+            Ok(EventDelivery::Shutdown)
+        ));
     }
 
     #[test]

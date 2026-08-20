@@ -1016,7 +1016,7 @@ mod tests {
     fn teslamate_import_requires_a_complete_safe_source_configuration() {
         let incomplete: HubConfig = toml::from_str(
             "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-             [teslamate]\nsource_url = 'postgresql://reader@db.internal/teslamate'",
+             [teslamate]\nsource_url = 'postgresql://reader@127.0.0.1/teslamate'",
         )
         .expect("parse");
         assert!(matches!(
@@ -1026,7 +1026,7 @@ mod tests {
 
         let complete: HubConfig = toml::from_str(
             "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-             [teslamate]\nsource_url = 'postgresql://reader@db.internal/teslamate'\n\
+             [teslamate]\nsource_url = 'postgresql://reader@127.0.0.1/teslamate'\n\
              source_key = 'garage-teslamate'",
         )
         .expect("parse");
@@ -1038,7 +1038,7 @@ mod tests {
 
         let unsafe_stage: HubConfig = toml::from_str(
             "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-             [teslamate]\nsource_url = 'postgresql://reader@db.internal/teslamate'\n\
+             [teslamate]\nsource_url = 'postgresql://reader@127.0.0.1/teslamate'\n\
              source_key = 'garage-teslamate'\nmaximum_stage_bytes = 1",
         )
         .expect("parse");
