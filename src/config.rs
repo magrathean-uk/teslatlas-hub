@@ -8,7 +8,7 @@ use std::{
 };
 
 use rustix::{
-    fs::{FileType, Mode, OFlags, fstat, open},
+    fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open},
     process::getuid,
 };
 use serde::Deserialize;
@@ -798,7 +798,7 @@ fn read_config_file_after_open(
 ) -> Result<Vec<u8>, ConfigError> {
     let descriptor = open(
         path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
     .map_err(|_| ConfigError::Read)?;
@@ -809,6 +809,8 @@ fn read_config_file_after_open(
     {
         return Err(ConfigError::UnsafeFile);
     }
+    let flags = fcntl_getfl(&descriptor).map_err(|_| ConfigError::Read)?;
+    fcntl_setfl(&descriptor, flags & !OFlags::NONBLOCK).map_err(|_| ConfigError::Read)?;
 
     after_open();
 
@@ -894,7 +896,7 @@ pub enum ConfigError {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::PermissionsExt;
+    use std::{os::unix::fs::PermissionsExt, process::Command, sync::mpsc, thread, time::Duration};
 
     use super::*;
 
@@ -945,6 +947,36 @@ mod tests {
                 .expect("replace")),
             Err(ConfigError::FileIdentityChanged)
         ));
+    }
+
+    #[test]
+    fn load_rejects_a_fifo_without_waiting_for_a_writer() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let path = temporary.path().join("config.fifo");
+        assert!(
+            Command::new("mkfifo")
+                .arg(&path)
+                .status()
+                .expect("run mkfifo")
+                .success()
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("FIFO mode");
+
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            sender
+                .send(matches!(
+                    HubConfig::load(path),
+                    Err(ConfigError::UnsafeFile)
+                ))
+                .expect("send FIFO result");
+        });
+        assert!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("FIFO admission must not block")
+        );
+        worker.join().expect("FIFO admission worker");
     }
 
     #[test]

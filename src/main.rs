@@ -45,7 +45,11 @@ use teslatlas_hub::{
 use tracing_subscriber::EnvFilter;
 
 #[cfg(target_os = "macos")]
-use rustix::{io::Errno, process::getuid};
+use rustix::{
+    fs::{fcntl_getfl, fcntl_setfl},
+    io::Errno,
+    process::getuid,
+};
 
 /// A worker owned by the macOS Serve supervisor.  Normal exits request
 /// shutdown and await the task; cancellation of the supervisor aborts the
@@ -928,6 +932,8 @@ struct MacMigrationInput<'a> {
 #[cfg(target_os = "macos")]
 const MAX_MIGRATION_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
 #[cfg(target_os = "macos")]
+const MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES: usize = MAX_MIGRATION_POSTGRES_PASSWORD_BYTES + 2;
+#[cfg(target_os = "macos")]
 const MAX_MIGRATION_TOKEN_BYTES: usize =
     teslatlas_hub::teslamate_token::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
 #[cfg(target_os = "macos")]
@@ -1045,10 +1051,7 @@ async fn run_macos_migration(
     admission.assert_sensitive_access()?;
     admission.assert_store_path(&config.data_dir)?;
     let source = ReadOnlySource::parse(source_url)?;
-    let postgres_password = TeslaMatePostgresPassword::from_bytes(&read_migration_secret(
-        postgres_password_file,
-        MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
-    )?)?;
+    let postgres_password = read_migration_postgres_password(postgres_password_file)?;
     let mut limits = config.teslamate.read_limits()?;
     let profile = derive_effective_import_profile(
         limits.parallel_copy_lanes,
@@ -1273,6 +1276,14 @@ fn read_migration_secret(
 }
 
 #[cfg(target_os = "macos")]
+fn read_migration_postgres_password(
+    path: &Path,
+) -> Result<TeslaMatePostgresPassword, Box<dyn std::error::Error>> {
+    let bytes = read_migration_secret(path, MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES)?;
+    TeslaMatePostgresPassword::from_bytes(&bytes).map_err(Into::into)
+}
+
+#[cfg(target_os = "macos")]
 fn read_bounded_migration_secret(
     reader: impl Read,
     maximum: usize,
@@ -1305,7 +1316,7 @@ fn read_migration_secret_file_with_hooks(
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, MigrationSecretReadError> {
     let descriptor = open(
         path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
     .map_err(|error| {
@@ -1319,6 +1330,9 @@ fn read_migration_secret_file_with_hooks(
     if !safe_migration_secret_stat(&initial) {
         return Err(MigrationSecretReadError::UnsafeFile);
     }
+    let flags = fcntl_getfl(&descriptor).map_err(|_| MigrationSecretReadError::Read)?;
+    fcntl_setfl(&descriptor, flags & !OFlags::NONBLOCK)
+        .map_err(|_| MigrationSecretReadError::Read)?;
     after_open();
 
     let file: fs::File = descriptor.into();
@@ -1783,10 +1797,11 @@ mod tests {
     #[cfg(target_os = "macos")]
     use super::{
         MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
-        MAX_MIGRATION_TOKEN_BYTES, MacServeControl, MacServeWorkerStopTimeout,
+        MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
+        MAX_MIGRATION_TOKEN_FILE_BYTES, MacServeControl, MacServeWorkerStopTimeout,
         MigrationSecretReadError, command_requires_user_hub_admission, migration_start_requested,
-        migration_stop_confirmed, read_migration_secret, read_migration_secret_file_with_hooks,
-        run_macos_serve_supervisor,
+        migration_stop_confirmed, read_migration_postgres_password, read_migration_secret,
+        read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
     };
     use teslatlas_hub::db::HubStore;
     #[cfg(target_os = "macos")]
@@ -1830,8 +1845,8 @@ mod tests {
     fn migration_secret_reader_accepts_each_exact_cap_and_rejects_next_byte() {
         let temporary = tempfile::tempdir().expect("temporary directory");
         for (name, maximum) in [
-            ("postgres", MAX_MIGRATION_POSTGRES_PASSWORD_BYTES),
-            ("token", MAX_MIGRATION_TOKEN_BYTES),
+            ("postgres", MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES),
+            ("token", MAX_MIGRATION_TOKEN_FILE_BYTES),
             ("key", MAX_MIGRATION_ENCRYPTION_KEY_BYTES),
         ] {
             let path = temporary.path().join(name);
@@ -1847,6 +1862,85 @@ mod tests {
             fs::write(&path, vec![b'x'; maximum + 1]).expect("oversized secret");
             assert!(read_migration_secret(&path, maximum).is_err());
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migration_password_and_token_semantic_boundaries_include_line_endings() {
+        use teslatlas_hub::teslamate_token::{
+            CLOAK_ENVELOPE_OVERHEAD_BYTES, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+            encrypt_legacy_owner_token_files,
+        };
+
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let password_path = temporary.path().join("password");
+        for ending in [b"".as_slice(), b"\n".as_slice(), b"\r\n".as_slice()] {
+            let mut value = vec![b'p'; MAX_MIGRATION_POSTGRES_PASSWORD_BYTES];
+            value.extend_from_slice(ending);
+            fs::write(&password_path, value).expect("password file");
+            fs::set_permissions(&password_path, fs::Permissions::from_mode(0o600))
+                .expect("password mode");
+            assert_eq!(
+                read_migration_postgres_password(&password_path)
+                    .expect("semantic password cap")
+                    .as_str()
+                    .len(),
+                MAX_MIGRATION_POSTGRES_PASSWORD_BYTES
+            );
+        }
+        fs::write(
+            &password_path,
+            vec![b'p'; MAX_MIGRATION_POSTGRES_PASSWORD_BYTES + 1],
+        )
+        .expect("oversized password");
+        fs::set_permissions(&password_path, fs::Permissions::from_mode(0o600))
+            .expect("password mode");
+        assert!(read_migration_postgres_password(&password_path).is_err());
+
+        assert_eq!(MAX_MIGRATION_TOKEN_BYTES, 16 * 1024);
+        assert_eq!(
+            MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+            MAX_MIGRATION_TOKEN_BYTES + CLOAK_ENVELOPE_OVERHEAD_BYTES
+        );
+        let access_path = temporary.path().join("access");
+        let refresh_path = temporary.path().join("refresh");
+        fs::write(
+            &access_path,
+            [vec![b'a'; MAX_MIGRATION_TOKEN_BYTES], b"\n".to_vec()].concat(),
+        )
+        .expect("access token");
+        fs::write(
+            &refresh_path,
+            [vec![b'b'; MAX_MIGRATION_TOKEN_BYTES], b"\r\n".to_vec()].concat(),
+        )
+        .expect("refresh token");
+        for path in [&access_path, &refresh_path] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("token mode");
+        }
+        let (access, refresh) = encrypt_legacy_owner_token_files(
+            b"boundary-test-key",
+            read_migration_secret(&access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)
+                .expect("bounded access token"),
+            read_migration_secret(&refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)
+                .expect("bounded refresh token"),
+        )
+        .expect("semantic token cap");
+        assert_eq!(access.len(), MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES);
+        assert_eq!(refresh.len(), MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES);
+
+        fs::write(&access_path, vec![b'a'; MAX_MIGRATION_TOKEN_BYTES + 1])
+            .expect("oversized access token");
+        fs::set_permissions(&access_path, fs::Permissions::from_mode(0o600)).expect("token mode");
+        assert!(
+            encrypt_legacy_owner_token_files(
+                b"boundary-test-key",
+                read_migration_secret(&access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)
+                    .expect("raw bounded access token"),
+                read_migration_secret(&refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)
+                    .expect("bounded refresh token"),
+            )
+            .is_err()
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -1912,6 +2006,39 @@ mod tests {
         let rendered = format!("{error:?}");
         assert!(!rendered.contains("outside-secret"));
         assert!(!rendered.contains(&linked.display().to_string()));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migration_secret_reader_rejects_a_fifo_without_waiting_for_a_writer() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let path = temporary.path().join("secret.fifo");
+        assert!(
+            ProcessCommand::new("mkfifo")
+                .arg(&path)
+                .status()
+                .expect("run mkfifo")
+                .success()
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("FIFO mode");
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            sender
+                .send(matches!(
+                    read_migration_secret(&path, 64),
+                    Err(error)
+                        if error.downcast_ref::<MigrationSecretReadError>()
+                            == Some(&MigrationSecretReadError::UnsafeFile)
+                ))
+                .expect("send FIFO result");
+        });
+        assert!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("FIFO admission must not block")
+        );
+        worker.join().expect("FIFO admission worker");
     }
 
     #[cfg(target_os = "macos")]

@@ -8,7 +8,7 @@ use std::{
 };
 
 use rustix::{
-    fs::{FileType, Mode, OFlags, fstat, open},
+    fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open},
     io::Errno,
     process::getuid,
 };
@@ -444,7 +444,7 @@ fn read_checked_secret_file_after_open(
 ) -> Result<Zeroizing<Vec<u8>>, TeslaMateCredentialError> {
     let descriptor = open(
         path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
     .map_err(|error| match error {
@@ -480,6 +480,20 @@ fn read_checked_secret_file_after_open(
             TeslaMateCredentialError::UnsafeKeyFile
         });
     }
+    let flags = fcntl_getfl(&descriptor).map_err(|_| {
+        if cursor {
+            TeslaMateCredentialError::ReadCursorKey
+        } else {
+            TeslaMateCredentialError::ReadKey
+        }
+    })?;
+    fcntl_setfl(&descriptor, flags & !OFlags::NONBLOCK).map_err(|_| {
+        if cursor {
+            TeslaMateCredentialError::ReadCursorKey
+        } else {
+            TeslaMateCredentialError::ReadKey
+        }
+    })?;
 
     after_open();
 
@@ -625,7 +639,9 @@ pub enum TeslaMateCredentialImportError {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{
+        fs, os::unix::fs::PermissionsExt, process::Command, sync::mpsc, thread, time::Duration,
+    };
 
     use super::*;
 
@@ -762,6 +778,43 @@ mod tests {
             }),
             Err(TeslaMateCredentialError::KeyIdentityChanged)
         ));
+    }
+
+    #[test]
+    fn key_readers_reject_fifos_without_waiting_for_a_writer() {
+        for cursor in [false, true] {
+            let temporary = tempfile::tempdir().expect("temporary directory");
+            let path = temporary.path().join(if cursor {
+                "cursor-key.fifo"
+            } else {
+                "encryption-key.fifo"
+            });
+            assert!(
+                Command::new("mkfifo")
+                    .arg(&path)
+                    .status()
+                    .expect("run mkfifo")
+                    .success()
+            );
+            fs::set_permissions(&path, fs::Permissions::from_mode(KEY_FILE_MODE))
+                .expect("FIFO mode");
+
+            let (sender, receiver) = mpsc::channel();
+            let worker = thread::spawn(move || {
+                let rejected = match read_checked_secret_file(&path, MAX_KEY_BYTES, cursor) {
+                    Err(TeslaMateCredentialError::UnsafeCursorKeyFile) if cursor => true,
+                    Err(TeslaMateCredentialError::UnsafeKeyFile) if !cursor => true,
+                    _ => false,
+                };
+                sender.send(rejected).expect("send FIFO result");
+            });
+            assert!(
+                receiver
+                    .recv_timeout(Duration::from_secs(1))
+                    .expect("FIFO admission must not block")
+            );
+            worker.join().expect("FIFO admission worker");
+        }
     }
 
     #[test]

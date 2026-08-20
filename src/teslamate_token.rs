@@ -21,12 +21,13 @@ const NONCE_BYTES: usize = 12;
 const AUTH_TAG_BYTES: usize = 16;
 const ASSOCIATED_DATA: &[u8] = b"AES256GCM";
 
-/// Shared with the source reader and matched by the Hub token store. No
-/// plaintext whose Cloak envelope would exceed this limit is admitted.
-pub const MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES: usize = 16 * 1024;
 pub const CLOAK_ENVELOPE_OVERHEAD_BYTES: usize = 2 + CLOAK_TAG.len() + NONCE_BYTES + AUTH_TAG_BYTES;
-pub const MAX_LEGACY_TOKEN_PLAINTEXT_BYTES: usize =
-    MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES - CLOAK_ENVELOPE_OVERHEAD_BYTES;
+/// The established semantic limit for one plaintext owner token.
+pub const MAX_LEGACY_TOKEN_PLAINTEXT_BYTES: usize = 16 * 1024;
+/// Shared with the source reader and matched by the Hub token store. This cap
+/// includes the fixed Cloak V1 envelope around a maximum-size plaintext.
+pub const MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES: usize =
+    MAX_LEGACY_TOKEN_PLAINTEXT_BYTES + CLOAK_ENVELOPE_OVERHEAD_BYTES;
 
 /// Decrypt the one legacy TeslaMate access/refresh pair. Both values are
 /// authenticated independently; a malformed, stale, or tampered value is
@@ -285,6 +286,11 @@ mod tests {
 
     #[test]
     fn envelope_exact_plaintext_cap_persists_and_next_byte_is_rejected() {
+        assert_eq!(MAX_LEGACY_TOKEN_PLAINTEXT_BYTES, 16 * 1024);
+        assert_eq!(
+            MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+            MAX_LEGACY_TOKEN_PLAINTEXT_BYTES + super::CLOAK_ENVELOPE_OVERHEAD_BYTES
+        );
         let access = Zeroizing::new(vec![b'a'; MAX_LEGACY_TOKEN_PLAINTEXT_BYTES]);
         let refresh = Zeroizing::new(vec![b'b'; MAX_LEGACY_TOKEN_PLAINTEXT_BYTES]);
         let (access_ciphertext, refresh_ciphertext) =
