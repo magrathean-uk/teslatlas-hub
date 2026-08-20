@@ -339,6 +339,19 @@ struct Cli {
     command: Command,
 }
 
+#[cfg(target_os = "macos")]
+#[derive(Debug, Subcommand)]
+enum ServiceCommand {
+    /// Print whether the per-user LaunchAgent is loaded.
+    Status,
+    /// Start the installed per-user LaunchAgent.
+    Start,
+    /// Stop the installed per-user LaunchAgent.
+    Stop,
+    /// Stop and start the installed per-user LaunchAgent.
+    Restart,
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Print licence, source, and independence notices.
@@ -394,6 +407,12 @@ enum Command {
     /// Install and start the minimal per-user macOS Hub LaunchAgent.
     #[cfg(target_os = "macos")]
     Install,
+    /// Control the installed per-user macOS Hub LaunchAgent.
+    #[cfg(target_os = "macos")]
+    Service {
+        #[command(subcommand)]
+        command: ServiceCommand,
+    },
     /// Import one TeslaMate car, its history, and its opaque legacy token pair.
     #[cfg(target_os = "macos")]
     Migrate {
@@ -490,6 +509,37 @@ async fn main() -> ExitCode {
 
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
+
+    #[cfg(target_os = "macos")]
+    if let Command::Service { command } = &cli.command {
+        match command {
+            ServiceCommand::Status => {
+                let loaded = teslatlas_hub::macos_launch_agent::service_is_loaded()?;
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": if loaded { "running" } else { "stopped" },
+                        "loaded": loaded,
+                    })
+                );
+            }
+            ServiceCommand::Start => {
+                let config = HubConfig::load(&config_path)?;
+                teslatlas_hub::macos_launch_agent::start_installed(&config.data_dir)?;
+                println!("{}", serde_json::json!({"status": "running"}));
+            }
+            ServiceCommand::Stop => {
+                teslatlas_hub::macos_launch_agent::stop_installed()?;
+                println!("{}", serde_json::json!({"status": "stopped"}));
+            }
+            ServiceCommand::Restart => {
+                let config = HubConfig::load(&config_path)?;
+                teslatlas_hub::macos_launch_agent::restart_installed(&config.data_dir)?;
+                println!("{}", serde_json::json!({"status": "running"}));
+            }
+        }
+        return Ok(());
+    }
 
     #[cfg(not(target_os = "macos"))]
     if matches!(&cli.command, Command::Serve) {
@@ -765,6 +815,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         | Command::ObservationWatermark { .. }
         | Command::VerifyObservation { .. } => {
             unreachable!("read-only commands return before opening writable Hub state")
+        }
+        #[cfg(target_os = "macos")]
+        Command::Service { .. } => {
+            unreachable!("macOS service control returns before opening writable Hub state")
         }
         #[cfg(target_os = "macos")]
         Command::Preflight => {
@@ -1840,9 +1894,9 @@ mod tests {
         MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
         MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
         MAX_MIGRATION_TOKEN_FILE_BYTES, MacServeControl, MacServeWorkerStopTimeout,
-        MigrationSecretReadError, command_requires_user_hub_admission, migration_start_requested,
-        migration_stop_confirmed, read_migration_postgres_password, read_migration_secret,
-        read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
+        MigrationSecretReadError, ServiceCommand, command_requires_user_hub_admission,
+        migration_start_requested, migration_stop_confirmed, read_migration_postgres_password,
+        read_migration_secret, read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
     };
     use teslatlas_hub::db::HubStore;
     #[cfg(target_os = "macos")]
@@ -2957,6 +3011,29 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn service_commands_parse_without_live_store_admission() {
+        for (name, expected) in [
+            ("status", "status"),
+            ("start", "start"),
+            ("stop", "stop"),
+            ("restart", "restart"),
+        ] {
+            let cli = Cli::try_parse_from(["teslatlas-hub", "service", name]).expect("service CLI");
+            let Command::Service { command } = cli.command else {
+                panic!("service command")
+            };
+            let actual = match command {
+                ServiceCommand::Status => "status",
+                ServiceCommand::Start => "start",
+                ServiceCommand::Stop => "stop",
+                ServiceCommand::Restart => "restart",
+            };
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn every_live_mutation_and_service_command_requires_the_instance_lock() {
         assert!(command_requires_user_hub_admission(&Command::Init));
         assert!(command_requires_user_hub_admission(&Command::Setup {
@@ -2989,6 +3066,9 @@ mod tests {
         assert!(!command_requires_user_hub_admission(&Command::Legal));
         assert!(!command_requires_user_hub_admission(&Command::Status));
         assert!(!command_requires_user_hub_admission(&Command::Preflight));
+        assert!(!command_requires_user_hub_admission(&Command::Service {
+            command: ServiceCommand::Status,
+        }));
     }
 
     fn test_identity(name: &str) -> (String, zeroize::Zeroizing<String>, Vec<u8>) {

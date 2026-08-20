@@ -9,7 +9,7 @@ use std::{
 };
 
 #[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
 const LABEL: &str = "com.teslatlas.hub";
 const PLIST_NAME: &str = "com.teslatlas.hub.plist";
@@ -38,6 +38,34 @@ pub fn prepare_install(data_dir: &Path, config_path: &Path) -> io::Result<Instal
 /// have released the Hub instance lock first so Serve can acquire it.
 pub fn start_prepared(paths: &InstallPaths) -> io::Result<()> {
     launch(paths)
+}
+
+/// Query the per-user LaunchAgent without changing it.
+pub fn service_is_loaded() -> io::Result<bool> {
+    let (_, service) = service_identifiers();
+    service_is_loaded_with_runner(&service, &mut real_launchctl)
+}
+
+/// Start an already-installed Hub LaunchAgent after revalidating Hub data.
+pub fn start_installed(data_dir: &Path) -> io::Result<()> {
+    preflight_hub(data_dir)?;
+    let plist = installed_plist()?;
+    let (domain, service) = service_identifiers();
+    start_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
+}
+
+/// Idempotently stop the installed Hub LaunchAgent.
+pub fn stop_installed() -> io::Result<()> {
+    let (_, service) = service_identifiers();
+    stop_installed_with_runner(&service, &mut real_launchctl)
+}
+
+/// Restart an installed Hub LaunchAgent after revalidating Hub data.
+pub fn restart_installed(data_dir: &Path) -> io::Result<()> {
+    preflight_hub(data_dir)?;
+    let plist = installed_plist()?;
+    let (domain, service) = service_identifiers();
+    restart_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
 }
 
 /// Refuse to replace a running LaunchAgent unless this data directory has one
@@ -155,10 +183,99 @@ fn install_files(
 }
 
 fn launch(paths: &InstallPaths) -> io::Result<()> {
-    let domain = format!("gui/{}", rustix::process::geteuid().as_raw());
-    let service = format!("{domain}/{LABEL}");
+    let (domain, service) = service_identifiers();
     let mut runner = real_launchctl;
     launch_with_runner(paths, &domain, &service, &mut runner)
+}
+
+fn service_identifiers() -> (String, String) {
+    let domain = format!("gui/{}", rustix::process::geteuid().as_raw());
+    let service = format!("{domain}/{LABEL}");
+    (domain, service)
+}
+
+fn installed_plist() -> io::Result<PathBuf> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
+    let plist = home.join("Library").join("LaunchAgents").join(PLIST_NAME);
+    let metadata = fs::symlink_metadata(&plist)?;
+    if !metadata.file_type().is_file()
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || metadata.mode() & 0o077 != 0
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "installed Hub LaunchAgent plist is unsafe",
+        ));
+    }
+    Ok(plist)
+}
+
+fn start_installed_with_runner(
+    plist: &Path,
+    domain: &str,
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<()> {
+    if !service_is_loaded_with_runner(service, runner)? {
+        run_launchctl(
+            runner,
+            &[
+                std::ffi::OsStr::new("bootstrap"),
+                std::ffi::OsStr::new(domain),
+                plist.as_os_str(),
+            ],
+        )?;
+    }
+    run_launchctl(
+        runner,
+        &[
+            std::ffi::OsStr::new("kickstart"),
+            std::ffi::OsStr::new("-k"),
+            std::ffi::OsStr::new(service),
+        ],
+    )?;
+    if !service_is_loaded_with_runner(service, runner)? {
+        return Err(io::Error::other(
+            "Hub LaunchAgent is not loaded after start",
+        ));
+    }
+    Ok(())
+}
+
+fn stop_installed_with_runner(
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<()> {
+    let bootout = [
+        std::ffi::OsStr::new("bootout"),
+        std::ffi::OsStr::new(service),
+    ];
+    let _ = runner(&bootout)?;
+    if service_is_loaded_with_runner(service, runner)? {
+        return Err(io::Error::other(
+            "Hub LaunchAgent is still loaded after stop",
+        ));
+    }
+    Ok(())
+}
+
+fn service_is_loaded_with_runner(
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<bool> {
+    runner(&[std::ffi::OsStr::new("print"), std::ffi::OsStr::new(service)])
+}
+
+fn restart_installed_with_runner(
+    plist: &Path,
+    domain: &str,
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<()> {
+    stop_installed_with_runner(service, runner)?;
+    start_installed_with_runner(plist, domain, service, runner)
 }
 
 fn launch_with_runner(
@@ -616,6 +733,87 @@ mod tests {
             .expect_err("query failure must abort install");
         assert!(!binary.exists());
         assert!(!plist.exists());
+    }
+
+    #[test]
+    fn installed_service_start_stop_and_restart_use_bounded_launchctl_sequences() {
+        fn runner(
+            responses: Vec<bool>,
+        ) -> (
+            impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+            std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>,
+        ) {
+            let responses = std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::VecDeque::from(responses),
+            ));
+            let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let calls_for_runner = std::sync::Arc::clone(&calls);
+            let responses_for_runner = std::sync::Arc::clone(&responses);
+            let run = move |arguments: &[&std::ffi::OsStr]| {
+                calls_for_runner.lock().expect("calls").push(
+                    arguments
+                        .iter()
+                        .map(|argument| argument.to_string_lossy().into_owned())
+                        .collect(),
+                );
+                responses_for_runner
+                    .lock()
+                    .expect("responses")
+                    .pop_front()
+                    .ok_or_else(|| io::Error::other("unexpected launchctl call"))
+            };
+            (run, calls)
+        }
+
+        let plist = Path::new("/private/tmp/com.teslatlas.hub.plist");
+        let domain = "gui/501";
+        let service = "gui/501/com.teslatlas.hub";
+
+        let (mut start_runner, start_calls) = runner(vec![false, true, true, true]);
+        start_installed_with_runner(plist, domain, service, &mut start_runner)
+            .expect("start service");
+        assert_eq!(
+            start_calls
+                .lock()
+                .expect("start calls")
+                .iter()
+                .map(|call| call[0].as_str())
+                .collect::<Vec<_>>(),
+            ["print", "bootstrap", "kickstart", "print"]
+        );
+
+        let (mut stop_runner, stop_calls) = runner(vec![true, false]);
+        stop_installed_with_runner(service, &mut stop_runner).expect("stop service");
+        assert_eq!(
+            stop_calls
+                .lock()
+                .expect("stop calls")
+                .iter()
+                .map(|call| call[0].as_str())
+                .collect::<Vec<_>>(),
+            ["bootout", "print"]
+        );
+
+        let (mut restart_runner, restart_calls) =
+            runner(vec![true, false, false, true, true, true]);
+        restart_installed_with_runner(plist, domain, service, &mut restart_runner)
+            .expect("restart service");
+        assert_eq!(
+            restart_calls
+                .lock()
+                .expect("restart calls")
+                .iter()
+                .map(|call| call[0].as_str())
+                .collect::<Vec<_>>(),
+            [
+                "bootout",
+                "print",
+                "print",
+                "bootstrap",
+                "kickstart",
+                "print"
+            ]
+        );
     }
 
     #[test]
