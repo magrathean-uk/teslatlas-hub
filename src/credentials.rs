@@ -1,12 +1,13 @@
 //! Small local credential helpers. Hub owns one encrypted TeslaMate pair.
 
 use crate::legacy_auth::{LegacyAuth, LegacyAuthError};
+use crate::teslamate_token::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
 use reqwest::Client;
 use std::{path::Path, sync::Arc, time::SystemTime};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-const MAX_TOKEN_BYTES: usize = 16 * 1024;
+const MAX_TOKEN_BYTES: usize = MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
 const MAX_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
 
 type SensitiveAccessGuard = Arc<dyn Fn() -> Result<(), CredentialError> + Send + Sync>;

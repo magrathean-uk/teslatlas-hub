@@ -54,6 +54,7 @@ use crate::{
     teslamate_stage::{
         TeslaMateStage, TeslaMateStageError, TeslaMateStageLimits, TeslaMateStageTable,
     },
+    teslamate_token::MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
 };
 
 /// After migration handoff, live collection must never re-open TeslaMate
@@ -272,7 +273,7 @@ pub struct TeslaMateLegacyTokenCiphertexts {
     pub refresh: Vec<u8>,
 }
 
-const MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES: i64 = 16 * 1024;
+const MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64: i64 = MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES as i64;
 
 const PRIVATE_LEGACY_TOKENS_SQL: &str = "SELECT \"token\".\"access\" AS \"access\", \"token\".\"refresh\" AS \"refresh\" \
      FROM \"private\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
@@ -476,11 +477,11 @@ fn validate_legacy_ciphertext_length(
     column: &'static str,
     actual: i64,
 ) -> Result<(), TeslaMateReaderError> {
-    if !(0..=MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES).contains(&actual) {
+    if !(0..=MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64).contains(&actual) {
         return Err(TeslaMateReaderError::LegacyTokenCiphertextTooLarge {
             relation,
             column,
-            maximum: MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+            maximum: MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64,
             actual,
         });
     }
@@ -1234,7 +1235,16 @@ pub async fn capture_history_to_stage_with_legacy_token(
         true,
     )
     .await?;
-    Ok((stage, token.expect("legacy token requested")))
+    let token = match token {
+        Some(token) => token,
+        None => {
+            return Err(discard_stage_after_error(
+                stage,
+                TeslaMateReaderError::LegacyTokenPairMissing,
+            ));
+        }
+    };
+    Ok((stage, token))
 }
 
 /// Capture history, the active open session, and the opaque legacy OAuth pair
@@ -1263,11 +1273,28 @@ pub async fn capture_history_to_stage_with_legacy_token_and_session(
         true,
     )
     .await?;
-    Ok((
-        stage,
-        session,
-        token.ok_or(TeslaMateReaderError::LegacyTokenPairMissing)?,
-    ))
+    let token = match token {
+        Some(token) => token,
+        None => {
+            return Err(discard_stage_after_error(
+                stage,
+                TeslaMateReaderError::LegacyTokenPairMissing,
+            ));
+        }
+    };
+    Ok((stage, session, token))
+}
+
+fn discard_stage_after_error(
+    stage: TeslaMateStage,
+    primary: TeslaMateReaderError,
+) -> TeslaMateReaderError {
+    match stage.discard() {
+        Ok(()) => primary,
+        Err(_) => TeslaMateReaderError::StageCleanupFailure {
+            primary: Box::new(primary),
+        },
+    }
 }
 
 async fn capture_history_to_stage_internal(
@@ -1313,8 +1340,7 @@ async fn capture_history_to_stage_internal(
     let (client, connection_task) = match connect_source(source, password, limits).await {
         Ok(connection) => connection,
         Err(error) => {
-            let _ = stage.discard();
-            return Err(error);
+            return Err(discard_stage_after_error(stage, error));
         }
     };
 
@@ -1334,32 +1360,33 @@ async fn capture_history_to_stage_internal(
     drop(client);
     let _ = connection_task.await;
     if let Err(error) = capture {
-        let _ = stage.discard();
-        return Err(error);
+        return Err(discard_stage_after_error(stage, error));
     }
     let open_session = match open_session {
         Some(Ok(session)) => session,
         Some(Err(error)) => {
-            let _ = stage.discard();
-            return Err(error);
+            return Err(discard_stage_after_error(stage, error));
         }
         None => unreachable!("open session capture follows successful history capture"),
     };
     let token = match token {
         Some(Ok(token)) => Some(token),
         Some(Err(error)) => {
-            let _ = stage.discard();
-            return Err(error);
+            return Err(discard_stage_after_error(stage, error));
         }
         None => None,
     };
     if let Err(error) = rollback {
-        let _ = stage.discard();
-        return Err(TeslaMateReaderError::Postgres(error));
+        return Err(discard_stage_after_error(
+            stage,
+            TeslaMateReaderError::Postgres(error),
+        ));
     }
     if let Err(error) = stage.seal() {
-        let _ = stage.discard();
-        return Err(TeslaMateReaderError::Stage(error));
+        return Err(discard_stage_after_error(
+            stage,
+            TeslaMateReaderError::Stage(error),
+        ));
     }
     Ok((stage, token, open_session))
 }
@@ -1398,8 +1425,7 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
         {
             Ok(value) => value,
             Err(error) => {
-                let _ = stage.discard();
-                return Err(error);
+                return Err(discard_stage_after_error(stage, error));
             }
         };
 
@@ -1416,8 +1442,7 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
         Ok(value) => value,
         Err(error) => {
             let _ = owner.finish().await;
-            let _ = stage.discard();
-            return Err(error);
+            return Err(discard_stage_after_error(stage, error));
         }
     };
     let charge_max_id = match source_max_id(
@@ -1430,8 +1455,7 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
         Ok(value) => value,
         Err(error) => {
             let _ = owner.finish().await;
-            let _ = stage.discard();
-            return Err(error);
+            return Err(discard_stage_after_error(stage, error));
         }
     };
     let lane_jobs = distribute_capture_jobs(lane_count, position_max_id, charge_max_id);
@@ -1492,38 +1516,38 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
     };
     let owner_result = owner.finish().await;
     if let Some(error) = capture_error {
-        let _ = stage.discard();
-        return Err(error);
+        return Err(discard_stage_after_error(stage, error));
     }
     let open_session = match open_session {
         Some(Ok(session)) => session,
         Some(Err(error)) => {
-            let _ = stage.discard();
-            return Err(error);
+            return Err(discard_stage_after_error(stage, error));
         }
         None => unreachable!("open session capture follows successful history capture"),
     };
     if let Err(error) = owner_result {
-        let _ = stage.discard();
-        return Err(error);
+        return Err(discard_stage_after_error(stage, error));
     }
     let token = match token {
         Some(Ok(token)) => Some(token),
         Some(Err(error)) => {
-            let _ = stage.discard();
-            return Err(error);
+            return Err(discard_stage_after_error(stage, error));
         }
         None => None,
     };
     if !selected_car_seen {
-        let _ = stage.discard();
-        return Err(TeslaMateReaderError::SelectedCarMissing {
-            selected_car_id: i64::from(selected_car_id),
-        });
+        return Err(discard_stage_after_error(
+            stage,
+            TeslaMateReaderError::SelectedCarMissing {
+                selected_car_id: i64::from(selected_car_id),
+            },
+        ));
     }
     if let Err(error) = stage.seal() {
-        let _ = stage.discard();
-        return Err(TeslaMateReaderError::Stage(error));
+        return Err(discard_stage_after_error(
+            stage,
+            TeslaMateReaderError::Stage(error),
+        ));
     }
     Ok((stage, token, open_session))
 }
@@ -3781,6 +3805,11 @@ fn cell(
 
 #[derive(Debug, Error)]
 pub enum TeslaMateReaderError {
+    #[error("TeslaMate migration failed: {primary}; staging cleanup failed")]
+    StageCleanupFailure {
+        #[source]
+        primary: Box<TeslaMateReaderError>,
+    },
     #[error("TeslaMate PostgreSQL queries are forbidden after Hub handoff")]
     SourceQueriesForbiddenAfterHandoff,
     #[error("TeslaMate source user is required")]
@@ -4009,14 +4038,14 @@ mod tests {
             validate_legacy_ciphertext_length(
                 "private.tokens",
                 "access",
-                MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
+                MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64
             )
             .is_ok()
         );
         match validate_legacy_ciphertext_length(
             "private.tokens",
             "access",
-            MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES + 1,
+            MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64 + 1,
         ) {
             Err(TeslaMateReaderError::LegacyTokenCiphertextTooLarge {
                 relation,
@@ -4026,11 +4055,32 @@ mod tests {
             }) => {
                 assert_eq!(relation, "private.tokens");
                 assert_eq!(column, "access");
-                assert_eq!(maximum, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES);
-                assert_eq!(actual, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES + 1);
+                assert_eq!(maximum, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64);
+                assert_eq!(actual, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64 + 1);
             }
             other => panic!("expected length error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn cleanup_failure_is_typed_and_keeps_the_primary_reader_error() {
+        let temporary = tempfile::tempdir().expect("temporary stage directory");
+        let stage = TeslaMateStage::create(
+            temporary.path(),
+            TeslaMateStageLimits {
+                max_rows: 1,
+                max_stage_bytes: 64 * 1024,
+                minimum_free_bytes: 0,
+            },
+        )
+        .expect("stage");
+        let path = stage.path().to_path_buf();
+        std::fs::remove_file(path).expect("remove stage before cleanup");
+        assert!(matches!(
+            discard_stage_after_error(stage, TeslaMateReaderError::InvalidSelectedCarId),
+            TeslaMateReaderError::StageCleanupFailure { primary }
+                if matches!(*primary, TeslaMateReaderError::InvalidSelectedCarId)
+        ));
     }
 
     #[test]

@@ -21,6 +21,13 @@ const NONCE_BYTES: usize = 12;
 const AUTH_TAG_BYTES: usize = 16;
 const ASSOCIATED_DATA: &[u8] = b"AES256GCM";
 
+/// Shared with the source reader and matched by the Hub token store. No
+/// plaintext whose Cloak envelope would exceed this limit is admitted.
+pub const MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES: usize = 16 * 1024;
+pub const CLOAK_ENVELOPE_OVERHEAD_BYTES: usize = 2 + CLOAK_TAG.len() + NONCE_BYTES + AUTH_TAG_BYTES;
+pub const MAX_LEGACY_TOKEN_PLAINTEXT_BYTES: usize =
+    MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES - CLOAK_ENVELOPE_OVERHEAD_BYTES;
+
 /// Decrypt the one legacy TeslaMate access/refresh pair. Both values are
 /// authenticated independently; a malformed, stale, or tampered value is
 /// never accepted as an Owner API credential.
@@ -55,27 +62,40 @@ pub fn encrypt_legacy_owner_tokens(
 /// through the CLI crate. Files may end in one conventional line ending.
 pub fn encrypt_legacy_owner_token_files(
     encryption_key: &[u8],
-    mut access_token: Vec<u8>,
-    mut refresh_token: Vec<u8>,
+    mut access_token: Zeroizing<Vec<u8>>,
+    mut refresh_token: Zeroizing<Vec<u8>>,
 ) -> Result<(Vec<u8>, Vec<u8>), TeslaMateTokenError> {
     strip_line_ending(&mut access_token);
     strip_line_ending(&mut refresh_token);
-    let access =
-        String::from_utf8(access_token).map_err(|_| TeslaMateTokenError::InvalidPlaintext)?;
-    let refresh =
-        String::from_utf8(refresh_token).map_err(|_| TeslaMateTokenError::InvalidPlaintext)?;
-    let tokens = OwnerTokens::from_secret_parts(access, refresh)
-        .map_err(|_| TeslaMateTokenError::InvalidPlaintext)?;
-    encrypt_legacy_owner_tokens(encryption_key, &tokens)
+    validate_file_token_plaintext(access_token.as_slice())?;
+    validate_file_token_plaintext(refresh_token.as_slice())?;
+    let cipher = cloak_cipher(encryption_key)?;
+    Ok((
+        encrypt_cloak_value(&cipher, access_token.as_slice())?,
+        encrypt_cloak_value(&cipher, refresh_token.as_slice())?,
+    ))
 }
 
-fn strip_line_ending(bytes: &mut Vec<u8>) {
+fn strip_line_ending(bytes: &mut Zeroizing<Vec<u8>>) {
     if bytes.last() == Some(&b'\n') {
         bytes.pop();
         if bytes.last() == Some(&b'\r') {
             bytes.pop();
         }
     }
+}
+
+fn validate_file_token_plaintext(value: &[u8]) -> Result<(), TeslaMateTokenError> {
+    if value.is_empty()
+        || value.len() > MAX_LEGACY_TOKEN_PLAINTEXT_BYTES
+        || std::str::from_utf8(value).is_err()
+        || value
+            .iter()
+            .any(|byte| *byte == 0 || *byte == b'\r' || *byte == b'\n' || byte.is_ascii_control())
+    {
+        return Err(TeslaMateTokenError::InvalidPlaintext);
+    }
+    Ok(())
 }
 
 fn cloak_cipher(encryption_key: &[u8]) -> Result<Aes256Gcm, TeslaMateTokenError> {
@@ -185,9 +205,11 @@ mod tests {
         aead::{Aead, KeyInit, Payload},
     };
     use sha2::{Digest, Sha256};
+    use zeroize::Zeroizing;
 
     use super::{
-        ASSOCIATED_DATA, AUTH_TAG_BYTES, CLOAK_TAG, CLOAK_TYPE, NONCE_BYTES, TeslaMateTokenError,
+        ASSOCIATED_DATA, AUTH_TAG_BYTES, CLOAK_TAG, CLOAK_TYPE, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+        MAX_LEGACY_TOKEN_PLAINTEXT_BYTES, NONCE_BYTES, TeslaMateTokenError,
         decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
     };
     use crate::credentials::OwnerTokens;
@@ -245,14 +267,44 @@ mod tests {
     fn encrypts_legacy_pair_read_from_newline_terminated_files() {
         let (access, refresh) = encrypt_legacy_owner_token_files(
             ENCRYPTION_KEY,
-            b"access-token-deterministic-01\n".to_vec(),
-            b"refresh-token-deterministic-01\r\n".to_vec(),
+            Zeroizing::new(b"access-token-deterministic-01\n".to_vec()),
+            Zeroizing::new(b"refresh-token-deterministic-01\r\n".to_vec()),
         )
         .expect("file pair encrypts");
         let tokens = decrypt_legacy_owner_tokens(ENCRYPTION_KEY, &access, &refresh)
             .expect("encrypted file pair decrypts");
         assert_eq!(tokens.access_token().as_bytes(), ACCESS_TOKEN);
         assert_eq!(tokens.refresh_token().as_bytes(), REFRESH_TOKEN);
+    }
+
+    #[test]
+    fn envelope_exact_plaintext_cap_persists_and_next_byte_is_rejected() {
+        let access = Zeroizing::new(vec![b'a'; MAX_LEGACY_TOKEN_PLAINTEXT_BYTES]);
+        let refresh = Zeroizing::new(vec![b'b'; MAX_LEGACY_TOKEN_PLAINTEXT_BYTES]);
+        let (access_ciphertext, refresh_ciphertext) =
+            encrypt_legacy_owner_token_files(ENCRYPTION_KEY, access, refresh)
+                .expect("exact plaintext cap encrypts");
+        assert_eq!(access_ciphertext.len(), MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES);
+        assert_eq!(refresh_ciphertext.len(), MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES);
+        let stored =
+            crate::db::TeslaMateLegacyTokenStore::imported(access_ciphertext, refresh_ciphertext)
+                .expect("exact envelope cap persists");
+        assert_eq!(
+            decrypt_legacy_owner_tokens(ENCRYPTION_KEY, stored.access(), stored.refresh())
+                .expect("stored cap decrypts")
+                .access_token()
+                .len(),
+            MAX_LEGACY_TOKEN_PLAINTEXT_BYTES
+        );
+
+        assert!(matches!(
+            encrypt_legacy_owner_token_files(
+                ENCRYPTION_KEY,
+                Zeroizing::new(vec![b'a'; MAX_LEGACY_TOKEN_PLAINTEXT_BYTES + 1]),
+                Zeroizing::new(vec![b'b'; MAX_LEGACY_TOKEN_PLAINTEXT_BYTES]),
+            ),
+            Err(TeslaMateTokenError::InvalidPlaintext)
+        ));
     }
 
     #[test]

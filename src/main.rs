@@ -1,6 +1,7 @@
 use std::{
     fs,
     io::{Read, Write},
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     process::ExitCode,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -38,10 +39,17 @@ use teslatlas_hub::{
         capture_history_to_stage_with_legacy_token_and_session,
         capture_history_to_stage_with_session,
     },
-    teslamate_stage::TeslaMateStageStats,
+    teslamate_stage::{TeslaMateStage, TeslaMateStageStats},
     teslamate_token::{decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files},
 };
 use tracing_subscriber::EnvFilter;
+
+#[cfg(target_os = "macos")]
+use rustix::{
+    fs::{FileType, Mode, OFlags, fstat, open},
+    io::Errno,
+    process::getuid,
+};
 
 /// A worker owned by the macOS Serve supervisor.  Normal exits request
 /// shutdown and await the task; cancellation of the supervisor aborts the
@@ -946,7 +954,10 @@ struct MacMigrationInput<'a> {
 #[cfg(target_os = "macos")]
 const MAX_MIGRATION_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
 #[cfg(target_os = "macos")]
-const MAX_MIGRATION_TOKEN_BYTES: usize = 16 * 1024;
+const MAX_MIGRATION_TOKEN_BYTES: usize =
+    teslatlas_hub::teslamate_token::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
+#[cfg(target_os = "macos")]
+const MAX_MIGRATION_TOKEN_FILE_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES + 2;
 #[cfg(target_os = "macos")]
 const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
 
@@ -958,6 +969,73 @@ fn migration_stop_confirmed(answer: &str) -> bool {
 #[cfg(target_os = "macos")]
 fn migration_start_requested(answer: &str) -> bool {
     matches!(answer.trim(), "y" | "Y")
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MigrationSecretReadError {
+    Read,
+    UnsafeFile,
+    IdentityChanged,
+    TooLarge,
+}
+
+#[cfg(target_os = "macos")]
+impl std::fmt::Display for MigrationSecretReadError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Read => "cannot read migration secret",
+            Self::UnsafeFile => "migration secret file is unsafe",
+            Self::IdentityChanged => "migration secret file changed while reading",
+            Self::TooLarge => "migration secret exceeds the fixed size limit",
+        })
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl std::error::Error for MigrationSecretReadError {}
+
+#[cfg(target_os = "macos")]
+struct MigrationStageCleanupFailure {
+    primary: Box<dyn std::error::Error>,
+}
+
+#[cfg(target_os = "macos")]
+impl std::fmt::Debug for MigrationStageCleanupFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MigrationStageCleanupFailure")
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl std::fmt::Display for MigrationStageCleanupFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "migration failed: {}; staging cleanup failed",
+            self.primary
+        )
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl std::error::Error for MigrationStageCleanupFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.primary.as_ref())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn discard_migration_stage_after_error(
+    stage: TeslaMateStage,
+    primary: Box<dyn std::error::Error>,
+) -> Box<dyn std::error::Error> {
+    match stage.discard() {
+        Ok(()) => primary,
+        Err(_) => Box::new(MigrationStageCleanupFailure { primary }),
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1096,8 +1174,8 @@ async fn run_macos_migration(
         let key = random_encryption_key();
         let (access, refresh) = encrypt_legacy_owner_token_files(
             &key,
-            read_migration_secret(access_path, MAX_MIGRATION_TOKEN_BYTES)?.to_vec(),
-            read_migration_secret(refresh_path, MAX_MIGRATION_TOKEN_BYTES)?.to_vec(),
+            read_migration_secret(access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
+            read_migration_secret(refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
         )?;
         (key, access, refresh)
     };
@@ -1175,27 +1253,33 @@ async fn capture_and_publish_migration_snapshot(
         .await?;
         (stage, open_session, None)
     };
-    let stage_stats = stage.stats()?;
+    let stage_stats = match stage.stats() {
+        Ok(stats) => stats,
+        Err(error) => {
+            return Err(discard_migration_stage_after_error(stage, Box::new(error)));
+        }
+    };
+    let imported_at_ms = match current_epoch_ms() {
+        Ok(value) => value,
+        Err(error) => {
+            return Err(discard_migration_stage_after_error(stage, Box::new(error)));
+        }
+    };
+    let request = TeslaMateImportRequest {
+        source_key: "teslamate".to_owned(),
+        scope: TeslaMateImportScope::Selected(car_id),
+        imported_at_ms,
+    };
     let report = match publish_staged_history_with_session(
         store,
         cursor_key,
-        &TeslaMateImportRequest {
-            source_key: "teslamate".to_owned(),
-            scope: TeslaMateImportScope::Selected(car_id),
-            imported_at_ms: current_epoch_ms()?,
-        },
+        &request,
         &stage,
         &open_session,
     ) {
         Ok(report) => report,
         Err(error) => {
-            return match stage.discard() {
-                Ok(()) => Err(error.into()),
-                Err(_) => Err(format!(
-                    "migration publication failed: {error}; stage cleanup also failed"
-                )
-                .into()),
-            };
+            return Err(discard_migration_stage_after_error(stage, Box::new(error)));
         }
     };
     let cleanup_pending = stage.discard().is_err();
@@ -1207,20 +1291,110 @@ fn read_migration_secret(
     path: &Path,
     maximum: usize,
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
-    let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(maximum.min(8 * 1024)));
     if path == Path::new("-") {
-        std::io::stdin()
-            .take(u64::try_from(maximum + 1).expect("secret cap fits u64"))
-            .read_to_end(&mut bytes)?;
-    } else {
-        fs::File::open(path)?
-            .take(u64::try_from(maximum + 1).expect("secret cap fits u64"))
-            .read_to_end(&mut bytes)?;
+        return read_bounded_migration_secret(std::io::stdin(), maximum).map_err(Into::into);
     }
+    read_migration_secret_file(path, maximum).map_err(Into::into)
+}
+
+#[cfg(target_os = "macos")]
+fn read_bounded_migration_secret(
+    reader: impl Read,
+    maximum: usize,
+) -> Result<zeroize::Zeroizing<Vec<u8>>, MigrationSecretReadError> {
+    let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(maximum.min(8 * 1024)));
+    reader
+        .take(u64::try_from(maximum + 1).expect("secret cap fits u64"))
+        .read_to_end(&mut bytes)
+        .map_err(|_| MigrationSecretReadError::Read)?;
     if bytes.len() > maximum {
-        return Err("migration secret exceeds the fixed size limit".into());
+        return Err(MigrationSecretReadError::TooLarge);
     }
     Ok(bytes)
+}
+
+#[cfg(target_os = "macos")]
+fn read_migration_secret_file(
+    path: &Path,
+    maximum: usize,
+) -> Result<zeroize::Zeroizing<Vec<u8>>, MigrationSecretReadError> {
+    read_migration_secret_file_with_hooks(path, maximum, || {}, || {})
+}
+
+#[cfg(target_os = "macos")]
+fn read_migration_secret_file_with_hooks(
+    path: &Path,
+    maximum: usize,
+    after_open: impl FnOnce(),
+    after_read: impl FnOnce(),
+) -> Result<zeroize::Zeroizing<Vec<u8>>, MigrationSecretReadError> {
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|error| {
+        if error == Errno::LOOP {
+            MigrationSecretReadError::UnsafeFile
+        } else {
+            MigrationSecretReadError::Read
+        }
+    })?;
+    let initial = fstat(&descriptor).map_err(|_| MigrationSecretReadError::Read)?;
+    if !safe_migration_secret_stat(&initial) {
+        return Err(MigrationSecretReadError::UnsafeFile);
+    }
+    after_open();
+
+    let file: fs::File = descriptor.into();
+    let bytes = read_bounded_migration_secret(&file, maximum)?;
+    after_read();
+    let final_descriptor = fstat(&file).map_err(|_| MigrationSecretReadError::Read)?;
+    if !same_migration_secret_stat(&initial, &final_descriptor) {
+        return Err(MigrationSecretReadError::IdentityChanged);
+    }
+    let current =
+        fs::symlink_metadata(path).map_err(|_| MigrationSecretReadError::IdentityChanged)?;
+    if current.file_type().is_symlink()
+        || !current.file_type().is_file()
+        || current.uid() != initial.st_uid
+        || current.dev() != initial.st_dev as u64
+        || current.ino() != initial.st_ino
+        || current.mode() != initial.st_mode as u32
+        || current.len() != initial.st_size as u64
+        || current.mtime() != initial.st_mtime
+        || current.mtime_nsec() != initial.st_mtime_nsec as i64
+        || !safe_migration_secret_metadata(&current)
+    {
+        return Err(MigrationSecretReadError::IdentityChanged);
+    }
+    Ok(bytes)
+}
+
+#[cfg(target_os = "macos")]
+fn safe_migration_secret_stat(stat: &rustix::fs::Stat) -> bool {
+    FileType::from_raw_mode(stat.st_mode).is_file()
+        && stat.st_uid == getuid().as_raw()
+        && (stat.st_mode as u32 & 0o077) == 0
+        && (stat.st_mode as u32 & 0o400) != 0
+}
+
+#[cfg(target_os = "macos")]
+fn same_migration_secret_stat(left: &rustix::fs::Stat, right: &rustix::fs::Stat) -> bool {
+    left.st_dev == right.st_dev
+        && left.st_ino == right.st_ino
+        && left.st_uid == right.st_uid
+        && left.st_mode == right.st_mode
+        && left.st_size == right.st_size
+        && left.st_mtime == right.st_mtime
+        && left.st_mtime_nsec == right.st_mtime_nsec
+}
+
+#[cfg(target_os = "macos")]
+fn safe_migration_secret_metadata(metadata: &fs::Metadata) -> bool {
+    metadata.uid() == getuid().as_raw()
+        && (metadata.mode() & 0o077) == 0
+        && (metadata.mode() & 0o400) != 0
 }
 
 fn observation_command_error(
@@ -1308,6 +1482,7 @@ mod tests {
     use std::{
         future::pending,
         net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
+        os::unix::fs::{PermissionsExt, symlink},
         path::Path,
         process::{Child, Command as ProcessCommand, Stdio},
         sync::{
@@ -1328,8 +1503,9 @@ mod tests {
     use super::{
         MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
         MAX_MIGRATION_TOKEN_BYTES, MacServeControl, MacServeWorkerStopTimeout,
-        command_requires_user_hub_admission, migration_start_requested, migration_stop_confirmed,
-        read_migration_secret, run_macos_serve_supervisor,
+        MigrationSecretReadError, command_requires_user_hub_admission, migration_start_requested,
+        migration_stop_confirmed, read_migration_secret, read_migration_secret_file_with_hooks,
+        run_macos_serve_supervisor,
     };
     #[cfg(target_os = "macos")]
     use teslatlas_hub::protocol::{
@@ -1378,6 +1554,8 @@ mod tests {
         ] {
             let path = temporary.path().join(name);
             fs::write(&path, vec![b'x'; maximum]).expect("exact secret");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+                .expect("safe secret mode");
             assert_eq!(
                 read_migration_secret(&path, maximum)
                     .expect("exact cap")
@@ -1387,6 +1565,99 @@ mod tests {
             fs::write(&path, vec![b'x'; maximum + 1]).expect("oversized secret");
             assert!(read_migration_secret(&path, maximum).is_err());
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migration_secret_files_require_private_nofollow_stable_descriptors() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let path = temporary.path().join("secret");
+        fs::write(&path, b"migration-secret").expect("secret");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("secret mode");
+        assert_eq!(
+            read_migration_secret(&path, 64)
+                .expect("safe secret")
+                .as_slice(),
+            b"migration-secret"
+        );
+
+        let outside = temporary.path().join("outside");
+        fs::write(&outside, b"outside-secret").expect("outside secret");
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o600)).expect("outside mode");
+        let linked = temporary.path().join("linked");
+        symlink(&outside, &linked).expect("secret symlink");
+        assert!(matches!(
+            read_migration_secret(&linked, 64),
+            Err(error) if error.downcast_ref::<MigrationSecretReadError>() == Some(&MigrationSecretReadError::UnsafeFile)
+        ));
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).expect("unsafe mode");
+        assert!(matches!(
+            read_migration_secret(&path, 64),
+            Err(error) if error.downcast_ref::<MigrationSecretReadError>() == Some(&MigrationSecretReadError::UnsafeFile)
+        ));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("safe mode");
+
+        let replacement = temporary.path().join("replacement");
+        fs::write(&replacement, b"replacement-secret").expect("replacement");
+        fs::set_permissions(&replacement, fs::Permissions::from_mode(0o600))
+            .expect("replacement mode");
+        assert_eq!(
+            read_migration_secret_file_with_hooks(
+                &path,
+                64,
+                || { fs::rename(&replacement, &path).expect("replace secret") },
+                || {}
+            )
+            .expect_err("replacement race"),
+            MigrationSecretReadError::IdentityChanged
+        );
+
+        fs::write(&path, b"stable-secret").expect("restore secret");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("restore mode");
+        assert_eq!(
+            read_migration_secret_file_with_hooks(
+                &path,
+                64,
+                || {},
+                || { fs::write(&path, b"same-inode-secret-mutated").expect("mutate secret") }
+            )
+            .expect_err("same inode mutation"),
+            MigrationSecretReadError::IdentityChanged
+        );
+
+        let error = read_migration_secret(&linked, 64).expect_err("unsafe link");
+        let rendered = format!("{error:?}");
+        assert!(!rendered.contains("outside-secret"));
+        assert!(!rendered.contains(&linked.display().to_string()));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migration_stage_cleanup_failure_preserves_the_primary_error() {
+        use teslatlas_hub::teslamate_stage::{TeslaMateStage, TeslaMateStageLimits};
+
+        let temporary = tempfile::tempdir().expect("temporary stage directory");
+        let stage = TeslaMateStage::create(
+            temporary.path(),
+            TeslaMateStageLimits {
+                max_rows: 1,
+                max_stage_bytes: 64 * 1024,
+                minimum_free_bytes: 0,
+            },
+        )
+        .expect("stage");
+        let path = stage.path().to_path_buf();
+        fs::remove_file(path).expect("remove stage before cleanup");
+        let error = super::discard_migration_stage_after_error(
+            stage,
+            Box::new(std::io::Error::other("primary migration error")),
+        );
+        let cleanup = error
+            .downcast_ref::<super::MigrationStageCleanupFailure>()
+            .expect("typed compound cleanup error");
+        assert!(cleanup.to_string().contains("primary migration error"));
+        assert!(cleanup.to_string().contains("staging cleanup failed"));
     }
 
     #[cfg(target_os = "macos")]

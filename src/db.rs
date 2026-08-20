@@ -48,6 +48,7 @@ use crate::{
         TeslaMateProjectionStateError, TeslaMateProjectionStateLimits,
         TeslaMateProjectionStateTransfer, recover_stale_import_generation_spools,
     },
+    teslamate_token::MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
@@ -248,11 +249,12 @@ impl TeslaMateLegacyTokenStore {
         expires_at: i64,
         next_refresh_at: i64,
     ) -> Result<Self, StoreError> {
-        const MAX_CIPHERTEXT_BYTES: usize = 16 * 1024;
         if access.is_empty() || refresh.is_empty() {
             return Err(StoreError::TeslaMateTokenPairEmpty);
         }
-        if access.len() > MAX_CIPHERTEXT_BYTES || refresh.len() > MAX_CIPHERTEXT_BYTES {
+        if access.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
+            || refresh.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
+        {
             return Err(StoreError::TeslaMateTokenCiphertextTooLarge);
         }
         let imported = expires_at == 0 && next_refresh_at == 0;
