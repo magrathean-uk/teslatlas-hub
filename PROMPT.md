@@ -1,74 +1,68 @@
-# Goal: working Rust TeslaMate replacement on macOS
+# Goal: finish the Rust TeslaMate replacement for macOS
 
-Status: defined only. Do not start automatically.
+Status: defined only. Do not start until the owner says `start`.
 
-## Outcome
+## Result
 
-Finish `hub/` as a usable TeslaMate replacement written in Rust for one vehicle on Apple-silicon macOS. A new installation must work without TeslaMate. Optional TeslaMate migration must be read-only.
+Make `hub/` a working TeslaMate replacement for one vehicle on Apple-silicon macOS.
 
-There is no time limit. When started, continue step by step until the product path works or a real external blocker needs owner input.
+A clean install must work without TeslaMate. Importing an existing TeslaMate PostgreSQL database is optional and strictly read-only.
 
-## Source and scope
+## Normal development
 
-- Work only in the active `hub/main` checkout.
-- Do not edit or build the sibling `app/` project.
-- Improve the existing implementation; do not rewrite working code without a reproduced problem.
-- Product path: build, configure, initialize, migrate optionally, run as a macOS user service, collect telemetry, persist lifecycle history, restart, pair, sync, back up, restore, and repair.
-- Use the local PostgreSQL `teslamate` database only as a read-only older-schema and scale fixture. Never modify it.
-- Exclude Agent Fleet work, release paperwork, licensing work, Linux packaging, CI, notarization, multi-car support, and speculative hardening.
+Work sequentially in the active `hub/main` checkout:
 
-## One progress document
+1. Read `PROGRESS.md` and select one unfinished product step.
+2. Reproduce that step's real failure or missing behavior.
+3. Make the smallest correct source change.
+4. Run one focused check or test.
+5. Fix it, update `PROGRESS.md`, and commit code plus progress together.
+6. Continue to the next product step.
 
-Use `PROGRESS.md` as the only work ledger. Do not create review forests, evidence packs, duplicated plans, or per-agent reports.
-
-Keep only: status, one current step, one next step, exact blockers, and a short completed list stating each change and its focused validation. Update it with the code before each commit.
-
-## Sequential development loop
-
-1. Read `PROGRESS.md` and choose the next incomplete product step.
-2. Inspect only the relevant files and reproduce the actual failure or missing behavior.
-3. Make the smallest correct edit directly in `hub/`.
-4. Run the smallest relevant check or focused test.
-5. Fix until that step passes.
-6. Update `PROGRESS.md` with the change and result.
-7. Commit the code and progress update together.
-8. Continue to the next step.
-
-Do not stop for another broad audit, architecture exercise, candidate tournament, or review cycle between normal product steps.
+Use `PROGRESS.md` as the only ledger. Keep only current, next, blockers, and short completed results.
 
 ## Product order
 
-1. Release build and clean first-run initialization.
-2. Configuration and macOS user-service start, status, stop, and restart.
+1. Clean initialization and native setup without TeslaMate.
+2. macOS user-service install, start, status, stop, and restart.
 3. Fake/local Owner API and streaming collection without vehicle commands.
 4. Durable cars, positions, drives, charges, states, settings, and updates across restart.
-5. Optional bounded read-only TeslaMate migration with clear incompatible-schema rejection.
+5. Optional bounded read-only TeslaMate import with clear schema rejection.
 6. Pairing and authenticated local sync across restart.
-7. Backup, verify, restore, and repair.
-8. One final full validation and one practical macOS smoke run.
+7. Backup, verification, restore, and repair.
+8. One final validation pass and one practical macOS smoke run.
 
-## Resource rules
+## Hard resource limits
 
-- Primary agent codes directly. Use a subagent only for one small independent question that avoids duplicate work.
-- One checkout. One Cargo target directory: `hub/target`.
-- Never create per-agent, per-review, per-test, or per-commit clones or target directories.
-- Do not run the full test suite after every edit. Use focused tests during development.
-- Run `fmt`, full `check`, full `test`, `clippy`, and release build once near completion, or after a genuinely broad dependency/API change.
-- Use `rg` and narrow file reads. Do not dump whole repositories or long command output into the conversation.
-- Browse only when current external documentation is required.
-- Keep user updates to completed milestones, failures, or blockers.
-- Do not generate large logs, archives, fixtures, benchmarks, or evidence unless the product failure requires them.
-- Any exceptional temporary Hub checkout or artifact must be removed immediately after use.
-- Before every handoff: zero Hub temp clones/targets in `/tmp`, report `hub/target` size, and leave `hub/main` clean except known user files.
+- Work only in `hub/`. Never edit or build `app/`.
+- Use one checkout and one build cache: `hub/target`.
+- Never create repository clones, worktrees, copied source trees, or extra Cargo target directories.
+- Do not use Agent Fleet or subagents for normal development.
+- Run one Cargo process at a time.
+- Use focused tests while coding. Run the full test suite, Clippy, and release build once near completion, unless a broad change genuinely requires them sooner.
+- Do not run `cargo clean`; keep and reuse the single build cache.
+- Temporary Hub data outside the repository must use one small directory, stay below 1 GiB, and be deleted in the same step.
+- Do not create evidence packs, review trees, archives, large logs, benchmarks, or duplicate progress documents.
+- Use narrow `rg` searches and narrow file reads. Browse only for required current documentation.
+- Keep conversation updates to completed milestones, failures, or real blockers. Do not stream internal analysis or long command output.
+- Before handoff: remove all Hub temporary data, report `hub/target` size, and leave `hub/main` clean except known user files.
+
+If a step would exceed these limits, stop and ask before spending the disk, CPU, or tokens.
+
+## Scope exclusions
+
+No Agent Fleet work, licensing work, release paperwork, Linux packaging, CI, notarization, multi-car support, speculative hardening, or repeated review cycles.
+
+Improve working code; do not rewrite it without a reproduced product problem.
 
 ## Safety
 
-- Never write to the TeslaMate PostgreSQL source.
-- Never use real Tesla credentials without explicit owner authorization.
+- Never write to the local TeslaMate PostgreSQL database.
+- Never use real Tesla credentials without explicit authorization.
 - Never wake a vehicle or send a vehicle command.
 - Never push, publish, deploy, or change remote systems.
 - Never reset, clean, stash, or overwrite unrelated user work.
 
 ## Done
 
-The goal is complete only when the normal macOS journey works, final Rust gates pass, practical local behavior is recorded in `PROGRESS.md`, temporary Hub artifacts are cleaned, and only exact external blockers remain.
+Done means the normal one-vehicle macOS journey works, the final Rust checks pass once, `PROGRESS.md` records the result, temporary Hub data is gone, and only exact external blockers remain.

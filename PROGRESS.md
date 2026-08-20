@@ -4,7 +4,7 @@ Status: goal not started.
 
 Current: none.
 
-Next: verify clean first-run initialization and the macOS service start/status/stop/restart path.
+Next: clean initialization and native setup without TeslaMate.
 
 Blocked: none.
 
