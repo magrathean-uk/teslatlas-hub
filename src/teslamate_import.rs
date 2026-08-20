@@ -1083,7 +1083,7 @@ async fn import_from_postgres_with_updates_capture(
     };
     // A pre-commit failure can leave only unreferenced candidate packs; repair
     // may remove those safely. After the transaction commits they are catalogued.
-    store.finalize_import_generation_with_projection_state(
+    if let Err(error) = store.finalize_import_generation_with_projection_state(
         run_id,
         registered_source.source_id,
         vehicle.vehicle_id,
@@ -1094,7 +1094,10 @@ async fn import_from_postgres_with_updates_capture(
         &direct.geofences,
         &binding,
         &projection_state,
-    )?;
+    ) {
+        reconcile_failed_full_snapshot_candidate(store, &publication_gate, &mut direct, &error)?;
+        return Err(error.into());
+    }
     direct.keep_chunks();
     run_guard.disarm();
     Ok(CapturedTeslaMateImport {
@@ -1359,7 +1362,7 @@ fn publish_staged_history_with_limits(
         .ok_or(TeslaMateImportError::ProjectionStateCaptureMissing)?;
     capture.seal()?;
     let projection_state = capture.into_state();
-    store.finalize_import_generation_with_projection_state(
+    if let Err(error) = store.finalize_import_generation_with_projection_state(
         import_run
             .run_id
             .ok_or(TeslaMateImportError::ProjectionStateCaptureMissing)?,
@@ -1372,7 +1375,10 @@ fn publish_staged_history_with_limits(
         &staged.geofences,
         &binding,
         &projection_state,
-    )?;
+    ) {
+        reconcile_failed_full_snapshot_candidate(store, &publication_gate, &mut staged, &error)?;
+        return Err(error.into());
+    }
     import_run.disarm();
     staged.keep_chunks();
     Ok(TeslaMateImportReport {
@@ -2252,6 +2258,27 @@ fn discard_unpublished_chunks(
     Ok(())
 }
 
+fn reconcile_failed_full_snapshot_candidate(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    staged: &mut StagedProjectionPacks,
+    error: &crate::db::StoreError,
+) -> Result<(), TeslaMateImportError> {
+    if !matches!(
+        error,
+        crate::db::StoreError::AmbiguousCatalogueCommit { .. }
+    ) {
+        // A proven-prior result has no catalogue ownership. Query again under
+        // the still-held publication gate before unlinking so a coincident
+        // content object used by current or retained lineage is preserved.
+        discard_unpublished_chunks(store, publication_gate, &staged.chunks)?;
+    }
+    // Either cleanup completed/retained every object, or the commit outcome is
+    // deliberately ambiguous and startup repair must preserve its evidence.
+    staged.keep_chunks();
+    Ok(())
+}
+
 /// An unchanged completed-history fingerprint deliberately skips lineage
 /// publication, but the bounded source pass may still have observed a newer
 /// open drive, charge, or state tail. Retain no candidate pack and atomically
@@ -2689,6 +2716,49 @@ mod tests {
             !fresh_path.exists(),
             "importer cleanup still removes a fresh unreferenced candidate"
         );
+    }
+
+    #[test]
+    fn proven_prior_full_snapshot_failure_cleans_candidate_under_gate() {
+        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let projected = project_vehicle(&history(), 1).expect("project source history");
+        let request = ProjectionPackRequest {
+            pack_id: Uuid::from_u128(81),
+            snapshot_id: Uuid::from_u128(82),
+            ordinal: 0,
+            binding: ProjectionBinding {
+                installation_id: Uuid::from_u128(83),
+                account_id: Uuid::from_u128(84),
+                vehicle_id: Uuid::from_u128(85),
+                generation: 1,
+                selected_car_id: 1,
+            },
+            sequence: SequenceRange {
+                from_exclusive: 0,
+                to_inclusive: 1,
+            },
+            snapshot: &projected.snapshot,
+        };
+        let built = ProjectionPackWriter::new(store.packs_dir())
+            .write_full_snapshot(&request)
+            .expect("fresh candidate");
+        let path = built.path.clone();
+        let mut staged = StagedProjectionPacks::new(
+            vec![built],
+            ProjectionReport::default(),
+            Sha256Digest::of_bytes(b"prior-candidate"),
+            Vec::new(),
+        );
+        let gate = store.try_acquire_publication_gate().expect("gate");
+        let error = crate::db::StoreError::CatalogueDurability(std::io::Error::other(
+            "test pre-commit result",
+        ));
+        reconcile_failed_full_snapshot_candidate(&store, &gate, &mut staged, &error)
+            .expect("proven prior cleanup");
+        assert!(!path.exists(), "proven-prior candidate is removed");
+        drop(staged);
+        assert!(!path.exists(), "drop cannot recreate the candidate");
     }
 
     fn open_live_tail(

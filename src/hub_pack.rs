@@ -6385,14 +6385,7 @@ fn publish_immutable(
     crate::durability_fault::check(crate::durability_fault::DurabilityFaultPoint::PackFinalInstall)
         .map_err(ProjectionPackError::Durability)?;
     let ownership = match fs::hard_link(&temporary_path, final_path) {
-        Ok(()) => {
-            crate::durability_fault::check(
-                crate::durability_fault::DurabilityFaultPoint::PackFinalDirectoryFsync,
-            )
-            .map_err(ProjectionPackError::Durability)?;
-            sync_parent_directory(final_path)?;
-            ProjectionPackOwnership::Created
-        }
+        Ok(()) => ProjectionPackOwnership::Created,
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             verify_file(metadata, final_path, limits)
                 .map(|_| ProjectionPackOwnership::ReusedExisting)?
@@ -6402,6 +6395,15 @@ fn publish_immutable(
             source,
         })?,
     };
+    // A prior attempt may have installed this exact immutable name and then
+    // failed before syncing its parent directory. Reuse proves the bytes, not
+    // the directory entry's durability, so both paths must cross the same
+    // checkpoint and sync before publication can be reported complete.
+    crate::durability_fault::check(
+        crate::durability_fault::DurabilityFaultPoint::PackFinalDirectoryFsync,
+    )
+    .map_err(ProjectionPackError::Durability)?;
+    sync_parent_directory(final_path)?;
     // Once a final content name exists (or a verified identical object was
     // reused), an error in staging cleanup is a restart-repairable orphan.
     // Do not let `Drop` erase the evidence or pretend its directory entry was
@@ -7118,6 +7120,31 @@ mod tests {
                 "restart-visible staging outcome for {point:?}"
             );
         }
+    }
+
+    #[test]
+    fn existing_content_retry_repeats_the_final_directory_sync() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        let temporary = tempfile::tempdir().expect("retry store");
+        let source = snapshot();
+        {
+            let _fault = inject(DurabilityFaultPoint::PackFinalDirectoryFsync);
+            ProjectionPackWriter::new(temporary.path())
+                .write_full_snapshot(&request(&source))
+                .expect_err("first directory sync fault");
+        }
+        {
+            let _fault = inject(DurabilityFaultPoint::PackFinalDirectoryFsync);
+            ProjectionPackWriter::new(temporary.path())
+                .write_full_snapshot(&request(&source))
+                .expect_err("verified reuse still repeats directory sync");
+        }
+        let built = ProjectionPackWriter::new(temporary.path())
+            .write_full_snapshot(&request(&source))
+            .expect("normal retry durably converges");
+        assert_eq!(built.ownership(), ProjectionPackOwnership::ReusedExisting);
+        assert_eq!(built.cleanup_state(), ProjectionPackCleanupState::Complete);
     }
 
     fn snapshot_v2_2() -> ProjectionSnapshotV2_2 {

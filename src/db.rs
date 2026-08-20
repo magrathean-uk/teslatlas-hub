@@ -2894,6 +2894,7 @@ impl HubStore {
             self.schema_22_noop_bytes_in_directory(&directory, final_name.as_str())?
         {
             return if existing == payload {
+                self.sync_schema_22_noop_directory(&directory)?;
                 Ok(())
             } else {
                 Err(StoreError::Schema22SnapshotConflict {
@@ -2972,14 +2973,7 @@ impl HubStore {
                         crate::durability_fault::DurabilityFaultPoint::Schema22NoOpRename,
                     )
                     .map_err(StoreError::WriteSchema22NoOp)?;
-                    crate::durability_fault::check(
-                        crate::durability_fault::DurabilityFaultPoint::Schema22NoOpDirectoryFsync,
-                    )
-                    .map_err(StoreError::WriteSchema22NoOp)?;
-                    directory
-                        .file
-                        .sync_all()
-                        .map_err(StoreError::WriteSchema22NoOp)
+                    self.sync_schema_22_noop_directory(&directory)
                 }
                 Err(Errno::EXIST) => {
                     unlinkat(&directory.file, temporary_name.as_str(), AtFlags::empty())
@@ -2988,6 +2982,7 @@ impl HubStore {
                         .schema_22_noop_bytes_in_directory(&directory, final_name.as_str())?
                         .ok_or(StoreError::Schema22NoOpNotFound)?;
                     if existing == payload {
+                        self.sync_schema_22_noop_directory(&directory)?;
                         Ok(())
                     } else {
                         Err(StoreError::Schema22SnapshotConflict {
@@ -3003,6 +2998,20 @@ impl HubStore {
             let _ = unlinkat(&directory.file, temporary_name.as_str(), AtFlags::empty());
         }
         result
+    }
+
+    fn sync_schema_22_noop_directory(
+        &self,
+        directory: &SharedSchema22NoOpDirectory,
+    ) -> Result<(), StoreError> {
+        crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::Schema22NoOpDirectoryFsync,
+        )
+        .map_err(StoreError::WriteSchema22NoOp)?;
+        directory
+            .file
+            .sync_all()
+            .map_err(StoreError::WriteSchema22NoOp)
     }
 
     pub fn schema_22_noop_for_snapshot(
@@ -16481,6 +16490,13 @@ mod tests {
                     bytes,
                     serde_json::to_vec(&noop).expect("canonical candidate")
                 );
+            }
+            if expect_candidate {
+                let _retry_fault = inject(DurabilityFaultPoint::Schema22NoOpDirectoryFsync);
+                let retry_error = store
+                    .publish_schema_22_noop(&gate, &noop)
+                    .expect_err("same-payload retry must repeat directory sync");
+                assert!(retry_error.to_string().contains("durability fault"));
             }
             assert!(
                 store
