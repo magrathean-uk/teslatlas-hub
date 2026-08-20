@@ -9,16 +9,15 @@
 use std::{
     ffi::{OsStr, OsString},
     fs,
-    os::fd::{AsFd, OwnedFd},
-    path::{Path, PathBuf},
+    os::fd::{AsFd, AsRawFd, OwnedFd},
+    path::{Component, Path, PathBuf},
 };
-
-#[cfg(unix)]
-use std::os::unix::fs::DirBuilderExt;
 
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use rustix::{
-    fs::{FileType, Mode, OFlags, fchmod, fstat, mkdirat, open, openat, statvfs},
+    fs::{
+        AtFlags, FileType, Mode, OFlags, fchmod, fstat, mkdirat, open, openat, statvfs, unlinkat,
+    },
     process::{getegid, geteuid},
 };
 use serde::{Serialize, de::DeserializeOwned};
@@ -185,6 +184,9 @@ pub struct TeslaMateStage {
     connection: Connection,
     writable: bool,
     file_identity: StageFileIdentity,
+    directory: PrivateDirectory,
+    file_name: OsString,
+    file_descriptor: OwnedFd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -240,7 +242,7 @@ impl TeslaMateStage {
 
         let file_name = OsString::from(format!("{}.{}", Uuid::new_v4(), STAGE_FILE_EXTENSION));
         let path = staging_dir.path.join(&file_name);
-        let (file_guard, file_identity) =
+        let (file_descriptor, file_identity) =
             create_private_stage_file(&staging_dir, &file_name, &path)?;
         let connection = Connection::open_with_flags(
             &path,
@@ -250,13 +252,14 @@ impl TeslaMateStage {
         configure_writable_connection(&connection, limits)?;
         initialise_schema(&connection, limits)?;
         verify_stage_path_identity(&staging_dir, &file_name, &path, file_identity)?;
-        drop(file_guard);
-
         Ok(Self {
             path,
             connection,
             writable: true,
             file_identity,
+            directory: staging_dir,
+            file_name,
+            file_descriptor,
         })
     }
 
@@ -273,12 +276,9 @@ impl TeslaMateStage {
     ) -> Result<Self, TeslaMateStageError> {
         let stage_path = ensure_private_stage_path(path)?;
         let path = stage_path.path.clone();
-        let (file_guard, file_identity) = open_private_stage_file(&stage_path, false)?;
+        let (file_descriptor, file_identity) = open_private_stage_file(&stage_path, false)?;
         before_sqlite_open();
-        let connection = Connection::open_with_flags(
-            &path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
-        )?;
+        let connection = open_read_only_sqlite_from_descriptor(&file_descriptor)?;
         verify_stage_path_identity(
             &stage_path.directory,
             &stage_path.file_name,
@@ -290,6 +290,9 @@ impl TeslaMateStage {
             connection,
             writable: false,
             file_identity,
+            directory: stage_path.directory,
+            file_name: stage_path.file_name,
+            file_descriptor,
         };
         let stats = stage.stats()?;
         if stats.state != TeslaMateStageState::Sealed {
@@ -298,12 +301,11 @@ impl TeslaMateStage {
         stage.verify_integrity()?;
         stage.verify_accounting(stats)?;
         verify_stage_path_identity(
-            &stage_path.directory,
-            &stage_path.file_name,
+            &stage.directory,
+            &stage.file_name,
             &stage.path,
             file_identity,
         )?;
-        drop(file_guard);
         Ok(stage)
     }
 
@@ -312,11 +314,21 @@ impl TeslaMateStage {
     }
 
     fn verify_path_identity(&self) -> Result<(), TeslaMateStageError> {
-        let stage_path = ensure_private_stage_path(&self.path)?;
+        let descriptor_identity = validate_private_descriptor(
+            self.file_descriptor.as_fd(),
+            &self.path,
+            FileType::RegularFile,
+            0o600,
+        )?;
+        if descriptor_identity != self.file_identity {
+            return Err(TeslaMateStageError::StagePathIdentityChanged(
+                self.path.clone(),
+            ));
+        }
         verify_stage_path_identity(
-            &stage_path.directory,
-            &stage_path.file_name,
-            &stage_path.path,
+            &self.directory,
+            &self.file_name,
+            &self.path,
             self.file_identity,
         )
     }
@@ -325,17 +337,44 @@ impl TeslaMateStage {
     /// resumable after a source-session failure; callers use this to discard
     /// their partial snapshot rather than risking mixed PostgreSQL views.
     pub fn discard(self) -> Result<(), TeslaMateStageError> {
-        let path = self.path.clone();
-        let identity = self.file_identity;
-        drop(self);
-        let stage_path = ensure_private_stage_path(&path)?;
-        verify_stage_path_identity(
-            &stage_path.directory,
-            &stage_path.file_name,
+        self.discard_with_hook(|| {})
+    }
+
+    fn discard_with_hook(self, before_unlink: impl FnOnce()) -> Result<(), TeslaMateStageError> {
+        let Self {
+            path,
+            connection,
+            writable: _,
+            file_identity,
+            directory,
+            file_name,
+            file_descriptor,
+        } = self;
+        drop(connection);
+        let descriptor_identity = validate_private_descriptor(
+            file_descriptor.as_fd(),
             &path,
-            identity,
+            FileType::RegularFile,
+            0o600,
         )?;
-        fs::remove_file(&path).map_err(|source| TeslaMateStageError::RemoveStage { path, source })
+        if descriptor_identity != file_identity {
+            return Err(TeslaMateStageError::StagePathIdentityChanged(path));
+        }
+        before_unlink();
+        verify_stage_path_identity(&directory, &file_name, &path, file_identity)?;
+        let (unlink_guard, unlink_identity) =
+            open_private_stage_file_at(&directory, &file_name, &path, false)?;
+        if unlink_identity != file_identity {
+            return Err(TeslaMateStageError::StagePathIdentityChanged(path));
+        }
+        unlinkat(&directory.descriptor, &file_name, AtFlags::empty()).map_err(|source| {
+            TeslaMateStageError::RemoveStage {
+                path,
+                source: std::io::Error::from(source),
+            }
+        })?;
+        drop(unlink_guard);
+        Ok(())
     }
 
     pub fn stats(&self) -> Result<TeslaMateStageStats, TeslaMateStageError> {
@@ -777,6 +816,22 @@ fn configure_writable_connection(
     Ok(())
 }
 
+fn open_read_only_sqlite_from_descriptor(
+    descriptor: &OwnedFd,
+) -> Result<Connection, rusqlite::Error> {
+    // Sealed stages are immutable, so SQLite needs no journal beside /dev/fd.
+    // Opening this URI duplicates the already admitted descriptor; replacing
+    // the stage pathname cannot redirect SQLite to a different inode.
+    let uri = format!(
+        "file:/dev/fd/{}?mode=ro&immutable=1",
+        descriptor.as_raw_fd()
+    );
+    Connection::open_with_flags(
+        uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+    )
+}
+
 fn initialise_schema(
     connection: &Connection,
     limits: TeslaMateStageLimits,
@@ -965,55 +1020,106 @@ fn open_private_directory(path: &Path) -> Result<PrivateDirectory, TeslaMateStag
 }
 
 fn private_directory(path: &Path, create: bool) -> Result<PrivateDirectory, TeslaMateStageError> {
-    let created = match fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            if metadata.file_type().is_symlink() {
-                return Err(TeslaMateStageError::SymlinkPath(path.to_path_buf()));
-            }
-            if !metadata.is_dir() {
-                return Err(TeslaMateStageError::ExpectedDirectory(path.to_path_buf()));
-            }
-            false
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && create => {
-            let mut builder = fs::DirBuilder::new();
-            builder.mode(0o700);
-            match builder.create(path) {
-                Ok(()) => true,
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => false,
-                Err(source) => {
-                    return Err(TeslaMateStageError::CreateDirectory {
-                        path: path.to_path_buf(),
-                        source,
-                    });
-                }
+    let absolute = absolute_stage_path(path)?;
+    let name = absolute
+        .file_name()
+        .ok_or(TeslaMateStageError::InvalidStagePath)?;
+    let parent_path = absolute
+        .parent()
+        .ok_or(TeslaMateStageError::InvalidStagePath)?;
+    let parent = open_directory_components(parent_path)?;
+    let created = if create {
+        match mkdirat(&parent, name, Mode::from_raw_mode(0o700)) {
+            Ok(()) => true,
+            Err(rustix::io::Errno::EXIST) => false,
+            Err(source) => {
+                return Err(TeslaMateStageError::SecureCreateDirectory {
+                    path: absolute,
+                    source,
+                });
             }
         }
-        Err(source) => {
-            return Err(TeslaMateStageError::InspectPath {
-                path: path.to_path_buf(),
-                source,
-            });
-        }
+    } else {
+        false
     };
-    let directory = open(
-        path,
+    let directory = openat(
+        &parent,
+        name,
         OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
         Mode::empty(),
     )
     .map_err(|source| TeslaMateStageError::SecureOpen {
-        path: path.to_path_buf(),
+        path: absolute.clone(),
         source,
     })?;
     if created {
         fchmod(&directory, Mode::from_raw_mode(0o700)).map_err(|source| {
             TeslaMateStageError::SecurePermissions {
-                path: path.to_path_buf(),
+                path: absolute.clone(),
                 source,
             }
         })?;
     }
-    finish_private_directory(directory, path)
+    finish_private_directory(directory, &absolute)
+}
+
+fn absolute_stage_path(path: &Path) -> Result<PathBuf, TeslaMateStageError> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|current| current.join(path))
+            .map_err(|source| TeslaMateStageError::InspectPath {
+                path: path.to_path_buf(),
+                source,
+            })?
+    };
+    #[cfg(target_os = "macos")]
+    if let Ok(suffix) = absolute.strip_prefix("/var") {
+        return Ok(Path::new("/private/var").join(suffix));
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(suffix) = absolute.strip_prefix("/tmp") {
+        return Ok(Path::new("/private/tmp").join(suffix));
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(suffix) = absolute.strip_prefix("/etc") {
+        return Ok(Path::new("/private/etc").join(suffix));
+    }
+    Ok(absolute)
+}
+
+fn open_directory_components(path: &Path) -> Result<OwnedFd, TeslaMateStageError> {
+    let mut descriptor = open(
+        "/",
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|source| TeslaMateStageError::SecureOpen {
+        path: PathBuf::from("/"),
+        source,
+    })?;
+    let mut traversed = PathBuf::from("/");
+    for component in path.components() {
+        let Component::Normal(name) = component else {
+            if matches!(component, Component::RootDir) {
+                continue;
+            }
+            return Err(TeslaMateStageError::InvalidStagePath);
+        };
+        traversed.push(name);
+        descriptor = openat(
+            &descriptor,
+            name,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|source| TeslaMateStageError::SecureOpen {
+            path: traversed.clone(),
+            source,
+        })?;
+    }
+    Ok(descriptor)
 }
 
 fn ensure_private_child_directory(
@@ -1088,35 +1194,10 @@ fn finish_private_directory(
 ) -> Result<PrivateDirectory, TeslaMateStageError> {
     let identity =
         validate_private_descriptor(directory.as_fd(), path, FileType::Directory, 0o700)?;
-    let canonical_path =
-        fs::canonicalize(path).map_err(|source| TeslaMateStageError::InspectPath {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    let canonical = open(
-        &canonical_path,
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|source| TeslaMateStageError::SecureOpen {
-        path: canonical_path.clone(),
-        source,
-    })?;
-    let canonical_identity = validate_private_descriptor(
-        canonical.as_fd(),
-        &canonical_path,
-        FileType::Directory,
-        0o700,
-    )?;
-    if canonical_identity != identity {
-        return Err(TeslaMateStageError::DirectoryIdentityChanged(
-            path.to_path_buf(),
-        ));
-    }
     Ok(PrivateDirectory {
         descriptor: directory,
         identity,
-        path: canonical_path,
+        path: path.to_path_buf(),
     })
 }
 
@@ -1261,15 +1342,7 @@ fn verify_stage_path_identity(
             directory.path.clone(),
         ));
     }
-    let current_directory_descriptor = open(
-        &directory.path,
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|source| TeslaMateStageError::SecureOpen {
-        path: directory.path.clone(),
-        source,
-    })?;
+    let current_directory_descriptor = open_directory_components(&directory.path)?;
     let current_directory_identity = validate_private_descriptor(
         current_directory_descriptor.as_fd(),
         &directory.path,
@@ -2011,6 +2084,56 @@ mod tests {
     }
 
     #[test]
+    fn sealed_sqlite_connection_reads_the_admitted_descriptor_after_path_replacement() {
+        let temporary = tempdir().expect("temp dir");
+        let mut stage =
+            TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        stage.seal().expect("sealed");
+        let path = stage.path().to_path_buf();
+        drop(stage);
+
+        let stage_path = ensure_private_stage_path(&path).expect("secure stage path");
+        let (descriptor, _) = open_private_stage_file(&stage_path, false).expect("stage fd");
+        let original = path.with_extension("descriptor-original");
+        fs::rename(&path, &original).expect("retain admitted inode");
+        fs::write(&path, b"not a SQLite database").expect("replacement");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("private replacement");
+
+        let connection = open_read_only_sqlite_from_descriptor(&descriptor).expect("fd SQLite");
+        let state: String = connection
+            .query_row(
+                "SELECT value FROM stage_meta WHERE key = 'state'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query admitted stage inode");
+        assert_eq!(state, TeslaMateStageState::Sealed.as_str());
+    }
+
+    #[test]
+    fn rejects_symlink_in_an_intermediate_stage_directory_component() {
+        let temporary = tempdir().expect("temp dir");
+        let real_root = temporary.path().join("real-root");
+        fs::create_dir(&real_root).expect("real root");
+        let mut stage = TeslaMateStage::create(real_root.join("imports"), limits()).expect("stage");
+        stage.seal().expect("sealed");
+        let path = stage.path().to_path_buf();
+        let file_name = path.file_name().expect("file name").to_os_string();
+        drop(stage);
+
+        let alias = temporary.path().join("root-alias");
+        std::os::unix::fs::symlink(&real_root, &alias).expect("intermediate symlink");
+        let aliased_path = alias
+            .join("imports")
+            .join(STAGING_DIRECTORY)
+            .join(file_name);
+        assert!(matches!(
+            TeslaMateStage::open_sealed(aliased_path),
+            Err(TeslaMateStageError::SecureOpen { .. })
+        ));
+    }
+
+    #[test]
     fn rejects_stage_directory_replacement_between_secure_and_sqlite_open() {
         let temporary = tempdir().expect("temp dir");
         let mut stage =
@@ -2050,6 +2173,67 @@ mod tests {
             matches!(fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
         );
         assert!(staging.is_dir());
+    }
+
+    #[test]
+    fn discard_rechecks_identity_and_preserves_a_racing_replacement() {
+        let temporary = tempdir().expect("temp dir");
+        let stage = TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        let path = stage.path().to_path_buf();
+        let original = path.with_extension("retained-original");
+
+        let error = stage
+            .discard_with_hook(|| {
+                fs::rename(&path, &original).expect("retain original stage");
+                fs::write(&path, b"replacement must survive").expect("replacement");
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+                    .expect("private replacement");
+            })
+            .expect_err("racing replacement rejected");
+        assert!(matches!(
+            error,
+            TeslaMateStageError::StagePathIdentityChanged(ref changed) if changed == &path
+        ));
+        assert_eq!(
+            fs::read(&path).expect("replacement remains"),
+            b"replacement must survive"
+        );
+        assert!(original.is_file(), "original stage was not deleted by path");
+    }
+
+    #[test]
+    fn discard_rejects_parent_replacement_and_preserves_both_directories() {
+        let temporary = tempdir().expect("temp dir");
+        let stage = TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        let path = stage.path().to_path_buf();
+        let staging = path.parent().expect("staging directory").to_path_buf();
+        let displaced = staging.with_extension("discard-original-directory");
+        let file_name = path.file_name().expect("stage file").to_os_string();
+
+        let error = stage
+            .discard_with_hook(|| {
+                fs::rename(&staging, &displaced).expect("retain original directory");
+                fs::create_dir(&staging).expect("replacement staging directory");
+                fs::set_permissions(&staging, fs::Permissions::from_mode(0o700))
+                    .expect("private replacement directory");
+                let replacement = staging.join(&file_name);
+                fs::write(&replacement, b"replacement must survive").expect("replacement file");
+                fs::set_permissions(replacement, fs::Permissions::from_mode(0o600))
+                    .expect("private replacement");
+            })
+            .expect_err("racing directory replacement rejected");
+        assert!(matches!(
+            error,
+            TeslaMateStageError::DirectoryIdentityChanged(ref changed) if changed == &staging
+        ));
+        assert_eq!(
+            fs::read(staging.join(&file_name)).expect("replacement remains"),
+            b"replacement must survive"
+        );
+        assert!(
+            displaced.join(file_name).is_file(),
+            "original stage remains in its retained directory"
+        );
     }
 
     #[test]

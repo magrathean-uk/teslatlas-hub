@@ -323,6 +323,14 @@ impl TeslaMateSnapshotSession {
         }
     }
 
+    #[cfg(test)]
+    fn for_connection_task(connection_task: tokio::task::JoinHandle<()>) -> Self {
+        Self {
+            client: None,
+            connection_task: Some(connection_task),
+        }
+    }
+
     pub(crate) fn client(&self) -> &Client {
         self.client
             .as_ref()
@@ -387,20 +395,42 @@ async fn finish_connection_task(
                     .expect("connection task remains owned while aborting"),
             )
             .await;
-            task.take();
             match aborted {
-                Ok(Ok(())) => Err(TeslaMateReaderError::SnapshotConnectionShutdownTimedOut),
-                Ok(Err(error)) if error.is_cancelled() => {
+                Ok(Ok(())) => {
+                    task.take();
                     Err(TeslaMateReaderError::SnapshotConnectionShutdownTimedOut)
                 }
-                Ok(Err(error)) => Err(TeslaMateReaderError::SnapshotConnectionTaskFailed {
-                    cancelled: error.is_cancelled(),
-                    panicked: error.is_panic(),
-                }),
-                Err(_) => Err(TeslaMateReaderError::SnapshotConnectionAbortTimedOut),
+                Ok(Err(error)) if error.is_cancelled() => {
+                    task.take();
+                    Err(TeslaMateReaderError::SnapshotConnectionShutdownTimedOut)
+                }
+                Ok(Err(error)) => {
+                    task.take();
+                    Err(TeslaMateReaderError::SnapshotConnectionTaskFailed {
+                        cancelled: error.is_cancelled(),
+                        panicked: error.is_panic(),
+                    })
+                }
+                Err(_) => {
+                    let connection_task = task
+                        .take()
+                        .expect("timed-out connection task remains owned for draining");
+                    spawn_connection_task_drain(connection_task);
+                    Err(TeslaMateReaderError::SnapshotConnectionAbortTimedOut)
+                }
             }
         }
     }
+}
+
+fn spawn_connection_task_drain(connection_task: tokio::task::JoinHandle<()>) {
+    // A JoinHandle detaches its task when dropped. Keep the non-cooperative
+    // aborted task owned by a runtime task until it actually reaches a terminal
+    // state; the bounded caller can then report the timeout without leaking an
+    // unowned PostgreSQL connection task.
+    tokio::spawn(async move {
+        let _ = connection_task.await;
+    });
 }
 
 /// A read-only source transaction that keeps one PostgreSQL snapshot available
@@ -1415,6 +1445,7 @@ impl From<&TeslaMateStageError> for TeslaMateStageCleanupFailureKind {
             TeslaMateStageError::InspectPath { .. }
             | TeslaMateStageError::StagePathIdentityChanged(_)
             | TeslaMateStageError::DirectoryIdentityChanged(_) => Self::MissingOrChanged,
+            TeslaMateStageError::UnexpectedLinkCount { actual: 0, .. } => Self::MissingOrChanged,
             TeslaMateStageError::SymlinkPath(_)
             | TeslaMateStageError::ExpectedDirectory(_)
             | TeslaMateStageError::ExpectedFile(_)
@@ -4472,7 +4503,7 @@ mod tests {
         assert!(!open.contains("LIMIT ALL"));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn connection_task_shutdown_is_bounded_and_abort_on_drop_is_exact() {
         struct DropWitness(Option<tokio::sync::oneshot::Sender<()>>);
         impl Drop for DropWitness {
@@ -4533,17 +4564,97 @@ mod tests {
         assert!(pending.is_none());
 
         let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
+        let (drop_started_tx, drop_started_rx) = tokio::sync::oneshot::channel();
         let mut unfinished = Some(tokio::spawn(async move {
             let _witness = DropWitness(Some(drop_tx));
+            let _ = drop_started_tx.send(());
             std::future::pending::<()>().await;
         }));
-        tokio::task::yield_now().await;
+        drop_started_rx.await.expect("drop task started");
         abort_connection_task(&mut unfinished);
         timeout(Duration::from_secs(1), drop_rx)
             .await
             .expect("drop aborts task")
             .expect("drop witness sender");
         assert!(unfinished.is_none());
+
+        let (session_drop_tx, session_drop_rx) = tokio::sync::oneshot::channel();
+        let (session_started_tx, session_started_rx) = tokio::sync::oneshot::channel();
+        let session_task = tokio::spawn(async move {
+            let _witness = DropWitness(Some(session_drop_tx));
+            let _ = session_started_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        session_started_rx.await.expect("session task started");
+        drop(TeslaMateSnapshotSession::for_connection_task(session_task));
+        timeout(Duration::from_secs(1), session_drop_rx)
+            .await
+            .expect("snapshot session Drop aborts its task")
+            .expect("snapshot session drop witness");
+
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let (cancel_started_tx, cancel_started_rx) = tokio::sync::oneshot::channel();
+        let session_task = tokio::spawn(async move {
+            let _witness = DropWitness(Some(cancel_tx));
+            let _ = cancel_started_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        cancel_started_rx
+            .await
+            .expect("cancelled session task started");
+        let session = TeslaMateSnapshotSession::for_connection_task(session_task);
+        let finish = tokio::spawn(session.finish());
+        tokio::task::yield_now().await;
+        finish.abort();
+        let _ = finish.await;
+        timeout(Duration::from_secs(1), cancel_rx)
+            .await
+            .expect("cancelling snapshot session finish still aborts its task")
+            .expect("cancelled snapshot session finish drop witness");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn non_cooperative_connection_abort_is_owned_until_drained() {
+        struct BlockingDrop {
+            release: std::sync::mpsc::Receiver<()>,
+            dropped: Option<tokio::sync::oneshot::Sender<()>>,
+        }
+
+        impl Drop for BlockingDrop {
+            fn drop(&mut self) {
+                let _ = self.release.recv();
+                if let Some(dropped) = self.dropped.take() {
+                    let _ = dropped.send(());
+                }
+            }
+        }
+
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let _blocking_drop = BlockingDrop {
+                release: release_rx,
+                dropped: Some(dropped_tx),
+            };
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        started_rx.await.expect("non-cooperative task started");
+        let mut task = Some(task);
+
+        assert!(matches!(
+            finish_connection_task(&mut task, Duration::from_millis(20)).await,
+            Err(TeslaMateReaderError::SnapshotConnectionAbortTimedOut)
+        ));
+        assert!(task.is_none(), "the runtime drain task owns the JoinHandle");
+        release_tx
+            .send(())
+            .expect("release blocking task destructor");
+        timeout(Duration::from_secs(1), dropped_rx)
+            .await
+            .expect("owned connection task eventually drains")
+            .expect("blocking drop witness");
     }
 
     #[tokio::test]
