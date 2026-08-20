@@ -1,87 +1,74 @@
-# Teslatlas Hub: working Rust TeslaMate replacement for macOS
+# Goal: working Rust TeslaMate replacement on macOS
 
-## Goal
+Status: defined only. Do not start automatically.
 
-Finish the existing Teslatlas Hub as a practical TeslaMate replacement written in Rust and working on macOS. Deliver a usable telemetry collector and local data hub, not another audit, release-certification exercise, or orchestration project.
+## Outcome
 
-There is no fixed execution time limit. Continue until the normal product path works, validation passes, or a concrete external blocker requires owner input.
+Finish `hub/` as a usable TeslaMate replacement written in Rust for one vehicle on Apple-silicon macOS. A new installation must work without TeslaMate. Optional TeslaMate migration must be read-only.
 
-## Primary user journey
+There is no time limit. When started, continue step by step until the product path works or a real external blocker needs owner input.
 
-An owner must be able to:
+## Source and scope
 
-1. Build and launch Teslatlas Hub on a supported Mac.
-2. Configure Tesla authentication and local storage without installing TeslaMate.
-3. Optionally migrate one car, its history, and compatible credentials from a TeslaMate PostgreSQL database through read-only access.
-4. Start the Hub and leave it running as a macOS user service.
-5. Collect Owner API and streaming telemetry continuously without sending vehicle commands.
-6. Persist cars, positions, drives, charging sessions, states, software updates, and settings correctly across restarts.
-7. Pair and sync the stored history with the Teslatlas client over the local Hub API.
-8. Inspect status and logs, stop or restart the service, back up the data, restore it, and run repair from the app or CLI.
+- Work only in the active `hub/main` checkout.
+- Do not edit or build the sibling `app/` project.
+- Improve the existing implementation; do not rewrite working code without a reproduced problem.
+- Product path: build, configure, initialize, migrate optionally, run as a macOS user service, collect telemetry, persist lifecycle history, restart, pair, sync, back up, restore, and repair.
+- Use the local PostgreSQL `teslamate` database only as a read-only older-schema and scale fixture. Never modify it.
+- Exclude Agent Fleet work, release paperwork, licensing work, Linux packaging, CI, notarization, multi-car support, and speculative hardening.
 
-## Product scope
+## One progress document
 
-- Use the current dependency-upgraded `hub/` tree as source authority.
-- Finish and simplify the implementation already present. Do not rewrite working subsystems without a demonstrated need.
-- Prioritize the real macOS path: first run, configuration, migration, authentication, collection, lifecycle reconstruction, local sync, restart, and recovery.
-- Preserve a useful CLI even when the native control app is used.
-- Keep the initial product boundary to macOS, Apple silicon, one vehicle, and the existing legacy Owner API plus streaming integration.
-- TeslaMate migration is optional compatibility. A new installation must run without TeslaMate.
-- Treat the supplied local PostgreSQL database as read-only. Its known older schema is useful for scale and rejection-path testing, not as false proof of supported-schema compatibility.
+Use `PROGRESS.md` as the only work ledger. Do not create review forests, evidence packs, duplicated plans, or per-agent reports.
 
-## Working definition
+Keep only: status, one current step, one next step, exact blockers, and a short completed list stating each change and its focused validation. Update it with the code before each commit.
 
-The Hub is working when all of these are true:
+## Sequential development loop
 
-- `cargo build --locked --release` succeeds.
-- `cargo fmt`, `cargo check`, `cargo test`, and `cargo clippy` pass for the current tree.
-- The macOS app bundle builds and launches locally.
-- A clean local configuration can initialize storage, start, report healthy status, stop, and restart without manual database surgery.
-- The fake/local end-to-end collector path produces durable telemetry, completed drives and charges, and readable sync output.
-- Compatible TeslaMate migration completes through bounded read-only PostgreSQL access; incompatible schemas fail clearly and leave both databases unchanged.
-- Pairing and authenticated local sync work after a Hub restart.
-- Backup, restore, and repair preserve a usable installation.
-- No plaintext credential appears in logs, command output, persisted configuration, or test receipts.
-- Any final live-account check uses credentials deliberately supplied by the owner, performs observation only, and never wakes or commands a vehicle.
+1. Read `PROGRESS.md` and choose the next incomplete product step.
+2. Inspect only the relevant files and reproduce the actual failure or missing behavior.
+3. Make the smallest correct edit directly in `hub/`.
+4. Run the smallest relevant check or focused test.
+5. Fix until that step passes.
+6. Update `PROGRESS.md` with the change and result.
+7. Commit the code and progress update together.
+8. Continue to the next step.
 
-## How to work
+Do not stop for another broad audit, architecture exercise, candidate tournament, or review cycle between normal product steps.
 
-- Work directly in the active `hub/` checkout and preserve existing user changes.
-- Develop normally in that checkout with one Cargo target directory (`hub/target` by default). Reuse it for check, test, clippy, and release builds.
-- Do not create separate multi-gigabyte Cargo targets, repository clones, or worktrees for each agent, review, test subset, or commit.
-- If isolation is genuinely required, use at most one short-lived Hub-only checkout and one target directory. Remove both immediately after the useful commit is merged.
-- Before every handoff or merge, inventory and remove all Hub-only temporary clones, targets, logs, and generated evidence created by the task. Verify the remaining `/tmp` Hub count and disk space. Never remove App artifacts.
-- Use Sol, Terra, or Luna only for small independent implementation or review tasks that materially speed up the product work.
-- Do not modify, redesign, debug, or perfect Agent Fleet. Fleet is not part of the product.
-- Do not create process, policy, evidence, or review machinery unless it is required to make the macOS Hub work or to diagnose a real failure.
-- Reproduce a failure, fix the smallest correct cause, run the relevant test, then continue through the user journey.
-- Prefer existing maintained Rust crates and macOS facilities over custom infrastructure when they fit.
-- Integrate useful already-completed fixes only after checking them against the current tree. Ignore the stale reviewed archive as code.
-- One focused independent review near completion is enough. Fix concrete findings; do not reopen broad speculative audits.
+## Product order
 
-## Not required for this goal
+1. Release build and clean first-run initialization.
+2. Configuration and macOS user-service start, status, stop, and restart.
+3. Fake/local Owner API and streaming collection without vehicle commands.
+4. Durable cars, positions, drives, charges, states, settings, and updates across restart.
+5. Optional bounded read-only TeslaMate migration with clear incompatible-schema rejection.
+6. Pairing and authenticated local sync across restart.
+7. Backup, verify, restore, and repair.
+8. One final full validation and one practical macOS smoke run.
 
-- Agent Fleet development.
-- Licensing, SBOM, notices, legal review, or release paperwork.
-- Developer ID signing, notarization, App Store work, GitHub automation, or CI design.
-- Linux packaging or service management.
-- Grafana, MQTT, official Fleet API, multi-car support, or feature parity with every TeslaMate integration.
-- Exhaustive adversarial, SIGKILL, ENOSPC, power-loss, endurance, benchmark, or provider-policy matrices unless a normal product failure specifically requires one.
-- Speculative hardening unrelated to the working macOS user journey.
+## Resource rules
 
-## Safety boundaries
+- Primary agent codes directly. Use a subagent only for one small independent question that avoids duplicate work.
+- One checkout. One Cargo target directory: `hub/target`.
+- Never create per-agent, per-review, per-test, or per-commit clones or target directories.
+- Do not run the full test suite after every edit. Use focused tests during development.
+- Run `fmt`, full `check`, full `test`, `clippy`, and release build once near completion, or after a genuinely broad dependency/API change.
+- Use `rg` and narrow file reads. Do not dump whole repositories or long command output into the conversation.
+- Browse only when current external documentation is required.
+- Keep user updates to completed milestones, failures, or blockers.
+- Do not generate large logs, archives, fixtures, benchmarks, or evidence unless the product failure requires them.
+- Any exceptional temporary Hub checkout or artifact must be removed immediately after use.
+- Before every handoff: zero Hub temp clones/targets in `/tmp`, report `hub/target` size, and leave `hub/main` clean except known user files.
+
+## Safety
 
 - Never write to the TeslaMate PostgreSQL source.
-- Never use real Tesla credentials unless the owner explicitly supplies and authorizes them for the check.
+- Never use real Tesla credentials without explicit owner authorization.
 - Never wake a vehicle or send a vehicle command.
-- Never push, publish, deploy, or modify remote systems.
-- Do not reset, clean, stash, or overwrite unrelated working-tree changes.
+- Never push, publish, deploy, or change remote systems.
+- Never reset, clean, stash, or overwrite unrelated user work.
 
-## Finish rule
+## Done
 
-Do not stop at a plan, candidate branch, narrow unit test, or review receipt. Finish the active macOS product path and report:
-
-- what now works;
-- exact local validation results;
-- any live behavior actually observed;
-- the smallest remaining external blockers, if any.
+The goal is complete only when the normal macOS journey works, final Rust gates pass, practical local behavior is recorded in `PROGRESS.md`, temporary Hub artifacts are cleaned, and only exact external blockers remain.
