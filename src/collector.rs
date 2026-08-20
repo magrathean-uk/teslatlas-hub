@@ -4131,6 +4131,7 @@ fn compatibility_car(
             &model,
             trim_badging.as_deref(),
             raw_car_type,
+            Some(&vehicle.vin),
         ),
         exterior_color: snapshot
             .and_then(|snapshot| nested_text(snapshot, "vehicle_config", "exterior_color"))

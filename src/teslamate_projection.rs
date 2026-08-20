@@ -1047,6 +1047,7 @@ pub fn project_car(
             &model,
             trim_badging.as_deref(),
             raw_model.as_deref(),
+            car.vin.as_deref(),
         )
     });
     Ok(ProjectionCar {

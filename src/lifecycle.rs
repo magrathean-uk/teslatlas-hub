@@ -1237,12 +1237,15 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
         let model = raw_car_type.as_deref().map(normalize_tesla_model_code);
         let trim_badging = text_field(vehicle_config, "trim_badging")
             .map(|value| crate::hub_pack::normalize_tesla_trim(&value));
+        let vin = text_field(Some(root), "vin")
+            .or_else(|| vehicle_data.and_then(|fields| text_field(Some(fields), "vin")));
         let marketing_name = raw_car_type.as_deref().and_then(|raw| {
             model.as_deref().and_then(|model| {
                 crate::hub_pack::derive_tesla_marketing_name(
                     model,
                     trim_badging.as_deref(),
                     Some(raw),
+                    vin.as_deref(),
                 )
             })
         });
@@ -1253,8 +1256,7 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
                 })
                 .or_else(|| text_field(vehicle_state, "vehicle_name")),
             model,
-            vin: text_field(Some(root), "vin")
-                .or_else(|| vehicle_data.and_then(|fields| text_field(Some(fields), "vin"))),
+            vin,
             trim_badging,
             marketing_name,
             exterior_color: text_field(vehicle_config, "exterior_color"),
@@ -1355,7 +1357,9 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
             .and_then(|fields| float_field(fields, "charger_actual_current")),
         charger_pilot_current: charge
             .and_then(|fields| float_field(fields, "charger_pilot_current")),
-        charger_phases: charge.and_then(|fields| int_field(fields, "charger_phases")),
+        charger_phases: charge
+            .and_then(|fields| int_field(fields, "charger_phases"))
+            .filter(|phases| *phases > 0),
         fast_charger_present: charge.and_then(|fields| bool_field(fields, "fast_charger_present")),
         fast_charger_brand: charge
             .and_then(|fields| fields.get("fast_charger_brand"))
@@ -1829,14 +1833,10 @@ fn observe_charge_sample(open: &mut OpenCharge, sample: &ProjectionChargeSample)
     let power_kw = sample
         .charger_power_kw
         .filter(|power| power.is_finite() && *power >= 0.0);
-    if let (Some(previous_ts), Some(previous_power), Some(_current_power)) = (
-        open.last_sample_timestamp_ms,
-        open.last_sample_power_kw,
-        power_kw,
-    ) {
+    if let (Some(previous_ts), Some(current_power)) = (open.last_sample_timestamp_ms, power_kw) {
         let elapsed_ms = sample.timestamp_ms.saturating_sub(previous_ts);
         if elapsed_ms > 0 {
-            let increment = previous_power * elapsed_ms as f64 / 3_600_000.0;
+            let increment = current_power * elapsed_ms as f64 / 3_600_000.0;
             open.energy_used_kwh = Some(open.energy_used_kwh.unwrap_or(0.0) + increment);
         }
     }
@@ -2201,7 +2201,7 @@ fn charge_energy_added_delta(
     (delta >= 0.0).then_some(delta)
 }
 
-fn calculate_energy_used_kwh(samples: &[ProjectionChargeSample]) -> Option<f64> {
+pub(crate) fn calculate_energy_used_kwh(samples: &[ProjectionChargeSample]) -> Option<f64> {
     if samples.is_empty() {
         return None;
     }
@@ -2215,14 +2215,17 @@ fn calculate_energy_used_kwh(samples: &[ProjectionChargeSample]) -> Option<f64> 
         if elapsed_ms == 0 {
             continue;
         }
-        let power_kw = match pair[0].charger_phases {
-            None => pair[0].charger_power_kw,
-            Some(_) => phases.and_then(|phases| {
-                pair[0]
-                    .charger_actual_current
-                    .zip(pair[0].charger_voltage)
-                    .map(|(current, voltage)| current * voltage * phases / 1_000.0)
-            }),
+        let sample = &pair[1];
+        let power_kw = match sample.charger_phases.filter(|phases| *phases > 0) {
+            None => sample.charger_power_kw,
+            Some(_) => phases
+                .and_then(|phases| {
+                    sample
+                        .charger_actual_current
+                        .zip(sample.charger_voltage)
+                        .map(|(current, voltage)| current * voltage * phases / 1_000.0)
+                })
+                .or(sample.charger_power_kw),
         };
         if let Some(power_kw) = power_kw.filter(|power| power.is_finite() && *power >= 0.0) {
             total += power_kw * elapsed_ms as f64 / 3_600_000.0;
@@ -2250,7 +2253,9 @@ fn determine_phases(samples: &[ProjectionChargeSample]) -> Option<f64> {
         return None;
     }
     let power_phase_ratio = ratios.iter().copied().sum::<f64>() / ratios.len() as f64;
-    let raw_phases = samples.iter().filter_map(|sample| sample.charger_phases);
+    let raw_phases = samples
+        .iter()
+        .filter_map(|sample| sample.charger_phases.filter(|phases| *phases > 0));
     let raw_phases = raw_phases.collect::<Vec<_>>();
     let average_phases = (!raw_phases.is_empty())
         .then(|| {
@@ -2263,8 +2268,8 @@ fn determine_phases(samples: &[ProjectionChargeSample]) -> Option<f64> {
     if average_phases == Some(3.0) && (power_phase_ratio / 3.0_f64.sqrt() - 1.0).abs() <= 0.1 {
         return Some(3.0_f64.sqrt());
     }
-    ((power_phase_ratio.round() - power_phase_ratio).abs() <= 0.3)
-        .then_some(power_phase_ratio.round())
+    let rounded = power_phase_ratio.round();
+    (rounded > 0.0 && (rounded - power_phase_ratio).abs() <= 0.3).then_some(rounded)
 }
 
 fn is_drive_shift(shift_state: Option<&str>) -> bool {
@@ -3346,6 +3351,56 @@ mod tests {
         assert_eq!(charge.start_latitude, Some(51.5));
         assert_eq!(charge.start_longitude, Some(-0.1));
         assert_eq!(charge.cost, None);
+    }
+
+    #[test]
+    fn charge_energy_uses_the_current_row_and_phase_fallback() {
+        let start = 1_800_000_000_000;
+        let samples = [
+            sample(
+                1,
+                start,
+                json!({
+                    "charge_state": {
+                        "charging_state": "Charging",
+                        "timestamp": start,
+                        "charger_power": 1.0
+                    }
+                }),
+            ),
+            sample(
+                2,
+                start + 3_600_000,
+                json!({
+                    "charge_state": {
+                        "charging_state": "Charging",
+                        "timestamp": start + 3_600_000,
+                        "charger_power": 6.0,
+                        "charger_phases": 1
+                    }
+                }),
+            ),
+        ];
+        let step = apply_samples(OpenSessionState::new(), 1, &samples).expect("valid charge");
+        let stored = &step.state.open_charge.expect("open charge").samples;
+        assert_eq!(calculate_energy_used_kwh(stored), Some(6.0));
+    }
+
+    #[test]
+    fn nonpositive_live_charger_phases_are_stored_as_null() {
+        let sample = sample(
+            1,
+            1_800_000_000_000,
+            json!({
+                "charge_state": {
+                    "charging_state": "Charging",
+                    "charger_power": 3.0,
+                    "charger_phases": 0
+                }
+            }),
+        );
+        let step = apply_sample(OpenSessionState::new(), 1, &sample).expect("valid charge");
+        assert_eq!(step.delta.open_charge_samples[0].charger_phases, None);
     }
 
     #[test]

@@ -2,13 +2,15 @@
 
 Status: active — TeslaMate v4.1.1 parity fixes.
 
-Current: charging calculations and derived vehicle data.
+Current: bounded current vehicle snapshot and sync API.
 
 Next: current vehicle snapshot, bounded runtime storage, native controls, then one final validation pass.
 
 Blocked: live Tesla Owner API collection and actual LaunchAgent start/restart were not run because real credentials and vehicle access were not authorized; the existing user plist was preserved.
 
 ## Completed
+
+- TeslaMate v4.1.1 derived data — charge integration now uses the current row, falls back to charger power when phase inference is unavailable, normalizes nonpositive phases, and recomputes from all durable samples before publication; Model 3 MY2022+ trim `50` is now `RWD` — 5 focused tests passed. TeslaMate v4.1.1 itself no longer writes the legacy per-drive efficiency column, so live `NULL` remains compatible.
 
 - TeslaMate v4.1.1 import — pinned the exact 105-migration tag at `d6c43bc8c48784da8f0b701945b80b20911b3d1a`, updated VIN/cost schema admission and pack contracts, and kept the local 99-migration database as a read-only negative fixture — 16 schema tests, 20 pack-contract tests, and the bounded preflight test passed.
 

@@ -1310,6 +1310,7 @@ pub fn derive_tesla_marketing_name(
     model: &str,
     trim_badging: Option<&str>,
     raw_car_type: Option<&str>,
+    vin: Option<&str>,
 ) -> Option<String> {
     let model = normalize_tesla_model_code(model);
     let trim = trim_badging.map(normalize_tesla_trim);
@@ -1322,7 +1323,7 @@ pub fn derive_tesla_marketing_name(
         ("3", Some("74D"), _) => Some("LR AWD".to_owned()),
         ("3", Some("74"), _) => Some("LR".to_owned()),
         ("3", Some("62"), _) => Some("MR".to_owned()),
-        ("3", Some("50"), _) => Some("SR+".to_owned()),
+        ("3", Some("50"), _) => Some(model_3_base_trim(vin).to_owned()),
         ("X", Some("100D"), "tamarind") => Some("LR".to_owned()),
         ("X", Some("P100D"), "tamarind") => Some("Plaid".to_owned()),
         ("Y", Some("P74D"), _) => Some("LR AWD Performance".to_owned()),
@@ -1331,6 +1332,38 @@ pub fn derive_tesla_marketing_name(
         ("Y", Some("50"), _) => Some("SR".to_owned()),
         _ => None,
     }
+}
+
+fn model_3_base_trim(vin: Option<&str>) -> &'static str {
+    let Some(vin) = vin.filter(|vin| vin.len() == 17 && vin.is_ascii()) else {
+        return "SR+";
+    };
+    let model_year = match vin.as_bytes()[9] {
+        b'A' => 2010,
+        b'B' => 2011,
+        b'C' => 2012,
+        b'D' => 2013,
+        b'E' => 2014,
+        b'F' => 2015,
+        b'G' => 2016,
+        b'H' => 2017,
+        b'J' => 2018,
+        b'K' => 2019,
+        b'L' => 2020,
+        b'M' => 2021,
+        b'N' => 2022,
+        b'P' => 2023,
+        b'R' => 2024,
+        b'S' => 2025,
+        b'T' => 2026,
+        b'V' => 2027,
+        b'W' => 2028,
+        b'X' => 2029,
+        b'Y' => 2030,
+        b'1'..=b'9' => 2030 + i32::from(vin.as_bytes()[9] - b'0'),
+        _ => return "SR+",
+    };
+    if model_year >= 2022 { "RWD" } else { "SR+" }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6840,6 +6873,22 @@ mod tests {
         assert_eq!(normalize_tesla_model_code("models2"), "S");
         assert_eq!(normalize_tesla_model_code("modely"), "Y");
         assert_eq!(normalize_tesla_model_code("Model 3"), "3");
+    }
+
+    #[test]
+    fn model_3_base_trim_uses_the_vin_model_year() {
+        assert_eq!(
+            derive_tesla_marketing_name("3", Some("50"), Some("model3"), Some("5YJ3E1EA7NF000001")),
+            Some("RWD".to_owned())
+        );
+        assert_eq!(
+            derive_tesla_marketing_name("3", Some("50"), Some("model3"), Some("5YJ3E1EA7MF000001")),
+            Some("SR+".to_owned())
+        );
+        assert_eq!(
+            derive_tesla_marketing_name("3", Some("50"), Some("model3"), None),
+            Some("SR+".to_owned())
+        );
     }
 
     #[test]

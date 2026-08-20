@@ -10677,6 +10677,17 @@ impl HubStore {
         }
         for charge in &delta.charges {
             let mut charge = charge.clone();
+            let charge_samples = delta
+                .charge_samples
+                .iter()
+                .filter(|sample| sample.charge_process_id == charge.id)
+                .cloned()
+                .collect::<Vec<_>>();
+            if let Some(energy_used_kwh) =
+                crate::lifecycle::calculate_energy_used_kwh(&charge_samples)
+            {
+                charge.charge_energy_used_kwh = Some(energy_used_kwh);
+            }
             let start_fence = delta
                 .charge_start_coordinates
                 .iter()
@@ -22172,6 +22183,78 @@ mod tests {
         assert_eq!(history.charges[0].cost_per_unit, Some(0.30));
         assert_eq!(history.charges[0].session_fee, Some(2.0));
         assert_eq!(history.charges[0].cost, Some(2.3));
+    }
+
+    #[test]
+    fn lifecycle_commit_recomputes_charge_energy_from_all_durable_samples() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let (_, vehicle) = test_registered_vehicle(&store);
+        let start = 1_800_000_000_000;
+        let sample =
+            |observation_id, observed_at_ms, charge_state| crate::lifecycle::LifecycleSample {
+                observation_id,
+                observed_at_ms,
+                vehicle_state: "online".to_owned(),
+                payload: serde_json::json!({
+                    "record_type": "owner_api_vehicle_data_v1",
+                    "source_vehicle_id": "9",
+                    "vehicle_data": {"charge_state": charge_state},
+                }),
+            };
+        let step = crate::lifecycle::apply_samples(
+            crate::lifecycle::OpenSessionState::new(),
+            1,
+            &[
+                sample(
+                    1,
+                    start,
+                    serde_json::json!({
+                        "charging_state": "Charging",
+                        "timestamp": start,
+                        "charger_power": 1.0
+                    }),
+                ),
+                sample(
+                    2,
+                    start + 3_600_000,
+                    serde_json::json!({
+                        "charging_state": "Charging",
+                        "timestamp": start + 3_600_000,
+                        "charger_power": 6.0,
+                        "charger_phases": 1
+                    }),
+                ),
+                sample(
+                    3,
+                    start + 7_200_000,
+                    serde_json::json!({
+                        "charging_state": "Complete",
+                        "timestamp": start + 7_200_000,
+                        "charger_power": 0.0
+                    }),
+                ),
+            ],
+        )
+        .expect("closed charge");
+        let encoded = step.state.encode().expect("encode state");
+        let mut delta = step.delta;
+        delta.charges[0].charge_energy_used_kwh = Some(999.0);
+        store
+            .commit_lifecycle_delta(&LifecycleCommit {
+                vehicle_id: vehicle.vehicle_id,
+                car_id: 1,
+                open_session_json: &encoded,
+                last_observation_id: 3,
+                quarantined: false,
+                updated_at_ms: start + 7_200_000,
+                delta: &delta,
+            })
+            .expect("commit lifecycle");
+        let history = store
+            .materialised_history(vehicle.vehicle_id)
+            .expect("materialised history");
+        assert_eq!(history.charges[0].charge_energy_used_kwh, Some(6.0));
     }
 
     #[test]
