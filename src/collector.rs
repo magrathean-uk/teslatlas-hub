@@ -7266,8 +7266,8 @@ mod tests {
                 .open()
                 .expect("catalogue")
                 .query_row(
-                    "SELECT COUNT(*) FROM raw_observations
-                     WHERE json_extract(payload_json, '$.record_type') = 'tesla_stream_update_v1'",
+                    "SELECT COUNT(*) FROM current_observations
+                     WHERE record_type = 'tesla_stream_update_v1'",
                     [],
                     |row| row.get::<_, i64>(0),
                 )
@@ -7425,8 +7425,8 @@ mod tests {
                 .open()
                 .expect("catalogue")
                 .query_row(
-                    "SELECT COUNT(*) FROM raw_observations
-                     WHERE json_extract(payload_json, '$.record_type') = 'tesla_stream_update_v1'",
+                    "SELECT COUNT(*) FROM current_observations
+                     WHERE record_type = 'tesla_stream_update_v1'",
                     [],
                     |row| row.get::<_, i64>(0),
                 )
@@ -7857,12 +7857,8 @@ mod tests {
         assert_eq!(history.drives.len(), 1);
         assert_eq!(history.positions.len(), 2);
         let observations = store
-            .observations_after_id_for_vehicle(
-                vehicle_id,
-                0,
-                crate::db::MAX_OBSERVATION_QUERY_LIMIT,
-            )
-            .expect("observations");
+            .current_observations_for_vehicle(vehicle_id)
+            .expect("current observations");
         assert!(
             observations.iter().any(|observation| {
                 observation.payload["record_type"] == "owner_api_discovery_v1"
@@ -8269,17 +8265,17 @@ mod tests {
             .expect("vehicle identity")
             .parse::<Uuid>()
             .expect("vehicle UUID");
-        let observations = store
-            .observations_for_vehicle(registered, crate::db::ObservationQuery::from_start(10))
-            .expect("stream observations");
-        assert_eq!(observations.len(), 2);
-        assert_eq!(
-            observations
-                .iter()
-                .map(|observation| observation.observed_at_ms)
-                .collect::<Vec<_>>(),
-            vec![first_timestamp, first_timestamp + 1_000]
+        assert!(
+            store
+                .observations_for_vehicle(registered, crate::db::ObservationQuery::from_start(10),)
+                .expect("pruned stream observations")
+                .is_empty()
         );
+        let observations = store
+            .current_observations_for_vehicle(registered)
+            .expect("current stream observation");
+        assert_eq!(observations.len(), 1);
+        assert_eq!(observations[0].observed_at_ms, first_timestamp + 1_000);
         let lifecycle = store
             .load_lifecycle_state(registered)
             .expect("lifecycle state")
@@ -8362,7 +8358,24 @@ mod tests {
                 row.get(0)
             })
             .expect("raw count");
-        assert_eq!(raw_count, 1);
+        assert_eq!(raw_count, 0);
+        assert_eq!(
+            store
+                .current_observations_for_vehicle(
+                    store
+                        .open()
+                        .expect("database")
+                        .query_row("SELECT vehicle_id FROM vehicles", [], |row| {
+                            row.get::<_, String>(0)
+                        })
+                        .expect("vehicle")
+                        .parse()
+                        .expect("vehicle UUID"),
+                )
+                .expect("current powered stream observation")
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -8399,6 +8412,7 @@ mod tests {
             let connection = store.open().expect("database");
             for table in [
                 "raw_observations",
+                "current_observations",
                 "stream_watermarks",
                 "vehicle_lifecycle_state",
             ] {
@@ -8414,19 +8428,23 @@ mod tests {
             assert!(persist_stream_update(&store, vehicle_id, &update).expect("retry"));
             assert!(!persist_stream_update(&store, vehicle_id, &update).expect("duplicate"));
             let connection = store.open().expect("database");
+            let raw: i64 = connection
+                .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| {
+                    row.get(0)
+                })
+                .expect("raw count");
+            assert_eq!(raw, 0);
             for table in [
-                "raw_observations",
-                "stream_watermarks, vehicle_lifecycle_state",
+                "current_observations",
+                "stream_watermarks",
+                "vehicle_lifecycle_state",
             ] {
-                let table = table.replace(", ", " UNION ALL SELECT COUNT(*) FROM ");
-                let counts: Vec<i64> = connection
-                    .prepare(&format!("SELECT COUNT(*) FROM {table}"))
-                    .expect("count query")
-                    .query_map([], |row| row.get(0))
-                    .expect("count rows")
-                    .map(|row| row.expect("count row"))
-                    .collect();
-                assert!(counts.iter().all(|count| *count == 1));
+                let count: i64 = connection
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get(0)
+                    })
+                    .expect("committed count");
+                assert_eq!(count, 1, "missing committed {table}");
             }
         }
     }
@@ -8476,10 +8494,16 @@ mod tests {
             .expect("vehicle")
             .parse::<Uuid>()
             .expect("uuid");
+        assert!(
+            store
+                .observations_for_vehicle(registered, crate::db::ObservationQuery::from_start(10),)
+                .expect("pruned observations")
+                .is_empty()
+        );
         assert_eq!(
             store
-                .observations_for_vehicle(registered, crate::db::ObservationQuery::from_start(10))
-                .expect("observations")
+                .current_observations_for_vehicle(registered)
+                .expect("current observation")
                 .len(),
             1
         );

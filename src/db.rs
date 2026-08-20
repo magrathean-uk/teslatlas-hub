@@ -15158,8 +15158,18 @@ fn append_observation_in_transaction(
     let inserted = transaction
         .execute(
             "INSERT INTO raw_observations
-             (source_id, vehicle_id, observed_at_ms, received_at_ms, payload_sha256, payload_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             (observation_id, source_id, vehicle_id, observed_at_ms,
+              received_at_ms, payload_sha256, payload_json)
+             VALUES (
+                 COALESCE((
+                     SELECT MAX(observation_id) FROM (
+                         SELECT observation_id FROM raw_observations
+                         UNION ALL
+                         SELECT observation_id FROM current_observations
+                     )
+                 ), 0) + 1,
+                 ?1, ?2, ?3, ?4, ?5, ?6
+             )
              ON CONFLICT(source_id, vehicle_id, observed_at_ms, payload_sha256) DO NOTHING",
             params![
                 input.source_id.to_string(),
@@ -16819,6 +16829,22 @@ mod tests {
         entries
     }
 
+    fn remove_v50_current_observation_schema(connection: &Connection) {
+        connection
+            .execute_batch(
+                "DROP TABLE current_observations;
+                 DROP TABLE raw_observation_prune_guard;
+                 DROP TRIGGER raw_observations_append_only_delete;
+                 CREATE TRIGGER raw_observations_append_only_delete
+                 BEFORE DELETE ON raw_observations
+                 FOR EACH ROW
+                 BEGIN
+                     SELECT RAISE(ABORT, 'raw observations are append-only');
+                 END;",
+            )
+            .expect("remove v50 current-observation schema");
+    }
+
     #[test]
     fn initializes_a_checked_wal_database() {
         let temp = tempfile::tempdir().expect("temp directory");
@@ -17203,6 +17229,7 @@ mod tests {
         let temporary = tempfile::tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
+        remove_v50_current_observation_schema(&connection);
         connection
             .execute_batch(
                 "DROP TABLE legacy_refresh_input_fences;
@@ -17237,6 +17264,7 @@ mod tests {
         let temporary = tempfile::tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
+        remove_v50_current_observation_schema(&connection);
         connection
             .execute_batch(
                 "DROP TABLE legacy_refresh_input_fences;
@@ -17978,6 +18006,24 @@ mod tests {
                 })
                 .unwrap(),
             0
+        );
+
+        let mut newer = input.clone();
+        newer.observed_at_ms = 20_000;
+        newer.payload["vehicle_data"]["vehicle_state"]["timestamp"] = serde_json::json!(20_000);
+        let second = store
+            .accept_owner_observation_and_lifecycle(&newer, 20_001, 1)
+            .expect("accept newer observation after pruning");
+        assert!(second.append.inserted);
+        assert!(
+            second.append.observation.observation_id > first.append.observation.observation_id,
+            "pruning must never allow SQLite row identifiers to be reused"
+        );
+        assert_eq!(
+            store
+                .current_observations_for_vehicle(vehicle.vehicle_id)
+                .expect("new current observation")[0],
+            second.append.observation
         );
     }
 
@@ -20292,6 +20338,7 @@ mod tests {
             .expect("catalogue historical V2 base");
 
         let connection = store.open().expect("historical catalogue");
+        remove_v50_current_observation_schema(&connection);
         connection
             .execute(
                 "DELETE FROM v2_base_bindings WHERE vehicle_id = ?1",
@@ -22578,6 +22625,7 @@ mod tests {
         let temporary = tempfile::tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
+        remove_v50_current_observation_schema(&connection);
         connection
             .execute_batch(
                 "DROP TABLE legacy_refresh_input_fences;
@@ -22621,6 +22669,7 @@ mod tests {
         let temporary = tempfile::tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
+        remove_v50_current_observation_schema(&connection);
         connection
             .execute_batch(
                 "DROP TABLE legacy_refresh_input_fences;
@@ -22664,6 +22713,7 @@ mod tests {
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let correlation_id = Uuid::new_v4();
         let connection = store.open().expect("current catalogue");
+        remove_v50_current_observation_schema(&connection);
         connection
             .execute_batch(
                 "DROP TABLE legacy_refresh_input_fences;
@@ -22880,6 +22930,7 @@ mod tests {
         let temporary = tempfile::tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
+        remove_v50_current_observation_schema(&connection);
         connection
             .execute_batch(
                 "
@@ -22935,6 +22986,7 @@ mod tests {
         let temporary = tempfile::tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
+        remove_v50_current_observation_schema(&connection);
         connection
             .execute_batch(
                 "
