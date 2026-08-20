@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use crate::{
     config::{CollectorCadence, ConfigError, HubConfig, TerrainConfig},
-    credentials::{CredentialError, LegacyAuthManager, LegacyAuthManagerError},
+    credentials::{CredentialError, LegacyAuthManager, LegacyAuthManagerError, OwnerTokens},
     db::{
         HubStore, ObservationInput, SUPERVISED_COLLECTOR_HEARTBEAT_INTERVAL, SourceDescriptor,
         StoreError, StreamObservationResult, SupervisedCollectorLease, SupervisedCollectorState,
@@ -40,7 +40,7 @@ use crate::{
         ProjectionBinding, ProjectionCar, ProjectionDeltaPackRequest, ProjectionPackError,
         ProjectionPackRequest, ProjectionPackWriter, ProjectionSnapshot,
     },
-    legacy_auth::LegacyAuthFuse,
+    legacy_auth::{LegacyAuth, LegacyAuthError, LegacyAuthFuse},
     lifecycle::{
         LifecycleError, LifecycleSample, OpenSessionState, apply_sample, force_close_for_service,
         stream_observation_payload,
@@ -62,9 +62,6 @@ use crate::{
 
 #[cfg(test)]
 use crate::db::StreamFaultPoint;
-#[cfg(test)]
-use crate::legacy_auth::LegacyAuthError;
-
 const OWNER_API_SOURCE_KIND: &str = "owner_api_compat";
 const OWNER_API_SOURCE_KEY: &str = "local_installation_v1";
 const EARLIEST_PLAUSIBLE_TIMESTAMP_MS: i64 = 946_684_800_000; // 2000-01-01 UTC
@@ -300,6 +297,15 @@ pub struct ManualCollectionReport {
     pub positions_materialised: usize,
     pub charge_samples_materialised: usize,
     pub lifecycle_quarantines: usize,
+}
+
+/// Safe first-run receipt. It contains only the selected numeric vehicle id,
+/// its optional display name, and whether the initial V2 base was published.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct NativeSetupReport {
+    pub selected_vehicle_id: i64,
+    pub display_name: Option<String>,
+    pub snapshots_published: usize,
 }
 
 #[derive(Clone)]
@@ -755,6 +761,114 @@ async fn finish_collection(
     Ok(report)
 }
 
+/// Configure one clean Hub directly from a bounded legacy token pair. This
+/// performs products discovery only: no vehicle-data read, wake, or command.
+pub async fn setup_native_vehicle(
+    store: &HubStore,
+    config: &HubConfig,
+    tokens: &OwnerTokens,
+    requested_vehicle_id: Option<i64>,
+) -> Result<NativeSetupReport, CollectorError> {
+    if store.database_path() != config.data_dir.join("hub.sqlite") {
+        return Err(CollectorError::NativeSetupStoreMismatch);
+    }
+    if !config.collector.legacy_auth.enabled {
+        return Err(CollectorError::NativeSetupLegacyAuthRequired);
+    }
+
+    let auth = LegacyAuth::from_access_token(
+        tokens.access_token().to_owned(),
+        tokens.refresh_token().to_owned(),
+    )?;
+    let client = OwnerApi::new(
+        config
+            .collector
+            .owner_api_options_for_region(auth.region())?,
+    )?;
+    setup_native_vehicle_with_client(
+        store,
+        &config.data_dir,
+        &client,
+        &auth,
+        requested_vehicle_id,
+    )
+    .await
+}
+
+async fn setup_native_vehicle_with_client(
+    store: &HubStore,
+    data_dir: &std::path::Path,
+    client: &OwnerApi,
+    auth: &LegacyAuth,
+    requested_vehicle_id: Option<i64>,
+) -> Result<NativeSetupReport, CollectorError> {
+    let existing = store.selected_tesla_eid()?;
+    let effective_vehicle_id = requested_vehicle_id.or(existing.as_ref().map(|(id, _)| *id));
+    let vehicles = client.list_vehicles_with_legacy_auth_once(auth).await?;
+    let mut vehicle = select_native_setup_vehicle(vehicles, effective_vehicle_id)?;
+    let selected_vehicle_id =
+        i64::try_from(vehicle.id.get()).map_err(|_| CollectorError::NativeSetupVehicleIdInvalid)?;
+
+    if let Some((existing_vehicle_id, settings)) = existing {
+        if existing_vehicle_id != selected_vehicle_id {
+            return Err(CollectorError::NativeSetupVehicleConflict {
+                existing: existing_vehicle_id,
+                requested: selected_vehicle_id,
+            });
+        }
+        vehicle.settings = settings;
+    }
+
+    let display_name = vehicle.display_name.clone();
+    let cursor_key =
+        crate::teslamate_credentials::load_or_create_cursor_key(data_dir).map_err(|error| {
+            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
+        })?;
+    let report = finish_collection(
+        store,
+        &cursor_key,
+        &ManualCollection {
+            vehicles: vec![vehicle],
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        },
+    )
+    .await?;
+
+    Ok(NativeSetupReport {
+        selected_vehicle_id,
+        display_name,
+        snapshots_published: report.snapshots_published,
+    })
+}
+
+fn select_native_setup_vehicle(
+    mut vehicles: Vec<Vehicle>,
+    requested_vehicle_id: Option<i64>,
+) -> Result<Vehicle, CollectorError> {
+    if vehicles.is_empty() {
+        return Err(CollectorError::NativeSetupNoVehicles);
+    }
+    if let Some(requested_vehicle_id) = requested_vehicle_id {
+        let requested = u64::try_from(requested_vehicle_id)
+            .ok()
+            .filter(|id| *id > 0)
+            .ok_or(CollectorError::NativeSetupVehicleIdInvalid)?;
+        return vehicles
+            .into_iter()
+            .find(|vehicle| vehicle.id.get() == requested)
+            .ok_or(CollectorError::NativeSetupVehicleNotFound(
+                requested_vehicle_id,
+            ));
+    }
+    if vehicles.len() != 1 {
+        return Err(CollectorError::NativeSetupVehicleSelectionRequired {
+            discovered: vehicles.len(),
+        });
+    }
+    Ok(vehicles.pop().expect("one discovered vehicle"))
+}
+
 struct TerrainWorker {
     wake: mpsc::Sender<()>,
     initialized: Option<oneshot::Receiver<Result<(), ()>>>,
@@ -1184,7 +1298,7 @@ where
     .await
 }
 
-fn selected_imported_vehicle(
+fn filter_selected_vehicle(
     vehicles: Vec<Vehicle>,
     selected: &(i64, crate::hub_pack::ProjectionCarSettings),
 ) -> Vec<Vehicle> {
@@ -1216,8 +1330,8 @@ where
     F: Future<Output = ()>,
 {
     let selected_vehicle = store
-        .selected_imported_tesla_eid()?
-        .ok_or(CollectorError::SelectedTeslaMateCarMissing)?;
+        .selected_tesla_eid()?
+        .ok_or(CollectorError::SelectedVehicleMissing)?;
     let collector_lease = store.acquire_supervised_collector_lease(current_epoch_millis()?)?;
     let (collector_state, collector_state_rx) = watch::channel(SupervisedCollectorState::Active);
     let (heartbeat_shutdown, heartbeat_stop) = oneshot::channel();
@@ -1327,7 +1441,7 @@ where
                 if scheduler.discovery_due(now) {
                     match list_vehicles_for_auth(&client, &auth).await {
                         Ok(vehicles) => {
-                            let vehicles = selected_imported_vehicle(vehicles, &selected_vehicle);
+                            let vehicles = filter_selected_vehicle(vehicles, &selected_vehicle);
                             report_successful_owner_api_request(
                                 &collector_state,
                                 stream_authentication_rejected,
@@ -4278,8 +4392,24 @@ fn classify_stream_task_result(
 
 #[derive(Debug, Error)]
 pub enum CollectorError {
-    #[error("Serve requires one imported TeslaMate car")]
-    SelectedTeslaMateCarMissing,
+    #[error("Serve requires one configured vehicle")]
+    SelectedVehicleMissing,
+    #[error("native setup store does not match the configured Hub data directory")]
+    NativeSetupStoreMismatch,
+    #[error("native setup requires legacy Owner API authentication to be enabled")]
+    NativeSetupLegacyAuthRequired,
+    #[error("native setup found no vehicles")]
+    NativeSetupNoVehicles,
+    #[error("native setup found {discovered} vehicles; select one with --vehicle-id")]
+    NativeSetupVehicleSelectionRequired { discovered: usize },
+    #[error("native setup vehicle id must be positive")]
+    NativeSetupVehicleIdInvalid,
+    #[error("native setup vehicle {0} was not found")]
+    NativeSetupVehicleNotFound(i64),
+    #[error(
+        "Hub is already configured for vehicle {existing}; refusing requested vehicle {requested}"
+    )]
+    NativeSetupVehicleConflict { existing: i64, requested: i64 },
     #[error("supervised collector heartbeat task stopped unexpectedly")]
     SupervisedHeartbeatTask,
     #[error("terrain worker stopped unexpectedly")]
@@ -4323,6 +4453,8 @@ pub enum CollectorError {
     OwnerApiAuth(#[from] OwnerApiAuthError),
     #[error(transparent)]
     LegacyAuthManager(#[from] LegacyAuthManagerError),
+    #[error(transparent)]
+    LegacyAuth(#[from] LegacyAuthError),
     #[error(transparent)]
     Projection(#[from] ProjectionPackError),
     #[error(transparent)]
@@ -4418,6 +4550,83 @@ mod tests {
         for rendered in [format!("{tokens:?}"), format!("{manager:?}")] {
             assert!(!rendered.contains("access-secret"));
             assert!(!rendered.contains("refresh-secret"));
+        }
+    }
+
+    #[test]
+    fn native_setup_requires_an_explicit_choice_for_multiple_vehicles() {
+        let first = Vehicle::for_test(7, "5YJ3E1EA7KF000001", "asleep");
+        let second = Vehicle::for_test(9, "5YJ3E1EA7KF000002", "online");
+        assert!(matches!(
+            select_native_setup_vehicle(vec![first.clone(), second.clone()], None),
+            Err(CollectorError::NativeSetupVehicleSelectionRequired { discovered: 2 })
+        ));
+        assert_eq!(
+            select_native_setup_vehicle(vec![first, second], Some(9))
+                .expect("selected vehicle")
+                .id
+                .get(),
+            9
+        );
+    }
+
+    #[tokio::test]
+    async fn native_setup_discovers_and_publishes_one_vehicle_without_wake() {
+        use crate::fake_tesla::{AdvanceMode, FIXTURE_EID, FakeTeslaSource};
+
+        crate::crypto::install_default_provider();
+        let temporary = tempfile::tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+            .await
+            .expect("loopback Tesla");
+        let auth = LegacyAuth::for_test(
+            fake.oauth_issuer_url(),
+            "native-setup-access",
+            "native-setup-refresh",
+        );
+        let client = OwnerApi::for_fake_http(fake.http_base_url().clone(), Duration::from_secs(2))
+            .expect("loopback Owner client");
+
+        let report =
+            setup_native_vehicle_with_client(&store, temporary.path(), &client, &auth, None)
+                .await
+                .expect("native setup");
+
+        assert_eq!(report.selected_vehicle_id, FIXTURE_EID as i64);
+        assert_eq!(report.snapshots_published, 1);
+        assert_eq!(
+            store.selected_tesla_eid().expect("selection").unwrap().0,
+            FIXTURE_EID as i64
+        );
+        assert_eq!(store.published_vehicles().expect("vehicles").len(), 1);
+        let requests = fake.audited_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].path, "/api/1/products");
+        assert!(!requests[0].rejected);
+
+        #[cfg(target_os = "macos")]
+        {
+            let tokens = OwnerTokens::from_secret_parts(
+                "native-setup-access".to_owned(),
+                "native-setup-refresh".to_owned(),
+            )
+            .expect("setup tokens");
+            let key = b"native-setup-key";
+            let (access, refresh) =
+                crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens)
+                    .expect("encrypted setup tokens");
+            let stored = crate::db::TeslaMateLegacyTokenStore::imported(access, refresh)
+                .expect("stored setup tokens");
+            crate::teslamate_credentials::replace_key_and_tokens(
+                temporary.path(),
+                &store,
+                key,
+                &stored,
+            )
+            .expect("persist setup tokens");
+            crate::macos_launch_agent::preflight_hub(temporary.path())
+                .expect("native setup is service-ready");
         }
     }
 
@@ -7917,7 +8126,7 @@ mod tests {
             ..crate::hub_pack::ProjectionCarSettings::default()
         };
 
-        let selected = selected_imported_vehicle(vec![first, second], &(2, settings.clone()));
+        let selected = filter_selected_vehicle(vec![first, second], &(2, settings.clone()));
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].id.get(), 2);
         assert_eq!(selected[0].settings, settings);

@@ -28,6 +28,25 @@ pub struct OwnerTokens {
     refresh_token: Zeroizing<String>,
 }
 impl OwnerTokens {
+    /// Build one bounded token pair from private files. Exactly one trailing
+    /// LF or CRLF is accepted so normal text files do not change the token.
+    pub fn from_file_bytes(
+        access_token: Zeroizing<Vec<u8>>,
+        refresh_token: Zeroizing<Vec<u8>>,
+    ) -> Result<Self, CredentialError> {
+        fn decode(bytes: &Zeroizing<Vec<u8>>) -> Result<String, CredentialError> {
+            let bytes = bytes
+                .strip_suffix(b"\r\n")
+                .or_else(|| bytes.strip_suffix(b"\n"))
+                .unwrap_or(bytes);
+            std::str::from_utf8(bytes)
+                .map(str::to_owned)
+                .map_err(|_| CredentialError::InvalidTokenBytes)
+        }
+
+        Self::from_secret_parts(decode(&access_token)?, decode(&refresh_token)?)
+    }
+
     pub(crate) fn access_token(&self) -> &str {
         &self.access_token
     }
@@ -517,6 +536,31 @@ mod tests {
         tokens.zeroize();
         assert!(tokens.access_token().bytes().all(|byte| byte == 0));
         assert!(tokens.refresh_token().bytes().all(|byte| byte == 0));
+    }
+
+    #[test]
+    fn owner_token_files_accept_one_line_ending_and_enforce_semantic_bounds() {
+        let access = [vec![b'a'; MAX_TOKEN_BYTES], b"\r\n".to_vec()].concat();
+        let refresh = [b"refresh".as_slice(), b"\n".as_slice()].concat();
+        let tokens = OwnerTokens::from_file_bytes(Zeroizing::new(access), Zeroizing::new(refresh))
+            .expect("bounded token files");
+        assert_eq!(tokens.access_token().len(), MAX_TOKEN_BYTES);
+        assert_eq!(tokens.refresh_token(), "refresh");
+
+        assert!(matches!(
+            OwnerTokens::from_file_bytes(
+                Zeroizing::new(vec![b'a'; MAX_TOKEN_BYTES + 1]),
+                Zeroizing::new(b"refresh".to_vec()),
+            ),
+            Err(CredentialError::TokenTooLarge)
+        ));
+        assert!(matches!(
+            OwnerTokens::from_file_bytes(
+                Zeroizing::new(vec![0xff]),
+                Zeroizing::new(b"refresh".to_vec()),
+            ),
+            Err(CredentialError::InvalidTokenBytes)
+        ));
     }
 
     #[tokio::test]

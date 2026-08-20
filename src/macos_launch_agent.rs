@@ -23,7 +23,7 @@ pub struct InstallPaths {
     previous_plist: Option<PathBuf>,
 }
 
-/// Validate the migrated store and write the binary and LaunchAgent files.
+/// Validate the configured store and write the binary and LaunchAgent files.
 /// The caller keeps the Hub instance lock until this returns, then releases
 /// it before [`start_prepared`] lets launchd start Serve.
 pub fn prepare_install(data_dir: &Path, config_path: &Path) -> io::Result<InstallPaths> {
@@ -40,23 +40,23 @@ pub fn start_prepared(paths: &InstallPaths) -> io::Result<()> {
     launch(paths)
 }
 
-/// Refuse to replace a running LaunchAgent unless this data directory is a
-/// usable one-car TeslaMate migration. This runs before any installer file or
-/// launchctl mutation.
-pub fn preflight_migrated_hub(data_dir: &Path) -> io::Result<()> {
+/// Refuse to replace a running LaunchAgent unless this data directory has one
+/// configured car and a usable legacy credential pair. This runs before any
+/// installer file or launchctl mutation.
+pub fn preflight_hub(data_dir: &Path) -> io::Result<()> {
     let store = crate::db::HubStore::open_read_only(data_dir).map_err(|error| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Hub migration data is unavailable: {error}"),
+            format!("Hub data is unavailable: {error}"),
         )
     })?;
     store
-        .selected_imported_tesla_eid()
+        .selected_tesla_eid()
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
         .ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                "one selected TeslaMate car is required before install",
+                "one configured vehicle is required before install",
             )
         })?;
     let tokens = store
@@ -65,13 +65,13 @@ pub fn preflight_migrated_hub(data_dir: &Path) -> io::Result<()> {
         .ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                "TeslaMate legacy credentials are required before install",
+                "legacy Owner API credentials are required before install",
             )
         })?;
     crate::teslamate_credentials::load_key_for_tokens(data_dir, &tokens).map_err(|error| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("TeslaMate legacy credentials are unusable: {error}"),
+            format!("legacy Owner API credentials are unusable: {error}"),
         )
     })?;
     Ok(())
@@ -83,7 +83,7 @@ fn install_files_after_preflight(
     home: &Path,
     executable: &Path,
 ) -> io::Result<InstallPaths> {
-    preflight_migrated_hub(data_dir)?;
+    preflight_hub(data_dir)?;
     install_files(data_dir, config_path, home, executable)
 }
 

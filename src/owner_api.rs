@@ -5,8 +5,8 @@
 //! crate-local `vehicle_data` paths. The collector owns the no-wake stream-power
 //! confirmation contract; this module exposes no public manual collection shortcut.
 //!
-//! Legacy authentication is supplied only through the crate-local
-//! `LegacyAuthManager`; raw bearer strings never enter the production API.
+//! Legacy authentication is supplied only through typed credential owners;
+//! raw bearer strings never enter the production API.
 
 use std::{
     fmt,
@@ -28,7 +28,7 @@ use url::Url;
 use crate::{
     credentials::{LegacyAuthManager, LegacyAuthManagerError},
     hub_pack::ProjectionCarSettings,
-    legacy_auth::LegacyAuthFuse,
+    legacy_auth::{LegacyAuth, LegacyAuthFuse},
     tesla_stream::{StreamPowerGate, StreamRegion},
 };
 
@@ -245,6 +245,20 @@ impl OwnerApi {
             .get_envelope_with_legacy_auth_url_fused(auth, fuse, endpoint, None)
             .await?;
         parse_vehicle_list(envelope).map_err(OwnerApiAuthError::Owner)
+    }
+
+    /// Native first-run discovery performs one bounded products request with
+    /// the supplied in-memory pair. It never refreshes, wakes, or commands a
+    /// vehicle; persistence happens only after the caller selects a car.
+    pub(crate) async fn list_vehicles_with_legacy_auth_once(
+        &self,
+        auth: &LegacyAuth,
+    ) -> Result<Vec<Vehicle>, OwnerApiError> {
+        let endpoint = self.base_url.endpoint("api/1/products")?;
+        let envelope: ResponseEnvelope<Vec<ProductWire>> = self
+            .execute_envelope_request(self.envelope_request(auth.access_token(), endpoint))
+            .await?;
+        parse_vehicle_list(envelope)
     }
 
     pub(crate) async fn vehicle_data_with_legacy_auth_fused(
@@ -1155,6 +1169,32 @@ mod tests {
                     .ok_or(CredentialError::MacKeychainHelperInvalid)
             }),
         )
+    }
+
+    #[tokio::test]
+    async fn native_setup_discovery_is_one_bounded_products_request() {
+        let state = FakeState::with_vehicles(
+            r#"{"response":[{"vehicle_id":71,"id":70,"vin":"5YJ3E1EA7KF000001","state":"asleep","display_name":"Athena"}],"count":1}"#,
+        );
+        let fake = FakeServer::spawn(state.clone()).await;
+        let auth = crate::legacy_auth::LegacyAuth::for_test(
+            fake.base_url.clone(),
+            TEST_TOKEN,
+            "test-refresh-token",
+        );
+
+        let vehicles = fake
+            .client(Duration::from_secs(2))
+            .list_vehicles_with_legacy_auth_once(&auth)
+            .await
+            .expect("native discovery");
+
+        assert_eq!(vehicles.len(), 1);
+        assert_eq!(vehicles[0].id.get(), 70);
+        let requests = state.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].path, "/api/1/products");
+        assert!(requests[0].authorization_is_expected);
     }
 
     #[tokio::test]

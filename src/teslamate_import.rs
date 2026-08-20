@@ -4721,9 +4721,7 @@ mod tests {
         assert_eq!(manifest.total_rows, 1);
         assert_eq!(report.projection, ProjectionReport::default());
         assert_eq!(
-            store
-                .selected_imported_tesla_eid()
-                .expect("selected imported car"),
+            store.selected_tesla_eid().expect("selected imported car"),
             Some((88, crate::hub_pack::ProjectionCarSettings::default()))
         );
 

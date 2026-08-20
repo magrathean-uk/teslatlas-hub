@@ -1,14 +1,16 @@
 # Hub progress
 
-Status: goal not started.
+Status: active.
 
-Current: none.
+Current: verify macOS user-service install, start, status, stop, and restart without touching an existing user service.
 
-Next: clean initialization and native setup without TeslaMate.
+Next: verify fake/local Owner API and streaming collection with durable lifecycle data across restart.
 
 Blocked: none.
 
 ## Completed
+
+- Native clean setup — added `setup` with bounded private token files, products-only vehicle discovery, explicit multi-car selection, durable V2 publication, encrypted credential persistence, and general service preflight without TeslaMate — `cargo check --locked` and 5 focused tests passed.
 
 - Product-fix merge — transport, migration, snapshot, pairing, credential handling, and durability changes merged to `main` — format, check, Clippy, release build, and 674 tests passed with 2 ignored.
 - Workspace cleanup — 69 redundant Hub-only temporary clones, targets, and logs removed; sibling App artifacts untouched — zero matching Hub items remained in `/tmp`.

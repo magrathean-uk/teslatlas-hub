@@ -3533,12 +3533,10 @@ impl HubStore {
         })
     }
 
-    /// The single TeslaMate-imported car eligible for Owner API collection.
-    /// A V2 binding and Tesla EID are durable import facts; do not infer this
-    /// from mutable discovery data.
-    pub fn selected_imported_tesla_eid(
-        &self,
-    ) -> Result<Option<(i64, ProjectionCarSettings)>, StoreError> {
+    /// The single configured car eligible for Owner API collection. A V2
+    /// binding and Tesla EID are durable setup/import facts; do not infer the
+    /// selection from mutable discovery data.
+    pub fn selected_tesla_eid(&self) -> Result<Option<(i64, ProjectionCarSettings)>, StoreError> {
         let connection = self.open()?;
         let mut statement = connection
             .prepare(
@@ -17016,7 +17014,7 @@ mod tests {
             .expect("settings");
 
         assert_eq!(
-            store.selected_imported_tesla_eid().expect("selection"),
+            store.selected_tesla_eid().expect("selection"),
             Some((70, settings))
         );
     }
@@ -17041,7 +17039,7 @@ mod tests {
             .expect("imported car");
 
         assert_eq!(
-            store.selected_imported_tesla_eid().expect("selection"),
+            store.selected_tesla_eid().expect("selection"),
             Some((70, settings))
         );
     }

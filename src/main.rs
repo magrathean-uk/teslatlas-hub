@@ -24,7 +24,7 @@ use teslatlas_hub::teslamate_import::derive_effective_import_profile;
 use teslatlas_hub::{
     collector,
     config::HubConfig,
-    credentials::TeslaMatePostgresPassword,
+    credentials::{OwnerTokens, TeslaMatePostgresPassword},
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{HubStore, ObservationVerificationError, TeslaMateLegacyTokenStore},
     server,
@@ -41,7 +41,9 @@ use teslatlas_hub::{
         capture_history_to_stage_with_session,
     },
     teslamate_stage::{TeslaMateStage, TeslaMateStageStats},
-    teslamate_token::{decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files},
+    teslamate_token::{
+        decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
+    },
 };
 use tracing_subscriber::EnvFilter;
 
@@ -343,11 +345,24 @@ enum Command {
     Legal,
     /// Initialize or migrate the local Hub database.
     Init,
+    /// Configure one vehicle directly from private Owner token files.
+    #[cfg(target_os = "macos")]
+    Setup {
+        /// Legacy Owner API access-token file, or `-` for stdin.
+        #[arg(long)]
+        access_token_file: PathBuf,
+        /// Legacy Owner API refresh-token file, or `-` for stdin.
+        #[arg(long)]
+        refresh_token_file: PathBuf,
+        /// Tesla Owner API vehicle id. Required only when discovery finds multiple vehicles.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        vehicle_id: Option<i64>,
+    },
     /// Read-only validate the database and print a machine-readable health report.
     Doctor,
     /// Print the redacted local status consumed by the native control app.
     Status,
-    /// Validate that one imported car and its credentials are ready to serve.
+    /// Validate that one configured car and its credentials are ready to serve.
     #[cfg(target_os = "macos")]
     Preflight,
     /// Capture the current durable observation watermark for one source car.
@@ -582,7 +597,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             if vehicles.len() > 1 {
                 return Err("native control status requires exactly one published car".into());
             }
-            let selected = store.selected_imported_tesla_eid()?;
+            let selected = store.selected_tesla_eid()?;
             let vehicle = match vehicles.first() {
                 Some(vehicle) => {
                     let binding = store.v2_projection_binding(vehicle.vehicle_id)?;
@@ -629,7 +644,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(target_os = "macos")]
         Command::Preflight => {
             let config = HubConfig::load(&config_path)?;
-            teslatlas_hub::macos_launch_agent::preflight_migrated_hub(&config.data_dir)?;
+            teslatlas_hub::macos_launch_agent::preflight_hub(&config.data_dir)?;
             println!(
                 "{}",
                 serde_json::json!({
@@ -718,6 +733,32 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Init => {
             println!("initialized {}", store.database_path().display());
         }
+        #[cfg(target_os = "macos")]
+        Command::Setup {
+            access_token_file,
+            refresh_token_file,
+            vehicle_id,
+        } => {
+            let tokens = OwnerTokens::from_file_bytes(
+                read_migration_secret(&access_token_file, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
+                read_migration_secret(&refresh_token_file, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
+            )?;
+            let report =
+                collector::setup_native_vehicle(&store, &config, &tokens, vehicle_id).await?;
+            let encryption_key = random_encryption_key();
+            let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, &tokens)?;
+            let stored = TeslaMateLegacyTokenStore::imported(access, refresh)?;
+            replace_key_and_tokens(&config.data_dir, &store, &encryption_key, &stored)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "configured",
+                    "selectedVehicleId": report.selected_vehicle_id,
+                    "displayName": report.display_name,
+                    "snapshotsPublished": report.snapshots_published,
+                })
+            );
+        }
         Command::Legal
         | Command::Doctor
         | Command::Status
@@ -732,7 +773,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Serve => {
             #[cfg(target_os = "macos")]
             {
-                teslatlas_hub::macos_launch_agent::preflight_migrated_hub(&config.data_dir)?;
+                teslatlas_hub::macos_launch_agent::preflight_hub(&config.data_dir)?;
                 let admission = admitted_user_hub
                     .ok_or("macOS Serve reached runtime without native user admission")?;
                 admission.assert_sensitive_access()?;
@@ -894,6 +935,7 @@ fn command_requires_user_hub_admission(command: &Command) -> bool {
     matches!(
         command,
         Command::Init
+            | Command::Setup { .. }
             | Command::Serve
             | Command::Observe { .. }
             | Command::Migrate { .. }
@@ -961,10 +1003,10 @@ enum MigrationSecretReadError {
 impl std::fmt::Display for MigrationSecretReadError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
-            Self::Read => "cannot read migration secret",
-            Self::UnsafeFile => "migration secret file is unsafe",
-            Self::IdentityChanged => "migration secret file changed while reading",
-            Self::TooLarge => "migration secret exceeds the fixed size limit",
+            Self::Read => "cannot read secret",
+            Self::UnsafeFile => "secret file is unsafe",
+            Self::IdentityChanged => "secret file changed while reading",
+            Self::TooLarge => "secret exceeds the fixed size limit",
         })
     }
 }
@@ -2877,8 +2919,51 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn setup_command_accepts_private_token_files_and_positive_optional_vehicle() {
+        let cli = Cli::try_parse_from([
+            "teslatlas-hub",
+            "setup",
+            "--access-token-file",
+            "access",
+            "--refresh-token-file",
+            "refresh",
+            "--vehicle-id",
+            "70",
+        ])
+        .expect("setup CLI");
+        assert!(matches!(
+            cli.command,
+            Command::Setup {
+                access_token_file,
+                refresh_token_file,
+                vehicle_id: Some(70),
+            } if access_token_file == PathBuf::from("access")
+                && refresh_token_file == PathBuf::from("refresh")
+        ));
+        assert!(
+            Cli::try_parse_from([
+                "teslatlas-hub",
+                "setup",
+                "--access-token-file",
+                "access",
+                "--refresh-token-file",
+                "refresh",
+                "--vehicle-id",
+                "0",
+            ])
+            .is_err()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn every_live_mutation_and_service_command_requires_the_instance_lock() {
         assert!(command_requires_user_hub_admission(&Command::Init));
+        assert!(command_requires_user_hub_admission(&Command::Setup {
+            access_token_file: PathBuf::from("access"),
+            refresh_token_file: PathBuf::from("refresh"),
+            vehicle_id: None,
+        }));
         assert!(command_requires_user_hub_admission(&Command::Serve));
         assert!(command_requires_user_hub_admission(&Command::Observe {
             duration_seconds: 1,
