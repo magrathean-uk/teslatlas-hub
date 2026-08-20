@@ -38,6 +38,9 @@ impl ReadOnlySource {
         if host.contains(',') {
             return Err(TeslaMateSourceError::MultipleHosts);
         }
+        if !is_single_source_host(host) {
+            return Err(TeslaMateSourceError::InvalidHost);
+        }
         if url.password().is_some() {
             return Err(TeslaMateSourceError::EmbeddedSecret);
         }
@@ -95,6 +98,30 @@ impl ReadOnlySource {
     }
 }
 
+/// Accept one literal address or one DNS hostname. `url` deliberately retains
+/// percent escapes in non-special-scheme hosts, so accepting a generic host
+/// string here would admit encoded multi-host authority forms even though the
+/// Hub only ever connects to one exact source host.
+fn is_single_source_host(host: &str) -> bool {
+    let host = host.trim_matches(['[', ']']);
+    if host.parse::<IpAddr>().is_ok() {
+        return true;
+    }
+
+    let hostname = host.strip_suffix('.').unwrap_or(host);
+    !hostname.is_empty()
+        && hostname.len() <= 253
+        && hostname.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
+}
+
 impl fmt::Debug for ReadOnlySource {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -134,6 +161,8 @@ pub enum TeslaMateSourceError {
     Host,
     #[error("TeslaMate migration source requires exactly one PostgreSQL host")]
     MultipleHosts,
+    #[error("TeslaMate migration source host is not one literal address or DNS hostname")]
+    InvalidHost,
     #[error("TeslaMate migration source requires a database name")]
     Database,
     #[error("embedded source credentials are not permitted")]
@@ -186,6 +215,21 @@ mod tests {
             ReadOnlySource::parse("postgresql://reader@127.0.0.1,127.0.0.2/teslamate"),
             Err(TeslaMateSourceError::MultipleHosts)
         ));
+        for source in [
+            "postgresql://reader@127.0.0.1%2c127.0.0.2/teslamate",
+            "postgresql://reader@127.0.0.1%2C127.0.0.2/teslamate",
+            "postgresql://reader@%31%32%37.0.0.1/teslamate",
+            "postgresql://reader@db%2eexample/teslamate",
+            "postgresql://reader@db_example/teslamate",
+        ] {
+            assert!(
+                matches!(
+                    ReadOnlySource::parse(source),
+                    Err(TeslaMateSourceError::InvalidHost)
+                ),
+                "{source}"
+            );
+        }
     }
 
     #[test]

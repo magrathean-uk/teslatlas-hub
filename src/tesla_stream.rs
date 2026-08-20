@@ -18,7 +18,13 @@ use tokio::{
 };
 use tokio_tungstenite::{
     connect_async_with_config,
-    tungstenite::{Message, protocol::WebSocketConfig},
+    tungstenite::{
+        Error as WebSocketError, Message,
+        protocol::{
+            WebSocketConfig,
+            frame::{CloseFrame, coding::CloseCode},
+        },
+    },
 };
 use url::Url;
 
@@ -37,6 +43,7 @@ const STREAM_WRITE_BUFFER_BYTES: usize = 64 * 1024;
 const STREAM_MAX_WRITE_BUFFER_BYTES: usize = 256 * 1024;
 const STREAM_MAX_FRAME_BYTES: usize = 64 * 1024;
 const STREAM_MAX_MESSAGE_BYTES: usize = 256 * 1024;
+const OVERSIZE_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy)]
 struct SupervisorPolicy {
@@ -165,6 +172,8 @@ pub enum StreamSupervisorError {
     EventReceiverClosed,
     #[error("stream credential authority is unavailable")]
     CredentialAuthorityUnavailable,
+    #[error("stream peer violated the bounded wire protocol")]
+    ProtocolViolation,
 }
 
 /// Live, stream-owned prerequisite for a potentially waking `vehicle_data`
@@ -529,6 +538,29 @@ impl TeslaStreamSupervisor {
                             silence
                                 .as_mut()
                                 .reset(tokio::time::Instant::now() + self.policy.silence_timeout);
+                        }
+                        Some(Err(WebSocketError::Capacity(_))) => {
+                            if let Some(receipt) = subscribe_receipt.take() {
+                                self.complete_stream_attempt(
+                                    receipt,
+                                    crate::db::OutboundRequestOutcome::ProtocolError,
+                                )?;
+                            }
+                            // Tungstenite reports a received size violation
+                            // without initiating a closing handshake. Send the
+                            // required 1009 frame ourselves, wait only a
+                            // bounded interval for its write, and stop this
+                            // supervisor rather than reconnecting to a peer
+                            // that just violated our finite wire contract.
+                            let close = CloseFrame {
+                                code: CloseCode::Size,
+                                reason: "message exceeds Hub stream limit".into(),
+                            };
+                            let _ = timeout(OVERSIZE_CLOSE_TIMEOUT, socket.close(Some(close))).await;
+                            if self.emit_event(StreamEvent::ProtocolViolation, shutdown).await?.is_shutdown() {
+                                return Ok(disconnected_termination(ever_subscribed));
+                            }
+                            return Err(StreamSupervisorError::ProtocolViolation);
                         }
                         Some(Err(_)) | None => {
                             if let Some(receipt) = subscribe_receipt.take() {
@@ -1213,7 +1245,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loopback_socket_rejects_oversized_single_frame_without_telemetry() {
+    async fn loopback_socket_closes_1009_after_an_oversized_single_frame() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -1239,25 +1271,24 @@ mod tests {
                 )))
                 .await
                 .unwrap();
-            let _ = timeout(
-                Duration::from_secs(1),
-                socket.send(Message::Text(r#"{"msg_type":"data:update","tag":"9","timestamp":1700000000123,"value":"42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#.into())),
-            )
-            .await;
-            timeout(Duration::from_secs(1), async {
-                loop {
-                    match socket.next().await {
-                        Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
-                        Some(Ok(_)) => {}
-                    }
-                }
-            })
-            .await
-            .expect("client must terminate the oversized-frame connection");
+            let close = timeout(Duration::from_secs(1), socket.next())
+                .await
+                .expect("client must close the oversized-frame connection")
+                .expect("client close frame must be valid");
+            assert!(matches!(
+                close,
+                Ok(Message::Close(Some(frame))) if frame.code == CloseCode::Size
+            ));
+            assert!(
+                timeout(Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err(),
+                "an oversize violation must not reconnect"
+            );
         });
         let (events, mut received) = mpsc::channel(8);
         let supervisor = legacy_supervisor(9, 9, endpoint, events).unwrap();
-        let (stop, shutdown) = oneshot::channel();
+        let (_stop, shutdown) = oneshot::channel();
         let task = tokio::spawn(supervisor.run(shutdown));
         assert_eq!(
             timeout(Duration::from_secs(1), received.recv())
@@ -1269,14 +1300,15 @@ mod tests {
             timeout(Duration::from_secs(1), received.recv())
                 .await
                 .unwrap(),
-            Some(StreamEvent::TransportUnavailable)
+            Some(StreamEvent::ProtocolViolation)
         );
-        stop.send(()).unwrap();
-        timeout(Duration::from_secs(1), task)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
+        assert!(matches!(
+            timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(StreamSupervisorError::ProtocolViolation)
+        ));
         while let Ok(event) = received.try_recv() {
             assert!(!matches!(event, StreamEvent::Telemetry(_)));
         }
@@ -1287,7 +1319,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loopback_socket_rejects_oversized_fragmented_message_without_telemetry() {
+    async fn loopback_socket_closes_1009_after_an_oversized_fragmented_message() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -1346,25 +1378,24 @@ mod tests {
                 )))
                 .await
                 .unwrap();
-            let _ = timeout(
-                Duration::from_secs(1),
-                socket.send(Message::Text(r#"{"msg_type":"data:update","tag":"9","timestamp":1700000000123,"value":"42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#.into())),
-            )
-            .await;
-            timeout(Duration::from_secs(1), async {
-                loop {
-                    match socket.next().await {
-                        Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
-                        Some(Ok(_)) => {}
-                    }
-                }
-            })
-            .await
-            .expect("client must terminate the oversized-message connection");
+            let close = timeout(Duration::from_secs(1), socket.next())
+                .await
+                .expect("client must close the oversized-message connection")
+                .expect("client close frame must be valid");
+            assert!(matches!(
+                close,
+                Ok(Message::Close(Some(frame))) if frame.code == CloseCode::Size
+            ));
+            assert!(
+                timeout(Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err(),
+                "an oversize violation must not reconnect"
+            );
         });
         let (events, mut received) = mpsc::channel(8);
         let supervisor = legacy_supervisor(9, 9, endpoint, events).unwrap();
-        let (stop, shutdown) = oneshot::channel();
+        let (_stop, shutdown) = oneshot::channel();
         let task = tokio::spawn(supervisor.run(shutdown));
         assert_eq!(
             timeout(Duration::from_secs(1), received.recv())
@@ -1376,14 +1407,15 @@ mod tests {
             timeout(Duration::from_secs(1), received.recv())
                 .await
                 .unwrap(),
-            Some(StreamEvent::TransportUnavailable)
+            Some(StreamEvent::ProtocolViolation)
         );
-        stop.send(()).unwrap();
-        timeout(Duration::from_secs(1), task)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
+        assert!(matches!(
+            timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(StreamSupervisorError::ProtocolViolation)
+        ));
         while let Ok(event) = received.try_recv() {
             assert!(!matches!(event, StreamEvent::Telemetry(_)));
         }
