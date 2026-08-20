@@ -23,7 +23,7 @@ pub const REQUIRED_TABLES: &[&str] = &[
 /// A credential-free PostgreSQL endpoint for a TeslaMate read-only import.
 /// Database credentials are supplied out-of-band through a protected local
 /// file or stdin.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ReadOnlySource {
     url: Url,
 }
@@ -95,11 +95,24 @@ impl ReadOnlySource {
     }
 }
 
+impl fmt::Debug for ReadOnlySource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReadOnlySource")
+            .field("scheme", &self.url.scheme())
+            .field("userinfo", &self.user().map(|_| "[redacted]"))
+            .field("host", &self.host())
+            .field("port", &self.port())
+            .field("database", &self.database_name())
+            .finish()
+    }
+}
+
 impl fmt::Display for ReadOnlySource {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "postgresql://")?;
-        if let Some(user) = self.user() {
-            write!(formatter, "{user}@")?;
+        if self.user().is_some() {
+            write!(formatter, "[redacted]@")?;
         }
         write!(
             formatter,
@@ -142,7 +155,7 @@ mod tests {
         assert_eq!(source.database_name(), "teslamate");
         assert_eq!(
             source.to_string(),
-            "postgresql://teslamate@127.0.0.1:5433/teslamate"
+            "postgresql://[redacted]@127.0.0.1:5433/teslamate"
         );
         assert!(source.session_sql()[1].contains("REPEATABLE READ, READ ONLY"));
         assert!(source.session_sql()[2].contains("TIME ZONE 'UTC'"));
@@ -205,10 +218,50 @@ mod tests {
 
     #[test]
     fn source_errors_never_echo_embedded_secrets() {
-        let error = ReadOnlySource::parse("postgresql://reader:postgres-secret@127.0.0.1/db")
-            .expect_err("secret is forbidden");
-        assert!(!format!("{error}").contains("postgres-secret"));
-        assert!(!format!("{error:?}").contains("postgres-secret"));
+        for (url, markers) in [
+            (
+                "postgresql://reader:postgres-secret@127.0.0.1/db",
+                &["reader", "postgres-secret"][..],
+            ),
+            (
+                "postgresql://encoded-user:percent%2Dencoded%2Dpassword@127.0.0.1/db",
+                &[
+                    "encoded-user",
+                    "percent%2Dencoded%2Dpassword",
+                    "percent-encoded-password",
+                ][..],
+            ),
+        ] {
+            let error = ReadOnlySource::parse(url).expect_err("secret is forbidden");
+            let rendered = format!("{error} {error:?}");
+            for marker in markers {
+                assert!(!rendered.contains(marker), "leaked marker {marker}");
+            }
+        }
+    }
+
+    #[test]
+    fn source_display_and_debug_redact_plain_and_percent_encoded_userinfo() {
+        for (url, markers) in [
+            (
+                "postgresql://plain-user-marker@db.example:5433/teslamate",
+                &["plain-user-marker"][..],
+            ),
+            (
+                "postgresql://encoded-user%40marker@db.example:5433/teslamate",
+                &["encoded-user", "%40marker", "@marker"][..],
+            ),
+        ] {
+            let source = ReadOnlySource::parse(url).expect("credential-free source URL");
+            let rendered = format!("{source} {source:?}");
+            for marker in markers {
+                assert!(!rendered.contains(marker), "leaked marker {marker}");
+            }
+            assert!(rendered.contains("[redacted]"));
+            assert!(rendered.contains("db.example"));
+            assert!(rendered.contains("5433"));
+            assert!(rendered.contains("teslamate"));
+        }
     }
 
     #[test]

@@ -499,7 +499,7 @@ impl CollectorConfig {
 
 /// Opt-in TeslaMate import source. The endpoint excludes its password and the
 /// source key is a durable owner label, not an endpoint alias.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TeslaMateConfig {
     #[serde(default)]
@@ -522,6 +522,30 @@ pub struct TeslaMateConfig {
     pub parallel_copy_lanes: usize,
     #[serde(default)]
     pub performance_profile: PerformanceProfileConfig,
+}
+
+impl fmt::Debug for TeslaMateConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TeslaMateConfig")
+            .field(
+                "source_url",
+                &self.source_url.as_ref().map(|_| "[redacted]"),
+            )
+            .field("source_key", &self.source_key)
+            .field("connect_timeout_seconds", &self.connect_timeout_seconds)
+            .field(
+                "copy_statement_timeout_seconds",
+                &self.copy_statement_timeout_seconds,
+            )
+            .field("page_size", &self.page_size)
+            .field("maximum_rows", &self.maximum_rows)
+            .field("maximum_stage_bytes", &self.maximum_stage_bytes)
+            .field("minimum_free_bytes", &self.minimum_free_bytes)
+            .field("parallel_copy_lanes", &self.parallel_copy_lanes)
+            .field("performance_profile", &self.performance_profile)
+            .finish()
+    }
 }
 
 /// Conservative host-local tuning for the TeslaMate import reader.
@@ -592,12 +616,24 @@ impl Default for TeslaMateConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TeslaMateImportConfig {
     pub source: ReadOnlySource,
     pub source_key: String,
     pub limits: TeslaMateReadLimits,
     pub performance_profile: PerformanceProfileConfig,
+}
+
+impl fmt::Debug for TeslaMateImportConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TeslaMateImportConfig")
+            .field("source", &self.source)
+            .field("source_key", &self.source_key)
+            .field("limits", &self.limits)
+            .field("performance_profile", &self.performance_profile)
+            .finish()
+    }
 }
 
 impl TeslaMateConfig {
@@ -1041,6 +1077,64 @@ mod tests {
         ] {
             assert!(!rendered.contains("access-secret"));
             assert!(!rendered.contains("refresh-secret"));
+        }
+    }
+
+    #[test]
+    fn teslamate_debug_redacts_nested_plain_and_encoded_userinfo() {
+        let accepted: HubConfig = toml::from_str(
+            "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+             [teslamate]\n\
+             source_url = 'postgresql://plain-user-marker%40encoded-user-marker@db.example:5433/teslamate'\n\
+             source_key = 'garage-teslamate'",
+        )
+        .expect("parse accepted source configuration");
+        accepted.validate().expect("validate accepted source");
+        let import = accepted
+            .teslamate
+            .import_config()
+            .expect("build import configuration");
+
+        for rendered in [
+            format!("{:?}", accepted.teslamate),
+            format!("{accepted:?}"),
+            format!("{import:?}"),
+        ] {
+            for marker in ["plain-user-marker", "encoded-user-marker", "%40"] {
+                assert!(!rendered.contains(marker), "leaked marker {marker}");
+            }
+        }
+
+        let import_debug = format!("{import:?}");
+        assert!(import_debug.contains("[redacted]"));
+        assert!(import_debug.contains("db.example"));
+        assert!(import_debug.contains("5433"));
+        assert!(import_debug.contains("teslamate"));
+        assert!(import_debug.contains("garage-teslamate"));
+
+        let rejected: HubConfig = toml::from_str(
+            "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+             [teslamate]\n\
+             source_url = 'postgresql://password-user-marker:percent%2Dencoded%2Dpassword@db.example/teslamate'\n\
+             source_key = 'garage-teslamate'",
+        )
+        .expect("parse rejected source configuration before validation");
+        let error = rejected
+            .teslamate
+            .import_config()
+            .expect_err("embedded password must be rejected");
+        for rendered in [
+            format!("{:?}", rejected.teslamate),
+            format!("{rejected:?}"),
+            format!("{error} {error:?}"),
+        ] {
+            for marker in [
+                "password-user-marker",
+                "percent%2Dencoded%2Dpassword",
+                "percent-encoded-password",
+            ] {
+                assert!(!rendered.contains(marker), "leaked marker {marker}");
+            }
         }
     }
 
