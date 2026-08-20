@@ -1,10 +1,11 @@
 //! Optional, bounded Nominatim reverse geocoding.
 //!
-//! This module is not part of collection yet. It performs one request per
-//! call, has no internal retries, stores only a bounded provider response, and keeps all
-//! provider errors free of coordinates and response bodies.
+//! It performs one request per call, has no internal retries, stores only a
+//! bounded provider response, and keeps all provider errors free of
+//! coordinates and response bodies.
 
 use std::{
+    collections::BTreeMap,
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
@@ -344,6 +345,7 @@ struct NominatimAddress {
     osm_id: Option<i64>,
     display_name: Option<String>,
     name: Option<String>,
+    namedetails: Option<BTreeMap<String, serde_json::Value>>,
     lat: Option<String>,
     lon: Option<String>,
     address: Option<NominatimAddressDetails>,
@@ -352,15 +354,21 @@ struct NominatimAddress {
 
 #[derive(Debug, Deserialize, Default)]
 struct NominatimAddressDetails {
-    house_number: Option<String>,
-    road: Option<String>,
-    neighbourhood: Option<String>,
-    city: Option<String>,
-    county: Option<String>,
-    postcode: Option<String>,
-    state: Option<String>,
-    state_district: Option<String>,
-    country: Option<String>,
+    #[serde(flatten)]
+    fields: BTreeMap<String, serde_json::Value>,
+}
+
+impl NominatimAddressDetails {
+    fn first(&self, names: &[&str]) -> Option<String> {
+        names.iter().find_map(|name| {
+            self.fields
+                .get(*name)
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        })
+    }
 }
 
 fn parse_response(body: &[u8]) -> Result<GeocodedAddress, GeocoderError> {
@@ -385,6 +393,16 @@ fn parse_response(body: &[u8]) -> Result<GeocodedAddress, GeocoderError> {
         .to_owned();
     let name = raw
         .name
+        .or_else(|| {
+            raw.namedetails.as_ref().and_then(|details| {
+                ["name", "alt_name"].iter().find_map(|name| {
+                    details
+                        .get(*name)
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                })
+            })
+        })
         .and_then(|value| (!value.trim().is_empty()).then(|| value.trim().to_owned()));
     let latitude = raw.lat.and_then(|value| value.parse::<f64>().ok());
     let longitude = raw.lon.and_then(|value| value.parse::<f64>().ok());
@@ -401,15 +419,52 @@ fn parse_response(body: &[u8]) -> Result<GeocodedAddress, GeocoderError> {
         name,
         latitude,
         longitude,
-        house_number: details.house_number,
-        road: details.road,
-        neighbourhood: details.neighbourhood,
-        city: details.city,
-        county: details.county,
-        postcode: details.postcode,
-        state: details.state,
-        state_district: details.state_district,
-        country: details.country,
+        house_number: details.first(&["house_number", "street_number"]),
+        road: details.first(&[
+            "road",
+            "footway",
+            "street",
+            "street_name",
+            "residential",
+            "path",
+            "pedestrian",
+            "road_reference",
+            "road_reference_intl",
+            "square",
+            "place",
+        ]),
+        neighbourhood: details.first(&[
+            "neighbourhood",
+            "suburb",
+            "city_district",
+            "district",
+            "quarter",
+            "borough",
+            "city_block",
+            "residential",
+            "commercial",
+            "houses",
+            "subdistrict",
+            "subdivision",
+            "ward",
+        ]),
+        city: details.first(&[
+            "city",
+            "town",
+            "township",
+            "village",
+            "municipality",
+            "hamlet",
+            "locality",
+            "croft",
+            "local_administrative_area",
+            "subcounty",
+        ]),
+        county: details.first(&["county", "county_code", "department"]),
+        postcode: details.first(&["postcode"]),
+        state: details.first(&["state", "province", "territory", "state_code"]),
+        state_district: details.first(&["state_district"]),
+        country: details.first(&["country", "country_name"]),
         raw_json,
     })
 }
@@ -650,6 +705,28 @@ mod tests {
             parsed.raw_json,
             Some(String::from_utf8(body.to_vec()).unwrap())
         );
+    }
+
+    #[test]
+    fn parse_uses_teslamate_v4_1_1_address_aliases() {
+        let body = br#"{
+            "osm_type":"relation","osm_id":10,"display_name":"Darwin NT",
+            "namedetails":{"alt_name":"Darwin"},"lat":"-12.46","lon":"130.84",
+            "address":{
+                "street_number":"7","footway":"Esplanade Path","suburb":"Darwin City",
+                "town":"Darwin","department":"Top End","postcode":"0800",
+                "territory":"Northern Territory","country_name":"Australia"
+            }
+        }"#;
+        let parsed = parse_response(body).expect("alias response");
+        assert_eq!(parsed.name.as_deref(), Some("Darwin"));
+        assert_eq!(parsed.house_number.as_deref(), Some("7"));
+        assert_eq!(parsed.road.as_deref(), Some("Esplanade Path"));
+        assert_eq!(parsed.neighbourhood.as_deref(), Some("Darwin City"));
+        assert_eq!(parsed.city.as_deref(), Some("Darwin"));
+        assert_eq!(parsed.county.as_deref(), Some("Top End"));
+        assert_eq!(parsed.state.as_deref(), Some("Northern Territory"));
+        assert_eq!(parsed.country.as_deref(), Some("Australia"));
     }
 
     #[tokio::test]

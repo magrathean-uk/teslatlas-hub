@@ -2,13 +2,15 @@
 
 Status: active — TeslaMate v4.1.1 parity fixes.
 
-Current: final v4.1.1 surface check, then one validation pass.
+Current: one final validation pass and practical macOS smoke.
 
 Next: remaining verified one-vehicle parity, then one final validation pass.
 
 Blocked: live Tesla Owner API collection and actual LaunchAgent start/restart were not run because real credentials and vehicle access were not authorized; the existing user plist was preserved.
 
 ## Completed
+
+- v4.1.1 surface closeout — matched Nominatim address aliases including Australian territories and corrected the stale 17-item parity ledger: schema 2.2 preserves 16 reviewed domains, excludes only provider raw JSON, and loses none — 3 focused tests passed.
 
 - Charge and geofence parity — charge cost edits now accept total, per-kWh, or per-minute input; geofence changes relabel bounded historical drive/charge pages, optionally calculate missing matching charge costs, and enforce TeslaMate's sub-5-km radius — 2 focused tests passed.
 

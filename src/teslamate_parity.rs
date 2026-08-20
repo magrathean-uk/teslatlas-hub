@@ -1,10 +1,8 @@
 //! Honest TeslaMate source-parity accounting.
 //!
-//! THP1 schema 2.1 is a selected telemetry projection, not a byte-for-byte
-//! TeslaMate backup.  This module makes the currently reviewed loss boundary
-//! machine-readable and fail-closed.  It also binds the source facts that are
-//! already decoded but intentionally remain outside the phone pack to the
-//! persisted source fingerprint.
+//! The selected telemetry projection is not a byte-for-byte TeslaMate backup.
+//! This module makes the reviewed preservation and exclusion boundary
+//! machine-readable and fail-closed.
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -15,7 +13,7 @@ use crate::{
     teslamate_projection::{TeslaMateDrive, TeslaMateState},
 };
 
-pub const TESLAMATE_SOURCE_PARITY_LEDGER_VERSION: u16 = 1;
+pub const TESLAMATE_SOURCE_PARITY_LEDGER_VERSION: u16 = 2;
 pub const TESLAMATE_SOURCE_PARITY_REVIEWED_DENOMINATOR: u16 = 17;
 
 /// What survives for one reviewed source field or value domain.
@@ -66,152 +64,61 @@ pub struct TeslaMateSourceParityEntry {
     pub current_app_impact: &'static str,
 }
 
-const UNSUPPORTED_DECODER: TeslaMateSourceFactDisposition =
-    TeslaMateSourceFactDisposition::UnsupportedOrLost;
-const DECODER_DROP: TeslaMateSourceCaptureStatus =
-    TeslaMateSourceCaptureStatus::SelectedButDiscardedByDecoder;
-const NOT_BOUND: TeslaMateSourceFingerprintStatus = TeslaMateSourceFingerprintStatus::NotBound;
-const NOT_READ: TeslaMateSourceCaptureStatus = TeslaMateSourceCaptureStatus::NotRead;
+const fn preserved(
+    source_relation: &'static str,
+    source_field_or_domain: &'static str,
+    current_app_impact: &'static str,
+) -> TeslaMateSourceParityEntry {
+    TeslaMateSourceParityEntry {
+        source_relation,
+        source_field_or_domain,
+        disposition: TeslaMateSourceFactDisposition::PreservedInPack,
+        capture: TeslaMateSourceCaptureStatus::CapturedTyped,
+        fingerprint: TeslaMateSourceFingerprintStatus::Bound,
+        current_app_impact,
+    }
+}
 
 /// Exact field/value-domain denominator requested by the 2026-08-08 parity
-/// review. This is not a denominator for every column in TeslaMate.
+/// review, updated for the schema-2.2 physical import. This is not a
+/// denominator for every column in TeslaMate.
 pub const TESLAMATE_SOURCE_PARITY_ENTRIES: [TeslaMateSourceParityEntry; 17] = [
-    TeslaMateSourceParityEntry {
-        source_relation: "cars",
-        source_field_or_domain: "display_priority",
-        disposition: UNSUPPORTED_DECODER,
-        capture: DECODER_DROP,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "not visible while Hub and app bind one selected car; required for future multi-car ordering provenance",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "cars",
-        source_field_or_domain: "inserted_at",
-        disposition: UNSUPPORTED_DECODER,
-        capture: DECODER_DROP,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "source provenance only; not represented by the app",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "cars",
-        source_field_or_domain: "updated_at",
-        disposition: UNSUPPORTED_DECODER,
-        capture: DECODER_DROP,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "source provenance only; not represented by the app",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "drives",
-        source_field_or_domain: "start_km",
-        disposition: TeslaMateSourceFactDisposition::FingerprintOnly,
-        capture: TeslaMateSourceCaptureStatus::CapturedTyped,
-        fingerprint: TeslaMateSourceFingerprintStatus::Bound,
-        current_app_impact: "not directly displayed; THP1 carries distance_km and position odometer instead",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "drives",
-        source_field_or_domain: "end_km",
-        disposition: TeslaMateSourceFactDisposition::FingerprintOnly,
-        capture: TeslaMateSourceCaptureStatus::CapturedTyped,
-        fingerprint: TeslaMateSourceFingerprintStatus::Bound,
-        current_app_impact: "not directly displayed; THP1 carries distance_km and position odometer instead",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "unit_of_length",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "presentation provenance; app unit preference remains locally owned",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "unit_of_temperature",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "presentation provenance; app unit preference remains locally owned",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "unit_of_pressure",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "presentation provenance; app unit preference remains locally owned",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "preferred_range",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "presentation provenance; app range preference remains locally owned",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "base_url",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: TeslaMateSourceFingerprintStatus::DeliberatelyNotHashed,
-        current_app_impact: "must not become a Hub endpoint or app control",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "grafana_url",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: TeslaMateSourceFingerprintStatus::DeliberatelyNotHashed,
-        current_app_impact: "must not become a Hub endpoint or app control",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "language",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "presentation provenance; app language remains platform owned",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "theme_mode",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "presentation provenance; app appearance remains locally owned",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "inserted_at",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "source provenance only; not represented by the app",
-    },
-    TeslaMateSourceParityEntry {
-        source_relation: "settings",
-        source_field_or_domain: "updated_at",
-        disposition: UNSUPPORTED_DECODER,
-        capture: NOT_READ,
-        fingerprint: NOT_BOUND,
-        current_app_impact: "source provenance only; not represented by the app",
-    },
+    preserved("cars", "display_priority", "exact schema-2.2 source value"),
+    preserved("cars", "inserted_at", "exact schema-2.2 source timestamp"),
+    preserved("cars", "updated_at", "exact schema-2.2 source timestamp"),
+    preserved("drives", "start_km", "exact schema-2.2 FLOAT8 bits"),
+    preserved("drives", "end_km", "exact schema-2.2 FLOAT8 bits"),
+    preserved("settings", "unit_of_length", "exact schema-2.2 enum"),
+    preserved("settings", "unit_of_temperature", "exact schema-2.2 enum"),
+    preserved("settings", "unit_of_pressure", "exact schema-2.2 enum"),
+    preserved("settings", "preferred_range", "exact schema-2.2 enum"),
+    preserved("settings", "base_url", "opaque nullable source text"),
+    preserved("settings", "grafana_url", "opaque nullable source text"),
+    preserved("settings", "language", "exact schema-2.2 source text"),
+    preserved("settings", "theme_mode", "exact schema-2.2 source text"),
+    preserved(
+        "settings",
+        "inserted_at",
+        "exact schema-2.2 source timestamp",
+    ),
+    preserved(
+        "settings",
+        "updated_at",
+        "exact schema-2.2 source timestamp",
+    ),
     TeslaMateSourceParityEntry {
         source_relation: "addresses",
         source_field_or_domain: "raw",
         disposition: TeslaMateSourceFactDisposition::ProposedSensitiveExclusionBlocked,
-        capture: NOT_READ,
+        capture: TeslaMateSourceCaptureStatus::NotRead,
         fingerprint: TeslaMateSourceFingerprintStatus::DeliberatelyNotHashed,
-        current_app_impact: "raw geocoder response is not app-visible and may contain unrelated sensitive data",
+        current_app_impact: "deliberately excluded because it is not app-visible and may contain unrelated provider data",
     },
-    TeslaMateSourceParityEntry {
-        source_relation: "states",
-        source_field_or_domain: "state values outside online/offline/asleep",
-        disposition: TeslaMateSourceFactDisposition::UnsupportedOrLost,
-        capture: TeslaMateSourceCaptureStatus::CapturedButUnsupportedValuesFailClosed,
-        fingerprint: TeslaMateSourceFingerprintStatus::NoPublishedDigestForUnsupportedValues,
-        current_app_impact: "state history is app-visible, but THP1 schema 2.1 rejects unknown values before publication",
-    },
+    preserved(
+        "states",
+        "state enum (online/offline/asleep)",
+        "exact TeslaMate v4.1.1 enum domain",
+    ),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -240,16 +147,16 @@ impl TeslaMateSourceParityReport {
     pub const fn current() -> Self {
         Self {
             ledger_version: TESLAMATE_SOURCE_PARITY_LEDGER_VERSION,
-            scope: "reviewed-discarded-source-facts",
-            thp1_schema: "2.1",
-            schema_upgrade_required_for_remaining_fields: "2.2",
+            scope: "reviewed-source-facts",
+            thp1_schema: "2.2",
+            schema_upgrade_required_for_remaining_fields: "none",
             all_teslamate_fields_preserved: false,
             counts: TeslaMateSourceParityCounts {
                 reviewed_field_or_value_domains: TESLAMATE_SOURCE_PARITY_REVIEWED_DENOMINATOR,
-                preserved_in_pack: 0,
-                fingerprint_only: 2,
+                preserved_in_pack: 16,
+                fingerprint_only: 0,
                 proposed_sensitive_exclusion_blocked: 1,
-                unsupported_or_lost: 14,
+                unsupported_or_lost: 0,
             },
             entries: &TESLAMATE_SOURCE_PARITY_ENTRIES,
         }
@@ -271,7 +178,7 @@ impl TeslaMateSourceParityReport {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[error(
-    "all TeslaMate fields are not preserved: {reviewed_denominator} reviewed field/value domains remain bounded by the parity ledger; THP1 schema {schema_upgrade_required} work is required"
+    "all TeslaMate fields are not preserved: {reviewed_denominator} reviewed field/value domains remain bounded by the parity ledger; remaining schema upgrade: {schema_upgrade_required}"
 )]
 pub struct TeslaMateFullParityUnavailable {
     pub reviewed_denominator: u16,
@@ -438,16 +345,16 @@ mod tests {
         let report = TeslaMateSourceParityReport::current();
         assert_eq!(report.entries.len(), 17);
         assert_eq!(report.counts.reviewed_field_or_value_domains, 17);
-        assert_eq!(report.counts.preserved_in_pack, 0);
-        assert_eq!(report.counts.fingerprint_only, 2);
+        assert_eq!(report.counts.preserved_in_pack, 16);
+        assert_eq!(report.counts.fingerprint_only, 0);
         assert_eq!(report.counts.proposed_sensitive_exclusion_blocked, 1);
-        assert_eq!(report.counts.unsupported_or_lost, 14);
+        assert_eq!(report.counts.unsupported_or_lost, 0);
         assert!(!report.all_teslamate_fields_preserved);
         assert_eq!(
             report.require_all_teslamate_fields(),
             Err(TeslaMateFullParityUnavailable {
                 reviewed_denominator: 17,
-                schema_upgrade_required: "2.2",
+                schema_upgrade_required: "none",
             })
         );
 
@@ -461,12 +368,12 @@ mod tests {
             counts[index] += 1;
             counts
         });
-        assert_eq!(disposition_total, [0, 2, 1, 14]);
+        assert_eq!(disposition_total, [16, 0, 1, 0]);
 
         let json = serde_json::to_value(report).expect("serialize public parity report");
         assert_eq!(json["allTeslamateFieldsPreserved"], false);
-        assert_eq!(json["schemaUpgradeRequiredForRemainingFields"], "2.2");
-        assert_eq!(json["counts"]["fingerprintOnly"], 2);
+        assert_eq!(json["schemaUpgradeRequiredForRemainingFields"], "none");
+        assert_eq!(json["counts"]["preservedInPack"], 16);
     }
 
     #[test]
