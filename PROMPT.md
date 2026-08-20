@@ -47,6 +47,10 @@ The Hub is working when all of these are true:
 ## How to work
 
 - Work directly in the active `hub/` checkout and preserve existing user changes.
+- Develop normally in that checkout with one Cargo target directory (`hub/target` by default). Reuse it for check, test, clippy, and release builds.
+- Do not create separate multi-gigabyte Cargo targets, repository clones, or worktrees for each agent, review, test subset, or commit.
+- If isolation is genuinely required, use at most one short-lived Hub-only checkout and one target directory. Remove both immediately after the useful commit is merged.
+- Before every handoff or merge, inventory and remove all Hub-only temporary clones, targets, logs, and generated evidence created by the task. Verify the remaining `/tmp` Hub count and disk space. Never remove App artifacts.
 - Use Sol, Terra, or Luna only for small independent implementation or review tasks that materially speed up the product work.
 - Do not modify, redesign, debug, or perfect Agent Fleet. Fleet is not part of the product.
 - Do not create process, policy, evidence, or review machinery unless it is required to make the macOS Hub work or to diagnose a real failure.
