@@ -402,7 +402,7 @@ async fn write_direct_full_snapshot_once(
         native_ten_million_phase_trace::NativeTenMillionPhase::SourceProjection,
     );
     let result = write_from_session(
-        &lane.client,
+        lane.client(),
         selected_car_id,
         selected_car_id_i16,
         read_limits,
@@ -585,9 +585,9 @@ pub async fn preflight_teslamate_import(
     let (session, selected_car_id_i16, schema) =
         open_snapshot_session_with_schema(source, password, selected_car_id, read_limits).await?;
     let result = async {
-        let source_database_bytes = read_source_database_size(&session.client).await?;
+        let source_database_bytes = read_source_database_size(session.client()).await?;
         let source_row_counts =
-            read_direct_source_counts(&session.client, selected_car_id_i16).await?;
+            read_direct_source_counts(session.client(), selected_car_id_i16).await?;
         let retention_reason = match admit_direct_retention(source_row_counts, read_limits) {
             Ok(_) => None,
             Err(error) => Some(direct_retention_preflight_reason(&error).ok_or(error)?),
@@ -685,7 +685,7 @@ async fn read_addresses_lane(
 ) -> Result<Vec<TeslaMateAddress>, TeslaMateDirectError> {
     let lane = open_snapshot_capture_lane(source, password, snapshot_id, limits).await?;
     let mut retained = 0;
-    let result = read_addresses(&lane.client, selected_car_id, limits, &mut retained).await;
+    let result = read_addresses(lane.client(), selected_car_id, limits, &mut retained).await;
     let finish = lane.finish().await;
     match (result, finish) {
         (Ok(rows), Ok(())) => Ok(rows),
@@ -703,7 +703,7 @@ async fn read_geofences_lane(
 ) -> Result<Vec<TeslaMateGeofence>, TeslaMateDirectError> {
     let lane = open_snapshot_capture_lane(source, password, snapshot_id, limits).await?;
     let mut retained = 0;
-    let result = read_geofences(&lane.client, selected_car_id, limits, &mut retained).await;
+    let result = read_geofences(lane.client(), selected_car_id, limits, &mut retained).await;
     let finish = lane.finish().await;
     match (result, finish) {
         (Ok(rows), Ok(())) => Ok(rows),
@@ -1242,7 +1242,7 @@ async fn read_direct_source_counts_from_exported_snapshot(
     limits: TeslaMateReadLimits,
 ) -> Result<TeslaMateSourceCounts, TeslaMateDirectError> {
     let lane = open_snapshot_capture_lane(source, password, snapshot_token, limits).await?;
-    let result = read_direct_source_counts(&lane.client, selected_car_id).await;
+    let result = read_direct_source_counts(lane.client(), selected_car_id).await;
     let finish = lane.finish().await;
     match (result, finish) {
         (Ok(counts), Ok(())) => Ok(counts),

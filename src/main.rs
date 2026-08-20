@@ -1145,7 +1145,8 @@ async fn run_macos_migration(
             &ciphertexts.access,
             &ciphertexts.refresh,
         )?);
-        (key, ciphertexts.access, ciphertexts.refresh)
+        let (access, refresh) = ciphertexts.into_parts();
+        (key, access, refresh)
     } else {
         let access_path = access_token_file.expect("validated access-token input");
         let refresh_path = refresh_token_file.expect("validated refresh-token input");
@@ -1926,7 +1927,7 @@ mod tests {
 
         let temporary = tempfile::tempdir().expect("temporary stage directory");
         let stage = TeslaMateStage::create(
-            temporary.path(),
+            temporary.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 1,
                 max_stage_bytes: 64 * 1024,

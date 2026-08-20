@@ -1950,7 +1950,7 @@ mod tests {
     fn stage_with_sealed(seal: bool) -> (tempfile::TempDir, TeslaMateStage) {
         let temporary = tempfile::tempdir().unwrap();
         let mut stage = TeslaMateStage::create(
-            temporary.path(),
+            temporary.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 2_000,
                 max_stage_bytes: 4 * 1024 * 1024,

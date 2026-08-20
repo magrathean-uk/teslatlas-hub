@@ -4631,7 +4631,7 @@ mod tests {
         let imports = tempfile::tempdir().unwrap();
         let store = HubStore::initialize(data.path()).unwrap();
         let mut stage = TeslaMateStage::create(
-            imports.path(),
+            imports.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 10,
                 max_stage_bytes: 128 * 1024,
@@ -4704,7 +4704,7 @@ mod tests {
         };
         let cursor_key = CursorKey::from_bytes([70; 32]);
         let mut stage = TeslaMateStage::create(
-            imports.path(),
+            imports.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 16,
                 max_stage_bytes: 128 * 1024,
@@ -4787,7 +4787,7 @@ mod tests {
         };
         let cursor_key = CursorKey::from_bytes([71; 32]);
         let mut stage = TeslaMateStage::create(
-            imports.path(),
+            imports.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 16,
                 max_stage_bytes: 128 * 1024,
@@ -4846,7 +4846,7 @@ mod tests {
         };
         let cursor_key = CursorKey::from_bytes([73; 32]);
         let mut stage = TeslaMateStage::create(
-            imports.path(),
+            imports.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 16,
                 max_stage_bytes: 128 * 1024,
@@ -4863,7 +4863,7 @@ mod tests {
             .expect("initial migration base");
 
         let mut final_stage = TeslaMateStage::create(
-            imports.path(),
+            imports.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 16,
                 max_stage_bytes: 128 * 1024,
@@ -4950,7 +4950,7 @@ mod tests {
         };
         let cursor_key = CursorKey::from_bytes([72; 32]);
         let mut stage = TeslaMateStage::create(
-            imports.path(),
+            imports.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 16,
                 max_stage_bytes: 128 * 1024,
@@ -5018,7 +5018,7 @@ mod tests {
         let imports = tempfile::tempdir().unwrap();
         let store = HubStore::initialize(data.path()).unwrap();
         let mut stage = TeslaMateStage::create(
-            imports.path(),
+            imports.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 2_000,
                 max_stage_bytes: 4 * 1024 * 1024,

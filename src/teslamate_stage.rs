@@ -7,15 +7,20 @@
 //! like a complete source snapshot.
 
 use std::{
+    ffi::{OsStr, OsString},
     fs,
+    os::fd::{AsFd, OwnedFd},
     path::{Path, PathBuf},
 };
 
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::DirBuilderExt;
 
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
-use rustix::fs::statvfs;
+use rustix::{
+    fs::{FileType, Mode, OFlags, fchmod, fstat, mkdirat, open, openat, statvfs},
+    process::{getegid, geteuid},
+};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use thiserror::Error;
@@ -179,6 +184,25 @@ pub struct TeslaMateStage {
     path: PathBuf,
     connection: Connection,
     writable: bool,
+    file_identity: StageFileIdentity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StageFileIdentity {
+    device: u64,
+    inode: u64,
+}
+
+struct PrivateDirectory {
+    descriptor: OwnedFd,
+    identity: StageFileIdentity,
+    path: PathBuf,
+}
+
+struct PrivateStagePath {
+    directory: PrivateDirectory,
+    file_name: OsString,
+    path: PathBuf,
 }
 
 impl std::fmt::Debug for TeslaMateStage {
@@ -200,14 +224,13 @@ impl TeslaMateStage {
     ) -> Result<Self, TeslaMateStageError> {
         limits.validate()?;
         let imports_dir = imports_dir.as_ref();
-        ensure_private_directory(imports_dir)?;
-        let staging_dir = imports_dir.join(STAGING_DIRECTORY);
-        ensure_private_directory(&staging_dir)?;
+        let imports_dir = ensure_private_directory(imports_dir)?;
+        let staging_dir = ensure_private_child_directory(&imports_dir, STAGING_DIRECTORY)?;
         let required_free_bytes = limits
             .max_stage_bytes
             .checked_add(limits.minimum_free_bytes)
             .ok_or(TeslaMateStageError::StageCapacityOverflow)?;
-        let available_free_bytes = available_bytes(&staging_dir)?;
+        let available_free_bytes = available_bytes(&staging_dir.path)?;
         if available_free_bytes < required_free_bytes {
             return Err(TeslaMateStageError::InsufficientFreeSpace {
                 required: required_free_bytes,
@@ -215,19 +238,25 @@ impl TeslaMateStage {
             });
         }
 
-        let path = staging_dir.join(format!("{}.{}", Uuid::new_v4(), STAGE_FILE_EXTENSION));
+        let file_name = OsString::from(format!("{}.{}", Uuid::new_v4(), STAGE_FILE_EXTENSION));
+        let path = staging_dir.path.join(&file_name);
+        let (file_guard, file_identity) =
+            create_private_stage_file(&staging_dir, &file_name, &path)?;
         let connection = Connection::open_with_flags(
             &path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
         )?;
-        ensure_private_file(&path)?;
+        verify_stage_path_identity(&staging_dir, &file_name, &path, file_identity)?;
         configure_writable_connection(&connection, limits)?;
         initialise_schema(&connection, limits)?;
+        verify_stage_path_identity(&staging_dir, &file_name, &path, file_identity)?;
+        drop(file_guard);
 
         Ok(Self {
             path,
             connection,
             writable: true,
+            file_identity,
         })
     }
 
@@ -235,13 +264,32 @@ impl TeslaMateStage {
     /// callers must resume/rebuild them with a writer, not treat them as a
     /// source-consistent history.
     pub fn open_sealed(path: impl AsRef<Path>) -> Result<Self, TeslaMateStageError> {
-        let path = path.as_ref().to_path_buf();
-        ensure_private_stage_path(&path)?;
-        let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        Self::open_sealed_with_hook(path.as_ref(), || {})
+    }
+
+    fn open_sealed_with_hook(
+        path: &Path,
+        before_sqlite_open: impl FnOnce(),
+    ) -> Result<Self, TeslaMateStageError> {
+        let stage_path = ensure_private_stage_path(path)?;
+        let path = stage_path.path.clone();
+        let (file_guard, file_identity) = open_private_stage_file(&stage_path, false)?;
+        before_sqlite_open();
+        let connection = Connection::open_with_flags(
+            &path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+        )?;
+        verify_stage_path_identity(
+            &stage_path.directory,
+            &stage_path.file_name,
+            &path,
+            file_identity,
+        )?;
         let stage = Self {
             path,
             connection,
             writable: false,
+            file_identity,
         };
         let stats = stage.stats()?;
         if stats.state != TeslaMateStageState::Sealed {
@@ -249,6 +297,13 @@ impl TeslaMateStage {
         }
         stage.verify_integrity()?;
         stage.verify_accounting(stats)?;
+        verify_stage_path_identity(
+            &stage_path.directory,
+            &stage_path.file_name,
+            &stage.path,
+            file_identity,
+        )?;
+        drop(file_guard);
         Ok(stage)
     }
 
@@ -256,16 +311,35 @@ impl TeslaMateStage {
         &self.path
     }
 
+    fn verify_path_identity(&self) -> Result<(), TeslaMateStageError> {
+        let stage_path = ensure_private_stage_path(&self.path)?;
+        verify_stage_path_identity(
+            &stage_path.directory,
+            &stage_path.file_name,
+            &stage_path.path,
+            self.file_identity,
+        )
+    }
+
     /// Remove exactly this private staging file. Open captures are never
     /// resumable after a source-session failure; callers use this to discard
     /// their partial snapshot rather than risking mixed PostgreSQL views.
     pub fn discard(self) -> Result<(), TeslaMateStageError> {
         let path = self.path.clone();
+        let identity = self.file_identity;
         drop(self);
+        let stage_path = ensure_private_stage_path(&path)?;
+        verify_stage_path_identity(
+            &stage_path.directory,
+            &stage_path.file_name,
+            &path,
+            identity,
+        )?;
         fs::remove_file(&path).map_err(|source| TeslaMateStageError::RemoveStage { path, source })
     }
 
     pub fn stats(&self) -> Result<TeslaMateStageStats, TeslaMateStageError> {
+        self.verify_path_identity()?;
         let state = TeslaMateStageState::parse(&read_meta(&self.connection, META_STATE)?)?;
         let row_count = parse_meta_u64(&self.connection, META_ROW_COUNT)?;
         let payload_bytes = parse_meta_u64(&self.connection, META_PAYLOAD_BYTES)?;
@@ -857,7 +931,7 @@ fn map_write_error(error: rusqlite::Error, maximum: u64) -> TeslaMateStageError 
     }
 }
 
-fn ensure_private_stage_path(path: &Path) -> Result<(), TeslaMateStageError> {
+fn ensure_private_stage_path(path: &Path) -> Result<PrivateStagePath, TeslaMateStageError> {
     if path.extension().and_then(|extension| extension.to_str()) != Some(STAGE_FILE_EXTENSION) {
         return Err(TeslaMateStageError::InvalidStagePath);
     }
@@ -865,16 +939,33 @@ fn ensure_private_stage_path(path: &Path) -> Result<(), TeslaMateStageError> {
     if parent.file_name().and_then(|name| name.to_str()) != Some(STAGING_DIRECTORY) {
         return Err(TeslaMateStageError::InvalidStagePath);
     }
-    ensure_private_directory(parent)?;
     let imports_dir = parent
         .parent()
         .ok_or(TeslaMateStageError::InvalidStagePath)?;
-    ensure_private_directory(imports_dir)?;
-    ensure_private_file(path)
+    let imports_dir = open_private_directory(imports_dir)?;
+    let staging_dir = open_private_child_directory(&imports_dir, STAGING_DIRECTORY)?;
+    let file_name = path
+        .file_name()
+        .ok_or(TeslaMateStageError::InvalidStagePath)?
+        .to_os_string();
+    let path = staging_dir.path.join(&file_name);
+    Ok(PrivateStagePath {
+        directory: staging_dir,
+        file_name,
+        path,
+    })
 }
 
-fn ensure_private_directory(path: &Path) -> Result<(), TeslaMateStageError> {
-    match fs::symlink_metadata(path) {
+fn ensure_private_directory(path: &Path) -> Result<PrivateDirectory, TeslaMateStageError> {
+    private_directory(path, true)
+}
+
+fn open_private_directory(path: &Path) -> Result<PrivateDirectory, TeslaMateStageError> {
+    private_directory(path, false)
+}
+
+fn private_directory(path: &Path, create: bool) -> Result<PrivateDirectory, TeslaMateStageError> {
+    let created = match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if metadata.file_type().is_symlink() {
                 return Err(TeslaMateStageError::SymlinkPath(path.to_path_buf()));
@@ -882,12 +973,21 @@ fn ensure_private_directory(path: &Path) -> Result<(), TeslaMateStageError> {
             if !metadata.is_dir() {
                 return Err(TeslaMateStageError::ExpectedDirectory(path.to_path_buf()));
             }
+            false
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::create_dir_all(path).map_err(|source| TeslaMateStageError::CreateDirectory {
-                path: path.to_path_buf(),
-                source,
-            })?;
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && create => {
+            let mut builder = fs::DirBuilder::new();
+            builder.mode(0o700);
+            match builder.create(path) {
+                Ok(()) => true,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => false,
+                Err(source) => {
+                    return Err(TeslaMateStageError::CreateDirectory {
+                        path: path.to_path_buf(),
+                        source,
+                    });
+                }
+            }
         }
         Err(source) => {
             return Err(TeslaMateStageError::InspectPath {
@@ -895,11 +995,175 @@ fn ensure_private_directory(path: &Path) -> Result<(), TeslaMateStageError> {
                 source,
             });
         }
+    };
+    let directory = open(
+        path,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|source| TeslaMateStageError::SecureOpen {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if created {
+        fchmod(&directory, Mode::from_raw_mode(0o700)).map_err(|source| {
+            TeslaMateStageError::SecurePermissions {
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
     }
-    set_private_directory_permissions(path)
+    finish_private_directory(directory, path)
 }
 
-fn ensure_private_file(path: &Path) -> Result<(), TeslaMateStageError> {
+fn ensure_private_child_directory(
+    parent: &PrivateDirectory,
+    name: &str,
+) -> Result<PrivateDirectory, TeslaMateStageError> {
+    private_child_directory(parent, name, true)
+}
+
+fn open_private_child_directory(
+    parent: &PrivateDirectory,
+    name: &str,
+) -> Result<PrivateDirectory, TeslaMateStageError> {
+    private_child_directory(parent, name, false)
+}
+
+fn private_child_directory(
+    parent: &PrivateDirectory,
+    name: &str,
+    create: bool,
+) -> Result<PrivateDirectory, TeslaMateStageError> {
+    let path = parent.path.join(name);
+    let created = if create {
+        match mkdirat(&parent.descriptor, name, Mode::from_raw_mode(0o700)) {
+            Ok(()) => true,
+            Err(rustix::io::Errno::EXIST) => false,
+            Err(source) => {
+                return Err(TeslaMateStageError::SecureCreateDirectory { path, source });
+            }
+        }
+    } else {
+        false
+    };
+    if !created {
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(TeslaMateStageError::SymlinkPath(path));
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(TeslaMateStageError::ExpectedDirectory(path));
+            }
+            Ok(_) => {}
+            Err(source) => {
+                return Err(TeslaMateStageError::InspectPath { path, source });
+            }
+        }
+    }
+    let directory = openat(
+        &parent.descriptor,
+        name,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|source| TeslaMateStageError::SecureOpen {
+        path: path.clone(),
+        source,
+    })?;
+    if created {
+        fchmod(&directory, Mode::from_raw_mode(0o700)).map_err(|source| {
+            TeslaMateStageError::SecurePermissions {
+                path: path.clone(),
+                source,
+            }
+        })?;
+    }
+    finish_private_directory(directory, &path)
+}
+
+fn finish_private_directory(
+    directory: OwnedFd,
+    path: &Path,
+) -> Result<PrivateDirectory, TeslaMateStageError> {
+    let identity =
+        validate_private_descriptor(directory.as_fd(), path, FileType::Directory, 0o700)?;
+    let canonical_path =
+        fs::canonicalize(path).map_err(|source| TeslaMateStageError::InspectPath {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let canonical = open(
+        &canonical_path,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|source| TeslaMateStageError::SecureOpen {
+        path: canonical_path.clone(),
+        source,
+    })?;
+    let canonical_identity = validate_private_descriptor(
+        canonical.as_fd(),
+        &canonical_path,
+        FileType::Directory,
+        0o700,
+    )?;
+    if canonical_identity != identity {
+        return Err(TeslaMateStageError::DirectoryIdentityChanged(
+            path.to_path_buf(),
+        ));
+    }
+    Ok(PrivateDirectory {
+        descriptor: directory,
+        identity,
+        path: canonical_path,
+    })
+}
+
+fn create_private_stage_file(
+    directory: &PrivateDirectory,
+    file_name: &OsStr,
+    path: &Path,
+) -> Result<(OwnedFd, StageFileIdentity), TeslaMateStageError> {
+    let file = openat(
+        &directory.descriptor,
+        file_name,
+        OFlags::RDWR | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::from_raw_mode(0o600),
+    )
+    .map_err(|source| TeslaMateStageError::SecureOpen {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    fchmod(&file, Mode::from_raw_mode(0o600)).map_err(|source| {
+        TeslaMateStageError::SecurePermissions {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    let identity = validate_private_descriptor(file.as_fd(), path, FileType::RegularFile, 0o600)?;
+    verify_stage_path_identity(directory, file_name, path, identity)?;
+    Ok((file, identity))
+}
+
+fn open_private_stage_file(
+    stage_path: &PrivateStagePath,
+    writable: bool,
+) -> Result<(OwnedFd, StageFileIdentity), TeslaMateStageError> {
+    open_private_stage_file_at(
+        &stage_path.directory,
+        &stage_path.file_name,
+        &stage_path.path,
+        writable,
+    )
+}
+
+fn open_private_stage_file_at(
+    directory: &PrivateDirectory,
+    file_name: &OsStr,
+    path: &Path,
+    writable: bool,
+) -> Result<(OwnedFd, StageFileIdentity), TeslaMateStageError> {
     let metadata =
         fs::symlink_metadata(path).map_err(|source| TeslaMateStageError::InspectPath {
             path: path.to_path_buf(),
@@ -911,7 +1175,125 @@ fn ensure_private_file(path: &Path) -> Result<(), TeslaMateStageError> {
     if !metadata.is_file() {
         return Err(TeslaMateStageError::ExpectedFile(path.to_path_buf()));
     }
-    set_private_file_permissions(path)
+    let access = if writable {
+        OFlags::RDWR
+    } else {
+        OFlags::RDONLY
+    };
+    let file = openat(
+        &directory.descriptor,
+        file_name,
+        access | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|source| TeslaMateStageError::SecureOpen {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let identity = validate_private_descriptor(file.as_fd(), path, FileType::RegularFile, 0o600)?;
+    Ok((file, identity))
+}
+
+fn validate_private_descriptor(
+    descriptor: impl AsFd,
+    path: &Path,
+    expected_type: FileType,
+    expected_mode: u32,
+) -> Result<StageFileIdentity, TeslaMateStageError> {
+    let stat = fstat(descriptor).map_err(|source| TeslaMateStageError::SecureInspect {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let actual_type = FileType::from_raw_mode(stat.st_mode);
+    if actual_type != expected_type {
+        return if expected_type == FileType::Directory {
+            Err(TeslaMateStageError::ExpectedDirectory(path.to_path_buf()))
+        } else {
+            Err(TeslaMateStageError::ExpectedFile(path.to_path_buf()))
+        };
+    }
+    if expected_type == FileType::RegularFile && stat.st_nlink != 1 {
+        return Err(TeslaMateStageError::UnexpectedLinkCount {
+            path: path.to_path_buf(),
+            actual: u64::from(stat.st_nlink),
+        });
+    }
+    let expected_uid = geteuid().as_raw();
+    let expected_gid = getegid().as_raw();
+    if stat.st_uid != expected_uid || stat.st_gid != expected_gid {
+        return Err(TeslaMateStageError::UnexpectedOwner {
+            path: path.to_path_buf(),
+            expected_uid,
+            expected_gid,
+            actual_uid: stat.st_uid,
+            actual_gid: stat.st_gid,
+        });
+    }
+    let actual_mode = u32::from(Mode::from_raw_mode(stat.st_mode).as_raw_mode());
+    if actual_mode != expected_mode {
+        return Err(TeslaMateStageError::InsecurePermissions {
+            path: path.to_path_buf(),
+            expected: expected_mode,
+            actual: actual_mode,
+        });
+    }
+    Ok(StageFileIdentity {
+        device: u64::try_from(stat.st_dev).expect("filesystem device identifier fits u64"),
+        inode: stat.st_ino,
+    })
+}
+
+fn verify_stage_path_identity(
+    directory: &PrivateDirectory,
+    file_name: &OsStr,
+    path: &Path,
+    expected: StageFileIdentity,
+) -> Result<(), TeslaMateStageError> {
+    if directory.identity
+        != validate_private_descriptor(
+            directory.descriptor.as_fd(),
+            &directory.path,
+            FileType::Directory,
+            0o700,
+        )?
+    {
+        return Err(TeslaMateStageError::DirectoryIdentityChanged(
+            directory.path.clone(),
+        ));
+    }
+    let current_directory_descriptor = open(
+        &directory.path,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|source| TeslaMateStageError::SecureOpen {
+        path: directory.path.clone(),
+        source,
+    })?;
+    let current_directory_identity = validate_private_descriptor(
+        current_directory_descriptor.as_fd(),
+        &directory.path,
+        FileType::Directory,
+        0o700,
+    )?;
+    if current_directory_identity != directory.identity {
+        return Err(TeslaMateStageError::DirectoryIdentityChanged(
+            directory.path.clone(),
+        ));
+    }
+    let current_directory = PrivateDirectory {
+        descriptor: current_directory_descriptor,
+        identity: current_directory_identity,
+        path: directory.path.clone(),
+    };
+    let (file, actual) = open_private_stage_file_at(&current_directory, file_name, path, false)?;
+    drop(file);
+    if actual != expected {
+        return Err(TeslaMateStageError::StagePathIdentityChanged(
+            path.to_path_buf(),
+        ));
+    }
+    Ok(())
 }
 
 fn available_bytes(path: &Path) -> Result<u64, TeslaMateStageError> {
@@ -923,36 +1305,6 @@ fn available_bytes(path: &Path) -> Result<u64, TeslaMateStageError> {
         .f_bavail
         .checked_mul(stats.f_frsize)
         .ok_or(TeslaMateStageError::FilesystemSpaceOverflow)
-}
-
-#[cfg(unix)]
-fn set_private_directory_permissions(path: &Path) -> Result<(), TeslaMateStageError> {
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|source| {
-        TeslaMateStageError::SetPermissions {
-            path: path.to_path_buf(),
-            source,
-        }
-    })
-}
-
-#[cfg(not(unix))]
-fn set_private_directory_permissions(_path: &Path) -> Result<(), TeslaMateStageError> {
-    Ok(())
-}
-
-#[cfg(unix)]
-fn set_private_file_permissions(path: &Path) -> Result<(), TeslaMateStageError> {
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|source| {
-        TeslaMateStageError::SetPermissions {
-            path: path.to_path_buf(),
-            source,
-        }
-    })
-}
-
-#[cfg(not(unix))]
-fn set_private_file_permissions(_path: &Path) -> Result<(), TeslaMateStageError> {
-    Ok(())
 }
 
 #[derive(Debug, Error)]
@@ -977,15 +1329,30 @@ pub enum TeslaMateStageError {
         path: PathBuf,
         source: std::io::Error,
     },
+    #[error("could not create private stage directory {path} relative to its owner: {source}")]
+    SecureCreateDirectory {
+        path: PathBuf,
+        source: rustix::io::Errno,
+    },
     #[error("could not inspect stage path {path}: {source}")]
     InspectPath {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("could not set private permissions on {path}: {source}")]
-    SetPermissions {
+    #[error("could not securely open stage path {path}: {source}")]
+    SecureOpen {
         path: PathBuf,
-        source: std::io::Error,
+        source: rustix::io::Errno,
+    },
+    #[error("could not inspect securely opened stage path {path}: {source}")]
+    SecureInspect {
+        path: PathBuf,
+        source: rustix::io::Errno,
+    },
+    #[error("could not set new private stage permissions on {path}: {source}")]
+    SecurePermissions {
+        path: PathBuf,
+        source: rustix::io::Errno,
     },
     #[error("could not remove private stage {path}: {source}")]
     RemoveStage {
@@ -998,6 +1365,28 @@ pub enum TeslaMateStageError {
     ExpectedDirectory(PathBuf),
     #[error("expected stage file at {0}")]
     ExpectedFile(PathBuf),
+    #[error("stage file {path} must have exactly one hard link, not {actual}")]
+    UnexpectedLinkCount { path: PathBuf, actual: u64 },
+    #[error(
+        "stage path {path} must be owned by uid {expected_uid} gid {expected_gid}, not uid {actual_uid} gid {actual_gid}"
+    )]
+    UnexpectedOwner {
+        path: PathBuf,
+        expected_uid: u32,
+        expected_gid: u32,
+        actual_uid: u32,
+        actual_gid: u32,
+    },
+    #[error("stage path {path} must have mode {expected:o}, not {actual:o}")]
+    InsecurePermissions {
+        path: PathBuf,
+        expected: u32,
+        actual: u32,
+    },
+    #[error("stage path identity changed while it was being opened: {0}")]
+    StagePathIdentityChanged(PathBuf),
+    #[error("stage directory identity changed while it was being opened: {0}")]
+    DirectoryIdentityChanged(PathBuf),
     #[error("stage path must be a .sqlite file inside a private .staging directory")]
     InvalidStagePath,
     #[error("stage database error: {0}")]
@@ -1094,6 +1483,10 @@ mod tests {
         }
     }
 
+    fn private_imports(temporary: &tempfile::TempDir) -> PathBuf {
+        temporary.path().join("imports")
+    }
+
     #[test]
     fn encoding_workers_are_bounded() {
         assert_eq!(stage_encoding_worker_count_for(0), 1);
@@ -1149,7 +1542,8 @@ mod tests {
     #[test]
     fn parallel_insert_preserves_deterministic_stored_order() {
         let temporary = tempdir().expect("temp dir");
-        let mut stage = TeslaMateStage::create(temporary.path(), limits()).expect("stage");
+        let mut stage =
+            TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
         stage
             .insert_page_parallel(
                 TeslaMateStageTable::Cars,
@@ -1373,7 +1767,8 @@ mod tests {
     #[test]
     fn charge_sample_page_uses_process_index() {
         let temporary = tempdir().expect("temp dir");
-        let mut stage = TeslaMateStage::create(temporary.path(), limits()).expect("stage");
+        let mut stage =
+            TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
         stage
             .insert(
                 TeslaMateStageTable::Charges,
@@ -1416,7 +1811,7 @@ mod tests {
     fn rejects_bound_overrun_duplicate_ids_and_non_object_rows() {
         let temporary = tempdir().expect("temp dir");
         let mut stage = TeslaMateStage::create(
-            temporary.path(),
+            private_imports(&temporary),
             TeslaMateStageLimits {
                 max_rows: 1,
                 max_stage_bytes: 128 * 1024,
@@ -1438,7 +1833,7 @@ mod tests {
 
         let temporary = tempdir().expect("temp dir");
         let mut byte_limited = TeslaMateStage::create(
-            temporary.path(),
+            private_imports(&temporary),
             TeslaMateStageLimits {
                 max_rows: 2,
                 max_stage_bytes: 128 * 1024,
@@ -1474,7 +1869,7 @@ mod tests {
     #[test]
     fn refuses_open_or_symlinked_stages_as_complete_snapshots() {
         let temporary = tempdir().expect("temp dir");
-        let stage = TeslaMateStage::create(temporary.path(), limits()).expect("stage");
+        let stage = TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
         let path = stage.path().to_path_buf();
         drop(stage);
         assert!(matches!(
@@ -1484,7 +1879,7 @@ mod tests {
 
         let target = temporary.path().join("target.sqlite");
         fs::write(&target, b"not a stage").expect("target");
-        let link = temporary.path().join(".staging/link.sqlite");
+        let link = path.parent().expect("stage parent").join("link.sqlite");
         std::os::unix::fs::symlink(&target, &link).expect("link");
         assert!(matches!(
             TeslaMateStage::open_sealed(link),
@@ -1493,22 +1888,175 @@ mod tests {
     }
 
     #[test]
+    fn rejects_insecure_existing_directories_without_changing_their_modes() {
+        for mode in [0o755, 0o770] {
+            let temporary = tempdir().expect("temp dir");
+            let imports = temporary.path().join("imports");
+            fs::create_dir(&imports).expect("imports");
+            fs::set_permissions(&imports, fs::Permissions::from_mode(mode)).expect("insecure mode");
+
+            assert!(matches!(
+                TeslaMateStage::create(&imports, limits()),
+                Err(TeslaMateStageError::InsecurePermissions {
+                    expected: 0o700,
+                    actual,
+                    ..
+                }) if actual == mode
+            ));
+            assert_eq!(
+                fs::metadata(&imports)
+                    .expect("imports metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                mode
+            );
+        }
+
+        let temporary = tempdir().expect("temp dir");
+        let imports = temporary.path().join("imports");
+        fs::create_dir(&imports).expect("imports");
+        fs::set_permissions(&imports, fs::Permissions::from_mode(0o700)).expect("private imports");
+        let staging = imports.join(STAGING_DIRECTORY);
+        fs::create_dir(&staging).expect("staging");
+        fs::set_permissions(&staging, fs::Permissions::from_mode(0o770))
+            .expect("insecure staging mode");
+        assert!(matches!(
+            TeslaMateStage::create(&imports, limits()),
+            Err(TeslaMateStageError::InsecurePermissions {
+                expected: 0o700,
+                actual: 0o770,
+                ..
+            })
+        ));
+        assert_eq!(
+            fs::metadata(staging)
+                .expect("staging metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o770
+        );
+    }
+
+    #[test]
+    fn rejects_insecure_existing_stage_files_without_changing_their_modes() {
+        for mode in [0o644, 0o622] {
+            let temporary = tempdir().expect("temp dir");
+            let mut stage =
+                TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+            stage.seal().expect("sealed");
+            let path = stage.path().to_path_buf();
+            drop(stage);
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode))
+                .expect("insecure stage mode");
+
+            assert!(matches!(
+                TeslaMateStage::open_sealed(&path),
+                Err(TeslaMateStageError::InsecurePermissions {
+                    expected: 0o600,
+                    actual,
+                    ..
+                }) if actual == mode
+            ));
+            assert_eq!(
+                fs::metadata(path)
+                    .expect("stage metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                mode
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_hard_linked_stage_files() {
+        let temporary = tempdir().expect("temp dir");
+        let mut stage =
+            TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        stage.seal().expect("sealed");
+        let path = stage.path().to_path_buf();
+        drop(stage);
+        let second_link = path.with_extension("retained-link");
+        fs::hard_link(&path, second_link).expect("second hard link");
+
+        assert!(matches!(
+            TeslaMateStage::open_sealed(path),
+            Err(TeslaMateStageError::UnexpectedLinkCount { actual: 2, .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_stage_replacement_between_secure_and_sqlite_open() {
+        let temporary = tempdir().expect("temp dir");
+        let mut stage =
+            TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        stage.seal().expect("sealed");
+        let path = stage.path().to_path_buf();
+        let original = path.with_extension("original");
+        drop(stage);
+
+        let error = TeslaMateStage::open_sealed_with_hook(&path, || {
+            fs::rename(&path, &original).expect("retain original inode");
+            fs::copy(&original, &path).expect("replacement copy");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+                .expect("private replacement");
+        })
+        .expect_err("identity mismatch");
+        assert!(matches!(
+            error,
+            TeslaMateStageError::StagePathIdentityChanged(ref changed) if changed == &path
+        ));
+    }
+
+    #[test]
+    fn rejects_stage_directory_replacement_between_secure_and_sqlite_open() {
+        let temporary = tempdir().expect("temp dir");
+        let mut stage =
+            TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+        stage.seal().expect("sealed");
+        let path = stage.path().to_path_buf();
+        let staging = path.parent().expect("staging directory").to_path_buf();
+        let displaced = staging.with_extension("original-directory");
+        let file_name = path.file_name().expect("stage file").to_os_string();
+        drop(stage);
+
+        let error = TeslaMateStage::open_sealed_with_hook(&path, || {
+            fs::rename(&staging, &displaced).expect("retain original directory");
+            fs::create_dir(&staging).expect("replacement directory");
+            fs::set_permissions(&staging, fs::Permissions::from_mode(0o700))
+                .expect("private replacement directory");
+            let replacement = staging.join(&file_name);
+            fs::copy(displaced.join(&file_name), &replacement).expect("replacement stage");
+            fs::set_permissions(replacement, fs::Permissions::from_mode(0o600))
+                .expect("private replacement stage");
+        })
+        .expect_err("directory identity mismatch");
+        assert!(matches!(
+            error,
+            TeslaMateStageError::DirectoryIdentityChanged(ref changed) if changed == &staging
+        ));
+    }
+
+    #[test]
     fn discards_only_its_exact_private_stage_file() {
         let temporary = tempdir().expect("temp dir");
-        let stage = TeslaMateStage::create(temporary.path(), limits()).expect("stage");
+        let stage = TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
         let path = stage.path().to_path_buf();
+        let staging = path.parent().expect("staging directory").to_path_buf();
         stage.discard().expect("discard");
         assert!(
             matches!(fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
         );
-        assert!(temporary.path().join(STAGING_DIRECTORY).is_dir());
+        assert!(staging.is_dir());
     }
 
     #[test]
     fn refuses_to_consume_the_host_disk_reserve() {
         let temporary = tempdir().expect("temp dir");
         let result = TeslaMateStage::create(
-            temporary.path(),
+            private_imports(&temporary),
             TeslaMateStageLimits {
                 max_rows: 1,
                 max_stage_bytes: MIN_STAGE_BYTES,

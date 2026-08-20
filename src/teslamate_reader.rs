@@ -28,6 +28,7 @@ use tokio_postgres::{
     types::{FromSql, Type},
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
+use zeroize::Zeroize;
 
 use crate::{
     credentials::TeslaMatePostgresPassword,
@@ -61,6 +62,11 @@ use crate::{
 /// PostgreSQL. Tests (and future production handoff) flip this gate closed so
 /// any accidental source query fails closed rather than silently succeeding.
 static POSTGRES_SOURCE_QUERIES_ALLOWED: AtomicBool = AtomicBool::new(true);
+
+const SNAPSHOT_ROLLBACK_TIMEOUT: Duration = Duration::from_secs(5);
+const SNAPSHOT_CONNECTION_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_MATERIALIZED_HISTORY_POSITIONS: usize = 100_000;
+const MAX_MATERIALIZED_OPEN_POSITIONS: usize = 100_000;
 
 /// Forbid or re-allow TeslaMate PostgreSQL connect/query (R06 handoff).
 pub fn set_postgres_source_queries_allowed(allowed: bool) {
@@ -202,14 +208,11 @@ pub async fn inspect_teslamate_live_source(
 ) -> Result<TeslaMateLiveSourceWitness, TeslaMateReaderError> {
     limits.validate()?;
     let (client, connection_task) = connect_source(source, password, limits).await?;
-    let session = TeslaMateSnapshotSession {
-        client,
-        connection_task,
-    };
+    let session = TeslaMateSnapshotSession::new(client, connection_task);
     let result = async {
-        prepare_read_only_snapshot(&session.client, source, limits).await?;
+        prepare_read_only_snapshot(session.client(), source, limits).await?;
         let row = session
-            .client
+            .client()
             .query_one(LIVE_SOURCE_WITNESS_SQL, &[])
             .await?;
         let private_schema_usage: bool = row.try_get("private_schema_usage")?;
@@ -261,8 +264,8 @@ fn source_witness_count(row: &Row, column: &'static str) -> Result<u64, TeslaMat
 }
 
 pub(crate) struct TeslaMateSnapshotSession {
-    pub(crate) client: Client,
-    connection_task: tokio::task::JoinHandle<()>,
+    client: Option<Client>,
+    connection_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// The encrypted TeslaMate legacy OAuth pair. Ciphertext is sensitive even
@@ -271,6 +274,28 @@ pub(crate) struct TeslaMateSnapshotSession {
 pub struct TeslaMateLegacyTokenCiphertexts {
     pub access: Vec<u8>,
     pub refresh: Vec<u8>,
+}
+
+impl Zeroize for TeslaMateLegacyTokenCiphertexts {
+    fn zeroize(&mut self) {
+        self.access.zeroize();
+        self.refresh.zeroize();
+    }
+}
+
+impl Drop for TeslaMateLegacyTokenCiphertexts {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl TeslaMateLegacyTokenCiphertexts {
+    pub fn into_parts(mut self) -> (Vec<u8>, Vec<u8>) {
+        (
+            std::mem::take(&mut self.access),
+            std::mem::take(&mut self.refresh),
+        )
+    }
 }
 
 const MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64: i64 = MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES as i64;
@@ -291,11 +316,90 @@ impl std::fmt::Debug for TeslaMateLegacyTokenCiphertexts {
 }
 
 impl TeslaMateSnapshotSession {
-    pub(crate) async fn finish(self) -> Result<(), TeslaMateReaderError> {
-        let rollback = self.client.batch_execute("ROLLBACK").await;
-        drop(self.client);
-        let _ = self.connection_task.await;
-        rollback.map_err(Into::into)
+    fn new(client: Client, connection_task: tokio::task::JoinHandle<()>) -> Self {
+        Self {
+            client: Some(client),
+            connection_task: Some(connection_task),
+        }
+    }
+
+    pub(crate) fn client(&self) -> &Client {
+        self.client
+            .as_ref()
+            .expect("snapshot client exists until session finish")
+    }
+
+    pub(crate) async fn finish(mut self) -> Result<(), TeslaMateReaderError> {
+        let rollback = match self.client.as_ref() {
+            Some(client) => {
+                match timeout(SNAPSHOT_ROLLBACK_TIMEOUT, client.batch_execute("ROLLBACK")).await {
+                    Ok(result) => result.map_err(TeslaMateReaderError::Postgres),
+                    Err(_) => Err(TeslaMateReaderError::SnapshotRollbackTimedOut),
+                }
+            }
+            None => Ok(()),
+        };
+        self.client.take();
+        let shutdown = finish_connection_task(
+            &mut self.connection_task,
+            SNAPSHOT_CONNECTION_SHUTDOWN_TIMEOUT,
+        )
+        .await;
+        rollback.and(shutdown)
+    }
+}
+
+impl Drop for TeslaMateSnapshotSession {
+    fn drop(&mut self) {
+        self.client.take();
+        abort_connection_task(&mut self.connection_task);
+    }
+}
+
+fn abort_connection_task(task: &mut Option<tokio::task::JoinHandle<()>>) {
+    if let Some(task) = task.take() {
+        task.abort();
+    }
+}
+
+async fn finish_connection_task(
+    task: &mut Option<tokio::task::JoinHandle<()>>,
+    shutdown_timeout: Duration,
+) -> Result<(), TeslaMateReaderError> {
+    let Some(connection_task) = task.as_mut() else {
+        return Ok(());
+    };
+    match timeout(shutdown_timeout, connection_task).await {
+        Ok(result) => {
+            task.take();
+            result.map_err(|error| TeslaMateReaderError::SnapshotConnectionTaskFailed {
+                cancelled: error.is_cancelled(),
+                panicked: error.is_panic(),
+            })
+        }
+        Err(_) => {
+            task.as_ref()
+                .expect("connection task remains owned after shutdown timeout")
+                .abort();
+            let aborted = timeout(
+                shutdown_timeout,
+                task.as_mut()
+                    .expect("connection task remains owned while aborting"),
+            )
+            .await;
+            task.take();
+            match aborted {
+                Ok(Ok(())) => Err(TeslaMateReaderError::SnapshotConnectionShutdownTimedOut),
+                Ok(Err(error)) if error.is_cancelled() => {
+                    Err(TeslaMateReaderError::SnapshotConnectionShutdownTimedOut)
+                }
+                Ok(Err(error)) => Err(TeslaMateReaderError::SnapshotConnectionTaskFailed {
+                    cancelled: error.is_cancelled(),
+                    panicked: error.is_panic(),
+                }),
+                Err(_) => Err(TeslaMateReaderError::SnapshotConnectionAbortTimedOut),
+            }
+        }
     }
 }
 
@@ -391,13 +495,10 @@ pub async fn read_legacy_token_ciphertexts(
 ) -> Result<TeslaMateLegacyTokenCiphertexts, TeslaMateReaderError> {
     limits.validate()?;
     let (client, connection_task) = connect_source(source, password, limits).await?;
-    let session = TeslaMateSnapshotSession {
-        client,
-        connection_task,
-    };
+    let session = TeslaMateSnapshotSession::new(client, connection_task);
     let result = async {
-        prepare_read_only_snapshot(&session.client, source, limits).await?;
-        read_legacy_token_ciphertexts_in_client(&session.client).await
+        prepare_read_only_snapshot(session.client(), source, limits).await?;
+        read_legacy_token_ciphertexts_in_client(session.client()).await
     }
     .await;
     let finish = session.finish().await;
@@ -511,22 +612,15 @@ pub(crate) async fn open_snapshot_session_with_schema(
     }
     let selected_car_id = selected_source_car_id(selected_car_id)?;
     let (client, connection_task) = connect_source(source, password, limits).await?;
-    let schema = match prepare_read_only_snapshot(&client, source, limits).await {
+    let session = TeslaMateSnapshotSession::new(client, connection_task);
+    let schema = match prepare_read_only_snapshot(session.client(), source, limits).await {
         Ok(schema) => schema,
         Err(error) => {
-            drop(client);
-            let _ = connection_task.await;
+            let _ = session.finish().await;
             return Err(error);
         }
     };
-    Ok((
-        TeslaMateSnapshotSession {
-            client,
-            connection_task,
-        },
-        selected_car_id,
-        schema,
-    ))
+    Ok((session, selected_car_id, schema))
 }
 
 /// Open and validate the owner transaction for a future parallel capture.
@@ -542,7 +636,7 @@ pub(crate) async fn open_exported_snapshot_lease(
     let (session, selected_car_id, schema) =
         open_snapshot_session_with_schema(source, password, selected_car_id, limits).await?;
     let exported = session
-        .client
+        .client()
         .query_one("SELECT pg_export_snapshot() AS snapshot_id", &[])
         .await
         .and_then(|row| row.try_get::<_, String>("snapshot_id"));
@@ -593,28 +687,32 @@ pub(crate) async fn open_snapshot_capture_lane(
     limits.validate()?;
     let snapshot_sql = snapshot_import_sql(snapshot_id)?;
     let (client, connection_task) = connect_source(source, password, limits).await?;
+    let session = TeslaMateSnapshotSession::new(client, connection_task);
     let prepared = async {
-        client.batch_execute(source.session_sql()[0]).await?;
-        client.batch_execute(source.session_sql()[1]).await?;
-        client.batch_execute(&snapshot_sql).await?;
+        session
+            .client()
+            .batch_execute(source.session_sql()[0])
+            .await?;
+        session
+            .client()
+            .batch_execute(source.session_sql()[1])
+            .await?;
+        session.client().batch_execute(&snapshot_sql).await?;
         for statement in &source.session_sql()[2..] {
-            client.batch_execute(statement).await?;
+            session.client().batch_execute(statement).await?;
         }
-        client
+        session
+            .client()
             .batch_execute(&copy_statement_timeout_sql(limits.copy_statement_timeout))
             .await?;
-        validate_source_schema(&client).await
+        validate_source_schema(session.client()).await
     }
     .await;
     if let Err(error) = prepared {
-        drop(client);
-        let _ = connection_task.await;
+        let _ = session.finish().await;
         return Err(error);
     }
-    Ok(TeslaMateSnapshotSession {
-        client,
-        connection_task,
-    })
+    Ok(session)
 }
 
 pub(crate) fn snapshot_import_sql(snapshot_id: &str) -> Result<String, TeslaMateReaderError> {
@@ -627,37 +725,32 @@ pub(crate) fn snapshot_import_sql(snapshot_id: &str) -> Result<String, TeslaMate
 /// table and every SQL fragment are fixed and `selected_car_id` is already an
 /// `i16` from the validated source domain.
 pub(crate) fn binary_copy_sql(table: SourceTable, selected_car_id: i16) -> String {
-    let query = render_projection_query(
-        table,
-        ProjectionQueryBindings {
-            last_id: 0,
-            limit: ProjectionLimit::All,
-            selected_car_id,
-        },
-    );
+    let query = render_streaming_projection_query(table, selected_car_id);
     format!("COPY ({query}) TO STDOUT WITH (FORMAT BINARY)")
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProjectionLimit {
-    All,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ProjectionQueryBindings {
-    last_id: i32,
-    limit: ProjectionLimit,
-    selected_car_id: i16,
 }
 
 /// Render the canonical reviewed projection with typed, integer-only bindings.
 /// Unknown placeholder tokens remain unchanged so a future schema-template
 /// change fails at PostgreSQL prepare time instead of being silently rewritten.
-fn render_projection_query(table: SourceTable, bindings: ProjectionQueryBindings) -> String {
-    render_projection_template(projection(table).sql, bindings)
+fn render_streaming_projection_query(table: SourceTable, selected_car_id: i16) -> String {
+    render_projection_template(projection(table).sql, 0, "ALL", selected_car_id)
 }
 
-fn render_projection_template(template: &str, bindings: ProjectionQueryBindings) -> String {
+fn render_bounded_projection_query(table: SourceTable, selected_car_id: i16, limit: i64) -> String {
+    render_projection_template(
+        projection(table).sql,
+        0,
+        &limit.to_string(),
+        selected_car_id,
+    )
+}
+
+fn render_projection_template(
+    template: &str,
+    last_id: i32,
+    limit: &str,
+    selected_car_id: i16,
+) -> String {
     let mut rendered = String::with_capacity(template.len() + 16);
     let bytes = template.as_bytes();
     let mut index = 0;
@@ -675,11 +768,9 @@ fn render_projection_template(template: &str, bindings: ProjectionQueryBindings)
         }
         let token = &template[start..index];
         match token {
-            "$1" => rendered.push_str(&bindings.last_id.to_string()),
-            "$2" => match bindings.limit {
-                ProjectionLimit::All => rendered.push_str("ALL"),
-            },
-            "$3" => rendered.push_str(&bindings.selected_car_id.to_string()),
+            "$1" => rendered.push_str(&last_id.to_string()),
+            "$2" => rendered.push_str(limit),
+            "$3" => rendered.push_str(&selected_car_id.to_string()),
             _ => rendered.push_str(token),
         }
     }
@@ -700,14 +791,7 @@ pub(crate) fn related_positions_binary_copy_sql(
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(",");
-    let positions = render_projection_query(
-        SourceTable::Positions,
-        ProjectionQueryBindings {
-            last_id: 0,
-            limit: ProjectionLimit::All,
-            selected_car_id,
-        },
-    );
+    let positions = render_streaming_projection_query(SourceTable::Positions, selected_car_id);
     let query = format!(
         "SELECT \"related\".* FROM ({positions}) AS \"related\" \
          WHERE \"related\".\"id\" = ANY(ARRAY[{ids}]::int4[]) \
@@ -741,16 +825,18 @@ fn open_position_projection_template(branch: OpenPositionBranch) -> String {
     format!("{before_ordering}  AND {predicate}\n{ORDERING}{after_ordering}")
 }
 
-fn open_position_branch_copy_sql(selected_car_id: i16, branch: OpenPositionBranch) -> String {
+fn open_position_branch_copy_sql(
+    selected_car_id: i16,
+    branch: OpenPositionBranch,
+    limit: i64,
+) -> String {
     let template = open_position_projection_template(branch);
-    let query = render_projection_template(
-        &template,
-        ProjectionQueryBindings {
-            last_id: 0,
-            limit: ProjectionLimit::All,
-            selected_car_id,
-        },
-    );
+    let query = render_projection_template(&template, 0, &limit.to_string(), selected_car_id);
+    format!("COPY ({query}) TO STDOUT WITH (FORMAT BINARY)")
+}
+
+fn bounded_position_binary_copy_sql(selected_car_id: i16, limit: i64) -> String {
+    let query = render_bounded_projection_query(SourceTable::Positions, selected_car_id, limit);
     format!("COPY ({query}) TO STDOUT WITH (FORMAT BINARY)")
 }
 
@@ -764,7 +850,7 @@ pub async fn read_selected_car(
         open_snapshot_session(source, password, selected_car_id, limits).await?;
     let mut retained_rows = 0_usize;
     let result = read_cars(
-        &session.client,
+        session.client(),
         selected_car_id_i16,
         limits,
         &mut retained_rows,
@@ -794,7 +880,7 @@ pub async fn read_open_session(
 ) -> Result<TeslaMateOpenSession, TeslaMateReaderError> {
     let (session, selected_car_id_i16) =
         open_snapshot_session(source, password, selected_car_id, limits).await?;
-    let result = read_open_session_in_client(&session.client, selected_car_id_i16, limits).await;
+    let result = read_open_session_in_client(session.client(), selected_car_id_i16, limits).await;
     let finish = session.finish().await;
     match (result, finish) {
         (Err(error), _) => Err(error),
@@ -810,7 +896,7 @@ pub(crate) async fn read_open_session_in_client(
 ) -> Result<TeslaMateOpenSession, TeslaMateReaderError> {
     let mut retained_rows = 0_usize;
     let drives = read_open_drives(client, selected_car_id, limits, &mut retained_rows).await?;
-    let drive = resolve_open_row("drives", drives);
+    let drive = resolve_open_row("drives", drives)?;
     let positions = read_open_positions(
         client,
         selected_car_id,
@@ -824,14 +910,14 @@ pub(crate) async fn read_open_session_in_client(
         .partition(|position| position.drive_id.is_some());
     let processes =
         read_open_charging_processes(client, selected_car_id, limits, &mut retained_rows).await?;
-    let charge = resolve_open_row("charging_processes", processes);
+    let charge = resolve_open_row("charging_processes", processes)?;
     let charge_samples = if charge.is_some() {
         read_open_charges(client, selected_car_id, limits, &mut retained_rows).await?
     } else {
         Vec::new()
     };
     let states = read_open_states(client, selected_car_id, limits, &mut retained_rows).await?;
-    let state = resolve_open_row("states", states);
+    let state = resolve_open_row("states", states)?;
     let watermarks = read_source_watermarks(client, selected_car_id).await?;
     let result = TeslaMateOpenSession {
         car_id: i64::from(selected_car_id),
@@ -853,18 +939,14 @@ pub(crate) async fn read_open_session_in_client(
 /// Multiple unfinished rows are ambiguous stale state, not a valid active session.
 /// Historical rows were captured separately and remain intact; a later live poll
 /// establishes the authoritative session.
-fn resolve_open_row<T>(table: &'static str, mut rows: Vec<T>) -> Option<T> {
+fn resolve_open_row<T>(
+    table: &'static str,
+    mut rows: Vec<T>,
+) -> Result<Option<T>, TeslaMateReaderError> {
     match rows.len() {
-        0 => None,
-        1 => rows.pop(),
-        row_count => {
-            tracing::warn!(
-                table,
-                row_count,
-                "TeslaMate open session is ambiguous; ignoring open rows until live collection establishes truth"
-            );
-            None
-        }
+        0 => Ok(None),
+        1 => Ok(rows.pop()),
+        _ => Err(TeslaMateReaderError::MultipleOpenRows { table }),
     }
 }
 
@@ -902,12 +984,14 @@ async fn read_open_positions(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<Vec<TeslaMatePosition>, TeslaMateReaderError> {
+    let mut materialized_positions = 0_usize;
     let mut positions = read_open_position_branch(
         client,
         selected_car_id,
         OpenPositionBranch::Standalone,
         limits,
         retained_rows,
+        &mut materialized_positions,
     )
     .await?;
     if let Some(active_drive_id) = active_drive_id {
@@ -918,6 +1002,7 @@ async fn read_open_positions(
                 OpenPositionBranch::ActiveDrive(active_drive_id),
                 limits,
                 retained_rows,
+                &mut materialized_positions,
             )
             .await?,
         );
@@ -932,9 +1017,18 @@ async fn read_open_position_branch(
     branch: OpenPositionBranch,
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
+    materialized_positions: &mut usize,
 ) -> Result<Vec<TeslaMatePosition>, TeslaMateReaderError> {
+    let remaining_open = MAX_MATERIALIZED_OPEN_POSITIONS.saturating_sub(*materialized_positions);
+    let remaining_rows = limits.maximum_rows.saturating_sub(*retained_rows);
+    let allowed = remaining_open.min(remaining_rows);
+    let query_limit = i64::try_from(allowed.saturating_add(1)).unwrap_or(i64::MAX);
     let stream = client
-        .copy_out(&open_position_branch_copy_sql(selected_car_id, branch))
+        .copy_out(&open_position_branch_copy_sql(
+            selected_car_id,
+            branch,
+            query_limit,
+        ))
         .await?;
     let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
         stream,
@@ -942,7 +1036,15 @@ async fn read_open_position_branch(
     ));
     let mut positions = Vec::new();
     while let Some(row) = rows.as_mut().try_next().await? {
+        if *materialized_positions >= MAX_MATERIALIZED_OPEN_POSITIONS {
+            return Err(
+                TeslaMateReaderError::MaterializedOpenPositionLimitExceeded {
+                    maximum: MAX_MATERIALIZED_OPEN_POSITIONS,
+                },
+            );
+        }
         retain_row(retained_rows, limits.maximum_rows)?;
+        *materialized_positions += 1;
         positions.push(decode_binary_position(&row)?);
     }
     Ok(positions)
@@ -1159,14 +1261,15 @@ pub async fn read_history(
     }
     let selected_car_id = selected_source_car_id(selected_car_id)?;
     let (client, connection_task) = connect_source(source, password, limits).await?;
+    let session = TeslaMateSnapshotSession::new(client, connection_task);
 
-    let result = read_history_in_session(&client, source, selected_car_id, limits).await;
-    let rollback = client.batch_execute("ROLLBACK").await;
-    drop(client);
-    let _ = connection_task.await;
-    let history = result?;
-    rollback?;
-    Ok(history)
+    let result = read_history_in_session(session.client(), source, selected_car_id, limits).await;
+    let finish = session.finish().await;
+    match (result, finish) {
+        (Err(error), _) => Err(error),
+        (Ok(history), Ok(())) => Ok(history),
+        (Ok(_), Err(error)) => Err(error),
+    }
 }
 
 /// Capture a source-consistent TeslaMate snapshot into one private local
@@ -1291,9 +1394,48 @@ fn discard_stage_after_error(
 ) -> TeslaMateReaderError {
     match stage.discard() {
         Ok(()) => primary,
-        Err(_) => TeslaMateReaderError::StageCleanupFailure {
+        Err(error) => TeslaMateReaderError::StageCleanupFailure {
             primary: Box::new(primary),
+            cleanup: TeslaMateStageCleanupFailureKind::from(&error),
         },
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TeslaMateStageCleanupFailureKind {
+    MissingOrChanged,
+    UnsafePath,
+    RemoveFailed,
+    Other,
+}
+
+impl From<&TeslaMateStageError> for TeslaMateStageCleanupFailureKind {
+    fn from(error: &TeslaMateStageError) -> Self {
+        match error {
+            TeslaMateStageError::InspectPath { .. }
+            | TeslaMateStageError::StagePathIdentityChanged(_)
+            | TeslaMateStageError::DirectoryIdentityChanged(_) => Self::MissingOrChanged,
+            TeslaMateStageError::SymlinkPath(_)
+            | TeslaMateStageError::ExpectedDirectory(_)
+            | TeslaMateStageError::ExpectedFile(_)
+            | TeslaMateStageError::UnexpectedLinkCount { .. }
+            | TeslaMateStageError::UnexpectedOwner { .. }
+            | TeslaMateStageError::InsecurePermissions { .. }
+            | TeslaMateStageError::InvalidStagePath => Self::UnsafePath,
+            TeslaMateStageError::RemoveStage { .. } => Self::RemoveFailed,
+            _ => Self::Other,
+        }
+    }
+}
+
+impl std::fmt::Display for TeslaMateStageCleanupFailureKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::MissingOrChanged => "missing-or-changed",
+            Self::UnsafePath => "unsafe-path",
+            Self::RemoveFailed => "remove-failed",
+            Self::Other => "other",
+        })
     }
 }
 
@@ -1343,22 +1485,27 @@ async fn capture_history_to_stage_internal(
             return Err(discard_stage_after_error(stage, error));
         }
     };
+    let session = TeslaMateSnapshotSession::new(client, connection_task);
 
-    let capture =
-        capture_history_in_session(&client, source, selected_car_id, limits, &mut stage).await;
+    let capture = capture_history_in_session(
+        session.client(),
+        source,
+        selected_car_id,
+        limits,
+        &mut stage,
+    )
+    .await;
     let open_session = if capture.is_ok() {
-        Some(read_open_session_in_client(&client, selected_car_id, limits).await)
+        Some(read_open_session_in_client(session.client(), selected_car_id, limits).await)
     } else {
         None
     };
     let token = if include_legacy_token && open_session.as_ref().is_some_and(Result::is_ok) {
-        Some(read_legacy_token_ciphertexts_in_client(&client).await)
+        Some(read_legacy_token_ciphertexts_in_client(session.client()).await)
     } else {
         None
     };
-    let rollback = client.batch_execute("ROLLBACK").await;
-    drop(client);
-    let _ = connection_task.await;
+    let rollback = session.finish().await;
     if let Err(error) = capture {
         return Err(discard_stage_after_error(stage, error));
     }
@@ -1377,10 +1524,7 @@ async fn capture_history_to_stage_internal(
         None => None,
     };
     if let Err(error) = rollback {
-        return Err(discard_stage_after_error(
-            stage,
-            TeslaMateReaderError::Postgres(error),
-        ));
+        return Err(discard_stage_after_error(stage, error));
     }
     if let Err(error) = stage.seal() {
         return Err(discard_stage_after_error(
@@ -1433,7 +1577,7 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
         .parallel_copy_lanes
         .min(TeslaMateStageTable::ALL.len());
     let position_max_id = match source_max_id(
-        &owner.session.client,
+        owner.session.client(),
         TeslaMateStageTable::Positions,
         selected_car_id,
     )
@@ -1446,7 +1590,7 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
         }
     };
     let charge_max_id = match source_max_id(
-        &owner.session.client,
+        owner.session.client(),
         TeslaMateStageTable::Charges,
         selected_car_id,
     )
@@ -1481,43 +1625,24 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
     }
     drop(sender);
 
-    let mut capture_error = None;
-    let mut selected_car_seen = false;
-    while let Some(page) = receiver.recv().await {
-        if page.table == TeslaMateStageTable::Cars && !page.rows.is_empty() {
-            selected_car_seen = true;
-        }
-        if capture_error.is_none()
-            && let Err(error) = stage.insert_encoded_json_page(page.table, page.rows)
-        {
-            capture_error = Some(TeslaMateReaderError::Stage(error));
-        }
-    }
-    while let Some(result) = lanes.join_next().await {
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) if capture_error.is_none() => capture_error = Some(error),
-            Ok(Err(_)) => {}
-            Err(error) if capture_error.is_none() => {
-                capture_error = Some(TeslaMateReaderError::ParallelLaneFailed(error.to_string()))
-            }
-            Err(_) => {}
-        }
-    }
-    let open_session = if capture_error.is_none() {
-        Some(read_open_session_in_client(&owner.session.client, selected_car_id, limits).await)
+    let capture = coordinate_parallel_capture(&mut stage, &mut receiver, &mut lanes).await;
+    let open_session = if capture.is_ok() {
+        Some(read_open_session_in_client(owner.session.client(), selected_car_id, limits).await)
     } else {
         None
     };
     let token = if include_legacy_token && open_session.as_ref().is_some_and(Result::is_ok) {
-        Some(read_legacy_token_ciphertexts_in_client(&owner.session.client).await)
+        Some(read_legacy_token_ciphertexts_in_client(owner.session.client()).await)
     } else {
         None
     };
     let owner_result = owner.finish().await;
-    if let Some(error) = capture_error {
-        return Err(discard_stage_after_error(stage, error));
-    }
+    let selected_car_seen = match capture {
+        Ok(selected_car_seen) => selected_car_seen,
+        Err(error) => {
+            return Err(discard_stage_after_error(stage, error));
+        }
+    };
     let open_session = match open_session {
         Some(Ok(session)) => session,
         Some(Err(error)) => {
@@ -1550,6 +1675,75 @@ async fn capture_history_to_stage_parallel_with_legacy_token(
         ));
     }
     Ok((stage, token, open_session))
+}
+
+async fn coordinate_parallel_capture(
+    stage: &mut TeslaMateStage,
+    receiver: &mut mpsc::Receiver<RawStagePage>,
+    lanes: &mut JoinSet<Result<(), TeslaMateReaderError>>,
+) -> Result<bool, TeslaMateReaderError> {
+    let mut receiver_closed = false;
+    let mut selected_car_seen = false;
+    let mut primary = None;
+
+    while !receiver_closed || !lanes.is_empty() {
+        tokio::select! {
+            biased;
+            lane = lanes.join_next(), if !lanes.is_empty() => {
+                match lane {
+                    Some(Ok(Ok(()))) => {}
+                    Some(Ok(Err(error))) => {
+                        primary = Some(error);
+                        break;
+                    }
+                    Some(Err(error)) => {
+                        primary = Some(parallel_lane_join_error(error));
+                        break;
+                    }
+                    None => {}
+                }
+            }
+            page = receiver.recv(), if !receiver_closed => {
+                match page {
+                    Some(page) => {
+                        if page.table == TeslaMateStageTable::Cars && !page.rows.is_empty() {
+                            selected_car_seen = true;
+                        }
+                        if let Err(error) = stage.insert_encoded_json_page(page.table, page.rows) {
+                            primary = Some(TeslaMateReaderError::Stage(error));
+                            break;
+                        }
+                    }
+                    None => receiver_closed = true,
+                }
+            }
+        }
+    }
+
+    if let Some(primary) = primary {
+        receiver.close();
+        lanes.abort_all();
+        while receiver.try_recv().is_ok() {}
+        while lanes.join_next().await.is_some() {}
+        return Err(primary);
+    }
+
+    while let Some(result) = lanes.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => return Err(error),
+            Err(error) => return Err(parallel_lane_join_error(error)),
+        }
+    }
+    Ok(selected_car_seen)
+}
+
+fn parallel_lane_join_error(error: tokio::task::JoinError) -> TeslaMateReaderError {
+    if error.is_panic() {
+        TeslaMateReaderError::ParallelLanePanicked
+    } else {
+        TeslaMateReaderError::ParallelLaneCancelled
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1639,7 +1833,8 @@ async fn capture_snapshot_lane(
     let session = open_snapshot_capture_lane(source, password, snapshot_id, limits).await?;
     let result = async {
         for job in jobs {
-            capture_raw_table_pages(&session.client, job, selected_car_id, limits, &sender).await?;
+            capture_raw_table_pages(session.client(), job, selected_car_id, limits, &sender)
+                .await?;
         }
         Ok::<(), TeslaMateReaderError>(())
     }
@@ -2734,19 +2929,65 @@ async fn read_positions(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<Vec<TeslaMatePosition>, TeslaMateReaderError> {
+    let remaining_rows = limits.maximum_rows.saturating_sub(*retained_rows);
+    let maximum = MAX_MATERIALIZED_HISTORY_POSITIONS.min(remaining_rows);
+    let count_sql = materialized_position_count_sql(maximum);
+    let count: i64 = client
+        .query_one(&count_sql, &[&selected_car_id])
+        .await?
+        .try_get("position_count")?;
+    let count = validate_materialized_history_position_count(count, maximum)?;
+    let query_limit = i64::try_from(maximum.saturating_add(1)).unwrap_or(i64::MAX);
     let stream = client
-        .copy_out(&binary_copy_sql(SourceTable::Positions, selected_car_id))
+        .copy_out(&bounded_position_binary_copy_sql(
+            selected_car_id,
+            query_limit,
+        ))
         .await?;
     let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
         stream,
         position_copy_types()
     ));
-    let mut positions = Vec::new();
+    let mut positions = Vec::with_capacity(count);
     while let Some(row) = rows.as_mut().try_next().await? {
+        if positions.len() >= maximum {
+            return Err(
+                TeslaMateReaderError::MaterializedHistoryPositionLimitExceeded {
+                    maximum,
+                    count: positions.len().saturating_add(1),
+                },
+            );
+        }
         retain_row(retained_rows, limits.maximum_rows)?;
         positions.push(decode_binary_position(&row)?);
     }
     Ok(positions)
+}
+
+fn materialized_position_count_sql(maximum: usize) -> String {
+    let limit = maximum.saturating_add(1);
+    format!(
+        "SELECT COUNT(*)::bigint AS position_count FROM (\
+         SELECT 1 FROM \"public\".\"positions\" \
+         WHERE \"car_id\" = $1 ORDER BY \"id\" ASC LIMIT {limit}\
+         ) AS bounded_positions"
+    )
+}
+
+fn validate_materialized_history_position_count(
+    count: i64,
+    maximum: usize,
+) -> Result<usize, TeslaMateReaderError> {
+    let count = usize::try_from(count).map_err(|_| TeslaMateReaderError::InvalidSourceCount {
+        column: "positions",
+        count,
+    })?;
+    if count > maximum {
+        return Err(
+            TeslaMateReaderError::MaterializedHistoryPositionLimitExceeded { maximum, count },
+        );
+    }
+    Ok(count)
 }
 
 pub(crate) async fn read_charging_processes(
@@ -3805,10 +4046,11 @@ fn cell(
 
 #[derive(Debug, Error)]
 pub enum TeslaMateReaderError {
-    #[error("TeslaMate migration failed: {primary}; staging cleanup failed")]
+    #[error("TeslaMate migration failed: {primary}; staging cleanup failed ({cleanup})")]
     StageCleanupFailure {
         #[source]
         primary: Box<TeslaMateReaderError>,
+        cleanup: TeslaMateStageCleanupFailureKind,
     },
     #[error("TeslaMate PostgreSQL queries are forbidden after Hub handoff")]
     SourceQueriesForbiddenAfterHandoff,
@@ -3861,18 +4103,36 @@ pub enum TeslaMateReaderError {
     ConnectTimedOut,
     #[error("TeslaMate PostgreSQL COPY statement timeout must be between 60 seconds and 24 hours")]
     InvalidCopyStatementTimeout,
+    #[error("TeslaMate PostgreSQL snapshot rollback timed out")]
+    SnapshotRollbackTimedOut,
+    #[error("TeslaMate PostgreSQL connection task did not stop before it was aborted")]
+    SnapshotConnectionShutdownTimedOut,
+    #[error("TeslaMate PostgreSQL connection task did not stop after abort")]
+    SnapshotConnectionAbortTimedOut,
+    #[error(
+        "TeslaMate PostgreSQL connection task failed (cancelled={cancelled}, panicked={panicked})"
+    )]
+    SnapshotConnectionTaskFailed { cancelled: bool, panicked: bool },
     #[error("TeslaMate schema has no migration version")]
     MissingMigrationVersion,
     #[error("TeslaMate exported an invalid PostgreSQL snapshot identifier")]
     InvalidExportedSnapshot,
-    #[error("TeslaMate parallel capture lane failed: {0}")]
-    ParallelLaneFailed(String),
+    #[error("TeslaMate parallel capture lane panicked")]
+    ParallelLanePanicked,
+    #[error("TeslaMate parallel capture lane was cancelled")]
+    ParallelLaneCancelled,
     #[error("TeslaMate staged row serialization failed: {0}")]
     SerializeStageRow(#[from] serde_json::Error),
     #[error("TeslaMate {table} page did not advance its keyset cursor")]
     NonProgressingPage { table: &'static str },
     #[error("TeslaMate source exceeds the {maximum} row import limit")]
     MaximumRowsExceeded { maximum: usize },
+    #[error(
+        "TeslaMate compatibility history has {count} positions, exceeding the {maximum} materialization limit"
+    )]
+    MaterializedHistoryPositionLimitExceeded { maximum: usize, count: usize },
+    #[error("TeslaMate open session exceeds the {maximum} position materialization limit")]
+    MaterializedOpenPositionLimitExceeded { maximum: usize },
     #[error("TeslaMate has more than one open row in {table}")]
     MultipleOpenRows { table: &'static str },
     #[error("TeslaMate open-session projection validation failed: {0}")]
@@ -4063,10 +4323,24 @@ mod tests {
     }
 
     #[test]
+    fn legacy_token_ciphertexts_are_redacted_and_zeroizable() {
+        let mut ciphertexts = TeslaMateLegacyTokenCiphertexts {
+            access: b"access-ciphertext-marker".to_vec(),
+            refresh: b"refresh-ciphertext-marker".to_vec(),
+        };
+        let debug = format!("{ciphertexts:?}");
+        assert!(!debug.contains("access-ciphertext-marker"));
+        assert!(!debug.contains("refresh-ciphertext-marker"));
+        ciphertexts.zeroize();
+        assert!(ciphertexts.access.iter().all(|byte| *byte == 0));
+        assert!(ciphertexts.refresh.iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
     fn cleanup_failure_is_typed_and_keeps_the_primary_reader_error() {
         let temporary = tempfile::tempdir().expect("temporary stage directory");
         let stage = TeslaMateStage::create(
-            temporary.path(),
+            temporary.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 1,
                 max_stage_bytes: 64 * 1024,
@@ -4078,8 +4352,9 @@ mod tests {
         std::fs::remove_file(path).expect("remove stage before cleanup");
         assert!(matches!(
             discard_stage_after_error(stage, TeslaMateReaderError::InvalidSelectedCarId),
-            TeslaMateReaderError::StageCleanupFailure { primary }
+            TeslaMateReaderError::StageCleanupFailure { primary, cleanup }
                 if matches!(*primary, TeslaMateReaderError::InvalidSelectedCarId)
+                    && cleanup == TeslaMateStageCleanupFailureKind::MissingOrChanged
         ));
     }
 
@@ -4159,6 +4434,162 @@ mod tests {
     }
 
     #[test]
+    fn open_row_resolution_fails_closed_on_ambiguity() {
+        assert_eq!(resolve_open_row::<i32>("drives", vec![]).unwrap(), None);
+        assert_eq!(resolve_open_row("drives", vec![7]).unwrap(), Some(7));
+        assert!(matches!(
+            resolve_open_row("drives", vec![7, 8]),
+            Err(TeslaMateReaderError::MultipleOpenRows { table: "drives" })
+        ));
+    }
+
+    #[test]
+    fn position_materialization_queries_are_finite_and_cap_plus_one() {
+        assert_eq!(
+            validate_materialized_history_position_count(100, 100).unwrap(),
+            100
+        );
+        assert!(matches!(
+            validate_materialized_history_position_count(101, 100),
+            Err(
+                TeslaMateReaderError::MaterializedHistoryPositionLimitExceeded {
+                    maximum: 100,
+                    count: 101
+                }
+            )
+        ));
+        let history = bounded_position_binary_copy_sql(7, 101);
+        assert!(history.contains("\"source\".\"car_id\" = 7"));
+        assert!(history.contains("LIMIT 101"));
+        assert!(!history.contains("LIMIT ALL"));
+        let count = materialized_position_count_sql(100);
+        assert!(count.contains("COUNT(*)::bigint"));
+        assert!(count.contains("WHERE \"car_id\" = $1"));
+        assert!(count.contains("LIMIT 101"));
+
+        let open = open_position_branch_copy_sql(7, OpenPositionBranch::Standalone, 101);
+        assert!(open.contains("LIMIT 101"));
+        assert!(!open.contains("LIMIT ALL"));
+    }
+
+    #[tokio::test]
+    async fn connection_task_shutdown_is_bounded_and_abort_on_drop_is_exact() {
+        struct DropWitness(Option<tokio::sync::oneshot::Sender<()>>);
+        impl Drop for DropWitness {
+            fn drop(&mut self) {
+                if let Some(sender) = self.0.take() {
+                    let _ = sender.send(());
+                }
+            }
+        }
+
+        let mut completed = Some(tokio::spawn(async {}));
+        assert!(
+            finish_connection_task(&mut completed, Duration::from_millis(50))
+                .await
+                .is_ok()
+        );
+        assert!(completed.is_none());
+
+        let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
+        let mut cancelled_finish = Some(tokio::spawn(async move {
+            let _witness = DropWitness(Some(cancelled_tx));
+            std::future::pending::<()>().await;
+        }));
+        tokio::task::yield_now().await;
+        {
+            let finish = finish_connection_task(&mut cancelled_finish, Duration::from_secs(1));
+            tokio::pin!(finish);
+            assert!(
+                timeout(Duration::from_millis(20), &mut finish)
+                    .await
+                    .is_err()
+            );
+        }
+        assert!(
+            cancelled_finish.is_some(),
+            "a cancelled finish future must leave the task owned for session Drop"
+        );
+        abort_connection_task(&mut cancelled_finish);
+        timeout(Duration::from_secs(1), cancelled_rx)
+            .await
+            .expect("cancelled finish remains abortable")
+            .expect("cancelled-finish drop witness");
+
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+        let mut pending = Some(tokio::spawn(async move {
+            let _witness = DropWitness(Some(dropped_tx));
+            std::future::pending::<()>().await;
+        }));
+        tokio::task::yield_now().await;
+        assert!(matches!(
+            finish_connection_task(&mut pending, Duration::from_millis(20)).await,
+            Err(TeslaMateReaderError::SnapshotConnectionShutdownTimedOut)
+        ));
+        timeout(Duration::from_secs(1), dropped_rx)
+            .await
+            .expect("aborted task drops its witness")
+            .expect("drop witness sender");
+        assert!(pending.is_none());
+
+        let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
+        let mut unfinished = Some(tokio::spawn(async move {
+            let _witness = DropWitness(Some(drop_tx));
+            std::future::pending::<()>().await;
+        }));
+        tokio::task::yield_now().await;
+        abort_connection_task(&mut unfinished);
+        timeout(Duration::from_secs(1), drop_rx)
+            .await
+            .expect("drop aborts task")
+            .expect("drop witness sender");
+        assert!(unfinished.is_none());
+    }
+
+    #[tokio::test]
+    async fn first_parallel_lane_error_aborts_and_drains_siblings() {
+        struct DropWitness(Option<tokio::sync::oneshot::Sender<()>>);
+        impl Drop for DropWitness {
+            fn drop(&mut self) {
+                if let Some(sender) = self.0.take() {
+                    let _ = sender.send(());
+                }
+            }
+        }
+
+        let temporary = tempfile::tempdir().expect("temporary stage directory");
+        let mut stage = TeslaMateStage::create(
+            temporary.path().join("imports"),
+            TeslaMateStageLimits {
+                max_rows: 10,
+                max_stage_bytes: 128 * 1024,
+                minimum_free_bytes: 0,
+            },
+        )
+        .expect("stage");
+        let (sender, mut receiver) = mpsc::channel(1);
+        drop(sender);
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+        let mut lanes = JoinSet::new();
+        lanes.spawn(async { Err(TeslaMateReaderError::InvalidSelectedCarId) });
+        lanes.spawn(async move {
+            let _witness = DropWitness(Some(dropped_tx));
+            std::future::pending::<Result<(), TeslaMateReaderError>>().await
+        });
+        tokio::task::yield_now().await;
+
+        assert!(matches!(
+            coordinate_parallel_capture(&mut stage, &mut receiver, &mut lanes).await,
+            Err(TeslaMateReaderError::InvalidSelectedCarId)
+        ));
+        timeout(Duration::from_secs(1), dropped_rx)
+            .await
+            .expect("sibling aborted")
+            .expect("sibling drop witness");
+        assert!(lanes.is_empty());
+    }
+
+    #[test]
     fn selected_car_id_must_fit_the_source_smallint_domain() {
         assert!(matches!(
             selected_source_car_id(i64::from(i16::MAX)),
@@ -4198,7 +4629,7 @@ mod tests {
     }
 
     #[test]
-    fn binary_copy_statements_are_fixed_full_projection_queries() {
+    fn binary_copy_statements_are_fixed_streaming_projection_queries() {
         for table in SourceTable::ALL {
             let sql = binary_copy_sql(table, 17);
             assert!(sql.starts_with("COPY ("));
@@ -4224,10 +4655,10 @@ mod tests {
 
     #[test]
     fn open_position_copy_branches_are_fixed_and_do_not_use_exists() {
-        let standalone = open_position_branch_copy_sql(7, OpenPositionBranch::Standalone);
+        let standalone = open_position_branch_copy_sql(7, OpenPositionBranch::Standalone, 101);
         assert!(standalone.contains(
             "WHERE \"source\".\"id\" > 0\n  AND \"source\".\"car_id\" = 7\n  \
-             AND \"source\".\"drive_id\" IS NULL\nORDER BY \"source\".\"id\" ASC\nLIMIT ALL"
+             AND \"source\".\"drive_id\" IS NULL\nORDER BY \"source\".\"id\" ASC\nLIMIT 101"
         ));
         assert!(!standalone.contains("FROM (\nSELECT"));
         assert!(!standalone.contains("\"branch\""));
@@ -4236,10 +4667,10 @@ mod tests {
         assert!(!standalone.contains('$'));
         assert!(!standalone.contains(';'));
 
-        let active = open_position_branch_copy_sql(7, OpenPositionBranch::ActiveDrive(42));
+        let active = open_position_branch_copy_sql(7, OpenPositionBranch::ActiveDrive(42), 101);
         assert!(active.contains(
             "WHERE \"source\".\"id\" > 0\n  AND \"source\".\"car_id\" = 7\n  \
-             AND \"source\".\"drive_id\" = 42\nORDER BY \"source\".\"id\" ASC\nLIMIT ALL"
+             AND \"source\".\"drive_id\" = 42\nORDER BY \"source\".\"id\" ASC\nLIMIT 101"
         ));
         assert!(!active.contains("FROM (\nSELECT"));
         assert!(!active.contains("\"branch\""));
@@ -4262,7 +4693,7 @@ mod tests {
             );
             assert!(sql.contains("ORDER BY \"source\".\"id\" ASC"));
         }
-        let standalone = open_position_branch_copy_sql(7, OpenPositionBranch::Standalone);
+        let standalone = open_position_branch_copy_sql(7, OpenPositionBranch::Standalone, 101);
         assert!(standalone.contains("\"source\".\"drive_id\" IS NULL"));
         assert!(!standalone.contains("OR EXISTS"));
     }
@@ -4519,7 +4950,7 @@ mod tests {
     fn sealed_stage_round_trips_the_small_snapshot_reader_contract() {
         let temporary = tempfile::tempdir().expect("temporary stage directory");
         let mut stage = TeslaMateStage::create(
-            temporary.path(),
+            temporary.path().join("imports"),
             TeslaMateStageLimits {
                 max_rows: 10,
                 max_stage_bytes: 128 * 1024,
