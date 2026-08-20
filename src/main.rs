@@ -13,6 +13,7 @@ use std::future::Future;
 use clap::{Parser, Subcommand};
 use qrcode::{QrCode, render::unicode::Dense1x2};
 use rustix::fs::{FileType, Mode, OFlags, fstat, open};
+use rustix::process::getuid;
 use sha2::{Digest, Sha256};
 #[cfg(target_os = "macos")]
 use teslatlas_hub::hub_user_process::AdmittedUserHub;
@@ -1654,6 +1655,7 @@ fn read_tls_identity_file_after_open(
     let permission_mask = if private { 0o077 } else { 0o022 };
     if !FileType::from_raw_mode(held.st_mode).is_file()
         || (held.st_mode as u32 & permission_mask) != 0
+        || held.st_uid != getuid().as_raw()
     {
         return Err(std::io::Error::other("TLS identity file is unsafe"));
     }
@@ -1689,6 +1691,7 @@ fn read_tls_identity_file_after_open(
         || after.st_ctime_nsec != held.st_ctime_nsec
         || current.file_type().is_symlink()
         || !current.file_type().is_file()
+        || current.uid() != getuid().as_raw()
         || current.dev() != held.st_dev as u64
         || current.ino() != held.st_ino
         || current.nlink() != u64::from(held.st_nlink)

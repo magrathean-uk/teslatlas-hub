@@ -23238,6 +23238,12 @@ impl DeviceAccessToken {
         &self.0
     }
 
+    /// Move the bearer into an explicitly zeroizing response buffer without
+    /// making an ordinary secret copy.
+    pub(crate) fn take_bearer(&mut self) -> Zeroizing<String> {
+        Zeroizing::new(std::mem::take(&mut self.0))
+    }
+
     fn digest(&self) -> [u8; ACCESS_TOKEN_BYTES] {
         sha256_bytes(self.0.as_bytes())
     }

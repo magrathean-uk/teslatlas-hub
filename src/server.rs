@@ -541,13 +541,13 @@ async fn claim_pairing(
     };
     match state.store.claim_pairing(
         pairing_id,
-        &request.secret,
+        request.secret.as_str(),
         &request.device_name,
         claimed_at_ms,
     ) {
-        Ok(access) => Json(PairingClaimResponse {
+        Ok(mut access) => Json(PairingClaimResponse {
             device_id: access.device_id,
-            access_token: access.access_token.as_bearer().to_owned(),
+            access_token: access.access_token.take_bearer().into(),
         })
         .into_response(),
         // Do not distinguish a bad secret from expiry, reuse, or an unknown
@@ -987,14 +987,64 @@ struct Capabilities<'a> {
 
 #[derive(Deserialize)]
 struct PairingClaimRequest {
-    secret: String,
+    secret: PairingSecretInput,
     device_name: String,
 }
 
-#[derive(Serialize)]
 struct PairingClaimResponse {
     device_id: Uuid,
-    access_token: String,
+    access_token: PairingBearer,
+}
+
+impl Serialize for PairingClaimResponse {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let mut response = serializer.serialize_struct("PairingClaimResponse", 2)?;
+        response.serialize_field("device_id", &self.device_id)?;
+        response.serialize_field("access_token", self.access_token.0.as_str())?;
+        response.end()
+    }
+}
+
+struct PairingSecretInput(zeroize::Zeroizing<String>);
+
+impl<'de> Deserialize<'de> for PairingSecretInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(|secret| Self(zeroize::Zeroizing::new(secret)))
+    }
+}
+
+impl PairingSecretInput {
+    fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+struct PairingBearer(zeroize::Zeroizing<String>);
+
+impl From<zeroize::Zeroizing<String>> for PairingBearer {
+    fn from(value: zeroize::Zeroizing<String>) -> Self {
+        Self(value)
+    }
+}
+
+impl std::fmt::Debug for PairingBearer {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PairingBearer([redacted])")
+    }
+}
+
+impl std::fmt::Debug for PairingSecretInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PairingSecretInput([redacted])")
+    }
 }
 
 #[derive(Serialize)]
@@ -2157,6 +2207,22 @@ mod tests {
             .await
             .expect("replay response");
         assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn pairing_claim_credentials_are_zeroizing_and_redacted() {
+        let secret =
+            PairingSecretInput(zeroize::Zeroizing::new("pairing-secret-canary".to_owned()));
+        let bearer = PairingBearer(zeroize::Zeroizing::new("bearer-token-canary".to_owned()));
+        assert!(!format!("{secret:?}").contains("pairing-secret-canary"));
+        assert!(!format!("{bearer:?}").contains("bearer-token-canary"));
+
+        let response = PairingClaimResponse {
+            device_id: Uuid::nil(),
+            access_token: bearer,
+        };
+        let encoded = serde_json::to_vec(&response).expect("pairing response JSON");
+        assert!(String::from_utf8_lossy(&encoded).contains("bearer-token-canary"));
     }
 
     #[tokio::test]
