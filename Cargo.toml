@@ -55,7 +55,7 @@ url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 zstd = { version = "0.13", features = ["zstdmt"] }
-zeroize = "1"
+zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 http-body-util = "0.1"

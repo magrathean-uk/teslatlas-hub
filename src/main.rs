@@ -13,6 +13,7 @@ use std::future::Future;
 use base64::Engine;
 use clap::{Parser, Subcommand};
 use qrcode::{QrCode, render::unicode::Dense1x2};
+use rustix::fs::{FileType, Mode, OFlags, fstat, open};
 use sha2::{Digest, Sha256};
 #[cfg(target_os = "macos")]
 use teslatlas_hub::hub_user_process::AdmittedUserHub;
@@ -860,44 +861,20 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 .tls
                 .as_ref()
                 .ok_or("device pairing requires configured TLS")?;
-            if expires_in_seconds == 0 {
-                return Err("pairing expiry must be greater than zero".into());
-            }
+            let mut stdout = std::io::stdout().lock();
             let created_at_ms = current_epoch_ms()?;
-            let ttl_ms = expires_in_seconds
-                .checked_mul(1_000)
-                .ok_or("pairing expiry is too large")?;
-            let ttl_ms = i64::try_from(ttl_ms).map_err(|_| "pairing expiry is too large")?;
-            let expires_at_ms = created_at_ms
-                .checked_add(ttl_ms)
-                .ok_or("pairing expiry is too large")?;
-            let invitation = store.create_pairing(&label, created_at_ms, expires_at_ms)?;
-            let tls_pin = leaf_certificate_sha256(&tls.certificate_path)?;
-            let pairing_uri = pairing_uri(
-                &tls.public_url,
-                &tls_pin,
-                invitation.pairing_id,
-                invitation.secret(),
-            );
-            if json {
-                // Explicit debug mode only. The Hub never stores the raw
-                // pairing secret or writes it to service logs.
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "pairingId": invitation.pairing_id,
-                        "secret": invitation.secret(),
-                        "expiresAtMs": invitation.expires_at_ms,
-                        "endpoint": tls.public_url,
-                        "tlsPin": tls_pin,
-                        "pairingUri": pairing_uri,
-                    })
-                );
-            } else {
-                let qr = render_pairing_qr(&pairing_uri)?;
-                println!("Scan with Teslatlas:\n{qr}");
-                println!("Expires in {expires_in_seconds} seconds.");
-            }
+            execute_pairing_at(
+                &store,
+                PairingCommandInput {
+                    label: &label,
+                    expires_in_seconds,
+                    json,
+                    public_url: &tls.public_url,
+                    certificate_path: &tls.certificate_path,
+                    created_at_ms,
+                },
+                &mut stdout,
+            )?;
         }
         Command::Repair => {
             let report = store.repair()?;
@@ -1421,11 +1398,225 @@ fn render_pairing_qr(pairing_uri: &str) -> Result<String, qrcode::types::QrError
         .build())
 }
 
+const MAX_TLS_CERTIFICATE_CHAIN_BYTES: usize = 256 * 1024;
+
+#[derive(Debug, thiserror::Error)]
+enum PairingCommandError {
+    #[error("TLS certificate cannot be validated")]
+    Certificate(#[source] std::io::Error),
+    #[error("pairing expiry is invalid")]
+    InvalidExpiry,
+    #[error("pairing presentation cannot be constructed")]
+    Presentation,
+    #[error("pairing invitation cannot be persisted")]
+    Persist(#[source] Box<teslatlas_hub::db::StoreError>),
+    #[error("pairing invitation persistence failed and revocation could not be confirmed")]
+    PersistAndRevoke {
+        persist: Box<teslatlas_hub::db::StoreError>,
+        revoke: Box<teslatlas_hub::db::StoreError>,
+    },
+    #[error("pairing presentation failed; invitation was revoked ({kind:?})")]
+    Present { kind: std::io::ErrorKind },
+    #[error("pairing presentation failed and invitation revocation failed ({kind:?})")]
+    PresentAndRevoke {
+        kind: std::io::ErrorKind,
+        #[source]
+        revoke: Box<teslatlas_hub::db::StoreError>,
+    },
+}
+
+struct PairingCommandInput<'a> {
+    label: &'a str,
+    expires_in_seconds: u64,
+    json: bool,
+    public_url: &'a str,
+    certificate_path: &'a Path,
+    created_at_ms: i64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PairingJsonPresentation<'a> {
+    pairing_id: uuid::Uuid,
+    secret: &'a str,
+    expires_at_ms: i64,
+    endpoint: &'a str,
+    tls_pin: &'a str,
+    pairing_uri: &'a str,
+}
+
+fn execute_pairing_at<W: Write>(
+    store: &HubStore,
+    input: PairingCommandInput<'_>,
+    writer: &mut W,
+) -> Result<(), PairingCommandError> {
+    // Validate the configured identity before generating any one-time secret.
+    let tls_pin = leaf_certificate_sha256(input.certificate_path)
+        .map_err(PairingCommandError::Certificate)?;
+    if input.expires_in_seconds == 0 {
+        return Err(PairingCommandError::InvalidExpiry);
+    }
+    let ttl_ms = input
+        .expires_in_seconds
+        .checked_mul(1_000)
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or(PairingCommandError::InvalidExpiry)?;
+    let expires_at_ms = input
+        .created_at_ms
+        .checked_add(ttl_ms)
+        .ok_or(PairingCommandError::InvalidExpiry)?;
+    let invitation = store
+        .prepare_pairing(input.label, input.created_at_ms, expires_at_ms)
+        .map_err(|error| PairingCommandError::Persist(Box::new(error)))?;
+    let pairing_uri = zeroize::Zeroizing::new(pairing_uri(
+        input.public_url,
+        &tls_pin,
+        invitation.pairing_id,
+        invitation.secret(),
+    ));
+    let presentation = build_pairing_presentation(
+        input.json,
+        input.public_url,
+        &tls_pin,
+        &pairing_uri,
+        &invitation,
+        input.expires_in_seconds,
+    )?;
+    let pairing_id = invitation.pairing_id;
+    persist_and_present_pairing(
+        writer,
+        &presentation,
+        || store.persist_pairing(input.label, &invitation),
+        || store.revoke_pairing(pairing_id),
+    )
+}
+
+fn build_pairing_presentation(
+    json: bool,
+    public_url: &str,
+    tls_pin: &str,
+    pairing_uri: &str,
+    invitation: &teslatlas_hub::db::PairingInvitation,
+    expires_in_seconds: u64,
+) -> Result<zeroize::Zeroizing<Vec<u8>>, PairingCommandError> {
+    let mut output = zeroize::Zeroizing::new(Vec::new());
+    if json {
+        let document = PairingJsonPresentation {
+            pairing_id: invitation.pairing_id,
+            secret: invitation.secret(),
+            expires_at_ms: invitation.expires_at_ms,
+            endpoint: public_url,
+            tls_pin,
+            pairing_uri,
+        };
+        serde_json::to_writer(&mut *output, &document)
+            .map_err(|_| PairingCommandError::Presentation)?;
+        output.push(b'\n');
+    } else {
+        let qr = render_pairing_qr(pairing_uri).map_err(|_| PairingCommandError::Presentation)?;
+        write!(
+            output,
+            "Scan with Teslatlas:\n{qr}\nExpires in {expires_in_seconds} seconds.\n"
+        )
+        .map_err(|_| PairingCommandError::Presentation)?;
+    }
+    Ok(output)
+}
+
+fn persist_and_present_pairing<W, P, R>(
+    writer: &mut W,
+    presentation: &[u8],
+    persist: P,
+    revoke: R,
+) -> Result<(), PairingCommandError>
+where
+    W: Write,
+    P: FnOnce() -> Result<(), teslatlas_hub::db::StoreError>,
+    R: FnOnce() -> Result<(), teslatlas_hub::db::StoreError>,
+{
+    if let Err(persist) = persist() {
+        return match revoke() {
+            Ok(()) => Err(PairingCommandError::Persist(Box::new(persist))),
+            Err(revoke) => Err(PairingCommandError::PersistAndRevoke {
+                persist: Box::new(persist),
+                revoke: Box::new(revoke),
+            }),
+        };
+    }
+    if let Err(error) = writer.write_all(presentation).and_then(|()| writer.flush()) {
+        let kind = error.kind();
+        return match revoke() {
+            Ok(()) => Err(PairingCommandError::Present { kind }),
+            Err(revoke) => Err(PairingCommandError::PresentAndRevoke {
+                kind,
+                revoke: Box::new(revoke),
+            }),
+        };
+    }
+    Ok(())
+}
+
 /// SHA-256 pin for the first PEM certificate (the server leaf) in the active
 /// TLS chain. Pairing carries this non-secret value so an iPhone can pin the
 /// exact identity before it sends its single-use claim secret.
 fn leaf_certificate_sha256(certificate_path: &std::path::Path) -> Result<String, std::io::Error> {
-    let pem = fs::read_to_string(certificate_path)?;
+    leaf_certificate_sha256_after_open(certificate_path, || {})
+}
+
+fn leaf_certificate_sha256_after_open(
+    certificate_path: &Path,
+    after_open: impl FnOnce(),
+) -> Result<String, std::io::Error> {
+    let descriptor = open(
+        certificate_path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|_| std::io::Error::other("TLS certificate cannot be safely opened"))?;
+    let held = fstat(&descriptor)
+        .map_err(|_| std::io::Error::other("TLS certificate cannot be inspected"))?;
+    if !FileType::from_raw_mode(held.st_mode).is_file() || (held.st_mode as u32 & 0o022) != 0 {
+        return Err(std::io::Error::other("TLS certificate file is unsafe"));
+    }
+    after_open();
+    let file: fs::File = descriptor.into();
+    let mut pem = Vec::with_capacity(MAX_TLS_CERTIFICATE_CHAIN_BYTES.min(8 * 1024));
+    (&file)
+        .take(u64::try_from(MAX_TLS_CERTIFICATE_CHAIN_BYTES + 1).expect("certificate cap fits u64"))
+        .read_to_end(&mut pem)
+        .map_err(|_| std::io::Error::other("TLS certificate cannot be read"))?;
+    if pem.len() > MAX_TLS_CERTIFICATE_CHAIN_BYTES {
+        return Err(std::io::Error::other(
+            "TLS certificate exceeds the fixed size limit",
+        ));
+    }
+    let after =
+        fstat(&file).map_err(|_| std::io::Error::other("TLS certificate cannot be inspected"))?;
+    let current = fs::symlink_metadata(certificate_path)
+        .map_err(|_| std::io::Error::other("TLS certificate identity changed"))?;
+    if after.st_dev != held.st_dev
+        || after.st_ino != held.st_ino
+        || after.st_mode != held.st_mode
+        || after.st_size != held.st_size
+        || after.st_mtime != held.st_mtime
+        || after.st_mtime_nsec != held.st_mtime_nsec
+        || after.st_ctime != held.st_ctime
+        || after.st_ctime_nsec != held.st_ctime_nsec
+        || current.file_type().is_symlink()
+        || !current.file_type().is_file()
+        || current.dev() != held.st_dev as u64
+        || current.ino() != held.st_ino
+        || current.len() != u64::try_from(held.st_size).unwrap_or(u64::MAX)
+        || current.mtime() != held.st_mtime
+        || current.mtime_nsec() != held.st_mtime_nsec
+        || current.ctime() != held.st_ctime
+        || current.ctime_nsec() != held.st_ctime_nsec
+        || (current.mode() & 0o022) != 0
+    {
+        return Err(std::io::Error::other("TLS certificate identity changed"));
+    }
+    let pem = std::str::from_utf8(&pem)
+        .map_err(|_| std::io::Error::other("TLS certificate is not UTF-8 PEM"))?;
     let begin = "-----BEGIN CERTIFICATE-----";
     let end = "-----END CERTIFICATE-----";
     let Some(after_begin) = pem.split_once(begin).map(|(_, rest)| rest) else {
@@ -1477,7 +1668,13 @@ fn current_epoch_ms() -> Result<i64, std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, io::Write, path::PathBuf};
+    use std::{
+        fs,
+        io::{self, Write},
+        os::unix::fs::{PermissionsExt, symlink},
+        path::{Path, PathBuf},
+        time::Duration,
+    };
     #[cfg(target_os = "macos")]
     use std::{
         future::pending,
@@ -1489,7 +1686,6 @@ mod tests {
             Arc,
             atomic::{AtomicUsize, Ordering},
         },
-        time::Duration,
     };
 
     use base64::Engine;
@@ -1498,7 +1694,11 @@ mod tests {
     #[cfg(target_os = "macos")]
     use sha2::Sha256;
 
-    use super::{Cli, Command, leaf_certificate_sha256, pairing_uri, render_pairing_qr, run};
+    use super::{
+        Cli, Command, MAX_TLS_CERTIFICATE_CHAIN_BYTES, PairingCommandError, PairingCommandInput,
+        execute_pairing_at, leaf_certificate_sha256, leaf_certificate_sha256_after_open,
+        pairing_uri, persist_and_present_pairing, render_pairing_qr, run,
+    };
     #[cfg(target_os = "macos")]
     use super::{
         MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
@@ -1507,6 +1707,7 @@ mod tests {
         migration_stop_confirmed, read_migration_secret, read_migration_secret_file_with_hooks,
         run_macos_serve_supervisor,
     };
+    use teslatlas_hub::db::HubStore;
     #[cfg(target_os = "macos")]
     use teslatlas_hub::protocol::{
         CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor, PROTOCOL_V1,
@@ -2496,6 +2697,265 @@ mod tests {
         assert!(!command_requires_user_hub_admission(&Command::Legal));
         assert!(!command_requires_user_hub_admission(&Command::Status));
         assert!(!command_requires_user_hub_admission(&Command::Preflight));
+    }
+
+    fn write_test_leaf(path: &Path) {
+        fs::write(
+            path,
+            format!(
+                "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+                base64::engine::general_purpose::STANDARD.encode([1_u8, 2, 3, 4, 5])
+            ),
+        )
+        .expect("write test leaf");
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).expect("protect test leaf");
+    }
+
+    fn pairing_challenge_count(store: &HubStore) -> i64 {
+        store
+            .open()
+            .expect("open Hub store")
+            .query_row("SELECT COUNT(*) FROM pairing_challenges", [], |row| {
+                row.get(0)
+            })
+            .expect("pairing challenge count")
+    }
+
+    #[derive(Default)]
+    struct FlushFailingWriter {
+        bytes: Vec<u8>,
+    }
+
+    impl Write for FlushFailingWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "test presentation sink failed",
+            ))
+        }
+    }
+
+    struct WriteFailingWriter;
+
+    impl Write for WriteFailingWriter {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "test presentation sink failed",
+            ))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn pairing_certificate_and_qr_failures_leave_no_invitation() {
+        let temporary = tempfile::tempdir().expect("temporary root");
+        let store = HubStore::initialize(temporary.path().join("hub")).expect("Hub store");
+        let missing = temporary.path().join("access-secret-certificate.pem");
+        let mut output = Vec::new();
+        let certificate_error = execute_pairing_at(
+            &store,
+            PairingCommandInput {
+                label: "test phone",
+                expires_in_seconds: 900,
+                json: false,
+                public_url: "https://hub.example/",
+                certificate_path: &missing,
+                created_at_ms: 1_000,
+            },
+            &mut output,
+        )
+        .expect_err("missing certificate");
+        assert!(matches!(
+            &certificate_error,
+            PairingCommandError::Certificate(_)
+        ));
+        assert!(!format!("{certificate_error:?}").contains("access-secret"));
+        assert!(!certificate_error.to_string().contains("access-secret"));
+        assert_eq!(pairing_challenge_count(&store), 0);
+
+        let certificate = temporary.path().join("leaf.pem");
+        write_test_leaf(&certificate);
+        let oversized_endpoint = format!("https://hub.example/{}", "x".repeat(16 * 1024));
+        assert!(matches!(
+            execute_pairing_at(
+                &store,
+                PairingCommandInput {
+                    label: "test phone",
+                    expires_in_seconds: 900,
+                    json: false,
+                    public_url: &oversized_endpoint,
+                    certificate_path: &certificate,
+                    created_at_ms: 1_000,
+                },
+                &mut output,
+            ),
+            Err(PairingCommandError::Presentation)
+        ));
+        assert_eq!(pairing_challenge_count(&store), 0);
+    }
+
+    #[test]
+    fn pairing_flush_failure_revokes_and_success_persists_once() {
+        let temporary = tempfile::tempdir().expect("temporary root");
+        let store = HubStore::initialize(temporary.path().join("hub")).expect("Hub store");
+        let certificate = temporary.path().join("leaf.pem");
+        write_test_leaf(&certificate);
+
+        let mut write_failure = WriteFailingWriter;
+        let error = execute_pairing_at(
+            &store,
+            PairingCommandInput {
+                label: "broken writer",
+                expires_in_seconds: 900,
+                json: true,
+                public_url: "https://hub.example/",
+                certificate_path: &certificate,
+                created_at_ms: 500,
+            },
+            &mut write_failure,
+        )
+        .expect_err("write failure");
+        assert!(matches!(
+            error,
+            PairingCommandError::Present {
+                kind: io::ErrorKind::BrokenPipe
+            }
+        ));
+        assert_eq!(pairing_challenge_count(&store), 0);
+
+        let mut broken = FlushFailingWriter::default();
+        let error = execute_pairing_at(
+            &store,
+            PairingCommandInput {
+                label: "broken terminal",
+                expires_in_seconds: 900,
+                json: true,
+                public_url: "https://hub.example/",
+                certificate_path: &certificate,
+                created_at_ms: 1_000,
+            },
+            &mut broken,
+        )
+        .expect_err("flush failure");
+        assert!(matches!(
+            error,
+            PairingCommandError::Present {
+                kind: io::ErrorKind::BrokenPipe
+            }
+        ));
+        assert_eq!(pairing_challenge_count(&store), 0);
+
+        let mut output = Vec::new();
+        execute_pairing_at(
+            &store,
+            PairingCommandInput {
+                label: "working terminal",
+                expires_in_seconds: 900,
+                json: true,
+                public_url: "https://hub.example/",
+                certificate_path: &certificate,
+                created_at_ms: 2_000,
+            },
+            &mut output,
+        )
+        .expect("pairing succeeds");
+        let document: serde_json::Value = serde_json::from_slice(&output).expect("pairing JSON");
+        assert!(
+            document["secret"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+        assert_eq!(pairing_challenge_count(&store), 1);
+    }
+
+    #[test]
+    fn pairing_compound_failure_is_typed_and_redacted() {
+        let marker = b"pairing-secret-marker";
+        let mut writer = FlushFailingWriter::default();
+        let error = persist_and_present_pairing(
+            &mut writer,
+            marker,
+            || Ok(()),
+            || Err(teslatlas_hub::db::StoreError::PairingRejected),
+        )
+        .expect_err("presentation and cleanup fail");
+        assert!(matches!(
+            error,
+            PairingCommandError::PresentAndRevoke {
+                kind: io::ErrorKind::BrokenPipe,
+                ..
+            }
+        ));
+        let debug = format!("{error:?}");
+        let display = error.to_string();
+        assert!(!debug.contains("pairing-secret-marker"));
+        assert!(!display.contains("pairing-secret-marker"));
+    }
+
+    #[test]
+    fn leaf_certificate_reader_rejects_symlink_mode_size_and_identity_races() {
+        let temporary = tempfile::tempdir().expect("temporary root");
+        let target = temporary.path().join("target.pem");
+        write_test_leaf(&target);
+        let link = temporary.path().join("link.pem");
+        symlink(&target, &link).expect("certificate symlink");
+        assert!(leaf_certificate_sha256(&link).is_err());
+
+        let unsafe_mode = temporary.path().join("unsafe.pem");
+        write_test_leaf(&unsafe_mode);
+        fs::set_permissions(&unsafe_mode, fs::Permissions::from_mode(0o622))
+            .expect("unsafe certificate mode");
+        assert!(leaf_certificate_sha256(&unsafe_mode).is_err());
+
+        let base = format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            base64::engine::general_purpose::STANDARD.encode([1_u8, 2, 3, 4, 5])
+        );
+        let bounded = temporary.path().join("bounded.pem");
+        let mut exact = vec![b' '; MAX_TLS_CERTIFICATE_CHAIN_BYTES - base.len()];
+        exact.extend_from_slice(base.as_bytes());
+        fs::write(&bounded, &exact).expect("exact certificate cap");
+        fs::set_permissions(&bounded, fs::Permissions::from_mode(0o600))
+            .expect("protect exact certificate");
+        leaf_certificate_sha256(&bounded).expect("exact certificate cap accepted");
+        exact.push(b' ');
+        fs::write(&bounded, &exact).expect("oversized certificate");
+        assert!(leaf_certificate_sha256(&bounded).is_err());
+
+        let replaced = temporary.path().join("replaced.pem");
+        write_test_leaf(&replaced);
+        let old = temporary.path().join("old.pem");
+        let replacement_path = replaced.clone();
+        assert!(
+            leaf_certificate_sha256_after_open(&replaced, || {
+                fs::rename(&replacement_path, &old).expect("move opened certificate");
+                write_test_leaf(&replacement_path);
+            })
+            .is_err()
+        );
+
+        let mutated = temporary.path().join("mutated.pem");
+        write_test_leaf(&mutated);
+        let mutation_path = mutated.clone();
+        assert!(
+            leaf_certificate_sha256_after_open(&mutated, || {
+                std::thread::sleep(Duration::from_millis(2));
+                fs::write(&mutation_path, b"same-inode mutation")
+                    .expect("mutate opened certificate");
+                fs::set_permissions(&mutation_path, fs::Permissions::from_mode(0o600))
+                    .expect("protect mutated certificate");
+            })
+            .is_err()
+        );
     }
 
     #[cfg(target_os = "macos")]

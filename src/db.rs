@@ -7439,10 +7439,9 @@ impl HubStore {
         Ok(Some(lineage))
     }
 
-    /// Create a single-use, short-lived pairing challenge. Only a SHA-256
-    /// digest is persisted. The raw value is returned once to the local
-    /// administrator so it can travel over an out-of-band pairing channel.
-    pub fn create_pairing(
+    /// Prepare one single-use pairing challenge without writing it. The CLI
+    /// uses this phase to finish its QR/JSON presentation before activation.
+    pub fn prepare_pairing(
         &self,
         label: &str,
         created_at_ms: i64,
@@ -7456,6 +7455,27 @@ impl HubStore {
 
         let pairing_id = Uuid::new_v4();
         let secret = PairingSecret::generate();
+        Ok(PairingInvitation {
+            pairing_id,
+            secret,
+            created_at_ms,
+            expires_at_ms,
+        })
+    }
+
+    /// Persist a fully prepared invitation immediately before its local
+    /// presentation. Only the secret digest crosses this boundary.
+    pub fn persist_pairing(
+        &self,
+        label: &str,
+        invitation: &PairingInvitation,
+    ) -> Result<(), StoreError> {
+        validate_identity("pairing label", label, MAX_PAIRING_LABEL_BYTES)?;
+        validate_timestamp("pairing created_at_ms", invitation.created_at_ms)?;
+        validate_timestamp("pairing expires_at_ms", invitation.expires_at_ms)?;
+        if invitation.expires_at_ms <= invitation.created_at_ms {
+            return Err(StoreError::InvalidPairingExpiry);
+        }
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -7464,22 +7484,48 @@ impl HubStore {
             .execute(
                 "INSERT INTO pairing_challenges \
                  (pairing_id, label, secret_sha256, created_at_ms, expires_at_ms) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
-                    pairing_id.to_string(),
+                    invitation.pairing_id.to_string(),
                     label,
-                    secret.digest().as_slice(),
-                    created_at_ms,
-                    expires_at_ms,
+                    invitation.secret.digest().as_slice(),
+                    invitation.created_at_ms,
+                    invitation.expires_at_ms,
                 ],
             )
             .map_err(StoreError::CreatePairing)?;
         transaction.commit().map_err(StoreError::CreatePairing)?;
-        Ok(PairingInvitation {
-            pairing_id,
-            secret,
-            expires_at_ms,
-        })
+        Ok(())
+    }
+
+    /// Create and immediately persist an invitation for non-interactive
+    /// callers that do not have a presentation boundary.
+    pub fn create_pairing(
+        &self,
+        label: &str,
+        created_at_ms: i64,
+        expires_at_ms: i64,
+    ) -> Result<PairingInvitation, StoreError> {
+        let invitation = self.prepare_pairing(label, created_at_ms, expires_at_ms)?;
+        self.persist_pairing(label, &invitation)?;
+        Ok(invitation)
+    }
+
+    /// Revoke one invitation. Deleting a missing row is deliberately success,
+    /// making cleanup safe to retry after an uncertain terminal write.
+    pub fn revoke_pairing(&self, pairing_id: Uuid) -> Result<(), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        transaction
+            .execute(
+                "DELETE FROM pairing_challenges WHERE pairing_id = ?1",
+                params![pairing_id.to_string()],
+            )
+            .map_err(StoreError::RevokePairing)?;
+        transaction.commit().map_err(StoreError::RevokePairing)?;
+        Ok(())
     }
 
     /// Consume one valid pairing challenge and return the device bearer token.
@@ -14876,6 +14922,8 @@ pub enum StoreError {
     RegisterVehicle(rusqlite::Error),
     #[error("cannot create pairing invitation: {0}")]
     CreatePairing(rusqlite::Error),
+    #[error("cannot revoke pairing invitation: {0}")]
+    RevokePairing(rusqlite::Error),
     #[error("cannot claim pairing invitation: {0}")]
     ClaimPairing(rusqlite::Error),
     #[error("cannot append raw observation: {0}")]
@@ -15890,6 +15938,54 @@ mod tests {
             conflicting,
             StoreError::VehicleIdentityMismatch { .. }
         ));
+    }
+
+    #[test]
+    fn pairing_preparation_is_inert_and_revocation_is_idempotent() {
+        let temporary = tempfile::tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let invitation = store
+            .prepare_pairing("iPhone", 1_000, 61_000)
+            .expect("pairing prepares");
+        let count = || {
+            store
+                .open()
+                .expect("open database")
+                .query_row("SELECT COUNT(*) FROM pairing_challenges", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("challenge count")
+        };
+
+        assert_eq!(count(), 0);
+        store
+            .persist_pairing("iPhone", &invitation)
+            .expect("pairing persists");
+        assert_eq!(count(), 1);
+        store
+            .revoke_pairing(invitation.pairing_id)
+            .expect("first revocation");
+        store
+            .revoke_pairing(invitation.pairing_id)
+            .expect("idempotent revocation");
+        assert_eq!(count(), 0);
+    }
+
+    #[test]
+    fn pairing_secrets_are_redacted_and_zeroizable_on_drop() {
+        use zeroize::Zeroize;
+
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        let mut pairing = PairingSecret("pairing-secret".to_owned());
+        let mut access = DeviceAccessToken("device-access-secret".to_owned());
+        assert!(!format!("{access:?}").contains(access.as_bearer()));
+        assert_zeroize_on_drop::<PairingSecret>();
+        assert_zeroize_on_drop::<DeviceAccessToken>();
+        pairing.zeroize();
+        access.zeroize();
+        assert!(pairing.as_wire().bytes().all(|byte| byte == 0));
+        assert!(access.as_bearer().bytes().all(|byte| byte == 0));
     }
 
     #[test]
@@ -22402,10 +22498,11 @@ pub struct TerrainCandidate {
 
 /// One opaque, single-use pairing invitation. The secret is intentionally not
 /// `Debug` or `Display`; it is safe only for a local terminal or a QR payload.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct PairingInvitation {
     pub pairing_id: Uuid,
     secret: PairingSecret,
+    created_at_ms: i64,
     pub expires_at_ms: i64,
 }
 
@@ -22426,7 +22523,7 @@ impl std::fmt::Debug for PairingInvitation {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(PartialEq, Eq, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 struct PairingSecret(String);
 
 impl PairingSecret {
@@ -22448,8 +22545,14 @@ impl PairingSecret {
 }
 
 /// A paired device's bearer token. It is returned once at claim time and is
-/// stored only as a hash in the Hub database.
-#[derive(Clone, PartialEq, Eq)]
+/// stored only as a hash in the Hub database. It is intentionally not
+/// cloneable.
+///
+/// ```compile_fail
+/// fn requires_clone<T: Clone>() {}
+/// requires_clone::<teslatlas_hub::db::DeviceAccessToken>();
+/// ```
+#[derive(PartialEq, Eq, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 pub struct DeviceAccessToken(String);
 
 impl DeviceAccessToken {
@@ -22477,7 +22580,7 @@ impl std::fmt::Debug for DeviceAccessToken {
 }
 
 /// The only credential-bearing result of a successful pairing claim.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct PairedDeviceAccess {
     pub device_id: Uuid,
     pub access_token: DeviceAccessToken,
