@@ -2,13 +2,15 @@
 
 Status: active.
 
-Current: verify pairing and authenticated local sync across restart.
+Current: verify backup, backup verification, restore, and repair.
 
-Next: verify backup, backup verification, restore, and repair.
+Next: run the one final validation pass and practical macOS smoke.
 
 Blocked: none.
 
 ## Completed
+
+- Pairing and local sync — verified failure-safe invitation persistence, single-use TLS claim, authenticated vehicle/manifest/pack access, Range resume, restart persistence, and wrong-key rejection — 3 focused tests passed.
 
 - Optional TeslaMate import — verified exact migration-set admission and final-snapshot publication; the local PostgreSQL copy stayed read-only at 99 migrations/2,644 drives and was correctly rejected as incompatible — 2 focused tests and one CLI negative smoke passed; the 632 KiB fixture was removed.
 
