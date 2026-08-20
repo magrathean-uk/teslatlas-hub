@@ -1,14 +1,16 @@
 # Hub progress
 
-Status: local goal complete.
+Status: active — TeslaMate v4.1.1 parity fixes.
 
-Current: none.
+Current: charging calculations and derived vehicle data.
 
-Next: optional owner-authorized live Tesla setup and installed-service smoke.
+Next: current vehicle snapshot, bounded runtime storage, native controls, then one final validation pass.
 
 Blocked: live Tesla Owner API collection and actual LaunchAgent start/restart were not run because real credentials and vehicle access were not authorized; the existing user plist was preserved.
 
 ## Completed
+
+- TeslaMate v4.1.1 import — pinned the exact 105-migration tag at `d6c43bc8c48784da8f0b701945b80b20911b3d1a`, updated VIN/cost schema admission and pack contracts, and kept the local 99-migration database as a read-only negative fixture — 16 schema tests, 20 pack-contract tests, and the bounded preflight test passed.
 
 - Final validation and smoke — format, all-target check, 681 tests passed with 2 ignored, Clippy `-D warnings`, and release build passed; the release binary initialized, reported status, passed doctor/repair, backed up, verified, restored, re-checked the restored store, and reported the real service stopped — the 1.8 MiB fixture was removed, no Hub `/tmp` artifacts remain, and the single `hub/target` is 5.2 GiB.
 

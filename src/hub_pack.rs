@@ -69,7 +69,7 @@ const THP2_2_GLOBAL_SETTINGS_SLICE_SHA256: &str =
 const THP2_2_CAR_SETTINGS_SLICE_SHA256: &str =
     "e528749f76d15fb5e87ab43692455885d3249e989f53492ee34a6d5140824730";
 const THP2_2_CARS_SLICE_SHA256: &str =
-    "f5374a910b28f426d48990d76221b0d6505e7d6e4665fc159000a4cbe647c2ab";
+    "415e969442843f3e137070525d04c0d48bf282eecd025fc0343a88677ab96dc5";
 const THP2_2_CARS_EFFICIENCY_ENCODING: &str = "ieee754_bits_be_blob";
 const THP2_2_DRIVES_FLOAT_ENCODING: &str = "ieee754_bits_be_blob";
 const THP2_2_POSITIONS_ODOMETER_ENCODING: &str = "ieee754_bits_be_blob";
@@ -121,7 +121,7 @@ const THP2_2_CARS_SLICE_CONTRACT: &str = concat!(
     "id:smallint:not_null\n",
     "eid:bigint:not_null\n",
     "vid:bigint:not_null\n",
-    "vin:text:nullable\n",
+    "vin:text:not_null\n",
     "name:text:nullable\n",
     "model:character varying(255):nullable\n",
     "efficiency:double precision:nullable:ieee754_bits_be_blob\n",
@@ -205,7 +205,7 @@ const THP2_2_DRIVES_SLICE_SHA256: &str =
 const THP2_2_POSITIONS_SLICE_SHA256: &str =
     "8b699739dd76d25f62d74274cda9e6dfafc24c52f101c8418c08d2cc702b7a8b";
 const THP2_2_CHARGING_PROCESSES_SLICE_SHA256: &str =
-    "65fc438345466cf772f57b728af646ac9707eb20207b366ebeedd64b3165f3d3";
+    "bd0b3f60721289da8dda83d80283c134560f0ae810b2f99ee20916590c2aa9f6";
 const THP2_2_CHARGES_SLICE_SHA256: &str =
     "c8075db09941a15c2deeda010b2e001b78a3e5f9b4cded547f123fbbf5ab79da";
 #[cfg(test)]
@@ -291,7 +291,7 @@ const THP2_2_CHARGING_PROCESSES_SLICE_CONTRACT: &str = concat!(
     "end_battery_level:smallint:nullable\n",
     "duration_min:smallint:nullable\n",
     "outside_temp_avg:numeric(4,1):nullable:finite_scaled_i64_or_nan:e1\n",
-    "cost:numeric(6,2):nullable:finite_scaled_i64_or_nan:e2\n",
+    "cost:numeric(14,2):nullable:finite_scaled_i64_or_nan:e2\n",
 );
 #[cfg(test)]
 const THP2_2_CHARGES_SLICE_CONTRACT: &str = concat!(
@@ -561,7 +561,7 @@ CREATE TABLE addresses (
 ) STRICT, WITHOUT ROWID
 "#;
 const THP2_2_GEOFENCE_SLICE_SHA256: &str =
-    "04195e9c5c5d1f4ac8e6623d6077b670cb50f104f947cb637925f458c021212f";
+    "c64f07b35c76d248d3538a741d26d1d4293ee97cc01e5097f2e86f08f82e0981";
 #[cfg(test)]
 const THP2_2_GEOFENCE_SLICE_CONTRACT: &str = concat!(
     "teslatlas-thp2.2-geofences-v1\n",
@@ -571,8 +571,8 @@ const THP2_2_GEOFENCE_SLICE_CONTRACT: &str = concat!(
     "longitude:numeric(9,6):not_null:finite_scaled_i64_or_nan:e6\n",
     "radius:smallint:not_null\n",
     "billing_type:billing_type:not_null\n",
-    "cost_per_unit:numeric(6,4):nullable:finite_scaled_i64_or_nan:e4\n",
-    "session_fee:numeric(6,2):nullable:finite_scaled_i64_or_nan:e2\n",
+    "cost_per_unit:numeric(9,4):nullable:finite_scaled_i64_or_nan:e4\n",
+    "session_fee:numeric(14,2):nullable:finite_scaled_i64_or_nan:e2\n",
     "inserted_at:timestamp(0) without time zone:not_null:postgres_timestamp_binary_i64_us_since_2000_timestamp_0\n",
     "updated_at:timestamp(0) without time zone:not_null:postgres_timestamp_binary_i64_us_since_2000_timestamp_0\n",
 );

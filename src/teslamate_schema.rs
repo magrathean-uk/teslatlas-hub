@@ -6,32 +6,31 @@
 //! validate their rows with this module, and only then use the fixed paginated
 //! projections below.
 //!
-//! The contract is pinned to TeslaMate v4.1.0-dev revision
-//! `7054517c10475f39f480edeae8f90c6f717985a3`. Its reviewed physical schema
-//! and complete migration set are equivalent to the TeslaMate v4.0.1 tag. A
-//! source must match that migration high-water mark and complete ordered set.
+//! The contract is pinned to the TeslaMate v4.1.1 tag revision
+//! `d6c43bc8c48784da8f0b701945b80b20911b3d1a`. A source must match that
+//! migration high-water mark and complete ordered set.
 //! A newer migration, or a database reconstructed with a different migration
 //! history, is rejected until its schema delta has been reviewed.
 
 use sha2::{Digest, Sha256};
 
-/// First TeslaMate migration version this adapter supports (v4.0.1-schema-equivalent).
-pub const MIN_SUPPORTED_MIGRATION: i64 = 20_260_411_070_212;
+/// First TeslaMate migration version this adapter supports (the exact v4.1.1 set).
+pub const MIN_SUPPORTED_MIGRATION: i64 = 20_260_808_090_000;
 
-/// Last migration in the pinned v4.1.0-dev source tree, schema-equivalent to v4.0.1.
+/// Last migration in the pinned v4.1.1 source tree.
 pub const MAX_VALIDATED_MIGRATION: i64 = MIN_SUPPORTED_MIGRATION;
 
-/// Immutable v4.1.0-dev source revision behind this compatibility contract.
-pub const TESLAMATE_V4_SOURCE_REVISION: &str = "7054517c10475f39f480edeae8f90c6f717985a3";
+/// Immutable v4.1.1 source revision behind this compatibility contract.
+pub const TESLAMATE_V4_SOURCE_REVISION: &str = "d6c43bc8c48784da8f0b701945b80b20911b3d1a";
 
 /// Number of migrations in the pinned source revision.
-pub const TESLAMATE_V4_MIGRATION_COUNT: usize = 100;
+pub const TESLAMATE_V4_MIGRATION_COUNT: usize = 105;
 
 /// SHA-256 of the sorted, newline-delimited 14-digit migration versions in
 /// the pinned source revision. The exact list—not only its high-water mark—is
 /// part of the read-only source admission contract.
 pub const TESLAMATE_V4_MIGRATION_SET_SHA256: &str =
-    "f03b25b2c12e4a558a481a45a9b3df65518f7733008bc47931eea7e7c78efefb";
+    "ea850d1b038c4af950db32e7a0939aa5ebe8f1dcefe5e56dcd592f3451038868";
 
 /// Fixed read-only session statements. The COPY statement timeout is supplied
 /// separately from validated import limits so large historical reads can be
@@ -299,7 +298,7 @@ const CARS_SOURCE_COLUMNS: &[PinnedSourceColumn] = &[
     pinned_source_column!("id", SmallInt, false, "smallint"),
     pinned_source_column!("eid", BigInt, false, "bigint"),
     pinned_source_column!("vid", BigInt, false, "bigint"),
-    pinned_source_column!("vin", Text, true, "text"),
+    pinned_source_column!("vin", Text, false, "text"),
     pinned_source_column!("name", Text, true, "text"),
     pinned_source_column!("model", Varchar, true, "character varying(255)"),
     pinned_source_column!("efficiency", Floating, true, "double precision"),
@@ -540,7 +539,7 @@ const CHARGING_PROCESSES_SOURCE_COLUMNS: &[PinnedSourceColumn] = &[
     pinned_source_column!("end_battery_level", SmallInt, true, "smallint"),
     pinned_source_column!("duration_min", SmallInt, true, "smallint"),
     pinned_source_column!("outside_temp_avg", Numeric, true, "numeric(4,1)"),
-    pinned_source_column!("cost", Numeric, true, "numeric(6,2)"),
+    pinned_source_column!("cost", Numeric, true, "numeric(14,2)"),
 ];
 
 const CHARGES_SOURCE_COLUMNS: &[PinnedSourceColumn] = &[
@@ -760,13 +759,13 @@ const GEOFENCE_SOURCE_COLUMNS: &[PinnedSourceColumn] = &[
         name: "cost_per_unit",
         value_type: ValueType::Numeric,
         nullable: true,
-        format_type: "numeric(6,4)",
+        format_type: "numeric(9,4)",
     },
     PinnedSourceColumn {
         name: "session_fee",
         value_type: ValueType::Numeric,
         nullable: true,
-        format_type: "numeric(6,2)",
+        format_type: "numeric(14,2)",
     },
     PinnedSourceColumn {
         name: "inserted_at",
@@ -1664,6 +1663,11 @@ mod tests {
         20251207212310,
         20251225150000,
         20260411070212,
+        20260715081000,
+        20260716110000,
+        20260718160000,
+        20260807090000,
+        20260808090000,
     ];
 
     fn complete_schema() -> Vec<ObservedColumn<'static>> {

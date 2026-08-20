@@ -2731,12 +2731,12 @@ mod tests {
             selected_car_id: 17,
             source_database_bytes: 123,
             schema: TeslaMateSchemaInfo {
-                observed_migration_version: 20260411070212,
-                observed_migration_count: 100,
-                minimum_supported_migration_version: 20260411070212,
-                maximum_validated_migration_version: 20260411070212,
-                pinned_source_revision: "7054517c10475f39f480edeae8f90c6f717985a3",
-                pinned_migration_set_sha256: "f03b25b2c12e4a558a481a45a9b3df65518f7733008bc47931eea7e7c78efefb",
+                observed_migration_version: 20260808090000,
+                observed_migration_count: 105,
+                minimum_supported_migration_version: 20260808090000,
+                maximum_validated_migration_version: 20260808090000,
+                pinned_source_revision: "d6c43bc8c48784da8f0b701945b80b20911b3d1a",
+                pinned_migration_set_sha256: "ea850d1b038c4af950db32e7a0939aa5ebe8f1dcefe5e56dcd592f3451038868",
                 fingerprint: "abc".to_owned(),
             },
             source_row_counts: TeslaMateSourceCounts {
