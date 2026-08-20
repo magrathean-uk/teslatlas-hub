@@ -1071,8 +1071,10 @@ mod tests {
 
     #[test]
     fn terrain_cache_must_hold_one_srtm1_tile() {
-        let mut config = TerrainConfig::default();
-        config.max_cache_bytes = crate::terrain::SRTM1_BYTES;
+        let config = TerrainConfig {
+            max_cache_bytes: crate::terrain::SRTM1_BYTES,
+            ..TerrainConfig::default()
+        };
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidTerrainConfig)

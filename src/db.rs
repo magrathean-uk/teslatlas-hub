@@ -24000,8 +24000,10 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
-        let mut settings = ProjectionCarSettings::default();
-        settings.enabled = false;
+        let mut settings = ProjectionCarSettings {
+            enabled: false,
+            ..ProjectionCarSettings::default()
+        };
         store
             .upsert_car_settings(vehicle.vehicle_id, 1, &settings)
             .expect("pause collection");
