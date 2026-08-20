@@ -78,6 +78,17 @@ data_dir = "/Users/me/Library/Application Support/Teslatlas Hub/data"
 bind = "127.0.0.1:8080"
 ```
 
+Initialize and configure one vehicle without TeslaMate. Token files must be
+private (`chmod 600`); add `--vehicle-id ID` only when the account has more
+than one vehicle.
+
+```sh
+teslatlas-hub --config /absolute/path/config.toml init
+teslatlas-hub --config /absolute/path/config.toml setup \
+  --access-token-file /absolute/path/access-token \
+  --refresh-token-file /absolute/path/refresh-token
+```
+
 Run without installation:
 
 ```sh
@@ -89,6 +100,10 @@ Install the current per-user service:
 
 ```sh
 teslatlas-hub --config /absolute/path/config.toml install
+teslatlas-hub service status
+teslatlas-hub --config /absolute/path/config.toml service restart
+teslatlas-hub service stop
+teslatlas-hub --config /absolute/path/config.toml service start
 ```
 
 Useful checks:

@@ -2991,8 +2991,8 @@ mod tests {
                 access_token_file,
                 refresh_token_file,
                 vehicle_id: Some(70),
-            } if access_token_file == PathBuf::from("access")
-                && refresh_token_file == PathBuf::from("refresh")
+            } if access_token_file.as_path() == Path::new("access")
+                && refresh_token_file.as_path() == Path::new("refresh")
         ));
         assert!(
             Cli::try_parse_from([

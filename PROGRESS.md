@@ -1,14 +1,16 @@
 # Hub progress
 
-Status: active.
+Status: local goal complete.
 
-Current: run the one final validation pass and practical macOS smoke.
+Current: none.
 
-Next: none.
+Next: optional owner-authorized live Tesla setup and installed-service smoke.
 
-Blocked: none.
+Blocked: live Tesla Owner API collection and actual LaunchAgent start/restart were not run because real credentials and vehicle access were not authorized; the existing user plist was preserved.
 
 ## Completed
+
+- Final validation and smoke — format, all-target check, 681 tests passed with 2 ignored, Clippy `-D warnings`, and release build passed; the release binary initialized, reported status, passed doctor/repair, backed up, verified, restored, re-checked the restored store, and reported the real service stopped — the 1.8 MiB fixture was removed, no Hub `/tmp` artifacts remain, and the single `hub/target` is 5.2 GiB.
 
 - Data recovery — verified immutable backup, backup verification, restore without source mutation, unsafe-destination refusal, and repair that preserves quarantine while deleting proven orphan packs — 2 focused tests passed.
 
