@@ -1395,6 +1395,23 @@ impl HubStore {
         .transpose()
     }
 
+    /// Delete the sole persisted TeslaMate token pair.
+    pub fn clear_teslamate_legacy_tokens(&self) -> Result<(), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        transaction
+            .execute(
+                "DELETE FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                [],
+            )
+            .map_err(StoreError::TeslaMateTokenStore)?;
+        transaction
+            .commit()
+            .map_err(StoreError::TeslaMateTokenStore)
+    }
+
     /// Serialize complete local publication workflows across every Hub process
     /// sharing this data directory. Callers must keep the returned guard alive
     /// from before sequence reservation until catalogue, lifecycle, and pack

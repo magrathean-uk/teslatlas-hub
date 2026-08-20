@@ -2,13 +2,15 @@
 
 Status: active — TeslaMate v4.1.1 parity fixes.
 
-Current: credential sign-out and recovery continuity.
+Current: charge-cost and geofence-cost controls.
 
 Next: remaining verified one-vehicle parity, then one final validation pass.
 
 Blocked: live Tesla Owner API collection and actual LaunchAgent start/restart were not run because real credentials and vehicle access were not authorized; the existing user plist was preserved.
 
 ## Completed
+
+- Credential continuity — `control sign-out` now stops the LaunchAgent, refuses a concurrently running direct Hub, deletes the token row and both key generations, while backup v2 verifies and restores the encryption and cursor keys with the service stopped — 4 focused tests passed.
 
 - Native TeslaMate controls — added live pause/resume and settings pickup within 30 seconds, geofence create/list/delete, completed-charge cost replacement, bounded TeslaMate-compatible GPX export, and rated-range charge-consensus efficiency recalculation — 5 focused tests passed.
 

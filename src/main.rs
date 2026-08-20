@@ -32,7 +32,8 @@ use teslatlas_hub::{
     server,
     teslamate::ReadOnlySource,
     teslamate_credentials::{
-        load_or_create_cursor_key, random_encryption_key, replace_key_and_tokens,
+        load_or_create_cursor_key, random_encryption_key, remove_key_and_tokens,
+        replace_key_and_tokens,
     },
     teslamate_import::{
         TeslaMateImportReport, TeslaMateImportRequest, TeslaMateImportScope,
@@ -377,6 +378,9 @@ enum ControlCommand {
     Pause,
     /// Resume Owner API and streaming collection for the selected car.
     Resume,
+    /// Stop collection and remove the persisted Tesla account credentials.
+    #[command(name = "sign-out")]
+    SignOut,
     /// List configured geofences.
     Geofences,
     /// Create a geofence, or replace one by id.
@@ -659,6 +663,24 @@ fn run_control(
                 serde_json::json!({
                     "status": if settings.enabled { "running" } else { "paused" },
                     "vehicleId": vehicle_id,
+                })
+            );
+        }
+        ControlCommand::SignOut => {
+            #[cfg(target_os = "macos")]
+            teslatlas_hub::macos_launch_agent::stop_installed()?;
+            #[cfg(not(target_os = "macos"))]
+            return Err("sign-out is supported only on macOS".into());
+
+            #[cfg(target_os = "macos")]
+            let _admission = AdmittedUserHub::admit(&config.data_dir)?;
+            remove_key_and_tokens(&config.data_dir, &store)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "signed_out",
+                    "vehicleId": vehicle_id,
+                    "service": "stopped",
                 })
             );
         }
@@ -3220,6 +3242,15 @@ mod tests {
             Cli::try_parse_from(["teslatlas-hub", "control", "export-gpx", "--drive-id", "0",])
                 .is_err()
         );
+
+        let sign_out =
+            Cli::try_parse_from(["teslatlas-hub", "control", "sign-out"]).expect("sign-out CLI");
+        assert!(matches!(
+            sign_out.command,
+            Command::Control {
+                command: ControlCommand::SignOut
+            }
+        ));
     }
 
     #[cfg(target_os = "macos")]

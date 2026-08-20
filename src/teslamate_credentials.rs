@@ -133,6 +133,36 @@ pub fn replace_key_and_tokens(
     Ok(())
 }
 
+/// Remove TeslaMate collector authority after its process has been stopped.
+///
+/// The token row is deleted first. A leftover key by itself grants no access,
+/// while deleting the key first could leave a usable ciphertext pair with an
+/// already-loaded key generation after an interrupted operation.
+pub fn remove_key_and_tokens(
+    data_dir: &Path,
+    store: &crate::db::HubStore,
+) -> Result<(), TeslaMateCredentialRemovalError> {
+    store
+        .clear_teslamate_legacy_tokens()
+        .map_err(TeslaMateCredentialRemovalError::TokenStore)?;
+
+    let secrets_dir = data_dir.join("secrets");
+    let current = key_path(data_dir);
+    let previous = previous_key_path(data_dir);
+    let current_exists = path_exists(&current)?;
+    let previous_exists = path_exists(&previous)?;
+    if current_exists {
+        remove_checked_key_file(&current)?;
+    }
+    if previous_exists {
+        remove_checked_key_file(&previous)?;
+    }
+    if current_exists || previous_exists {
+        sync_directory(&secrets_dir)?;
+    }
+    Ok(())
+}
+
 /// Load the key generation that decrypts the committed ciphertext pair.
 /// This also settles an interrupted cross-filesystem replacement.
 pub fn load_key_for_tokens(
@@ -428,6 +458,17 @@ fn read_checked_cursor_key_file(
     read_checked_secret_file(path, CURSOR_KEY_BYTES, true)
 }
 
+pub(crate) fn load_existing_cursor_key_bytes(
+    data_dir: &Path,
+) -> Result<Option<Zeroizing<Vec<u8>>>, TeslaMateCredentialError> {
+    let path = cursor_key_path(data_dir);
+    match fs::symlink_metadata(&path) {
+        Ok(_) => read_checked_cursor_key_file(&path).map(Some),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(TeslaMateCredentialError::InspectCursorKey(error)),
+    }
+}
+
 fn read_checked_secret_file(
     path: &Path,
     maximum: usize,
@@ -637,6 +678,14 @@ pub enum TeslaMateCredentialImportError {
     },
 }
 
+#[derive(Debug, Error)]
+pub enum TeslaMateCredentialRemovalError {
+    #[error("cannot remove TeslaMate token pair: {0}")]
+    TokenStore(#[source] crate::db::StoreError),
+    #[error(transparent)]
+    Credential(#[from] TeslaMateCredentialError),
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -715,6 +764,29 @@ mod tests {
         let recovered = load_key_for_tokens(temporary.path(), &new_store).expect("keep new key");
         assert_eq!(recovered.as_bytes(), new_key);
         assert!(!previous_key_path(temporary.path()).exists());
+    }
+
+    #[test]
+    fn sign_out_removes_tokens_and_both_key_generations() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let store = crate::db::HubStore::initialize(temporary.path()).expect("store");
+        let key = b"exact TeslaMate key";
+        let stored = encrypted_store(key, "access", "refresh");
+        replace_key_and_tokens(temporary.path(), &store, key, &stored).expect("persist pair");
+        drop(begin_key_replacement(temporary.path(), b"replacement key").expect("stage key"));
+
+        remove_key_and_tokens(temporary.path(), &store).expect("remove authority");
+
+        assert!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("read token row")
+                .is_none()
+        );
+        assert!(!key_path(temporary.path()).exists());
+        assert!(!previous_key_path(temporary.path()).exists());
+
+        remove_key_and_tokens(temporary.path(), &store).expect("idempotent removal");
     }
 
     #[test]
