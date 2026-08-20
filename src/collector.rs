@@ -7278,7 +7278,26 @@ mod tests {
         crate::crypto::install_default_provider();
         let temporary = tempfile::tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
-        seed_supervised_restart_import(&store);
+        let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+            .await
+            .expect("loopback Tesla");
+        let setup_auth = LegacyAuth::for_test(
+            fake.oauth_issuer_url(),
+            "observer-access",
+            "observer-refresh",
+        );
+        let setup_client =
+            OwnerApi::for_fake_http(fake.http_base_url().clone(), Duration::from_secs(2))
+                .expect("setup Owner client");
+        setup_native_vehicle_with_client(
+            &store,
+            temporary.path(),
+            &setup_client,
+            &setup_auth,
+            None,
+        )
+        .await
+        .expect("native setup");
         crate::teslamate_credentials::replace_key(temporary.path(), b"observer-cloak-key")
             .expect("0600 Cloak key");
         let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
@@ -7297,9 +7316,6 @@ mod tests {
             )
             .expect("store encrypted pair");
 
-        let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
-            .await
-            .expect("loopback Tesla");
         fake.set_step(crate::fake_tesla::ScenarioStep::UnchangedNoOp);
         fake.set_base_ts_ms(current_epoch_millis().expect("clock") - 900_000);
         let manager = LegacyAuthManager::from_hub_teslamate_store_observer_with_issuer(

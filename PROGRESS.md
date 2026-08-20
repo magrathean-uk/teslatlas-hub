@@ -2,13 +2,15 @@
 
 Status: active.
 
-Current: verify fake/local Owner API and streaming collection with durable lifecycle data across restart.
+Current: verify optional bounded read-only TeslaMate import and incompatible-schema rejection.
 
-Next: verify optional bounded read-only TeslaMate import and incompatible-schema rejection.
+Next: verify pairing and authenticated local sync across restart.
 
 Blocked: none.
 
 ## Completed
+
+- Fake collection and restart durability — wired the observer acceptance path through native setup, then verified products, vehicle-data, streaming reconnect, encrypted credentials, and durable car/drive/charge/position/state/settings/update behavior across restart — 5 focused tests passed.
 
 - macOS service control — added `service status`, `start`, `stop`, and `restart` with preflight and bounded launchctl state checks; focused launchctl/CLI tests passed and live read-only status reported stopped without changing the existing plist.
 
