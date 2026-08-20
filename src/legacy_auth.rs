@@ -11,6 +11,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::tesla_stream::StreamRegion;
 
@@ -135,14 +136,22 @@ pub enum LegacyAuthError {
     SensitiveAccessUnavailable,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+/// The single in-memory owner-auth authority. It is intentionally not cloneable.
+///
+/// ```compile_fail
+/// fn requires_clone<T: Clone>() {}
+/// requires_clone::<teslatlas_hub::legacy_auth::LegacyAuth>();
+/// ```
+#[derive(PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct LegacyAuth {
-    access_token: String,
-    refresh_token: String,
+    access_token: Zeroizing<String>,
+    refresh_token: Zeroizing<String>,
     token_type: String,
     expires_at: i64,
     next_refresh_at: i64,
+    #[zeroize(skip)]
     issuer: Url,
+    #[zeroize(skip)]
     region: StreamRegion,
     retry_at: Option<i64>,
     /// A newly imported pair has no trusted schedule and must refresh once.
@@ -171,8 +180,8 @@ impl LegacyAuth {
         access_token: impl Into<String>,
         refresh_token: impl Into<String>,
     ) -> Result<Self, LegacyAuthError> {
-        let access_token = access_token.into();
-        let refresh_token = refresh_token.into();
+        let access_token = Zeroizing::new(access_token.into());
+        let refresh_token = Zeroizing::new(refresh_token.into());
         validate_refresh_token(&refresh_token)?;
         let (issuer, region) = issuer_from_access_token(&access_token)?;
         Ok(Self {
@@ -483,7 +492,7 @@ impl LegacyAuth {
 
     fn validate_response(
         &self,
-        response: TokenResponse,
+        mut response: TokenResponse,
         receipt_epoch: i64,
     ) -> Result<ValidatedTokens, LegacyAuthError> {
         validate_nonempty(&response.access_token)?;
@@ -507,9 +516,10 @@ impl LegacyAuth {
             )
             .ok_or(LegacyAuthError::InvalidResponse)?;
         Ok(ValidatedTokens {
-            access_token: response.access_token,
-            refresh_token: response.refresh_token,
-            token_type: response.token_type.unwrap_or_else(|| "Bearer".to_owned()),
+            access_token: Zeroizing::new(std::mem::take(&mut response.access_token)),
+            refresh_token: Zeroizing::new(std::mem::take(&mut response.refresh_token)),
+            token_type: std::mem::take(&mut response.token_type)
+                .unwrap_or_else(|| "Bearer".to_owned()),
             expires_at,
             next_refresh_at,
         })
@@ -537,8 +547,8 @@ impl LegacyAuth {
     #[cfg(test)]
     pub(crate) fn for_test(issuer: Url, access_token: &str, refresh_token: &str) -> Self {
         Self {
-            access_token: access_token.to_owned(),
-            refresh_token: refresh_token.to_owned(),
+            access_token: Zeroizing::new(access_token.to_owned()),
+            refresh_token: Zeroizing::new(refresh_token.to_owned()),
             token_type: "Bearer".to_owned(),
             expires_at: 0,
             next_refresh_at: 0,
@@ -559,7 +569,7 @@ impl LegacyAuth {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 struct TokenRequest<'a> {
     grant_type: &'static str,
     scope: &'static str,
@@ -567,7 +577,7 @@ struct TokenRequest<'a> {
     refresh_token: &'a str,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct TokenResponse {
     access_token: String,
     refresh_token: String,
@@ -578,8 +588,8 @@ struct TokenResponse {
 }
 
 struct ValidatedTokens {
-    access_token: String,
-    refresh_token: String,
+    access_token: Zeroizing<String>,
+    refresh_token: Zeroizing<String>,
     token_type: String,
     expires_at: i64,
     next_refresh_at: i64,
@@ -716,6 +726,27 @@ mod tests {
         let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
         let payload = URL_SAFE_NO_PAD.encode(serde_json::json!({"iss": issuer}).to_string());
         format!("{header}.{payload}.signature")
+    }
+
+    #[test]
+    fn legacy_auth_is_redacted_and_zeroizable_on_drop() {
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        let access = "owner-access-secret";
+        let refresh = "owner-refresh-secret";
+        let mut auth = LegacyAuth::for_test(
+            Url::parse("https://auth.tesla.com/oauth2/v3/").unwrap(),
+            access,
+            refresh,
+        );
+        let debug = format!("{auth:?}");
+        assert!(!debug.contains(access));
+        assert!(!debug.contains(refresh));
+        assert_zeroize_on_drop::<LegacyAuth>();
+
+        auth.zeroize();
+        assert!(auth.access_token().bytes().all(|byte| byte == 0));
+        assert!(auth.refresh_token().bytes().all(|byte| byte == 0));
     }
 
     #[test]

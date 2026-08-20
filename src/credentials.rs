@@ -5,7 +5,7 @@ use crate::teslamate_token::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
 use reqwest::Client;
 use std::{path::Path, sync::Arc, time::SystemTime};
 use thiserror::Error;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const MAX_TOKEN_BYTES: usize = MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
 const MAX_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
@@ -16,10 +16,16 @@ fn permitted_sensitive_access() -> SensitiveAccessGuard {
     Arc::new(|| Ok(()))
 }
 
-#[derive(Clone, PartialEq, Eq)]
+/// One decrypted owner credential pair. It is intentionally not cloneable.
+///
+/// ```compile_fail
+/// fn requires_clone<T: Clone>() {}
+/// requires_clone::<teslatlas_hub::credentials::OwnerTokens>();
+/// ```
+#[derive(PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct OwnerTokens {
-    access_token: String,
-    refresh_token: String,
+    access_token: Zeroizing<String>,
+    refresh_token: Zeroizing<String>,
 }
 impl OwnerTokens {
     pub(crate) fn access_token(&self) -> &str {
@@ -32,6 +38,8 @@ impl OwnerTokens {
         access_token: String,
         refresh_token: String,
     ) -> Result<Self, CredentialError> {
+        let access_token = Zeroizing::new(access_token);
+        let refresh_token = Zeroizing::new(refresh_token);
         validate_token_component(&access_token)?;
         validate_token_component(&refresh_token)?;
         Ok(Self {
@@ -492,6 +500,24 @@ pub enum CredentialError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owner_tokens_are_redacted_and_zeroizable_on_drop() {
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        let access = "owner-access-secret";
+        let refresh = "owner-refresh-secret";
+        let mut tokens =
+            OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).unwrap();
+        let debug = format!("{tokens:?}");
+        assert!(!debug.contains(access));
+        assert!(!debug.contains(refresh));
+        assert_zeroize_on_drop::<OwnerTokens>();
+
+        tokens.zeroize();
+        assert!(tokens.access_token().bytes().all(|byte| byte == 0));
+        assert!(tokens.refresh_token().bytes().all(|byte| byte == 0));
+    }
 
     #[tokio::test]
     async fn observer_never_posts_a_refresh_token() {

@@ -37,10 +37,10 @@ pub fn decrypt_legacy_owner_tokens(
     encrypted_refresh: &[u8],
 ) -> Result<OwnerTokens, TeslaMateTokenError> {
     let cipher = cloak_cipher(encryption_key)?;
-    let access = decrypt_cloak_value(&cipher, encrypted_access)?;
-    let refresh = decrypt_cloak_value(&cipher, encrypted_refresh)?;
-    let access = String::from_utf8(access).map_err(|_| TeslaMateTokenError::InvalidPlaintext)?;
-    let refresh = String::from_utf8(refresh).map_err(|_| TeslaMateTokenError::InvalidPlaintext)?;
+    let access = Zeroizing::new(decrypt_cloak_value(&cipher, encrypted_access)?);
+    let refresh = Zeroizing::new(decrypt_cloak_value(&cipher, encrypted_refresh)?);
+    let access = secret_utf8_copy(&access)?;
+    let refresh = secret_utf8_copy(&refresh)?;
     OwnerTokens::from_secret_parts(access, refresh)
         .map_err(|_| TeslaMateTokenError::InvalidPlaintext)
 }
@@ -83,6 +83,12 @@ fn strip_line_ending(bytes: &mut Zeroizing<Vec<u8>>) {
             bytes.pop();
         }
     }
+}
+
+fn secret_utf8_copy(bytes: &[u8]) -> Result<String, TeslaMateTokenError> {
+    std::str::from_utf8(bytes)
+        .map(str::to_owned)
+        .map_err(|_| TeslaMateTokenError::InvalidPlaintext)
 }
 
 fn validate_file_token_plaintext(value: &[u8]) -> Result<(), TeslaMateTokenError> {
