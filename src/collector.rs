@@ -23,7 +23,7 @@ use thiserror::Error;
 use tokio::time::{Instant, MissedTickBehavior, sleep, timeout};
 use tokio::{
     sync::{mpsc, oneshot, watch},
-    task::JoinHandle,
+    task::{JoinError, JoinHandle},
 };
 use uuid::Uuid;
 
@@ -2243,7 +2243,18 @@ fn ensure_vehicle_stream(
     let endpoint = stream_endpoint
         .unwrap_or_else(|| streaming_endpoint(*region))
         .to_owned();
+    #[cfg(not(test))]
     let supervisor_result = TeslaStreamSupervisor::new_legacy_auth(
+        vehicle_id,
+        stream_vehicle_id,
+        Arc::clone(manager),
+        *region,
+        endpoint,
+        client.legacy_auth_http_client(),
+        events,
+    );
+    #[cfg(test)]
+    let supervisor_result = TeslaStreamSupervisor::new_legacy_auth_for_test(
         vehicle_id,
         stream_vehicle_id,
         Arc::clone(manager),
@@ -2379,8 +2390,7 @@ async fn drain_stream_events_with_cache(
         if stream.task.is_finished() {
             // Do not discard a completed stream task. An empty event queue
             // must never hide a dead supervisor.
-            let _ = (&mut stream.task).await;
-            return Err(CollectorError::StreamTask);
+            return Err(classify_stream_task_result((&mut stream.task).await));
         }
         for _ in 0..MAX_STREAM_EVENTS_PER_DRAIN {
             let Ok(event) = stream.events.try_recv() else {
@@ -2414,6 +2424,9 @@ async fn drain_stream_events_with_cache(
                     );
                 }
                 StreamEvent::TransportUnavailable => {
+                    scheduler.stream_unhealthy(stream.vehicle_id, Instant::now());
+                }
+                StreamEvent::ProtocolViolation => {
                     scheduler.stream_unhealthy(stream.vehicle_id, Instant::now());
                 }
             }
@@ -4237,6 +4250,27 @@ fn assert_runtime_sensitive_access(
 }
 
 #[derive(Debug, Error)]
+pub enum StreamTaskOutcome {
+    #[error("completed normally")]
+    CompletedNormally,
+    #[error("supervisor failed: {0}")]
+    Supervisor(#[source] crate::tesla_stream::StreamSupervisorError),
+    #[error("task panicked or was cancelled")]
+    JoinFailure,
+}
+
+fn classify_stream_task_result(
+    result: Result<Result<(), crate::tesla_stream::StreamSupervisorError>, JoinError>,
+) -> CollectorError {
+    let outcome = match result {
+        Ok(Ok(())) => StreamTaskOutcome::CompletedNormally,
+        Ok(Err(error)) => StreamTaskOutcome::Supervisor(error),
+        Err(_) => StreamTaskOutcome::JoinFailure,
+    };
+    CollectorError::StreamTask(outcome)
+}
+
+#[derive(Debug, Error)]
 pub enum CollectorError {
     #[error("Serve requires one imported TeslaMate car")]
     SelectedTeslaMateCarMissing,
@@ -4244,8 +4278,8 @@ pub enum CollectorError {
     SupervisedHeartbeatTask,
     #[error("terrain worker stopped unexpectedly")]
     TerrainWorkerTask,
-    #[error("vehicle stream task stopped unexpectedly")]
-    StreamTask,
+    #[error("vehicle stream task stopped unexpectedly: {0}")]
+    StreamTask(StreamTaskOutcome),
     #[error("terrain worker failed during local startup")]
     TerrainWorkerStartup,
     #[error("runtime sensitive-access admission is unavailable")]
@@ -4321,6 +4355,30 @@ mod tests {
         lifecycle::OpenSessionState,
         owner_api::{Vehicle, VehicleData},
     };
+
+    #[tokio::test]
+    async fn stream_task_completion_outcomes_are_typed_and_secret_safe() {
+        let normal =
+            tokio::spawn(async { Ok::<_, crate::tesla_stream::StreamSupervisorError>(()) }).await;
+        let supervisor = tokio::spawn(async {
+            Err::<(), _>(crate::tesla_stream::StreamSupervisorError::EventQueueFull)
+        })
+        .await;
+        let panic = tokio::spawn(async { panic!("access-secret refresh-secret") }).await;
+        for error in [
+            classify_stream_task_result(normal),
+            classify_stream_task_result(supervisor),
+            classify_stream_task_result(panic),
+        ] {
+            let rendered = format!("{error} {error:?}");
+            assert!(!rendered.contains("access-secret"));
+            assert!(!rendered.contains("refresh-secret"));
+        }
+        assert!(matches!(
+            classify_stream_task_result(Ok(Ok(()))),
+            CollectorError::StreamTask(StreamTaskOutcome::CompletedNormally)
+        ));
+    }
 
     #[test]
     fn persists_a_collected_snapshot_and_retries_without_duplication() {
@@ -5505,7 +5563,7 @@ mod tests {
                 .unwrap();
         });
         let (events, _receiver) = mpsc::channel(4);
-        let supervisor = TeslaStreamSupervisor::new_legacy_auth(
+        let supervisor = TeslaStreamSupervisor::new_legacy_auth_for_test(
             VehicleId::from_test(9),
             StreamVehicleId::from_test(9),
             manager,
@@ -6862,7 +6920,8 @@ mod tests {
             region,
         };
         let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse(fake.http_base_url().as_str()).expect("loopback owner API"),
+            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
+                .expect("loopback owner API"),
             Duration::from_secs(2),
         ))
         .expect("owner client");
@@ -7011,7 +7070,8 @@ mod tests {
             region: StreamRegion::Global,
         };
         let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse(fake.http_base_url().as_str()).expect("loopback Owner API"),
+            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
+                .expect("loopback Owner API"),
             Duration::from_secs(2),
         ))
         .expect("Owner client");
@@ -7114,7 +7174,8 @@ mod tests {
             region: StreamRegion::Global,
         };
         let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse(fake.http_base_url().as_str()).expect("loopback Owner API"),
+            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
+                .expect("loopback Owner API"),
             Duration::from_secs(2),
         ))
         .expect("Owner client");
@@ -7162,7 +7223,8 @@ mod tests {
             region: StreamRegion::Global,
         };
         let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse(fake.http_base_url().as_str()).expect("loopback Owner API"),
+            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
+                .expect("loopback Owner API"),
             Duration::from_secs(2),
         ))
         .expect("Owner client");
@@ -7216,7 +7278,8 @@ mod tests {
             region: StreamRegion::Global,
         };
         let client = OwnerApi::new(OwnerApiOptions::new(
-            OwnerApiBase::parse(fake.http_base_url().as_str()).expect("loopback Owner API"),
+            OwnerApiBase::parse_loopback_http_for_test(fake.http_base_url().as_str())
+                .expect("loopback Owner API"),
             Duration::from_secs(2),
         ))
         .expect("Owner client");

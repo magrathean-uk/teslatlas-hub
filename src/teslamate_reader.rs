@@ -325,12 +325,12 @@ async fn connect_source(
         .ok_or(TeslaMateReaderError::SourceUserRequired)?;
     let mut configuration = Config::new();
     configuration
-        .host(source.host())
+        .host(source.connection_host())
         .port(source.port())
         .user(user)
         .password(password.as_str())
         .dbname(source.database_name());
-    if source.is_loopback() {
+    if matches!(source_transport(source), SourceTransport::PlaintextLoopback) {
         configuration.ssl_mode(SslMode::Disable);
         let (client, connection) = timeout(limits.connect_timeout, configuration.connect(NoTls))
             .await
@@ -359,6 +359,20 @@ async fn connect_source(
         let _ = connection.await;
     });
     Ok((client, connection_task))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SourceTransport {
+    PlaintextLoopback,
+    Rustls,
+}
+
+fn source_transport(source: &ReadOnlySource) -> SourceTransport {
+    if source.is_loopback() {
+        SourceTransport::PlaintextLoopback
+    } else {
+        SourceTransport::Rustls
+    }
 }
 
 /// Read exactly one encrypted legacy OAuth pair from TeslaMate's private
@@ -3842,6 +3856,28 @@ mod tests {
         teslamate_projection::TeslaMateCar,
         teslamate_stage::{TeslaMateStageLimits, TeslaMateStageTable},
     };
+
+    #[test]
+    fn postgres_transport_uses_plaintext_only_for_literal_loopback() {
+        for source in [
+            "postgresql://reader@127.0.0.1/db",
+            "postgresql://reader@[::1]/db",
+        ] {
+            let source = ReadOnlySource::parse(source).unwrap();
+            assert_eq!(
+                source_transport(&source),
+                SourceTransport::PlaintextLoopback
+            );
+            assert!(!source.connection_host().contains(['[', ']']));
+        }
+        for source in [
+            "postgresql://reader@192.168.1.2/db",
+            "postgresql://reader@db.example/db",
+        ] {
+            let source = ReadOnlySource::parse(source).unwrap();
+            assert_eq!(source_transport(&source), SourceTransport::Rustls);
+        }
+    }
 
     #[test]
     fn live_source_witness_is_fixed_read_only_and_never_reads_private_tokens() {

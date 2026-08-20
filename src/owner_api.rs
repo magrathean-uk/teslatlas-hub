@@ -55,16 +55,22 @@ impl OwnerApiBase {
         Self::from_url(url, true)
     }
 
-    fn from_url(mut url: Url, require_https: bool) -> Result<Self, OwnerApiConfigError> {
-        if url.scheme() == "http" && !is_loopback_owner_api_host(url.host_str()) {
+    /// Hermetic loopback-only constructor. Production configuration always
+    /// goes through `parse`, which requires HTTPS before any bearer client is
+    /// built.
+    #[cfg(test)]
+    pub(crate) fn parse_loopback_http_for_test(value: &str) -> Result<Self, OwnerApiConfigError> {
+        let url = Url::parse(value).map_err(|_| OwnerApiConfigError::InvalidBaseUrl)?;
+        let base = Self::from_url(url, false)?;
+        if !base.is_loopback_http() {
             return Err(OwnerApiConfigError::HttpsRequired);
         }
+        Ok(base)
+    }
+
+    fn from_url(mut url: Url, require_https: bool) -> Result<Self, OwnerApiConfigError> {
         if require_https && url.scheme() != "https" {
-            // Local replacement proof uses a loopback fake Tesla source over
-            // plaintext HTTP. Remote hosts remain HTTPS-only.
-            if url.scheme() != "http" {
-                return Err(OwnerApiConfigError::HttpsRequired);
-            }
+            return Err(OwnerApiConfigError::HttpsRequired);
         }
         if !require_https && !matches!(url.scheme(), "http" | "https") {
             return Err(OwnerApiConfigError::UnsupportedBaseScheme);
@@ -165,10 +171,11 @@ fn is_loopback_owner_api_host(host: Option<&str>) -> bool {
 
 impl OwnerApi {
     pub(crate) fn new(options: OwnerApiOptions) -> Result<Self, OwnerApiConfigError> {
-        // Loopback HTTP is only accepted for the local fake Tesla source used by
-        // replacement journeys. Remote endpoints still require HTTPS.
-        let allow_loopback_http = options.base_url.is_loopback_http();
-        Self::build(options, allow_loopback_http)
+        #[cfg(test)]
+        let allow_insecure_test_base = options.base_url.is_loopback_http();
+        #[cfg(not(test))]
+        let allow_insecure_test_base = false;
+        Self::build(options, allow_insecure_test_base)
     }
 
     pub(crate) fn legacy_auth_http_client(&self) -> Client {
@@ -889,6 +896,9 @@ impl OwnerApi {
         request_timeout: Duration,
     ) -> Result<Self, OwnerApiConfigError> {
         let base_url = OwnerApiBase::from_url(base_url, false)?;
+        if !base_url.is_loopback_http() {
+            return Err(OwnerApiConfigError::HttpsRequired);
+        }
         Self::build(OwnerApiOptions::new(base_url, request_timeout), true)
     }
 }
@@ -992,7 +1002,7 @@ mod tests {
 
     #[test]
     fn vehicle_data_endpoint_preserves_provider_path_and_encodes_only_the_endpoint_query() {
-        let base = Url::parse("https://provider.example/owner-proxy/").expect("base URL");
+        let base = Url::parse("http://127.0.0.1/owner-proxy/").expect("base URL");
         let client = OwnerApi::for_fake_http(base, Duration::from_secs(2)).expect("fake client");
         let endpoint = client
             .vehicle_data_endpoint(VehicleId(7))
@@ -1037,26 +1047,37 @@ mod tests {
 
     #[test]
     fn loopback_http_owner_api_base_is_accepted_for_local_fake_source() {
-        let base = OwnerApiBase::parse("http://127.0.0.1:9/").expect("loopback http");
+        let base = OwnerApiBase::parse_loopback_http_for_test("http://127.0.0.1:9/")
+            .expect("loopback http");
         assert!(base.is_loopback_http());
         assert_eq!(base.as_str(), "http://127.0.0.1:9/");
         assert!(matches!(
-            OwnerApiBase::parse("http://localhost:9/owner/"),
+            OwnerApiBase::parse_loopback_http_for_test("http://localhost:9/owner/"),
             Err(OwnerApiConfigError::HttpsRequired)
         ));
         assert!(matches!(
-            OwnerApiBase::parse("http://192.168.1.2/"),
+            OwnerApiBase::parse_loopback_http_for_test("http://192.168.1.2/"),
             Err(OwnerApiConfigError::HttpsRequired)
         ));
-        assert!(OwnerApiBase::parse("http://[::1]:9/").is_ok());
+        assert!(OwnerApiBase::parse_loopback_http_for_test("http://[::1]:9/").is_ok());
         for base in [
             "http://token@127.0.0.1/",
             "http://127.0.0.1/?token=bad",
             "http://127.0.0.1/#token",
             "http://localhost:9/",
         ] {
-            assert!(OwnerApiBase::parse(base).is_err());
+            assert!(OwnerApiBase::parse_loopback_http_for_test(base).is_err());
         }
+    }
+
+    #[test]
+    fn owner_api_errors_and_debug_redact_bearer_values() {
+        let error = OwnerApiBase::parse("https://access-secret@owner.example/")
+            .expect_err("credential-bearing base rejected");
+        assert!(!format!("{error}").contains("access-secret"));
+        assert!(!format!("{error:?}").contains("access-secret"));
+        let base = OwnerApiBase::parse("https://owner.example/").unwrap();
+        assert!(!format!("{base:?}").contains("refresh-secret"));
     }
 
     struct FakeServer {

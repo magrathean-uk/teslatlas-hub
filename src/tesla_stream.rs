@@ -85,6 +85,18 @@ pub fn streaming_endpoint(region: StreamRegion) -> &'static str {
 }
 
 pub fn validate_endpoint_override(value: &str) -> Result<(), StreamError> {
+    validate_endpoint_override_with_loopback_test_exception(value, false)
+}
+
+#[cfg(test)]
+fn validate_test_endpoint_override(value: &str) -> Result<(), StreamError> {
+    validate_endpoint_override_with_loopback_test_exception(value, true)
+}
+
+fn validate_endpoint_override_with_loopback_test_exception(
+    value: &str,
+    allow_loopback_plaintext: bool,
+) -> Result<(), StreamError> {
     let url = Url::parse(value).map_err(|_| StreamError::InvalidEndpoint)?;
     if !matches!(url.scheme(), "ws" | "wss")
         || url.host_str().is_none()
@@ -92,7 +104,8 @@ pub fn validate_endpoint_override(value: &str) -> Result<(), StreamError> {
         || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
-        || (url.scheme() == "ws" && !is_literal_loopback_host(url.host_str()))
+        || (url.scheme() == "ws"
+            && (!allow_loopback_plaintext || !is_literal_loopback_host(url.host_str())))
     {
         return Err(StreamError::InvalidEndpoint);
     }
@@ -111,6 +124,7 @@ pub enum StreamEvent {
     VehicleOffline,
     AuthRejected,
     TransportUnavailable,
+    ProtocolViolation,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -173,7 +187,8 @@ impl StreamPowerGate {
                 .store(update.power.is_some(), Ordering::Release),
             StreamEvent::VehicleOffline
             | StreamEvent::AuthRejected
-            | StreamEvent::TransportUnavailable => self.revoke(),
+            | StreamEvent::TransportUnavailable
+            | StreamEvent::ProtocolViolation => self.revoke(),
             StreamEvent::Healthy => {}
         }
     }
@@ -243,6 +258,7 @@ enum EventDelivery {
 }
 
 impl TeslaStreamSupervisor {
+    #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn new_legacy_auth(
         vehicle_id: VehicleId,
         stream_vehicle_id: StreamVehicleId,
@@ -252,7 +268,52 @@ impl TeslaStreamSupervisor {
         client: Client,
         events: mpsc::Sender<StreamEvent>,
     ) -> Result<Self, StreamSupervisorError> {
-        let endpoint = endpoint_for_region(region, endpoint)?;
+        Self::new_legacy_auth_with_endpoint_policy(
+            vehicle_id,
+            stream_vehicle_id,
+            manager,
+            region,
+            endpoint,
+            client,
+            events,
+            false,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_legacy_auth_for_test(
+        vehicle_id: VehicleId,
+        stream_vehicle_id: StreamVehicleId,
+        manager: Arc<Mutex<LegacyAuthManager>>,
+        region: StreamRegion,
+        endpoint: String,
+        client: Client,
+        events: mpsc::Sender<StreamEvent>,
+    ) -> Result<Self, StreamSupervisorError> {
+        Self::new_legacy_auth_with_endpoint_policy(
+            vehicle_id,
+            stream_vehicle_id,
+            manager,
+            region,
+            endpoint,
+            client,
+            events,
+            true,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_legacy_auth_with_endpoint_policy(
+        vehicle_id: VehicleId,
+        stream_vehicle_id: StreamVehicleId,
+        manager: Arc<Mutex<LegacyAuthManager>>,
+        region: StreamRegion,
+        endpoint: String,
+        client: Client,
+        events: mpsc::Sender<StreamEvent>,
+        allow_loopback_plaintext: bool,
+    ) -> Result<Self, StreamSupervisorError> {
+        let endpoint = endpoint_for_region(region, endpoint, allow_loopback_plaintext)?;
         let tag = stream_vehicle_id.to_string();
         if tag.is_empty() {
             return Err(StreamSupervisorError::InvalidTag);
@@ -421,6 +482,7 @@ impl TeslaStreamSupervisor {
                         if self.emit_event(StreamEvent::TransportUnavailable, shutdown).await?.is_shutdown() {
                             return Ok(disconnected_termination(ever_subscribed));
                         }
+                        let _ = socket.close(None).await;
                         break false;
                     }
                     frame = socket.next() => match frame {
@@ -428,7 +490,7 @@ impl TeslaStreamSupervisor {
                             let Some(event) = decode_message(&self.tag, message) else {
                                 continue;
                             };
-                            if matches!(event, StreamEvent::Healthy) {
+                            if resets_backoff(&event) {
                                 subscribed = true;
                                 ever_subscribed = true;
                                 // A raw WebSocket handshake proves transport
@@ -445,7 +507,7 @@ impl TeslaStreamSupervisor {
                             }
                             let valid_after_handshake = subscribed
                                 && matches!(event, StreamEvent::Healthy | StreamEvent::Telemetry(_));
-                            let terminal = matches!(event, StreamEvent::AuthRejected);
+                            let terminal = matches!(event, StreamEvent::AuthRejected | StreamEvent::ProtocolViolation);
                             if terminal
                                 && let Some(receipt) = subscribe_receipt.take() {
                                     let outcome = if matches!(event, StreamEvent::AuthRejected) {
@@ -613,13 +675,24 @@ fn disconnected_termination(ever_subscribed: bool) -> StreamRunTermination {
     }
 }
 
-fn endpoint_for_region(region: StreamRegion, endpoint: String) -> Result<String, StreamError> {
+fn endpoint_for_region(
+    region: StreamRegion,
+    endpoint: String,
+    allow_loopback_plaintext: bool,
+) -> Result<String, StreamError> {
     let endpoint = if endpoint == GLOBAL_STREAM_ENDPOINT || endpoint == CHINA_STREAM_ENDPOINT {
         streaming_endpoint(region).to_owned()
     } else {
         endpoint
     };
-    validate_endpoint_override(&endpoint)?;
+    if allow_loopback_plaintext {
+        #[cfg(test)]
+        validate_test_endpoint_override(&endpoint)?;
+        #[cfg(not(test))]
+        validate_endpoint_override(&endpoint)?;
+    } else {
+        validate_endpoint_override(&endpoint)?;
+    }
     Ok(endpoint)
 }
 
@@ -643,6 +716,10 @@ fn equal_jitter(delay: Duration) -> Duration {
         0
     };
     Duration::from_nanos(lower.saturating_add(random % width.saturating_add(1)) as u64)
+}
+
+fn resets_backoff(event: &StreamEvent) -> bool {
+    matches!(event, StreamEvent::Healthy)
 }
 
 impl EventDelivery {
@@ -691,7 +768,7 @@ pub struct StreamUpdate {
 fn decode_message(tag: &str, message: Message) -> Option<StreamEvent> {
     let text = match message {
         Message::Text(text) => text,
-        Message::Binary(_) => return None,
+        Message::Binary(_) => return Some(StreamEvent::ProtocolViolation),
         _ => return None,
     };
     let wire: StreamWire<'_> = serde_json::from_str(&text).ok()?;
@@ -737,7 +814,7 @@ fn decode_control_hello(code: Option<i64>, connection_timeout: Option<i64>) -> S
             401 | 403 => StreamEvent::AuthRejected,
             _ => StreamEvent::TransportUnavailable,
         },
-        None if connection_timeout.is_some() => StreamEvent::Healthy,
+        None if connection_timeout.is_some_and(|timeout| timeout > 0) => StreamEvent::Healthy,
         None => StreamEvent::TransportUnavailable,
     }
 }
@@ -761,28 +838,25 @@ fn parse_data_update_parts(
     value: &str,
 ) -> Result<StreamUpdate, StreamError> {
     validate_tag(tag)?;
-    let values: Vec<&str> = value.split(',').collect();
-    let (timestamp_ms, values) = match values.len() {
-        length if length == TESLAMATE_STREAM_FIELDS.len() => {
-            let timestamp_ms = timestamp
-                .filter(|timestamp| *timestamp > 0)
-                .ok_or(StreamError::InvalidTimestamp)?;
-            (timestamp_ms, values.as_slice())
-        }
-        length if length == TESLAMATE_STREAM_FIELDS.len() + 1 => {
-            if timestamp.is_some() {
-                return Err(StreamError::MalformedDataUpdate);
-            }
-            let timestamp_ms = values[0]
-                .trim()
-                .parse::<i64>()
-                .ok()
-                .filter(|timestamp| *timestamp > 0)
-                .ok_or(StreamError::InvalidTimestamp)?;
-            (timestamp_ms, &values[1..])
-        }
-        _ => return Err(StreamError::MalformedDataUpdate),
+    const MAX_FIELD_BYTES: usize = 64;
+    let mut parts = value.split(',');
+    let timestamp_ms = match timestamp {
+        Some(timestamp) if timestamp > 0 => timestamp,
+        Some(_) => return Err(StreamError::InvalidTimestamp),
+        None => bounded_next_field(&mut parts, MAX_FIELD_BYTES)?
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .filter(|timestamp| *timestamp > 0)
+            .ok_or(StreamError::InvalidTimestamp)?,
     };
+    let mut values = [""; TESLAMATE_STREAM_FIELDS.len()];
+    for field in &mut values {
+        *field = bounded_next_field(&mut parts, MAX_FIELD_BYTES)?;
+    }
+    if parts.next().is_some() {
+        return Err(StreamError::MalformedDataUpdate);
+    }
     Ok(StreamUpdate {
         tag: tag.to_owned(),
         timestamp_ms,
@@ -794,11 +868,21 @@ fn parse_data_update_parts(
         est_lat: optional_f64(values[5])?,
         est_lng: optional_f64(values[6])?,
         power: optional_i64(values[7])?,
-        shift_state: optional_state(values[8]),
+        shift_state: optional_state(values[8])?,
         range: optional_i64(values[9])?,
         est_range: optional_i64(values[10])?,
         heading: optional_i64(values[11])?,
     })
+}
+
+fn bounded_next_field<'a>(
+    parts: &mut std::str::Split<'a, char>,
+    maximum: usize,
+) -> Result<&'a str, StreamError> {
+    let field = parts.next().ok_or(StreamError::MalformedDataUpdate)?;
+    (field.len() <= maximum)
+        .then_some(field)
+        .ok_or(StreamError::InvalidField)
 }
 
 fn validate_tag(tag: &str) -> Result<(), StreamError> {
@@ -837,9 +921,12 @@ fn optional_f64(value: &str) -> Result<Option<f64>, StreamError> {
         Err(StreamError::InvalidField)
     }
 }
-fn optional_state(value: &str) -> Option<String> {
+fn optional_state(value: &str) -> Result<Option<String>, StreamError> {
     let value = value.trim();
-    (!value.is_empty()).then(|| value.to_owned())
+    if value.len() > 32 || value.chars().any(char::is_control) {
+        return Err(StreamError::InvalidField);
+    }
+    Ok((!value.is_empty()).then(|| value.to_owned()))
 }
 
 #[cfg(test)]
@@ -847,7 +934,16 @@ mod tests {
     use super::*;
     use serde_json::Value;
     use tokio::{net::TcpListener, time::timeout};
-    use tokio_tungstenite::{accept_async, tungstenite::Message};
+    use tokio_tungstenite::{
+        accept_async,
+        tungstenite::{
+            Message,
+            protocol::frame::{
+                Frame,
+                coding::{Data, OpCode},
+            },
+        },
+    };
 
     fn legacy_supervisor(
         vehicle_id: u64,
@@ -864,7 +960,7 @@ mod tests {
         .with_test_schedule(2_000_000_000, 1_900_000_000);
         let manager = LegacyAuthManager::for_test(auth, Arc::new(|_, _| Ok(())));
         let client = reqwest::Client::builder().build().unwrap();
-        TeslaStreamSupervisor::new_legacy_auth(
+        TeslaStreamSupervisor::new_legacy_auth_for_test(
             VehicleId::from_test(vehicle_id),
             StreamVehicleId::from_test(stream_vehicle_id),
             Arc::new(Mutex::new(manager)),
@@ -890,7 +986,10 @@ mod tests {
     #[test]
     fn plaintext_endpoints_require_literal_loopback_ips() {
         for endpoint in ["ws://127.0.0.1:9000/", "ws://[::1]:9000/"] {
-            assert!(validate_endpoint_override(endpoint).is_ok(), "{endpoint}");
+            assert!(
+                validate_test_endpoint_override(endpoint).is_ok(),
+                "{endpoint}"
+            );
         }
         for endpoint in [
             "ws://localhost:9000/",
@@ -899,7 +998,10 @@ mod tests {
             "ws://user@127.0.0.1:9000/",
             "ws://127.0.0.1:9000/?token=secret",
         ] {
-            assert!(validate_endpoint_override(endpoint).is_err(), "{endpoint}");
+            assert!(
+                validate_test_endpoint_override(endpoint).is_err(),
+                "{endpoint}"
+            );
         }
         assert!(
             validate_endpoint_override("wss://streaming.vn.teslamotors.com/streaming/").is_ok()
@@ -935,6 +1037,62 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn supervisor_exits_when_shutdown_hits_a_saturated_event_queue() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let server_attempts = Arc::clone(&attempts);
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            server_attempts.fetch_add(1, Ordering::SeqCst);
+            let mut socket = accept_async(tcp).await.unwrap();
+            let _ = socket.next().await;
+            socket
+                .send(Message::Text(
+                    r#"{"msg_type":"control:hello","code":200}"#.into(),
+                ))
+                .await
+                .unwrap();
+            socket.send(Message::Text(r#"{"msg_type":"data:update","tag":"9","timestamp":1700000000123,"value":"42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#.into())).await.unwrap();
+            let _ = timeout(Duration::from_secs(1), socket.next()).await;
+        });
+        let (events, _receiver) = mpsc::channel(1);
+        let gate = Arc::new(StreamPowerGate::default());
+        let supervisor = legacy_supervisor(9, 9, endpoint, events)
+            .unwrap()
+            .with_power_gate(Arc::clone(&gate))
+            .with_policy(SupervisorPolicy {
+                connect_timeout: Duration::from_millis(100),
+                silence_timeout: Duration::from_secs(1),
+                backoff_initial: Duration::from_millis(5),
+                remote_backoff_cap: Duration::from_millis(10),
+                connect_backoff_cap: Duration::from_millis(10),
+            });
+        let (stop, shutdown) = oneshot::channel();
+        let task = tokio::spawn(supervisor.run(shutdown));
+        timeout(Duration::from_secs(1), async {
+            while !gate.is_confirmed() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        stop.send(()).unwrap();
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            1,
+            "shutdown must not reconnect"
+        );
+        assert!(!gate.is_confirmed(), "supervisor exit revokes power gate");
+        server.await.unwrap();
+    }
+
     #[test]
     fn websocket_limits_and_jitter_are_bounded() {
         let config = stream_socket_config();
@@ -944,6 +1102,131 @@ mod tests {
             let delay = equal_jitter(Duration::from_millis(100));
             assert!((Duration::from_millis(50)..=Duration::from_millis(100)).contains(&delay));
         }
+    }
+
+    #[test]
+    fn only_valid_protocol_health_resets_backoff() {
+        assert!(resets_backoff(&StreamEvent::Healthy));
+        for event in [
+            StreamEvent::VehicleOffline,
+            StreamEvent::AuthRejected,
+            StreamEvent::TransportUnavailable,
+            StreamEvent::ProtocolViolation,
+        ] {
+            assert!(!resets_backoff(&event));
+        }
+        let error = validate_endpoint_override("ws://127.0.0.1/?access-secret=1")
+            .expect_err("production plaintext endpoint rejected");
+        assert!(!format!("{error} {error:?}").contains("access-secret"));
+    }
+
+    #[tokio::test]
+    async fn loopback_socket_rejects_oversized_single_frame_without_telemetry() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(tcp).await.unwrap();
+            let _ = socket.next().await;
+            socket
+                .send(Message::Frame(Frame::message(
+                    vec![b'x'; STREAM_MAX_FRAME_BYTES + 1],
+                    OpCode::Data(Data::Text),
+                    true,
+                )))
+                .await
+                .unwrap();
+        });
+        let (events, mut received) = mpsc::channel(2);
+        let supervisor = legacy_supervisor(9, 9, endpoint, events).unwrap();
+        let (stop, shutdown) = oneshot::channel();
+        let task = tokio::spawn(supervisor.run(shutdown));
+        assert_eq!(
+            received.recv().await,
+            Some(StreamEvent::TransportUnavailable)
+        );
+        assert!(
+            received.try_recv().is_err(),
+            "no telemetry must be admitted"
+        );
+        stop.send(()).unwrap();
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn loopback_socket_rejects_oversized_fragmented_message_without_telemetry() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(tcp).await.unwrap();
+            let _ = socket.next().await;
+            let fragment = vec![b'x'; STREAM_MAX_FRAME_BYTES - 1];
+            socket
+                .send(Message::Frame(Frame::message(
+                    fragment.clone(),
+                    OpCode::Data(Data::Text),
+                    false,
+                )))
+                .await
+                .unwrap();
+            socket
+                .send(Message::Frame(Frame::message(
+                    fragment.clone(),
+                    OpCode::Data(Data::Continue),
+                    false,
+                )))
+                .await
+                .unwrap();
+            socket
+                .send(Message::Frame(Frame::message(
+                    fragment.clone(),
+                    OpCode::Data(Data::Continue),
+                    false,
+                )))
+                .await
+                .unwrap();
+            socket
+                .send(Message::Frame(Frame::message(
+                    fragment.clone(),
+                    OpCode::Data(Data::Continue),
+                    false,
+                )))
+                .await
+                .unwrap();
+            socket
+                .send(Message::Frame(Frame::message(
+                    fragment,
+                    OpCode::Data(Data::Continue),
+                    true,
+                )))
+                .await
+                .unwrap();
+        });
+        let (events, mut received) = mpsc::channel(2);
+        let supervisor = legacy_supervisor(9, 9, endpoint, events).unwrap();
+        let (stop, shutdown) = oneshot::channel();
+        let task = tokio::spawn(supervisor.run(shutdown));
+        assert_eq!(
+            received.recv().await,
+            Some(StreamEvent::TransportUnavailable)
+        );
+        assert!(
+            received.try_recv().is_err(),
+            "no telemetry must be admitted"
+        );
+        stop.send(()).unwrap();
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        server.await.unwrap();
     }
 
     #[tokio::test]
@@ -1020,7 +1303,7 @@ mod tests {
         );
         let (events, _) = mpsc::channel(1);
         crate::crypto::install_default_provider();
-        let supervisor = TeslaStreamSupervisor::new_legacy_auth(
+        let supervisor = TeslaStreamSupervisor::new_legacy_auth_for_test(
             VehicleId::from_test(9),
             StreamVehicleId::from_test(9),
             Arc::new(Mutex::new(manager)),
@@ -1106,7 +1389,7 @@ mod tests {
             let _ = second.next().await;
         });
         let (events, _received) = mpsc::channel(4);
-        let supervisor = TeslaStreamSupervisor::new_legacy_auth(
+        let supervisor = TeslaStreamSupervisor::new_legacy_auth_for_test(
             VehicleId::from_test(9),
             StreamVehicleId::from_test(9),
             Arc::new(Mutex::new(manager)),
@@ -1279,8 +1562,10 @@ mod tests {
                 ))
                 .await
                 .unwrap();
-            tokio::time::sleep(Duration::from_millis(35)).await;
-            drop(first);
+            assert!(matches!(
+                timeout(Duration::from_secs(1), first.next()).await.unwrap(),
+                Some(Ok(Message::Close(_))) | None
+            ));
 
             let (tcp, _) = listener.accept().await.unwrap();
             let mut second = accept_async(tcp).await.unwrap();
@@ -1363,7 +1648,7 @@ mod tests {
             .build()
             .unwrap();
         let (events, _) = mpsc::channel(1);
-        let supervisor = TeslaStreamSupervisor::new_legacy_auth(
+        let supervisor = TeslaStreamSupervisor::new_legacy_auth_for_test(
             crate::owner_api::VehicleId::from_test(9),
             crate::owner_api::StreamVehicleId::from_test(9),
             Arc::new(Mutex::new(manager)),
@@ -1392,7 +1677,7 @@ mod tests {
         );
         assert_eq!(
             decode_message("42", Message::Binary(hello.as_bytes().to_vec().into())),
-            None
+            Some(StreamEvent::ProtocolViolation)
         );
 
         let update = r#"{"msg_type":"data:update","tag":"42","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#;
@@ -1400,7 +1685,7 @@ mod tests {
         assert!(matches!(text, Some(StreamEvent::Telemetry(_))));
         assert_eq!(
             decode_message("42", Message::Binary(update.as_bytes().to_vec().into())),
-            None
+            Some(StreamEvent::ProtocolViolation)
         );
     }
 
@@ -1408,7 +1693,7 @@ mod tests {
     fn non_utf8_binary_and_websocket_control_frames_are_ignored() {
         assert_eq!(
             decode_message("42", Message::Binary(vec![0xff, 0xfe].into())),
-            None
+            Some(StreamEvent::ProtocolViolation)
         );
         assert_eq!(decode_message("42", Message::Ping(Vec::new().into())), None);
         assert_eq!(decode_message("42", Message::Pong(Vec::new().into())), None);
@@ -1440,7 +1725,7 @@ mod tests {
                 "9",
                 Message::Text(r#"{"msg_type":"control:hello","connection_timeout":0}"#.into(),),
             ),
-            Some(StreamEvent::Healthy)
+            Some(StreamEvent::TransportUnavailable)
         );
     }
 
