@@ -1,14 +1,16 @@
 # Hub progress
 
-Status: active — TeslaMate v4.1.1 parity fixes.
+Status: complete — verified TeslaMate v4.1.1 one-car macOS parity implemented.
 
-Current: one final validation pass and practical macOS smoke.
+Current: local product validated and cleaned.
 
-Next: remaining verified one-vehicle parity, then one final validation pass.
+Next: optional live Owner API and installed LaunchAgent acceptance with user-authorized credentials and vehicle access.
 
 Blocked: live Tesla Owner API collection and actual LaunchAgent start/restart were not run because real credentials and vehicle access were not authorized; the existing user plist was preserved.
 
 ## Completed
+
+- Final integration — fixed monotonic observation IDs after bounded raw-row pruning, preventing later Owner/stream telemetry from being skipped after SQLite row reuse; corrected historical migration fixtures and current-snapshot assertions — collector 60/60 and all 8 affected upgrade tests passed.
 
 - v4.1.1 surface closeout — matched Nominatim address aliases including Australian territories and corrected the stale 17-item parity ledger: schema 2.2 preserves 16 reviewed domains, excludes only provider raw JSON, and loses none — 3 focused tests passed.
 
@@ -26,7 +28,7 @@ Blocked: live Tesla Owner API collection and actual LaunchAgent start/restart we
 
 - TeslaMate v4.1.1 import — pinned the exact 105-migration tag at `d6c43bc8c48784da8f0b701945b80b20911b3d1a`, updated VIN/cost schema admission and pack contracts, and kept the local 99-migration database as a read-only negative fixture — 16 schema tests, 20 pack-contract tests, and the bounded preflight test passed.
 
-- Final validation and smoke — format, all-target check, 681 tests passed with 2 ignored, Clippy `-D warnings`, and release build passed; the release binary initialized, reported status, passed doctor/repair, backed up, verified, restored, re-checked the restored store, and reported the real service stopped — the 1.8 MiB fixture was removed, no Hub `/tmp` artifacts remain, and the single `hub/target` is 5.2 GiB.
+- Final validation and smoke — format, all-target check, 697 tests passed with 2 ignored, Clippy `-D warnings`, and release build passed; the release binary initialized, reported status, passed doctor/repair, backed up, verified, restored, and re-checked the restored store — the 1.8 MiB fixture was removed, no Hub `/tmp` artifacts remain, and the retained release-only `hub/target` is 611 MiB after deleting 20.1 GiB of debug/test artifacts.
 
 - Data recovery — verified immutable backup, backup verification, restore without source mutation, unsafe-destination refusal, and repair that preserves quarantine while deleting proven orphan packs — 2 focused tests passed.
 
