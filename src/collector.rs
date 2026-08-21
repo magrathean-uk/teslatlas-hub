@@ -1671,12 +1671,7 @@ where
                     let mut failures = Vec::new();
                     let mut scheduler_events = Vec::new();
                     for vehicle_id in due {
-                        let use_streaming = scheduler
-                            .vehicles()
-                            .into_iter()
-                            .find(|vehicle| vehicle.id == vehicle_id)
-                            .is_some_and(|vehicle| vehicle.settings.use_streaming_api);
-                        let power_gate = if use_streaming {
+                        let power_gate = if scheduler.requires_live_stream_power_gate(vehicle_id) {
                             let Some(power_gate) = streams
                                 .iter()
                                 .find(|stream| stream.vehicle_id == vehicle_id)
@@ -2839,6 +2834,7 @@ enum PreOnlineCheck {
     Probing { deadline: Instant },
     ConfirmedFake { deadline: Instant },
     ConfirmedReal,
+    FallbackReady,
 }
 
 const PRE_ONLINE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -3159,7 +3155,7 @@ impl VehicleScheduler {
                 // TeslaMate falls back to vehicle_data when a new stream stays
                 // silent. A nil-power frame remains a confirmed fake-online
                 // signal and deliberately does not take this fallback.
-                scheduled.pre_online = PreOnlineCheck::ConfirmedReal;
+                scheduled.pre_online = PreOnlineCheck::FallbackReady;
                 scheduled.next_poll = now;
             }
         }
@@ -3173,7 +3169,10 @@ impl VehicleScheduler {
                     && scheduled.settings.enabled
                     && !scheduled.service_mode
                     && (!scheduled.settings.use_streaming_api
-                        || matches!(scheduled.pre_online, PreOnlineCheck::ConfirmedReal))
+                        || matches!(
+                            scheduled.pre_online,
+                            PreOnlineCheck::ConfirmedReal | PreOnlineCheck::FallbackReady
+                        ))
                     && now >= scheduled.next_poll
             })
             .map(|scheduled| scheduled.vehicle.id)
@@ -3506,7 +3505,9 @@ impl VehicleScheduler {
         {
             observe_pre_online_power(&mut scheduled.pre_online, power, now);
             match scheduled.pre_online {
-                PreOnlineCheck::ConfirmedReal => scheduled.next_poll = now,
+                PreOnlineCheck::ConfirmedReal | PreOnlineCheck::FallbackReady => {
+                    scheduled.next_poll = now;
+                }
                 PreOnlineCheck::ConfirmedFake { deadline } => {
                     scheduled.next_poll = deadline;
                 }
@@ -3554,7 +3555,18 @@ impl VehicleScheduler {
                     PreOnlineCheck::Probing { .. }
                         | PreOnlineCheck::ConfirmedFake { .. }
                         | PreOnlineCheck::ConfirmedReal
+                        | PreOnlineCheck::FallbackReady
                 )
+        })
+    }
+
+    /// Numeric stream power is the strict no-wake prerequisite. A stream that
+    /// stays silent for the bounded startup window instead uses TeslaMate's
+    /// Owner API fallback after products has already reported the car online.
+    fn requires_live_stream_power_gate(&self, id: VehicleId) -> bool {
+        self.vehicles.get(&id).is_some_and(|scheduled| {
+            scheduled.settings.use_streaming_api
+                && matches!(scheduled.pre_online, PreOnlineCheck::ConfirmedReal)
         })
     }
 
@@ -7737,6 +7749,7 @@ mod tests {
             scheduler.due_vehicles(now + Duration::from_secs(31)),
             vec![online_id]
         );
+        assert!(scheduler.requires_live_stream_power_gate(online_id));
     }
 
     #[test]
@@ -7758,6 +7771,10 @@ mod tests {
         assert_eq!(
             scheduler.due_vehicles(now + Duration::from_secs(60)),
             vec![id]
+        );
+        assert!(
+            !scheduler.requires_live_stream_power_gate(id),
+            "the bounded silent-stream fallback must not demand absent power"
         );
     }
 

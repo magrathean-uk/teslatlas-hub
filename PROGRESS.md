@@ -1,10 +1,10 @@
 # Hub progress
 
-Status: blocked — live Owner API token needs refresh.
+Status: in progress — Mac live collection passed; Debian live package test pending.
 
-Current: rebuilt the current release binary in the normal `target`; products-only native setup reached the Owner API and received HTTP 401 from the existing app session. No vehicle read, wake, climate command, or Hub service ran. VPS TeslaMate was stopped only for that attempt, then restored healthy; the private temporary Hub profile was deleted.
+Current: Hub used the active TeslaMate legacy pair privately, with TeslaMate stopped. Mac setup and the default streaming observer completed; after its bounded silent-stream fallback, the Hub persisted live Owner vehicle data with `is_climate_on=true`. No wake or climate command was sent. Fixed the fallback so it no longer requires nonexistent stream power after the scheduler has selected TeslaMate-compatible Owner API fallback.
 
-Next: refresh the app Tesla session, then run one Mac observer while the owner manually enables A/C; after that, run the same test once through the Debian package.
+Next: build the updated Debian ARM64 package, run one disposable Linux guest with the same legacy pair and manual A/C observation, then delete the guest and temporary profiles.
 
 Blocked: real Tesla Owner API collection and vehicle commands need separate explicit credentials/confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
