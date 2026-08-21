@@ -1,14 +1,18 @@
 # Hub progress
 
-Status: done — current Mac and Debian ARM64 live collection passed; driving remains deliberately deferred.
+Status: Mac full TeslaMate v4.1.1 migration passed; Debian ARM64 source-copy capacity rejection passed; driving remains deliberately deferred.
 
-Current: Hub used the active TeslaMate legacy pair privately, with TeslaMate stopped. Mac and Debian setup plus the default streaming observer completed; after each bounded silent-stream fallback, Hub persisted live Owner vehicle data with `is_climate_on=true`. No wake or climate command was sent. The fallback no longer requires nonexistent stream power after the scheduler has selected TeslaMate-compatible Owner API fallback.
+Current: TeslaMate remains stopped on the VPS. Mac completed the two-snapshot migration from the real v4.1.1 database and validated the resulting Hub store. The under-6 GiB Debian guest reached the real source through its read-only tunnel and cleanly stopped at its deliberate 64 MiB stage cap; a complete 10.7M-position import needs a larger Linux disk.
 
-Next: real driving behavior only after a separate explicit test request.
+Next: full Linux migration only on Linux storage that can accommodate its observed 12 GiB temporary peak; real driving behavior only after a separate explicit test request.
 
 Blocked: real wake and climate commands still require immediate explicit confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
 ## Completed
+
+- Live v4.1.1 migration and cleanup — with TeslaMate stopped, Mac migrated car 1 from exact TeslaMate v4.1.1 d6c43bc8c48784da8f0b701945b80b20911b3d1a through two read-only snapshots. Each snapshot staged 11,082,539 rows / 7,408,814,477 bytes; final import was imported, retained 1,116-byte access and 1,031-byte refresh ciphertexts, and doctor returned ok. The final temporary store was 3.2 GiB; peak staging/publication use was 12 GiB and took 853 seconds. The Mac test store was deleted. Migration now keeps all dangling historical TeslaMate sessions while omitting an ambiguous live tail, and accepts one normal newline on a supplied ENCRYPTION_KEY; both focused regressions passed.
+
+- Debian ARM64 v4.1.1 migration boundary — one 5.5 GiB QEMU Debian 13 guest installed the Hub package, reached the real stopped v4.1.1 source through a loopback-only SSH tunnel, and copied until its deliberate 64 MiB stage cap returned stage database byte limit exceeded. The service remained inactive and the stage was empty afterward (660 KiB local state). The guest, package test data, private password file, tunnel, and 2.6 GiB host debug cache were deleted. No TeslaMate PostgreSQL write or vehicle command ran.
 
 - Current Debian ARM64 package and live collection — one 5.5 GiB QEMU Debian 13 guest compiled `447c904` natively from the mounted Hub source and existing offline Cargo registry. The 5.3 MiB package (`523beee58b1e83790c82c0a4601a38741ce4321eb6695b8b3fcca57661652b18`) installed, bootstrapped, reported status, completed systemd start/restart/stop, and made a bounded default-streaming live observation with `is_climate_on=true`. Host format, 664 library + 34 CLI + 1 TLS tests (2 intentional fixtures ignored), and Clippy `-D warnings` passed. No vehicle command ran.
 

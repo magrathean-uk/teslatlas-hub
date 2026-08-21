@@ -926,7 +926,23 @@ pub(crate) async fn read_open_session_in_client(
 ) -> Result<TeslaMateOpenSession, TeslaMateReaderError> {
     let mut retained_rows = 0_usize;
     let drives = read_open_drives(client, selected_car_id, limits, &mut retained_rows).await?;
-    let drive = resolve_open_row("drives", drives)?;
+    let processes =
+        read_open_charging_processes(client, selected_car_id, limits, &mut retained_rows).await?;
+    let states = read_open_states(client, selected_car_id, limits, &mut retained_rows).await?;
+    let watermarks = read_source_watermarks(client, selected_car_id).await?;
+    if has_ambiguous_open_rows([drives.len(), processes.len(), states.len()]) {
+        // The full snapshot already retains every source row. Do not invent a
+        // live parent from a TeslaMate database with dangling historical
+        // sessions; a later Owner API observation establishes the live tail.
+        return Ok(TeslaMateOpenSession {
+            car_id: i64::from(selected_car_id),
+            watermarks,
+            ..TeslaMateOpenSession::default()
+        });
+    }
+    let drive = drives.into_iter().next();
+    let charge = processes.into_iter().next();
+    let state = states.into_iter().next();
     let positions = read_open_positions(
         client,
         selected_car_id,
@@ -938,17 +954,11 @@ pub(crate) async fn read_open_session_in_client(
     let (drive_positions, standalone_positions): (Vec<_>, Vec<_>) = positions
         .into_iter()
         .partition(|position| position.drive_id.is_some());
-    let processes =
-        read_open_charging_processes(client, selected_car_id, limits, &mut retained_rows).await?;
-    let charge = resolve_open_row("charging_processes", processes)?;
     let charge_samples = if charge.is_some() {
         read_open_charges(client, selected_car_id, limits, &mut retained_rows).await?
     } else {
         Vec::new()
     };
-    let states = read_open_states(client, selected_car_id, limits, &mut retained_rows).await?;
-    let state = resolve_open_row("states", states)?;
-    let watermarks = read_source_watermarks(client, selected_car_id).await?;
     let result = TeslaMateOpenSession {
         car_id: i64::from(selected_car_id),
         drive,
@@ -965,19 +975,8 @@ pub(crate) async fn read_open_session_in_client(
     Ok(result)
 }
 
-/// Resolve a live TeslaMate row only when the source has exactly one candidate.
-/// Multiple unfinished rows are ambiguous stale state, not a valid active session.
-/// Historical rows were captured separately and remain intact; a later live poll
-/// establishes the authoritative session.
-fn resolve_open_row<T>(
-    table: &'static str,
-    mut rows: Vec<T>,
-) -> Result<Option<T>, TeslaMateReaderError> {
-    match rows.len() {
-        0 => Ok(None),
-        1 => Ok(rows.pop()),
-        _ => Err(TeslaMateReaderError::MultipleOpenRows { table }),
-    }
+fn has_ambiguous_open_rows(open_row_counts: [usize; 3]) -> bool {
+    open_row_counts.into_iter().any(|count| count > 1)
 }
 
 fn open_rows_sql(table: SourceTable, predicate: &str) -> String {
@@ -4164,8 +4163,6 @@ pub enum TeslaMateReaderError {
     MaterializedHistoryPositionLimitExceeded { maximum: usize, count: usize },
     #[error("TeslaMate open session exceeds the {maximum} position materialization limit")]
     MaterializedOpenPositionLimitExceeded { maximum: usize },
-    #[error("TeslaMate has more than one open row in {table}")]
-    MultipleOpenRows { table: &'static str },
     #[error("TeslaMate open-session projection validation failed: {0}")]
     OpenSessionProjection(#[source] TeslaMateProjectionError),
     #[error("TeslaMate {table}.{column} decimal cannot be represented as a finite f64")]
@@ -4465,13 +4462,11 @@ mod tests {
     }
 
     #[test]
-    fn open_row_resolution_fails_closed_on_ambiguity() {
-        assert_eq!(resolve_open_row::<i32>("drives", vec![]).unwrap(), None);
-        assert_eq!(resolve_open_row("drives", vec![7]).unwrap(), Some(7));
-        assert!(matches!(
-            resolve_open_row("drives", vec![7, 8]),
-            Err(TeslaMateReaderError::MultipleOpenRows { table: "drives" })
-        ));
+    fn ambiguous_open_rows_discard_the_whole_live_tail() {
+        assert!(!has_ambiguous_open_rows([0, 1, 1]));
+        assert!(has_ambiguous_open_rows([2, 1, 1]));
+        assert!(has_ambiguous_open_rows([1, 2, 1]));
+        assert!(has_ambiguous_open_rows([1, 1, 2]));
     }
 
     #[test]

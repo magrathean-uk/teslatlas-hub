@@ -1636,7 +1636,7 @@ async fn run_macos_migration(
     // The encrypted source pair came from the same final snapshot as history.
     let (encryption_key, access_ciphertext, refresh_ciphertext) = if copy_teslamate_ciphertext {
         let key_path = encryption_key_file.expect("validated encrypted-token input");
-        let key = read_migration_secret(key_path, MAX_MIGRATION_ENCRYPTION_KEY_BYTES)?;
+        let key = read_migration_encryption_key(key_path)?;
         if key.is_empty() {
             return Err("TeslaMate ENCRYPTION_KEY is empty".into());
         }
@@ -1774,6 +1774,20 @@ fn read_migration_secret(
         return read_bounded_migration_secret(std::io::stdin(), maximum).map_err(Into::into);
     }
     read_migration_secret_file(path, maximum).map_err(Into::into)
+}
+
+#[cfg(unix)]
+fn read_migration_encryption_key(
+    path: &Path,
+) -> Result<zeroize::Zeroizing<Vec<u8>>, Box<dyn std::error::Error>> {
+    let mut key = read_migration_secret(path, MAX_MIGRATION_ENCRYPTION_KEY_BYTES)?;
+    if key.last() == Some(&b'\n') {
+        key.pop();
+        if key.last() == Some(&b'\r') {
+            key.pop();
+        }
+    }
+    Ok(key)
 }
 
 #[cfg(unix)]
@@ -2305,8 +2319,9 @@ mod tests {
         MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
         MAX_MIGRATION_TOKEN_FILE_BYTES, MacServeControl, MacServeWorkerStopTimeout,
         MigrationSecretReadError, ServiceCommand, command_requires_user_hub_admission,
-        migration_start_requested, migration_stop_confirmed, read_migration_postgres_password,
-        read_migration_secret, read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
+        migration_start_requested, migration_stop_confirmed, read_migration_encryption_key,
+        read_migration_postgres_password, read_migration_secret,
+        read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
     };
     use teslatlas_hub::db::HubStore;
     #[cfg(target_os = "macos")]
@@ -2391,6 +2406,25 @@ mod tests {
             );
             fs::write(&path, vec![b'x'; maximum + 1]).expect("oversized secret");
             assert!(read_migration_secret(&path, maximum).is_err());
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migration_encryption_key_reader_accepts_normal_line_endings() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let path = temporary.path().join("encryption-key");
+        for ending in [b"".as_slice(), b"\n".as_slice(), b"\r\n".as_slice()] {
+            let mut value = b"teslamate-key".to_vec();
+            value.extend_from_slice(ending);
+            fs::write(&path, value).expect("key file");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("key mode");
+            assert_eq!(
+                read_migration_encryption_key(&path)
+                    .expect("line ending is not part of the key")
+                    .as_slice(),
+                b"teslamate-key"
+            );
         }
     }
 
