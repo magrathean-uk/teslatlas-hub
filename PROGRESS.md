@@ -1,16 +1,18 @@
 # Hub progress
 
-Status: in progress — Mac live collection passed; Debian live package test pending.
+Status: done — current Mac and Debian ARM64 live collection passed; driving remains deliberately deferred.
 
-Current: Hub used the active TeslaMate legacy pair privately, with TeslaMate stopped. Mac setup and the default streaming observer completed; after its bounded silent-stream fallback, the Hub persisted live Owner vehicle data with `is_climate_on=true`. No wake or climate command was sent. Fixed the fallback so it no longer requires nonexistent stream power after the scheduler has selected TeslaMate-compatible Owner API fallback.
+Current: Hub used the active TeslaMate legacy pair privately, with TeslaMate stopped. Mac and Debian setup plus the default streaming observer completed; after each bounded silent-stream fallback, Hub persisted live Owner vehicle data with `is_climate_on=true`. No wake or climate command was sent. The fallback no longer requires nonexistent stream power after the scheduler has selected TeslaMate-compatible Owner API fallback.
 
-Next: build the updated Debian ARM64 package, run one disposable Linux guest with the same legacy pair and manual A/C observation, then delete the guest and temporary profiles.
+Next: real driving behavior only after a separate explicit test request.
 
-Blocked: real Tesla Owner API collection and vehicle commands need separate explicit credentials/confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
+Blocked: real wake and climate commands still require immediate explicit confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
 ## Completed
 
-- Debian ARM64 acceptance — one Debian 13 ARM64 QEMU guest built the release and package. Native `cargo check --all-targets`, Clippy `-D warnings`, and tests passed (655 library, 13 CLI, 1 TLS; 2 intentional fixtures ignored). The installed package bootstrapped a root-owned service config, printed status, completed systemd CLI start/restart/stop/status, backed up, verified, restored, and repaired. A dummy migration request safely refused the 17 GiB stage requirement before any PostgreSQL connection; no real Tesla or vehicle command ran. The guest and its Cargo target were deleted; the retained package SHA-256 is `0233d4b4d6208c73f05f1645d18214f648877f1ea2b77289be04b43a71d9687f`.
+- Current Debian ARM64 package and live collection — one 5.5 GiB QEMU Debian 13 guest compiled `447c904` natively from the mounted Hub source and existing offline Cargo registry. The 5.3 MiB package (`523beee58b1e83790c82c0a4601a38741ce4321eb6695b8b3fcca57661652b18`) installed, bootstrapped, reported status, completed systemd start/restart/stop, and made a bounded default-streaming live observation with `is_climate_on=true`. Host format, 664 library + 34 CLI + 1 TLS tests (2 intentional fixtures ignored), and Clippy `-D warnings` passed. No vehicle command ran.
+
+- Debian ARM64 acceptance — an earlier Debian 13 ARM64 QEMU guest built and package-tested the broader bootstrap, status, systemd lifecycle, backup, verification, restore, repair, and read-only migration-rejection surface. The dummy migration request safely refused the 17 GiB stage requirement before any PostgreSQL connection; no real Tesla or vehicle command ran.
 
 - Linux portability — fixed Unix-sized Rustix mode/device handling, Linux service error formatting, root-owned packaged config admission, normal non-022 test umasks, Linux service CLI wording, and host-only byte-fixture execution. The package builder now removes only its exact temporary staging directory.
 
