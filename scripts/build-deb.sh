@@ -26,7 +26,7 @@ esac
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 stage=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-hub-deb.XXXXXX")
-trap 'rm -rf "$stage"' EXIT HUP INT TERM
+trap 'find "$stage" -depth -delete' EXIT HUP INT TERM
 package_root="$stage/root"
 
 install -D -m 0755 "$binary" "$package_root/usr/bin/teslatlas-hub"

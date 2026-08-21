@@ -41,6 +41,7 @@ struct NodeIdentity {
 impl NodeIdentity {
     fn from_stat(stat: &rustix::fs::Stat) -> Self {
         Self {
+            #[allow(clippy::unnecessary_cast)]
             device: stat.st_dev as u64,
             inode: stat.st_ino,
         }

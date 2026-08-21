@@ -87,12 +87,12 @@ sudo -u teslatlas teslatlas-hub bootstrap
 sudo -u teslatlas teslatlas-hub setup \
   --access-token-file /private/access-token \
   --refresh-token-file /private/refresh-token
-sudo systemctl start teslatlas-hub.service
-teslatlas-hub service status
+sudo systemctl enable --now teslatlas-hub.service
+sudo teslatlas-hub service status
 sudo -u teslatlas teslatlas-hub status
 ```
 
-Service controls are `teslatlas-hub service status|start|stop|restart`.
+Service controls are `sudo teslatlas-hub service status|start|stop|restart`.
 Migration stays read-only; after a Linux migration, start the package service
 with `sudo systemctl start teslatlas-hub.service`.
 

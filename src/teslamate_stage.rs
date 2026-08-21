@@ -1335,6 +1335,7 @@ fn validate_private_descriptor(
             actual_gid: stat.st_gid,
         });
     }
+    #[allow(clippy::useless_conversion)]
     let actual_mode = u32::from(Mode::from_raw_mode(stat.st_mode).as_raw_mode());
     if actual_mode != expected_mode {
         return Err(TeslaMateStageError::InsecurePermissions {
@@ -1344,6 +1345,7 @@ fn validate_private_descriptor(
         });
     }
     Ok(StageFileIdentity {
+        #[allow(clippy::useless_conversion)]
         device: u64::try_from(stat.st_dev).expect("filesystem device identifier fits u64"),
         inode: stat.st_ino,
     })

@@ -99,9 +99,11 @@ fn ensure_success(action: &str, output: SystemctlOutput) -> io::Result<()> {
         return Ok(());
     }
     let detail = output.stderr.trim();
-    let detail = (!detail.is_empty())
-        .then_some(detail)
-        .unwrap_or("systemctl failed");
+    let detail = if detail.is_empty() {
+        "systemctl failed"
+    } else {
+        detail
+    };
     Err(io::Error::other(format!(
         "systemctl {action} failed: {detail}"
     )))

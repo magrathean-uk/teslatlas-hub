@@ -2763,7 +2763,7 @@ fn validate_private_directory_stat(
     stat: rustix::fs::Stat,
 ) -> Result<(), TeslaMateProjectionStateError> {
     if !FileType::from_raw_mode(stat.st_mode).is_dir()
-        || (Mode::from_raw_mode(stat.st_mode).as_raw_mode() as u32 & 0o777) != 0o700
+        || (Mode::from_raw_mode(stat.st_mode).as_raw_mode() & 0o777) != 0o700
     {
         return Err(
             TeslaMateProjectionStateError::UnsafeImportGenerationNamespace(path.to_path_buf()),
@@ -2777,7 +2777,7 @@ fn validate_private_regular_file_stat(
     stat: rustix::fs::Stat,
 ) -> Result<(), TeslaMateProjectionStateError> {
     if !FileType::from_raw_mode(stat.st_mode).is_file()
-        || (Mode::from_raw_mode(stat.st_mode).as_raw_mode() as u32 & 0o777) != 0o600
+        || (Mode::from_raw_mode(stat.st_mode).as_raw_mode() & 0o777) != 0o600
     {
         return Err(
             TeslaMateProjectionStateError::UnsafeImportGenerationNamespace(path.to_path_buf()),

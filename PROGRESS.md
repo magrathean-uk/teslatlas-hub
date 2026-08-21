@@ -1,14 +1,18 @@
 # Hub progress
 
-Status: active — Debian ARM64 CLI and systemd support.
+Status: active — final Debian package rebuild and cleanup.
 
-Current: native Debian ARM64 release build, package install, and CLI/systemd acceptance.
+Current: QEMU acceptance passed; rebuild the final package, retain it in `dist/`, then delete the guest.
 
-Next: build/install the `.deb`, exercise CLI and systemd, retain the package, delete the guest.
+Next: copy the final `.deb`, delete the guest and its single Cargo target, and leave only `target/release` plus `dist/`.
 
 Blocked: real Tesla Owner API collection and vehicle commands need separate explicit credentials/confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
 ## Completed
+
+- Debian ARM64 acceptance — one Debian 13 ARM64 QEMU guest built the release and package. Native `cargo check --all-targets`, Clippy `-D warnings`, and tests passed (655 library, 13 CLI, 1 TLS; 2 intentional fixtures ignored). The installed package bootstrapped a root-owned service config, printed status, completed systemd CLI start/restart/stop/status, backed up, verified, restored, and repaired. A dummy migration request safely refused the 17 GiB stage requirement before any PostgreSQL connection; no real Tesla or vehicle command ran.
+
+- Linux portability — fixed Unix-sized Rustix mode/device handling, Linux service error formatting, root-owned packaged config admission, normal non-022 test umasks, Linux service CLI wording, and host-only byte-fixture execution. The package builder now removes only its exact temporary staging directory.
 
 - Linux CLI delivery — added bootstrap, systemd `status|start|stop|restart`, explicit `control wake --confirm` and `control climate-start --confirm` with a local fake Owner API test, Debian package files, and Linux documentation. Host format, focused Owner API test, and binary check passed.
 

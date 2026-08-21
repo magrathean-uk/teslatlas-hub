@@ -76,7 +76,7 @@ struct MacServeWorkerStopTimeout {
     label: &'static str,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl std::fmt::Display for MacServeWorkerStopTimeout {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -499,7 +499,7 @@ enum Command {
     /// Install and start the minimal per-user macOS Hub LaunchAgent.
     #[cfg(target_os = "macos")]
     Install,
-    /// Control the installed per-user macOS Hub LaunchAgent.
+    /// Control the installed Hub service.
     #[cfg(unix)]
     Service {
         #[command(subcommand)]
@@ -1215,7 +1215,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(unix)]
         Command::Service { .. } => {
-            unreachable!("macOS service control returns before opening writable Hub state")
+            unreachable!("service control returns before opening writable Hub state")
         }
         #[cfg(unix)]
         Command::Preflight => {
@@ -1418,6 +1418,7 @@ fn default_config_path() -> PathBuf {
     }
     #[cfg(target_os = "linux")]
     return PathBuf::from("/etc/teslatlas-hub/config.toml");
+    #[cfg(not(target_os = "linux"))]
     PathBuf::from("config.toml")
 }
 
@@ -1864,8 +1865,8 @@ fn read_migration_secret_file_with_hooks(
 fn safe_migration_secret_stat(stat: &rustix::fs::Stat) -> bool {
     FileType::from_raw_mode(stat.st_mode).is_file()
         && stat.st_uid == getuid().as_raw()
-        && (stat.st_mode as u32 & 0o077) == 0
-        && (stat.st_mode as u32 & 0o400) != 0
+        && (stat.st_mode & 0o077) == 0
+        && (stat.st_mode & 0o400) != 0
 }
 
 #[cfg(unix)]
@@ -2199,9 +2200,9 @@ fn read_tls_identity_file_after_open(
         || current.mode() != held.st_mode as u32
         || current.len() != u64::try_from(held.st_size).unwrap_or(u64::MAX)
         || current.mtime() != held.st_mtime
-        || current.mtime_nsec() != held.st_mtime_nsec
+        || current.mtime_nsec() != held.st_mtime_nsec as i64
         || current.ctime() != held.st_ctime
-        || current.ctime_nsec() != held.st_ctime_nsec
+        || current.ctime_nsec() != held.st_ctime_nsec as i64
     {
         return Err(std::io::Error::other("TLS identity file changed"));
     }
@@ -2266,11 +2267,13 @@ fn current_epoch_ms() -> Result<i64, std::io::Error> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    use std::path::PathBuf;
     use std::{
         fs,
         io::{self, Write},
         os::unix::fs::{PermissionsExt, symlink},
-        path::{Path, PathBuf},
+        path::Path,
         time::Duration,
     };
     #[cfg(target_os = "macos")]
@@ -3324,6 +3327,8 @@ mod tests {
             format!("data_dir = {:?}\nbind = '127.0.0.1:18443'\n", data_dir),
         )
         .expect("write config");
+        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600))
+            .expect("make test config private");
 
         let error = run(Cli {
             config: Some(config_path),
@@ -3336,7 +3341,7 @@ mod tests {
         assert!(!data_dir.exists());
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     #[tokio::test]
     async fn serve_fails_before_initialising_state_on_an_unsupported_platform() {
         let temporary = tempfile::tempdir().expect("temporary directory");

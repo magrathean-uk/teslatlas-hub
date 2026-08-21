@@ -811,7 +811,7 @@ fn read_config_file_after_open(
     .map_err(|_| ConfigError::Read)?;
     let held = fstat(&descriptor).map_err(|_| ConfigError::Read)?;
     if !FileType::from_raw_mode(held.st_mode).is_file()
-        || held.st_uid != getuid().as_raw()
+        || (held.st_uid != getuid().as_raw() && held.st_uid != 0)
         || (held.st_mode as u32 & 0o022) != 0
     {
         return Err(ConfigError::UnsafeFile);
@@ -1165,6 +1165,8 @@ mod tests {
         let first = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
                      [collector]\nowner_api_base_url = 'https://owner.example.test'\n";
         fs::write(&path, first).expect("write first config");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+            .expect("make test config private");
         let (_config, first_digest) =
             HubConfig::load_with_digest(&path).expect("load first config snapshot");
         assert_eq!(first_digest, Sha256Digest::of_bytes(first.as_bytes()));
