@@ -1,17 +1,18 @@
 # Hub progress
 
-Status: direct bounded migration is implemented and unit-tested. The next
-real compact-store measurement needs a new stopped cutover confirmation;
-TeslaMate is currently running. Driving remains deliberately deferred.
+Status: compact direct migration is measured on the exact stopped TeslaMate
+v4.1.1 VPS source. TeslaMate is restored and healthy. Driving remains deferred.
 
-Current: TeslaMate remains stopped on the VPS. The old migration path used a
-7.4 GiB raw SQLite stage and peaked at 12 GiB. The CLI now streams PostgreSQL
-directly into Hub packs. Its final stopped pass keeps compact comparison state
-and writes only sparse deltas; it does not create a second full candidate.
+Current: on 2026-08-21, the Mac release binary imported the stopped source
+read-only: 105 migrations, 10,782,430 positions, and 11,100,209 projected rows.
+The final store was 1,967,036 KiB (1.88 GiB); the sampled peak was 3,081,344 KiB
+(2.94 GiB). `hub.sqlite` was 1,818,672 KiB, packs were 148,332 KiB (446 packs),
+and the direct store retained one state catalogue (11,096,061 rows) with zero
+legacy inventory rows. SQLite integrity and `doctor` passed; source counts were
+unchanged. The exact local store and tunnel are disposable and will be deleted.
 
-Next: with TeslaMate explicitly stopped again, measure one compact direct
-v4.1.1 migration on Mac, record final and sampled peak space, then remove the
-exact test store. Linux runtime proof remains separate.
+Next: retain this Mac receipt, then run the direct compact path on Linux without
+creating a second checkout, target directory, or retained test store.
 
 Blocked: real wake and climate commands still require immediate explicit confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
@@ -23,6 +24,16 @@ Blocked: real wake and climate commands still require immediate explicit confirm
   that state, while old stores keep their existing inventory. Focused direct
   base/state, direct successor, and staged-compatibility tests plus release
   `cargo check` passed.
+
+- Compact direct v4.1.1 Mac measurement — the stopped VPS TeslaMate v4.1.1
+  source (105 migrations; 10,782,430 positions) imported through one local-only
+  SSH tunnel without a raw stage. It projected 11,100,209 rows, created one base
+  and no deltas, used 446 packs, passed SQLite `integrity_check` and `doctor`,
+  and left the source counts unchanged. Final disk was 1.88 GiB; sampled peak
+  was 2.94 GiB. The legacy `teslamate_import_projection_*` inventory tables had
+  zero rows; the compact state tables had 11,096,061 rows. TeslaMate was then
+  restarted healthy. The exact test store and its tunnel are removed after the
+  receipt is committed.
 
 - Direct v4.1.1 Mac measurement before catalogue compaction — with the source
   stopped, one read-only direct import projected 11,085,583 rows. It used no
