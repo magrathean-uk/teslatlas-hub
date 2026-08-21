@@ -1,10 +1,10 @@
 # Hub progress
 
-Status: complete — Debian ARM64 CLI/package delivery.
+Status: blocked — live Owner API token needs refresh.
 
-Current: final package retained at `dist/teslatlas-hub_1.0.0-alpha.1_arm64.deb`.
+Current: rebuilt the current release binary in the normal `target`; products-only native setup reached the Owner API and received HTTP 401 from the existing app session. No vehicle read, wake, climate command, or Hub service ran. VPS TeslaMate was stopped only for that attempt, then restored healthy; the private temporary Hub profile was deleted.
 
-Next: real Tesla credentials/vehicle action testing only with separate explicit approval.
+Next: refresh the app Tesla session, then run one Mac observer while the owner manually enables A/C; after that, run the same test once through the Debian package.
 
 Blocked: real Tesla Owner API collection and vehicle commands need separate explicit credentials/confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
