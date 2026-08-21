@@ -446,6 +446,12 @@ impl ExportedSnapshotLease {
         &self.snapshot_id
     }
 
+    /// Run one bounded read in the owner transaction for this exact exported
+    /// snapshot. Capture lanes must finish before the lease does.
+    pub(crate) fn client(&self) -> &Client {
+        self.session.client()
+    }
+
     pub(crate) async fn finish(self) -> Result<(), TeslaMateReaderError> {
         self.session.finish().await
     }
@@ -542,7 +548,7 @@ pub async fn read_legacy_token_ciphertexts(
 /// Read the opaque legacy pair without changing the caller's transaction.
 /// The private relation is authoritative; public is only an old-schema
 /// fallback when private.tokens does not exist.
-async fn read_legacy_token_ciphertexts_in_client(
+pub(crate) async fn read_legacy_token_ciphertexts_in_client(
     client: &Client,
 ) -> Result<TeslaMateLegacyTokenCiphertexts, TeslaMateReaderError> {
     let private_tokens_exists: bool = client

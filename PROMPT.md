@@ -1,14 +1,14 @@
-# Goal: Linux TeslaMate replacement
+# Goal: Rust TeslaMate replacement
 
 ## Result
 
-Make `hub/` work as a one-vehicle Rust TeslaMate replacement on Debian ARM64.
+Make `hub/` work as a one-vehicle Rust TeslaMate replacement on macOS and
+Debian ARM64.
 
-The Linux product is CLI and systemd only. It needs clean bootstrap, service
-status/start/stop/restart, setup, read-only TeslaMate migration, backup and
-repair, a Debian package, and the existing local sync server. Wake and climate
-start commands must be explicit CLI actions and hermetically tested. Driving
-tests can follow later.
+The product needs clean bootstrap, service status/start/stop/restart, setup,
+read-only TeslaMate migration, backup and repair, a Debian package, and the
+existing local sync server. Wake and climate-start commands must be explicit
+CLI actions and hermetically tested. Driving tests can follow later.
 
 ## Normal development
 
@@ -24,14 +24,17 @@ Work sequentially in `hub/main`:
 
 ## Product order
 
-1. Lift Linux platform gates for setup, migration, serving, and bounded observation.
-2. Add a systemd service adapter and CLI service status viewer.
-3. Add explicit wake and climate-start CLI actions with fake-Owner-API tests.
-4. Add bootstrap and Debian ARM64 packaging.
-5. Boot one Debian ARM64 QEMU guest, install the `.deb`, and test bootstrap,
+1. Keep migration as one PostgreSQL stream into Hub packs: no full raw-history
+   SQLite stage. The first pass writes the base; the stopped cutover pass writes
+   only sparse deltas from compact comparison state.
+2. Lift Linux platform gates for setup, migration, serving, and bounded observation.
+3. Add a systemd service adapter and CLI service status viewer.
+4. Add explicit wake and climate-start CLI actions with fake-Owner-API tests.
+5. Add bootstrap and Debian ARM64 packaging.
+6. Boot one Debian ARM64 QEMU guest, install the `.deb`, and test bootstrap,
    status, service lifecycle, migration rejection/read-only behavior, backup,
    restore, repair, wake, and climate-start against local fakes.
-6. Remove QEMU/image/build data; retain only the packaged `.deb` and the
+7. Remove QEMU/image/build data; retain only the packaged `.deb` and the
    normal `hub/target` cache.
 
 ## Resource limits
@@ -42,6 +45,9 @@ Work sequentially in `hub/main`:
   delete it after final verification.
 - Never create repository clones, worktrees, copied source trees, extra Cargo
   target directories, evidence archives, or benchmark data.
+- Migration may use final packs, one active fragment's temporary files, and a
+  compact comparison spool. It must never reserve or create a whole-history
+  raw stage just because a configured cap permits one.
 - Run one Cargo process at a time. Focused tests while coding; one full suite,
   Clippy, and release build near handoff.
 - Do not install host services or change host configuration.
@@ -57,7 +63,8 @@ Work sequentially in `hub/main`:
 
 ## Done
 
-Done means the Linux ARM64 `.deb` installs in one local Debian QEMU guest; the
-CLI bootstrap, status, systemd lifecycle, migration, backup/restore/repair,
-and local fake wake/climate controls work; final Rust checks pass; QEMU data is
-gone; and `PROGRESS.md` records exact remaining external proof.
+Done means macOS and the Linux ARM64 `.deb` have a working one-vehicle Hub;
+the CLI bootstrap, status, service lifecycle, direct read-only migration,
+backup/restore/repair, and local fake wake/climate controls work; final Rust
+checks pass; temporary test data is gone; and `PROGRESS.md` records exact
+remaining external proof.

@@ -4331,6 +4331,9 @@ fn seed_lifecycle_ids_from_materialised(
     let max_update = max_i64("materialised_updates", "update_id")?;
 
     // Import projection catalogue (entity primary keys published into V2 packs).
+    // New direct imports retain only digest state; older catalogues have the
+    // legacy inventory copy. The union keeps collector ID allocation correct
+    // across both formats without making direct imports store rows twice.
     let mut import_drive = 0_i64;
     let mut import_position = 0_i64;
     let mut import_charge = 0_i64;
@@ -4341,9 +4344,16 @@ fn seed_lifecycle_ids_from_materialised(
         let mut statement = connection
             .prepare(
                 "SELECT entity, COALESCE(MAX(entity_id), 0)
-                 FROM teslamate_import_projection_rows
-                 WHERE vehicle_id = ?1
-                 GROUP BY entity",
+                   FROM (
+                       SELECT entity, entity_id
+                         FROM teslamate_import_projection_rows
+                        WHERE vehicle_id = ?1
+                       UNION ALL
+                       SELECT entity, entity_id
+                         FROM teslamate_import_projection_state_rows
+                        WHERE vehicle_id = ?1 AND entity_ordinal BETWEEN 1 AND 6
+                   )
+                  GROUP BY entity",
             )
             .map_err(StoreError::Query)
             .map_err(CollectorError::Store)?;

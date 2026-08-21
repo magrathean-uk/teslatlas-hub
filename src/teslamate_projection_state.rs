@@ -72,6 +72,10 @@ pub(crate) const TESLAMATE_PROJECTION_STATE_ATTACHMENT_SCHEMA: &str =
 // pass does not turn one row-count batch into a multi-gigabyte commit.
 const WRITE_BATCH_ROWS: u32 = 8_192;
 const WRITE_BATCH_CHANGED_PAYLOAD_BYTES: u64 = DEFAULT_MAX_CHANGED_ROW_PAYLOAD_BYTES;
+// A source batch can contain one 8 MiB changed payload plus its SQLite
+// journal pages. Keep this small fixed margin above the durable free-space
+// floor rather than reserving the configured whole-history cap.
+const WRITE_BATCH_HEADROOM_BYTES: u64 = 32 * 1024 * 1024;
 // Keep dynamic `VALUES` lookups well below SQLite's conservative 999-bind
 // build-time limit.  Each requested changed row consumes two bind values.
 const CHANGED_PAGE_PAYLOAD_LOOKUP_ROWS: usize = 250;
@@ -534,10 +538,7 @@ impl TeslaMateProjectionState {
         let parent = path
             .parent()
             .ok_or_else(|| TeslaMateProjectionStateError::InvalidTransferPath(path.clone()))?;
-        let required = limits
-            .max_state_bytes
-            .checked_add(limits.minimum_free_bytes)
-            .ok_or(TeslaMateProjectionStateError::StateCapacityOverflow)?;
+        let required = write_batch_required_free_bytes(limits.minimum_free_bytes)?;
         let available = available_bytes(parent)?;
         if available < required {
             return Err(TeslaMateProjectionStateError::InsufficientFreeSpace {
@@ -1375,6 +1376,18 @@ impl TeslaMateProjectionState {
         }
         if self.write_transaction_open {
             return Ok(());
+        }
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| TeslaMateProjectionStateError::InvalidTransferPath(self.path.clone()))?;
+        let required = write_batch_required_free_bytes(self.limits.minimum_free_bytes)?;
+        let available = available_bytes(parent)?;
+        if available < required {
+            return Err(TeslaMateProjectionStateError::InsufficientFreeSpace {
+                required,
+                available,
+            });
         }
         debug_assert_eq!(self.pending_write_rows, 0);
         debug_assert_eq!(self.pending_row_count, 0);
@@ -3356,6 +3369,14 @@ fn available_bytes(path: &Path) -> Result<u64, TeslaMateProjectionStateError> {
         .ok_or(TeslaMateProjectionStateError::StateCapacityOverflow)
 }
 
+fn write_batch_required_free_bytes(
+    minimum_free_bytes: u64,
+) -> Result<u64, TeslaMateProjectionStateError> {
+    minimum_free_bytes
+        .checked_add(WRITE_BATCH_HEADROOM_BYTES)
+        .ok_or(TeslaMateProjectionStateError::StateCapacityOverflow)
+}
+
 #[cfg(unix)]
 fn set_private_directory_permissions(path: &Path) -> Result<(), TeslaMateProjectionStateError> {
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|source| {
@@ -3625,6 +3646,18 @@ mod tests {
             };
             Ok(TeslaMateProjectionStateDigestPage { rows, next_after })
         }
+    }
+
+    #[test]
+    fn write_batch_capacity_uses_a_small_fixed_margin_not_the_state_cap() {
+        assert_eq!(
+            write_batch_required_free_bytes(512 * 1024 * 1024).expect("bounded reserve"),
+            544 * 1024 * 1024
+        );
+        assert!(matches!(
+            write_batch_required_free_bytes(u64::MAX),
+            Err(TeslaMateProjectionStateError::StateCapacityOverflow)
+        ));
     }
 
     fn drive(id: i64, distance_km: Option<f64>) -> ProjectionDrive {

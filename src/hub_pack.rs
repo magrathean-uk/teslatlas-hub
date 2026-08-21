@@ -2203,6 +2203,20 @@ impl ProjectionPackWriter {
         self.ensure_free_bytes(required)
     }
 
+    /// Reserve space for one active fragment build plus the caller's durable
+    /// free-space floor. Direct imports recheck this before every immutable
+    /// pack write instead of reserving a whole-history cap up front.
+    pub fn ensure_incremental_capture_capacity(
+        &self,
+        minimum_free_bytes: u64,
+    ) -> Result<(), ProjectionPackError> {
+        self.ensure_free_bytes(
+            self.transient_write_bytes()?
+                .checked_add(minimum_free_bytes)
+                .ok_or(ProjectionPackError::CapacityOverflow)?,
+        )
+    }
+
     /// Write and verify an immutable, complete mirror snapshot. The caller
     /// supplies a bounded projection; the writer never inspects raw telemetry.
     pub fn write_full_snapshot(

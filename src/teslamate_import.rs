@@ -42,6 +42,7 @@ use crate::{
     teslamate_direct::{
         DirectSnapshotCapture, DirectUpdatesSourceV2_2, TeslaMateDirectError,
         capture_direct_snapshot_for_legacy_bridge,
+        capture_direct_successor_diff_with_projection_state,
         write_direct_full_snapshot_with_projection_state,
     },
     teslamate_fragments::{
@@ -57,7 +58,9 @@ use crate::{
         TeslaMateProjectionStateCapture, TeslaMateProjectionStateEntity,
         TeslaMateProjectionStateError, TeslaMateProjectionStateLimits,
     },
-    teslamate_reader::{TeslaMateReadLimits, read_open_session, read_selected_car},
+    teslamate_reader::{
+        TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits, read_open_session, read_selected_car,
+    },
     teslamate_stage::{TeslaMateStage, TeslaMateStageTable},
     updates_delivery::{
         ProductionUpdatesPublication, UpdatesDeliveryError, production_updates_head,
@@ -451,6 +454,7 @@ async fn capture_direct_import_snapshot(
     vehicle_id: Uuid,
     successor: bool,
     legacy_bridge: bool,
+    capture_legacy_token: bool,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError> {
     let writer = ProjectionPackWriter::new(store.packs_dir())
         .with_minimum_free_bytes(limits.minimum_free_bytes);
@@ -464,7 +468,7 @@ async fn capture_direct_import_snapshot(
             binding,
             capture_snapshot_id,
             capture_range,
-            limits.maximum_stage_bytes,
+            capture_legacy_token,
             || {
                 direct_projection_state_capture(
                     store,
@@ -480,30 +484,47 @@ async fn capture_direct_import_snapshot(
         )
         .await;
     }
-    write_direct_full_snapshot_with_projection_state(
-        source,
-        password,
-        selected_car_id,
-        limits,
-        &writer,
-        binding,
-        capture_snapshot_id,
-        capture_range,
-        limits.maximum_stage_bytes,
-        || -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError> {
-            direct_projection_state_capture(
-                store,
-                publication_gate,
-                run_id,
-                vehicle_id,
-                source_id,
-                selected_car_id,
-                successor,
-                limits,
-            )
-        },
-    )
-    .await
+    let capture_factory = || -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError> {
+        direct_projection_state_capture(
+            store,
+            publication_gate,
+            run_id,
+            vehicle_id,
+            source_id,
+            selected_car_id,
+            successor,
+            limits,
+        )
+    };
+    if successor {
+        capture_direct_successor_diff_with_projection_state(
+            source,
+            password,
+            selected_car_id,
+            limits,
+            &writer,
+            binding,
+            capture_snapshot_id,
+            capture_range,
+            capture_legacy_token,
+            capture_factory,
+        )
+        .await
+    } else {
+        write_direct_full_snapshot_with_projection_state(
+            source,
+            password,
+            selected_car_id,
+            limits,
+            &writer,
+            binding,
+            capture_snapshot_id,
+            capture_range,
+            capture_legacy_token,
+            capture_factory,
+        )
+        .await
+    }
 }
 
 fn legacy_direct_bridge_error(error: StoreError) -> TeslaMateImportError {
@@ -527,7 +548,7 @@ pub async fn import_from_postgres(
     limits: TeslaMateReadLimits,
 ) -> Result<TeslaMateImportReport, TeslaMateImportError> {
     Ok(import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits,
+        store, source, password, cursor_key, request, limits, false,
     )
     .await?
     .report)
@@ -546,10 +567,39 @@ pub async fn import_selected_from_postgres_with_schema_22(
     limits: TeslaMateReadLimits,
 ) -> Result<TeslaMateSelectedImportReport, TeslaMateImportError> {
     let captured = import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits,
+        store, source, password, cursor_key, request, limits, false,
     )
     .await?;
     finish_selected_schema_22_publication(store, cursor_key, captured)
+}
+
+/// As [`import_selected_from_postgres_with_schema_22`], while retaining the
+/// source's encrypted legacy token pair from the exact exported snapshot.
+/// The ciphertext stays opaque here and is returned only to the migration CLI.
+pub async fn import_selected_from_postgres_with_schema_22_and_legacy_token(
+    store: &HubStore,
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    cursor_key: &CursorKey,
+    request: &TeslaMateImportRequest,
+    limits: TeslaMateReadLimits,
+) -> Result<
+    (
+        TeslaMateSelectedImportReport,
+        TeslaMateLegacyTokenCiphertexts,
+    ),
+    TeslaMateImportError,
+> {
+    let mut captured = import_from_postgres_with_updates_capture(
+        store, source, password, cursor_key, request, limits, true,
+    )
+    .await?;
+    let legacy_tokens = captured
+        .legacy_tokens
+        .take()
+        .ok_or(TeslaMateImportError::LegacyTokenCaptureMissing)?;
+    let report = finish_selected_schema_22_publication(store, cursor_key, captured)?;
+    Ok((report, legacy_tokens))
 }
 
 #[derive(Debug)]
@@ -557,6 +607,7 @@ struct CapturedTeslaMateImport {
     report: TeslaMateImportReport,
     binding: ProjectionBinding,
     updates_v2_2: DirectUpdatesSourceV2_2,
+    legacy_tokens: Option<TeslaMateLegacyTokenCiphertexts>,
     publication_gate: PublicationGate,
 }
 
@@ -575,6 +626,7 @@ fn finish_selected_schema_22_publication(
         report,
         binding,
         updates_v2_2,
+        legacy_tokens: _,
         publication_gate,
     } = captured;
     let vehicle_id = report.vehicle_id;
@@ -616,6 +668,7 @@ async fn import_from_postgres_with_updates_capture(
     cursor_key: &CursorKey,
     request: &TeslaMateImportRequest,
     limits: TeslaMateReadLimits,
+    capture_legacy_token: bool,
 ) -> Result<CapturedTeslaMateImport, TeslaMateImportError> {
     let publication_gate = store.acquire_publication_gate().await?;
     let selected_car_id = selected_car_id(request)?;
@@ -724,6 +777,7 @@ async fn import_from_postgres_with_updates_capture(
         vehicle.vehicle_id,
         successor,
         legacy_bridge,
+        capture_legacy_token,
     )
     .await
     {
@@ -764,6 +818,7 @@ async fn import_from_postgres_with_updates_capture(
     identity_registration_guard.disarm();
     let mut direct = first_capture.packs;
     let mut updates_v2_2 = first_capture.updates_v2_2;
+    let mut legacy_tokens = first_capture.legacy_tokens;
     let mut second_open_session =
         match read_open_session(source, password, selected_car_id, limits).await {
             Ok(value) => value,
@@ -810,6 +865,7 @@ async fn import_from_postgres_with_updates_capture(
             vehicle.vehicle_id,
             successor,
             legacy_bridge,
+            capture_legacy_token,
         )
         .await
         {
@@ -825,6 +881,7 @@ async fn import_from_postgres_with_updates_capture(
         }
         direct = replacement.packs;
         updates_v2_2 = replacement.updates_v2_2;
+        legacy_tokens = replacement.legacy_tokens;
     }
     // Always commit the reconciled second tail. `cutover_unsettled` reports
     // that the source kept changing during the bounded pass; it must not
@@ -868,6 +925,7 @@ async fn import_from_postgres_with_updates_capture(
             },
             binding: binding.clone(),
             updates_v2_2,
+            legacy_tokens,
             publication_gate,
         });
     }
@@ -899,6 +957,7 @@ async fn import_from_postgres_with_updates_capture(
                 },
                 binding: binding.clone(),
                 updates_v2_2,
+                legacy_tokens,
                 publication_gate,
             });
         }
@@ -918,6 +977,7 @@ async fn import_from_postgres_with_updates_capture(
                 },
                 binding: binding.clone(),
                 updates_v2_2,
+                legacy_tokens,
                 publication_gate,
             });
         }
@@ -1058,6 +1118,7 @@ async fn import_from_postgres_with_updates_capture(
             },
             binding: binding.clone(),
             updates_v2_2,
+            legacy_tokens,
             publication_gate,
         });
     }
@@ -1113,6 +1174,7 @@ async fn import_from_postgres_with_updates_capture(
         },
         binding,
         updates_v2_2,
+        legacy_tokens,
         publication_gate,
     })
 }
@@ -2318,6 +2380,8 @@ pub enum TeslaMateImportError {
     SelectedCarMissing,
     #[error("direct TeslaMate capture did not retain its required projection state")]
     ProjectionStateCaptureMissing,
+    #[error("direct TeslaMate capture did not retain the requested legacy token pair")]
+    LegacyTokenCaptureMissing,
     #[error("existing TeslaMate direct-import base cannot be proved unchanged; rebase_required")]
     LegacyDirectImportRebaseRequired,
     #[error("direct TeslaMate delta batch accounting overflowed")]
@@ -3699,6 +3763,7 @@ mod tests {
                 report: legacy.clone(),
                 binding: wrong_binding,
                 updates_v2_2: source.clone(),
+                legacy_tokens: None,
                 publication_gate,
             },
         )
@@ -3729,6 +3794,7 @@ mod tests {
                 report: legacy.clone(),
                 binding: binding.clone(),
                 updates_v2_2: source.clone(),
+                legacy_tokens: None,
                 publication_gate,
             },
         )
@@ -3813,6 +3879,7 @@ mod tests {
                 report: delta.clone(),
                 binding: delta_binding.clone(),
                 updates_v2_2: delta_updates,
+                legacy_tokens: None,
                 publication_gate,
             },
         )

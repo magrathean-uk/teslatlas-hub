@@ -5148,16 +5148,6 @@ impl HubStore {
                 &transfer,
                 false,
             )?;
-            replace_teslamate_import_projection_inventory_from_attached_in_transaction(
-                &transaction,
-                vehicle_id,
-                binding.account_id,
-                final_delta.pack.snapshot_id,
-                final_delta.to_sequence,
-                binding.selected_car_id,
-                &transfer,
-                false,
-            )?;
             promote_imported_open_session_in_transaction(
                 &transaction,
                 source_id,
@@ -5467,8 +5457,10 @@ impl HubStore {
     }
 
     /// Load the exact source-owned history rows from the most recent
-    /// successful TeslaMate import.  Missing or mismatched provenance is a
-    /// hard failure: callers must not guess deletes from mutable history.
+    /// successful TeslaMate import. New direct imports derive this legacy
+    /// view from their durable digest state; older imports retain the original
+    /// inventory table. Missing or mismatched provenance is a hard failure:
+    /// callers must not guess deletes from mutable history.
     pub fn teslamate_import_projection_inventory(
         &self,
         vehicle_id: Uuid,
@@ -5482,7 +5474,7 @@ impl HubStore {
             return Err(StoreError::LineageCatalogConflict);
         }
         let connection = self.open()?;
-        let header: Option<(String, String, i64)> = connection
+        let legacy_header: Option<(String, String, i64)> = connection
             .query_row(
                 "SELECT source_id, base_snapshot_id, selected_car_id
                    FROM teslamate_import_projection_heads WHERE vehicle_id = ?1",
@@ -5491,9 +5483,39 @@ impl HubStore {
             )
             .optional()
             .map_err(StoreError::LineageCatalog)?;
-        let Some((stored_source_id, base_snapshot_id, stored_selected_car_id)) = header else {
-            return Err(StoreError::TeslaMateImportInventoryMissing(vehicle_id));
-        };
+        let (stored_source_id, base_snapshot_id, stored_selected_car_id, use_digest_state) =
+            if let Some((stored_source_id, base_snapshot_id, stored_selected_car_id)) =
+                legacy_header
+            {
+                (
+                    stored_source_id,
+                    base_snapshot_id,
+                    stored_selected_car_id,
+                    false,
+                )
+            } else {
+                let state_header: Option<(String, String, i64)> = connection
+                    .query_row(
+                        "SELECT source_id, base_snapshot_id, selected_car_id
+                           FROM teslamate_import_projection_state_heads
+                          WHERE vehicle_id = ?1",
+                        params![vehicle_id.to_string()],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    )
+                    .optional()
+                    .map_err(StoreError::LineageCatalog)?;
+                let Some((stored_source_id, base_snapshot_id, stored_selected_car_id)) =
+                    state_header
+                else {
+                    return Err(StoreError::TeslaMateImportInventoryMissing(vehicle_id));
+                };
+                (
+                    stored_source_id,
+                    base_snapshot_id,
+                    stored_selected_car_id,
+                    true,
+                )
+            };
         if stored_source_id != source_id.to_string()
             || stored_selected_car_id != selected_car_id
             || !connection
@@ -5509,13 +5531,19 @@ impl HubStore {
         {
             return Err(StoreError::LineageCatalogConflict);
         }
+        let query = if use_digest_state {
+            "SELECT entity, entity_id
+               FROM teslamate_import_projection_state_rows
+              WHERE vehicle_id = ?1 AND entity_ordinal BETWEEN 1 AND 6
+              ORDER BY entity, entity_id"
+        } else {
+            "SELECT entity, entity_id
+               FROM teslamate_import_projection_rows
+              WHERE vehicle_id = ?1
+              ORDER BY entity, entity_id"
+        };
         let mut statement = connection
-            .prepare(
-                "SELECT entity, entity_id
-                   FROM teslamate_import_projection_rows
-                  WHERE vehicle_id = ?1
-                  ORDER BY entity, entity_id",
-            )
+            .prepare(query)
             .map_err(StoreError::LineageCatalog)?;
         let rows = statement
             .query_map(params![vehicle_id.to_string()], |row| {
@@ -6227,11 +6255,10 @@ impl HubStore {
         )
     }
 
-    /// Finalize a direct TeslaMate V2 base together with the sealed,
-    /// digest-only state and deletion inventory needed for a later sparse
-    /// successor. A verified read-only SQLite attachment transfers the state
-    /// and inventory set-wise inside the same transaction; no million-row
-    /// inventory is materialised in memory.
+    /// Finalize a direct TeslaMate V2 base together with its sealed,
+    /// digest-only state. That state is the sole current-history catalogue:
+    /// legacy deletion inventory requests derive their non-car view from it
+    /// instead of retaining a second multi-million-row copy.
     pub fn finalize_import_generation_with_projection_state(
         &self,
         run_id: Uuid,
@@ -6303,16 +6330,6 @@ impl HubStore {
                 Some((base_last_observation_id, base_updated_at_ms)),
             )?;
             replace_teslamate_import_projection_state_from_attached_in_transaction(
-                &transaction,
-                vehicle_id,
-                binding.account_id,
-                manifest.snapshot_id,
-                manifest.head_sequence,
-                binding.selected_car_id,
-                &transfer,
-                true,
-            )?;
-            replace_teslamate_import_projection_inventory_from_attached_in_transaction(
                 &transaction,
                 vehicle_id,
                 binding.account_id,
@@ -20041,6 +20058,17 @@ mod tests {
             "legacy inventory remains the non-car projection-state view"
         );
         let connection = store.open().expect("catalogue after transfer");
+        for table in [
+            "teslamate_import_projection_heads",
+            "teslamate_import_projection_rows",
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("direct import leaves no duplicate legacy inventory");
+            assert_eq!(count, 0, "direct import does not duplicate {table}");
+        }
         let remaining_generations: i64 = connection
             .query_row("SELECT COUNT(*) FROM import_generations", [], |row| {
                 row.get(0)
@@ -25621,112 +25649,6 @@ fn replace_teslamate_import_projection_state_from_attached_in_transaction(
     if u64::try_from(inserted).map_err(|_| StoreError::LineageCatalogConflict)?
         != transfer.stats().row_count
     {
-        return Err(StoreError::LineageCatalogConflict);
-    }
-    Ok(())
-}
-
-/// Rebuild the retained legacy deletion inventory from the just-inserted
-/// durable state. The car row has already been required by the descriptor and
-/// intentionally remains absent from this legacy table. Reading the target
-/// rather than the attachment makes the two catalogue views exactly identical
-/// even if an outside process replaces the spool path after attachment.
-fn replace_teslamate_import_projection_inventory_from_attached_in_transaction(
-    transaction: &Transaction<'_>,
-    vehicle_id: Uuid,
-    source_id: Uuid,
-    base_snapshot_id: Uuid,
-    head_sequence: u64,
-    selected_car_id: i64,
-    transfer: &TeslaMateProjectionStateTransfer,
-    allow_create: bool,
-) -> Result<(), StoreError> {
-    if vehicle_id.is_nil()
-        || source_id.is_nil()
-        || base_snapshot_id.is_nil()
-        || selected_car_id <= 0
-    {
-        return Err(StoreError::LineageCatalogConflict);
-    }
-    let head_sequence = i64::try_from(head_sequence).map_err(|_| StoreError::SequenceTooLarge)?;
-    let vehicle_key = vehicle_id.to_string();
-    let base_matches: bool = transaction
-        .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM sync_bases AS base
-                JOIN sync_heads AS head ON head.vehicle_id = base.vehicle_id
-                 WHERE base.vehicle_id = ?1
-                   AND base.snapshot_id = ?2
-                   AND head.base_snapshot_id = base.snapshot_id
-                   AND head.head_sequence = ?3
-            )",
-            params![
-                vehicle_key.as_str(),
-                base_snapshot_id.to_string(),
-                head_sequence
-            ],
-            |row| row.get(0),
-        )
-        .map_err(StoreError::LineageCatalog)?;
-    if !base_matches {
-        return Err(StoreError::LineageCatalogConflict);
-    }
-    let existing: Option<(String, String, i64)> = transaction
-        .query_row(
-            "SELECT source_id, base_snapshot_id, selected_car_id
-               FROM teslamate_import_projection_heads WHERE vehicle_id = ?1",
-            params![vehicle_key.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()
-        .map_err(StoreError::LineageCatalog)?;
-    if let Some((stored_source_id, stored_base_snapshot_id, stored_selected_car_id)) = existing {
-        if stored_source_id != source_id.to_string()
-            || stored_base_snapshot_id != base_snapshot_id.to_string()
-            || stored_selected_car_id != selected_car_id
-        {
-            return Err(StoreError::LineageCatalogConflict);
-        }
-    } else if !allow_create {
-        return Err(StoreError::TeslaMateImportInventoryMissing(vehicle_id));
-    }
-    transaction
-        .execute(
-            "INSERT INTO teslamate_import_projection_heads(
-                vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence
-             ) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence",
-            params![
-                vehicle_key.as_str(),
-                source_id.to_string(),
-                base_snapshot_id.to_string(),
-                selected_car_id,
-                head_sequence,
-            ],
-        )
-        .map_err(StoreError::LineageCatalog)?;
-    transaction
-        .execute(
-            "DELETE FROM teslamate_import_projection_rows WHERE vehicle_id = ?1",
-            params![vehicle_key.as_str()],
-        )
-        .map_err(StoreError::LineageCatalog)?;
-    let inserted = transaction
-        .execute(
-            "INSERT INTO teslamate_import_projection_rows(vehicle_id, entity, entity_id)
-             SELECT vehicle_id, entity, entity_id
-               FROM teslamate_import_projection_state_rows
-              WHERE vehicle_id = ?1 AND entity_ordinal BETWEEN 1 AND 6
-              ORDER BY entity_ordinal ASC, entity_id ASC",
-            params![vehicle_key.as_str()],
-        )
-        .map_err(StoreError::LineageCatalog)?;
-    let expected = transfer
-        .stats()
-        .row_count
-        .checked_sub(1)
-        .ok_or(StoreError::LineageCatalogConflict)?;
-    if u64::try_from(inserted).map_err(|_| StoreError::LineageCatalogConflict)? != expected {
         return Err(StoreError::LineageCatalogConflict);
     }
     Ok(())

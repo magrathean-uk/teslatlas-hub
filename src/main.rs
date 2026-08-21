@@ -37,13 +37,10 @@ use teslatlas_hub::{
     },
     teslamate_import::{
         TeslaMateImportReport, TeslaMateImportRequest, TeslaMateImportScope,
-        publish_staged_history_with_session,
+        import_selected_from_postgres_with_schema_22,
+        import_selected_from_postgres_with_schema_22_and_legacy_token,
     },
-    teslamate_reader::{
-        capture_history_to_stage_with_legacy_token_and_session,
-        capture_history_to_stage_with_session,
-    },
-    teslamate_stage::{TeslaMateStage, TeslaMateStageStats},
+    teslamate_reader::TeslaMateLegacyTokenCiphertexts,
     teslamate_token::{
         decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
     },
@@ -1480,49 +1477,6 @@ impl std::fmt::Display for MigrationSecretReadError {
 impl std::error::Error for MigrationSecretReadError {}
 
 #[cfg(unix)]
-struct MigrationStageCleanupFailure {
-    primary: Box<dyn std::error::Error>,
-}
-
-#[cfg(unix)]
-impl std::fmt::Debug for MigrationStageCleanupFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("MigrationStageCleanupFailure")
-            .finish_non_exhaustive()
-    }
-}
-
-#[cfg(unix)]
-impl std::fmt::Display for MigrationStageCleanupFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "migration failed: {}; staging cleanup failed",
-            self.primary
-        )
-    }
-}
-
-#[cfg(unix)]
-impl std::error::Error for MigrationStageCleanupFailure {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(self.primary.as_ref())
-    }
-}
-
-#[cfg(unix)]
-fn discard_migration_stage_after_error(
-    stage: TeslaMateStage,
-    primary: Box<dyn std::error::Error>,
-) -> Box<dyn std::error::Error> {
-    match stage.discard() {
-        Ok(()) => primary,
-        Err(_) => Box::new(MigrationStageCleanupFailure { primary }),
-    }
-}
-
-#[cfg(unix)]
 async fn run_macos_migration(
     admission: &AdmittedUserHub,
     MacMigrationInput {
@@ -1580,32 +1534,29 @@ async fn run_macos_migration(
 
     let store = HubStore::initialize(&config.data_dir)?;
     let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
-    let (initial_stage_stats, initial_report, _, initial_cleanup_pending) =
-        capture_and_publish_migration_snapshot(
-            &store,
-            &cursor_key,
-            &source,
-            &postgres_password,
-            car_id,
-            limits,
-            false,
-        )
-        .await?;
+    let (initial_report, _) = import_direct_migration_snapshot(
+        &store,
+        &cursor_key,
+        &source,
+        &postgres_password,
+        car_id,
+        limits,
+        false,
+    )
+    .await?;
 
     println!(
         "{}",
         serde_json::json!({
-            "status": if initial_cleanup_pending { "initial-copy-committed-with-cleanup-pending" } else { "initial-copy-complete" },
+            "status": "initial-copy-complete",
+            "captureMode": "direct",
             "selectedCarId": car_id,
-            "stageRows": initial_stage_stats.row_count,
-            "stageBytes": initial_stage_stats.payload_bytes,
             "projectedRows": initial_report.projected_rows,
             "snapshotId": initial_report.snapshot_id,
             "sequence": initial_report.sequence,
             "profileVersion": profile.version,
             "parallelCopyLanes": profile.parallel_copy_lanes,
             "profileReason": profile.reason.as_str(),
-            "cleanupPending": initial_cleanup_pending,
         })
     );
     print!("Stop TeslaMate now. Confirm it is stopped before final copy [y/N] ");
@@ -1621,17 +1572,16 @@ async fn run_macos_migration(
     // The operator has now stopped TeslaMate. Re-capture from one new
     // repeatable-read snapshot so no history row or rotated token can fall in
     // the interval between the long initial copy and cutover.
-    let (stage_stats, report, captured_ciphertexts, final_cleanup_pending) =
-        capture_and_publish_migration_snapshot(
-            &store,
-            &cursor_key,
-            &source,
-            &postgres_password,
-            car_id,
-            limits,
-            copy_teslamate_ciphertext,
-        )
-        .await?;
+    let (report, captured_ciphertexts) = import_direct_migration_snapshot(
+        &store,
+        &cursor_key,
+        &source,
+        &postgres_password,
+        car_id,
+        limits,
+        copy_teslamate_ciphertext,
+    )
+    .await?;
 
     // The encrypted source pair came from the same final snapshot as history.
     let (encryption_key, access_ciphertext, refresh_ciphertext) = if copy_teslamate_ciphertext {
@@ -1667,10 +1617,9 @@ async fn run_macos_migration(
     println!(
         "{}",
         serde_json::json!({
-            "status": if final_cleanup_pending { "imported-with-cleanup-pending" } else { "imported" },
+            "status": "imported",
+            "captureMode": "direct",
             "selectedCarId": car_id,
-            "stageRows": stage_stats.row_count,
-            "stageBytes": stage_stats.payload_bytes,
             "projectedRows": report.projected_rows,
             "snapshotId": report.snapshot_id,
             "sequence": report.sequence,
@@ -1679,7 +1628,6 @@ async fn run_macos_migration(
             "profileVersion": profile.version,
             "parallelCopyLanes": profile.parallel_copy_lanes,
             "profileReason": profile.reason.as_str(),
-            "cleanupPending": final_cleanup_pending,
         })
     );
 
@@ -1693,7 +1641,7 @@ async fn run_macos_migration(
 }
 
 #[cfg(unix)]
-async fn capture_and_publish_migration_snapshot(
+async fn import_direct_migration_snapshot(
     store: &HubStore,
     cursor_key: &CursorKey,
     source: &ReadOnlySource,
@@ -1703,66 +1651,40 @@ async fn capture_and_publish_migration_snapshot(
     include_legacy_token: bool,
 ) -> Result<
     (
-        TeslaMateStageStats,
         TeslaMateImportReport,
-        Option<teslatlas_hub::teslamate_reader::TeslaMateLegacyTokenCiphertexts>,
-        bool,
+        Option<TeslaMateLegacyTokenCiphertexts>,
     ),
     Box<dyn std::error::Error>,
 > {
-    let (stage, open_session, captured_ciphertexts) = if include_legacy_token {
-        let (stage, open_session, ciphertexts) =
-            capture_history_to_stage_with_legacy_token_and_session(
-                source,
-                postgres_password,
-                car_id,
-                limits,
-                &store.imports_dir(),
-            )
-            .await?;
-        (stage, open_session, Some(ciphertexts))
-    } else {
-        let (stage, open_session) = capture_history_to_stage_with_session(
-            source,
-            postgres_password,
-            car_id,
-            limits,
-            &store.imports_dir(),
-        )
-        .await?;
-        (stage, open_session, None)
-    };
-    let stage_stats = match stage.stats() {
-        Ok(stats) => stats,
-        Err(error) => {
-            return Err(discard_migration_stage_after_error(stage, Box::new(error)));
-        }
-    };
-    let imported_at_ms = match current_epoch_ms() {
-        Ok(value) => value,
-        Err(error) => {
-            return Err(discard_migration_stage_after_error(stage, Box::new(error)));
-        }
-    };
+    let imported_at_ms = current_epoch_ms()?;
     let request = TeslaMateImportRequest {
         source_key: "teslamate".to_owned(),
         scope: TeslaMateImportScope::Selected(car_id),
         imported_at_ms,
     };
-    let report = match publish_staged_history_with_session(
-        store,
-        cursor_key,
-        &request,
-        &stage,
-        &open_session,
-    ) {
-        Ok(report) => report,
-        Err(error) => {
-            return Err(discard_migration_stage_after_error(stage, Box::new(error)));
-        }
-    };
-    let cleanup_pending = stage.discard().is_err();
-    Ok((stage_stats, report, captured_ciphertexts, cleanup_pending))
+    if include_legacy_token {
+        let (selected, tokens) = import_selected_from_postgres_with_schema_22_and_legacy_token(
+            store,
+            source,
+            postgres_password,
+            cursor_key,
+            &request,
+            limits,
+        )
+        .await?;
+        Ok((selected.import, Some(tokens)))
+    } else {
+        let selected = import_selected_from_postgres_with_schema_22(
+            store,
+            source,
+            postgres_password,
+            cursor_key,
+            &request,
+            limits,
+        )
+        .await?;
+        Ok((selected.import, None))
+    }
 }
 
 #[cfg(unix)]
@@ -2603,34 +2525,6 @@ mod tests {
                 .expect("FIFO admission must not block")
         );
         worker.join().expect("FIFO admission worker");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn migration_stage_cleanup_failure_preserves_the_primary_error() {
-        use teslatlas_hub::teslamate_stage::{TeslaMateStage, TeslaMateStageLimits};
-
-        let temporary = tempfile::tempdir().expect("temporary stage directory");
-        let stage = TeslaMateStage::create(
-            temporary.path().join("imports"),
-            TeslaMateStageLimits {
-                max_rows: 1,
-                max_stage_bytes: 64 * 1024,
-                minimum_free_bytes: 0,
-            },
-        )
-        .expect("stage");
-        let path = stage.path().to_path_buf();
-        fs::remove_file(path).expect("remove stage before cleanup");
-        let error = super::discard_migration_stage_after_error(
-            stage,
-            Box::new(std::io::Error::other("primary migration error")),
-        );
-        let cleanup = error
-            .downcast_ref::<super::MigrationStageCleanupFailure>()
-            .expect("typed compound cleanup error");
-        assert!(cleanup.to_string().contains("primary migration error"));
-        assert!(cleanup.to_string().contains("staging cleanup failed"));
     }
 
     #[cfg(target_os = "macos")]

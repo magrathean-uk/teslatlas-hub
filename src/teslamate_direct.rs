@@ -42,13 +42,13 @@ use crate::{
     },
     teslamate_projection_state::{TeslaMateProjectionStateCapture, TeslaMateProjectionStateError},
     teslamate_reader::{
-        TeslaMateReadLimits, TeslaMateReaderError, TeslaMateSchemaInfo, binary_copy_sql,
-        charge_copy_types, decode_binary_charge, decode_binary_position,
-        open_exported_snapshot_lease, open_snapshot_capture_lane,
+        TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits, TeslaMateReaderError,
+        TeslaMateSchemaInfo, binary_copy_sql, charge_copy_types, decode_binary_charge,
+        decode_binary_position, open_exported_snapshot_lease, open_snapshot_capture_lane,
         open_snapshot_session_with_schema, position_copy_types, read_addresses,
         read_car_and_car_settings_v2_2, read_cars, read_charging_processes, read_drives,
-        read_geofences, read_open_session, read_settings_v2_2, read_updates_v2_2,
-        related_positions_binary_copy_sql,
+        read_geofences, read_legacy_token_ciphertexts_in_client, read_open_session,
+        read_settings_v2_2, read_updates_v2_2, related_positions_binary_copy_sql,
     },
     teslamate_schema::SourceTable,
 };
@@ -60,6 +60,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DirectCaptureMode {
     PublishPacks,
+    SuccessorDiff,
     LegacyBridgeCapture,
 }
 
@@ -82,6 +83,7 @@ pub(crate) struct DirectUpdatesSourceV2_2 {
 pub(crate) struct DirectSnapshotCapture {
     pub packs: StagedProjectionPacks,
     pub updates_v2_2: DirectUpdatesSourceV2_2,
+    pub legacy_tokens: Option<TeslaMateLegacyTokenCiphertexts>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -105,7 +107,7 @@ pub async fn write_direct_full_snapshot(
         snapshot_id,
         sequence,
         || Ok(None),
-        0,
+        false,
         DirectCaptureMode::PublishPacks,
     )
     .await
@@ -126,7 +128,7 @@ pub(crate) async fn write_direct_full_snapshot_with_projection_state<F>(
     binding: ProjectionBinding,
     snapshot_id: Uuid,
     sequence: SequenceRange,
-    projection_state_maximum_bytes: u64,
+    capture_legacy_token: bool,
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
@@ -142,8 +144,42 @@ where
         snapshot_id,
         sequence,
         || capture_factory().map(Some),
-        projection_state_maximum_bytes,
+        capture_legacy_token,
         DirectCaptureMode::PublishPacks,
+    )
+    .await
+}
+
+/// Stream a direct successor into the comparison spool only. Its current base
+/// remains immutable; later import code turns changed rows into sparse deltas.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn capture_direct_successor_diff_with_projection_state<F>(
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    selected_car_id: i64,
+    read_limits: TeslaMateReadLimits,
+    writer: &ProjectionPackWriter,
+    binding: ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    capture_legacy_token: bool,
+    mut capture_factory: F,
+) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
+where
+    F: FnMut() -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError>,
+{
+    write_direct_full_snapshot_with_capture_factory(
+        source,
+        password,
+        selected_car_id,
+        read_limits,
+        writer,
+        binding,
+        snapshot_id,
+        sequence,
+        || capture_factory().map(Some),
+        capture_legacy_token,
+        DirectCaptureMode::SuccessorDiff,
     )
     .await
 }
@@ -162,7 +198,7 @@ pub(crate) async fn capture_direct_snapshot_for_legacy_bridge<F>(
     binding: ProjectionBinding,
     snapshot_id: Uuid,
     sequence: SequenceRange,
-    projection_state_maximum_bytes: u64,
+    capture_legacy_token: bool,
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
@@ -178,7 +214,7 @@ where
         snapshot_id,
         sequence,
         || capture_factory().map(Some),
-        projection_state_maximum_bytes,
+        capture_legacy_token,
         DirectCaptureMode::LegacyBridgeCapture,
     )
     .await
@@ -195,18 +231,13 @@ async fn write_direct_full_snapshot_with_capture_factory<F>(
     snapshot_id: Uuid,
     sequence: SequenceRange,
     mut capture_factory: F,
-    projection_state_maximum_bytes: u64,
+    capture_legacy_token: bool,
     capture_mode: DirectCaptureMode,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
     F: FnMut() -> Result<Option<TeslaMateProjectionStateCapture>, TeslaMateDirectError>,
 {
-    ensure_direct_capture_capacity(
-        writer,
-        read_limits.maximum_stage_bytes,
-        read_limits.minimum_free_bytes,
-        projection_state_maximum_bytes,
-    )?;
+    ensure_direct_capture_capacity(writer, read_limits.minimum_free_bytes)?;
     let (lease, selected_car_id_i16, schema) =
         open_exported_snapshot_lease(source, password, selected_car_id, read_limits).await?;
     let snapshot_token = lease.snapshot_id().to_owned();
@@ -231,9 +262,10 @@ where
         // old default/retry policy, never the current dense-corpus hint.
         let mut fragment_limits = match capture_mode {
             DirectCaptureMode::PublishPacks => initial_direct_fragment_limits(source_counts),
+            DirectCaptureMode::SuccessorDiff => initial_direct_fragment_limits(source_counts),
             DirectCaptureMode::LegacyBridgeCapture => TeslaMateFragmentLimits::default(),
         };
-        loop {
+        let mut capture = loop {
             let projection_state = capture_factory()?;
             match write_direct_full_snapshot_once(
                 source,
@@ -270,9 +302,14 @@ where
                     );
                     fragment_limits = next;
                 }
-                result => break result,
+                result => break result?,
             }
+        };
+        if capture_legacy_token {
+            capture.legacy_tokens =
+                Some(read_legacy_token_ciphertexts_in_client(lease.client()).await?);
         }
+        Ok(capture)
     }
     .await;
     let lease_finish = lease.finish().await;
@@ -592,11 +629,8 @@ pub async fn preflight_teslamate_import(
             Ok(_) => None,
             Err(error) => Some(direct_retention_preflight_reason(&error).ok_or(error)?),
         };
-        let (target_available_bytes, capacity_passed) = preflight_target_capacity(
-            target_packs_dir,
-            read_limits.maximum_stage_bytes,
-            read_limits.minimum_free_bytes,
-        )?;
+        let (target_available_bytes, capacity_passed) =
+            preflight_target_capacity(target_packs_dir, read_limits.minimum_free_bytes)?;
         Ok(TeslaMatePreflightReport {
             selected_car_id,
             source_database_bytes,
@@ -636,12 +670,10 @@ async fn read_source_database_size(client: &Client) -> Result<u64, TeslaMateDire
 
 fn preflight_target_capacity(
     target_packs_dir: &Path,
-    capture_bound_bytes: u64,
     minimum_free_bytes: u64,
 ) -> Result<(u64, bool), TeslaMateDirectError> {
     let writer = ProjectionPackWriter::new(target_packs_dir);
-    match writer.ensure_full_snapshot_capacity_for_capture(capture_bound_bytes, minimum_free_bytes)
-    {
+    match writer.ensure_incremental_capture_capacity(minimum_free_bytes) {
         Ok(()) => Ok((target_available_bytes(target_packs_dir)?, true)),
         Err(ProjectionPackError::InsufficientFreeSpace { available, .. }) => Ok((available, false)),
         Err(error) => Err(error.into()),
@@ -654,14 +686,9 @@ fn preflight_target_capacity(
 /// bounded writers cannot overcommit a shared filesystem.
 fn ensure_direct_capture_capacity(
     writer: &ProjectionPackWriter,
-    capture_bound_bytes: u64,
     minimum_free_bytes: u64,
-    projection_state_maximum_bytes: u64,
 ) -> Result<(), TeslaMateDirectError> {
-    let combined_reserve = minimum_free_bytes
-        .checked_add(projection_state_maximum_bytes)
-        .ok_or(TeslaMateDirectError::CombinedCapacityOverflow)?;
-    writer.ensure_full_snapshot_capacity_for_capture(capture_bound_bytes, combined_reserve)?;
+    writer.ensure_incremental_capture_capacity(minimum_free_bytes)?;
     Ok(())
 }
 
@@ -1028,7 +1055,12 @@ async fn write_from_session(
         true,
     );
     let mut sink = match capture_mode {
-        DirectCaptureMode::PublishPacks => sink.without_physical_fingerprint(),
+        DirectCaptureMode::PublishPacks => sink
+            .without_physical_fingerprint()
+            .with_synchronous_pack_builds(),
+        DirectCaptureMode::SuccessorDiff => {
+            sink.without_physical_fingerprint().capture_state_only()
+        }
         DirectCaptureMode::LegacyBridgeCapture => sink.capture_only(),
     };
     if let Some(projection_state) = projection_state {
@@ -1095,7 +1127,7 @@ async fn write_from_session(
     )
     .await?;
     let updates_accounted = match capture_mode {
-        DirectCaptureMode::PublishPacks => {
+        DirectCaptureMode::PublishPacks | DirectCaptureMode::SuccessorDiff => {
             let emitted = write_direct_update_fragments(
                 client,
                 selected_car_id,
@@ -1134,7 +1166,7 @@ async fn write_from_session(
     }
     let fingerprint = logical_fingerprint.finish();
     let legacy_physical_fingerprint = match capture_mode {
-        DirectCaptureMode::PublishPacks => None,
+        DirectCaptureMode::PublishPacks | DirectCaptureMode::SuccessorDiff => None,
         DirectCaptureMode::LegacyBridgeCapture => Some(
             sink.fingerprint()
                 .ok_or(TeslaMateDirectError::LegacyPhysicalFingerprintMissing)?,
@@ -1152,6 +1184,7 @@ async fn write_from_session(
             selected_car,
         ),
         updates_v2_2,
+        legacy_tokens: None,
     })
 }
 
@@ -2111,8 +2144,6 @@ pub enum TeslaMateDirectError {
     },
     #[error("target free-space calculation overflowed")]
     TargetCapacityOverflow,
-    #[error("combined immutable-pack and projection-state capacity overflowed")]
-    CombinedCapacityOverflow,
     #[error("TeslaMate update {update_id} belongs to car {found_car_id}, not {expected_car_id}")]
     UpdateWrongCar {
         update_id: i64,
@@ -3352,18 +3383,14 @@ mod tests {
     }
 
     #[test]
-    fn combined_capture_capacity_rejects_overflow_before_filesystem_access() {
+    fn incremental_capture_capacity_rejects_overflow_before_filesystem_access() {
         let temporary = tempfile::tempdir().expect("pack directory");
-        let error = ensure_direct_capture_capacity(
-            &ProjectionPackWriter::new(temporary.path()),
-            1,
-            u64::MAX,
-            1,
-        )
-        .expect_err("reserve addition must not wrap");
+        let error =
+            ensure_direct_capture_capacity(&ProjectionPackWriter::new(temporary.path()), u64::MAX)
+                .expect_err("reserve addition must not wrap");
         assert!(matches!(
             error,
-            TeslaMateDirectError::CombinedCapacityOverflow
+            TeslaMateDirectError::Pack(ProjectionPackError::CapacityOverflow)
         ));
     }
 
@@ -3456,7 +3483,7 @@ mod tests {
                     from_exclusive: 0,
                     to_inclusive: 1,
                 },
-                projection_state_limits.max_state_bytes,
+                false,
                 || {
                     TeslaMateProjectionState::create(packs.path(), projection_state_limits)
                         .map(TeslaMateProjectionStateCapture::for_initial_base)

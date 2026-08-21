@@ -1,16 +1,49 @@
 # Hub progress
 
-Status: Mac full TeslaMate v4.1.1 migration passed; Debian ARM64 source-copy capacity rejection passed; driving remains deliberately deferred.
+Status: direct bounded migration is implemented and unit-tested. The next
+real compact-store measurement needs a new stopped cutover confirmation;
+TeslaMate is currently running. Driving remains deliberately deferred.
 
-Current: TeslaMate remains stopped on the VPS. Mac completed the two-snapshot migration from the real v4.1.1 database and validated the resulting Hub store. The under-6 GiB Debian guest reached the real source through its read-only tunnel and cleanly stopped at its deliberate 64 MiB stage cap; a complete 10.7M-position import needs a larger Linux disk.
+Current: TeslaMate remains stopped on the VPS. The old migration path used a
+7.4 GiB raw SQLite stage and peaked at 12 GiB. The CLI now streams PostgreSQL
+directly into Hub packs. Its final stopped pass keeps compact comparison state
+and writes only sparse deltas; it does not create a second full candidate.
 
-Next: full Linux migration only on Linux storage that can accommodate its observed 12 GiB temporary peak; real driving behavior only after a separate explicit test request.
+Next: with TeslaMate explicitly stopped again, measure one compact direct
+v4.1.1 migration on Mac, record final and sampled peak space, then remove the
+exact test store. Linux runtime proof remains separate.
 
 Blocked: real wake and climate commands still require immediate explicit confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
 ## Completed
 
-- Live v4.1.1 migration and cleanup — with TeslaMate stopped, Mac migrated car 1 from exact TeslaMate v4.1.1 d6c43bc8c48784da8f0b701945b80b20911b3d1a through two read-only snapshots. Each snapshot staged 11,082,539 rows / 7,408,814,477 bytes; final import was imported, retained 1,116-byte access and 1,031-byte refresh ciphertexts, and doctor returned ok. The final temporary store was 3.2 GiB; peak staging/publication use was 12 GiB and took 853 seconds. The Mac test store was deleted. Migration now keeps all dangling historical TeslaMate sessions while omitting an ambiguous live tail, and accepts one normal newline on a supplied ENCRYPTION_KEY; both focused regressions passed.
+- Compact direct catalogue — current direct imports retain one digest/state
+  catalogue rather than a second `teslamate_import_projection_rows` copy.
+  Legacy tombstone and collector-ID paths derive their compatible view from
+  that state, while old stores keep their existing inventory. Focused direct
+  base/state and legacy-inventory tests plus release `cargo check` passed.
+
+- Direct v4.1.1 Mac measurement before catalogue compaction — with the source
+  stopped, one read-only direct import projected 11,085,583 rows. It used no
+  raw-history stage, finished at 3.17 GiB, and had a sampled 4.17 GiB peak
+  (including its temporary comparison spool). The disposable store and tunnel
+  were removed. The current compact-catalogue change still needs its own live
+  measurement.
+
+- Direct bounded migration — the CLI now uses the existing repeatable-read
+  PostgreSQL-to-pack importer rather than `imports/.staging`. The initial pass
+  builds packs inline; the final pass captures comparison state only and emits
+  sparse deltas. Legacy ciphertext is read from that exported snapshot. Capacity
+  admission reserves one active fragment plus the free-space floor instead of
+  a 16 GiB cap. 667 library tests passed (2 ignored); a fresh live space receipt
+  is still required.
+
+- Historical staged-path measurement — with TeslaMate stopped, Mac migrated car
+  1 from exact TeslaMate v4.1.1 d6c43bc8c48784da8f0b701945b80b20911b3d1a through
+  two read-only snapshots. Each snapshot staged 11,082,539 rows / 7,408,814,477
+  bytes; final store was 3.2 GiB; peak staging/publication use was 12 GiB and
+  took 853 seconds. The test store was deleted. This measures the retired raw
+  stage path, not the direct migration now in the CLI.
 
 - Debian ARM64 v4.1.1 migration boundary — one 5.5 GiB QEMU Debian 13 guest installed the Hub package, reached the real stopped v4.1.1 source through a loopback-only SSH tunnel, and copied until its deliberate 64 MiB stage cap returned stage database byte limit exceeded. The service remained inactive and the stage was empty afterward (660 KiB local state). The guest, package test data, private password file, tunnel, and 2.6 GiB host debug cache were deleted. No TeslaMate PostgreSQL write or vehicle command ran.
 

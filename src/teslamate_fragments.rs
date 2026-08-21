@@ -889,6 +889,34 @@ struct PackBuildJob {
     schema_2_1: bool,
 }
 
+impl PackBuildJob {
+    fn build(self, writer: &ProjectionPackWriter) -> PackBuildResult {
+        let request = ProjectionPackRequest {
+            pack_id: Uuid::new_v4(),
+            snapshot_id: self.snapshot_id,
+            ordinal: self.ordinal,
+            binding: self.binding,
+            sequence: self.sequence,
+            snapshot: &self.snapshot,
+        };
+        let built = if self.states.is_empty() && self.updates.is_empty() && !self.schema_2_1 {
+            writer.write_full_snapshot(&request)
+        } else {
+            writer.write_full_snapshot_with_states_and_updates(
+                &request,
+                &self.states,
+                &self.updates,
+            )
+        };
+        PackBuildResult {
+            ordinal: self.ordinal,
+            snapshot: self.snapshot,
+            updates: self.updates,
+            built,
+        }
+    }
+}
+
 struct PackBuildResult {
     ordinal: u32,
     snapshot: ProjectionSnapshot,
@@ -1101,30 +1129,7 @@ impl PackBuildQueue {
                         Ok(job) => job,
                         Err(_) => return,
                     };
-                    let request = ProjectionPackRequest {
-                        pack_id: Uuid::new_v4(),
-                        snapshot_id: job.snapshot_id,
-                        ordinal: job.ordinal,
-                        binding: job.binding,
-                        sequence: job.sequence,
-                        snapshot: &job.snapshot,
-                    };
-                    let built =
-                        if job.states.is_empty() && job.updates.is_empty() && !job.schema_2_1 {
-                            writer.write_full_snapshot(&request)
-                        } else {
-                            writer.write_full_snapshot_with_states_and_updates(
-                                &request,
-                                &job.states,
-                                &job.updates,
-                            )
-                        };
-                    let result = PackBuildResult {
-                        ordinal: job.ordinal,
-                        snapshot: job.snapshot,
-                        updates: job.updates,
-                        built,
-                    };
+                    let result = job.build(&writer);
                     if let Err(error) = result_sender.send(result) {
                         cleanup_built_pack(error.0.built);
                         return;
@@ -1238,6 +1243,8 @@ pub(crate) struct PackSink<'a> {
     /// without constructing a second set of immutable packs. It still walks
     /// the exact fragment layout and records the same captured state.
     capture_only: bool,
+    capture_state_only: bool,
+    synchronous_pack_builds: bool,
     build_queue: Option<PackBuildQueue>,
     submitted_fragments: usize,
     written_fragments: usize,
@@ -1280,6 +1287,8 @@ impl<'a> PackSink<'a> {
             schema_2_1,
             fingerprint: Some(fingerprint),
             capture_only: false,
+            capture_state_only: false,
+            synchronous_pack_builds: false,
             build_queue: None,
             submitted_fragments: 0,
             written_fragments: 0,
@@ -1328,6 +1337,22 @@ impl<'a> PackSink<'a> {
     /// to the already catalogued base before making any state visible.
     pub(crate) fn capture_only(mut self) -> Self {
         self.capture_only = true;
+        self
+    }
+
+    /// Stream rows into the projection-state comparison spool without making
+    /// a disposable full pack. Successor imports use this to produce only
+    /// sparse deltas; their current base remains immutable and readable.
+    pub(crate) fn capture_state_only(mut self) -> Self {
+        self.capture_state_only = true;
+        self
+    }
+
+    /// A direct import shares its filesystem with its comparison spool. Build
+    /// one fragment inline, then record its state, so their temporary files
+    /// cannot overlap and consume the free-space reserve together.
+    pub(crate) fn with_synchronous_pack_builds(mut self) -> Self {
+        self.synchronous_pack_builds = true;
         self
     }
 
@@ -1427,7 +1452,7 @@ impl<'a> PackSink<'a> {
             );
             fingerprint.update(&canonical);
         }
-        if self.capture_only {
+        if self.capture_only || self.capture_state_only {
             self.submitted_fragments += 1;
             self.accept_snapshot(snapshot, updates, None)?;
             return Ok(());
@@ -1448,6 +1473,10 @@ impl<'a> PackSink<'a> {
             updates: updates.to_vec(),
             schema_2_1: self.schema_2_1,
         };
+        if self.synchronous_pack_builds {
+            self.accept_completed(job.build(self.writer))?;
+            return Ok(());
+        }
         let completed = self
             .build_queue
             .get_or_insert_with(|| PackBuildQueue::new(self.writer))
@@ -2472,6 +2501,94 @@ mod tests {
                 .len(),
             6,
             "packless capture must still retain every projected fact"
+        );
+    }
+
+    #[test]
+    fn successor_state_capture_records_updates_without_a_full_candidate_pack() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let (_stage_directory, stage) = stage();
+        let (snapshot, states) = capturable_snapshot(&stage);
+        let state = TeslaMateProjectionState::create(
+            temporary.path(),
+            TeslaMateProjectionStateLimits {
+                max_rows: 16,
+                max_state_bytes: 128 * 1024,
+                max_changed_payload_bytes: 128 * 1024,
+                minimum_free_bytes: 0,
+            },
+        )
+        .expect("successor state capture");
+        let writer = ProjectionPackWriter::new(temporary.path());
+        let mut successor = PackSink::new_with_schema_2_1(
+            &writer,
+            binding(),
+            Uuid::from_u128(43),
+            SequenceRange {
+                from_exclusive: 1,
+                to_inclusive: 2,
+            },
+            states,
+            true,
+        )
+        .capture_state_only()
+        .with_projection_state_capture(TeslaMateProjectionStateCapture::for_initial_base(state));
+        successor
+            .write_with_updates(
+                snapshot,
+                &[ProjectionUpdate {
+                    id: 300,
+                    car_id: 1,
+                    start_date_ms: 1_699_000_000_000,
+                    end_date_ms: 1_699_000_060_000,
+                    version: "2026.20.1".into(),
+                }],
+            )
+            .expect("state-only successor accepts update history");
+        assert!(
+            successor.chunks.is_empty(),
+            "successor comparison must not build a disposable full pack"
+        );
+        assert!(successor.has_written_fragments());
+        let (chunks, capture, _selected_car) = successor.into_parts();
+        assert!(chunks.is_empty());
+        let mut capture = capture.expect("successor state retained");
+        capture.seal().expect("seal successor state");
+        assert_eq!(
+            capture
+                .page(None, 16)
+                .expect("successor state page")
+                .rows
+                .len(),
+            7,
+            "successor state must include every projected fact and the update"
+        );
+    }
+
+    #[test]
+    fn direct_pack_builds_complete_before_projection_state_writes_continue() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let (_stage_directory, stage) = stage();
+        let (snapshot, states) = capturable_snapshot(&stage);
+        let writer = ProjectionPackWriter::new(temporary.path());
+        let mut direct = PackSink::new_with_schema_2_1(
+            &writer,
+            binding(),
+            Uuid::from_u128(44),
+            SequenceRange {
+                from_exclusive: 0,
+                to_inclusive: 1,
+            },
+            states,
+            true,
+        )
+        .without_physical_fingerprint()
+        .with_synchronous_pack_builds();
+        direct.write(snapshot).expect("direct pack build");
+        assert_eq!(direct.chunks.len(), 1);
+        assert!(
+            direct.build_queue.is_none(),
+            "direct migration must not overlap a pack worker with state writes"
         );
     }
 

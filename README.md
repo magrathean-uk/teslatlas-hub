@@ -165,6 +165,13 @@ teslatlas-hub --config /absolute/path/config.toml migrate \
 
 The first copy may run while TeslaMate remains active. At cutover, stop TeslaMate before confirming the final snapshot. Do not let TeslaMate and the Hub refresh the same legacy token concurrently.
 
+Migration streams the supported TeslaMate projection directly from a read-only
+PostgreSQL snapshot into Hub packs. It does not create a second raw-history
+SQLite copy: disk use is the final Hub data, one active pack build, and compact
+comparison state for the stopped cutover pass. “1:1” means the supported
+TeslaMate records and values are preserved in Hub's schema, not PostgreSQL
+storage-file byte identity.
+
 Where the original encryption key is unavailable, supply fresh legacy access and refresh token files instead:
 
 ```sh
