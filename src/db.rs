@@ -485,18 +485,19 @@ fn validate_shared_sqlite_file(
     Ok(())
 }
 
-fn stat_mode(raw_mode: u16) -> u32 {
-    u32::from(Mode::from_raw_mode(raw_mode).as_raw_mode()) & 0o7777
+fn stat_mode(raw_mode: impl Into<u64>) -> u32 {
+    (raw_mode.into() as u32) & 0o7777
 }
 
 fn open_directory_path_nofollow(path: &Path) -> std::io::Result<File> {
-    let mut absolute = if path.is_absolute() {
+    let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
         std::env::current_dir()?.join(path)
     };
     #[cfg(target_os = "macos")]
-    {
+    let absolute = {
+        let mut absolute = absolute;
         for (alias, canonical) in [
             ("/tmp", "/private/tmp"),
             ("/var", "/private/var"),
@@ -507,7 +508,8 @@ fn open_directory_path_nofollow(path: &Path) -> std::io::Result<File> {
                 break;
             }
         }
-    }
+        absolute
+    };
     let mut descriptor = open(
         "/",
         OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
@@ -1485,7 +1487,7 @@ impl HubStore {
                         | OFlags::EXCL
                         | OFlags::NOFOLLOW
                         | OFlags::CLOEXEC,
-                    Mode::from_raw_mode(SHARED_DATA_FILE_MODE as u16),
+                    Mode::from_raw_mode(SHARED_DATA_FILE_MODE as _),
                 ) {
                     Ok(fd) => {
                         created = true;
@@ -1499,7 +1501,7 @@ impl HubStore {
         };
         let file = File::from(gate_fd);
         if created {
-            fchmod(&file, Mode::from_raw_mode(SHARED_DATA_FILE_MODE as u16))
+            fchmod(&file, Mode::from_raw_mode(SHARED_DATA_FILE_MODE as _))
                 .map_err(|error| StoreError::ProtectPublicationGate(error.into()))?;
             file.sync_all()
                 .map_err(StoreError::ProtectPublicationGate)?;
@@ -2845,7 +2847,7 @@ impl HubStore {
         {
             fchmod(
                 &packs_fd,
-                Mode::from_raw_mode(SHARED_DATA_DIRECTORY_MODE as u16),
+                Mode::from_raw_mode(SHARED_DATA_DIRECTORY_MODE as _),
             )
             .map_err(|error| StoreError::AccessSchema22NoOp(error.into()))?;
             File::from(
@@ -2869,7 +2871,7 @@ impl HubStore {
             match mkdirat(
                 &packs_fd,
                 "noop",
-                Mode::from_raw_mode(SHARED_SCHEMA_22_NOOP_DIRECTORY_MODE as u16),
+                Mode::from_raw_mode(SHARED_SCHEMA_22_NOOP_DIRECTORY_MODE as _),
             ) {
                 Ok(()) => true,
                 Err(Errno::EXIST) => false,
@@ -2894,7 +2896,7 @@ impl HubStore {
         if created {
             fchmod(
                 &noop_fd,
-                Mode::from_raw_mode(SHARED_SCHEMA_22_NOOP_DIRECTORY_MODE as u16),
+                Mode::from_raw_mode(SHARED_SCHEMA_22_NOOP_DIRECTORY_MODE as _),
             )
             .map_err(|error| StoreError::AccessSchema22NoOp(error.into()))?;
             File::from(
@@ -3027,13 +3029,13 @@ impl HubStore {
                 &directory.file,
                 temporary_name.as_str(),
                 OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                Mode::from_raw_mode(PRIVATE_SCHEMA_22_NOOP_STAGING_MODE as u16),
+                Mode::from_raw_mode(PRIVATE_SCHEMA_22_NOOP_STAGING_MODE as _),
             )
             .map_err(|error| StoreError::WriteSchema22NoOp(error.into()))?;
             let mut file = File::from(fd);
             fchmod(
                 &file,
-                Mode::from_raw_mode(PRIVATE_SCHEMA_22_NOOP_STAGING_MODE as u16),
+                Mode::from_raw_mode(PRIVATE_SCHEMA_22_NOOP_STAGING_MODE as _),
             )
             .map_err(|error| StoreError::WriteSchema22NoOp(error.into()))?;
             let private_stat =
@@ -3060,7 +3062,7 @@ impl HubStore {
             file.sync_all().map_err(StoreError::WriteSchema22NoOp)?;
             fchmod(
                 &file,
-                Mode::from_raw_mode(SHARED_SCHEMA_22_NOOP_FILE_MODE as u16),
+                Mode::from_raw_mode(SHARED_SCHEMA_22_NOOP_FILE_MODE as _),
             )
             .map_err(|error| StoreError::WriteSchema22NoOp(error.into()))?;
             let shared_stat =

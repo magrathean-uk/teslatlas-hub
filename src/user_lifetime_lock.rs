@@ -182,7 +182,7 @@ fn open_lock_file(data_dir_fd: &impl AsFd) -> Result<OwnedFd, UserLifetimeLockEr
                 data_dir_fd,
                 LOCK_FILE_NAME,
                 OFlags::RDWR | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                Mode::from_raw_mode(LOCK_FILE_MODE as u16),
+                Mode::from_raw_mode(LOCK_FILE_MODE as _),
             ) {
                 Ok(fd) => return Ok(fd),
                 Err(Errno::EXIST) => continue,

@@ -129,9 +129,14 @@ mod tests {
 
     #[test]
     fn status_parses_systemd_show_output() {
-        let mut calls = Vec::new();
+        let mut calls: Vec<Vec<String>> = Vec::new();
         let status = status_with_runner(&mut |arguments| {
-            calls.push(arguments.to_vec());
+            calls.push(
+                arguments
+                    .iter()
+                    .map(|argument| (*argument).to_owned())
+                    .collect(),
+            );
             Ok(SystemctlOutput {
                 success: true,
                 stdout: "LoadState=loaded\nActiveState=active\nSubState=running\n".to_owned(),
@@ -147,9 +152,14 @@ mod tests {
 
     #[test]
     fn action_returns_the_follow_up_status() {
-        let mut calls = Vec::new();
+        let mut calls: Vec<Vec<String>> = Vec::new();
         let status = apply_with_runner(ServiceAction::Restart, &mut |arguments| {
-            calls.push(arguments.to_vec());
+            calls.push(
+                arguments
+                    .iter()
+                    .map(|argument| (*argument).to_owned())
+                    .collect(),
+            );
             Ok(SystemctlOutput {
                 success: true,
                 stdout: if arguments[0] == "show" {
