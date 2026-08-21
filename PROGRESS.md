@@ -1,12 +1,12 @@
 # Hub progress
 
-Status: complete — verified TeslaMate v4.1.1 one-car macOS parity implemented.
+Status: active — Debian ARM64 CLI and systemd support.
 
-Current: local product validated and cleaned.
+Current: lift Linux platform gates for the existing one-car Hub.
 
-Next: optional live Owner API and installed LaunchAgent acceptance with user-authorized credentials and vehicle access.
+Next: systemd CLI, explicit wake/climate commands, bootstrap, `.deb`, then one QEMU acceptance run.
 
-Blocked: live Tesla Owner API collection and actual LaunchAgent start/restart were not run because real credentials and vehicle access were not authorized; the existing user plist was preserved.
+Blocked: real Tesla Owner API collection and vehicle commands need separate explicit credentials/confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
 ## Completed
 

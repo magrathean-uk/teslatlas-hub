@@ -1,68 +1,63 @@
-# Goal: finish the Rust TeslaMate replacement for macOS
-
-Status: defined only. Do not start until the owner says `start`.
+# Goal: Linux TeslaMate replacement
 
 ## Result
 
-Make `hub/` a working TeslaMate replacement for one vehicle on Apple-silicon macOS.
+Make `hub/` work as a one-vehicle Rust TeslaMate replacement on Debian ARM64.
 
-A clean install must work without TeslaMate. Importing an existing TeslaMate PostgreSQL database is optional and strictly read-only.
+The Linux product is CLI and systemd only. It needs clean bootstrap, service
+status/start/stop/restart, setup, read-only TeslaMate migration, backup and
+repair, a Debian package, and the existing local sync server. Wake and climate
+start commands must be explicit CLI actions and hermetically tested. Driving
+tests can follow later.
 
 ## Normal development
 
-Work sequentially in the active `hub/main` checkout:
+Work sequentially in `hub/main`:
 
-1. Read `PROGRESS.md` and select one unfinished product step.
-2. Reproduce that step's real failure or missing behavior.
+1. Read `PROGRESS.md`; select one missing Linux product step.
+2. Reproduce the missing behavior.
 3. Make the smallest correct source change.
-4. Run one focused check or test.
-5. Fix it, update `PROGRESS.md`, and commit code plus progress together.
-6. Continue to the next product step.
+4. Run one focused test or check.
+5. Update `PROGRESS.md` and commit the change.
 
-Use `PROGRESS.md` as the only ledger. Keep only current, next, blockers, and short completed results.
+`PROGRESS.md` is the only work ledger.
 
 ## Product order
 
-1. Clean initialization and native setup without TeslaMate.
-2. macOS user-service install, start, status, stop, and restart.
-3. Fake/local Owner API and streaming collection without vehicle commands.
-4. Durable cars, positions, drives, charges, states, settings, and updates across restart.
-5. Optional bounded read-only TeslaMate import with clear schema rejection.
-6. Pairing and authenticated local sync across restart.
-7. Backup, verification, restore, and repair.
-8. One final validation pass and one practical macOS smoke run.
+1. Lift Linux platform gates for setup, migration, serving, and bounded observation.
+2. Add a systemd service adapter and CLI service status viewer.
+3. Add explicit wake and climate-start CLI actions with fake-Owner-API tests.
+4. Add bootstrap and Debian ARM64 packaging.
+5. Boot one Debian ARM64 QEMU guest, install the `.deb`, and test bootstrap,
+   status, service lifecycle, migration rejection/read-only behavior, backup,
+   restore, repair, wake, and climate-start against local fakes.
+6. Remove QEMU/image/build data; retain only the packaged `.deb` and the
+   normal `hub/target` cache.
 
-## Hard resource limits
+## Resource limits
 
-- Work only in `hub/`. Never edit or build `app/`.
-- Use one checkout and one build cache: `hub/target`.
-- Never create repository clones, worktrees, copied source trees, or extra Cargo target directories.
-- Do not use Agent Fleet or subagents for normal development.
-- Run one Cargo process at a time.
-- Use focused tests while coding. Run the full test suite, Clippy, and release build once near completion, unless a broad change genuinely requires them sooner.
-- Do not run `cargo clean`; keep and reuse the single build cache.
-- Temporary Hub data outside the repository must use one small directory, stay below 1 GiB, and be deleted in the same step.
-- Do not create evidence packs, review trees, archives, large logs, benchmarks, or duplicate progress documents.
-- Use narrow `rg` searches and narrow file reads. Browse only for required current documentation.
-- Keep conversation updates to completed milestones, failures, or real blockers. Do not stream internal analysis or long command output.
-- Before handoff: remove all Hub temporary data, report `hub/target` size, and leave `hub/main` clean except known user files.
-
-If a step would exceed these limits, stop and ask before spending the disk, CPU, or tokens.
-
-## Scope exclusions
-
-No Agent Fleet work, licensing work, release paperwork, Linux packaging, CI, notarization, multi-car support, speculative hardening, or repeated review cycles.
-
-Improve working code; do not rewrite it without a reproduced product problem.
+- Work only in `hub/`; never edit or build `app/`.
+- Use one checkout and one host build cache: `hub/target`.
+- Use one QEMU Debian ARM64 guest directory below `/tmp`, under 6 GiB, and
+  delete it after final verification.
+- Never create repository clones, worktrees, copied source trees, extra Cargo
+  target directories, evidence archives, or benchmark data.
+- Run one Cargo process at a time. Focused tests while coding; one full suite,
+  Clippy, and release build near handoff.
+- Do not install host services or change host configuration.
 
 ## Safety
 
-- Never write to the local TeslaMate PostgreSQL database.
-- Never use real Tesla credentials without explicit authorization.
-- Never wake a vehicle or send a vehicle command.
+- TeslaMate PostgreSQL access remains read-only.
+- Do not use or print real Tesla credentials.
+- Implement and fake-test wake/climate commands first. A real vehicle command
+  needs a separate explicit confirmation immediately before it is sent.
 - Never push, publish, deploy, or change remote systems.
-- Never reset, clean, stash, or overwrite unrelated user work.
+- Preserve unrelated user work.
 
 ## Done
 
-Done means the normal one-vehicle macOS journey works, the final Rust checks pass once, `PROGRESS.md` records the result, temporary Hub data is gone, and only exact external blockers remain.
+Done means the Linux ARM64 `.deb` installs in one local Debian QEMU guest; the
+CLI bootstrap, status, systemd lifecycle, migration, backup/restore/repair,
+and local fake wake/climate controls work; final Rust checks pass; QEMU data is
+gone; and `PROGRESS.md` records exact remaining external proof.
