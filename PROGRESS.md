@@ -1,16 +1,16 @@
 # Hub progress
 
-Status: active — final Debian package rebuild and cleanup.
+Status: complete — Debian ARM64 CLI/package delivery.
 
-Current: QEMU acceptance passed; rebuild the final package, retain it in `dist/`, then delete the guest.
+Current: final package retained at `dist/teslatlas-hub_1.0.0-alpha.1_arm64.deb`.
 
-Next: copy the final `.deb`, delete the guest and its single Cargo target, and leave only `target/release` plus `dist/`.
+Next: real Tesla credentials/vehicle action testing only with separate explicit approval.
 
 Blocked: real Tesla Owner API collection and vehicle commands need separate explicit credentials/confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
 ## Completed
 
-- Debian ARM64 acceptance — one Debian 13 ARM64 QEMU guest built the release and package. Native `cargo check --all-targets`, Clippy `-D warnings`, and tests passed (655 library, 13 CLI, 1 TLS; 2 intentional fixtures ignored). The installed package bootstrapped a root-owned service config, printed status, completed systemd CLI start/restart/stop/status, backed up, verified, restored, and repaired. A dummy migration request safely refused the 17 GiB stage requirement before any PostgreSQL connection; no real Tesla or vehicle command ran.
+- Debian ARM64 acceptance — one Debian 13 ARM64 QEMU guest built the release and package. Native `cargo check --all-targets`, Clippy `-D warnings`, and tests passed (655 library, 13 CLI, 1 TLS; 2 intentional fixtures ignored). The installed package bootstrapped a root-owned service config, printed status, completed systemd CLI start/restart/stop/status, backed up, verified, restored, and repaired. A dummy migration request safely refused the 17 GiB stage requirement before any PostgreSQL connection; no real Tesla or vehicle command ran. The guest and its Cargo target were deleted; the retained package SHA-256 is `0233d4b4d6208c73f05f1645d18214f648877f1ea2b77289be04b43a71d9687f`.
 
 - Linux portability — fixed Unix-sized Rustix mode/device handling, Linux service error formatting, root-owned packaged config admission, normal non-022 test umasks, Linux service CLI wording, and host-only byte-fixture execution. The package builder now removes only its exact temporary staging directory.
 
