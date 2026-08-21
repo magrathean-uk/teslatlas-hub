@@ -1,4 +1,4 @@
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use std::future::Future;
 use std::{
     sync::Arc,
@@ -21,7 +21,7 @@ use tower_http::{
 };
 use uuid::Uuid;
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use crate::config::HubConfig;
 use crate::{
     BUILD_VERSION,
@@ -202,7 +202,7 @@ impl Drop for OwnedServer {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 type ServerAdmission = Arc<crate::hub_user_process::AdmittedUserHub>;
 
 #[derive(Clone)]
@@ -295,7 +295,7 @@ fn router_with_access(
 
 /// Serve from the one admitted Hub process. Its durable cursor key is kept
 /// under the admitted data directory after the local lock is revalidated.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 #[doc(hidden)]
 pub async fn serve_for_admitted_user<F>(
     store: HubStore,
@@ -311,7 +311,7 @@ where
     admission.assert_sensitive_access().map_err(|error| {
         std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
-            format!("macOS Hub admission is unavailable: {error}"),
+            format!("Hub admission is unavailable: {error}"),
         )
     })?;
     let cursor_key = match (cursor_key, config.tls.is_some()) {
@@ -339,7 +339,7 @@ where
     .await
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 async fn serve_with_cursor_key<F>(
     store: HubStore,
     config: &HubConfig,
@@ -431,20 +431,20 @@ fn join_server_task(
     result.map_err(|error| std::io::Error::other(format!("Hub server task failed: {error}")))?
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn revalidate_server_admission(admission: Option<&ServerAdmission>) -> std::io::Result<()> {
     admission
         .ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
-                "macOS server admission is unavailable",
+                "server admission is unavailable",
             )
         })?
         .assert_sensitive_access()
         .map_err(|error| {
             std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
-                format!("macOS Hub admission is unavailable: {error}"),
+                format!("Hub admission is unavailable: {error}"),
             )
         })
 }

@@ -2,13 +2,15 @@
 
 Status: active — Debian ARM64 CLI and systemd support.
 
-Current: lift Linux platform gates for the existing one-car Hub.
+Current: add Linux bootstrap, package files, and explicit vehicle controls.
 
 Next: systemd CLI, explicit wake/climate commands, bootstrap, `.deb`, then one QEMU acceptance run.
 
 Blocked: real Tesla Owner API collection and vehicle commands need separate explicit credentials/confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
 ## Completed
+
+- Linux runtime gates — lifted the existing admitted Unix runtime for setup, read-only migration, serving, and bounded observation; added the small systemd `status/start/stop/restart` adapter. Host format and all-target Rust check passed; Debian ARM64 compilation is deliberately deferred to the single QEMU guest because this host has no Linux C cross-compiler.
 
 - Final integration — fixed monotonic observation IDs after bounded raw-row pruning, preventing later Owner/stream telemetry from being skipped after SQLite row reuse; corrected historical migration fixtures and current-snapshot assertions — collector 60/60 and all 8 affected upgrade tests passed.
 

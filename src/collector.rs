@@ -1133,7 +1133,7 @@ async fn terrain_lookup_with_runtime_admission(
             .await;
     }
 
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(any(not(unix), test))]
     {
         return lookup
             .lookup_with_egress_guard(
@@ -1145,7 +1145,7 @@ async fn terrain_lookup_with_runtime_admission(
             .await;
     }
 
-    #[cfg(all(target_os = "macos", not(test)))]
+    #[cfg(all(unix, not(test)))]
     {
         Err(TerrainCacheError::EgressDenied)
     }
@@ -1174,10 +1174,10 @@ fn terrain_error_code(error: &TerrainCacheError) -> &'static str {
     }
 }
 
-/// Run the no-wake collector inside the exact admitted per-user macOS Serve
-/// process. The Hub-owned token pair and cursor key are loaded from the
-/// selected data directory.
-#[cfg(target_os = "macos")]
+/// Run the no-wake collector inside the exact admitted Unix Serve process.
+/// The Hub-owned token pair and cursor key are loaded from the selected data
+/// directory.
+#[cfg(unix)]
 #[doc(hidden)]
 pub async fn run_supervised_for_admitted_user<F>(
     store: &HubStore,
@@ -1192,12 +1192,12 @@ where
     admission.assert_sensitive_access()?;
     admission.assert_store_path(&config.data_dir)?;
     if store.database_path() != config.data_dir.join("hub.sqlite") {
-        return Err(CollectorError::MacOsStoreMismatch);
+        return Err(CollectorError::AdmittedStoreMismatch);
     }
     let _activation = config.collector.supervised_interval()?;
     let cadence = config.collector.cadence()?;
     if !config.collector.legacy_auth.enabled {
-        return Err(CollectorError::MacOsLegacyAuthRequired);
+        return Err(CollectorError::AdmittedLegacyAuthRequired);
     }
 
     let manager = LegacyAuthManager::from_hub_teslamate_store_for_admitted_user(
@@ -1240,7 +1240,7 @@ where
 /// Run the collector with an already-issued legacy pair. Observer mode never
 /// refreshes or retries an unauthorized pair; a 401/403 ends this process so
 /// an operator can replace the credentials explicitly.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 #[doc(hidden)]
 pub async fn run_observer_for_admitted_user<F>(
     store: &HubStore,
@@ -1255,12 +1255,12 @@ where
     admission.assert_sensitive_access()?;
     admission.assert_store_path(&config.data_dir)?;
     if store.database_path() != config.data_dir.join("hub.sqlite") {
-        return Err(CollectorError::MacOsStoreMismatch);
+        return Err(CollectorError::AdmittedStoreMismatch);
     }
     let _activation = config.collector.supervised_interval()?;
     let cadence = config.collector.cadence()?;
     if !config.collector.legacy_auth.enabled {
-        return Err(CollectorError::MacOsLegacyAuthRequired);
+        return Err(CollectorError::AdmittedLegacyAuthRequired);
     }
 
     let manager = LegacyAuthManager::from_hub_teslamate_store_observer_for_admitted_user(
@@ -4465,15 +4465,15 @@ pub enum CollectorError {
     SensitiveAccessUnavailable,
     #[error("supervised collector startup receiver closed")]
     SupervisedStartupReadyDropped,
-    #[cfg(target_os = "macos")]
-    #[error("macOS admitted collector store does not match the selected Hub store")]
-    MacOsStoreMismatch,
-    #[cfg(target_os = "macos")]
-    #[error("macOS admitted collection requires legacy authentication")]
-    MacOsLegacyAuthRequired,
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
+    #[error("admitted collector store does not match the selected Hub store")]
+    AdmittedStoreMismatch,
+    #[cfg(unix)]
+    #[error("admitted collection requires legacy authentication")]
+    AdmittedLegacyAuthRequired,
+    #[cfg(unix)]
     #[error(transparent)]
-    MacOsUserAdmission(#[from] crate::hub_user_process::UserLifetimeLockError),
+    UserAdmission(#[from] crate::hub_user_process::UserLifetimeLockError),
     #[error("manual collection receipt timestamp is invalid")]
     InvalidReceiptTimestamp,
     #[error("manual collection received data for a vehicle absent from discovery")]

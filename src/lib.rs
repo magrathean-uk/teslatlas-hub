@@ -22,6 +22,8 @@ pub mod hub_pack;
 pub mod hub_user_process;
 pub mod legacy_auth;
 pub mod lifecycle;
+#[cfg(target_os = "linux")]
+pub mod linux_systemd;
 pub mod location;
 #[cfg(target_os = "macos")]
 pub mod macos_launch_agent;

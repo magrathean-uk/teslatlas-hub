@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use std::future::Future;
 
 use clap::{Parser, Subcommand};
@@ -15,11 +15,11 @@ use qrcode::{QrCode, render::unicode::Dense1x2};
 use rustix::fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open};
 use rustix::process::getuid;
 use sha2::{Digest, Sha256};
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use teslatlas_hub::hub_user_process::AdmittedUserHub;
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use teslatlas_hub::protocol::CursorKey;
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use teslatlas_hub::teslamate_import::derive_effective_import_profile;
 use teslatlas_hub::{
     collector,
@@ -50,13 +50,13 @@ use teslatlas_hub::{
 };
 use tracing_subscriber::EnvFilter;
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use rustix::io::Errno;
 
-/// A worker owned by the macOS Serve supervisor.  Normal exits request
+/// A worker owned by the Unix Serve supervisor. Normal exits request
 /// shutdown and await the task; cancellation of the supervisor aborts the
 /// owned task rather than silently detaching it.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 struct MacServeWorker {
     label: &'static str,
     shutdown: Option<tokio::sync::oneshot::Sender<()>>,
@@ -65,12 +65,12 @@ struct MacServeWorker {
 
 // Unit tests use a short stop bound so a non-cooperative fake worker can prove
 // the abort path without a real wait.
-#[cfg(all(target_os = "macos", not(test)))]
+#[cfg(all(unix, not(test)))]
 const MACOS_SERVE_STOP_TIMEOUT: Duration = Duration::from_secs(120);
-#[cfg(all(target_os = "macos", test))]
+#[cfg(all(unix, test))]
 const MACOS_SERVE_STOP_TIMEOUT: Duration = Duration::from_millis(50);
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 #[derive(Debug)]
 struct MacServeWorkerStopTimeout {
     label: &'static str,
@@ -81,17 +81,17 @@ impl std::fmt::Display for MacServeWorkerStopTimeout {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
-            "macOS {} worker did not stop within {} milliseconds",
+            "Hub {} worker did not stop within {} milliseconds",
             self.label,
             MACOS_SERVE_STOP_TIMEOUT.as_millis()
         )
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl std::error::Error for MacServeWorkerStopTimeout {}
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl MacServeWorker {
     fn start<F>(label: &'static str, shutdown: tokio::sync::oneshot::Sender<()>, future: F) -> Self
     where
@@ -135,12 +135,12 @@ impl MacServeWorker {
         result: Result<std::io::Result<()>, tokio::task::JoinError>,
     ) -> std::io::Result<()> {
         result.map_err(|error| {
-            std::io::Error::other(format!("macOS {} worker task failed: {error}", self.label))
+            std::io::Error::other(format!("Hub {} worker task failed: {error}", self.label))
         })?
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl Drop for MacServeWorker {
     fn drop(&mut self) {
         self.request_stop();
@@ -148,20 +148,20 @@ impl Drop for MacServeWorker {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 enum MacServeControl {
     Shutdown,
     AdmissionInvalidated(std::io::Error),
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 enum MacServeActiveOutcome {
     Server(std::io::Result<()>),
     Collector(std::io::Result<()>),
     Control(MacServeControl),
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn is_macos_serve_stop_timeout(result: &std::io::Result<()>) -> bool {
     matches!(
         result,
@@ -173,7 +173,7 @@ fn is_macos_serve_stop_timeout(result: &std::io::Result<()>) -> bool {
     )
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn preserve_active_result_after_stop(
     primary: std::io::Result<()>,
     stop_result: std::io::Result<()>,
@@ -185,12 +185,12 @@ fn preserve_active_result_after_stop(
     }
 }
 
-/// Own the Mac process's collector and listener as one cancellation-safe
+/// Own the Unix process's collector and listener as one cancellation-safe
 /// lifecycle.  The collector is constructed only for a positive cadence; the
 /// listener is constructed only after the collector hands over its exact
 /// cursor key. This accepts factories so ordering and exit can be tested
 /// without real network work.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 async fn run_macos_serve_supervisor<C, S, CF, SF, Control>(
     collector_enabled: bool,
     collector_start: CF,
@@ -342,16 +342,16 @@ struct Cli {
     command: Command,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 #[derive(Debug, Subcommand)]
 enum ServiceCommand {
-    /// Print whether the per-user LaunchAgent is loaded.
+    /// Print the installed service state.
     Status,
-    /// Start the installed per-user LaunchAgent.
+    /// Start the installed service.
     Start,
-    /// Stop the installed per-user LaunchAgent.
+    /// Stop the installed service.
     Stop,
-    /// Stop and start the installed per-user LaunchAgent.
+    /// Stop and start the installed service.
     Restart,
 }
 
@@ -437,7 +437,7 @@ enum Command {
     /// Initialize or migrate the local Hub database.
     Init,
     /// Configure one vehicle directly from private Owner token files.
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     Setup {
         /// Legacy Owner API access-token file, or `-` for stdin.
         #[arg(long)]
@@ -454,7 +454,7 @@ enum Command {
     /// Print the redacted local status consumed by the native control app.
     Status,
     /// Validate that one configured car and its credentials are ready to serve.
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     Preflight,
     /// Capture the current durable observation watermark for one source car.
     #[command(name = "observation-watermark")]
@@ -475,8 +475,8 @@ enum Command {
     },
     /// Start the Hub HTTP service.
     Serve,
-    /// Observe one admitted car for a bounded period without installing a LaunchAgent.
-    #[cfg(target_os = "macos")]
+    /// Observe one admitted car for a bounded period without installing a service.
+    #[cfg(unix)]
     Observe {
         /// Observation duration in seconds.
         #[arg(long, default_value_t = 3_600, value_parser = clap::value_parser!(u64).range(1..))]
@@ -486,7 +486,7 @@ enum Command {
     #[cfg(target_os = "macos")]
     Install,
     /// Control the installed per-user macOS Hub LaunchAgent.
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     Service {
         #[command(subcommand)]
         command: ServiceCommand,
@@ -497,7 +497,7 @@ enum Command {
         command: ControlCommand,
     },
     /// Import one TeslaMate car, its history, and its opaque legacy token pair.
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     Migrate {
         /// Password-free PostgreSQL URL. Password is read from a file or stdin.
         #[arg(long)]
@@ -827,15 +827,40 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    #[cfg(target_os = "linux")]
+    if let Command::Service { command } = &cli.command {
+        let status = match command {
+            ServiceCommand::Status => teslatlas_hub::linux_systemd::status()?,
+            ServiceCommand::Start => teslatlas_hub::linux_systemd::apply(
+                teslatlas_hub::linux_systemd::ServiceAction::Start,
+            )?,
+            ServiceCommand::Stop => teslatlas_hub::linux_systemd::apply(
+                teslatlas_hub::linux_systemd::ServiceAction::Stop,
+            )?,
+            ServiceCommand::Restart => teslatlas_hub::linux_systemd::apply(
+                teslatlas_hub::linux_systemd::ServiceAction::Restart,
+            )?,
+        };
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": status.status(),
+                "unit": status.unit,
+                "loadState": status.load_state,
+                "activeState": status.active_state,
+                "subState": status.sub_state,
+            })
+        );
+        return Ok(());
+    }
+
     if let Command::Control { command } = &cli.command {
         return run_control(&config_path, command);
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(unix))]
     if matches!(&cli.command, Command::Serve) {
-        return Err(
-            "serve is not yet supported on this platform; Linux runtime support is planned".into(),
-        );
+        return Err("serve requires a Unix platform".into());
     }
 
     #[cfg(target_os = "macos")]
@@ -853,7 +878,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     // Long-lived service, import, credential, and recovery commands take the
     // local instance lock. `control` uses short SQLite transactions so it can
     // intentionally operate while the collector is running.
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     let admitted_user_hub = if command_requires_user_hub_admission(&cli.command) {
         let config = HubConfig::load(&config_path)?;
         Some(AdmittedUserHub::admit(&config.data_dir)?)
@@ -861,7 +886,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     if let Command::Migrate {
         source,
         car_id,
@@ -871,10 +896,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         refresh_token_file,
     } = &cli.command
     {
-        let prepared_install = run_macos_migration(
+        let start_hub = run_macos_migration(
             admitted_user_hub
                 .as_ref()
-                .ok_or("macOS migrate reached runtime without native user admission")?,
+                .ok_or("migration reached runtime without user admission")?,
             MacMigrationInput {
                 config_path: &config_path,
                 source_url: source,
@@ -887,9 +912,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
         drop(admitted_user_hub);
-        if let Some(installed) = prepared_install {
+        #[cfg(target_os = "macos")]
+        if start_hub {
+            let config = HubConfig::load(&config_path)?;
+            let installed =
+                teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, &config_path)?;
             teslatlas_hub::macos_launch_agent::start_prepared(&installed)?;
             println!("installed {}; launch requested", installed.binary.display());
+        }
+        #[cfg(target_os = "linux")]
+        if start_hub {
+            println!("{}", serde_json::json!({"serviceStartRequested": true}));
         }
         return Ok(());
     }
@@ -981,10 +1014,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             );
             return Ok(());
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(unix)]
         Command::Preflight => {
             let config = HubConfig::load(&config_path)?;
-            teslatlas_hub::macos_launch_agent::preflight_hub(&config.data_dir)?;
+            let store = HubStore::open_immutable_read_only(&config.data_dir)?;
+            store.catalogue_check()?;
+            store.verify_immutable_snapshot_unchanged()?;
             println!(
                 "{}",
                 serde_json::json!({
@@ -1059,12 +1094,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         _ => {}
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     if let Some(admission) = admitted_user_hub.as_ref() {
         admission.assert_sensitive_access()?;
     }
     let (config, config_sha256) = HubConfig::load_with_digest(&config_path)?;
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     if let Some(admission) = admitted_user_hub.as_ref() {
         admission.assert_store_path(&config.data_dir)?;
     }
@@ -1073,7 +1108,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Init => {
             println!("initialized {}", store.database_path().display());
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(unix)]
         Command::Setup {
             access_token_file,
             refresh_token_file,
@@ -1107,20 +1142,21 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         | Command::VerifyObservation { .. } => {
             unreachable!("read-only commands return before opening writable Hub state")
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(unix)]
         Command::Service { .. } => {
             unreachable!("macOS service control returns before opening writable Hub state")
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(unix)]
         Command::Preflight => {
-            unreachable!("macOS preflight returns before opening writable Hub state")
+            unreachable!("preflight returns before opening writable Hub state")
         }
         Command::Serve => {
-            #[cfg(target_os = "macos")]
+            #[cfg(unix)]
             {
+                #[cfg(target_os = "macos")]
                 teslatlas_hub::macos_launch_agent::preflight_hub(&config.data_dir)?;
-                let admission = admitted_user_hub
-                    .ok_or("macOS Serve reached runtime without native user admission")?;
+                let admission =
+                    admitted_user_hub.ok_or("Serve reached runtime without user admission")?;
                 admission.assert_sensitive_access()?;
                 use tokio::signal::unix::{SignalKind, signal};
                 let mut sigterm = signal(SignalKind::terminate())?;
@@ -1173,10 +1209,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
             }
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(unix)]
         Command::Observe { duration_seconds } => {
-            let admission = admitted_user_hub
-                .ok_or("macOS Observe reached runtime without native user admission")?;
+            let admission =
+                admitted_user_hub.ok_or("Observe reached runtime without user admission")?;
             admission.assert_sensitive_access()?;
             use tokio::signal::unix::{SignalKind, signal};
             let mut sigterm = signal(SignalKind::terminate())?;
@@ -1230,9 +1266,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(target_os = "macos")]
         Command::Install => unreachable!("install returns before opening Hub state"),
-        #[cfg(target_os = "macos")]
+        #[cfg(unix)]
         Command::Migrate { .. } => {
-            unreachable!("macOS migrate returns before opening common Hub state")
+            unreachable!("migration returns before opening common Hub state")
         }
         Command::Pair {
             label,
@@ -1275,7 +1311,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn command_requires_user_hub_admission(command: &Command) -> bool {
     matches!(
         command,
@@ -1299,10 +1335,12 @@ fn default_config_path() -> PathBuf {
             .join("Teslatlas Hub")
             .join("config.toml");
     }
+    #[cfg(target_os = "linux")]
+    return PathBuf::from("/etc/teslatlas-hub/config.toml");
     PathBuf::from("config.toml")
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 struct MacMigrationInput<'a> {
     config_path: &'a Path,
     source_url: &'a str,
@@ -1313,29 +1351,29 @@ struct MacMigrationInput<'a> {
     refresh_token_file: Option<&'a Path>,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 const MAX_MIGRATION_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 const MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES: usize = MAX_MIGRATION_POSTGRES_PASSWORD_BYTES + 2;
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 const MAX_MIGRATION_TOKEN_BYTES: usize =
     teslatlas_hub::teslamate_token::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 const MAX_MIGRATION_TOKEN_FILE_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES + 2;
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn migration_stop_confirmed(answer: &str) -> bool {
     matches!(answer.trim(), "y" | "Y")
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn migration_start_requested(answer: &str) -> bool {
     matches!(answer.trim(), "y" | "Y")
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MigrationSecretReadError {
     Read,
@@ -1344,7 +1382,7 @@ enum MigrationSecretReadError {
     TooLarge,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl std::fmt::Display for MigrationSecretReadError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
@@ -1356,15 +1394,15 @@ impl std::fmt::Display for MigrationSecretReadError {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl std::error::Error for MigrationSecretReadError {}
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 struct MigrationStageCleanupFailure {
     primary: Box<dyn std::error::Error>,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl std::fmt::Debug for MigrationStageCleanupFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -1373,7 +1411,7 @@ impl std::fmt::Debug for MigrationStageCleanupFailure {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl std::fmt::Display for MigrationStageCleanupFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -1384,14 +1422,14 @@ impl std::fmt::Display for MigrationStageCleanupFailure {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 impl std::error::Error for MigrationStageCleanupFailure {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(self.primary.as_ref())
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn discard_migration_stage_after_error(
     stage: TeslaMateStage,
     primary: Box<dyn std::error::Error>,
@@ -1402,7 +1440,7 @@ fn discard_migration_stage_after_error(
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 async fn run_macos_migration(
     admission: &AdmittedUserHub,
     MacMigrationInput {
@@ -1414,7 +1452,7 @@ async fn run_macos_migration(
         access_token_file,
         refresh_token_file,
     }: MacMigrationInput<'_>,
-) -> Result<Option<teslatlas_hub::macos_launch_agent::InstallPaths>, Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn std::error::Error>> {
     if car_id <= 0 {
         return Err("--car-id must be a positive TeslaMate car id".into());
     }
@@ -1569,13 +1607,10 @@ async fn run_macos_migration(
     std::io::stdin().read_line(&mut answer)?;
     let start_hub = migration_start_requested(&answer);
 
-    start_hub
-        .then(|| teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, config_path))
-        .transpose()
-        .map_err(Into::into)
+    Ok(start_hub)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 async fn capture_and_publish_migration_snapshot(
     store: &HubStore,
     cursor_key: &CursorKey,
@@ -1648,7 +1683,7 @@ async fn capture_and_publish_migration_snapshot(
     Ok((stage_stats, report, captured_ciphertexts, cleanup_pending))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn read_migration_secret(
     path: &Path,
     maximum: usize,
@@ -1659,7 +1694,7 @@ fn read_migration_secret(
     read_migration_secret_file(path, maximum).map_err(Into::into)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn read_migration_postgres_password(
     path: &Path,
 ) -> Result<TeslaMatePostgresPassword, Box<dyn std::error::Error>> {
@@ -1667,7 +1702,7 @@ fn read_migration_postgres_password(
     TeslaMatePostgresPassword::from_bytes(&bytes).map_err(Into::into)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn read_bounded_migration_secret(
     reader: impl Read,
     maximum: usize,
@@ -1683,7 +1718,7 @@ fn read_bounded_migration_secret(
     Ok(bytes)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn read_migration_secret_file(
     path: &Path,
     maximum: usize,
@@ -1691,7 +1726,7 @@ fn read_migration_secret_file(
     read_migration_secret_file_with_hooks(path, maximum, || {}, || {})
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn read_migration_secret_file_with_hooks(
     path: &Path,
     maximum: usize,
@@ -1744,7 +1779,7 @@ fn read_migration_secret_file_with_hooks(
     Ok(bytes)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn safe_migration_secret_stat(stat: &rustix::fs::Stat) -> bool {
     FileType::from_raw_mode(stat.st_mode).is_file()
         && stat.st_uid == getuid().as_raw()
@@ -1752,7 +1787,7 @@ fn safe_migration_secret_stat(stat: &rustix::fs::Stat) -> bool {
         && (stat.st_mode as u32 & 0o400) != 0
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn same_migration_secret_stat(left: &rustix::fs::Stat, right: &rustix::fs::Stat) -> bool {
     left.st_dev == right.st_dev
         && left.st_ino == right.st_ino
@@ -1763,7 +1798,7 @@ fn same_migration_secret_stat(left: &rustix::fs::Stat, right: &rustix::fs::Stat)
         && left.st_mtime_nsec == right.st_mtime_nsec
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn safe_migration_secret_metadata(metadata: &fs::Metadata) -> bool {
     metadata.uid() == getuid().as_raw()
         && (metadata.mode() & 0o077) == 0

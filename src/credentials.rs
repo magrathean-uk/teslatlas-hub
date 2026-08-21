@@ -192,7 +192,7 @@ impl LegacyAuthManager {
         )
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     pub(crate) fn from_hub_teslamate_store_for_admitted_user(
         store: crate::db::HubStore,
         data_dir: &Path,
@@ -202,7 +202,7 @@ impl LegacyAuthManager {
             .map(|manager| manager.with_runtime_admission(admission))
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     pub(crate) fn from_hub_teslamate_store_observer_for_admitted_user(
         store: crate::db::HubStore,
         data_dir: &Path,
@@ -247,7 +247,7 @@ impl LegacyAuthManager {
         })
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     fn with_runtime_admission(
         mut self,
         admission: Arc<crate::hub_user_process::AdmittedUserHub>,
