@@ -2,13 +2,15 @@
 
 Status: active — Debian ARM64 CLI and systemd support.
 
-Current: add Linux bootstrap, package files, and explicit vehicle controls.
+Current: one Debian ARM64 QEMU package acceptance run.
 
-Next: systemd CLI, explicit wake/climate commands, bootstrap, `.deb`, then one QEMU acceptance run.
+Next: build/install the `.deb`, exercise CLI and systemd, retain the package, delete the guest.
 
 Blocked: real Tesla Owner API collection and vehicle commands need separate explicit credentials/confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
 ## Completed
+
+- Linux CLI delivery — added bootstrap, systemd `status|start|stop|restart`, explicit `control wake --confirm` and `control climate-start --confirm` with a local fake Owner API test, Debian package files, and Linux documentation. Host format, focused Owner API test, and binary check passed. QEMU acceptance remains next.
 
 - Linux runtime gates — lifted the existing admitted Unix runtime for setup, read-only migration, serving, and bounded observation; added the small systemd `status/start/stop/restart` adapter. Host format and all-target Rust check passed; Debian ARM64 compilation is deliberately deferred to the single QEMU guest because this host has no Linux C cross-compiler.
 

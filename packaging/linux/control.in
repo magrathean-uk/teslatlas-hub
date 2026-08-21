@@ -1,0 +1,10 @@
+Package: teslatlas-hub
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: arm64
+Depends: adduser, ca-certificates, systemd
+Maintainer: Magrathean UK Ltd <contact@magrathean.uk>
+Description: Self-hosted Tesla telemetry hub
+ Teslatlas Hub is a local one-vehicle telemetry collector, migration tool,
+ sync server, and command-line controller.

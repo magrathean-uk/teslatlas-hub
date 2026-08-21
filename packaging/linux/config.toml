@@ -1,0 +1,11 @@
+# Teslatlas Hub Debian configuration.
+# Run `teslatlas-hub bootstrap`, then `setup` or `migrate` before collection.
+data_dir = "/var/lib/teslatlas-hub"
+bind = "127.0.0.1:8080"
+
+# Keep precise coordinates local by default until the operator explicitly opts in.
+[geocoder]
+enabled = false
+
+[terrain]
+enabled = false

@@ -1,9 +1,10 @@
-//! Deliberate, one-shot compatibility reads from a Tesla Owner API endpoint.
+//! Deliberate, one-shot compatibility reads and explicit commands for a Tesla
+//! Owner API endpoint.
 //!
-//! This is not a polling loop, a Fleet implementation, or a command client.
-//! It only sends authenticated `GET` requests to the legacy-compatible product list and
-//! crate-local `vehicle_data` paths. The collector owns the no-wake stream-power
-//! confirmation contract; this module exposes no public manual collection shortcut.
+//! This is not a polling loop or a Fleet implementation. It sends authenticated
+//! reads to the legacy-compatible product list and crate-local `vehicle_data`
+//! paths. Explicit wake and climate-start commands are deliberately separate
+//! from collector calls.
 //!
 //! Legacy authentication is supplied only through typed credential owners;
 //! raw bearer strings never enter the production API.
@@ -305,6 +306,31 @@ impl OwnerApi {
         parse_vehicle_state(envelope.response).map_err(OwnerApiAuthError::Owner)
     }
 
+    /// Send one explicit vehicle command using the persisted legacy token pair.
+    /// Collection never calls this path.
+    pub(crate) async fn issue_command_with_legacy_auth_fused(
+        &self,
+        auth: &mut LegacyAuthManager,
+        fuse: &mut LegacyAuthFuse,
+        vehicle_id: VehicleId,
+        command: OwnerVehicleCommand,
+    ) -> Result<(), OwnerApiAuthError> {
+        self.prepare_legacy_auth(auth, fuse).await?;
+        let endpoint = self.vehicle_command_endpoint(vehicle_id, command)?;
+        let first = self.post_command_with_legacy_auth(auth, endpoint).await;
+        if !matches!(
+            first,
+            Err(OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(401)))
+        ) {
+            return first;
+        }
+        fuse.record_unauthorized(SystemTime::now());
+        if fuse.is_blown() {
+            return Err(OwnerApiAuthError::NotSignedIn);
+        }
+        first
+    }
+
     fn vehicle_data_endpoint(&self, vehicle_id: VehicleId) -> Result<Url, OwnerApiError> {
         let suffix = format!("api/1/vehicles/{vehicle_id}/vehicle_data");
         let mut endpoint = self.base_url.endpoint(&suffix)?;
@@ -319,6 +345,17 @@ impl OwnerApi {
             .endpoint(&format!("api/1/vehicles/{vehicle_id}"))
     }
 
+    fn vehicle_command_endpoint(
+        &self,
+        vehicle_id: VehicleId,
+        command: OwnerVehicleCommand,
+    ) -> Result<Url, OwnerApiError> {
+        self.base_url.endpoint(&format!(
+            "api/1/vehicles/{vehicle_id}/{}",
+            command.endpoint_suffix()
+        ))
+    }
+
     async fn get_envelope_with_legacy_auth_url_fused<T>(
         &self,
         auth: &mut LegacyAuthManager,
@@ -329,27 +366,7 @@ impl OwnerApi {
     where
         T: DeserializeOwned,
     {
-        if fuse.is_blown() {
-            return Err(OwnerApiAuthError::NotSignedIn);
-        }
-        auth.assert_sensitive_access()?;
-        // The API timer in pinned TeslaMate refreshes independently of an
-        // Owner API 401. Check the same persisted schedule before each bounded
-        // compatibility read; refresh failure retains the current pair.
-        if let Err(error) = auth
-            .refresh_if_due(&self.legacy_auth_client, SystemTime::now())
-            .await
-        {
-            if error.is_sensitive_access_failure() {
-                return Err(error.into());
-            }
-            if !matches!(
-                &error,
-                LegacyAuthManagerError::Auth(crate::legacy_auth::LegacyAuthError::RefreshDeferred)
-            ) {
-                tracing::warn!(error = %error, "scheduled legacy token refresh failed; current pair retained");
-            }
-        }
+        self.prepare_legacy_auth(auth, fuse).await?;
         let first = self
             .get_envelope_url_with_legacy_auth(auth, endpoint, power_gate)
             .await;
@@ -387,9 +404,63 @@ impl OwnerApi {
             .map_err(OwnerApiAuthError::Owner)
     }
 
+    async fn post_command_with_legacy_auth(
+        &self,
+        auth: &LegacyAuthManager,
+        url: Url,
+    ) -> Result<(), OwnerApiAuthError> {
+        let request = self.command_request(auth.access_token_for_sensitive_use()?, url);
+        auth.assert_sensitive_access()?;
+        let envelope: ResponseEnvelope<CommandResponseWire> = self
+            .execute_envelope_request(request)
+            .await
+            .map_err(OwnerApiAuthError::Owner)?;
+        if envelope.response.result {
+            Ok(())
+        } else {
+            Err(OwnerApiError::CommandRejected.into())
+        }
+    }
+
+    async fn prepare_legacy_auth(
+        &self,
+        auth: &mut LegacyAuthManager,
+        fuse: &mut LegacyAuthFuse,
+    ) -> Result<(), OwnerApiAuthError> {
+        if fuse.is_blown() {
+            return Err(OwnerApiAuthError::NotSignedIn);
+        }
+        auth.assert_sensitive_access()?;
+        // The API timer in pinned TeslaMate refreshes independently of an
+        // Owner API 401. Check the same persisted schedule before each bounded
+        // compatibility request; refresh failure retains the current pair.
+        if let Err(error) = auth
+            .refresh_if_due(&self.legacy_auth_client, SystemTime::now())
+            .await
+        {
+            if error.is_sensitive_access_failure() {
+                return Err(error.into());
+            }
+            if !matches!(
+                &error,
+                LegacyAuthManagerError::Auth(crate::legacy_auth::LegacyAuthError::RefreshDeferred)
+            ) {
+                tracing::warn!(error = %error, "scheduled legacy token refresh failed; current pair retained");
+            }
+        }
+        Ok(())
+    }
+
     fn envelope_request(&self, bearer: &str, url: Url) -> reqwest::RequestBuilder {
         self.client
             .get(url)
+            .header(ACCEPT, ACCEPT_JSON.clone())
+            .bearer_auth(bearer)
+    }
+
+    fn command_request(&self, bearer: &str, url: Url) -> reqwest::RequestBuilder {
+        self.client
+            .post(url)
             .header(ACCEPT, ACCEPT_JSON.clone())
             .bearer_auth(bearer)
     }
@@ -507,6 +578,13 @@ impl fmt::Debug for OwnerApi {
 pub struct VehicleId(u64);
 
 impl VehicleId {
+    pub(crate) fn from_owner_api_id(value: i64) -> Option<Self> {
+        u64::try_from(value)
+            .ok()
+            .filter(|value| *value > 0)
+            .map(Self)
+    }
+
     pub fn get(self) -> u64 {
         self.0
     }
@@ -514,6 +592,30 @@ impl VehicleId {
     #[cfg(test)]
     pub(crate) fn from_test(value: u64) -> Self {
         Self(value)
+    }
+}
+
+/// Commands intentionally exposed by the one-car CLI. This enum does not
+/// offer arbitrary endpoint paths.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OwnerVehicleCommand {
+    WakeUp,
+    ClimateStart,
+}
+
+impl OwnerVehicleCommand {
+    fn endpoint_suffix(self) -> &'static str {
+        match self {
+            Self::WakeUp => "wake_up",
+            Self::ClimateStart => "command/auto_conditioning_start",
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::WakeUp => "wake",
+            Self::ClimateStart => "climate_start",
+        }
     }
 }
 
@@ -668,6 +770,8 @@ pub enum OwnerApiError {
     VehicleNotFound,
     #[error("owner API vehicle is in service")]
     VehicleInService,
+    #[error("owner API command was rejected")]
+    CommandRejected,
     #[error("owner API response exceeds the size limit")]
     ResponseTooLarge,
     #[error("owner API response body could not be read")]
@@ -706,6 +810,11 @@ struct ResponseEnvelope<T> {
     response: T,
     #[serde(default)]
     count: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct CommandResponseWire {
+    result: bool,
 }
 
 #[derive(Deserialize)]
@@ -933,7 +1042,7 @@ mod tests {
         extract::{Path as AxumPath, State},
         http::{HeaderMap, StatusCode, Uri},
         response::IntoResponse,
-        routing::get,
+        routing::{get, post},
     };
     use tokio::{net::TcpListener, task::JoinHandle};
 
@@ -1129,6 +1238,11 @@ mod tests {
                         "/api/1/vehicles/{vehicle_id}/vehicle_data",
                         get(data_handler),
                     )
+                    .route("/api/1/vehicles/{vehicle_id}/wake_up", post(wake_handler))
+                    .route(
+                        "/api/1/vehicles/{vehicle_id}/command/auto_conditioning_start",
+                        post(climate_start_handler),
+                    )
                     .with_state(state),
             )
             .await
@@ -1195,6 +1309,51 @@ mod tests {
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].path, "/api/1/products");
         assert!(requests[0].authorization_is_expected);
+    }
+
+    #[tokio::test]
+    async fn explicit_wake_and_climate_commands_use_only_the_fixed_post_routes() {
+        let state = FakeState::with_vehicles(r#"{"response":[],"count":0}"#);
+        let fake = FakeServer::spawn(state.clone()).await;
+        let admitted = Arc::new(AtomicBool::new(true));
+        let mut manager = guarded_legacy_manager(fake.base_url.clone(), admitted);
+        let mut fuse = LegacyAuthFuse::default();
+        let vehicle = VehicleId::from_owner_api_id(70).expect("positive fixture id");
+        let client = fake.client(Duration::from_secs(2));
+
+        client
+            .issue_command_with_legacy_auth_fused(
+                &mut manager,
+                &mut fuse,
+                vehicle,
+                OwnerVehicleCommand::WakeUp,
+            )
+            .await
+            .expect("wake command");
+        client
+            .issue_command_with_legacy_auth_fused(
+                &mut manager,
+                &mut fuse,
+                vehicle,
+                OwnerVehicleCommand::ClimateStart,
+            )
+            .await
+            .expect("climate command");
+
+        let requests = state.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[0].path, "/api/1/vehicles/70/wake_up");
+        assert_eq!(requests[1].method, "POST");
+        assert_eq!(
+            requests[1].path,
+            "/api/1/vehicles/70/command/auto_conditioning_start"
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request.authorization_is_expected)
+        );
     }
 
     #[tokio::test]
@@ -1269,11 +1428,54 @@ mod tests {
         response.into_response()
     }
 
+    async fn wake_handler(
+        State(state): State<FakeState>,
+        AxumPath(vehicle_id): AxumPath<String>,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
+        command_handler(state, vehicle_id, headers, "wake_up").await
+    }
+
+    async fn climate_start_handler(
+        State(state): State<FakeState>,
+        AxumPath(vehicle_id): AxumPath<String>,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
+        command_handler(
+            state,
+            vehicle_id,
+            headers,
+            "command/auto_conditioning_start",
+        )
+        .await
+    }
+
+    async fn command_handler(
+        state: FakeState,
+        vehicle_id: String,
+        headers: HeaderMap,
+        suffix: &str,
+    ) -> impl IntoResponse {
+        let path = format!("/api/1/vehicles/{vehicle_id}/{suffix}");
+        record_with_method(&state, &headers, &path, "", "POST");
+        (StatusCode::OK, r#"{"response":{"result":true}}"#)
+    }
+
     fn record(state: &FakeState, headers: &HeaderMap, path: &str) {
         record_with_query(state, headers, path, "");
     }
 
     fn record_with_query(state: &FakeState, headers: &HeaderMap, path: &str, query: &str) {
+        record_with_method(state, headers, path, query, "GET");
+    }
+
+    fn record_with_method(
+        state: &FakeState,
+        headers: &HeaderMap,
+        path: &str,
+        query: &str,
+        method: &str,
+    ) {
         let authorization_is_expected = headers
             .get("authorization")
             .is_some_and(|value| value.as_bytes() == b"Bearer test-owner-token");
@@ -1282,7 +1484,7 @@ mod tests {
             .lock()
             .expect("fake request lock")
             .push(FakeRequest {
-                method: "GET".to_owned(),
+                method: method.to_owned(),
                 path: path.to_owned(),
                 query: query.to_owned(),
                 authorization_is_expected,

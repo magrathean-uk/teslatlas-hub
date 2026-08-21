@@ -378,6 +378,17 @@ enum ControlCommand {
     Pause,
     /// Resume Owner API and streaming collection for the selected car.
     Resume,
+    /// Wake the selected vehicle. Requires a fresh explicit confirmation.
+    Wake {
+        #[arg(long)]
+        confirm: bool,
+    },
+    /// Start climate control for the selected vehicle. Requires a fresh explicit confirmation.
+    #[command(name = "climate-start")]
+    ClimateStart {
+        #[arg(long)]
+        confirm: bool,
+    },
     /// Stop collection and remove the persisted Tesla account credentials.
     #[command(name = "sign-out")]
     SignOut,
@@ -436,6 +447,9 @@ enum Command {
     Legal,
     /// Initialize or migrate the local Hub database.
     Init,
+    /// Create the configured local store for a packaged Linux installation.
+    #[cfg(unix)]
+    Bootstrap,
     /// Configure one vehicle directly from private Owner token files.
     #[cfg(unix)]
     Setup {
@@ -600,7 +614,7 @@ fn control_target(store: &HubStore) -> Result<uuid::Uuid, Box<dyn std::error::Er
     Ok(vehicle_id)
 }
 
-fn run_control(
+async fn run_control(
     config_path: &Path,
     command: &ControlCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -671,13 +685,31 @@ fn run_control(
                 })
             );
         }
+        ControlCommand::Wake { confirm } => {
+            run_explicit_vehicle_command(
+                &store,
+                &config,
+                teslatlas_hub::collector::ExplicitVehicleCommand::Wake,
+                *confirm,
+            )
+            .await?;
+        }
+        ControlCommand::ClimateStart { confirm } => {
+            run_explicit_vehicle_command(
+                &store,
+                &config,
+                teslatlas_hub::collector::ExplicitVehicleCommand::ClimateStart,
+                *confirm,
+            )
+            .await?;
+        }
         ControlCommand::SignOut => {
             #[cfg(target_os = "macos")]
             teslatlas_hub::macos_launch_agent::stop_installed()?;
-            #[cfg(not(target_os = "macos"))]
-            return Err("sign-out is supported only on macOS".into());
+            #[cfg(target_os = "linux")]
+            teslatlas_hub::linux_systemd::apply(teslatlas_hub::linux_systemd::ServiceAction::Stop)?;
 
-            #[cfg(target_os = "macos")]
+            #[cfg(unix)]
             let _admission = AdmittedUserHub::admit(&config.data_dir)?;
             remove_key_and_tokens(&config.data_dir, &store)?;
             println!(
@@ -793,6 +825,28 @@ fn run_control(
     Ok(())
 }
 
+async fn run_explicit_vehicle_command(
+    store: &HubStore,
+    config: &HubConfig,
+    command: teslatlas_hub::collector::ExplicitVehicleCommand,
+    confirmed: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !confirmed {
+        return Err("refusing vehicle command without --confirm".into());
+    }
+    let receipt =
+        teslatlas_hub::collector::issue_explicit_vehicle_command(store, config, command).await?;
+    println!(
+        "{}",
+        serde_json::json!({
+            "status": "accepted",
+            "command": receipt.command,
+            "vehicleEid": receipt.vehicle_eid,
+        })
+    );
+    Ok(())
+}
+
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
 
@@ -855,7 +909,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Command::Control { command } = &cli.command {
-        return run_control(&config_path, command);
+        return run_control(&config_path, command).await;
     }
 
     #[cfg(not(unix))]
@@ -922,7 +976,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(target_os = "linux")]
         if start_hub {
-            println!("{}", serde_json::json!({"serviceStartRequested": true}));
+            println!(
+                "{}",
+                serde_json::json!({
+                    "serviceStartRequested": true,
+                    "next": "sudo systemctl start teslatlas-hub.service",
+                })
+            );
         }
         return Ok(());
     }
@@ -1109,6 +1169,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             println!("initialized {}", store.database_path().display());
         }
         #[cfg(unix)]
+        Command::Bootstrap => {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "bootstrapped",
+                    "version": teslatlas_hub::BUILD_VERSION,
+                    "database": store.database_path(),
+                })
+            );
+        }
+        #[cfg(unix)]
         Command::Setup {
             access_token_file,
             refresh_token_file,
@@ -1161,7 +1232,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 use tokio::signal::unix::{SignalKind, signal};
                 let mut sigterm = signal(SignalKind::terminate())?;
 
-                let collector_enabled = config.collector.interval_seconds > 0;
+                let collector_enabled = collector_can_start(&store, &config)?;
                 let collector_store = store.clone();
                 let collector_config = config.clone();
                 let collector_admission = std::sync::Arc::clone(&admission);
@@ -1316,6 +1387,7 @@ fn command_requires_user_hub_admission(command: &Command) -> bool {
     matches!(
         command,
         Command::Init
+            | Command::Bootstrap
             | Command::Setup { .. }
             | Command::Serve
             | Command::Observe { .. }
@@ -1324,6 +1396,15 @@ fn command_requires_user_hub_admission(command: &Command) -> bool {
             | Command::Repair
             | Command::Backup { .. }
     )
+}
+
+fn collector_can_start(
+    store: &HubStore,
+    config: &HubConfig,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    Ok(config.collector.interval_seconds > 0
+        && store.selected_tesla_eid()?.is_some()
+        && store.load_teslamate_legacy_tokens()?.is_some())
 }
 
 fn default_config_path() -> PathBuf {
@@ -2259,6 +2340,31 @@ mod tests {
         assert!(!migration_start_requested(""));
         assert!(!migration_start_requested("N"));
         assert!(migration_start_requested("y"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bootstrap_and_explicit_vehicle_controls_parse() {
+        let bootstrap = Cli::try_parse_from(["teslatlas-hub", "bootstrap"]).expect("bootstrap CLI");
+        assert!(matches!(bootstrap.command, Command::Bootstrap));
+
+        let wake = Cli::try_parse_from(["teslatlas-hub", "control", "wake"]).expect("wake CLI");
+        assert!(matches!(
+            wake.command,
+            Command::Control {
+                command: ControlCommand::Wake { confirm: false }
+            }
+        ));
+
+        let climate =
+            Cli::try_parse_from(["teslatlas-hub", "control", "climate-start", "--confirm"])
+                .expect("climate CLI");
+        assert!(matches!(
+            climate.command,
+            Command::Control {
+                command: ControlCommand::ClimateStart { confirm: true }
+            }
+        ));
     }
 
     #[cfg(target_os = "macos")]

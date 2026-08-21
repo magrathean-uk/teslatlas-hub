@@ -48,7 +48,8 @@ use crate::{
     location::Wgs84Point,
     owner_api::{
         ManualCollection, OwnerApi, OwnerApiAuthError, OwnerApiConfigError, OwnerApiError,
-        StreamVehicleId, Vehicle, VehicleCollectionFailure, VehicleData, VehicleId,
+        OwnerVehicleCommand, StreamVehicleId, Vehicle, VehicleCollectionFailure, VehicleData,
+        VehicleId,
     },
     protocol::{
         CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V2, LineageDelta, OpaqueCursor, PROTOCOL_V1,
@@ -92,6 +93,32 @@ const STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 // turn guarantees owner-api scheduling, lease heartbeats, and shutdown get a
 // chance to run even while telemetry is arriving continuously.
 const MAX_STREAM_EVENTS_PER_DRAIN: usize = 16;
+
+/// Explicit actions which are never reachable from scheduled collection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExplicitVehicleCommand {
+    Wake,
+    ClimateStart,
+}
+
+impl ExplicitVehicleCommand {
+    fn owner_command(self) -> OwnerVehicleCommand {
+        match self {
+            Self::Wake => OwnerVehicleCommand::WakeUp,
+            Self::ClimateStart => OwnerVehicleCommand::ClimateStart,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        self.owner_command().label()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExplicitVehicleCommandReceipt {
+    pub vehicle_eid: i64,
+    pub command: &'static str,
+}
 
 // The production collector deliberately uses conservative retry timing and
 // cannot expose an interstitial gate state.  Keep the acceptance witness
@@ -793,6 +820,46 @@ pub async fn setup_native_vehicle(
         requested_vehicle_id,
     )
     .await
+}
+
+/// Submit one operator-confirmed command for the durable one-car selection.
+/// The command type is closed and separate from all collector call paths.
+pub async fn issue_explicit_vehicle_command(
+    store: &HubStore,
+    config: &HubConfig,
+    command: ExplicitVehicleCommand,
+) -> Result<ExplicitVehicleCommandReceipt, CollectorError> {
+    if store.database_path() != config.data_dir.join("hub.sqlite") {
+        return Err(CollectorError::NativeSetupStoreMismatch);
+    }
+    if !config.collector.legacy_auth.enabled {
+        return Err(CollectorError::ExplicitCommandLegacyAuthRequired);
+    }
+    let vehicle_eid = store
+        .selected_tesla_eid()?
+        .ok_or(CollectorError::SelectedVehicleMissing)?
+        .0;
+    let vehicle_id = VehicleId::from_owner_api_id(vehicle_eid)
+        .ok_or(CollectorError::NativeSetupVehicleIdInvalid)?;
+    let mut manager = LegacyAuthManager::from_hub_teslamate_store(store.clone(), &config.data_dir)?;
+    let client = OwnerApi::new(
+        config
+            .collector
+            .owner_api_options_for_region(manager.region())?,
+    )?;
+    let mut fuse = LegacyAuthFuse::default();
+    client
+        .issue_command_with_legacy_auth_fused(
+            &mut manager,
+            &mut fuse,
+            vehicle_id,
+            command.owner_command(),
+        )
+        .await?;
+    Ok(ExplicitVehicleCommandReceipt {
+        vehicle_eid,
+        command: command.label(),
+    })
 }
 
 async fn setup_native_vehicle_with_client(
@@ -4441,6 +4508,8 @@ pub enum CollectorError {
     NativeSetupStoreMismatch,
     #[error("native setup requires legacy Owner API authentication to be enabled")]
     NativeSetupLegacyAuthRequired,
+    #[error("explicit vehicle commands require legacy Owner API authentication to be enabled")]
+    ExplicitCommandLegacyAuthRequired,
     #[error("native setup found no vehicles")]
     NativeSetupNoVehicles,
     #[error("native setup found {discovered} vehicles; select one with --vehicle-id")]

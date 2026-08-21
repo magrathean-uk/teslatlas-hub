@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+if ! getent passwd teslatlas >/dev/null 2>&1; then
+    adduser --system --group --home /var/lib/teslatlas-hub --no-create-home teslatlas
+fi
+
+install -d -o teslatlas -g teslatlas -m 0700 /var/lib/teslatlas-hub
+install -d -o root -g teslatlas -m 0750 /etc/teslatlas-hub
+if [ -f /etc/teslatlas-hub/config.toml ]; then
+    chown root:teslatlas /etc/teslatlas-hub/config.toml
+    chmod 0640 /etc/teslatlas-hub/config.toml
+fi
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+fi

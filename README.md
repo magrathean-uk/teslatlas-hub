@@ -23,15 +23,13 @@ The paid Teslatlas application is a separate product and is not part of this rep
 
 The current `v1.0.0-alpha.1` implementation is narrower than the planned cross-platform product:
 
-- macOS 12 or later on Apple silicon;
+- macOS 12 or later on Apple silicon, and Debian 13 ARM64;
 - one vehicle;
 - legacy Owner API token authentication; no official Fleet API integration;
 - PostgreSQL history import, encrypted token/key transfer, token refresh, Owner API polling, Tesla streaming, lifecycle persistence, backup and repair;
 - native AppKit control app plus full CLI access;
-- per-user LaunchAgent;
-- no Grafana, MQTT, multi-vehicle collection, Debian package or App Store build.
-
-Linux service and packaging support is planned. Do not treat the present macOS implementation as the permanent platform boundary.
+- a per-user LaunchAgent on macOS or a systemd service on Debian;
+- no Grafana, MQTT, multi-vehicle collection, or App Store build.
 
 ## Project boundaries
 
@@ -67,7 +65,36 @@ scripts/build-macos-app.sh
 
 The app is written to `dist/Teslatlas Hub.app`. Current alpha builds are ad-hoc signed and are not notarised.
 
-Linux build, service and packaging instructions will be published with the first tagged Linux release. Do not infer Linux support from an arbitrary branch.
+## Debian ARM64 package
+
+Build the package from an ARM64 Debian host (or the supplied development VM):
+
+```sh
+cargo build --locked --release
+scripts/build-deb.sh \
+  --binary target/release/teslatlas-hub \
+  --version 1.0.0-alpha.1 \
+  --output dist/teslatlas-hub_1.0.0-alpha.1_arm64.deb
+sudo dpkg -i dist/teslatlas-hub_1.0.0-alpha.1_arm64.deb
+```
+
+The package creates the private `teslatlas` service user, configuration at
+`/etc/teslatlas-hub/config.toml`, and data directory at
+`/var/lib/teslatlas-hub`. Bootstrap and setup run as that service user:
+
+```sh
+sudo -u teslatlas teslatlas-hub bootstrap
+sudo -u teslatlas teslatlas-hub setup \
+  --access-token-file /private/access-token \
+  --refresh-token-file /private/refresh-token
+sudo systemctl start teslatlas-hub.service
+teslatlas-hub service status
+sudo -u teslatlas teslatlas-hub status
+```
+
+Service controls are `teslatlas-hub service status|start|stop|restart`.
+Migration stays read-only; after a Linux migration, start the package service
+with `sudo systemctl start teslatlas-hub.service`.
 
 ## CLI setup
 
@@ -112,6 +139,14 @@ Useful checks:
 teslatlas-hub --config /absolute/path/config.toml status
 teslatlas-hub --config /absolute/path/config.toml doctor
 teslatlas-hub legal
+```
+
+Wake and climate start are explicit one-car commands. They are not used by
+scheduled collection and require a fresh command-line confirmation:
+
+```sh
+teslatlas-hub --config /absolute/path/config.toml control wake --confirm
+teslatlas-hub --config /absolute/path/config.toml control climate-start --confirm
 ```
 
 ## Optional TeslaMate migration
