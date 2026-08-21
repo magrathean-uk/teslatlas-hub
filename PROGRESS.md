@@ -21,7 +21,8 @@ Blocked: real wake and climate commands still require immediate explicit confirm
   catalogue rather than a second `teslamate_import_projection_rows` copy.
   Legacy tombstone and collector-ID paths derive their compatible view from
   that state, while old stores keep their existing inventory. Focused direct
-  base/state and legacy-inventory tests plus release `cargo check` passed.
+  base/state, direct successor, and staged-compatibility tests plus release
+  `cargo check` passed.
 
 - Direct v4.1.1 Mac measurement before catalogue compaction — with the source
   stopped, one read-only direct import projected 11,085,583 rows. It used no

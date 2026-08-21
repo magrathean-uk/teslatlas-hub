@@ -1096,6 +1096,7 @@ async fn import_from_postgres_with_updates_capture(
             direct.fingerprint,
             &direct.geofences,
             &projection_state,
+            false,
         )?;
         delta_packs.published();
         drop(delta_packs);
@@ -1155,6 +1156,7 @@ async fn import_from_postgres_with_updates_capture(
         &direct.geofences,
         &binding,
         &projection_state,
+        false,
     ) {
         reconcile_failed_full_snapshot_candidate(store, &publication_gate, &mut direct, &error)?;
         return Err(error.into());
@@ -1437,6 +1439,7 @@ fn publish_staged_history_with_limits(
         &staged.geofences,
         &binding,
         &projection_state,
+        true,
     ) {
         reconcile_failed_full_snapshot_candidate(store, &publication_gate, &mut staged, &error)?;
         return Err(error.into());
@@ -1577,6 +1580,7 @@ fn publish_staged_history_successor(
         fingerprint,
         &staged.geofences,
         &projection_state,
+        true,
     )?;
     delta_packs.published();
     drop(delta_packs);
@@ -3298,6 +3302,7 @@ mod tests {
                 &base_history.geofences,
                 &binding,
                 &base_state,
+                false,
             )
             .expect("committed direct base survives post-commit detach failure");
         drop(base_candidate);
@@ -3473,6 +3478,7 @@ mod tests {
                 changed_fingerprint,
                 &changed_history.geofences,
                 &successor_state,
+                false,
             )
             .expect("atomically publish direct sparse successor and state");
         assert!(

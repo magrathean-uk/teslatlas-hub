@@ -4947,6 +4947,8 @@ impl HubStore {
     /// Atomically publish every bounded direct-import successor produced from
     /// one sealed PostgreSQL snapshot. A source rewrite may exceed one pack,
     /// but clients must never observe only a prefix of its ordered deltas.
+    /// `retain_legacy_inventory` is only for the older staged importer; the
+    /// direct PostgreSQL path derives that view from digest state instead.
     pub fn finalize_import_generation_delta_successors_with_projection_state(
         &self,
         run_id: Uuid,
@@ -4960,6 +4962,7 @@ impl HubStore {
         fingerprint: Sha256Digest,
         geofences: &[crate::teslamate_projection::TeslaMateGeofence],
         projection_state: &TeslaMateProjectionState,
+        retain_legacy_inventory: bool,
     ) -> Result<(), StoreError> {
         if run_id.is_nil() || source_id.is_nil() || vehicle_id.is_nil() || car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
@@ -5148,6 +5151,18 @@ impl HubStore {
                 &transfer,
                 false,
             )?;
+            if retain_legacy_inventory {
+                replace_teslamate_import_projection_inventory_from_attached_in_transaction(
+                    &transaction,
+                    vehicle_id,
+                    binding.account_id,
+                    final_delta.pack.snapshot_id,
+                    final_delta.to_sequence,
+                    binding.selected_car_id,
+                    &transfer,
+                    false,
+                )?;
+            }
             promote_imported_open_session_in_transaction(
                 &transaction,
                 source_id,
@@ -6258,7 +6273,8 @@ impl HubStore {
     /// Finalize a direct TeslaMate V2 base together with its sealed,
     /// digest-only state. That state is the sole current-history catalogue:
     /// legacy deletion inventory requests derive their non-car view from it
-    /// instead of retaining a second multi-million-row copy.
+    /// instead of retaining a second multi-million-row copy. Set
+    /// `retain_legacy_inventory` only for the older staged importer.
     pub fn finalize_import_generation_with_projection_state(
         &self,
         run_id: Uuid,
@@ -6271,6 +6287,7 @@ impl HubStore {
         geofences: &[crate::teslamate_projection::TeslaMateGeofence],
         binding: &ProjectionBinding,
         projection_state: &TeslaMateProjectionState,
+        retain_legacy_inventory: bool,
     ) -> Result<(), StoreError> {
         if run_id.is_nil()
             || source_id.is_nil()
@@ -6339,6 +6356,18 @@ impl HubStore {
                 &transfer,
                 true,
             )?;
+            if retain_legacy_inventory {
+                replace_teslamate_import_projection_inventory_from_attached_in_transaction(
+                    &transaction,
+                    vehicle_id,
+                    binding.account_id,
+                    manifest.snapshot_id,
+                    manifest.head_sequence,
+                    binding.selected_car_id,
+                    &transfer,
+                    true,
+                )?;
+            }
             upsert_geofences_in_transaction(&transaction, vehicle_id, geofences)?;
             record_snapshot_fingerprint_in_transaction(&transaction, manifest, fingerprint)?;
             if transaction
@@ -18770,6 +18799,7 @@ mod tests {
                 &[],
                 &binding,
                 &state,
+                false,
             )
             .expect("complete direct base finalization");
         state
@@ -19316,6 +19346,7 @@ mod tests {
                 Sha256Digest::of_bytes(b"direct-batch-successor"),
                 &[],
                 &successor_state,
+                false,
             )
             .expect("atomically publish the complete direct-import batch");
 
@@ -19416,6 +19447,7 @@ mod tests {
                 Sha256Digest::of_bytes(b"direct-batch-rollback"),
                 &[],
                 &wrong_car_state,
+                false,
             ),
             Err(StoreError::TeslaMateProjectionState(
                 TeslaMateProjectionStateError::TransferRowContractMismatch
@@ -19518,6 +19550,7 @@ mod tests {
                 Sha256Digest::of_bytes(b"direct-batch-ordinal-gap"),
                 &[],
                 &successor_state,
+                false,
             ),
             Err(StoreError::LineageCatalogConflict)
         ));
@@ -20012,6 +20045,7 @@ mod tests {
                 &[],
                 &binding,
                 &state,
+                false,
             )
             .expect("set-based direct base finalization");
 
@@ -20125,6 +20159,7 @@ mod tests {
                 &[],
                 &binding,
                 &state,
+                false,
             ),
             Err(StoreError::TeslaMateProjectionState(
                 TeslaMateProjectionStateError::TransferCarContractMismatch
@@ -20266,6 +20301,7 @@ mod tests {
                 &[],
                 &binding,
                 &state,
+                false,
             ),
             Err(StoreError::LineageCatalogConflict)
         ));
@@ -25649,6 +25685,112 @@ fn replace_teslamate_import_projection_state_from_attached_in_transaction(
     if u64::try_from(inserted).map_err(|_| StoreError::LineageCatalogConflict)?
         != transfer.stats().row_count
     {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    Ok(())
+}
+
+/// Rebuild the retained legacy deletion inventory from the just-inserted
+/// durable state. The car row has already been required by the descriptor and
+/// intentionally remains absent from this legacy table. Reading the target
+/// rather than the attachment makes the two catalogue views exactly identical
+/// even if an outside process replaces the spool path after attachment.
+fn replace_teslamate_import_projection_inventory_from_attached_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    source_id: Uuid,
+    base_snapshot_id: Uuid,
+    head_sequence: u64,
+    selected_car_id: i64,
+    transfer: &TeslaMateProjectionStateTransfer,
+    allow_create: bool,
+) -> Result<(), StoreError> {
+    if vehicle_id.is_nil()
+        || source_id.is_nil()
+        || base_snapshot_id.is_nil()
+        || selected_car_id <= 0
+    {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    let head_sequence = i64::try_from(head_sequence).map_err(|_| StoreError::SequenceTooLarge)?;
+    let vehicle_key = vehicle_id.to_string();
+    let base_matches: bool = transaction
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM sync_bases AS base
+                JOIN sync_heads AS head ON head.vehicle_id = base.vehicle_id
+                 WHERE base.vehicle_id = ?1
+                   AND base.snapshot_id = ?2
+                   AND head.base_snapshot_id = base.snapshot_id
+                   AND head.head_sequence = ?3
+            )",
+            params![
+                vehicle_key.as_str(),
+                base_snapshot_id.to_string(),
+                head_sequence
+            ],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    if !base_matches {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    let existing: Option<(String, String, i64)> = transaction
+        .query_row(
+            "SELECT source_id, base_snapshot_id, selected_car_id
+               FROM teslamate_import_projection_heads WHERE vehicle_id = ?1",
+            params![vehicle_key.as_str()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(StoreError::LineageCatalog)?;
+    if let Some((stored_source_id, stored_base_snapshot_id, stored_selected_car_id)) = existing {
+        if stored_source_id != source_id.to_string()
+            || stored_base_snapshot_id != base_snapshot_id.to_string()
+            || stored_selected_car_id != selected_car_id
+        {
+            return Err(StoreError::LineageCatalogConflict);
+        }
+    } else if !allow_create {
+        return Err(StoreError::TeslaMateImportInventoryMissing(vehicle_id));
+    }
+    transaction
+        .execute(
+            "INSERT INTO teslamate_import_projection_heads(
+                vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence
+             ) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence",
+            params![
+                vehicle_key.as_str(),
+                source_id.to_string(),
+                base_snapshot_id.to_string(),
+                selected_car_id,
+                head_sequence,
+            ],
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    transaction
+        .execute(
+            "DELETE FROM teslamate_import_projection_rows WHERE vehicle_id = ?1",
+            params![vehicle_key.as_str()],
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    let inserted = transaction
+        .execute(
+            "INSERT INTO teslamate_import_projection_rows(vehicle_id, entity, entity_id)
+             SELECT vehicle_id, entity, entity_id
+               FROM teslamate_import_projection_state_rows
+              WHERE vehicle_id = ?1 AND entity_ordinal BETWEEN 1 AND 6
+              ORDER BY entity_ordinal ASC, entity_id ASC",
+            params![vehicle_key.as_str()],
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    let expected = transfer
+        .stats()
+        .row_count
+        .checked_sub(1)
+        .ok_or(StoreError::LineageCatalogConflict)?;
+    if u64::try_from(inserted).map_err(|_| StoreError::LineageCatalogConflict)? != expected {
         return Err(StoreError::LineageCatalogConflict);
     }
     Ok(())
