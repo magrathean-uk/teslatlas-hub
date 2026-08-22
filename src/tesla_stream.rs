@@ -1603,7 +1603,7 @@ mod tests {
 
     #[tokio::test]
     async fn observer_reconnects_with_access_token_without_refreshing() {
-        let data = tempfile::tempdir().expect("data directory");
+        let data = crate::private_tempdir().expect("data directory");
         let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
         crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key")
             .expect("private key");

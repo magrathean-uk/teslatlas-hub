@@ -408,19 +408,12 @@ fn direct_projection_state_capture(
     source_id: Uuid,
     selected_car_id: i64,
     successor: bool,
-    read_limits: TeslaMateReadLimits,
+    state_limits: TeslaMateProjectionStateLimits,
 ) -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError> {
-    let maximum_rows = u64::try_from(read_limits.maximum_rows)
-        .map_err(|_| TeslaMateDirectError::TargetCapacityOverflow)?;
     let state = store.create_import_projection_state(
         publication_gate,
         run_id,
-        TeslaMateProjectionStateLimits {
-            max_rows: maximum_rows,
-            max_state_bytes: read_limits.maximum_stage_bytes,
-            max_changed_payload_bytes: read_limits.maximum_stage_bytes,
-            minimum_free_bytes: read_limits.minimum_free_bytes,
-        },
+        state_limits,
         DIRECT_DELTA_BATCH_PAYLOAD_BYTES,
     )?;
     if !successor {
@@ -469,7 +462,7 @@ async fn capture_direct_import_snapshot(
             capture_snapshot_id,
             capture_range,
             capture_legacy_token,
-            || {
+            |state_limits| {
                 direct_projection_state_capture(
                     store,
                     publication_gate,
@@ -478,24 +471,25 @@ async fn capture_direct_import_snapshot(
                     source_id,
                     selected_car_id,
                     false,
-                    limits,
+                    state_limits,
                 )
             },
         )
         .await;
     }
-    let capture_factory = || -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError> {
-        direct_projection_state_capture(
-            store,
-            publication_gate,
-            run_id,
-            vehicle_id,
-            source_id,
-            selected_car_id,
-            successor,
-            limits,
-        )
-    };
+    let capture_factory =
+        |state_limits| -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError> {
+            direct_projection_state_capture(
+                store,
+                publication_gate,
+                run_id,
+                vehicle_id,
+                source_id,
+                selected_car_id,
+                successor,
+                state_limits,
+            )
+        };
     if successor {
         capture_direct_successor_diff_with_projection_state(
             source,
@@ -2605,7 +2599,7 @@ mod tests {
 
     #[test]
     fn direct_successor_state_emits_typed_sparse_car_delta() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let mut projected = project_vehicle(&history(), 1).unwrap();
         let car = projected.snapshot.cars.remove(0);
         let state = TeslaMateProjectionState::create(
@@ -2645,7 +2639,7 @@ mod tests {
 
     #[test]
     fn direct_successor_state_emits_typed_update_delta() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let mut source = history();
         source.updates.push(TeslaMateUpdate {
             id: 71,
@@ -2715,7 +2709,7 @@ mod tests {
 
     #[test]
     fn discard_unpublished_chunks_keeps_catalogued_and_reused_content() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let projected = project_vehicle(&history(), 1).expect("project source history");
         let binding = ProjectionBinding {
@@ -2788,7 +2782,7 @@ mod tests {
 
     #[test]
     fn proven_prior_full_snapshot_failure_cleans_candidate_under_gate() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let projected = project_vehicle(&history(), 1).expect("project source history");
         let request = ProjectionPackRequest {
@@ -2898,7 +2892,7 @@ mod tests {
         const BASE_TIME_MS: i64 = 1_700_000_000_000;
         const TAIL_TIME_MS: i64 = BASE_TIME_MS + 1_000;
 
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let request = TeslaMateImportRequest {
             source_key: "unchanged-direct-live-tail".into(),
@@ -3117,12 +3111,12 @@ mod tests {
         }
     }
 
-    fn direct_state_test_limits() -> TeslaMateReadLimits {
-        TeslaMateReadLimits {
-            maximum_rows: 16,
-            maximum_stage_bytes: 64 * 1024,
+    fn direct_state_test_limits() -> TeslaMateProjectionStateLimits {
+        TeslaMateProjectionStateLimits {
+            max_rows: 16,
+            max_state_bytes: 64 * 1024,
+            max_changed_payload_bytes: 64 * 1024,
             minimum_free_bytes: 0,
-            ..TeslaMateReadLimits::default()
         }
     }
 
@@ -3188,7 +3182,7 @@ mod tests {
         const UNCHANGED_TIME_MS: i64 = BASE_TIME_MS + 1;
         const CHANGED_TIME_MS: i64 = BASE_TIME_MS + 2;
 
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let source = store
             .register_source(
@@ -3605,7 +3599,7 @@ mod tests {
 
     #[test]
     fn publishes_stable_vehicle_full_snapshots_with_rising_markers() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let store = HubStore::initialize(temporary.path()).unwrap();
         let request = TeslaMateImportRequest {
             source_key: "home-teslamate".into(),
@@ -3644,7 +3638,7 @@ mod tests {
 
     #[test]
     fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let cursor_key = CursorKey::from_bytes([57; 32]);
         let request = TeslaMateImportRequest {
@@ -3826,7 +3820,7 @@ mod tests {
         )
         .expect("canonical signed manifest/no-op pair");
 
-        let delta_temporary = tempfile::tempdir().expect("delta Hub store");
+        let delta_temporary = crate::private_tempdir().expect("delta Hub store");
         let delta_store = HubStore::initialize(delta_temporary.path()).expect("delta store");
         let delta_request = TeslaMateImportRequest {
             source_key: format!("selected-delta-{}", Uuid::new_v4()),
@@ -3903,7 +3897,7 @@ mod tests {
 
     #[test]
     fn rejected_exported_identity_restores_source_vehicle_and_alias_registry() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let empty_registry = identity_registry_image(&store);
         let source_descriptor =
@@ -3946,7 +3940,7 @@ mod tests {
 
     #[test]
     fn crash_residue_is_alias_free_nonpublished_and_reused_after_reopen() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let source_descriptor =
             SourceDescriptor::new("teslamate", format!("crash-{}", Uuid::new_v4()));
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
@@ -4004,7 +3998,7 @@ mod tests {
 
     #[test]
     fn rollback_preserves_interleaved_collector_alias_and_observation() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let source_descriptor =
             SourceDescriptor::new("teslamate", format!("interleaved-{}", Uuid::new_v4()));
@@ -4068,7 +4062,7 @@ mod tests {
 
     #[test]
     fn teslamate_import_reuses_existing_cross_source_vehicle_identity() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let owner_source = store
             .register_source(
@@ -4120,7 +4114,7 @@ mod tests {
 
     #[test]
     fn crash_residue_converges_with_later_cross_source_collector_identity() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let teslamate_descriptor =
             SourceDescriptor::new("teslamate", format!("crash-merge-{}", Uuid::new_v4()));
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
@@ -4201,7 +4195,7 @@ mod tests {
 
     #[test]
     fn publish_history_keeps_thirty_nine_exact_updates_in_signed_base_and_changed_delta() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let request = TeslaMateImportRequest {
             source_key: "update-history-regression".into(),
@@ -4285,7 +4279,7 @@ mod tests {
 
     #[test]
     fn imported_geofences_survive_publication_and_restart() {
-        let data = tempfile::tempdir().unwrap();
+        let data = crate::private_tempdir().unwrap();
         let store = HubStore::initialize(data.path()).unwrap();
         let request = TeslaMateImportRequest {
             source_key: "home-teslamate".into(),
@@ -4359,7 +4353,7 @@ mod tests {
 
     #[test]
     fn changed_history_publishes_import_delta_successor_without_second_base() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let store = HubStore::initialize(temporary.path()).unwrap();
         let request = TeslaMateImportRequest {
             source_key: "home-teslamate".into(),
@@ -4564,7 +4558,7 @@ mod tests {
 
     #[test]
     fn changed_history_tombstones_removed_teslamate_rows_without_second_base() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let request = TeslaMateImportRequest {
             source_key: "home-teslamate".into(),
@@ -4649,7 +4643,7 @@ mod tests {
 
     #[test]
     fn changed_history_without_prior_inventory_fails_before_lineage_mutation() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let request = TeslaMateImportRequest {
             source_key: "home-teslamate".into(),
@@ -4694,7 +4688,7 @@ mod tests {
 
     #[test]
     fn owner_compat_identity_before_teslamate_base_keeps_the_teslamate_binding() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let owner = store
             .register_source(
@@ -4757,8 +4751,8 @@ mod tests {
 
     #[test]
     fn sealed_stage_publication_never_needs_an_in_memory_history() {
-        let data = tempfile::tempdir().unwrap();
-        let imports = tempfile::tempdir().unwrap();
+        let data = crate::private_tempdir().unwrap();
+        let imports = crate::private_tempdir().unwrap();
         let store = HubStore::initialize(data.path()).unwrap();
         let mut stage = TeslaMateStage::create(
             imports.path().join("imports"),
@@ -4822,8 +4816,8 @@ mod tests {
 
     #[test]
     fn staged_unchanged_history_promotes_newer_open_drive_session() {
-        let data = tempfile::tempdir().expect("Hub data directory");
-        let imports = tempfile::tempdir().expect("staging directory");
+        let data = crate::private_tempdir().expect("Hub data directory");
+        let imports = crate::private_tempdir().expect("staging directory");
         let store = HubStore::initialize(data.path()).expect("Hub store");
         let request = TeslaMateImportRequest {
             source_key: "staged-open-drive".into(),
@@ -4905,8 +4899,8 @@ mod tests {
 
     #[test]
     fn staged_v21_base_persists_inventory_for_a_changed_history_successor() {
-        let data = tempfile::tempdir().expect("Hub data directory");
-        let imports = tempfile::tempdir().expect("staging directory");
+        let data = crate::private_tempdir().expect("Hub data directory");
+        let imports = crate::private_tempdir().expect("staging directory");
         let store = HubStore::initialize(data.path()).expect("Hub store");
         let request = TeslaMateImportRequest {
             source_key: "staged-successor".into(),
@@ -4964,8 +4958,8 @@ mod tests {
 
     #[test]
     fn migration_final_snapshot_after_initial_base_is_servable() {
-        let data = tempfile::tempdir().expect("Hub data directory");
-        let imports = tempfile::tempdir().expect("staging directory");
+        let data = crate::private_tempdir().expect("Hub data directory");
+        let imports = crate::private_tempdir().expect("staging directory");
         let store = HubStore::initialize(data.path()).expect("Hub store");
         let request = TeslaMateImportRequest {
             source_key: "migration-final-snapshot".into(),
@@ -5068,8 +5062,8 @@ mod tests {
 
     #[test]
     fn staged_v21_base_hands_off_to_a_direct_successor_capture() {
-        let data = tempfile::tempdir().expect("Hub data directory");
-        let imports = tempfile::tempdir().expect("staging directory");
+        let data = crate::private_tempdir().expect("Hub data directory");
+        let imports = crate::private_tempdir().expect("staging directory");
         let store = HubStore::initialize(data.path()).expect("Hub store");
         let request = TeslaMateImportRequest {
             source_key: "staged-direct-handoff".into(),
@@ -5142,8 +5136,8 @@ mod tests {
 
     #[test]
     fn staged_publication_adapts_before_the_protocol_chunk_ceiling() {
-        let data = tempfile::tempdir().unwrap();
-        let imports = tempfile::tempdir().unwrap();
+        let data = crate::private_tempdir().unwrap();
+        let imports = crate::private_tempdir().unwrap();
         let store = HubStore::initialize(data.path()).unwrap();
         let mut stage = TeslaMateStage::create(
             imports.path().join("imports"),
@@ -5237,7 +5231,7 @@ mod tests {
         let source = ReadOnlySource::parse(&url).expect("credential-free source URL");
         let password =
             TeslaMatePostgresPassword::from_bytes(b"fixture-password").expect("fixture password");
-        let data = tempfile::tempdir().expect("Hub data directory");
+        let data = crate::private_tempdir().expect("Hub data directory");
         let store = HubStore::initialize(data.path()).expect("Hub store");
         let report = import_from_postgres(
             &store,
@@ -5270,7 +5264,7 @@ mod tests {
         assert!(!manifest.chunks.is_empty());
         assert_eq!(store.repair().expect("Hub repair check").status, "ok");
 
-        let backup_parent = tempfile::tempdir().expect("backup parent");
+        let backup_parent = crate::private_tempdir().expect("backup parent");
         let backup_root = backup_parent.path().join("restored-hub");
         store.backup_to(&backup_root).expect("complete backup");
         let restored = HubStore::initialize(&backup_root).expect("restored Hub store");
@@ -5494,7 +5488,7 @@ mod open_cutover_tests {
         assert_eq!(cutover.session.watermarks.positions.max_id, Some(31));
         assert_eq!(cutover.session.watermarks.charges.max_id, Some(12));
 
-        let data = tempfile::tempdir().expect("data");
+        let data = crate::private_tempdir().expect("data");
         let store = HubStore::initialize(data.path()).expect("store");
         let source = store
             .register_source(&SourceDescriptor::new("teslamate", "cutover"), 1_000)

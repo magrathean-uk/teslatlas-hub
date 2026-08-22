@@ -355,6 +355,12 @@ enum ServiceCommand {
 
 #[derive(Debug, Subcommand)]
 enum ControlCommand {
+    /// List paired devices without exposing bearer material.
+    #[command(name = "paired-devices")]
+    PairedDevices,
+    /// Revoke one paired device bearer immediately.
+    #[command(name = "revoke-device")]
+    RevokeDevice { device_id: uuid::Uuid },
     /// Show or update the selected car's collection settings.
     Settings {
         #[arg(long)]
@@ -640,8 +646,26 @@ async fn run_control(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = HubConfig::load(config_path)?;
     let store = HubStore::open_existing(&config.data_dir)?;
+    match command {
+        ControlCommand::PairedDevices => {
+            println!("{}", serde_json::to_string(&store.list_paired_devices()?)?);
+            return Ok(());
+        }
+        ControlCommand::RevokeDevice { device_id } => {
+            store.revoke_device(*device_id)?;
+            println!(
+                "{}",
+                serde_json::json!({"status": "revoked", "deviceId": device_id})
+            );
+            return Ok(());
+        }
+        _ => {}
+    }
     let vehicle_id = control_target(&store)?;
     match command {
+        ControlCommand::PairedDevices | ControlCommand::RevokeDevice { .. } => {
+            unreachable!("device-only controls returned before vehicle selection")
+        }
         ControlCommand::Settings {
             enabled,
             streaming,
@@ -1905,8 +1929,8 @@ fn render_pairing_qr(
     ))
 }
 
-const MAX_TLS_CERTIFICATE_CHAIN_BYTES: usize = 256 * 1024;
-const MAX_TLS_PRIVATE_KEY_BYTES: usize = 64 * 1024;
+const MAX_TLS_CERTIFICATE_CHAIN_BYTES: usize = server::MAX_TLS_CERTIFICATE_CHAIN_BYTES;
+const MAX_TLS_PRIVATE_KEY_BYTES: usize = server::MAX_TLS_PRIVATE_KEY_BYTES;
 
 #[derive(Debug, thiserror::Error)]
 enum PairingCommandError {
@@ -2125,78 +2149,17 @@ fn read_tls_identity_file(
     maximum: usize,
     private: bool,
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, std::io::Error> {
-    read_tls_identity_file_after_open(path, maximum, private, || {})
+    server::read_tls_identity_file(path, maximum, private)
 }
 
+#[cfg(test)]
 fn read_tls_identity_file_after_open(
     path: &Path,
     maximum: usize,
     private: bool,
     after_open: impl FnOnce(),
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, std::io::Error> {
-    let descriptor = open(
-        path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|_| std::io::Error::other("TLS identity file cannot be safely opened"))?;
-    let held = fstat(&descriptor)
-        .map_err(|_| std::io::Error::other("TLS identity file cannot be inspected"))?;
-    let permission_mask = if private { 0o077 } else { 0o022 };
-    if !FileType::from_raw_mode(held.st_mode).is_file()
-        || (held.st_mode as u32 & permission_mask) != 0
-        || held.st_uid != getuid().as_raw()
-    {
-        return Err(std::io::Error::other("TLS identity file is unsafe"));
-    }
-    after_open();
-    let file: fs::File = descriptor.into();
-    let read_limit = maximum
-        .checked_add(1)
-        .ok_or_else(|| std::io::Error::other("TLS identity size limit is invalid"))?;
-    let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(read_limit));
-    (&file)
-        .take(u64::try_from(read_limit).expect("TLS identity cap fits u64"))
-        .read_to_end(&mut bytes)
-        .map_err(|_| std::io::Error::other("TLS identity file cannot be read"))?;
-    if bytes.len() > maximum {
-        return Err(std::io::Error::other(
-            "TLS identity exceeds the fixed size limit",
-        ));
-    }
-    let after =
-        fstat(&file).map_err(|_| std::io::Error::other("TLS identity file cannot be inspected"))?;
-    let current = fs::symlink_metadata(path)
-        .map_err(|_| std::io::Error::other("TLS identity file changed"))?;
-    if after.st_dev != held.st_dev
-        || after.st_ino != held.st_ino
-        || after.st_mode != held.st_mode
-        || after.st_nlink != held.st_nlink
-        || after.st_uid != held.st_uid
-        || after.st_gid != held.st_gid
-        || after.st_size != held.st_size
-        || after.st_mtime != held.st_mtime
-        || after.st_mtime_nsec != held.st_mtime_nsec
-        || after.st_ctime != held.st_ctime
-        || after.st_ctime_nsec != held.st_ctime_nsec
-        || current.file_type().is_symlink()
-        || !current.file_type().is_file()
-        || current.uid() != getuid().as_raw()
-        || current.dev() != held.st_dev as u64
-        || current.ino() != held.st_ino
-        || current.nlink() != u64::from(held.st_nlink)
-        || current.uid() != held.st_uid
-        || current.gid() != held.st_gid
-        || current.mode() != held.st_mode as u32
-        || current.len() != u64::try_from(held.st_size).unwrap_or(u64::MAX)
-        || current.mtime() != held.st_mtime
-        || current.mtime_nsec() != held.st_mtime_nsec as i64
-        || current.ctime() != held.st_ctime
-        || current.ctime_nsec() != held.st_ctime_nsec as i64
-    {
-        return Err(std::io::Error::other("TLS identity file changed"));
-    }
-    Ok(bytes)
+    server::read_tls_identity_file_after_open(path, maximum, private, after_open)
 }
 
 fn leaf_certificate_sha256_from_pem(pem: &[u8]) -> Result<String, std::io::Error> {
@@ -2346,6 +2309,31 @@ mod tests {
             Cli::try_parse_from(["teslatlas-hub", "control", "climate-start", "--confirm"])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn paired_device_controls_parse_without_vehicle_selection() {
+        let list = Cli::try_parse_from(["teslatlas-hub", "control", "paired-devices"])
+            .expect("paired-device list CLI");
+        assert!(matches!(
+            list.command,
+            Command::Control {
+                command: ControlCommand::PairedDevices
+            }
+        ));
+        let revoke = Cli::try_parse_from([
+            "teslatlas-hub",
+            "control",
+            "revoke-device",
+            "00000000-0000-0000-0000-000000000001",
+        ])
+        .expect("paired-device revoke CLI");
+        assert!(matches!(
+            revoke.command,
+            Command::Control {
+                command: ControlCommand::RevokeDevice { .. }
+            }
+        ));
     }
 
     #[cfg(target_os = "macos")]

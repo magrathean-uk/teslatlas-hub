@@ -1978,7 +1978,7 @@ mod tests {
     }
 
     fn stage_with_sealed(seal: bool) -> (tempfile::TempDir, TeslaMateStage) {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let mut stage = TeslaMateStage::create(
             temporary.path().join("imports"),
             TeslaMateStageLimits {
@@ -2289,7 +2289,7 @@ mod tests {
 
     #[test]
     fn dropped_candidate_sink_removes_unpublished_pack() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let writer = ProjectionPackWriter::new(temporary.path());
         let mut sink = PackSink::new(
             &writer,
@@ -2338,7 +2338,7 @@ mod tests {
 
     #[test]
     fn reused_catalogued_pack_survives_sink_and_staged_candidate_cleanup() {
-        let temporary = tempfile::tempdir().expect("temporary Hub store");
+        let temporary = crate::private_tempdir().expect("temporary Hub store");
         let store = crate::db::HubStore::initialize(temporary.path()).expect("Hub store");
         let writer = ProjectionPackWriter::new(store.packs_dir());
         let (_stage_directory, stage) = stage();
@@ -2430,7 +2430,7 @@ mod tests {
 
     #[test]
     fn legacy_bridge_capture_replays_the_physical_digest_without_writing_a_pack() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let (_stage_directory, stage) = stage();
         let (snapshot, states) = capturable_snapshot(&stage);
         let writer = ProjectionPackWriter::new(temporary.path());
@@ -2506,7 +2506,7 @@ mod tests {
 
     #[test]
     fn successor_state_capture_records_updates_without_a_full_candidate_pack() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let (_stage_directory, stage) = stage();
         let (snapshot, states) = capturable_snapshot(&stage);
         let state = TeslaMateProjectionState::create(
@@ -2567,7 +2567,7 @@ mod tests {
 
     #[test]
     fn direct_pack_builds_complete_before_projection_state_writes_continue() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let (_stage_directory, stage) = stage();
         let (snapshot, states) = capturable_snapshot(&stage);
         let writer = ProjectionPackWriter::new(temporary.path());
@@ -2594,7 +2594,7 @@ mod tests {
 
     #[test]
     fn staged_fingerprint_binds_preprojection_source_evidence() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let writer = ProjectionPackWriter::new(temporary.path());
         let make_sink = |evidence: crate::protocol::Sha256Digest| {
             PackSink::new(
@@ -2624,7 +2624,7 @@ mod tests {
 
     #[test]
     fn legacy_bridge_refuses_update_rows_to_preserve_the_historical_layout() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let (_stage_directory, stage) = stage();
         let (snapshot, states) = capturable_snapshot(&stage);
         let writer = ProjectionPackWriter::new(temporary.path());
@@ -2666,7 +2666,7 @@ mod tests {
 
     #[test]
     fn captures_each_projected_fact_once_after_verified_fragment_writes() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let (_stage_directory, stage) = stage();
         let (snapshot, states) = capturable_snapshot(&stage);
         let state = TeslaMateProjectionState::create(
@@ -2723,7 +2723,7 @@ mod tests {
 
     #[test]
     fn state_capture_failure_removes_already_written_candidate_pack() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let (_stage_directory, stage) = stage();
         let (snapshot, states) = capturable_snapshot(&stage);
         let state = TeslaMateProjectionState::create(
@@ -2771,7 +2771,7 @@ mod tests {
 
     #[test]
     fn dropped_completed_candidate_retains_packs_for_gated_repair() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let (_stage_directory, stage) = stage();
         let candidate = write_staged_full_snapshot(
             &stage,
@@ -2803,7 +2803,7 @@ mod tests {
 
     #[test]
     fn adapts_a_snapshot_that_would_exceed_the_legacy_chunk_ceiling() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let (_stage_directory, mut stage) = mutable_stage();
         let base_position = TeslaMatePosition {
             id: 20,
@@ -2909,7 +2909,7 @@ mod tests {
 
     #[test]
     fn writes_fk_complete_fragments_and_a_signed_complete_manifest() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let (_stage_directory, stage) = stage();
         let snapshot_id = Uuid::from_u128(4);
         let sequence = SequenceRange {
@@ -2963,7 +2963,7 @@ mod tests {
 
     #[test]
     fn staged_thirty_nine_update_rows_are_exact_in_signed_schema_2_1_packs() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let (_stage_directory, mut stage) = mutable_stage();
         let mut expected = vec![(
             300,
@@ -3042,7 +3042,7 @@ mod tests {
 
     #[test]
     fn staged_full_snapshot_uses_schema_2_1_with_an_empty_update_table() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let (_fixture_directory, fixture_stage) = stage();
         let car = fixture_stage
             .get::<TeslaMateCar>(TeslaMateStageTable::Cars, 1)

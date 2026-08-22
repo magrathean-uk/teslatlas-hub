@@ -1,69 +1,63 @@
 # Hub progress
 
-Status: Rust 1.98 dependencies are current. Native macOS Tesla login/setup,
-single refresh ownership, honest loopback documentation, data-only backup v3,
-and separately encrypted credential recovery are implemented and hermetically
-validated. Compact migration remains measured on TeslaMate v4.1.1. The final
-three-platform review found release blockers listed below; this is not yet a
-release-ready Mac/ARM64/amd64 set.
+Status: current Rust 1.98 source has one verified artifact for macOS ARM64,
+Debian amd64, and Debian ARM64. The full review found no remaining concrete
+Rust, migration, security, macOS lifecycle, or Debian lifecycle blocker.
 
-Current: on 2026-08-22, `cargo update` found zero resolvable updates;
-`matchit` 0.8.4 remains Axum 0.8.9's exact dependency. Before the latest
-streaming repair, Rust format, all-target check, 703 tests (701 passed, 2
-intentional ignores), Clippy `-D warnings`, and release build passed. The
-release macOS app/package built, ad-hoc signature verification passed, and 6
-AppKit/OAuth tests passed. A native Debian 13 amd64 package was built,
-installed, and tested loopback-only on the VPS. Its
-direct read-only TeslaMate v4.1.1 cutover imported 10,782,432 positions into
-about 1.86 GiB / 447 packs; source counts stayed unchanged. The 3.9 GiB native
-build directory and its accidental shell-profile reference were removed. No
-vehicle command or concurrent token refresher was used. Tesla's live binary,
-tagless stream variant is now covered by 25 native Debian stream tests and the
-corrected amd64 package was deployed at 21:46 +08 and opened a Tesla TLS stream.
-The parked vehicle did not emit telemetry before teardown, so a physical stream
-row remains pending. Hub was then fully removed from the VPS, including its
-package, unit, 2.0 GiB data, config, system account, and temporary build state;
-TeslaMate and TeslaMateAPI are healthy and VPS free space is 28 GiB. All retained
-Hub source and release artifacts are local under this `hub/` checkout.
+Current: 736 Rust tests passed with 2 intentional ignores; release Clippy with
+`-D warnings`, ShellCheck, Linux packaging tests, macOS packaging checks, and 16
+AppKit tests passed. The current artifacts are:
 
-Next: fix the macOS GUI migration invocation/lifecycle and process-pipe drain;
-add paired-device expiry/revoke/rotate; close the refresh-rotation crash window;
-make TLS serving use the same bounded admitted identity as pairing; repair Linux
-upgrade/root-migration/disk-admission behavior; then rebuild all three artifacts
-from one source revision. Clean-Mac install/upgrade/uninstall, live OAuth,
-physical-iOS sync, ARM64 package smoke, forced token-expiry refresh, driving
-stream, and restart/endurance remain external proof.
+- macOS ARM64 app, embedded Hub SHA-256
+  `9632e77610abec8bfd0c5151f9a23fdb99ae8f15f78eb0eb3b017accdd0fb6ce`;
+  deep strict ad-hoc signature verification passed.
+- Debian amd64 package, SHA-256
+  `42445738bfb44498075e5227f5b6d570d24f3462c5f0b315f02bd3fd2b00b906`;
+  native Debian 13 install, bootstrap, doctor, systemd, loopback API, and live
+  Tesla token refresh passed.
+- Debian ARM64 package, SHA-256
+  `805c90e856c1650fd09b8b3269c0d9b82aa10d3487c00176f6647e9e3d455121`;
+  the AArch64 executable ran under Debian 13 ARM64 user emulation and package
+  install, bootstrap, doctor, and purge passed.
 
-Blocked: the retained macOS app and ARM64 package predate the tagless/binary
-Tesla streaming repair. The macOS GUI migration currently cancels its own final
-copy and can deadlock on child output. Linux package upgrade does not restart an
-active old binary. Shared source also has permanent paired-device bearers,
-refresh crash ambiguity, unsafe/unbounded TLS identity loading, and late-failing
-direct-migration disk admission. The local TeslaMate PostgreSQL copy remains a
-deliberate old-schema negative fixture and is read-only.
+The final stopped TeslaMate v4.1.1 migration read 105 migrations, 10,782,436
+positions, 3,267 drives, and 1 car into about 1.86 GiB / 446 packs. Source
+counts stayed unchanged. Hub refreshed the real legacy token, its encrypted
+successor was handed back in one PostgreSQL transaction, and TeslaMate then
+refreshed successfully itself. Hub, its data, build inputs, emulation packages,
+and caches were removed from the VPS. TeslaMate and TeslaMateAPI are healthy;
+VPS root has 28 GiB free. No vehicle command ran.
+
+Next: physical driving-stream observation. Clean-machine macOS lifecycle,
+physical ARM64 hardware, physical iOS sync, and signed/notarized release remain
+external release evidence, not known code blockers.
+
+Blocked: no known code blocker. The local old-schema TeslaMate PostgreSQL copy
+remains an intentional read-only negative fixture.
 
 ## Three-platform review, 2026-08-22
 
-- macOS: GUI migration sends `n` to the mandatory stop confirmation and never
-  stops an installed Hub first; both child runners wait before draining pipes.
-  Valid password-free PostgreSQL usernames are rejected. Package failure has no
-  loaded-state rollback, there is no uninstall path, and the artifact is stale,
-  ad-hoc signed, and unnotarized. The LaunchAgent retains the logged-in user's
-  broad filesystem/network authority.
-- Debian ARM64 and amd64: package upgrade leaves the old mapped binary running;
-  root-run migration can create service-inaccessible state; systemd accepts only
-  `/var/lib/teslatlas-hub` despite arbitrary configured paths; removal has no
-  post-removal daemon reload; ELF validation checks only `Machine`.
-- Shared Rust: device bearers have no expiry/revoke/rotate, token rotation can be
-  lost between provider acceptance and local persistence, Serve reads TLS files
-  without the pairing path's bounds/no-follow/identity checks, direct migration
-  does not reserve its configured comparison-state spool, and backup/restore has
-  no free-space admission.
-- Artifact state: amd64 contains the latest streaming repair. The retained
-  macOS and ARM64 artifacts must be rebuilt after fixes. No current-revision
-  three-platform release gate has passed.
+- macOS: migration stop/install/schema/restart rollback, bounded child output,
+  service update, loaded-state upgrade rollback, and data-preserving privileged
+  uninstall are implemented. Current ARM64 app assembly and validation passed.
+- Debian amd64 and ARM64: upgrade rollback preserves active/enabled state;
+  migration ownership and configured data paths are admitted; maintainer-script
+  removal/reload behavior and generated shared-library dependencies are tested;
+  package construction checks complete ELF class, data, ABI, machine, and
+  interpreter identity.
+- Shared Rust: paired-device expiry/revoke/rotate, deterministic refresh
+  recovery, bounded TLS identity admission, direct-migration capacity admission,
+  crash-safe reset, and current schema migration are implemented and tested.
+- Artifact state: all three retained artifacts come from the repaired source.
+  Independent macOS, Debian, and Rust reviews found no concrete blocker.
 
 ## Completed
+
+- macOS controller/package repair — fixed migration stop/confirm/restart,
+  bounded concurrent child output, URL credential parsing, TOML path escaping,
+  loaded-state upgrade rollback, data-preserving privileged uninstall, and a
+  private process umask. Eleven focused AppKit tests and lightweight package
+  checks passed without rebuilding the Rust binary or release artifact.
 
 - Tesla stream wire compatibility — live VPS evidence showed Tesla returning a
   binary WebSocket JSON frame and no top-level `tag`, both accepted by

@@ -8,4 +8,34 @@ SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
 
 require_root
 read_console_user
-bootout_if_loaded
+
+STATE_DIRECTORY=$(upgrade_state_directory)
+remove_upgrade_state "$STATE_DIRECTORY"
+/usr/bin/install -d -o root -g wheel -m 0700 "$STATE_DIRECTORY" \
+    || installer_error "cannot create upgrade state"
+
+if [ -e "$BINARY_ROOT" ] || [ -L "$BINARY_ROOT" ]; then
+    require_safe_owned_tree "$BINARY_ROOT" 0 "existing Hub service payload"
+fi
+
+PLIST="$CONSOLE_HOME/Library/LaunchAgents/$LABEL.plist"
+if service_is_loaded; then
+    require_safe_regular_file "$PLIST" "$CONSOLE_UID" "existing LaunchAgent"
+    require_safe_regular_file "$BINARY" 0 "existing Hub binary"
+    [ -x "$BINARY" ] || installer_error "existing Hub binary is not executable"
+    /usr/bin/install -o root -g wheel -m 0600 /dev/null "$STATE_DIRECTORY/was-loaded" \
+        || installer_error "cannot record loaded service state"
+fi
+
+if [ -e "$BINARY" ] || [ -L "$BINARY" ]; then
+    require_safe_regular_file "$BINARY" 0 "existing Hub binary"
+    [ -x "$BINARY" ] || installer_error "existing Hub binary is not executable"
+    /usr/bin/install -o root -g wheel -m 0755 "$BINARY" "$STATE_DIRECTORY/teslatlas-hub" \
+        || installer_error "cannot preserve existing Hub binary"
+fi
+
+if [ -e "$PLIST" ] || [ -L "$PLIST" ]; then
+    require_safe_regular_file "$PLIST" "$CONSOLE_UID" "existing LaunchAgent"
+    /usr/bin/install -o root -g wheel -m 0600 "$PLIST" "$STATE_DIRECTORY/launch-agent.plist" \
+        || installer_error "cannot preserve existing LaunchAgent"
+fi

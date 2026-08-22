@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn marker_is_arc_shared_and_checks_exact_store() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let admitted = AdmittedUserHub::for_test(temporary.path()).expect("admit");
         let shared = Arc::clone(&admitted);
         shared

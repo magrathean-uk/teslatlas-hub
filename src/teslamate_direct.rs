@@ -40,7 +40,10 @@ use crate::{
         TeslaMateUpdatePhysicalV2_2, project_car, project_charge, project_charge_sample,
         project_drive, project_position, project_state, project_update,
     },
-    teslamate_projection_state::{TeslaMateProjectionStateCapture, TeslaMateProjectionStateError},
+    teslamate_projection_state::{
+        TeslaMateProjectionStateCapture, TeslaMateProjectionStateError,
+        TeslaMateProjectionStateLimits,
+    },
     teslamate_reader::{
         TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits, TeslaMateReaderError,
         TeslaMateSchemaInfo, binary_copy_sql, charge_copy_types, decode_binary_charge,
@@ -63,6 +66,25 @@ enum DirectCaptureMode {
     SuccessorDiff,
     LegacyBridgeCapture,
 }
+
+// Measured against the exact STRICT/WITHOUT ROWID spool schema, an initial
+// digest row occupies about 97 bytes and a fully changed row with empty JSON
+// about 153 bytes. These rounded-up bounds include B-tree/index slack. Changed
+// JSON has its own explicit budget below.
+const DIRECT_INITIAL_STATE_BYTES_PER_ROW: u64 = 128;
+const DIRECT_SUCCESSOR_STATE_BYTES_PER_ROW: u64 = 192;
+const DIRECT_STATE_FIXED_BYTES: u64 = 32 * 1024;
+const DIRECT_SUCCESSOR_CHANGED_PAYLOAD_BYTES: u64 = 256 * 1024 * 1024;
+const DIRECT_OUTPUT_FIXED_BYTES: u64 = 64 * 1024 * 1024;
+const DIRECT_OUTPUT_CAR_BYTES: u64 = 64 * 1024;
+const DIRECT_OUTPUT_DRIVE_BYTES: u64 = 2 * 1024;
+const DIRECT_OUTPUT_POSITION_BYTES: u64 = 128;
+const DIRECT_OUTPUT_CHARGING_PROCESS_BYTES: u64 = 2 * 1024;
+const DIRECT_OUTPUT_CHARGE_SAMPLE_BYTES: u64 = 128;
+const DIRECT_OUTPUT_STATE_BYTES: u64 = 256;
+const DIRECT_OUTPUT_ADDRESS_BYTES: u64 = 8 * 1024;
+const DIRECT_OUTPUT_GEOFENCE_BYTES: u64 = 8 * 1024;
+const DIRECT_OUTPUT_UPDATE_BYTES: u64 = 8 * 1024;
 
 /// Exact physical source facts retained from the same exported PostgreSQL
 /// snapshot used by the production direct import. These are consumed only by
@@ -106,9 +128,10 @@ pub async fn write_direct_full_snapshot(
         binding,
         snapshot_id,
         sequence,
-        || Ok(None),
+        |_| Ok(None),
         false,
         DirectCaptureMode::PublishPacks,
+        false,
     )
     .await
     .map(|capture| capture.packs)
@@ -132,7 +155,9 @@ pub(crate) async fn write_direct_full_snapshot_with_projection_state<F>(
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
-    F: FnMut() -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError>,
+    F: FnMut(
+        TeslaMateProjectionStateLimits,
+    ) -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError>,
 {
     write_direct_full_snapshot_with_capture_factory(
         source,
@@ -143,9 +168,10 @@ where
         binding,
         snapshot_id,
         sequence,
-        || capture_factory().map(Some),
+        |limits| capture_factory(limits).map(Some),
         capture_legacy_token,
         DirectCaptureMode::PublishPacks,
+        true,
     )
     .await
 }
@@ -166,7 +192,9 @@ pub(crate) async fn capture_direct_successor_diff_with_projection_state<F>(
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
-    F: FnMut() -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError>,
+    F: FnMut(
+        TeslaMateProjectionStateLimits,
+    ) -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError>,
 {
     write_direct_full_snapshot_with_capture_factory(
         source,
@@ -177,9 +205,10 @@ where
         binding,
         snapshot_id,
         sequence,
-        || capture_factory().map(Some),
+        |limits| capture_factory(limits).map(Some),
         capture_legacy_token,
         DirectCaptureMode::SuccessorDiff,
+        true,
     )
     .await
 }
@@ -202,7 +231,9 @@ pub(crate) async fn capture_direct_snapshot_for_legacy_bridge<F>(
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
-    F: FnMut() -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError>,
+    F: FnMut(
+        TeslaMateProjectionStateLimits,
+    ) -> Result<TeslaMateProjectionStateCapture, TeslaMateDirectError>,
 {
     write_direct_full_snapshot_with_capture_factory(
         source,
@@ -213,9 +244,10 @@ where
         binding,
         snapshot_id,
         sequence,
-        || capture_factory().map(Some),
+        |limits| capture_factory(limits).map(Some),
         capture_legacy_token,
         DirectCaptureMode::LegacyBridgeCapture,
+        true,
     )
     .await
 }
@@ -233,9 +265,12 @@ async fn write_direct_full_snapshot_with_capture_factory<F>(
     mut capture_factory: F,
     capture_legacy_token: bool,
     capture_mode: DirectCaptureMode,
+    capture_projection_state: bool,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
-    F: FnMut() -> Result<Option<TeslaMateProjectionStateCapture>, TeslaMateDirectError>,
+    F: FnMut(
+        TeslaMateProjectionStateLimits,
+    ) -> Result<Option<TeslaMateProjectionStateCapture>, TeslaMateDirectError>,
 {
     ensure_direct_capture_capacity(writer, read_limits.minimum_free_bytes)?;
     let (lease, selected_car_id_i16, schema) =
@@ -257,6 +292,32 @@ where
         // snapshot. Admit every history-sized in-memory relation before the
         // metadata lanes can decode or allocate one of them.
         let retention = admit_direct_retention(source_counts, read_limits)?;
+        let state_limits = capture_projection_state
+            .then(|| direct_projection_state_limits(source_counts, read_limits, capture_mode))
+            .transpose()?;
+        let admission_reserve_bytes = state_limits
+            .map(|limits| {
+                read_limits
+                    .minimum_free_bytes
+                    .checked_add(limits.max_state_bytes)
+                    .ok_or(TeslaMateDirectError::TargetCapacityOverflow)
+            })
+            .transpose()?
+            .unwrap_or(read_limits.minimum_free_bytes);
+        let capture_writer = writer
+            .clone()
+            .with_minimum_free_bytes(read_limits.minimum_free_bytes);
+        let estimated_final_bytes = match capture_mode {
+            DirectCaptureMode::PublishPacks => direct_projected_output_estimate(source_counts)?,
+            DirectCaptureMode::SuccessorDiff => state_limits
+                .map(|limits| limits.max_changed_payload_bytes)
+                .unwrap_or(0),
+            DirectCaptureMode::LegacyBridgeCapture => 0,
+        };
+        capture_writer.ensure_incremental_capture_capacity_with_final_estimate(
+            estimated_final_bytes,
+            admission_reserve_bytes,
+        )?;
         // The old physical fingerprint deliberately depended on the emitted
         // fragment layout. A compatibility bridge must therefore replay the
         // old default/retry policy, never the current dense-corpus hint.
@@ -266,14 +327,17 @@ where
             DirectCaptureMode::LegacyBridgeCapture => TeslaMateFragmentLimits::default(),
         };
         let mut capture = loop {
-            let projection_state = capture_factory()?;
+            let projection_state = match state_limits {
+                Some(limits) => capture_factory(limits)?,
+                None => None,
+            };
             match write_direct_full_snapshot_once(
                 source,
                 password,
                 selected_car_id,
                 selected_car_id_i16,
                 read_limits,
-                writer,
+                &capture_writer,
                 binding.clone(),
                 snapshot_id,
                 sequence,
@@ -603,6 +667,14 @@ pub struct TeslaMatePreflightReport {
     pub source_row_counts: TeslaMateSourceCounts,
     #[serde(rename = "targetAvailableBytes")]
     pub target_available_bytes: u64,
+    #[serde(rename = "estimatedTargetOutputBytes")]
+    pub estimated_target_output_bytes: u64,
+    #[serde(rename = "projectionStateMaximumBytes")]
+    pub projection_state_maximum_bytes: u64,
+    #[serde(rename = "activePackTransientBytes")]
+    pub active_pack_transient_bytes: u64,
+    #[serde(rename = "targetRequiredBytes")]
+    pub target_required_bytes: u64,
     #[serde(rename = "configuredMaximumRows")]
     pub configured_maximum_rows: usize,
     #[serde(rename = "configuredStagingLimitBytes")]
@@ -629,21 +701,43 @@ pub async fn preflight_teslamate_import(
             Ok(_) => None,
             Err(error) => Some(direct_retention_preflight_reason(&error).ok_or(error)?),
         };
-        let (target_available_bytes, capacity_passed) =
-            preflight_target_capacity(target_packs_dir, read_limits.minimum_free_bytes)?;
+        let state_limits = direct_projection_state_limits(
+            source_row_counts,
+            read_limits,
+            DirectCaptureMode::PublishPacks,
+        )?;
+        let capture_reserve_bytes = read_limits
+            .minimum_free_bytes
+            .checked_add(state_limits.max_state_bytes)
+            .ok_or(TeslaMateDirectError::TargetCapacityOverflow)?;
+        let estimated_target_output_bytes = direct_projected_output_estimate(source_row_counts)?;
+        let (
+            target_available_bytes,
+            active_pack_transient_bytes,
+            target_required_bytes,
+            capacity_passed,
+        ) = preflight_target_capacity(
+            target_packs_dir,
+            estimated_target_output_bytes,
+            capture_reserve_bytes,
+        )?;
         Ok(TeslaMatePreflightReport {
             selected_car_id,
             source_database_bytes,
             schema,
             source_row_counts,
             target_available_bytes,
+            estimated_target_output_bytes,
+            projection_state_maximum_bytes: state_limits.max_state_bytes,
+            active_pack_transient_bytes,
+            target_required_bytes,
             configured_maximum_rows: read_limits.maximum_rows,
             configured_staging_limit_bytes: read_limits.maximum_stage_bytes,
             configured_staging_reserve_bytes: read_limits.minimum_free_bytes,
             admission: TeslaMatePreflightAdmission {
                 passed: capacity_passed && retention_reason.is_none(),
                 reason: (!capacity_passed)
-                    .then_some("insufficient_target_capacity")
+                    .then_some("insufficient_estimated_target_capacity")
                     .or(retention_reason),
             },
         })
@@ -670,12 +764,26 @@ async fn read_source_database_size(client: &Client) -> Result<u64, TeslaMateDire
 
 fn preflight_target_capacity(
     target_packs_dir: &Path,
+    estimated_final_bytes: u64,
     minimum_free_bytes: u64,
-) -> Result<(u64, bool), TeslaMateDirectError> {
+) -> Result<(u64, u64, u64, bool), TeslaMateDirectError> {
     let writer = ProjectionPackWriter::new(target_packs_dir);
-    match writer.ensure_incremental_capture_capacity(minimum_free_bytes) {
-        Ok(()) => Ok((target_available_bytes(target_packs_dir)?, true)),
-        Err(ProjectionPackError::InsufficientFreeSpace { available, .. }) => Ok((available, false)),
+    let transient_bytes = writer.incremental_capture_transient_bytes()?;
+    let required_bytes =
+        writer.incremental_capture_required_bytes(estimated_final_bytes, minimum_free_bytes)?;
+    match writer.ensure_incremental_capture_capacity_with_final_estimate(
+        estimated_final_bytes,
+        minimum_free_bytes,
+    ) {
+        Ok(()) => Ok((
+            target_available_bytes(target_packs_dir)?,
+            transient_bytes,
+            required_bytes,
+            true,
+        )),
+        Err(ProjectionPackError::InsufficientFreeSpace { available, .. }) => {
+            Ok((available, transient_bytes, required_bytes, false))
+        }
         Err(error) => Err(error.into()),
     }
 }
@@ -690,6 +798,101 @@ fn ensure_direct_capture_capacity(
 ) -> Result<(), TeslaMateDirectError> {
     writer.ensure_incremental_capture_capacity(minimum_free_bytes)?;
     Ok(())
+}
+
+/// Turn exact exported-snapshot row counts into the tight durable spool limit
+/// used by both SQLite and pack-writer admission. This avoids reserving the
+/// configured 4 GiB safety ceiling for a small source while still preventing
+/// the two writers from independently consuming the same free-space floor.
+fn direct_projection_state_limits(
+    counts: TeslaMateSourceCounts,
+    read_limits: TeslaMateReadLimits,
+    capture_mode: DirectCaptureMode,
+) -> Result<TeslaMateProjectionStateLimits, TeslaMateDirectError> {
+    let state_rows = counts
+        .cars
+        .checked_add(counts.drives)
+        .and_then(|value| value.checked_add(counts.positions))
+        .and_then(|value| value.checked_add(counts.charging_processes))
+        .and_then(|value| value.checked_add(counts.charges))
+        .and_then(|value| value.checked_add(counts.states))
+        .and_then(|value| value.checked_add(counts.updates))
+        .ok_or(TeslaMateDirectError::ProjectionStateCapacityOverflow)?;
+    let bytes_per_row = match capture_mode {
+        DirectCaptureMode::SuccessorDiff => DIRECT_SUCCESSOR_STATE_BYTES_PER_ROW,
+        DirectCaptureMode::PublishPacks | DirectCaptureMode::LegacyBridgeCapture => {
+            DIRECT_INITIAL_STATE_BYTES_PER_ROW
+        }
+    };
+    let row_bytes = state_rows
+        .checked_mul(bytes_per_row)
+        .and_then(|value| value.checked_add(DIRECT_STATE_FIXED_BYTES))
+        .ok_or(TeslaMateDirectError::ProjectionStateCapacityOverflow)?;
+    let minimum_state_bytes = 64 * 1024;
+    let base_state_bytes = row_bytes.max(minimum_state_bytes);
+    if base_state_bytes > read_limits.maximum_stage_bytes {
+        return Err(TeslaMateDirectError::ProjectionStateCapacityExceeded {
+            required: base_state_bytes,
+            maximum: read_limits.maximum_stage_bytes,
+        });
+    }
+    let changed_payload_bytes = match capture_mode {
+        DirectCaptureMode::SuccessorDiff => read_limits
+            .maximum_stage_bytes
+            .saturating_sub(base_state_bytes)
+            .clamp(1, DIRECT_SUCCESSOR_CHANGED_PAYLOAD_BYTES),
+        DirectCaptureMode::PublishPacks | DirectCaptureMode::LegacyBridgeCapture => 1,
+    };
+    let max_state_bytes = match capture_mode {
+        DirectCaptureMode::SuccessorDiff => base_state_bytes
+            .checked_add(changed_payload_bytes)
+            .ok_or(TeslaMateDirectError::ProjectionStateCapacityOverflow)?,
+        DirectCaptureMode::PublishPacks | DirectCaptureMode::LegacyBridgeCapture => {
+            base_state_bytes
+        }
+    };
+    if max_state_bytes > read_limits.maximum_stage_bytes {
+        return Err(TeslaMateDirectError::ProjectionStateCapacityExceeded {
+            required: max_state_bytes,
+            maximum: read_limits.maximum_stage_bytes,
+        });
+    }
+    Ok(TeslaMateProjectionStateLimits {
+        max_rows: state_rows.max(1),
+        max_state_bytes,
+        max_changed_payload_bytes: changed_payload_bytes,
+        minimum_free_bytes: read_limits.minimum_free_bytes,
+    })
+}
+
+/// Selected-car output estimate for early operator feedback. It deliberately
+/// excludes unrelated cars, PostgreSQL indexes, bloat, and source-only tables.
+/// Compression prevents a useful small worst-case bound, so this is advisory:
+/// the pack and state writers independently recheck the aggregate 512 MiB
+/// free-space floor before every bounded write and fail without filling disk.
+fn direct_projected_output_estimate(
+    counts: TeslaMateSourceCounts,
+) -> Result<u64, TeslaMateDirectError> {
+    [
+        (counts.cars, DIRECT_OUTPUT_CAR_BYTES),
+        (counts.drives, DIRECT_OUTPUT_DRIVE_BYTES),
+        (counts.positions, DIRECT_OUTPUT_POSITION_BYTES),
+        (
+            counts.charging_processes,
+            DIRECT_OUTPUT_CHARGING_PROCESS_BYTES,
+        ),
+        (counts.charges, DIRECT_OUTPUT_CHARGE_SAMPLE_BYTES),
+        (counts.states, DIRECT_OUTPUT_STATE_BYTES),
+        (counts.addresses, DIRECT_OUTPUT_ADDRESS_BYTES),
+        (counts.geofences, DIRECT_OUTPUT_GEOFENCE_BYTES),
+        (counts.updates, DIRECT_OUTPUT_UPDATE_BYTES),
+    ]
+    .into_iter()
+    .try_fold(DIRECT_OUTPUT_FIXED_BYTES, |total, (rows, bytes_per_row)| {
+        rows.checked_mul(bytes_per_row)
+            .and_then(|bytes| total.checked_add(bytes))
+            .ok_or(TeslaMateDirectError::TargetCapacityOverflow)
+    })
 }
 
 fn target_available_bytes(path: &Path) -> Result<u64, TeslaMateDirectError> {
@@ -2144,6 +2347,12 @@ pub enum TeslaMateDirectError {
     },
     #[error("target free-space calculation overflowed")]
     TargetCapacityOverflow,
+    #[error("TeslaMate projection-state capacity calculation overflowed")]
+    ProjectionStateCapacityOverflow,
+    #[error(
+        "TeslaMate projection state requires {required} bytes, above its configured {maximum}-byte limit"
+    )]
+    ProjectionStateCapacityExceeded { required: u64, maximum: u64 },
     #[error("TeslaMate update {update_id} belongs to car {found_car_id}, not {expected_car_id}")]
     UpdateWrongCar {
         update_id: i64,
@@ -2512,9 +2721,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        credentials::TeslaMatePostgresPassword,
-        teslamate::ReadOnlySource,
-        teslamate_projection_state::{TeslaMateProjectionState, TeslaMateProjectionStateLimits},
+        credentials::TeslaMatePostgresPassword, teslamate::ReadOnlySource,
+        teslamate_projection_state::TeslaMateProjectionState,
     };
 
     #[derive(Debug, Deserialize)]
@@ -2782,6 +2990,10 @@ mod tests {
                 updates: 9,
             },
             target_available_bytes: 456,
+            estimated_target_output_bytes: 100,
+            projection_state_maximum_bytes: 200,
+            active_pack_transient_bytes: 300,
+            target_required_bytes: 1_112,
             configured_maximum_rows: 20_000_000,
             configured_staging_limit_bytes: 4 * 1024 * 1024 * 1024,
             configured_staging_reserve_bytes: 512 * 1024 * 1024,
@@ -2796,6 +3008,10 @@ mod tests {
         assert_eq!(value["sourceRowCounts"]["addresses"], 7);
         assert_eq!(value["sourceRowCounts"]["geofences"], 8);
         assert_eq!(value["sourceRowCounts"]["updates"], 9);
+        assert_eq!(value["estimatedTargetOutputBytes"], 100);
+        assert_eq!(value["projectionStateMaximumBytes"], 200);
+        assert_eq!(value["activePackTransientBytes"], 300);
+        assert_eq!(value["targetRequiredBytes"], 1_112);
         assert_eq!(value["admission"]["passed"], true);
         assert!(value.get("password").is_none());
         assert!(value.get("sourceUrl").is_none());
@@ -3394,6 +3610,83 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn projection_state_admission_uses_exact_rows_and_bounds_successor_payload() {
+        let counts = TeslaMateSourceCounts {
+            cars: 1,
+            drives: 3_200,
+            positions: 10_782_430,
+            charging_processes: 800,
+            charges: 292_600,
+            states: 1,
+            addresses: 0,
+            geofences: 0,
+            updates: 32,
+        };
+        let limits = TeslaMateReadLimits::default();
+        let initial =
+            direct_projection_state_limits(counts, limits, DirectCaptureMode::PublishPacks)
+                .expect("measured-size initial spool");
+        let successor =
+            direct_projection_state_limits(counts, limits, DirectCaptureMode::SuccessorDiff)
+                .expect("measured-size successor spool");
+
+        assert_eq!(initial.max_rows, 11_079_064);
+        assert!(initial.max_state_bytes < 2 * 1024 * 1024 * 1024);
+        assert_eq!(initial.max_changed_payload_bytes, 1);
+        assert!(successor.max_state_bytes < 3 * 1024 * 1024 * 1024);
+        assert_eq!(
+            successor.max_changed_payload_bytes,
+            DIRECT_SUCCESSOR_CHANGED_PAYLOAD_BYTES
+        );
+        assert!(successor.max_state_bytes > initial.max_state_bytes);
+        let projected_output =
+            direct_projected_output_estimate(counts).expect("selected-car output estimate");
+        assert!(projected_output > 1024 * 1024 * 1024);
+        assert!(projected_output < 2 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn projection_state_admission_fails_before_capture_when_exact_rows_do_not_fit() {
+        let error = direct_projection_state_limits(
+            TeslaMateSourceCounts {
+                cars: 1,
+                drives: 0,
+                positions: 1_000,
+                charging_processes: 0,
+                charges: 0,
+                states: 0,
+                addresses: 0,
+                geofences: 0,
+                updates: 0,
+            },
+            TeslaMateReadLimits {
+                maximum_stage_bytes: 64 * 1024,
+                ..TeslaMateReadLimits::default()
+            },
+            DirectCaptureMode::PublishPacks,
+        )
+        .expect_err("exact state estimate exceeds the configured capacity");
+        assert!(matches!(
+            error,
+            TeslaMateDirectError::ProjectionStateCapacityExceeded {
+                maximum: 65_536,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn selected_car_output_admission_rejects_overflow() {
+        assert!(matches!(
+            direct_projected_output_estimate(TeslaMateSourceCounts {
+                positions: u64::MAX,
+                ..direct_retention_test_counts()
+            }),
+            Err(TeslaMateDirectError::TargetCapacityOverflow)
+        ));
+    }
+
     #[tokio::test]
     async fn native_complete_corpus_direct_import_projects_every_kind_when_configured() {
         let Some((source, password)) = configured_native_postgres_source(false) else {
@@ -3454,12 +3747,6 @@ mod tests {
         let expected_source_counts =
             native_ten_million_expected_source_counts(&source, &password, limits, packs.path())
                 .await;
-        let projection_state_limits = TeslaMateProjectionStateLimits {
-            max_rows: u64::try_from(limits.maximum_rows).expect("maximum rows fits u64"),
-            max_state_bytes: limits.maximum_stage_bytes,
-            max_changed_payload_bytes: limits.maximum_stage_bytes,
-            minimum_free_bytes: limits.minimum_free_bytes,
-        };
         let writer = ProjectionPackWriter::new(packs.path());
         let mut phase_trace = native_ten_million_phase_trace::enabled_from_environment();
         let started = Instant::now();
@@ -3484,8 +3771,8 @@ mod tests {
                     to_inclusive: 1,
                 },
                 false,
-                || {
-                    TeslaMateProjectionState::create(packs.path(), projection_state_limits)
+                |state_limits| {
+                    TeslaMateProjectionState::create(packs.path(), state_limits)
                         .map(TeslaMateProjectionStateCapture::for_initial_base)
                         .map_err(Into::into)
                 },

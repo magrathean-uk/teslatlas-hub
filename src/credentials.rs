@@ -3,7 +3,11 @@
 use crate::legacy_auth::{LegacyAuth, LegacyAuthError};
 use crate::teslamate_token::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
 use reqwest::Client;
-use std::{path::Path, sync::Arc, time::SystemTime};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+    time::SystemTime,
+};
 use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
@@ -15,7 +19,6 @@ type SensitiveAccessGuard = Arc<dyn Fn() -> Result<(), CredentialError> + Send +
 fn permitted_sensitive_access() -> SensitiveAccessGuard {
     Arc::new(|| Ok(()))
 }
-
 /// One decrypted owner credential pair. It is intentionally not cloneable.
 ///
 /// ```compile_fail
@@ -91,6 +94,7 @@ impl LegacyAuthManagerError {
                     LegacyAuthError::Persistence
                         | LegacyAuthError::SensitivePersistenceUnavailable
                         | LegacyAuthError::SensitiveAccessUnavailable
+                        | LegacyAuthError::SensitiveRotationOutcomeUnknown
                 )
             )
     }
@@ -108,14 +112,39 @@ enum LegacyAuthRefreshPolicy {
     Managed,
     Observer,
 }
-#[derive(Clone)]
 struct HubTeslaMatePersistence {
     store: crate::db::HubStore,
     encryption_key: Arc<crate::teslamate_credentials::TeslaMateEncryptionKey>,
+    credential_generation: Mutex<uuid::Uuid>,
 }
 impl HubTeslaMatePersistence {
+    fn begin_refresh(
+        &self,
+    ) -> Result<(crate::db::OutboundRequestReceiptId, uuid::Uuid), CredentialError> {
+        let input_generation = *self.credential_generation.lock().map_err(|_| {
+            CredentialError::TeslaMateTokenStore(crate::db::StoreError::LegacyRefreshOutcomeUnknown)
+        })?;
+        let receipt_id = self
+            .store
+            .begin_legacy_refresh(input_generation)
+            .map_err(CredentialError::TeslaMateTokenStore)?;
+        Ok((receipt_id, input_generation))
+    }
+
+    fn cancel_refresh(
+        &self,
+        receipt_id: crate::db::OutboundRequestReceiptId,
+        input_generation: uuid::Uuid,
+    ) -> Result<(), CredentialError> {
+        self.store
+            .cancel_unsent_legacy_refresh(receipt_id, input_generation)
+            .map_err(CredentialError::TeslaMateTokenStore)
+    }
+
     fn persist_refreshed(
         &self,
+        receipt_id: crate::db::OutboundRequestReceiptId,
+        input_generation: uuid::Uuid,
         access: &str,
         refresh: &str,
         expires_at: i64,
@@ -134,9 +163,18 @@ impl HubTeslaMatePersistence {
             next_refresh_at,
         )
         .map_err(CredentialError::TeslaMateTokenStore)?;
+        let output_generation =
+            crate::teslamate_token::legacy_refresh_credential_generation(&tokens);
+        let stored = stored
+            .with_credential_generation(output_generation)
+            .map_err(CredentialError::TeslaMateTokenStore)?;
         self.store
-            .replace_teslamate_legacy_tokens(&stored)
-            .map_err(CredentialError::TeslaMateTokenStore)
+            .complete_legacy_refresh(receipt_id, input_generation, output_generation, &stored)
+            .map_err(CredentialError::TeslaMateTokenStore)?;
+        *self.credential_generation.lock().map_err(|_| {
+            CredentialError::TeslaMateTokenStore(crate::db::StoreError::LegacyRefreshOutcomeUnknown)
+        })? = output_generation;
+        Ok(())
     }
 }
 
@@ -145,6 +183,7 @@ pub(crate) struct LegacyAuthManager {
     persistence: LegacyAuthPersistence,
     refresh_policy: LegacyAuthRefreshPolicy,
     sensitive_access: SensitiveAccessGuard,
+    refresh_terminal: bool,
 }
 impl std::fmt::Debug for LegacyAuthManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -225,6 +264,14 @@ impl LegacyAuthManager {
             .load_teslamate_legacy_tokens()
             .map_err(CredentialError::TeslaMateTokenStore)?
             .ok_or(CredentialError::TeslaMateTokenStoreMissing)?;
+        if store
+            .has_unresolved_legacy_refresh()
+            .map_err(CredentialError::TeslaMateTokenStore)?
+        {
+            return Err(LegacyAuthManagerError::Auth(
+                LegacyAuthError::SensitiveRotationOutcomeUnknown,
+            ));
+        }
         let encryption_key = Arc::new(
             crate::teslamate_credentials::load_key_for_tokens(data_dir, &stored)
                 .map_err(CredentialError::TeslaMateCredentialFile)?,
@@ -235,15 +282,22 @@ impl LegacyAuthManager {
             stored.refresh(),
         )
         .map_err(CredentialError::TeslaMateTokenCipher)?;
+        let credential_generation =
+            crate::teslamate_token::legacy_refresh_credential_generation(&tokens);
         let auth = build_auth(&tokens, &stored)?;
+        store
+            .bind_teslamate_legacy_credential_generation(&stored, credential_generation)
+            .map_err(CredentialError::TeslaMateTokenStore)?;
         Ok(Self {
             auth,
             persistence: LegacyAuthPersistence::HubTeslaMate(Arc::new(HubTeslaMatePersistence {
                 store,
                 encryption_key,
+                credential_generation: Mutex::new(credential_generation),
             })),
             refresh_policy,
             sensitive_access: permitted_sensitive_access(),
+            refresh_terminal: false,
         })
     }
 
@@ -350,6 +404,11 @@ impl LegacyAuthManager {
         now: SystemTime,
         force: bool,
     ) -> Result<(), LegacyAuthManagerError> {
+        if self.refresh_terminal {
+            return Err(LegacyAuthManagerError::Auth(
+                LegacyAuthError::SensitiveRotationOutcomeUnknown,
+            ));
+        }
         if self.refresh_policy == LegacyAuthRefreshPolicy::Observer {
             return if force {
                 Err(LegacyAuthManagerError::ObserverRefreshDisabled)
@@ -382,20 +441,63 @@ impl LegacyAuthManager {
             LegacyAuthPersistence::TestCallback(_) => unreachable!("handled above"),
         };
         let sensitive_access = Arc::clone(&self.sensitive_access);
-        self.auth
+        let attempt = Arc::new(Mutex::new(None));
+        let begin_attempt = Arc::clone(&attempt);
+        let persist_attempt = Arc::clone(&attempt);
+        let begin_persistence = Arc::clone(&persistence);
+        let persist_persistence = Arc::clone(&persistence);
+        let result = self
+            .auth
             .refresh_persisted_with_bound_audit_guarded(
                 client,
                 now,
                 force,
-                move || sensitive_access().map_err(|_| LegacyAuthError::SensitiveAccessUnavailable),
+                move || {
+                    sensitive_access().map_err(|_| LegacyAuthError::SensitiveAccessUnavailable)?;
+                    let (receipt_id, input_generation) = begin_persistence
+                        .begin_refresh()
+                        .map_err(|error| match error {
+                            CredentialError::TeslaMateTokenStore(
+                                crate::db::StoreError::LegacyRefreshOutcomeUnknown,
+                            ) => LegacyAuthError::SensitiveRotationOutcomeUnknown,
+                            _ => LegacyAuthError::Persistence,
+                        })?;
+                    if sensitive_access().is_err() {
+                        if begin_persistence
+                            .cancel_refresh(receipt_id, input_generation)
+                            .is_err()
+                        {
+                            *begin_attempt.lock().expect("refresh attempt mutex") =
+                                Some((receipt_id, input_generation));
+                            return Err(LegacyAuthError::SensitiveRotationOutcomeUnknown);
+                        }
+                        return Err(LegacyAuthError::SensitiveAccessUnavailable);
+                    }
+                    *begin_attempt.lock().expect("refresh attempt mutex") =
+                        Some((receipt_id, input_generation));
+                    Ok(())
+                },
                 move |a, r, expires, next| {
-                    persistence
-                        .persist_refreshed(a, r, expires, next)
+                    let (receipt_id, input_generation) = persist_attempt
+                        .lock()
+                        .expect("refresh attempt mutex")
+                        .as_ref()
+                        .copied()
+                        .ok_or(LegacyAuthError::Persistence)?;
+                    persist_persistence
+                        .persist_refreshed(receipt_id, input_generation, a, r, expires, next)
                         .map_err(|_| LegacyAuthError::Persistence)
                 },
             )
-            .await
-            .map_err(Into::into)
+            .await;
+        let attempt_started = attempt.lock().expect("refresh attempt mutex").is_some();
+        if attempt_started && result.is_err() {
+            self.refresh_terminal = true;
+            return Err(LegacyAuthManagerError::Auth(
+                LegacyAuthError::SensitiveRotationOutcomeUnknown,
+            ));
+        }
+        result.map_err(Into::into)
     }
     #[cfg(test)]
     pub(crate) fn for_test(
@@ -407,6 +509,7 @@ impl LegacyAuthManager {
             persistence: LegacyAuthPersistence::TestCallback(persist),
             refresh_policy: LegacyAuthRefreshPolicy::Managed,
             sensitive_access: permitted_sensitive_access(),
+            refresh_terminal: false,
         }
     }
     #[cfg(test)]
@@ -565,7 +668,7 @@ mod tests {
 
     #[tokio::test]
     async fn observer_never_posts_a_refresh_token() {
-        let data = tempfile::tempdir().expect("data directory");
+        let data = crate::private_tempdir().expect("data directory");
         let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
         crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key")
             .expect("private key");
@@ -618,9 +721,14 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn replaced_runtime_admission_blocks_refresh_before_token_transport() {
-        let root = tempfile::tempdir().expect("test root");
+        let root = crate::private_tempdir().expect("test root");
         let data_dir = root.path().join("data");
         std::fs::create_dir(&data_dir).expect("data directory");
+        std::fs::set_permissions(
+            &data_dir,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .expect("private data directory");
         let admission = crate::hub_user_process::AdmittedUserHub::for_test(&data_dir)
             .expect("admit data directory");
         let fake = crate::fake_tesla::FakeTeslaSource::spawn_canonical(
@@ -653,7 +761,7 @@ mod tests {
 
     #[tokio::test]
     async fn hub_teslamate_store_refreshes_and_reopens_with_the_successor() {
-        let data = tempfile::tempdir().expect("data directory");
+        let data = crate::private_tempdir().expect("data directory");
         let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
         crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key")
             .expect("private key");
@@ -688,6 +796,12 @@ mod tests {
             fake.oauth_issuer_url(),
         )
         .expect("load initial pair");
+        let mut stale_manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+            store.clone(),
+            data.path(),
+            fake.oauth_issuer_url(),
+        )
+        .expect("load second initial authority");
         crate::crypto::install_default_provider();
         manager
             .refresh_now(&Client::new(), SystemTime::now())
@@ -718,6 +832,29 @@ mod tests {
         assert_eq!(stored.expires_at(), expected_expires);
         assert_eq!(stored.next_refresh_at(), expected_next_refresh);
 
+        assert!(matches!(
+            stale_manager
+                .refresh_now(&Client::new(), SystemTime::now())
+                .await,
+            Err(LegacyAuthManagerError::Auth(
+                LegacyAuthError::SensitiveRotationOutcomeUnknown
+            ))
+        ));
+        assert_eq!(fake.token_refresh_request_count(), 1);
+        assert!(
+            !store
+                .has_unresolved_legacy_refresh()
+                .expect("stale authority creates no receipt")
+        );
+        assert_eq!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("load successor after stale attempt")
+                .expect("successor remains")
+                .credential_generation(),
+            stored.credential_generation()
+        );
+
         let reopened = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
             store,
             data.path(),
@@ -733,6 +870,193 @@ mod tests {
             crate::fake_tesla::FAKE_REFRESHED_REFRESH_TOKEN
         );
         assert_eq!(reopened.next_refresh_at(), expected_next_refresh);
+    }
+
+    #[tokio::test]
+    async fn runtime_replacement_after_refresh_receipt_begin_cancels_before_token_post() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let data = crate::private_tempdir().expect("data directory");
+        let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
+        crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key")
+            .expect("private key");
+        let key = crate::teslamate_credentials::load_key(data.path()).expect("load private key");
+        let initial = OwnerTokens::from_secret_parts(
+            "initial-access".to_owned(),
+            "initial-refresh".to_owned(),
+        )
+        .expect("initial tokens");
+        let (access, refresh) =
+            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+                .expect("encrypt initial tokens");
+        store
+            .replace_teslamate_legacy_tokens(
+                &crate::db::TeslaMateLegacyTokenStore::refreshed(
+                    access,
+                    refresh,
+                    2_000_000_000,
+                    1_900_000_000,
+                )
+                .expect("initial schedule"),
+            )
+            .expect("store initial pair");
+
+        let fake = crate::fake_tesla::FakeTeslaSource::spawn_canonical(
+            crate::fake_tesla::AdvanceMode::Manual,
+        )
+        .await
+        .expect("fake Tesla");
+        let mut manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+            store.clone(),
+            data.path(),
+            fake.oauth_issuer_url(),
+        )
+        .expect("load initial pair");
+        let checks = Arc::new(AtomicUsize::new(0));
+        let guarded_checks = Arc::clone(&checks);
+        manager.sensitive_access = Arc::new(move || {
+            if guarded_checks.fetch_add(1, Ordering::SeqCst) < 2 {
+                Ok(())
+            } else {
+                Err(CredentialError::SensitiveAccessUnavailable)
+            }
+        });
+
+        crate::crypto::install_default_provider();
+        assert!(matches!(
+            manager.refresh_now(&Client::new(), SystemTime::now()).await,
+            Err(LegacyAuthManagerError::Auth(
+                LegacyAuthError::SensitiveAccessUnavailable
+            ))
+        ));
+        assert_eq!(checks.load(Ordering::SeqCst), 3);
+        assert_eq!(fake.token_refresh_request_count(), 0);
+        assert!(
+            !store
+                .has_unresolved_legacy_refresh()
+                .expect("cancelled receipt is terminal")
+        );
+        let generation = store
+            .load_teslamate_legacy_tokens()
+            .expect("tokens load")
+            .expect("tokens remain")
+            .credential_generation()
+            .expect("generation remains");
+        let receipt = store
+            .begin_legacy_refresh(generation)
+            .expect("input remains refreshable");
+        store
+            .cancel_unsent_legacy_refresh(receipt, generation)
+            .expect("test cleanup");
+        fake.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn post_send_refresh_failure_is_terminal_until_explicit_new_credentials() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let data = crate::private_tempdir().expect("data directory");
+        let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
+        crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key")
+            .expect("private key");
+        let key = crate::teslamate_credentials::load_key(data.path()).expect("load private key");
+        let initial = OwnerTokens::from_secret_parts(
+            "ambiguous-access".to_owned(),
+            "ambiguous-refresh".to_owned(),
+        )
+        .expect("initial tokens");
+        let (access, refresh) =
+            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+                .expect("encrypt initial tokens");
+        store
+            .replace_teslamate_legacy_tokens(
+                &crate::db::TeslaMateLegacyTokenStore::refreshed(
+                    access,
+                    refresh,
+                    2_000_000_000,
+                    1_900_000_000,
+                )
+                .expect("stored initial pair"),
+            )
+            .expect("persist initial pair");
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback refresh listener");
+        let address = listener.local_addr().expect("loopback address");
+        let response_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("refresh request");
+            let mut request = vec![0_u8; 16 * 1024];
+            let read = socket
+                .read(&mut request)
+                .await
+                .expect("read refresh request");
+            assert!(read > 0);
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}",
+                )
+                .await
+                .expect("malformed success response");
+        });
+        let issuer = url::Url::parse(&format!("http://{address}/")).expect("loopback issuer");
+        let mut manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+            store.clone(),
+            data.path(),
+            issuer.clone(),
+        )
+        .expect("load initial pair");
+        crate::crypto::install_default_provider();
+        assert!(matches!(
+            manager.refresh_now(&Client::new(), SystemTime::now()).await,
+            Err(LegacyAuthManagerError::Auth(
+                LegacyAuthError::SensitiveRotationOutcomeUnknown
+            ))
+        ));
+        response_task.await.expect("response task");
+        assert!(matches!(
+            manager.refresh_now(&Client::new(), SystemTime::now()).await,
+            Err(LegacyAuthManagerError::Auth(
+                LegacyAuthError::SensitiveRotationOutcomeUnknown
+            ))
+        ));
+        assert!(matches!(
+            LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+                store.clone(),
+                data.path(),
+                issuer.clone(),
+            ),
+            Err(LegacyAuthManagerError::Auth(
+                LegacyAuthError::SensitiveRotationOutcomeUnknown
+            ))
+        ));
+
+        let replacement =
+            OwnerTokens::from_secret_parts("fresh-access".to_owned(), "fresh-refresh".to_owned())
+                .expect("explicit replacement tokens");
+        let replacement_generation =
+            crate::teslamate_token::legacy_refresh_credential_generation(&replacement);
+        let (access, refresh) =
+            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &replacement)
+                .expect("encrypt replacement tokens");
+        store
+            .replace_teslamate_legacy_tokens(
+                &crate::db::TeslaMateLegacyTokenStore::refreshed(
+                    access,
+                    refresh,
+                    2_100_000_000,
+                    2_000_000_000,
+                )
+                .expect("stored replacement pair")
+                .with_credential_generation(replacement_generation)
+                .expect("replacement generation"),
+            )
+            .expect("explicit replacement supersedes ambiguity");
+        let recovered =
+            LegacyAuthManager::from_hub_teslamate_store_with_issuer(store, data.path(), issuer)
+                .expect("new credential authority starts");
+        assert_eq!(recovered.access_token(), "fresh-access");
+        assert_eq!(recovered.refresh_token(), "fresh-refresh");
     }
 
     #[test]

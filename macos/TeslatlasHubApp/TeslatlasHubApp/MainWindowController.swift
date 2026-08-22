@@ -420,7 +420,8 @@ final class MainWindowController: NSWindowController {
     }
 
     @objc private func detailsPressed() {
-        detailsWindow = ServiceDetailsWindowController(snapshot: controller.snapshot)
+        detailsWindow = ServiceDetailsWindowController(snapshot: controller.snapshot,
+                                                        controller: controller) { [weak self] in self?.update() }
         detailsWindow?.showWindow(nil)
         detailsWindow?.window?.makeKeyAndOrderFront(nil)
     }

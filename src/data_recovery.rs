@@ -17,6 +17,7 @@ use std::{
 };
 
 use rusqlite::{Connection, OpenFlags};
+use rustix::fs::statvfs;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -48,6 +49,10 @@ const MAX_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_COMPLETION_BYTES: u64 = 4 * 1024;
 const MAX_BACKUP_MEMBERS: usize = 4_096;
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
+// Admission reserves only metadata/write-amplification headroom. It does not
+// allocate a second copy: the staged backup/restore remains one payload copy.
+const COPY_CAPACITY_HEADROOM_DIVISOR: u64 = 20;
+const COPY_CAPACITY_FIXED_HEADROOM_BYTES: u64 = 8 * 1024 * 1024;
 const EXCLUDED_HOST_STATE: [&str; 5] = [
     "collector_decryption_key",
     "cursor_signing_key",
@@ -77,6 +82,22 @@ pub enum DataRecoveryError {
     CatalogueIdentity(#[source] rusqlite::Error),
     #[error("Hub data-backup credential validation failed: {0}")]
     Credential(#[from] crate::teslamate_credentials::TeslaMateCredentialError),
+    #[error("could not inspect free space at {path}: {source}")]
+    FilesystemSpace {
+        path: PathBuf,
+        #[source]
+        source: rustix::io::Errno,
+    },
+    #[error("Hub data-recovery staging capacity calculation overflowed")]
+    CapacityOverflow,
+    #[error(
+        "insufficient free space at {path}: recovery staging needs {required} bytes, only {available} bytes available"
+    )]
+    InsufficientFreeSpace {
+        path: PathBuf,
+        required: u64,
+        available: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -217,9 +238,12 @@ pub fn create_data_backup(
     }
 
     let source_installation_id = store.installation_id()?;
+    store.catalogue_check()?;
+    let backup_snapshot = store.begin_backup_snapshot()?;
+    admit_staging_capacity(&parent, backup_snapshot.copy_bytes()?)?;
     let staging = StagingDirectory::create(&parent)?;
     let payload = staging.path.join(DATA_DIRECTORY);
-    store.backup_to(&payload)?;
+    backup_snapshot.copy_to(&payload)?;
     seal_staged_catalogue(&payload)?;
     protect_payload_tree(&payload)?;
 
@@ -328,6 +352,7 @@ pub fn restore_data_backup(
     }
     source_store.verify_immutable_snapshot_unchanged()?;
 
+    admit_staging_capacity(&parent, manifest_copy_bytes(&manifest)?)?;
     let staging = StagingDirectory::create(&parent)?;
     create_private_directory(&staging.path.join("packs"))?;
     create_private_directory(&staging.path.join("packs").join("sha256"))?;
@@ -401,6 +426,66 @@ fn report(
         collector_authority: "absent",
         excluded_host_state: EXCLUDED_HOST_STATE.to_vec(),
     })
+}
+
+/// Calculate the bytes a completed backup can copy from a validated manifest.
+/// Manifest members are checked before this is called, so the sum is bounded,
+/// canonical, and cannot name symlinked data outside the backup root.
+fn manifest_copy_bytes(manifest: &BackupManifest) -> Result<u64, DataRecoveryError> {
+    manifest.members.iter().try_fold(0_u64, |total, member| {
+        total
+            .checked_add(member.size)
+            .ok_or(DataRecoveryError::CapacityOverflow)
+    })
+}
+
+fn checked_capacity_add(total: u64, additional: u64) -> Result<u64, DataRecoveryError> {
+    total
+        .checked_add(additional)
+        .ok_or(DataRecoveryError::CapacityOverflow)
+}
+
+fn staging_required_bytes(copy_bytes: u64) -> Result<u64, DataRecoveryError> {
+    let rounded_headroom = copy_bytes
+        .checked_add(COPY_CAPACITY_HEADROOM_DIVISOR - 1)
+        .ok_or(DataRecoveryError::CapacityOverflow)?
+        / COPY_CAPACITY_HEADROOM_DIVISOR;
+    checked_capacity_add(
+        checked_capacity_add(copy_bytes, rounded_headroom)?,
+        COPY_CAPACITY_FIXED_HEADROOM_BYTES,
+    )
+}
+
+fn admit_staging_capacity(parent: &Path, copy_bytes: u64) -> Result<(), DataRecoveryError> {
+    let required = staging_required_bytes(copy_bytes)?;
+    let available = available_bytes(parent)?;
+    admit_known_capacity(parent, required, available)
+}
+
+fn available_bytes(path: &Path) -> Result<u64, DataRecoveryError> {
+    let stats = statvfs(path).map_err(|source| DataRecoveryError::FilesystemSpace {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    stats
+        .f_bavail
+        .checked_mul(stats.f_frsize)
+        .ok_or(DataRecoveryError::CapacityOverflow)
+}
+
+fn admit_known_capacity(
+    parent: &Path,
+    required: u64,
+    available: u64,
+) -> Result<(), DataRecoveryError> {
+    if available < required {
+        return Err(DataRecoveryError::InsufficientFreeSpace {
+            path: parent.to_path_buf(),
+            required,
+            available,
+        });
+    }
+    Ok(())
 }
 
 fn prepare_new_destination(destination: &Path) -> Result<(PathBuf, PathBuf), DataRecoveryError> {
@@ -1549,6 +1634,56 @@ mod tests {
             .create_pairing("Recovery fixture", 1_000, 10_000)
             .expect("pairing database row");
         (temporary, store)
+    }
+
+    #[test]
+    fn staging_capacity_admission_rejects_simulated_low_space() {
+        let copy_bytes = 101_u64;
+        let required = staging_required_bytes(copy_bytes).expect("required staged bytes");
+        assert_eq!(
+            required,
+            copy_bytes
+                + (copy_bytes / COPY_CAPACITY_HEADROOM_DIVISOR + 1)
+                + COPY_CAPACITY_FIXED_HEADROOM_BYTES
+        );
+        let parent = Path::new("/simulated-capacity-parent");
+        assert!(matches!(
+            admit_known_capacity(parent, required, required - 1),
+            Err(DataRecoveryError::InsufficientFreeSpace {
+                path,
+                required: actual_required,
+                available,
+            }) if path == parent && actual_required == required && available == required - 1
+        ));
+        admit_known_capacity(parent, required, required).expect("exact capacity accepted");
+    }
+
+    #[test]
+    fn staging_capacity_calculation_rejects_overflow() {
+        assert!(matches!(
+            staging_required_bytes(u64::MAX),
+            Err(DataRecoveryError::CapacityOverflow)
+        ));
+    }
+
+    #[test]
+    fn backup_capacity_excludes_uncatalogued_pack_and_symlink_files() {
+        let (temporary, store) = create_fixture();
+        let before = store.backup_copy_bytes().expect("catalogued copy bytes");
+        let sha = store.packs_dir().join("sha256");
+        fs::create_dir_all(&sha).expect("pack directory");
+        fs::write(sha.join("orphan.sqlite.zst"), vec![0_u8; 4096]).expect("write orphan pack");
+        let outside = temporary.path().join("outside-pack");
+        fs::write(&outside, b"must not be counted through symlink").expect("write outside");
+        std::os::unix::fs::symlink(&outside, sha.join("linked.sqlite.zst"))
+            .expect("create capacity symlink");
+
+        assert_eq!(
+            store
+                .backup_copy_bytes()
+                .expect("unchanged exact copy bytes"),
+            before
+        );
     }
 
     fn publish_schema_22_fixture(store: &HubStore) -> (SyncManifest, SignedNoOpState) {

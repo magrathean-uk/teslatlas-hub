@@ -111,11 +111,10 @@ final class ImportSheetController: NSWindowController {
             alert.runModal()
             return
         }
-        guard !sourceField.stringValue.contains("@") else {
-            let alert = NSAlert()
-            alert.messageText = "Source must not contain inline credentials"
-            alert.informativeText = "Use the password file field. Secrets never go in command arguments."
-            alert.runModal()
+        do {
+            try HubController.validateMigrationSource(sourceField.stringValue)
+        } catch {
+            NSAlert(error: error).runModal()
             return
         }
         let confirmation = NSAlert()

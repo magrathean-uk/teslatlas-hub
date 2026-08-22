@@ -655,7 +655,7 @@ mod tests {
             r#"{"osm_type":"node","osm_id":7,"display_name":"Home","name":"Home","lat":"51.0001","lon":"-0.1001","address":{"road":"Home Road","neighbourhood":"Village","city":"London","postcode":"SW1A 1AA","state":"England","country":"United Kingdom"}}"#,
             1,
         );
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::private_tempdir().unwrap();
         let store = HubStore::initialize(temp.path()).unwrap();
         let geocoder = Geocoder::for_test(&config(endpoint)).unwrap();
         let point = Wgs84Point::new(51.0, -0.1).unwrap();

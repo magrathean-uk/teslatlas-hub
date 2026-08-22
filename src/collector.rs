@@ -4640,7 +4640,7 @@ mod tests {
         use crate::fake_tesla::{AdvanceMode, FIXTURE_EID, FakeTeslaSource};
 
         crate::crypto::install_default_provider();
-        let temporary = tempfile::tempdir().expect("temporary Hub");
+        let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
             .await
@@ -4697,7 +4697,7 @@ mod tests {
 
     #[test]
     fn persists_a_collected_snapshot_and_retries_without_duplication() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let received_at_ms = 1_800_000_000_000;
         let collection = ManualCollection {
@@ -4740,7 +4740,7 @@ mod tests {
 
     #[tokio::test]
     async fn disabled_geocoder_leaves_pending_jobs_untouched() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let source = store
             .register_source(&SourceDescriptor::new("test", "geocoder-disabled"), 1_000)
@@ -4812,7 +4812,7 @@ mod tests {
 
     #[tokio::test]
     async fn supervised_heartbeat_renews_during_idle_and_publishes_auth_recovery() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let lease = store
             .acquire_supervised_collector_lease(current_epoch_millis().expect("clock"))
@@ -4878,7 +4878,7 @@ mod tests {
 
     #[tokio::test]
     async fn supervised_heartbeat_survives_temporary_catalogue_write_rejection() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let lease = store
             .acquire_supervised_collector_lease(current_epoch_millis().expect("clock"))
@@ -4984,7 +4984,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_auth_rejection_fences_later_owner_api_success_until_healthy_stream() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
         let vehicle_id = vehicle.id;
@@ -5051,7 +5051,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_drain_budget_leaves_backlog_for_next_collection_turn() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let vehicle_id = VehicleId::from_test(19);
         let mut scheduler = VehicleScheduler::new(test_cadence(), Instant::now());
@@ -5902,7 +5902,7 @@ mod tests {
 
     #[test]
     fn compatibility_collection_publishes_a_real_car_only_phone_snapshot() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let collected_at_ms = 1_800_000_000_000;
         let collection = ManualCollection {
@@ -5991,7 +5991,7 @@ mod tests {
 
     #[test]
     fn near_limit_collection_compacts_live_suffix_before_consuming_the_next_slot() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let cursor_key = CursorKey::from_bytes([18; 32]);
         let now = 1_800_000_000_000_i64;
@@ -6180,7 +6180,7 @@ mod tests {
 
     #[test]
     fn outbox_uses_sparse_delta_after_immutable_base_and_preserves_base_pack() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let cursor_key = CursorKey::from_bytes([17; 32]);
         let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
@@ -6448,7 +6448,7 @@ mod tests {
 
     #[test]
     fn outbox_remains_scheduled_until_every_bounded_mutation_batch_is_published() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let cursor_key = CursorKey::from_bytes([23; 32]);
         let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
@@ -6603,7 +6603,7 @@ mod tests {
 
     #[test]
     fn sparse_live_metadata_preserves_durable_car_and_new_pack_metadata_after_restart() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let vehicle = Vehicle::for_test(9, "5YJFULLVIN123456", "online");
         let full = ManualCollection {
@@ -6734,7 +6734,7 @@ mod tests {
 
     #[test]
     fn live_publication_includes_v2_state_and_update_history() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
         let t0 = 1_800_000_000_000_i64;
@@ -6880,7 +6880,7 @@ mod tests {
 
     #[test]
     fn synthetic_drive_and_charge_survive_mid_session_restart() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let t0 = 1_800_000_500_000_i64;
         let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
@@ -7193,7 +7193,7 @@ mod tests {
         };
 
         crate::crypto::install_default_provider();
-        let temporary = tempfile::tempdir().expect("temporary Hub");
+        let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         seed_supervised_restart_import(&store);
 
@@ -7341,7 +7341,7 @@ mod tests {
         };
 
         crate::crypto::install_default_provider();
-        let temporary = tempfile::tempdir().expect("temporary Hub");
+        let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let fake = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
             .await
@@ -7819,7 +7819,7 @@ mod tests {
 
     #[test]
     fn offline_discovery_event_materialises_timed_out_drive() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let now = current_epoch_millis().expect("clock");
         let last_position = now - 15 * 60 * 1_000;
@@ -8250,7 +8250,7 @@ mod tests {
 
     #[test]
     fn stream_watermark_rejects_duplicate_and_old_frames_after_restart() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let vehicle_id = VehicleId::from_test(9);
         let first_timestamp = current_epoch_millis().expect("clock") - 60_000;
         let update = |timestamp_ms: i64, odometer: f64| crate::tesla_stream::StreamUpdate {
@@ -8325,7 +8325,7 @@ mod tests {
 
     #[test]
     fn asleep_stream_frame_without_power_only_updates_pre_online_state() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let now = Instant::now();
         let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "asleep");
@@ -8414,7 +8414,7 @@ mod tests {
             StreamFaultPoint::Commit,
         ];
         for (index, point) in points.into_iter().enumerate() {
-            let temp = tempfile::tempdir().expect("temporary store");
+            let temp = crate::private_tempdir().expect("temporary store");
             let store = HubStore::initialize(temp.path()).expect("store");
             let vehicle_id = VehicleId::from_test(index as u64 + 40);
             let timestamp = current_epoch_millis().expect("clock") - 60_000;
@@ -8478,7 +8478,7 @@ mod tests {
 
     #[test]
     fn concurrent_same_timestamp_has_one_committed_winner_and_restart_is_idempotent() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let vehicle_id = VehicleId::from_test(90);
         let timestamp = current_epoch_millis().expect("clock") - 60_000;
@@ -8700,7 +8700,7 @@ mod tests {
 
     #[tokio::test]
     async fn terrain_pass_uses_the_safe_cache_resolver() {
-        let data = tempfile::tempdir().expect("data");
+        let data = crate::private_tempdir().expect("data");
         let store = HubStore::initialize(data.path()).expect("store");
         let options = crate::terrain_cache::TerrainCacheOptions::from_config(
             &TerrainConfig::default(),
@@ -8726,7 +8726,7 @@ mod tests {
 
     #[tokio::test]
     async fn terrain_startup_failure_is_nonfatal_with_runtime_admission() {
-        let data = tempfile::tempdir().expect("data");
+        let data = crate::private_tempdir().expect("data");
         let config = TerrainConfig {
             enabled: true,
             min_free_bytes: 0,
@@ -8755,7 +8755,7 @@ mod tests {
 
     #[tokio::test]
     async fn disabled_terrain_worker_does_not_open_store_or_cache() {
-        let root = tempfile::tempdir().expect("root");
+        let root = crate::private_tempdir().expect("root");
         let data = root.path().join("hub-data");
         let config = TerrainConfig {
             enabled: false,

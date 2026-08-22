@@ -53,8 +53,10 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 50;
+pub const SCHEMA_VERSION: i32 = 52;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
+/// Paired-device bearers are renewable, but never permanent.
+pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 
 /// A supervised collector renews this durable lease from an independent task.
 /// The interval is deliberately much shorter than the lease so a short SQLite
@@ -238,12 +240,14 @@ pub struct TeslaMateLegacyTokenStore {
     refresh: Vec<u8>,
     expires_at: i64,
     next_refresh_at: i64,
+    #[zeroize(skip)]
+    credential_generation: Option<Uuid>,
 }
 
 impl TeslaMateLegacyTokenStore {
     /// Imported TeslaMate ciphertext has no Hub-owned refresh schedule yet.
     pub fn imported(access: Vec<u8>, refresh: Vec<u8>) -> Result<Self, StoreError> {
-        Self::new(access, refresh, 0, 0)
+        Self::new(access, refresh, 0, 0, None)
     }
 
     /// A refreshed pair must have a positive, ordered refresh schedule.
@@ -253,7 +257,7 @@ impl TeslaMateLegacyTokenStore {
         expires_at: i64,
         next_refresh_at: i64,
     ) -> Result<Self, StoreError> {
-        let value = Self::new(access, refresh, expires_at, next_refresh_at)?;
+        let value = Self::new(access, refresh, expires_at, next_refresh_at, None)?;
         if value.expires_at == 0 {
             return Err(StoreError::InvalidTeslaMateTokenSchedule);
         }
@@ -265,6 +269,7 @@ impl TeslaMateLegacyTokenStore {
         refresh: Vec<u8>,
         expires_at: i64,
         next_refresh_at: i64,
+        credential_generation: Option<Uuid>,
     ) -> Result<Self, StoreError> {
         if access.is_empty() || refresh.is_empty() {
             return Err(StoreError::TeslaMateTokenPairEmpty);
@@ -284,6 +289,7 @@ impl TeslaMateLegacyTokenStore {
             refresh,
             expires_at,
             next_refresh_at,
+            credential_generation,
         })
     }
 
@@ -304,6 +310,26 @@ impl TeslaMateLegacyTokenStore {
     pub const fn next_refresh_at(&self) -> i64 {
         self.next_refresh_at
     }
+
+    pub(crate) const fn credential_generation(&self) -> Option<Uuid> {
+        self.credential_generation
+    }
+
+    pub(crate) fn with_credential_generation(
+        &self,
+        credential_generation: Uuid,
+    ) -> Result<Self, StoreError> {
+        if credential_generation.is_nil() {
+            return Err(StoreError::InvalidLegacyRefreshGeneration);
+        }
+        Self::new(
+            self.access.clone(),
+            self.refresh.clone(),
+            self.expires_at,
+            self.next_refresh_at,
+            Some(credential_generation),
+        )
+    }
 }
 
 impl std::fmt::Debug for TeslaMateLegacyTokenStore {
@@ -314,6 +340,10 @@ impl std::fmt::Debug for TeslaMateLegacyTokenStore {
             .field("refresh", &"[redacted]")
             .field("expires_at", &self.expires_at)
             .field("next_refresh_at", &self.next_refresh_at)
+            .field(
+                "credential_generation",
+                &self.credential_generation.map(|_| "[redacted]"),
+            )
             .finish()
     }
 }
@@ -998,6 +1028,13 @@ pub(crate) struct PublicationGate {
     _file: File,
 }
 
+/// One catalogue/pack backup point held under the publication gate from
+/// capacity admission through the final immutable copy.
+pub(crate) struct HubBackupSnapshot<'a> {
+    store: &'a HubStore,
+    publication_gate: PublicationGate,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PackCleanupOutcome {
     Retained,
@@ -1016,8 +1053,8 @@ impl HubStore {
         let data_dir = data_dir.as_ref();
         let data_dir_was_absent = !data_dir.exists();
         fs::create_dir_all(data_dir).map_err(StoreError::CreateDataDir)?;
-        // Existing roots are admitted as-is; only newly-created roots receive
-        // the private one-user mode here.
+        // New roots receive the private one-user mode; existing roots must
+        // already satisfy the same owner/mode contract or startup fails closed.
         if data_dir_was_absent {
             fs::set_permissions(
                 data_dir,
@@ -1025,6 +1062,8 @@ impl HubStore {
             )
             .map_err(StoreError::ProtectDataDir)?;
         }
+        validate_private_store_directory(data_dir)
+            .map_err(|()| StoreError::UnsafeDataDir(data_dir.to_path_buf()))?;
         let packs_dir = data_dir.join("packs");
         let packs_dir_was_absent = !packs_dir.exists();
         fs::create_dir_all(&packs_dir).map_err(StoreError::CreatePacksDir)?;
@@ -1035,6 +1074,8 @@ impl HubStore {
             )
             .map_err(StoreError::ProtectPacksDir)?;
         }
+        validate_private_store_directory(&packs_dir)
+            .map_err(|()| StoreError::UnsafePacksDir(packs_dir.clone()))?;
 
         let store = Self {
             database_path: data_dir.join("hub.sqlite"),
@@ -1350,25 +1391,94 @@ impl HubStore {
         &self,
         tokens: &TeslaMateLegacyTokenStore,
     ) -> Result<(), StoreError> {
+        let replacement_generation = tokens
+            .credential_generation()
+            .map(|value| value.to_string());
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        if let Some(generation) = replacement_generation.as_ref() {
+            let consumed: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM legacy_refresh_input_fences
+                         WHERE input_credential_generation = ?1
+                    )",
+                    params![generation],
+                    |row| row.get(0),
+                )
+                .map_err(StoreError::LegacyRefreshReceipt)?;
+            if consumed {
+                return Err(StoreError::LegacyRefreshOutcomeUnknown);
+            }
+        }
+        let unresolved_inputs = transaction
+            .prepare(
+                "SELECT b.input_credential_generation
+                   FROM legacy_refresh_receipt_bindings AS b
+                   JOIN outbound_request_receipts AS r ON r.id = b.receipt_id
+                  WHERE r.outcome = 'started'",
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(StoreError::LegacyRefreshReceipt)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        if !unresolved_inputs.is_empty() {
+            let current_generation: Option<String> = transaction
+                .query_row(
+                    "SELECT credential_generation FROM teslamate_legacy_tokens
+                      WHERE singleton_id = 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(StoreError::TeslaMateTokenStore)?
+                .flatten();
+            if unresolved_inputs.len() != 1
+                || current_generation.as_ref() != unresolved_inputs.first()
+                || replacement_generation.is_none()
+                || replacement_generation.as_ref() == unresolved_inputs.first()
+            {
+                return Err(StoreError::LegacyRefreshOutcomeUnknown);
+            }
+            // An explicit setup/import with a different plaintext refresh
+            // authority is the operator recovery boundary. Random encryption
+            // nonces cannot make the same consumed refresh token look new.
+            let completed_at_ms = outbound_request_clock_ms()?;
+            transaction
+                .execute(
+                    "UPDATE outbound_request_receipts
+                        SET completed_at_ms = MAX(?1, started_at_ms),
+                            duration_ms = MAX(?1, started_at_ms) - started_at_ms,
+                            outcome = 'cancelled'
+                      WHERE outcome = 'started'
+                        AND id IN (
+                            SELECT receipt_id FROM legacy_refresh_receipt_bindings
+                        )",
+                    params![completed_at_ms],
+                )
+                .map_err(StoreError::LegacyRefreshReceipt)?;
+        }
         transaction
             .execute(
                 "INSERT INTO teslamate_legacy_tokens(
-                    singleton_id, access, refresh, expires_at, next_refresh_at
-                 ) VALUES (1, ?1, ?2, ?3, ?4)
+                    singleton_id, access, refresh, expires_at, next_refresh_at,
+                    credential_generation
+                 ) VALUES (1, ?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(singleton_id) DO UPDATE SET
                     access = excluded.access,
                     refresh = excluded.refresh,
                     expires_at = excluded.expires_at,
-                    next_refresh_at = excluded.next_refresh_at",
+                    next_refresh_at = excluded.next_refresh_at,
+                    credential_generation = excluded.credential_generation",
                 params![
                     tokens.access(),
                     tokens.refresh(),
                     tokens.expires_at(),
                     tokens.next_refresh_at(),
+                    replacement_generation,
                 ],
             )
             .map_err(StoreError::TeslaMateTokenStore)?;
@@ -1377,23 +1487,387 @@ impl HubStore {
             .map_err(StoreError::TeslaMateTokenStore)
     }
 
+    /// Bind a legacy row to the deterministic plaintext refresh identity after
+    /// authenticated decryption. This is the one-time v51-to-v52 upgrade path.
+    pub(crate) fn bind_teslamate_legacy_credential_generation(
+        &self,
+        tokens: &TeslaMateLegacyTokenStore,
+        credential_generation: Uuid,
+    ) -> Result<(), StoreError> {
+        if credential_generation.is_nil() {
+            return Err(StoreError::InvalidLegacyRefreshGeneration);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let current: Option<(Vec<u8>, Vec<u8>, Option<String>)> = transaction
+            .query_row(
+                "SELECT access, refresh, credential_generation
+                   FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(StoreError::TeslaMateTokenStore)?;
+        let Some((access, refresh, stored_generation)) = current else {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        };
+        let expected = credential_generation.to_string();
+        if access != tokens.access() || refresh != tokens.refresh() {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        match stored_generation {
+            Some(stored) if stored == expected => {}
+            Some(_) => return Err(StoreError::LegacyRefreshOutcomeUnknown),
+            None => {
+                let changed = transaction
+                    .execute(
+                        "UPDATE teslamate_legacy_tokens
+                            SET credential_generation = ?1
+                          WHERE singleton_id = 1 AND credential_generation IS NULL
+                            AND access = ?2 AND refresh = ?3",
+                        params![expected, tokens.access(), tokens.refresh()],
+                    )
+                    .map_err(StoreError::TeslaMateTokenStore)?;
+                if changed != 1 {
+                    return Err(StoreError::LegacyRefreshOutcomeUnknown);
+                }
+            }
+        }
+        transaction
+            .commit()
+            .map_err(StoreError::TeslaMateTokenStore)
+    }
+
+    /// Reserve the single-use legacy refresh input before any token HTTP
+    /// request. The receipt, input fence, and binding commit together.
+    pub(crate) fn begin_legacy_refresh(
+        &self,
+        input_generation: Uuid,
+    ) -> Result<OutboundRequestReceiptId, StoreError> {
+        if input_generation.is_nil() {
+            return Err(StoreError::InvalidLegacyRefreshGeneration);
+        }
+        let started_at_ms = outbound_request_clock_ms()?;
+        let correlation_id = Uuid::new_v4();
+        let attempt_id = Uuid::new_v4();
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let current_generation: Option<String> = transaction
+            .query_row(
+                "SELECT credential_generation FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::TeslaMateTokenStore)?
+            .flatten();
+        if current_generation.as_deref() != Some(input_generation.to_string().as_str()) {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        let unresolved: bool = transaction
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1
+                      FROM outbound_request_receipts AS r
+                      JOIN legacy_refresh_receipt_bindings AS b
+                        ON b.receipt_id = r.id
+                     WHERE r.transport = 'legacy_auth'
+                       AND r.operation = 'token_refresh'
+                       AND r.outcome = 'started'
+                )",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        if unresolved {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        let fenced: bool = transaction
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM legacy_refresh_input_fences
+                     WHERE input_credential_generation = ?1
+                )",
+                params![input_generation.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        if fenced {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        ensure_outbound_request_capacity(&transaction)?;
+        let fence_count: i64 = transaction
+            .query_row(
+                "SELECT COUNT(*) FROM legacy_refresh_input_fences",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        if fence_count >= MAX_LEGACY_REFRESH_INPUT_FENCES {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        transaction
+            .execute(
+                "INSERT INTO outbound_request_receipts(
+                    correlation_id, started_at_ms, vehicle_tesla_id, transport,
+                    operation, safety_class, precondition, outcome
+                 ) VALUES (?1, ?2, NULL, 'legacy_auth', 'token_refresh',
+                           'non_wake_endpoint', 'not_required', 'started')",
+                params![correlation_id.to_string(), started_at_ms],
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        let receipt_id = OutboundRequestReceiptId(transaction.last_insert_rowid());
+        transaction
+            .execute(
+                "INSERT INTO legacy_refresh_input_fences(input_credential_generation)
+                 VALUES (?1)",
+                params![input_generation.to_string()],
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        transaction
+            .execute(
+                "INSERT INTO legacy_refresh_receipt_bindings(
+                    receipt_id, attempt_id, input_credential_generation
+                 ) VALUES (?1, ?2, ?3)",
+                params![
+                    receipt_id.0,
+                    attempt_id.to_string(),
+                    input_generation.to_string()
+                ],
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        transaction
+            .commit()
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        Ok(receipt_id)
+    }
+
+    /// Atomically publish the encrypted successor and close its refresh
+    /// receipt. A crash before this commit leaves the input fenced and the
+    /// started receipt unresolved, so restart refuses another refresh.
+    pub(crate) fn complete_legacy_refresh(
+        &self,
+        receipt_id: OutboundRequestReceiptId,
+        input_generation: Uuid,
+        output_generation: Uuid,
+        tokens: &TeslaMateLegacyTokenStore,
+    ) -> Result<(), StoreError> {
+        if receipt_id.0 <= 0
+            || input_generation.is_nil()
+            || output_generation.is_nil()
+            || input_generation == output_generation
+            || tokens.credential_generation() != Some(output_generation)
+        {
+            return Err(StoreError::InvalidLegacyRefreshGeneration);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let stored_input: String = transaction
+            .query_row(
+                "SELECT b.input_credential_generation
+                   FROM legacy_refresh_receipt_bindings AS b
+                   JOIN outbound_request_receipts AS r ON r.id = b.receipt_id
+                  WHERE b.receipt_id = ?1 AND r.outcome = 'started'",
+                params![receipt_id.0],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::LegacyRefreshReceipt)?
+            .ok_or(StoreError::LegacyRefreshOutcomeUnknown)?;
+        if stored_input != input_generation.to_string() {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        let current_generation: Option<String> = transaction
+            .query_row(
+                "SELECT credential_generation FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::TeslaMateTokenStore)?
+            .flatten();
+        if current_generation.as_deref() != Some(input_generation.to_string().as_str()) {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        let output_consumed: bool = transaction
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM legacy_refresh_input_fences
+                     WHERE input_credential_generation = ?1
+                )",
+                params![output_generation.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        if output_consumed {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        transaction
+            .execute(
+                "INSERT INTO teslamate_legacy_tokens(
+                    singleton_id, access, refresh, expires_at, next_refresh_at,
+                    credential_generation
+                 ) VALUES (1, ?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(singleton_id) DO UPDATE SET
+                    access = excluded.access,
+                    refresh = excluded.refresh,
+                    expires_at = excluded.expires_at,
+                    next_refresh_at = excluded.next_refresh_at,
+                    credential_generation = excluded.credential_generation",
+                params![
+                    tokens.access(),
+                    tokens.refresh(),
+                    tokens.expires_at(),
+                    tokens.next_refresh_at(),
+                    output_generation.to_string(),
+                ],
+            )
+            .map_err(StoreError::TeslaMateTokenStore)?;
+        let bound = transaction
+            .execute(
+                "UPDATE legacy_refresh_receipt_bindings
+                    SET output_credential_generation = ?2
+                  WHERE receipt_id = ?1 AND output_credential_generation IS NULL",
+                params![receipt_id.0, output_generation.to_string()],
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        if bound != 1 {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        let completed_at_ms = outbound_request_clock_ms()?.max(
+            transaction
+                .query_row(
+                    "SELECT started_at_ms FROM outbound_request_receipts WHERE id = ?1",
+                    params![receipt_id.0],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(StoreError::LegacyRefreshReceipt)?,
+        );
+        let completed = transaction
+            .execute(
+                "UPDATE outbound_request_receipts
+                    SET completed_at_ms = ?2, duration_ms = ?2 - started_at_ms,
+                        outcome = 'success', http_status = 200
+                  WHERE id = ?1 AND outcome = 'started'",
+                params![receipt_id.0, completed_at_ms],
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        if completed != 1 {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        transaction
+            .commit()
+            .map_err(StoreError::LegacyRefreshReceipt)
+    }
+
+    /// Close a refresh intent only when no network request was sent.
+    pub(crate) fn cancel_unsent_legacy_refresh(
+        &self,
+        receipt_id: OutboundRequestReceiptId,
+        input_generation: Uuid,
+    ) -> Result<(), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let deleted = transaction
+            .execute(
+                "DELETE FROM legacy_refresh_receipt_bindings
+                  WHERE receipt_id = ?1 AND input_credential_generation = ?2
+                    AND EXISTS(
+                        SELECT 1 FROM outbound_request_receipts
+                         WHERE id = ?1 AND outcome = 'started'
+                    )",
+                params![receipt_id.0, input_generation.to_string()],
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        if deleted != 1 {
+            return Err(StoreError::LegacyRefreshOutcomeUnknown);
+        }
+        transaction
+            .execute(
+                "DELETE FROM legacy_refresh_input_fences WHERE input_credential_generation = ?1",
+                params![input_generation.to_string()],
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        let completed_at_ms = outbound_request_clock_ms()?;
+        transaction
+            .execute(
+                "UPDATE outbound_request_receipts
+                    SET completed_at_ms = MAX(?2, started_at_ms),
+                        duration_ms = MAX(?2, started_at_ms) - started_at_ms,
+                        outcome = 'cancelled'
+                  WHERE id = ?1 AND outcome = 'started'",
+                params![receipt_id.0, completed_at_ms],
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
+        transaction
+            .commit()
+            .map_err(StoreError::LegacyRefreshReceipt)
+    }
+
+    pub fn has_unresolved_legacy_refresh(&self) -> Result<bool, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1
+                      FROM outbound_request_receipts AS r
+                      JOIN legacy_refresh_receipt_bindings AS b
+                        ON b.receipt_id = r.id
+                     WHERE r.transport = 'legacy_auth'
+                       AND r.operation = 'token_refresh'
+                       AND r.outcome = 'started'
+                )",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)
+    }
+
     /// Load the sole persisted TeslaMate token pair without decrypting it.
     pub fn load_teslamate_legacy_tokens(
         &self,
     ) -> Result<Option<TeslaMateLegacyTokenStore>, StoreError> {
         let connection = self.open()?;
-        let row: Option<(Vec<u8>, Vec<u8>, i64, i64)> = connection
+        let row: Option<(Vec<u8>, Vec<u8>, i64, i64, Option<String>)> = connection
             .query_row(
-                "SELECT access, refresh, expires_at, next_refresh_at
+                "SELECT access, refresh, expires_at, next_refresh_at, credential_generation
                  FROM teslamate_legacy_tokens WHERE singleton_id = 1",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
             )
             .optional()
             .map_err(StoreError::TeslaMateTokenStore)?;
-        row.map(|(access, refresh, expires_at, next_refresh_at)| {
-            TeslaMateLegacyTokenStore::new(access, refresh, expires_at, next_refresh_at)
-        })
+        row.map(
+            |(access, refresh, expires_at, next_refresh_at, generation)| {
+                let generation = generation
+                    .map(|value| Uuid::parse_str(&value))
+                    .transpose()
+                    .map_err(|_| StoreError::InvalidLegacyRefreshGeneration)?;
+                TeslaMateLegacyTokenStore::new(
+                    access,
+                    refresh,
+                    expires_at,
+                    next_refresh_at,
+                    generation,
+                )
+            },
+        )
         .transpose()
     }
 
@@ -1403,6 +1877,20 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        let completed_at_ms = outbound_request_clock_ms()?;
+        transaction
+            .execute(
+                "UPDATE outbound_request_receipts
+                    SET completed_at_ms = MAX(?1, started_at_ms),
+                        duration_ms = MAX(?1, started_at_ms) - started_at_ms,
+                        outcome = 'cancelled'
+                  WHERE outcome = 'started'
+                    AND id IN (
+                        SELECT receipt_id FROM legacy_refresh_receipt_bindings
+                    )",
+                params![completed_at_ms],
+            )
+            .map_err(StoreError::LegacyRefreshReceipt)?;
         transaction
             .execute(
                 "DELETE FROM teslamate_legacy_tokens WHERE singleton_id = 1",
@@ -1824,26 +2312,103 @@ impl HubStore {
         }
     }
 
+    /// Exact copy-byte admission for [`Self::backup_to`]. SQLite's online
+    /// backup copies the live page set; immutable packs and schema-2.2 no-op
+    /// files come from the same catalogue-selected sets used by the copier.
+    /// Unreferenced files are deliberately excluded.
+    fn backup_copy_bytes_with_gate(
+        &self,
+        _publication_gate: &PublicationGate,
+    ) -> Result<u64, StoreError> {
+        let connection = self.open()?;
+        let page_count: i64 = connection
+            .query_row("PRAGMA page_count", [], |row| row.get(0))
+            .map_err(StoreError::Query)?;
+        let page_size: i64 = connection
+            .query_row("PRAGMA page_size", [], |row| row.get(0))
+            .map_err(StoreError::Query)?;
+        let mut total = u64::try_from(page_count)
+            .ok()
+            .and_then(|pages| {
+                u64::try_from(page_size)
+                    .ok()
+                    .and_then(|size| pages.checked_mul(size))
+            })
+            .ok_or(StoreError::BackupCapacityOverflow)?;
+        for (_, _, expected_bytes) in
+            referenced_pack_rows_at(&connection, retired_lineage_clock_ms()?)?
+        {
+            total = total
+                .checked_add(
+                    u64::try_from(expected_bytes).map_err(|_| StoreError::PackSizeTooLarge)?,
+                )
+                .ok_or(StoreError::BackupCapacityOverflow)?;
+        }
+        let manifest_rows = connection
+            .prepare(
+                "SELECT manifest_json FROM sync_manifests
+                 WHERE json_extract(manifest_json, '$.mode') = 'full_snapshot'
+                 ORDER BY vehicle_id, head_sequence DESC, snapshot_id DESC",
+            )
+            .map_err(StoreError::Query)?
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)?;
+        let mut visited = HashSet::new();
+        for payload in manifest_rows {
+            let manifest = decode_manifest(payload)?;
+            if !visited.insert(manifest.vehicle_id) || manifest.schema != HUB_PROJECTION_SCHEMA_V3 {
+                continue;
+            }
+            let bytes = self
+                .schema_22_noop_for_snapshot(manifest.vehicle_id, manifest.snapshot_id)?
+                .ok_or(StoreError::Schema22NoOpNotFound)?;
+            total = total
+                .checked_add(
+                    u64::try_from(bytes.len()).map_err(|_| StoreError::BackupCapacityOverflow)?,
+                )
+                .ok_or(StoreError::BackupCapacityOverflow)?;
+        }
+        Ok(total)
+    }
+
+    pub(crate) fn begin_backup_snapshot(&self) -> Result<HubBackupSnapshot<'_>, StoreError> {
+        Ok(HubBackupSnapshot {
+            store: self,
+            publication_gate: self.try_acquire_publication_gate()?,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn backup_copy_bytes(&self) -> Result<u64, StoreError> {
+        self.begin_backup_snapshot()?.copy_bytes()
+    }
+
     /// Create a complete Hub-owned restore directory. The catalogue is copied
     /// first through SQLite's online backup API; immutable packs are then
     /// copied from the exact referenced set in that copied catalogue.
     pub fn backup_to(&self, destination: &Path) -> Result<(), StoreError> {
+        self.begin_backup_snapshot()?.copy_to(destination)
+    }
+
+    fn backup_to_with_gate(
+        &self,
+        destination: &Path,
+        publication_gate: &PublicationGate,
+    ) -> Result<(), StoreError> {
         if destination.exists() {
             return Err(StoreError::BackupDestinationExists(
                 destination.to_path_buf(),
             ));
         }
-        // Snapshot-keyed no-op files are outside SQLite. Hold the same gate
-        // as pair publication so the copied catalogue and copied sidecars
-        // describe one servable point in time.
-        let publication_gate = self.try_acquire_publication_gate()?;
         fs::create_dir(destination).map_err(StoreError::CreateBackupDirectory)?;
         fs::set_permissions(
             destination,
             fs::Permissions::from_mode(SHARED_DATA_DIRECTORY_MODE),
         )
         .map_err(StoreError::CreateBackupDirectory)?;
-        let result = self.backup_to_created_directory(destination, &publication_gate);
+        let result = self.backup_to_created_directory(destination, publication_gate);
         if result.is_err() {
             let _ = fs::remove_dir_all(destination);
         }
@@ -8212,16 +8777,18 @@ impl HubStore {
 
         let device_id = Uuid::new_v4();
         let access_token = DeviceAccessToken::generate();
+        let expires_at_ms = claimed_at_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS);
         transaction
             .execute(
                 "INSERT INTO paired_devices \
-                 (device_id, display_name, token_sha256, created_at_ms, last_authenticated_at_ms) \
-                 VALUES (?1, ?2, ?3, ?4, NULL)",
+                 (device_id, display_name, token_sha256, created_at_ms, expires_at_ms, revoked_at_ms, last_authenticated_at_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL)",
                 params![
                     device_id.to_string(),
                     device_name,
                     access_token.digest().as_slice(),
                     claimed_at_ms,
+                    expires_at_ms,
                 ],
             )
             .map_err(StoreError::ClaimPairing)?;
@@ -8237,6 +8804,7 @@ impl HubStore {
         Ok(PairedDeviceAccess {
             device_id,
             access_token,
+            expires_at_ms,
         })
     }
 
@@ -8247,19 +8815,128 @@ impl HubStore {
         &self,
         access_token: &str,
     ) -> Result<Option<PairedDeviceRecord>, StoreError> {
+        let now_ms = retired_lineage_clock_ms()?;
+        self.authenticate_device_at(access_token, now_ms)
+    }
+
+    pub fn authenticate_device_at(
+        &self,
+        access_token: &str,
+        now_ms: i64,
+    ) -> Result<Option<PairedDeviceRecord>, StoreError> {
         let Some(token_digest) = DeviceAccessToken::digest_from_wire(access_token) else {
             return Ok(None);
         };
         let connection = self.open()?;
         connection
             .query_row(
-                "SELECT device_id, display_name, created_at_ms, last_authenticated_at_ms \
-                 FROM paired_devices WHERE token_sha256 = ?1",
-                params![token_digest.as_slice()],
+                "SELECT device_id, display_name, created_at_ms, expires_at_ms, revoked_at_ms, last_authenticated_at_ms \
+                 FROM paired_devices
+                  WHERE token_sha256 = ?1 AND revoked_at_ms IS NULL AND expires_at_ms > ?2",
+                params![token_digest.as_slice(), now_ms],
                 paired_device_from_row,
             )
             .optional()
             .map_err(StoreError::Query)
+    }
+
+    pub fn rotate_device(
+        &self,
+        access_token: &str,
+        now_ms: i64,
+    ) -> Result<PairedDeviceAccess, StoreError> {
+        let Some(token_digest) = DeviceAccessToken::digest_from_wire(access_token) else {
+            return Err(StoreError::PairingRejected);
+        };
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let device: Option<(Uuid, String)> = transaction
+            .query_row(
+                "SELECT device_id, display_name FROM paired_devices
+                 WHERE token_sha256 = ?1 AND revoked_at_ms IS NULL AND expires_at_ms > ?2",
+                params![token_digest.as_slice(), now_ms],
+                |row| {
+                    let id: String = row.get(0)?;
+                    let id = Uuid::parse_str(&id).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?;
+                    Ok((id, row.get(1)?))
+                },
+            )
+            .optional()
+            .map_err(StoreError::RotateDevice)?;
+        let Some((device_id, _display_name)) = device else {
+            return Err(StoreError::PairingRejected);
+        };
+        let replacement = DeviceAccessToken::generate();
+        let expires_at_ms = now_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS);
+        let changed = transaction
+            .execute(
+                "UPDATE paired_devices
+                 SET token_sha256 = ?1, expires_at_ms = ?2, last_authenticated_at_ms = ?3
+                 WHERE device_id = ?4 AND token_sha256 = ?5
+                   AND revoked_at_ms IS NULL AND expires_at_ms > ?3",
+                params![
+                    replacement.digest().as_slice(),
+                    expires_at_ms,
+                    now_ms,
+                    device_id.to_string(),
+                    token_digest.as_slice(),
+                ],
+            )
+            .map_err(StoreError::RotateDevice)?;
+        if changed != 1 {
+            return Err(StoreError::PairingRejected);
+        }
+        transaction.commit().map_err(StoreError::RotateDevice)?;
+        Ok(PairedDeviceAccess {
+            device_id,
+            access_token: replacement,
+            expires_at_ms,
+        })
+    }
+
+    pub fn list_paired_devices(&self) -> Result<Vec<PairedDeviceRecord>, StoreError> {
+        let connection = self.open()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT device_id, display_name, created_at_ms, expires_at_ms, revoked_at_ms, last_authenticated_at_ms
+                 FROM paired_devices ORDER BY created_at_ms ASC, device_id ASC",
+            )
+            .map_err(StoreError::Query)?;
+        statement
+            .query_map([], paired_device_from_row)
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)
+    }
+
+    pub fn revoke_device(&self, device_id: Uuid) -> Result<(), StoreError> {
+        self.revoke_device_at(device_id, retired_lineage_clock_ms()?)
+    }
+
+    pub fn revoke_device_at(&self, device_id: Uuid, revoked_at_ms: i64) -> Result<(), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let changed = transaction
+            .execute(
+                "UPDATE paired_devices SET revoked_at_ms = COALESCE(revoked_at_ms, ?1)
+                 WHERE device_id = ?2",
+                params![revoked_at_ms, device_id.to_string()],
+            )
+            .map_err(StoreError::RevokeDevice)?;
+        if changed != 1 {
+            return Err(StoreError::PairingRejected);
+        }
+        transaction.commit().map_err(StoreError::RevokeDevice)
     }
 
     /// Return the vehicles this Hub has published. Pairing currently grants a
@@ -8894,6 +9571,19 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        let reserved_legacy_refresh: bool = transaction
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM legacy_refresh_receipt_bindings
+                     WHERE receipt_id = ?1
+                )",
+                params![receipt_id.0],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::OutboundRequestReceipt)?;
+        if reserved_legacy_refresh {
+            return Err(StoreError::ReservedLegacyRefreshReceipt);
+        }
         let started_at_ms: Option<i64> = transaction
             .query_row(
                 "SELECT started_at_ms FROM outbound_request_receipts
@@ -8939,9 +9629,8 @@ impl HubStore {
             .map_err(StoreError::OutboundRequestReceipt)
     }
 
-    // Legacy refresh receipt journaling was removed. Hub refresh persistence is
-    // now one atomic replacement of the encrypted TeslaMate token pair.
-    /// attempt. A process crash or task abort deliberately leaves this row
+    /// Start a stream-session attempt. A process crash or task abort
+    /// deliberately leaves this row
     /// unresolved. Normal code paths terminalize it explicitly, distinguishing
     /// an orderly unsubscribe from cancellation, transport loss, or failure.
     pub fn begin_stream_session(
@@ -11949,6 +12638,30 @@ impl HubStore {
     }
 }
 
+impl HubBackupSnapshot<'_> {
+    pub(crate) fn copy_bytes(&self) -> Result<u64, StoreError> {
+        self.store
+            .backup_copy_bytes_with_gate(&self.publication_gate)
+    }
+
+    pub(crate) fn copy_to(&self, destination: &Path) -> Result<(), StoreError> {
+        self.store
+            .backup_to_with_gate(destination, &self.publication_gate)
+    }
+}
+
+fn validate_private_store_directory(path: &Path) -> Result<(), ()> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| ())?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_dir()
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || metadata.permissions().mode() & 0o777 != SHARED_DATA_DIRECTORY_MODE
+    {
+        return Err(());
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
 pub struct RepairReport {
     pub status: String,
@@ -12585,6 +13298,11 @@ impl OutboundRequestStart {
         if self.vehicle_tesla_id.is_some_and(|id| id <= 0) {
             return Err(StoreError::InvalidOutboundRequestVehicleId);
         }
+        if self.transport == OutboundRequestTransport::LegacyAuth
+            && self.operation == OutboundRequestOperation::TokenRefresh
+        {
+            return Err(StoreError::ReservedLegacyRefreshReceipt);
+        }
         if self.operation == OutboundRequestOperation::VehicleData
             && (self.safety_class != OutboundRequestSafetyClass::ConditionalRead
                 || self.precondition != OutboundRequestPrecondition::StreamPowerConfirmed)
@@ -13200,7 +13918,9 @@ fn paired_device_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PairedDev
         device_id,
         display_name: row.get(1)?,
         created_at_ms: row.get(2)?,
-        last_authenticated_at_ms: row.get(3)?,
+        expires_at_ms: row.get(3)?,
+        revoked_at_ms: row.get(4)?,
+        last_authenticated_at_ms: row.get(5)?,
     })
 }
 
@@ -13494,7 +14214,10 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
                     display_name TEXT NOT NULL,
                     token_sha256 BLOB NOT NULL UNIQUE CHECK(length(token_sha256) = 32),
                     created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+                    expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > created_at_ms),
+                    revoked_at_ms INTEGER,
                     last_authenticated_at_ms INTEGER,
+                    CHECK(revoked_at_ms IS NULL OR revoked_at_ms >= created_at_ms),
                     CHECK(last_authenticated_at_ms IS NULL OR last_authenticated_at_ms >= created_at_ms),
                     CHECK(length(CAST(display_name AS BLOB)) BETWEEN 1 AND 128)
                 ) STRICT;
@@ -14680,10 +15403,8 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
             .execute_batch(&format!(
                 "
                 BEGIN IMMEDIATE;
-                -- Historical pre-parity builds used this compact table as a
-                -- permanent refresh-input fence. Keep it for schema and
-                -- downgrade compatibility; parity builds never add rows or
-                -- consult it when deciding whether TeslaMate would retry.
+                -- Permanent refresh-input fence. Forgetting a consumed
+                -- single-use token could authorize an unsafe retry.
                 CREATE TABLE legacy_refresh_input_fences (
                     input_credential_generation TEXT PRIMARY KEY COLLATE NOCASE
                         CHECK(length(input_credential_generation) = 36)
@@ -14830,6 +15551,120 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
             )
             .map_err(StoreError::Migrate)?;
         version = 50;
+    }
+
+    if version == 50 {
+        // Historical paired bearers had no expiry or revocation state. Give
+        // each one a finite migration grace period in one atomic replacement.
+        let expires_at_ms =
+            retired_lineage_clock_ms()?.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS);
+        connection
+            .execute_batch(&format!(
+                "BEGIN IMMEDIATE;
+                CREATE TABLE paired_devices_v51 (
+                    device_id TEXT PRIMARY KEY NOT NULL,
+                    display_name TEXT NOT NULL,
+                    token_sha256 BLOB NOT NULL UNIQUE CHECK(length(token_sha256) = 32),
+                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+                    expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > created_at_ms),
+                    revoked_at_ms INTEGER,
+                    last_authenticated_at_ms INTEGER,
+                    CHECK(revoked_at_ms IS NULL OR revoked_at_ms >= created_at_ms),
+                    CHECK(last_authenticated_at_ms IS NULL OR last_authenticated_at_ms >= created_at_ms),
+                    CHECK(length(CAST(display_name AS BLOB)) BETWEEN 1 AND 128)
+                ) STRICT;
+                INSERT INTO paired_devices_v51(
+                    device_id, display_name, token_sha256, created_at_ms,
+                    expires_at_ms, revoked_at_ms, last_authenticated_at_ms
+                )
+                SELECT device_id, display_name, token_sha256,
+                       CASE WHEN created_at_ms = 9223372036854775807
+                            THEN 9223372036854775806 ELSE created_at_ms END,
+                       CASE WHEN created_at_ms = 9223372036854775807
+                            THEN 9223372036854775807
+                            WHEN {expires_at_ms} > created_at_ms
+                            THEN {expires_at_ms}
+                            ELSE created_at_ms + 1 END,
+                       NULL, last_authenticated_at_ms
+                  FROM paired_devices;
+                DROP TABLE paired_devices;
+                ALTER TABLE paired_devices_v51 RENAME TO paired_devices;
+                PRAGMA user_version = 51;
+                COMMIT;",
+                expires_at_ms = expires_at_ms
+            ))
+            .map_err(StoreError::Migrate)?;
+        version = 51;
+    }
+
+    if version == 51 {
+        let migration_completed_at_ms = outbound_request_clock_ms()?;
+        connection
+            .execute_batch("BEGIN IMMEDIATE;")
+            .map_err(StoreError::Migrate)?;
+        let migration = (|| -> Result<(), rusqlite::Error> {
+            let has_generation: bool = connection.query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM pragma_table_info('teslamate_legacy_tokens')
+                     WHERE name = 'credential_generation'
+                 )",
+                [],
+                |row| row.get(0),
+            )?;
+            connection.execute_batch(
+                "CREATE TABLE teslamate_legacy_tokens_v52 (
+                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+                    access BLOB NOT NULL CHECK(length(access) > 0),
+                    refresh BLOB NOT NULL CHECK(length(refresh) > 0),
+                    expires_at INTEGER NOT NULL CHECK(expires_at >= 0),
+                    next_refresh_at INTEGER NOT NULL CHECK(next_refresh_at >= 0),
+                    credential_generation TEXT
+                        CHECK(credential_generation IS NULL
+                              OR length(credential_generation) = 36),
+                    CHECK(
+                        (expires_at = 0 AND next_refresh_at = 0)
+                        OR (expires_at > next_refresh_at AND next_refresh_at > 0)
+                    )
+                 ) STRICT;",
+            )?;
+            let generation = if has_generation {
+                "credential_generation"
+            } else {
+                "NULL"
+            };
+            connection.execute_batch(&format!(
+                "INSERT INTO teslamate_legacy_tokens_v52(
+                    singleton_id, access, refresh, expires_at, next_refresh_at,
+                    credential_generation
+                 )
+                 SELECT singleton_id, access, refresh, expires_at, next_refresh_at,
+                        {generation}
+                   FROM teslamate_legacy_tokens;
+                 DROP TABLE teslamate_legacy_tokens;
+                 ALTER TABLE teslamate_legacy_tokens_v52
+                    RENAME TO teslamate_legacy_tokens;"
+            ))?;
+            connection.execute(
+                "UPDATE outbound_request_receipts AS r
+                    SET completed_at_ms = MAX(?1, started_at_ms),
+                        duration_ms = MAX(?1, started_at_ms) - started_at_ms,
+                        outcome = 'cancelled'
+                  WHERE transport = 'legacy_auth'
+                    AND operation = 'token_refresh'
+                    AND outcome = 'started'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM legacy_refresh_receipt_bindings AS b
+                         WHERE b.receipt_id = r.id
+                    )",
+                params![migration_completed_at_ms],
+            )?;
+            connection.execute_batch("PRAGMA user_version = 52; COMMIT;")
+        })();
+        if let Err(error) = migration {
+            let _ = connection.execute_batch("ROLLBACK;");
+            return Err(StoreError::Migrate(error));
+        }
+        version = 52;
     }
 
     if version == SCHEMA_VERSION {
@@ -16403,6 +17238,10 @@ pub enum StoreError {
     ProtectDataDir(std::io::Error),
     #[error("cannot protect packs directory: {0}")]
     ProtectPacksDir(std::io::Error),
+    #[error("Hub data directory has unsafe type, owner, or mode: {0}")]
+    UnsafeDataDir(PathBuf),
+    #[error("Hub packs directory has unsafe type, owner, or mode: {0}")]
+    UnsafePacksDir(PathBuf),
     #[error("cannot create shared Hub SQLite file: {0}")]
     CreateSharedSqlite(std::io::Error),
     #[error("cannot inspect shared Hub SQLite file: {0}")]
@@ -16459,6 +17298,8 @@ pub enum StoreError {
     BackupDestinationIsLiveDatabase,
     #[error("cannot create Hub backup directory: {0}")]
     CreateBackupDirectory(std::io::Error),
+    #[error("Hub backup copy-byte calculation overflowed")]
+    BackupCapacityOverflow,
     #[error("cannot copy Hub backup pack from {source_path} to {destination}: {source_error}")]
     CopyBackupPack {
         source_path: PathBuf,
@@ -16546,6 +17387,16 @@ pub enum StoreError {
     RevokePairing(rusqlite::Error),
     #[error("cannot claim pairing invitation: {0}")]
     ClaimPairing(rusqlite::Error),
+    #[error("cannot access legacy refresh receipt: {0}")]
+    LegacyRefreshReceipt(rusqlite::Error),
+    #[error("legacy refresh outcome is unresolved; explicit re-login is required")]
+    LegacyRefreshOutcomeUnknown,
+    #[error("legacy refresh generation is invalid")]
+    InvalidLegacyRefreshGeneration,
+    #[error("cannot rotate paired device bearer: {0}")]
+    RotateDevice(rusqlite::Error),
+    #[error("cannot revoke paired device: {0}")]
+    RevokeDevice(rusqlite::Error),
     #[error("cannot append raw observation: {0}")]
     AppendObservation(rusqlite::Error),
     #[error("cannot initialise Hub installation identity: {0}")]
@@ -16765,6 +17616,8 @@ pub enum StoreError {
     InvalidOutboundRequestReceiptId,
     #[error("outbound request receipt is missing or already terminal")]
     OutboundRequestReceiptNotStarted,
+    #[error("legacy token refresh receipts require the dedicated refresh API")]
+    ReservedLegacyRefreshReceipt,
     #[error("outbound request correlation id must not be nil")]
     NilOutboundRequestCorrelationId,
     #[error("outbound request vehicle id must be positive")]
@@ -16895,7 +17748,7 @@ mod tests {
 
     #[test]
     fn initializes_a_checked_wal_database() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
         store.quick_check().expect("database passes quick check");
         assert!(store.database_path().exists());
@@ -16923,7 +17776,7 @@ mod tests {
 
     #[test]
     fn teslamate_token_import_loads_and_reopens_as_one_row() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
         let imported = TeslaMateLegacyTokenStore::imported(
             b"access-ciphertext".to_vec(),
@@ -16976,7 +17829,7 @@ mod tests {
 
     #[test]
     fn teslamate_token_replacement_is_atomic_and_refresh_schedule_is_strict() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
         let imported = TeslaMateLegacyTokenStore::imported(
             b"old-access-ciphertext".to_vec(),
@@ -17019,8 +17872,30 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn initialize_rejects_weakened_existing_data_or_packs_directory() {
+        let weakened_data = crate::private_tempdir().expect("weakened data root");
+        fs::set_permissions(weakened_data.path(), fs::Permissions::from_mode(0o755))
+            .expect("weaken data mode");
+        assert!(matches!(
+            HubStore::initialize(weakened_data.path()),
+            Err(StoreError::UnsafeDataDir(_))
+        ));
+
+        let weakened_packs = crate::private_tempdir().expect("weakened packs root");
+        let store = HubStore::initialize(weakened_packs.path()).expect("initial store");
+        let packs = store.packs_dir().to_path_buf();
+        drop(store);
+        fs::set_permissions(&packs, fs::Permissions::from_mode(0o755)).expect("weaken packs mode");
+        assert!(matches!(
+            HubStore::initialize(weakened_packs.path()),
+            Err(StoreError::UnsafePacksDir(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn private_sqlite_catalogue_is_0600_and_only_tightens_0640() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
         let path = store.database_path();
         let expected_gid = fs::symlink_metadata(temporary.path())
@@ -17059,7 +17934,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn schema_22_noop_directory_is_shared_setgid_and_rejects_mode_or_symlink_substitution() {
-        let wrong_mode = tempfile::tempdir().expect("wrong-mode store");
+        let wrong_mode = crate::private_tempdir().expect("wrong-mode store");
         let store = HubStore::initialize(wrong_mode.path()).expect("store initializes");
         let noop = store.packs_dir().join("noop");
         let expected_gid = fs::symlink_metadata(store.packs_dir())
@@ -17079,7 +17954,7 @@ mod tests {
             Err(StoreError::UnsafeSchema22NoOpPath(_))
         ));
 
-        let symlinked = tempfile::tempdir().expect("symlink store");
+        let symlinked = crate::private_tempdir().expect("symlink store");
         let store = HubStore::initialize(symlinked.path()).expect("store initializes");
         let noop = store.packs_dir().join("noop");
         drop(store);
@@ -17106,7 +17981,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn publication_gate_rejects_an_incompatible_existing_lock_inode() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
         fs::set_permissions(
             &store.publication_lock_path,
@@ -17122,7 +17997,7 @@ mod tests {
 
     #[test]
     fn supervised_collector_lease_fences_kill_stale_and_recovery_transitions() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         assert_eq!(
             store
@@ -17217,7 +18092,7 @@ mod tests {
 
     #[test]
     fn fast_readiness_checks_pack_servability_without_hashing_content() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let manifest = test_manifest();
         let pack = &manifest.chunks[0];
@@ -17274,7 +18149,7 @@ mod tests {
 
     #[test]
     fn upgrades_v42_with_supervised_collector_lease_schema() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
         remove_v50_current_observation_schema(&connection);
@@ -17309,7 +18184,7 @@ mod tests {
 
     #[test]
     fn upgrades_v43_with_legacy_refresh_receipt_binding_schema() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
         remove_v50_current_observation_schema(&connection);
@@ -17342,8 +18217,269 @@ mod tests {
     }
 
     #[test]
+    fn upgrades_v50_paired_bearers_with_finite_lifetime_and_revocation_columns() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("current store");
+        let connection = store.open().expect("current catalogue");
+        connection
+            .execute_batch(
+                "DROP TABLE paired_devices;
+                 CREATE TABLE paired_devices (
+                    device_id TEXT PRIMARY KEY NOT NULL,
+                    display_name TEXT NOT NULL,
+                    token_sha256 BLOB NOT NULL UNIQUE CHECK(length(token_sha256) = 32),
+                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+                    last_authenticated_at_ms INTEGER,
+                    CHECK(last_authenticated_at_ms IS NULL
+                          OR last_authenticated_at_ms >= created_at_ms),
+                    CHECK(length(CAST(display_name AS BLOB)) BETWEEN 1 AND 128)
+                 ) STRICT;
+                 PRAGMA user_version = 50;",
+            )
+            .expect("recreate historical v50 paired-device boundary");
+        let device_id = Uuid::new_v4();
+        connection
+            .execute(
+                "INSERT INTO paired_devices(
+                    device_id, display_name, token_sha256,
+                    created_at_ms, last_authenticated_at_ms
+                 ) VALUES (?1, 'legacy phone', ?2, 1000, 2000)",
+                params![device_id.to_string(), vec![7_u8; 32]],
+            )
+            .expect("historical paired device");
+        let future_device_id = Uuid::new_v4();
+        connection
+            .execute(
+                "INSERT INTO paired_devices(
+                    device_id, display_name, token_sha256,
+                    created_at_ms, last_authenticated_at_ms
+                 ) VALUES (?1, 'future legacy phone', ?2, ?3, NULL)",
+                params![future_device_id.to_string(), vec![8_u8; 32], i64::MAX],
+            )
+            .expect("future-dated historical paired device");
+        drop(connection);
+
+        let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v50 store");
+        let connection = upgraded.open().expect("upgraded catalogue");
+        assert_eq!(
+            schema_version(&connection).expect("schema version"),
+            SCHEMA_VERSION
+        );
+        let (created, expires, revoked, last_authenticated): (i64, i64, Option<i64>, Option<i64>) =
+            connection
+                .query_row(
+                    "SELECT created_at_ms, expires_at_ms, revoked_at_ms,
+                            last_authenticated_at_ms
+                       FROM paired_devices WHERE device_id = ?1",
+                    params![device_id.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .expect("migrated paired device");
+        assert_eq!(created, 1000);
+        assert!(expires > created);
+        assert_eq!(revoked, None);
+        assert_eq!(last_authenticated, Some(2000));
+        let (future_created, future_expires): (i64, i64) = connection
+            .query_row(
+                "SELECT created_at_ms, expires_at_ms
+                   FROM paired_devices WHERE device_id = ?1",
+                params![future_device_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("future-dated paired device migrates");
+        assert_eq!(future_created, i64::MAX - 1);
+        assert_eq!(future_expires, i64::MAX);
+    }
+
+    #[test]
+    fn upgrades_v51_token_row_then_binds_generation_after_authenticated_decryption() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("current store");
+        let key_bytes = b"v51 exact TeslaMate key";
+        crate::teslamate_credentials::replace_key(temporary.path(), key_bytes)
+            .expect("private key");
+        let plaintext = crate::credentials::OwnerTokens::from_secret_parts(
+            "v51-access".to_owned(),
+            "v51-refresh".to_owned(),
+        )
+        .expect("plaintext pair");
+        let expected_generation =
+            crate::teslamate_token::legacy_refresh_credential_generation(&plaintext);
+        let (access, refresh) =
+            crate::teslamate_token::encrypt_legacy_owner_tokens(key_bytes, &plaintext)
+                .expect("encrypt v51 pair");
+        let connection = store.open().expect("current catalogue");
+        connection
+            .execute_batch(
+                "DROP TABLE teslamate_legacy_tokens;
+                 CREATE TABLE teslamate_legacy_tokens (
+                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+                    access BLOB NOT NULL CHECK(length(access) > 0),
+                    refresh BLOB NOT NULL CHECK(length(refresh) > 0),
+                    expires_at INTEGER NOT NULL CHECK(expires_at >= 0),
+                    next_refresh_at INTEGER NOT NULL CHECK(next_refresh_at >= 0),
+                    CHECK(expires_at > next_refresh_at AND next_refresh_at > 0)
+                 ) STRICT;
+                 PRAGMA user_version = 51;",
+            )
+            .expect("recreate historical v51 token table");
+        connection
+            .execute(
+                "INSERT INTO teslamate_legacy_tokens(
+                    singleton_id, access, refresh, expires_at, next_refresh_at
+                 ) VALUES (1, ?1, ?2, 2000000000, 1900000000)",
+                params![access, refresh],
+            )
+            .expect("historical pair");
+        drop(connection);
+        drop(store);
+
+        let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v51 store");
+        assert_eq!(
+            upgraded
+                .load_teslamate_legacy_tokens()
+                .expect("upgraded pair loads")
+                .expect("upgraded pair")
+                .credential_generation(),
+            None
+        );
+        let issuer = url::Url::parse("http://127.0.0.1/").expect("test issuer");
+        let manager = crate::credentials::LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+            upgraded.clone(),
+            temporary.path(),
+            issuer.clone(),
+        )
+        .expect("authenticated decrypt binds generation");
+        assert_eq!(manager.access_token(), "v51-access");
+        assert_eq!(
+            upgraded
+                .load_teslamate_legacy_tokens()
+                .expect("bound pair loads")
+                .expect("bound pair")
+                .credential_generation(),
+            Some(expected_generation)
+        );
+        drop(manager);
+        crate::credentials::LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+            upgraded,
+            temporary.path(),
+            issuer,
+        )
+        .expect("bound generation reopens");
+    }
+
+    #[test]
+    fn v51_noncanonical_credential_generation_column_is_not_stamped_v52() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("current store");
+        let connection = store.open().expect("current catalogue");
+        connection
+            .execute_batch(
+                "DROP TABLE teslamate_legacy_tokens;
+                 CREATE TABLE teslamate_legacy_tokens (
+                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+                    access BLOB NOT NULL,
+                    refresh BLOB NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    next_refresh_at INTEGER NOT NULL,
+                    credential_generation INTEGER
+                 ) STRICT;
+                 INSERT INTO teslamate_legacy_tokens(
+                    singleton_id, access, refresh, expires_at, next_refresh_at,
+                    credential_generation
+                 ) VALUES (1, x'01', x'02', 2000, 1750, 7);
+                 PRAGMA user_version = 51;",
+            )
+            .expect("recreate noncanonical v51 table");
+        drop(connection);
+        drop(store);
+
+        assert!(matches!(
+            HubStore::initialize(temporary.path()),
+            Err(StoreError::Migrate(_))
+        ));
+        let connection = Connection::open(temporary.path().join("hub.sqlite"))
+            .expect("inspect rolled-back catalogue");
+        assert_eq!(schema_version(&connection).expect("schema version"), 51);
+    }
+
+    #[test]
+    fn unbound_historical_legacy_receipt_does_not_block_credential_recovery() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("current store");
+        let connection = store.open().expect("current catalogue");
+        let future_start = i64::MAX - 1;
+        connection
+            .execute(
+                "INSERT INTO outbound_request_receipts(
+                    correlation_id, started_at_ms, vehicle_tesla_id, transport,
+                    operation, safety_class, precondition, outcome
+                 ) VALUES (?1, ?2, NULL, 'legacy_auth', 'token_refresh',
+                           'non_wake_endpoint', 'not_required', 'started')",
+                params![Uuid::new_v4().to_string(), future_start],
+            )
+            .expect("historical unbound receipt");
+        let receipt_id = connection.last_insert_rowid();
+        connection
+            .execute_batch("PRAGMA user_version = 51;")
+            .expect("historical schema boundary");
+        drop(connection);
+        drop(store);
+
+        let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v51 store");
+        assert!(
+            !upgraded
+                .has_unresolved_legacy_refresh()
+                .expect("unbound row is not refresh state")
+        );
+        let (outcome, completed, duration): (String, i64, i64) = upgraded
+            .open()
+            .expect("upgraded catalogue")
+            .query_row(
+                "SELECT outcome, completed_at_ms, duration_ms
+                   FROM outbound_request_receipts WHERE id = ?1",
+                params![receipt_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("historical receipt terminalized");
+        assert_eq!(outcome, "cancelled");
+        assert_eq!(completed, future_start);
+        assert_eq!(duration, 0);
+
+        let key = b"fresh recovery key";
+        let plaintext = crate::credentials::OwnerTokens::from_secret_parts(
+            "fresh-access".to_owned(),
+            "fresh-refresh".to_owned(),
+        )
+        .expect("fresh plaintext");
+        let (access, refresh) =
+            crate::teslamate_token::encrypt_legacy_owner_tokens(key, &plaintext)
+                .expect("fresh ciphertext");
+        let fresh = TeslaMateLegacyTokenStore::imported(access, refresh).expect("fresh pair");
+        crate::teslamate_credentials::replace_key_and_tokens(
+            temporary.path(),
+            &upgraded,
+            key,
+            &fresh,
+        )
+        .expect("fresh credentials recover");
+        let generation = upgraded
+            .load_teslamate_legacy_tokens()
+            .expect("fresh credentials load")
+            .expect("fresh credentials")
+            .credential_generation()
+            .expect("fresh generation");
+        let receipt = upgraded
+            .begin_legacy_refresh(generation)
+            .expect("fresh generation can begin refresh");
+        upgraded
+            .cancel_unsent_legacy_refresh(receipt, generation)
+            .expect("test cleanup");
+    }
+
+    #[test]
     fn read_only_catalogue_check_does_not_change_the_store_tree() {
-        let temporary = tempfile::tempdir().expect("temporary database");
+        let temporary = crate::private_tempdir().expect("temporary database");
         HubStore::initialize(temporary.path()).expect("store initializes");
         let before = tree_contents(temporary.path());
         let store = HubStore::open_immutable_read_only(temporary.path()).expect("immutable store");
@@ -17361,7 +18497,7 @@ mod tests {
 
     #[test]
     fn read_only_open_rejects_a_stale_schema_without_migrating_it() {
-        let temporary = tempfile::tempdir().expect("temporary database");
+        let temporary = crate::private_tempdir().expect("temporary database");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
         let connection = store.open().expect("writable test connection");
         connection
@@ -17379,10 +18515,10 @@ mod tests {
 
     #[test]
     fn online_catalogue_backup_restores_through_normal_store_checks() {
-        let source_directory = tempfile::tempdir().expect("source directory");
+        let source_directory = crate::private_tempdir().expect("source directory");
         let store = HubStore::initialize(source_directory.path()).expect("source store");
         let installation_id = store.installation_id().expect("source installation");
-        let restore_directory = tempfile::tempdir().expect("restore directory");
+        let restore_directory = crate::private_tempdir().expect("restore directory");
         let backup_path = restore_directory.path().join("hub.sqlite");
 
         store
@@ -17400,7 +18536,7 @@ mod tests {
 
     #[test]
     fn complete_backup_copies_catalogue_referenced_pack_set() {
-        let source_directory = tempfile::tempdir().expect("source directory");
+        let source_directory = crate::private_tempdir().expect("source directory");
         let store = HubStore::initialize(source_directory.path()).expect("source store");
         let manifest = test_manifest();
         let pack = &manifest.chunks[0];
@@ -17412,7 +18548,7 @@ mod tests {
         fs::write(&source_pack, vec![7_u8; 100]).expect("source pack");
         store.publish_manifest(&manifest).expect("catalogue pack");
 
-        let backup_parent = tempfile::tempdir().expect("backup parent");
+        let backup_parent = crate::private_tempdir().expect("backup parent");
         let backup_root = backup_parent.path().join("backup");
         store.backup_to(&backup_root).expect("complete backup");
         let restored = HubStore::initialize(&backup_root).expect("restored store");
@@ -17426,7 +18562,7 @@ mod tests {
 
     #[test]
     fn corrupt_referenced_pack_refuses_and_cleans_backup_root() {
-        let source_directory = tempfile::tempdir().expect("source directory");
+        let source_directory = crate::private_tempdir().expect("source directory");
         let store = HubStore::initialize(source_directory.path()).expect("source store");
         let manifest = test_manifest();
         let source_pack = store
@@ -17438,7 +18574,7 @@ mod tests {
         store.publish_manifest(&manifest).expect("catalogue pack");
         fs::write(&source_pack, vec![8_u8; 100]).expect("corrupt pack");
 
-        let backup_parent = tempfile::tempdir().expect("backup parent");
+        let backup_parent = crate::private_tempdir().expect("backup parent");
         let backup_root = backup_parent.path().join("corrupt-backup");
         assert!(matches!(
             store.backup_to(&backup_root),
@@ -17449,7 +18585,7 @@ mod tests {
 
     #[test]
     fn publishes_and_loads_a_canonical_manifest_catalog() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
         let manifest = test_manifest();
 
@@ -17472,7 +18608,7 @@ mod tests {
     fn manifest_commit_fault_reconciles_exact_pre_or_post_state() {
         use crate::durability_fault::{DurabilityFaultPoint, inject};
 
-        let before_root = tempfile::tempdir().expect("before-commit root");
+        let before_root = crate::private_tempdir().expect("before-commit root");
         let before = HubStore::initialize(before_root.path()).expect("before store");
         let manifest = test_manifest();
         let _before_fault = inject(DurabilityFaultPoint::CatalogueBeforeCommit);
@@ -17488,7 +18624,7 @@ mod tests {
             "pre-commit fault retains the exact prior empty state"
         );
 
-        let after_root = tempfile::tempdir().expect("after-commit root");
+        let after_root = crate::private_tempdir().expect("after-commit root");
         let after = HubStore::initialize(after_root.path()).expect("after store");
         let _after_fault = inject(DurabilityFaultPoint::CatalogueAfterCommit);
         after
@@ -17514,7 +18650,7 @@ mod tests {
                 Some("candidate"),
             ),
         ] {
-            let root = tempfile::tempdir().expect("receipt root");
+            let root = crate::private_tempdir().expect("receipt root");
             let store = HubStore::initialize(root.path()).expect("store");
             let mut connection = store.open().expect("connection");
             let transaction = connection
@@ -17556,7 +18692,7 @@ mod tests {
 
     #[test]
     fn schema_22_manifest_is_catalogued_as_full_snapshot() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
         let manifest = schema_22_test_manifest();
         let digest = manifest.chunks[0].sha256;
@@ -17618,7 +18754,7 @@ mod tests {
             (DurabilityFaultPoint::Schema22NoOpRename, true),
             (DurabilityFaultPoint::Schema22NoOpDirectoryFsync, true),
         ] {
-            let temp = tempfile::tempdir().expect("temp directory");
+            let temp = crate::private_tempdir().expect("temp directory");
             let store = HubStore::initialize(temp.path()).expect("store initializes");
             let manifest = schema_22_test_manifest();
             let noop = crate::updates_delivery::SignedNoOpState {
@@ -17672,7 +18808,7 @@ mod tests {
 
     #[test]
     fn source_and_vehicle_ids_are_stable_across_re_registration() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
         let descriptor = SourceDescriptor::new("tesla_owner_api", "account-opaque-id");
         let source = store
@@ -17722,7 +18858,7 @@ mod tests {
 
     #[test]
     fn accepts_a_deterministic_vehicle_id_and_allocates_snapshot_markers() {
-        let temporary = tempfile::tempdir().expect("temporary database");
+        let temporary = crate::private_tempdir().expect("temporary database");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
         let source = store
             .register_source(&SourceDescriptor::new("teslamate", "test-source"), 1_000)
@@ -17767,7 +18903,7 @@ mod tests {
 
     #[test]
     fn pairing_preparation_is_inert_and_revocation_is_idempotent() {
-        let temporary = tempfile::tempdir().expect("temporary database");
+        let temporary = crate::private_tempdir().expect("temporary database");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
         let invitation = store
             .prepare_pairing("iPhone", 1_000, 61_000)
@@ -17815,7 +18951,7 @@ mod tests {
 
     #[test]
     fn pairing_is_single_use_and_persists_only_token_hashes() {
-        let temporary = tempfile::tempdir().expect("temporary database");
+        let temporary = crate::private_tempdir().expect("temporary database");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
         let invitation = store
             .create_pairing("iPhone", 1_000, 61_000)
@@ -17835,7 +18971,7 @@ mod tests {
             "DeviceAccessToken([redacted])"
         );
         let authenticated = store
-            .authenticate_device(access.access_token.as_bearer())
+            .authenticate_device_at(access.access_token.as_bearer(), 2_001)
             .expect("device lookup")
             .expect("device exists");
         assert_eq!(authenticated.device_id, access.device_id);
@@ -17871,7 +19007,7 @@ mod tests {
 
     #[test]
     fn pairing_claims_fail_closed_when_expired_or_malformed() {
-        let temporary = tempfile::tempdir().expect("temporary database");
+        let temporary = crate::private_tempdir().expect("temporary database");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
         let invitation = store
             .create_pairing("iPad", 1_000, 2_000)
@@ -17893,8 +19029,495 @@ mod tests {
     }
 
     #[test]
+    fn paired_bearer_expires_at_boundary_and_survives_restart() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let invitation = store
+            .create_pairing("boundary", 10_000, 20_000)
+            .expect("pairing creates");
+        let access = store
+            .claim_pairing(invitation.pairing_id, invitation.secret(), "phone", 15_000)
+            .expect("claim succeeds");
+        let bearer = access.access_token.as_bearer().to_owned();
+        assert!(
+            store
+                .authenticate_device_at(&bearer, access.expires_at_ms - 1)
+                .expect("before expiry")
+                .is_some()
+        );
+        assert!(
+            store
+                .authenticate_device_at(&bearer, access.expires_at_ms)
+                .expect("at expiry")
+                .is_none()
+        );
+        drop(store);
+        let restarted = HubStore::open_existing(temporary.path()).expect("restart opens");
+        assert!(
+            restarted
+                .authenticate_device_at(&bearer, access.expires_at_ms - 1)
+                .expect("restart auth")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn paired_bearer_revoke_and_rotation_invalidate_old_material() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let invitation = store
+            .create_pairing("rotation", 10_000, 20_000)
+            .expect("pairing creates");
+        let access = store
+            .claim_pairing(invitation.pairing_id, invitation.secret(), "phone", 15_000)
+            .expect("claim succeeds");
+        let old_bearer = access.access_token.as_bearer().to_owned();
+        let rotated = store
+            .rotate_device(&old_bearer, 16_000)
+            .expect("rotation succeeds");
+        assert_eq!(rotated.device_id, access.device_id);
+        assert!(
+            store
+                .authenticate_device_at(&old_bearer, 16_000)
+                .expect("old auth")
+                .is_none()
+        );
+        assert!(
+            store
+                .authenticate_device_at(rotated.access_token.as_bearer(), 16_000)
+                .expect("new auth")
+                .is_some()
+        );
+        assert!(matches!(
+            store.rotate_device(&old_bearer, 16_001),
+            Err(StoreError::PairingRejected)
+        ));
+        store
+            .revoke_device_at(rotated.device_id, 17_000)
+            .expect("revoke succeeds");
+        assert!(matches!(
+            store.revoke_device_at(Uuid::new_v4(), 17_000),
+            Err(StoreError::PairingRejected)
+        ));
+        assert!(
+            store
+                .authenticate_device_at(rotated.access_token.as_bearer(), 17_000)
+                .expect("revoked auth")
+                .is_none()
+        );
+        let listed = store.list_paired_devices().expect("list devices");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].revoked_at_ms, Some(17_000));
+    }
+
+    #[test]
+    fn generic_receipt_api_rejects_reserved_legacy_refresh_start() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        assert!(matches!(
+            store.begin_outbound_request(&OutboundRequestStart {
+                correlation_id: Uuid::new_v4(),
+                vehicle_tesla_id: None,
+                transport: OutboundRequestTransport::LegacyAuth,
+                operation: OutboundRequestOperation::TokenRefresh,
+                safety_class: OutboundRequestSafetyClass::NonWakeEndpoint,
+                precondition: OutboundRequestPrecondition::NotRequired,
+            }),
+            Err(StoreError::ReservedLegacyRefreshReceipt)
+        ));
+        assert_eq!(
+            store
+                .outbound_request_watermark()
+                .expect("request watermark")
+                .receipt_id,
+            0
+        );
+    }
+
+    #[test]
+    fn generic_completion_cannot_close_bound_legacy_refresh_receipt() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let input_generation = Uuid::from_u128(31);
+        let input =
+            TeslaMateLegacyTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
+                .expect("input tokens")
+                .with_credential_generation(input_generation)
+                .expect("input generation");
+        store
+            .replace_teslamate_legacy_tokens(&input)
+            .expect("input persists");
+        let receipt = store
+            .begin_legacy_refresh(input_generation)
+            .expect("refresh begins");
+
+        assert!(matches!(
+            store.complete_outbound_request(
+                receipt,
+                &OutboundRequestCompletion {
+                    outcome: OutboundRequestOutcome::Success,
+                    http_status: Some(200),
+                    retry_after_seconds: None,
+                },
+            ),
+            Err(StoreError::ReservedLegacyRefreshReceipt)
+        ));
+        assert!(
+            store
+                .has_unresolved_legacy_refresh()
+                .expect("refresh remains unresolved")
+        );
+        store
+            .cancel_unsent_legacy_refresh(receipt, input_generation)
+            .expect("dedicated API can cancel unsent refresh");
+    }
+
+    #[test]
+    fn legacy_refresh_terminalization_clamps_backwards_clock() {
+        fn move_start_into_future(store: &HubStore, receipt: OutboundRequestReceiptId) -> i64 {
+            let future = i64::MAX - 1;
+            store
+                .open()
+                .expect("open store")
+                .execute(
+                    "UPDATE outbound_request_receipts SET started_at_ms = ?2 WHERE id = ?1",
+                    params![receipt.0, future],
+                )
+                .expect("move receipt start into future");
+            future
+        }
+
+        fn assert_clamped(store: &HubStore, receipt: OutboundRequestReceiptId, expected: i64) {
+            let (completed, duration): (i64, i64) = store
+                .open()
+                .expect("open store")
+                .query_row(
+                    "SELECT completed_at_ms, duration_ms
+                       FROM outbound_request_receipts WHERE id = ?1",
+                    params![receipt.0],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("terminal receipt");
+            assert_eq!(completed, expected);
+            assert_eq!(duration, 0);
+        }
+
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let first_generation = Uuid::from_u128(51);
+        let first = TeslaMateLegacyTokenStore::imported(
+            b"first-access".to_vec(),
+            b"first-refresh".to_vec(),
+        )
+        .expect("first tokens")
+        .with_credential_generation(first_generation)
+        .expect("first generation");
+        store
+            .replace_teslamate_legacy_tokens(&first)
+            .expect("first tokens persist");
+
+        let cancelled = store
+            .begin_legacy_refresh(first_generation)
+            .expect("cancelled refresh begins");
+        let future = move_start_into_future(&store, cancelled);
+        store
+            .cancel_unsent_legacy_refresh(cancelled, first_generation)
+            .expect("cancel clamps clock");
+        assert_clamped(&store, cancelled, future);
+
+        let replaced = store
+            .begin_legacy_refresh(first_generation)
+            .expect("replacement refresh begins");
+        let future = move_start_into_future(&store, replaced);
+        let second_generation = Uuid::from_u128(52);
+        let second = TeslaMateLegacyTokenStore::imported(
+            b"second-access".to_vec(),
+            b"second-refresh".to_vec(),
+        )
+        .expect("second tokens")
+        .with_credential_generation(second_generation)
+        .expect("second generation");
+        store
+            .replace_teslamate_legacy_tokens(&second)
+            .expect("replacement clamps clock");
+        assert_clamped(&store, replaced, future);
+
+        let signed_out = store
+            .begin_legacy_refresh(second_generation)
+            .expect("sign-out refresh begins");
+        let future = move_start_into_future(&store, signed_out);
+        store
+            .clear_teslamate_legacy_tokens()
+            .expect("sign out clamps clock");
+        assert_clamped(&store, signed_out, future);
+    }
+
+    #[test]
+    fn legacy_refresh_intent_fences_restart_and_commits_atomically() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let input = Uuid::from_u128(1);
+        let initial =
+            TeslaMateLegacyTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
+                .expect("initial token pair")
+                .with_credential_generation(input)
+                .expect("initial generation");
+        store
+            .replace_teslamate_legacy_tokens(&initial)
+            .expect("initial pair persists");
+        assert!(matches!(
+            store.begin_legacy_refresh(Uuid::new_v4()),
+            Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ));
+        assert!(
+            !store
+                .has_unresolved_legacy_refresh()
+                .expect("stale input creates no intent")
+        );
+        let receipt = store.begin_legacy_refresh(input).expect("intent persists");
+        assert!(
+            store
+                .has_unresolved_legacy_refresh()
+                .expect("intent lookup")
+        );
+        assert!(matches!(
+            store.begin_legacy_refresh(input),
+            Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ));
+        drop(store);
+        let restarted = HubStore::open_existing(temporary.path()).expect("restart opens");
+        assert!(
+            restarted
+                .has_unresolved_legacy_refresh()
+                .expect("restart intent")
+        );
+        restarted
+            .cancel_unsent_legacy_refresh(receipt, input)
+            .expect("pre-send cancellation");
+        assert!(
+            !restarted
+                .has_unresolved_legacy_refresh()
+                .expect("cancelled intent")
+        );
+
+        let receipt = restarted
+            .begin_legacy_refresh(input)
+            .expect("second intent persists");
+        let output = Uuid::from_u128(2);
+        let successor = TeslaMateLegacyTokenStore::refreshed(
+            b"new-access".to_vec(),
+            b"new-refresh".to_vec(),
+            2_000,
+            1_750,
+        )
+        .expect("successor token pair")
+        .with_credential_generation(output)
+        .expect("successor generation");
+        assert!(matches!(
+            restarted.complete_legacy_refresh(receipt, input, Uuid::new_v4(), &successor),
+            Err(StoreError::InvalidLegacyRefreshGeneration)
+        ));
+        restarted
+            .complete_legacy_refresh(receipt, input, output, &successor)
+            .expect("atomic successor commit");
+        assert!(
+            !restarted
+                .has_unresolved_legacy_refresh()
+                .expect("completed intent")
+        );
+        assert_eq!(
+            restarted
+                .load_teslamate_legacy_tokens()
+                .expect("successor load")
+                .expect("successor")
+                .access(),
+            successor.access()
+        );
+    }
+
+    #[test]
+    fn explicit_new_credentials_supersede_ambiguous_refresh_without_reusing_input() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let old_generation = Uuid::from_u128(11);
+        let initial =
+            TeslaMateLegacyTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
+                .expect("initial pair")
+                .with_credential_generation(old_generation)
+                .expect("initial generation");
+        store
+            .replace_teslamate_legacy_tokens(&initial)
+            .expect("initial pair persists");
+        store
+            .begin_legacy_refresh(old_generation)
+            .expect("ambiguous intent persists");
+        assert!(matches!(
+            store.replace_teslamate_legacy_tokens(&initial),
+            Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ));
+        let same_refresh_reencrypted = TeslaMateLegacyTokenStore::imported(
+            b"different-random-access-envelope".to_vec(),
+            b"different-random-refresh-envelope".to_vec(),
+        )
+        .expect("re-encrypted pair")
+        .with_credential_generation(old_generation)
+        .expect("same plaintext generation");
+        assert!(matches!(
+            store.replace_teslamate_legacy_tokens(&same_refresh_reencrypted),
+            Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ));
+
+        let replacement_generation = Uuid::from_u128(12);
+        let replacement = TeslaMateLegacyTokenStore::imported(
+            b"fresh-access".to_vec(),
+            b"fresh-refresh".to_vec(),
+        )
+        .expect("explicit replacement pair")
+        .with_credential_generation(replacement_generation)
+        .expect("replacement generation");
+        store
+            .replace_teslamate_legacy_tokens(&replacement)
+            .expect("new credential generation supersedes ambiguity");
+        assert!(
+            !store
+                .has_unresolved_legacy_refresh()
+                .expect("old attempt is terminal")
+        );
+        assert_eq!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("replacement load")
+                .expect("replacement")
+                .credential_generation(),
+            Some(replacement_generation)
+        );
+        let new_receipt = store
+            .begin_legacy_refresh(replacement_generation)
+            .expect("replacement may refresh");
+        store
+            .cancel_unsent_legacy_refresh(new_receipt, replacement_generation)
+            .expect("pre-send cancellation remains available");
+        assert!(matches!(
+            store.begin_legacy_refresh(old_generation),
+            Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ));
+    }
+
+    #[test]
+    fn legacy_refresh_rejects_successor_generation_already_consumed() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let first_generation = Uuid::from_u128(41);
+        let first = TeslaMateLegacyTokenStore::imported(
+            b"first-access".to_vec(),
+            b"first-refresh".to_vec(),
+        )
+        .expect("first tokens")
+        .with_credential_generation(first_generation)
+        .expect("first generation");
+        store
+            .replace_teslamate_legacy_tokens(&first)
+            .expect("first tokens persist");
+
+        let first_receipt = store
+            .begin_legacy_refresh(first_generation)
+            .expect("first refresh begins");
+        let second_generation = Uuid::from_u128(42);
+        let second = TeslaMateLegacyTokenStore::refreshed(
+            b"second-access".to_vec(),
+            b"second-refresh".to_vec(),
+            2_000,
+            1_750,
+        )
+        .expect("second tokens")
+        .with_credential_generation(second_generation)
+        .expect("second generation");
+        store
+            .complete_legacy_refresh(first_receipt, first_generation, second_generation, &second)
+            .expect("first refresh completes");
+
+        let second_receipt = store
+            .begin_legacy_refresh(second_generation)
+            .expect("second refresh begins");
+        let consumed_successor = TeslaMateLegacyTokenStore::refreshed(
+            b"cycled-access".to_vec(),
+            b"cycled-refresh".to_vec(),
+            3_000,
+            2_750,
+        )
+        .expect("cycled tokens")
+        .with_credential_generation(first_generation)
+        .expect("consumed generation");
+        assert!(matches!(
+            store.complete_legacy_refresh(
+                second_receipt,
+                second_generation,
+                first_generation,
+                &consumed_successor,
+            ),
+            Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ));
+        assert_eq!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("tokens load")
+                .expect("tokens remain")
+                .credential_generation(),
+            Some(second_generation)
+        );
+        assert!(
+            store
+                .has_unresolved_legacy_refresh()
+                .expect("rejected successor leaves receipt unresolved")
+        );
+    }
+
+    #[test]
+    fn explicit_replacement_rejects_previously_consumed_generation_after_successor_commit() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let input_generation = Uuid::from_u128(21);
+        let input =
+            TeslaMateLegacyTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
+                .expect("input tokens")
+                .with_credential_generation(input_generation)
+                .expect("input generation");
+        store
+            .replace_teslamate_legacy_tokens(&input)
+            .expect("input persists");
+        let receipt = store
+            .begin_legacy_refresh(input_generation)
+            .expect("refresh begins");
+
+        let output_generation = Uuid::from_u128(22);
+        let output = TeslaMateLegacyTokenStore::refreshed(
+            b"new-access".to_vec(),
+            b"new-refresh".to_vec(),
+            2_000,
+            1_750,
+        )
+        .expect("output tokens")
+        .with_credential_generation(output_generation)
+        .expect("output generation");
+        store
+            .complete_legacy_refresh(receipt, input_generation, output_generation, &output)
+            .expect("refresh completes");
+
+        assert!(matches!(
+            store.replace_teslamate_legacy_tokens(&input),
+            Err(StoreError::LegacyRefreshOutcomeUnknown)
+        ));
+        let current = store
+            .load_teslamate_legacy_tokens()
+            .expect("current tokens load")
+            .expect("current tokens remain");
+        assert_eq!(current.credential_generation(), Some(output_generation));
+        assert_eq!(current.access(), output.access());
+    }
+
+    #[test]
     fn appends_canonical_json_once_and_retries_idempotently() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
         let (source, vehicle) = test_registered_vehicle(&store);
         let input = ObservationInput {
@@ -17946,7 +19569,7 @@ mod tests {
 
     #[test]
     fn observations_are_time_ordered_and_query_is_bounded() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
         let (source, vehicle) = test_registered_vehicle(&store);
         for (observed_at_ms, value) in [(3_000, 3), (1_000, 1), (2_000, 2)] {
@@ -17999,7 +19622,7 @@ mod tests {
 
     #[test]
     fn processed_raw_observations_are_pruned_but_current_snapshot_and_dedup_survive() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
         let (source, vehicle) = test_registered_vehicle(&store);
         let input = ObservationInput {
@@ -18077,7 +19700,7 @@ mod tests {
 
     #[test]
     fn rejects_wrong_source_non_object_and_oversized_observations() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
         let (source, vehicle) = test_registered_vehicle(&store);
         let other_source = store
@@ -18240,7 +19863,7 @@ mod tests {
 
     #[test]
     fn imported_selection_returns_one_durable_eid_and_settings() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, _) = imported_v2_base(&store);
         let settings = ProjectionCarSettings {
@@ -18260,7 +19883,7 @@ mod tests {
 
     #[test]
     fn imported_selection_uses_materialised_settings_before_defaults() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, _) = imported_v2_base(&store);
         let settings = ProjectionCarSettings {
@@ -18489,7 +20112,7 @@ mod tests {
 
     #[test]
     fn recovery_reclaims_a_valid_owned_v1_spool_and_its_staging_generation() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (run_id, binding) = begin_projection_state_recovery_generation(&store);
         let publication_gate = store
@@ -18547,7 +20170,7 @@ mod tests {
 
     #[test]
     fn startup_recovery_refuses_to_scan_while_a_live_publication_gate_is_held() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (run_id, binding) = begin_projection_state_recovery_generation(&store);
         let publication_gate = store
@@ -18587,7 +20210,7 @@ mod tests {
 
     #[test]
     fn startup_recovery_preserves_a_flat_legacy_projection_state_spool() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let state = TeslaMateProjectionState::create(
             store.packs_dir(),
@@ -18616,7 +20239,7 @@ mod tests {
     #[test]
     fn startup_recovery_fails_closed_for_unsafe_v1_runs_without_deleting_any_sibling() {
         for unsafe_shape in ["owner", "unexpected", "mode", "symlink"] {
-            let temporary = tempfile::tempdir().expect("temporary store");
+            let temporary = crate::private_tempdir().expect("temporary store");
             let store = HubStore::initialize(temporary.path()).expect("store");
             let (bad_run_id, _) = begin_projection_state_recovery_generation(&store);
             let valid_run_id = Uuid::new_v4();
@@ -18673,7 +20296,7 @@ mod tests {
 
     #[test]
     fn run_bound_transfer_rejects_wrong_run_marker_mutation_and_attempt_substitution() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (run_id, binding) = begin_projection_state_recovery_generation(&store);
         let state = direct_projection_state_with_digest_rows(
@@ -18728,7 +20351,7 @@ mod tests {
 
     #[test]
     fn retry_drop_removes_only_its_exact_attempt_and_keeps_a_live_sibling() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (run_id, binding) = begin_projection_state_recovery_generation(&store);
         let first = direct_projection_state_with_digest_rows(
@@ -18760,7 +20383,7 @@ mod tests {
 
     #[test]
     fn startup_recovery_reclaims_a_completed_run_orphaned_before_state_drop() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let run_id = store
@@ -18875,7 +20498,7 @@ mod tests {
 
     #[test]
     fn projection_state_digest_cache_reuses_one_verified_range() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding) = persist_projection_state_rows(
             &store,
@@ -18927,7 +20550,7 @@ mod tests {
 
     #[test]
     fn projection_state_digest_cache_preserves_gaps_and_exhausted_absence() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding) = persist_projection_state_rows(
             &store,
@@ -18983,7 +20606,7 @@ mod tests {
 
     #[test]
     fn projection_state_digest_cache_reloads_for_entity_changes_and_backtracking() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding) = persist_projection_state_rows(
             &store,
@@ -19038,7 +20661,7 @@ mod tests {
 
     #[test]
     fn projection_state_digest_cache_is_bounded_and_leaves_tombstone_paging_exact() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let cache_limit = i64::try_from(TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS)
             .expect("cache limit fits i64");
@@ -19104,7 +20727,7 @@ mod tests {
 
     #[test]
     fn projection_state_digest_cache_rejects_mismatched_durable_rows() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding) = persist_projection_state_rows(
             &store,
@@ -19165,7 +20788,7 @@ mod tests {
 
     #[test]
     fn digest_projection_state_is_atomic_with_base_and_successor_heads() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let car = import_delta_test_car(binding.selected_car_id);
@@ -19275,7 +20898,7 @@ mod tests {
 
     #[test]
     fn direct_import_successor_batch_is_atomic_and_advances_every_durable_head() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let car = import_delta_test_car(binding.selected_car_id);
@@ -19375,7 +20998,7 @@ mod tests {
 
     #[test]
     fn direct_import_successor_batch_rejects_out_of_scope_state_without_advancing_heads() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let car = import_delta_test_car(binding.selected_car_id);
@@ -19479,7 +21102,7 @@ mod tests {
 
     #[test]
     fn direct_import_successor_batch_refuses_a_gap_in_pack_ordinals() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let car = import_delta_test_car(binding.selected_car_id);
@@ -19572,7 +21195,7 @@ mod tests {
 
     #[test]
     fn legacy_inventory_without_digest_state_fails_closed_distinctly() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let inventory = TeslaMateImportProjectionInventory {
@@ -19653,7 +21276,7 @@ mod tests {
     #[test]
     fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logical_rerun_skips()
     {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let legacy_fingerprint = Sha256Digest::of_bytes(b"legacy-direct-physical");
         let logical_fingerprint = Sha256Digest::of_bytes(b"logical-direct-projection");
@@ -19777,7 +21400,7 @@ mod tests {
 
     #[test]
     fn legacy_direct_bridge_rejects_changed_physical_fingerprint_without_mutation() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let legacy_fingerprint = Sha256Digest::of_bytes(b"legacy-direct-physical");
         let (vehicle, binding, manifest) = legacy_direct_bridge_fixture(&store, legacy_fingerprint);
@@ -19833,7 +21456,7 @@ mod tests {
 
     #[test]
     fn legacy_direct_bridge_rolls_back_state_when_inventory_semantics_mismatch() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let legacy_fingerprint = Sha256Digest::of_bytes(b"legacy-direct-physical");
         let (vehicle, binding, _manifest) =
@@ -19885,7 +21508,7 @@ mod tests {
 
     #[test]
     fn legacy_direct_bridge_rejects_a_carless_sealed_state_without_installing_a_head() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let legacy_fingerprint = Sha256Digest::of_bytes(b"legacy-direct-physical");
         let (vehicle, binding, _manifest) =
@@ -19937,7 +21560,7 @@ mod tests {
 
     #[test]
     fn unsealed_state_refuses_base_finalization_without_partial_catalogue() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let inventory = TeslaMateImportProjectionInventory {
@@ -19995,7 +21618,7 @@ mod tests {
 
     #[test]
     fn direct_base_set_transfer_preserves_state_and_legacy_inventory_semantics() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let run_id = store
@@ -20116,7 +21739,7 @@ mod tests {
 
     #[test]
     fn direct_base_rejects_carless_sealed_state_before_catalogue_mutation() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let run_id = store
@@ -20191,7 +21814,7 @@ mod tests {
 
     #[test]
     fn sealed_transfer_rejects_a_same_shape_spool_substitution() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, _) = v2_base_manifest(&store);
         let state = projection_state_with_digest_rows(
@@ -20229,7 +21852,7 @@ mod tests {
 
     #[test]
     fn sealed_transfer_attachment_is_read_only() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (_, binding, _) = v2_base_manifest(&store);
         let state = projection_state_with_digest_rows(
@@ -20267,7 +21890,7 @@ mod tests {
 
     #[test]
     fn direct_import_base_refuses_a_staging_car_outside_its_v2_binding() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let wrong_car_id = binding.selected_car_id + 1;
@@ -20323,7 +21946,7 @@ mod tests {
 
     #[test]
     fn v2_base_requires_immutable_binding_at_generic_publication_boundaries() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         let base_digest = manifest.chunks[0].sha256;
@@ -20391,7 +22014,7 @@ mod tests {
 
     #[test]
     fn schema_35_upgrade_recovers_v2_binding_from_immutable_base_not_mutable_source() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         store
@@ -20457,7 +22080,7 @@ mod tests {
 
     #[test]
     fn legacy_v2_binding_recovery_fails_closed_on_manifest_pack_identity_conflict() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, manifest) = v2_base_manifest(&store);
         store
@@ -20749,7 +22372,7 @@ mod tests {
 
     #[test]
     fn v2_delta_claim_rejects_invalid_inputs_without_publishing_then_is_idempotent() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, _) = imported_v2_base(&store);
         let (claim, delta) = claimed_collector_delta(&store, vehicle.vehicle_id, &binding);
@@ -20928,7 +22551,7 @@ mod tests {
 
     #[test]
     fn live_delta_compaction_preserves_the_base_and_rebuilds_from_durable_journal_payloads() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
 
@@ -21184,7 +22807,7 @@ mod tests {
 
     #[test]
     fn live_delta_compaction_coalesces_cross_table_settings_and_tombstones_by_revision() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, _) = imported_v2_base(&store);
         let plan = |mutations| LiveDeltaCompactionPlan {
@@ -21312,7 +22935,7 @@ mod tests {
 
     #[test]
     fn live_delta_admission_refuses_an_unservable_next_pack_when_no_compaction_can_gain_space() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, _) = imported_v2_base(&store);
         let two_pack_limit = ProtocolLimits {
@@ -21384,7 +23007,7 @@ mod tests {
 
     #[test]
     fn settings_only_sync_delta_is_emitted_and_retained() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, _) = imported_v2_base(&store);
 
@@ -21498,7 +23121,7 @@ mod tests {
 
     #[test]
     fn import_delta_finalizer_rejects_full_base_relabel_without_catalogue_mutation() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
         let mut forged_pack = base.base.packs[0].clone();
@@ -21531,7 +23154,7 @@ mod tests {
 
     #[test]
     fn import_delta_finalizer_rejects_wrong_chain_then_accepts_the_written_typed_delta() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
         let delta = imported_typed_delta(&store, &binding, &base);
@@ -21571,7 +23194,7 @@ mod tests {
 
     #[test]
     fn import_delta_writer_rejects_geofence_and_address_tombstones() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
         let sequence = SequenceRange {
@@ -21621,7 +23244,7 @@ mod tests {
 
     #[test]
     fn import_delta_finalizer_requires_the_exact_signed_terminal_cursor_claims() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
         let delta = imported_typed_delta(&store, &binding, &base);
@@ -21685,7 +23308,7 @@ mod tests {
 
     #[test]
     fn import_delta_finalizer_accepts_a_car_and_completed_drive() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
         let sequence = SequenceRange {
@@ -21769,7 +23392,7 @@ mod tests {
 
     #[test]
     fn import_delta_finalizer_rejects_a_typed_delta_for_another_selected_car() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
         let mut delta = imported_typed_delta(&store, &binding, &base);
@@ -21814,7 +23437,7 @@ mod tests {
 
     #[test]
     fn import_delta_finalizer_rejects_matching_metadata_with_an_extra_schema_object() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
         let mut delta = imported_typed_delta(&store, &binding, &base);
@@ -21844,7 +23467,7 @@ mod tests {
     #[test]
     fn import_delta_finalizer_rejects_forged_unsupported_tombstone_entities() {
         for entity in ["not-an-entity", "car", "car_setting", "geofence", "address"] {
-            let temporary = tempfile::tempdir().expect("temporary store");
+            let temporary = crate::private_tempdir().expect("temporary store");
             let store = HubStore::initialize(temporary.path()).expect("store");
             let (vehicle, binding, base) = imported_v2_base(&store);
             let mut delta = imported_typed_delta(&store, &binding, &base);
@@ -21882,7 +23505,7 @@ mod tests {
 
     #[test]
     fn import_delta_finalizer_rejects_forged_upsert_tombstone_overlap() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
         let mut delta = imported_typed_delta(&store, &binding, &base);
@@ -21925,7 +23548,7 @@ mod tests {
 
     #[test]
     fn import_delta_finalizer_requires_the_companion_settings_for_each_car() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (vehicle, binding, base) = imported_v2_base(&store);
         let mut delta = imported_typed_delta(&store, &binding, &base);
@@ -22035,7 +23658,7 @@ mod tests {
 
         let assert_rejected =
             |label: &str, added_rows: u64, table: Option<MirrorTable>, mutate: fn(&Connection)| {
-                let temporary = tempfile::tempdir().expect("temporary store");
+                let temporary = crate::private_tempdir().expect("temporary store");
                 let store = HubStore::initialize(temporary.path()).expect("store");
                 let (vehicle, binding, base) = imported_v2_base(&store);
                 let mut delta = imported_typed_delta(&store, &binding, &base);
@@ -22106,7 +23729,7 @@ mod tests {
 
     #[test]
     fn lineage_catalog_requires_verified_packs_and_is_restart_safe() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let base_snapshot_id = Uuid::new_v4();
@@ -22250,7 +23873,7 @@ mod tests {
 
     #[test]
     fn import_generation_staging_survives_active_state_and_promotes_once() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (source, vehicle) = test_registered_vehicle(&store);
         let active = crate::teslamate_projection::TeslaMateOpenSession {
@@ -22326,7 +23949,7 @@ mod tests {
 
     #[test]
     fn finalize_import_generation_promotes_fresh_vehicle_from_zero_cursor() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (source, vehicle) = test_registered_vehicle(&store);
         let session = crate::teslamate_projection::TeslaMateOpenSession {
@@ -22372,7 +23995,7 @@ mod tests {
 
     #[test]
     fn import_generation_promotion_rejects_newer_live_cursor_without_reopening_state() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let source = store
             .register_source(&SourceDescriptor::new("test", "race"), 1_000)
@@ -22424,7 +24047,7 @@ mod tests {
 
     #[test]
     fn export_outbox_coalesces_retries_survives_restart_and_respects_v2_base() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let source = store
             .register_source(&SourceDescriptor::new("test", "outbox"), 1_000)
@@ -22509,7 +24132,7 @@ mod tests {
 
     #[test]
     fn export_outbox_completion_preserves_a_newer_revision_created_during_the_lease() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         mark_export_dirty_for_test(&store, vehicle.vehicle_id);
@@ -22544,7 +24167,7 @@ mod tests {
 
     #[test]
     fn export_outbox_completion_advances_fairly_across_vehicles() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let source = store
             .register_source(&SourceDescriptor::new("test", "outbox-fairness"), 1_000)
@@ -22608,7 +24231,7 @@ mod tests {
 
     #[test]
     fn export_outbox_restart_reclaims_an_expired_lease_and_fences_stale_completion() {
-        let temp = tempfile::tempdir().expect("temporary store");
+        let temp = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         mark_export_dirty_for_test(&store, vehicle.vehicle_id);
@@ -22656,7 +24279,7 @@ mod tests {
 
     #[test]
     fn stream_session_terminal_completion_is_explicit_and_idempotence_fenced() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let correlation_id = Uuid::new_v4();
         let session = store
@@ -22688,7 +24311,7 @@ mod tests {
 
     #[test]
     fn upgrades_v39_with_durable_live_delta_compaction_provenance() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
         remove_v50_current_observation_schema(&connection);
@@ -22732,7 +24355,7 @@ mod tests {
 
     #[test]
     fn upgrades_v41_with_bounded_prior_lineage_pack_authorization() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
         remove_v50_current_observation_schema(&connection);
@@ -22775,7 +24398,7 @@ mod tests {
 
     #[test]
     fn upgrades_v40_stream_receipts_without_reclassifying_crash_evidence() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let correlation_id = Uuid::new_v4();
         let connection = store.open().expect("current catalogue");
@@ -22858,7 +24481,7 @@ mod tests {
 
     #[test]
     fn upgrades_a_v2_database_without_losing_existing_tables() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let database_path = temp.path().join("hub.sqlite");
         let legacy_source_id = Uuid::new_v4();
         let connection = Connection::open(&database_path).expect("open v2 database");
@@ -22929,7 +24552,7 @@ mod tests {
 
     #[test]
     fn upgrades_a_v1_database_through_v2_and_v3() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let database_path = temp.path().join("hub.sqlite");
         let connection = Connection::open(&database_path).expect("open v1 database");
         connection
@@ -22993,7 +24616,7 @@ mod tests {
 
     #[test]
     fn upgrades_v36_catalogue_to_a_separate_digest_only_projection_state() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
         remove_v50_current_observation_schema(&connection);
@@ -23049,7 +24672,7 @@ mod tests {
 
     #[test]
     fn upgrades_v38_teslamate_projection_catalogues_for_update_history() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
         remove_v50_current_observation_schema(&connection);
@@ -23241,7 +24864,7 @@ mod tests {
 
     #[test]
     fn imported_home_work_geofences_match_live_endpoints_after_restart() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let imported = vec![
@@ -23439,7 +25062,7 @@ mod tests {
 
     #[test]
     fn lifecycle_commit_recomputes_charge_energy_from_all_durable_samples() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let start = 1_800_000_000_000;
@@ -23511,7 +25134,7 @@ mod tests {
 
     #[test]
     fn lifecycle_state_intervals_upsert_and_survive_store_restart() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let state = crate::lifecycle::OpenSessionState::new();
@@ -23588,7 +25211,7 @@ mod tests {
 
     #[test]
     fn lifecycle_car_metadata_is_durable_and_preserves_imported_efficiency() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let imported = crate::hub_pack::ProjectionCar {
@@ -23727,7 +25350,7 @@ mod tests {
 
     #[test]
     fn repair_preserves_quarantined_sessions_and_removes_orphaned_packs() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
 
@@ -23772,7 +25395,7 @@ mod tests {
 
     #[test]
     fn car_settings_are_idempotent_and_survive_reopen() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let settings = ProjectionCarSettings {
@@ -23819,7 +25442,7 @@ mod tests {
 
     #[test]
     fn unresolved_live_default_resolves_once_and_explicit_value_wins() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let live = ProjectionCarSettings::new_live();
@@ -23885,7 +25508,7 @@ mod tests {
 
     #[test]
     fn stream_watermark_is_strictly_increasing_and_survives_reopen() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
 
@@ -23926,7 +25549,7 @@ mod tests {
 
     #[test]
     fn verify_no_wake_applies_the_captured_receipt_watermark() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let correlation_id = Uuid::new_v4();
 
@@ -23987,7 +25610,7 @@ mod tests {
 
     #[test]
     fn sync_mutations_are_durable_monotonic_and_coalescible() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let car = crate::hub_pack::ProjectionCar {
@@ -24063,7 +25686,7 @@ mod tests {
 
     #[test]
     fn native_controls_update_settings_geofences_charge_cost_and_gpx_pages() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let mut settings = ProjectionCarSettings {
@@ -24355,7 +25978,7 @@ mod tests {
 
     #[test]
     fn rated_range_charge_consensus_updates_live_car_efficiency() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let (_, vehicle) = test_registered_vehicle(&store);
         let car = ProjectionCar {
@@ -24481,7 +26104,7 @@ mod terrain_background_tests {
 
     #[test]
     fn terrain_enrichment_is_restart_safe_authoritative_and_republishes_revision() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let source = store
             .register_source(&SourceDescriptor::new("terrain_test", "one"), 1_000)
@@ -24631,7 +26254,7 @@ mod terrain_background_tests {
 
     #[test]
     fn tesla_eid_unifies_sources_and_survives_restart() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let imported = store
             .register_source(&SourceDescriptor::new("teslamate", "copy"), 1)
@@ -24669,7 +26292,7 @@ mod terrain_background_tests {
 
     #[test]
     fn distinct_eid_cars_do_not_merge_on_reused_vid_and_conflicts_fail() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = crate::private_tempdir().expect("tempdir");
         let store = HubStore::initialize(temp.path()).expect("store");
         let source = store
             .register_source(&SourceDescriptor::new("teslamate", "copy"), 1)
@@ -24733,7 +26356,7 @@ mod observation_verification_tests {
 
     #[test]
     fn watermark_and_verification_use_only_durable_observation_metadata() {
-        let temporary = tempfile::tempdir().expect("temporary database");
+        let temporary = crate::private_tempdir().expect("temporary database");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let (source, vehicle) = {
             let source = store
@@ -24792,7 +26415,7 @@ mod observation_verification_tests {
 
     #[test]
     fn source_car_mapping_fails_closed_when_missing_or_ambiguous() {
-        let temporary = tempfile::tempdir().expect("temporary database");
+        let temporary = crate::private_tempdir().expect("temporary database");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let source = store
             .register_source(
@@ -24971,13 +26594,16 @@ impl std::fmt::Debug for DeviceAccessToken {
 pub struct PairedDeviceAccess {
     pub device_id: Uuid,
     pub access_token: DeviceAccessToken,
+    pub expires_at_ms: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PairedDeviceRecord {
     pub device_id: Uuid,
     pub display_name: String,
     pub created_at_ms: i64,
+    pub expires_at_ms: i64,
+    pub revoked_at_ms: Option<i64>,
     pub last_authenticated_at_ms: Option<i64>,
 }
 

@@ -1,6 +1,10 @@
 #[cfg(unix)]
 use std::future::Future;
 use std::{
+    fs,
+    io::Read,
+    os::unix::fs::MetadataExt,
+    path::Path as FsPath,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -12,6 +16,10 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
+};
+use rustix::{
+    fs::{FileType, Mode, OFlags, fstat, open},
+    process::getuid,
 };
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
@@ -35,12 +43,106 @@ use crate::{
     },
 };
 
+pub const MAX_TLS_CERTIFICATE_CHAIN_BYTES: usize = 256 * 1024;
+pub const MAX_TLS_PRIVATE_KEY_BYTES: usize = 64 * 1024;
+
 pub async fn rustls_config_from_identity(
     tls: &TlsListenerConfig,
 ) -> std::io::Result<axum_server::tls_rustls::RustlsConfig> {
-    let certificate_pem = zeroize::Zeroizing::new(tokio::fs::read(&tls.certificate_path).await?);
-    let private_key_pem = zeroize::Zeroizing::new(tokio::fs::read(&tls.private_key_path).await?);
+    let certificate_pem = read_tls_identity_file(
+        &tls.certificate_path,
+        MAX_TLS_CERTIFICATE_CHAIN_BYTES,
+        false,
+    )?;
+    let private_key_pem =
+        read_tls_identity_file(&tls.private_key_path, MAX_TLS_PRIVATE_KEY_BYTES, true)?;
     rustls_config_from_pem_identity(certificate_pem, private_key_pem).await
+}
+
+/// Read one exact TLS identity inode with fixed bounds and Unix ownership and
+/// permission checks. Pairing and Serve deliberately share this function so a
+/// device cannot pin different bytes from the listener identity.
+#[doc(hidden)]
+pub fn read_tls_identity_file(
+    path: &FsPath,
+    maximum: usize,
+    private: bool,
+) -> std::io::Result<zeroize::Zeroizing<Vec<u8>>> {
+    read_tls_identity_file_after_open(path, maximum, private, || {})
+}
+
+/// Testable form of [`read_tls_identity_file`] with one hook after descriptor
+/// admission. The hook exists so identity-replacement races remain covered.
+#[doc(hidden)]
+pub fn read_tls_identity_file_after_open(
+    path: &FsPath,
+    maximum: usize,
+    private: bool,
+    after_open: impl FnOnce(),
+) -> std::io::Result<zeroize::Zeroizing<Vec<u8>>> {
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|_| std::io::Error::other("TLS identity file cannot be safely opened"))?;
+    let held = fstat(&descriptor)
+        .map_err(|_| std::io::Error::other("TLS identity file cannot be inspected"))?;
+    let permission_mask = if private { 0o077 } else { 0o022 };
+    if !FileType::from_raw_mode(held.st_mode).is_file()
+        || (held.st_mode as u32 & permission_mask) != 0
+        || held.st_uid != getuid().as_raw()
+    {
+        return Err(std::io::Error::other("TLS identity file is unsafe"));
+    }
+    after_open();
+    let file: fs::File = descriptor.into();
+    let read_limit = maximum
+        .checked_add(1)
+        .ok_or_else(|| std::io::Error::other("TLS identity size limit is invalid"))?;
+    let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(read_limit));
+    (&file)
+        .take(u64::try_from(read_limit).expect("TLS identity cap fits u64"))
+        .read_to_end(&mut bytes)
+        .map_err(|_| std::io::Error::other("TLS identity file cannot be read"))?;
+    if bytes.len() > maximum {
+        return Err(std::io::Error::other(
+            "TLS identity exceeds the fixed size limit",
+        ));
+    }
+    let after =
+        fstat(&file).map_err(|_| std::io::Error::other("TLS identity file cannot be inspected"))?;
+    let current = fs::symlink_metadata(path)
+        .map_err(|_| std::io::Error::other("TLS identity file changed"))?;
+    if after.st_dev != held.st_dev
+        || after.st_ino != held.st_ino
+        || after.st_mode != held.st_mode
+        || after.st_nlink != held.st_nlink
+        || after.st_uid != held.st_uid
+        || after.st_gid != held.st_gid
+        || after.st_size != held.st_size
+        || after.st_mtime != held.st_mtime
+        || after.st_mtime_nsec != held.st_mtime_nsec
+        || after.st_ctime != held.st_ctime
+        || after.st_ctime_nsec != held.st_ctime_nsec
+        || current.file_type().is_symlink()
+        || !current.file_type().is_file()
+        || current.uid() != getuid().as_raw()
+        || current.dev() != held.st_dev as u64
+        || current.ino() != held.st_ino
+        || current.nlink() != u64::from(held.st_nlink)
+        || current.uid() != held.st_uid
+        || current.gid() != held.st_gid
+        || current.mode() != held.st_mode as u32
+        || current.len() != u64::try_from(held.st_size).unwrap_or(u64::MAX)
+        || current.mtime() != held.st_mtime
+        || current.mtime_nsec() != held.st_mtime_nsec as i64
+        || current.ctime() != held.st_ctime
+        || current.ctime_nsec() != held.st_ctime_nsec as i64
+    {
+        return Err(std::io::Error::other("TLS identity file changed"));
+    }
+    Ok(bytes)
 }
 
 /// Build the exact TLS identity used by `Serve` from already admitted bytes.
@@ -273,6 +375,7 @@ fn router_with_access(
         .route("/readyz", get(ready))
         .route("/.well-known/teslatlas-hub", get(capabilities))
         .route("/v1/pairings/{pairing_id}/claim", post(claim_pairing))
+        .route("/v1/device/rotate", post(rotate_device))
         .route("/v1/vehicles", get(vehicles))
         .route("/v1/vehicles/{vehicle_id}/current", get(current_vehicle))
         .route("/v1/vehicles/{vehicle_id}/sync/manifest", get(manifest))
@@ -610,6 +713,7 @@ async fn claim_pairing(
         Ok(mut access) => Json(PairingClaimResponse {
             device_id: access.device_id,
             access_token: access.access_token.take_bearer().into(),
+            expires_at_ms: access.expires_at_ms,
         })
         .into_response(),
         // Do not distinguish a bad secret from expiry, reuse, or an unknown
@@ -617,6 +721,31 @@ async fn claim_pairing(
         Err(crate::db::StoreError::PairingRejected) => StatusCode::UNAUTHORIZED.into_response(),
         Err(error) => {
             tracing::error!(%error, "cannot claim pairing invitation");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+async fn rotate_device(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !state.require_device_auth {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let Some(bearer) = bearer_from_headers(&headers) else {
+        return unauthorized();
+    };
+    let Ok(now_ms) = current_epoch_ms() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    match state.store.rotate_device(bearer, now_ms) {
+        Ok(mut access) => Json(PairingClaimResponse {
+            device_id: access.device_id,
+            access_token: access.access_token.take_bearer().into(),
+            expires_at_ms: access.expires_at_ms,
+        })
+        .into_response(),
+        Err(crate::db::StoreError::PairingRejected) => unauthorized(),
+        Err(error) => {
+            tracing::error!(%error, "cannot rotate paired device bearer");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
@@ -858,17 +987,25 @@ fn authorize_device(state: &AppState, headers: &HeaderMap) -> Option<PairedDevic
             device_id: Uuid::nil(),
             display_name: String::new(),
             created_at_ms: 0,
+            expires_at_ms: i64::MAX,
+            revoked_at_ms: None,
             last_authenticated_at_ms: None,
         });
     }
+    let bearer = bearer_from_headers(headers)?;
+    state.store.authenticate_device(bearer).ok().flatten()
+}
+
+fn bearer_from_headers(headers: &HeaderMap) -> Option<&str> {
     let bearer = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())?
         .strip_prefix("Bearer ")?;
     if bearer.is_empty() || bearer.contains(char::is_whitespace) {
-        return None;
+        None
+    } else {
+        Some(bearer)
     }
-    state.store.authenticate_device(bearer).ok().flatten()
 }
 
 fn unauthorized() -> Response {
@@ -1056,6 +1193,7 @@ struct PairingClaimRequest {
 struct PairingClaimResponse {
     device_id: Uuid,
     access_token: PairingBearer,
+    expires_at_ms: i64,
 }
 
 impl Serialize for PairingClaimResponse {
@@ -1065,9 +1203,10 @@ impl Serialize for PairingClaimResponse {
     {
         use serde::ser::SerializeStruct;
 
-        let mut response = serializer.serialize_struct("PairingClaimResponse", 2)?;
+        let mut response = serializer.serialize_struct("PairingClaimResponse", 3)?;
         response.serialize_field("device_id", &self.device_id)?;
         response.serialize_field("access_token", self.access_token.0.as_str())?;
+        response.serialize_field("expires_at_ms", &self.expires_at_ms)?;
         response.end()
     }
 }
@@ -1121,7 +1260,7 @@ mod tests {
         collections::BTreeMap,
         fs,
         net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
-        os::unix::fs::PermissionsExt,
+        os::unix::fs::{PermissionsExt, symlink},
         time::Duration,
     };
 
@@ -1190,6 +1329,8 @@ mod tests {
         let private_key_path = temporary.path().join("private-key.pem");
         fs::write(&certificate_path, cert.pem()).expect("write certificate");
         fs::write(&private_key_path, signing_key.serialize_pem()).expect("write private key");
+        fs::set_permissions(&private_key_path, fs::Permissions::from_mode(0o600))
+            .expect("protect private key");
         HubConfig {
             data_dir,
             bind,
@@ -1245,7 +1386,7 @@ mod tests {
 
     #[tokio::test]
     async fn native_tls_validation_rejects_malformed_and_mismatched_identity() {
-        let temporary = tempfile::tempdir().expect("temporary TLS identity");
+        let temporary = crate::private_tempdir().expect("temporary TLS identity");
         let certificate_path = temporary.path().join("certificate.pem");
         let private_key_path = temporary.path().join("private-key.pem");
         let tls = TlsListenerConfig {
@@ -1256,6 +1397,8 @@ mod tests {
 
         fs::write(&certificate_path, b"not a certificate\n").expect("write malformed cert");
         fs::write(&private_key_path, b"not a private key\n").expect("write malformed key");
+        fs::set_permissions(&private_key_path, fs::Permissions::from_mode(0o600))
+            .expect("protect malformed key");
         rustls_config_from_identity(&tls)
             .await
             .expect_err("malformed PEM must fail native validation");
@@ -1272,15 +1415,56 @@ mod tests {
             .expect("second identity");
         fs::write(&certificate_path, first_certificate.pem()).expect("write certificate");
         fs::write(&private_key_path, second_key.serialize_pem()).expect("write mismatched key");
+        fs::set_permissions(&private_key_path, fs::Permissions::from_mode(0o600))
+            .expect("protect mismatched key");
         rustls_config_from_identity(&tls)
             .await
             .expect_err("mismatched certificate and key must fail native validation");
     }
 
+    #[tokio::test]
+    async fn native_tls_validation_rejects_symlink_insecure_mode_and_oversize() {
+        let temporary = crate::private_tempdir().expect("temporary TLS identity");
+        let certificate_path = temporary.path().join("certificate.pem");
+        let private_key_path = temporary.path().join("private-key.pem");
+        let tls = TlsListenerConfig {
+            certificate_path: certificate_path.clone(),
+            private_key_path: private_key_path.clone(),
+            public_url: "https://hub.example.test:8443".to_owned(),
+        };
+
+        let certificate_target = temporary.path().join("certificate-target.pem");
+        fs::write(&certificate_target, b"certificate").expect("certificate target");
+        symlink(&certificate_target, &certificate_path).expect("certificate symlink");
+        fs::write(&private_key_path, b"key").expect("private key");
+        fs::set_permissions(&private_key_path, fs::Permissions::from_mode(0o600))
+            .expect("protect key");
+        rustls_config_from_identity(&tls)
+            .await
+            .expect_err("Serve must reject a certificate symlink");
+
+        fs::remove_file(&certificate_path).expect("remove symlink");
+        fs::write(
+            &certificate_path,
+            vec![b'x'; MAX_TLS_CERTIFICATE_CHAIN_BYTES + 1],
+        )
+        .expect("oversize certificate");
+        rustls_config_from_identity(&tls)
+            .await
+            .expect_err("Serve must reject an oversize certificate");
+
+        fs::write(&certificate_path, b"certificate").expect("bounded certificate");
+        fs::set_permissions(&private_key_path, fs::Permissions::from_mode(0o640))
+            .expect("weaken key mode");
+        rustls_config_from_identity(&tls)
+            .await
+            .expect_err("Serve must reject a group-readable private key");
+    }
+
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn admitted_tls_server_creates_data_dir_cursor_key_when_not_supplied() {
-        let temporary = tempfile::tempdir().expect("temporary admitted TLS server root");
+        let temporary = crate::private_tempdir().expect("temporary admitted TLS server root");
         let (admission, store_path) = admitted_server_fixture(&temporary);
         let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve port");
         let bind = reservation.local_addr().expect("reserved address");
@@ -1327,7 +1511,7 @@ mod tests {
 
     #[tokio::test]
     async fn tls_server_cancellation_releases_owned_listener_for_rebind() {
-        let temporary = tempfile::tempdir().expect("temporary TLS server root");
+        let temporary = crate::private_tempdir().expect("temporary TLS server root");
         let (admission, store_path) = admitted_server_fixture(&temporary);
         let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve port");
         let bind = reservation.local_addr().expect("reserved address");
@@ -1364,7 +1548,7 @@ mod tests {
 
     #[tokio::test]
     async fn tls_server_supervisor_shutdown_gracefully_awaits_listener_stop() {
-        let temporary = tempfile::tempdir().expect("temporary TLS server root");
+        let temporary = crate::private_tempdir().expect("temporary TLS server root");
         let (admission, store_path) = admitted_server_fixture(&temporary);
         let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve port");
         let bind = reservation.local_addr().expect("reserved address");
@@ -1399,7 +1583,7 @@ mod tests {
 
     #[tokio::test]
     async fn plain_server_cancellation_releases_owned_listener_with_active_connection() {
-        let temporary = tempfile::tempdir().expect("temporary plain server root");
+        let temporary = crate::private_tempdir().expect("temporary plain server root");
         let (admission, store_path) = admitted_server_fixture(&temporary);
         let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve port");
         let bind = reservation.local_addr().expect("reserved address");
@@ -1439,7 +1623,7 @@ mod tests {
 
     #[tokio::test]
     async fn plain_server_supervisor_shutdown_gracefully_awaits_listener_stop() {
-        let temporary = tempfile::tempdir().expect("temporary plain server root");
+        let temporary = crate::private_tempdir().expect("temporary plain server root");
         let (admission, store_path) = admitted_server_fixture(&temporary);
         let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve port");
         let bind = reservation.local_addr().expect("reserved address");
@@ -1474,7 +1658,7 @@ mod tests {
 
     #[tokio::test]
     async fn native_readiness_binds_the_loaded_config_contract_digest() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let digest = Sha256Digest::of_bytes(b"loaded native config contract");
         let response = router_with_access(store, false, false, false, None, None, Some(digest))
@@ -1783,7 +1967,7 @@ mod tests {
 
     #[tokio::test]
     async fn exposes_health_and_capabilities() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let app = router(HubStore::initialize(temp.path()).expect("store"));
 
         let health = app
@@ -1820,7 +2004,7 @@ mod tests {
 
     #[tokio::test]
     async fn schema_22_catalogue_serves_only_when_client_advertises_22() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let cursor_key = CursorKey::from_bytes([92; 32]);
         let (vehicle_id, digest) = inject_schema_22_catalogue(&store, &cursor_key);
@@ -1891,7 +2075,7 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_reports_redacted_collector_absent_stale_terminal_and_recovery_codes() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let source = store
             .register_source(
@@ -2089,7 +2273,7 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_refuses_a_cheaply_unservable_published_lineage_pack() {
-        let temporary = tempfile::tempdir().expect("temporary store");
+        let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let cursor_key = CursorKey::from_bytes([91; 32]);
         let (_, _, pack_path) = seed_v2_lineage(&store, &cursor_key);
@@ -2150,7 +2334,7 @@ mod tests {
 
     #[tokio::test]
     async fn tls_capabilities_publish_lowercase_manifest_verifying_key() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let cursor_key = CursorKey::from_bytes([29; 32]);
         let expected = ManifestSigning::from_cursor_key(&cursor_key).verifying_key_hex();
         let app = paired_router(
@@ -2188,7 +2372,7 @@ mod tests {
 
     #[tokio::test]
     async fn tls_router_requires_a_paired_device_and_claims_once() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let invitation = store
             .create_pairing("iPhone", 1_000, i64::MAX)
@@ -2232,11 +2416,12 @@ mod tests {
             .await
             .expect("claim payload")
             .to_bytes();
-        let access_token = serde_json::from_slice::<serde_json::Value>(&payload)
-            .expect("claim JSON")["access_token"]
+        let claimed = serde_json::from_slice::<serde_json::Value>(&payload).expect("claim JSON");
+        let access_token = claimed["access_token"]
             .as_str()
             .expect("access token")
             .to_owned();
+        assert!(claimed["expires_at_ms"].as_i64().unwrap() > 0);
 
         let listed = app
             .clone()
@@ -2250,6 +2435,55 @@ mod tests {
             .await
             .expect("vehicle response");
         assert_eq!(listed.status(), StatusCode::OK);
+
+        let rotated = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/device/rotate")
+                    .header(header::AUTHORIZATION, format!("Bearer {access_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("rotation response");
+        assert_eq!(rotated.status(), StatusCode::OK);
+        let rotated_payload = rotated
+            .into_body()
+            .collect()
+            .await
+            .expect("rotation payload")
+            .to_bytes();
+        let rotated_token = serde_json::from_slice::<serde_json::Value>(&rotated_payload)
+            .expect("rotation JSON")["access_token"]
+            .as_str()
+            .expect("rotated access token")
+            .to_owned();
+        let old_after_rotation = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/vehicles")
+                    .header(header::AUTHORIZATION, format!("Bearer {access_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("old token response");
+        assert_eq!(old_after_rotation.status(), StatusCode::UNAUTHORIZED);
+        let new_after_rotation = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/vehicles")
+                    .header(header::AUTHORIZATION, format!("Bearer {rotated_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("new token response");
+        assert_eq!(new_after_rotation.status(), StatusCode::OK);
 
         let replay = app
             .oneshot(
@@ -2273,7 +2507,7 @@ mod tests {
 
     #[tokio::test]
     async fn current_vehicle_serves_the_durable_v4_1_1_summary_without_raw_history() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let source = store
             .register_source(
@@ -2360,6 +2594,7 @@ mod tests {
         let response = PairingClaimResponse {
             device_id: Uuid::nil(),
             access_token: bearer,
+            expires_at_ms: 123,
         };
         let encoded = serde_json::to_vec(&response).expect("pairing response JSON");
         assert!(String::from_utf8_lossy(&encoded).contains("bearer-token-canary"));
@@ -2367,7 +2602,7 @@ mod tests {
 
     #[tokio::test]
     async fn serves_catalogued_manifest_and_immutable_pack_stream() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let installation_id = Uuid::new_v4();
         let account_id = Uuid::new_v4();
@@ -2433,15 +2668,16 @@ mod tests {
         };
         store.publish_manifest(&manifest).expect("publish manifest");
         let expected_pack = fs::read(&built.path).expect("pack bytes");
+        let now_ms = current_epoch_ms().expect("pairing clock");
         let invitation = store
-            .create_pairing("manifest test", 1_000, i64::MAX)
+            .create_pairing("manifest test", now_ms - 1, i64::MAX)
             .expect("pairing invitation");
         let access = store
             .claim_pairing(
                 invitation.pairing_id,
                 invitation.secret(),
                 "test client",
-                1_001,
+                now_ms,
             )
             .expect("paired access");
         let bearer = access.access_token.as_bearer().to_owned();
@@ -2596,7 +2832,7 @@ mod tests {
 
     #[tokio::test]
     async fn paired_schema_22_restart_keeps_exact_noop_and_wrong_key_fails_closed() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store_path = temp.path().join("store");
         let store = HubStore::initialize(&store_path).expect("store");
         let cursor_key = CursorKey::from_bytes([73; 32]);
@@ -2615,15 +2851,16 @@ mod tests {
         .expect("schema 2.2 no-op");
         publish_updates_schema_22(&store, &manifest, &noop).expect("publish pair");
 
+        let now_ms = current_epoch_ms().expect("pairing clock");
         let invitation = store
-            .create_pairing("schema 2.2 no-op test", 1_000, i64::MAX)
+            .create_pairing("schema 2.2 no-op test", now_ms - 1, i64::MAX)
             .expect("pairing invitation");
         let access = store
             .claim_pairing(
                 invitation.pairing_id,
                 invitation.secret(),
                 "test client",
-                1_001,
+                now_ms,
             )
             .expect("paired access");
         let restarted = HubStore::initialize(&store_path).expect("restart store");
@@ -2715,7 +2952,7 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_delta_v2_returns_validated_lineage_and_authorized_packs() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let cursor_key = CursorKey::from_bytes([41; 32]);
         let (vehicle_id, digest, _) = seed_v2_lineage(&store, &cursor_key);
@@ -2779,7 +3016,7 @@ mod tests {
 
     #[tokio::test]
     async fn imported_changed_history_serves_a_valid_typed_delta() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let cursor_key = CursorKey::from_bytes([44; 32]);
         let request = TeslaMateImportRequest {
@@ -2911,7 +3148,7 @@ mod tests {
 
     #[tokio::test]
     async fn restart_serves_unexpired_prior_lineage_pack_but_never_an_arbitrary_orphan() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let cursor_key = CursorKey::from_bytes([45; 32]);
         let (vehicle_id, _, _) = seed_v2_lineage(&store, &cursor_key);
@@ -3060,7 +3297,7 @@ mod tests {
 
     #[tokio::test]
     async fn delta_v2_rejects_unknown_unavailable_and_corrupt_requests_without_v1_fallback() {
-        let temp = tempfile::tempdir().expect("temp directory");
+        let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
         let unknown = Uuid::new_v4();
         let app = router(store);
@@ -3090,7 +3327,7 @@ mod tests {
             .expect("unavailable response");
         assert_eq!(unavailable.status(), StatusCode::NOT_ACCEPTABLE);
 
-        let temp_corrupt = tempfile::tempdir().expect("corrupt temp directory");
+        let temp_corrupt = crate::private_tempdir().expect("corrupt temp directory");
         let corrupt_store = HubStore::initialize(temp_corrupt.path()).expect("corrupt store");
         let cursor_key = CursorKey::from_bytes([43; 32]);
         let (vehicle_id, _, pack_path) = seed_v2_lineage(&corrupt_store, &cursor_key);

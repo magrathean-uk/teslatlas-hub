@@ -9,7 +9,6 @@ SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
 require_root
 read_console_user
 
-BINARY='/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub'
 CONFIG="$CONSOLE_HOME/Library/Application Support/Teslatlas Hub/config.toml"
 LAUNCH_AGENTS="$CONSOLE_HOME/Library/LaunchAgents"
 PLIST="$LAUNCH_AGENTS/$LABEL.plist"
@@ -17,42 +16,77 @@ LOG_DIRECTORY="$CONSOLE_HOME/Library/Logs/Teslatlas Hub"
 STDOUT="$LOG_DIRECTORY/hub.out.log"
 STDERR="$LOG_DIRECTORY/hub.err.log"
 TEMPLATE="$SCRIPT_DIR/com.teslatlas.hub.plist.in"
+STATE_DIRECTORY=$(upgrade_state_directory)
+temporary_plist=
+service_stopped=0
+completed=0
+rollback_failed=0
 
-[ -f "$BINARY" ] && [ ! -L "$BINARY" ] \
-    || installer_error "installed Hub binary is missing or unsafe"
-[ "$(/usr/bin/stat -f '%u:%g' "$BINARY")" = '0:0' ] \
-    || installer_error "installed Hub binary is not root-owned"
+require_safe_upgrade_state "$STATE_DIRECTORY"
+
+finish() {
+    status=$?
+    trap - EXIT HUP INT TERM
+    if [ -n "$temporary_plist" ] && { [ -e "$temporary_plist" ] || [ -L "$temporary_plist" ]; }; then
+        /bin/rm -f "$temporary_plist" || status=1
+    fi
+    if [ "$completed" -ne 1 ]; then
+        if [ "$service_stopped" -eq 1 ]; then
+            /bin/launchctl bootout "$(service_target)" >/dev/null 2>&1 || true
+        fi
+        if [ -f "$STATE_DIRECTORY/teslatlas-hub" ] && [ ! -L "$STATE_DIRECTORY/teslatlas-hub" ]; then
+            /usr/bin/install -o root -g wheel -m 0755 "$STATE_DIRECTORY/teslatlas-hub" "$BINARY" \
+                || { status=1; rollback_failed=1; }
+        fi
+        if [ -f "$STATE_DIRECTORY/launch-agent.plist" ] && [ ! -L "$STATE_DIRECTORY/launch-agent.plist" ]; then
+            /usr/bin/install -o "$CONSOLE_UID" -g "$CONSOLE_GID" -m 0600 \
+                "$STATE_DIRECTORY/launch-agent.plist" "$PLIST" \
+                || { status=1; rollback_failed=1; }
+        elif [ "$service_stopped" -eq 1 ] && { [ -e "$PLIST" ] || [ -L "$PLIST" ]; }; then
+            /bin/rm -f "$PLIST" || { status=1; rollback_failed=1; }
+        fi
+        if [ "$service_stopped" -eq 1 ] && [ -f "$STATE_DIRECTORY/was-loaded" ]; then
+            /bin/launchctl bootstrap "$(service_domain)" "$PLIST" >/dev/null 2>&1 \
+                || { status=1; rollback_failed=1; }
+            /bin/launchctl kickstart -k "$(service_target)" >/dev/null 2>&1 \
+                || { status=1; rollback_failed=1; }
+        fi
+    fi
+    if [ "$completed" -eq 1 ] || [ "$rollback_failed" -eq 0 ]; then
+        remove_upgrade_state "$STATE_DIRECTORY" || status=1
+    else
+        printf '%s\n' "Teslatlas Hub installer: rollback state retained at $STATE_DIRECTORY" >&2
+    fi
+    exit "$status"
+}
+trap finish EXIT
+trap 'exit 1' HUP INT TERM
+
+require_safe_owned_tree "$BINARY_ROOT" 0 "installed Hub service payload"
+require_safe_regular_file "$BINARY" 0 "installed Hub binary"
+[ "$(/usr/bin/stat -f '%g' "$BINARY")" = 0 ] \
+    || installer_error "installed Hub binary has unexpected group"
 [ -x "$BINARY" ] || installer_error "installed Hub binary is not executable"
-[ -f "$TEMPLATE" ] || installer_error "LaunchAgent template is missing"
-
-# Preinstall already stopped an old job. Repeat the exact check here so an
-# interrupted prior install cannot leave two collectors running.
-bootout_if_loaded
+require_safe_regular_file "$TEMPLATE" 0 "LaunchAgent template"
 
 ensure_user_directory "$CONSOLE_HOME/Library" 0700
 ensure_user_directory "$LAUNCH_AGENTS" 0700
 ensure_user_directory "$CONSOLE_HOME/Library/Logs" 0700
 ensure_user_directory "$LOG_DIRECTORY" 0700
+/bin/chmod 0700 "$LOG_DIRECTORY" || installer_error "cannot protect Hub log directory"
 
 for log in "$STDOUT" "$STDERR"; do
     if [ -e "$log" ] || [ -L "$log" ]; then
-        [ -f "$log" ] && [ ! -L "$log" ] \
-            || installer_error "unsafe Hub log path"
-        [ "$(/usr/bin/stat -f '%u' "$log")" = "$CONSOLE_UID" ] \
-            || installer_error "Hub log has unexpected owner"
+        require_safe_regular_file "$log" "$CONSOLE_UID" "Hub log"
     else
         /usr/bin/install -o "$CONSOLE_UID" -g "$CONSOLE_GID" -m 0600 /dev/null "$log" \
             || installer_error "cannot create Hub log"
     fi
+    /bin/chmod 0600 "$log" || installer_error "cannot protect Hub log"
 done
 
 temporary_plist=$(/usr/bin/mktemp "$LAUNCH_AGENTS/.${LABEL}.XXXXXX") \
     || installer_error "cannot create temporary LaunchAgent plist"
-cleanup() {
-    /bin/rm -f "$temporary_plist"
-}
-trap cleanup EXIT HUP INT TERM
-
 /usr/bin/sed \
     -e "s|@BINARY@|$(xml_sed_replacement "$BINARY")|g" \
     -e "s|@CONFIG@|$(xml_sed_replacement "$CONFIG")|g" \
@@ -65,20 +99,45 @@ trap cleanup EXIT HUP INT TERM
 /usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_plist" \
     || installer_error "cannot set LaunchAgent ownership"
 /bin/chmod 0600 "$temporary_plist" || installer_error "cannot protect LaunchAgent plist"
-/bin/mv -f "$temporary_plist" "$PLIST" || installer_error "cannot install LaunchAgent plist"
-trap - EXIT HUP INT TERM
 
-domain=$(service_domain)
-target=$(service_target)
+previously_installed=0
+if [ -f "$STATE_DIRECTORY/teslatlas-hub" ] || [ -f "$STATE_DIRECTORY/launch-agent.plist" ]; then
+    previously_installed=1
+fi
 
-# A first install may happen before TeslaMate data and credentials are
-# imported. Do not create a KeepAlive crash loop in that state. Reinstalls of
-# an already configured Hub restart automatically; the app starts a newly
-# configured service after migration.
+if [ -f "$STATE_DIRECTORY/was-loaded" ]; then
+    service_stopped=1
+fi
+if service_is_loaded; then
+    service_stopped=1
+    bootout_if_loaded
+fi
+
+# The read-only preflight uses an immutable SQLite view. Run it only after the
+# old writer is stopped; any failure restores the old payload and loaded state.
+ready=0
 if /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
     "$BINARY" --config "$CONFIG" preflight >/dev/null 2>&1; then
-    /bin/launchctl bootstrap "$domain" "$PLIST" \
+    ready=1
+fi
+if [ -f "$STATE_DIRECTORY/was-loaded" ] && [ "$ready" -ne 1 ]; then
+    installer_error "new Hub failed preflight; restoring the running version"
+fi
+
+should_start=0
+if [ "$ready" -eq 1 ] && { [ -f "$STATE_DIRECTORY/was-loaded" ] || [ "$previously_installed" -eq 0 ]; }; then
+    should_start=1
+fi
+
+/bin/mv -f "$temporary_plist" "$PLIST" || installer_error "cannot install LaunchAgent plist"
+temporary_plist=
+
+if [ "$should_start" -eq 1 ]; then
+    service_stopped=1
+    /bin/launchctl bootstrap "$(service_domain)" "$PLIST" \
         || installer_error "cannot bootstrap Hub service"
-    /bin/launchctl kickstart -k "$target" \
+    /bin/launchctl kickstart -k "$(service_target)" \
         || installer_error "cannot start Hub service"
 fi
+
+completed=1

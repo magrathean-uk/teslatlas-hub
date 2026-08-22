@@ -3,7 +3,7 @@ Version: @VERSION@
 Section: utils
 Priority: optional
 Architecture: @ARCHITECTURE@
-Depends: adduser, ca-certificates, systemd
+Depends: adduser, ca-certificates, systemd@RUNTIME_DEPENDS@
 Maintainer: Magrathean UK Ltd <contact@magrathean.uk>
 Description: Self-hosted Tesla telemetry hub
  Teslatlas Hub is a local one-vehicle telemetry collector, migration tool,

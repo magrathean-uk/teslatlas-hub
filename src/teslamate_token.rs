@@ -59,6 +59,20 @@ pub fn encrypt_legacy_owner_tokens(
     ))
 }
 
+/// Stable, non-reversible identity of the single-use refresh authority.
+/// Tesla refresh tokens are high-entropy secrets; the domain-separated digest
+/// lets the durable fence recognize the same plaintext across random Cloak
+/// nonces without storing or logging the token.
+pub(crate) fn legacy_refresh_credential_generation(tokens: &OwnerTokens) -> uuid::Uuid {
+    let refresh = tokens.refresh_token().as_bytes();
+    let mut digest = Sha256::new();
+    digest.update(b"teslatlas-hub:legacy-refresh-generation:v1\0");
+    digest.update((refresh.len() as u64).to_le_bytes());
+    digest.update(refresh);
+    let bytes: [u8; 32] = digest.finalize().into();
+    uuid::Uuid::from_bytes(bytes[..16].try_into().expect("fixed digest prefix"))
+}
+
 /// Encrypt a user-supplied legacy pair without exposing the credential type
 /// through the CLI crate. Files may end in one conventional line ending.
 pub fn encrypt_legacy_owner_token_files(
@@ -218,6 +232,7 @@ mod tests {
         ASSOCIATED_DATA, AUTH_TAG_BYTES, CLOAK_TAG, CLOAK_TYPE, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
         MAX_LEGACY_TOKEN_PLAINTEXT_BYTES, NONCE_BYTES, TeslaMateTokenError,
         decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
+        legacy_refresh_credential_generation,
     };
     use crate::credentials::OwnerTokens;
 
@@ -389,6 +404,40 @@ mod tests {
         assert_ne!(
             &first_access[nonce_start..nonce_end],
             &second_access[nonce_start..nonce_end]
+        );
+    }
+
+    #[test]
+    fn legacy_refresh_credential_generation_has_stable_v1_vector_and_ignores_access_token() {
+        let first = OwnerTokens::from_secret_parts(
+            "access-one".to_owned(),
+            "stable-refresh-token-v1".to_owned(),
+        )
+        .expect("first pair");
+        let same_refresh = OwnerTokens::from_secret_parts(
+            "different-access".to_owned(),
+            "stable-refresh-token-v1".to_owned(),
+        )
+        .expect("same refresh pair");
+        let different_refresh = OwnerTokens::from_secret_parts(
+            "access-one".to_owned(),
+            "different-refresh-token".to_owned(),
+        )
+        .expect("different refresh pair");
+
+        let generation = legacy_refresh_credential_generation(&first);
+        assert_eq!(
+            generation,
+            uuid::Uuid::parse_str("5dc0cafc-ff0e-c09b-efb5-3ce6534ad2c9")
+                .expect("golden generation")
+        );
+        assert_eq!(
+            generation,
+            legacy_refresh_credential_generation(&same_refresh)
+        );
+        assert_ne!(
+            generation,
+            legacy_refresh_credential_generation(&different_refresh)
         );
     }
 }

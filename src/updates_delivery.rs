@@ -2253,7 +2253,7 @@ mod tests {
 
     #[test]
     fn production_capture_publishes_dynamic_exact_pair_and_reuses_exact_bytes() {
-        let temp = tempfile::tempdir().expect("store root");
+        let temp = crate::private_tempdir().expect("store root");
         let store = HubStore::initialize(temp.path()).expect("store");
         let cursor_key = CursorKey::from_bytes([43; 32]);
         let registered_source = store
@@ -2516,7 +2516,7 @@ mod tests {
 
     #[test]
     fn reopened_production_pack_root_mismatch_fails_closed() {
-        let temporary = tempfile::tempdir().expect("pack directory");
+        let temporary = crate::private_tempdir().expect("pack directory");
         let source = production_source(7);
         let source_stream =
             encode_updates_logical_stream(&source.updates).expect("source logical stream");
@@ -2563,7 +2563,7 @@ mod tests {
 
     #[test]
     fn reopened_pack_rejects_size_bomb_and_row_cap_plus_one() {
-        let temporary = tempfile::tempdir().expect("pack directory");
+        let temporary = crate::private_tempdir().expect("pack directory");
         let source = production_source(7);
         let snapshot = production_updates_snapshot(&source);
         let mut binding = pinned_updates_binding();

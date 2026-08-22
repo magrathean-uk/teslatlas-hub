@@ -31,30 +31,19 @@ restore_service_state() {
 }
 
 case "${1:-}" in
-    abort-remove|abort-deconfigure|abort-upgrade)
+    remove|purge)
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+        fi
+        rm -f "$state_file"
+        ;;
+    abort-install|abort-upgrade|failed-upgrade)
         restore_service_state
-        exit 0
+        ;;
+    disappear)
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+        fi
+        rm -f "$state_file"
         ;;
 esac
-
-if ! getent passwd teslatlas >/dev/null 2>&1; then
-    adduser --system --group --home /var/lib/teslatlas-hub --no-create-home teslatlas
-fi
-
-install -d -o teslatlas -g teslatlas -m 0700 /var/lib/teslatlas-hub
-install -d -o root -g teslatlas -m 0750 /etc/teslatlas-hub
-if [ -f /etc/teslatlas-hub/config.toml ]; then
-    chown root:teslatlas /etc/teslatlas-hub/config.toml
-    chmod 0640 /etc/teslatlas-hub/config.toml
-fi
-
-if [ -d /run/systemd/system ]; then
-    systemctl daemon-reload
-    if [ "${1:-}" = configure ] && [ -n "${2:-}" ] && systemctl is-active --quiet "$service"; then
-        systemctl restart "$service"
-    fi
-fi
-
-if [ "${1:-}" = configure ]; then
-    rm -f "$state_file"
-fi

@@ -945,13 +945,12 @@ mod tests {
         let temporary = tempfile::tempdir().expect("temporary directory");
         let data = temporary.path().join("Hub Data");
         let home = temporary.path().join("home");
-        fs::create_dir_all(&data).expect("data directory");
         fs::create_dir_all(&home).expect("home directory");
         let config = data.join("config.toml");
         let executable = temporary.path().join("source-bin");
+        seed_ready_hub(&data);
         fs::write(&config, "[hub]\n").expect("config");
         fs::write(&executable, "binary bytes").expect("source binary");
-        seed_ready_hub(&data);
 
         let paths = install_files_after_preflight(&data, &config, &home, &executable)
             .expect("install files");
@@ -985,7 +984,8 @@ mod tests {
         assert!(!plist.contains("EnvironmentVariables"));
         assert!(!plist.contains("ResourceLimits"));
         assert!(!plist.contains("SERVICE_WRAPPER"));
-        assert!(!plist.contains("ProcessType"));
+        assert!(plist.contains("<key>ProcessType</key>\n  <string>Background</string>"));
+        assert!(plist.contains("<key>Umask</key>\n  <integer>63</integer>"));
     }
 
     #[test]
@@ -993,13 +993,12 @@ mod tests {
         let temporary = tempfile::tempdir().expect("temporary directory");
         let data = temporary.path().join("data");
         let home = temporary.path().join("home");
-        fs::create_dir_all(&data).expect("data directory");
         fs::create_dir_all(&home).expect("home directory");
         let config = data.join("config.toml");
         let executable = temporary.path().join("source-bin");
+        HubStore::initialize(&data).expect("empty store");
         fs::write(&config, "[hub]\n").expect("config");
         fs::write(&executable, "binary bytes").expect("source binary");
-        HubStore::initialize(&data).expect("empty store");
 
         assert!(install_files_after_preflight(&data, &config, &home, &executable).is_err());
         assert_no_install_artifacts(&data, &home);
@@ -1010,13 +1009,12 @@ mod tests {
         let temporary = tempfile::tempdir().expect("temporary directory");
         let data = temporary.path().join("data");
         let home = temporary.path().join("home");
-        fs::create_dir_all(&data).expect("data directory");
         fs::create_dir_all(&home).expect("home directory");
         let config = data.join("config.toml");
         let executable = temporary.path().join("source-bin");
+        let _store = seed_selected_car(&data);
         fs::write(&config, "[hub]\n").expect("config");
         fs::write(&executable, "binary bytes").expect("source binary");
-        let _store = seed_selected_car(&data);
 
         assert!(install_files_after_preflight(&data, &config, &home, &executable).is_err());
         assert_no_install_artifacts(&data, &home);

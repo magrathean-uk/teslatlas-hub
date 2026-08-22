@@ -119,8 +119,15 @@ pub fn replace_key_and_tokens(
     tokens: &crate::db::TeslaMateLegacyTokenStore,
 ) -> Result<(), TeslaMateCredentialImportError> {
     recover_pending_key_replacement(data_dir, store)?;
+    let plaintext =
+        crate::teslamate_token::decrypt_legacy_owner_tokens(key, tokens.access(), tokens.refresh())
+            .map_err(TeslaMateCredentialImportError::TokenCipher)?;
+    let generation = crate::teslamate_token::legacy_refresh_credential_generation(&plaintext);
+    let tokens = tokens
+        .with_credential_generation(generation)
+        .map_err(TeslaMateCredentialImportError::TokenStore)?;
     let replacement = begin_key_replacement(data_dir, key)?;
-    if let Err(store_error) = store.replace_teslamate_legacy_tokens(tokens) {
+    if let Err(store_error) = store.replace_teslamate_legacy_tokens(&tokens) {
         return match replacement.rollback() {
             Ok(()) => Err(TeslaMateCredentialImportError::TokenStore(store_error)),
             Err(rollback) => Err(TeslaMateCredentialImportError::Rollback {
@@ -671,6 +678,8 @@ pub enum TeslaMateCredentialImportError {
     Credential(#[from] TeslaMateCredentialError),
     #[error("cannot store TeslaMate token pair: {0}")]
     TokenStore(#[source] crate::db::StoreError),
+    #[error("cannot authenticate TeslaMate token pair: {0}")]
+    TokenCipher(#[source] crate::teslamate_token::TeslaMateTokenError),
     #[error("cannot store TeslaMate token pair ({store}); key rollback also failed: {rollback}")]
     Rollback {
         store: String,
@@ -706,12 +715,16 @@ mod tests {
         .expect("test tokens");
         let (access, refresh) = crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens)
             .expect("encrypt pair");
-        crate::db::TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored pair")
+        let generation = crate::teslamate_token::legacy_refresh_credential_generation(&tokens);
+        crate::db::TeslaMateLegacyTokenStore::imported(access, refresh)
+            .expect("stored pair")
+            .with_credential_generation(generation)
+            .expect("credential generation")
     }
 
     #[test]
     fn replaces_and_loads_exact_key_with_private_permissions() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         replace_key(temporary.path(), b"first-key").expect("first key writes");
         replace_key(temporary.path(), b"second-key").expect("second key replaces first");
 
@@ -738,7 +751,7 @@ mod tests {
 
     #[test]
     fn key_and_ciphertext_replacement_recovers_both_crash_sides() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let store = crate::db::HubStore::initialize(temporary.path()).expect("store");
         let old_key = b"old exact TeslaMate key";
         let new_key = b"new exact TeslaMate key";
@@ -767,8 +780,41 @@ mod tests {
     }
 
     #[test]
+    fn ambiguous_refresh_rejects_same_plaintext_under_new_random_envelopes() {
+        let temporary = crate::private_tempdir().expect("temporary directory");
+        let store = crate::db::HubStore::initialize(temporary.path()).expect("store");
+        let first_key = b"first exact TeslaMate key";
+        let second_key = b"second exact TeslaMate key";
+        let first = encrypted_store(first_key, "same-access", "same-refresh");
+        replace_key_and_tokens(temporary.path(), &store, first_key, &first).expect("initial pair");
+        let generation = store
+            .load_teslamate_legacy_tokens()
+            .expect("load initial pair")
+            .expect("initial pair")
+            .credential_generation()
+            .expect("bound generation");
+        store
+            .begin_legacy_refresh(generation)
+            .expect("ambiguous refresh intent");
+
+        let reencrypted = encrypted_store(second_key, "same-access", "same-refresh");
+        assert!(matches!(
+            replace_key_and_tokens(temporary.path(), &store, second_key, &reencrypted,),
+            Err(TeslaMateCredentialImportError::TokenStore(
+                crate::db::StoreError::LegacyRefreshOutcomeUnknown
+            ))
+        ));
+        assert_eq!(
+            load_key_for_tokens(temporary.path(), &first)
+                .expect("old key remains")
+                .as_bytes(),
+            first_key
+        );
+    }
+
+    #[test]
     fn sign_out_removes_tokens_and_both_key_generations() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let store = crate::db::HubStore::initialize(temporary.path()).expect("store");
         let key = b"exact TeslaMate key";
         let stored = encrypted_store(key, "access", "refresh");
@@ -790,8 +836,67 @@ mod tests {
     }
 
     #[test]
+    fn sign_out_after_ambiguous_refresh_allows_fresh_credentials_without_reusing_input() {
+        let temporary = crate::private_tempdir().expect("temporary directory");
+        let store = crate::db::HubStore::initialize(temporary.path()).expect("store");
+        let old_key = b"old exact TeslaMate key";
+        let old = encrypted_store(old_key, "old-access", "old-refresh");
+        replace_key_and_tokens(temporary.path(), &store, old_key, &old).expect("persist old pair");
+        let old_generation = store
+            .load_teslamate_legacy_tokens()
+            .expect("load old pair")
+            .expect("old pair")
+            .credential_generation()
+            .expect("old generation");
+        store
+            .begin_legacy_refresh(old_generation)
+            .expect("ambiguous refresh starts");
+
+        remove_key_and_tokens(temporary.path(), &store).expect("sign out");
+        assert!(
+            !store
+                .has_unresolved_legacy_refresh()
+                .expect("sign out closes ambiguous receipt")
+        );
+
+        let fresh_key = b"fresh exact TeslaMate key";
+        let fresh = encrypted_store(fresh_key, "fresh-access", "fresh-refresh");
+        replace_key_and_tokens(temporary.path(), &store, fresh_key, &fresh)
+            .expect("fresh pair persists");
+        let reopened = store
+            .load_teslamate_legacy_tokens()
+            .expect("fresh pair loads")
+            .expect("fresh pair");
+        let fresh_generation = reopened.credential_generation().expect("fresh generation");
+        assert_ne!(fresh_generation, old_generation);
+        assert_eq!(
+            load_key_for_tokens(temporary.path(), &reopened)
+                .expect("fresh key reopens")
+                .as_bytes(),
+            fresh_key
+        );
+        assert!(matches!(
+            replace_key_and_tokens(temporary.path(), &store, old_key, &old),
+            Err(TeslaMateCredentialImportError::TokenStore(
+                crate::db::StoreError::LegacyRefreshOutcomeUnknown
+            ))
+        ));
+        let current = store
+            .load_teslamate_legacy_tokens()
+            .expect("fresh pair reloads")
+            .expect("fresh pair remains");
+        assert_eq!(current.credential_generation(), Some(fresh_generation));
+        assert_eq!(
+            load_key_for_tokens(temporary.path(), &current)
+                .expect("fresh key remains")
+                .as_bytes(),
+            fresh_key
+        );
+    }
+
+    #[test]
     fn rejects_symlinked_key_file() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let secrets = temporary.path().join("secrets");
         fs::create_dir(&secrets).expect("secrets directory");
         fs::set_permissions(&secrets, fs::Permissions::from_mode(SECRETS_DIRECTORY_MODE))
@@ -812,7 +917,7 @@ mod tests {
 
     #[test]
     fn rejects_empty_and_oversized_key_bytes() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         assert!(matches!(
             replace_key(temporary.path(), b""),
             Err(TeslaMateCredentialError::EmptyKey)
@@ -825,7 +930,7 @@ mod tests {
 
     #[test]
     fn key_reader_rejects_oversized_and_replaced_files_after_open() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let secrets = temporary.path().join("secrets");
         fs::create_dir(&secrets).expect("secrets directory");
         fs::set_permissions(&secrets, fs::Permissions::from_mode(SECRETS_DIRECTORY_MODE))
@@ -855,7 +960,7 @@ mod tests {
     #[test]
     fn key_readers_reject_fifos_without_waiting_for_a_writer() {
         for cursor in [false, true] {
-            let temporary = tempfile::tempdir().expect("temporary directory");
+            let temporary = crate::private_tempdir().expect("temporary directory");
             let path = temporary.path().join(if cursor {
                 "cursor-key.fifo"
             } else {
@@ -891,7 +996,7 @@ mod tests {
 
     #[test]
     fn creates_and_reloads_one_private_cursor_key() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let _first = load_or_create_cursor_key(temporary.path()).expect("cursor key creates");
         let path = cursor_key_path(temporary.path());
         let first_bytes = fs::read(&path).expect("cursor key bytes");
@@ -914,7 +1019,7 @@ mod tests {
 
     #[test]
     fn rejects_bad_cursor_key_length_and_mode() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let secrets = temporary.path().join("secrets");
         fs::create_dir(&secrets).expect("secrets directory");
         fs::set_permissions(&secrets, fs::Permissions::from_mode(SECRETS_DIRECTORY_MODE))
@@ -961,7 +1066,7 @@ mod tests {
 
     #[test]
     fn rejects_symlinked_cursor_key() {
-        let temporary = tempfile::tempdir().expect("temporary directory");
+        let temporary = crate::private_tempdir().expect("temporary directory");
         let secrets = temporary.path().join("secrets");
         fs::create_dir(&secrets).expect("secrets directory");
         fs::set_permissions(&secrets, fs::Permissions::from_mode(SECRETS_DIRECTORY_MODE))

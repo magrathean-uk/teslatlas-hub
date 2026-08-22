@@ -31,7 +31,7 @@ use uuid::Uuid;
 #[tokio::test]
 async fn claim_manifest_and_range_resume_over_real_tls() {
     let root = tempfile::tempdir().expect("temp root");
-    let store = HubStore::initialize(root.path()).expect("store");
+    let store = HubStore::initialize(root.path().join("hub")).expect("store");
     let cursor_key = CursorKey::from_bytes([0xA5; 32]);
     let published = publish_typed_snapshot(&store, &cursor_key).expect("seed pack");
 

@@ -56,6 +56,15 @@ pub(crate) mod user_lifetime_lock;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/teslatlas-hub";
 
+#[cfg(test)]
+pub(crate) fn private_tempdir() -> std::io::Result<tempfile::TempDir> {
+    use std::os::unix::fs::PermissionsExt;
+
+    tempfile::Builder::new()
+        .permissions(std::fs::Permissions::from_mode(0o700))
+        .tempdir()
+}
+
 /// Interactive legal notice printed by `teslatlas-hub legal`.
 pub fn legal_notice() -> String {
     format!(

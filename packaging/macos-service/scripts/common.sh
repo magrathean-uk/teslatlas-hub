@@ -6,6 +6,10 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export PATH
 
 LABEL=com.teslatlas.hub
+BINARY_ROOT='/Library/Application Support/Teslatlas Hub'
+# Consumed by scripts that source this file.
+# shellcheck disable=SC2034
+BINARY="$BINARY_ROOT/bin/teslatlas-hub"
 
 installer_error() {
     printf '%s\n' "Teslatlas Hub installer: $*" >&2
@@ -59,10 +63,9 @@ ensure_user_directory() {
     directory=$1
     mode=$2
     if [ -e "$directory" ] || [ -L "$directory" ]; then
-        [ -d "$directory" ] && [ ! -L "$directory" ] \
-            || installer_error "unsafe user directory"
-        [ "$(/usr/bin/stat -f '%u' "$directory")" = "$CONSOLE_UID" ] \
-            || installer_error "user directory has unexpected owner"
+        require_safe_owned_tree "$directory" "$CONSOLE_UID" "user directory"
+        /bin/chmod "$mode" "$directory" \
+            || installer_error "cannot protect user directory"
         return
     fi
     /usr/bin/install -d -o "$CONSOLE_UID" -g "$CONSOLE_GID" -m "$mode" "$directory" \
@@ -77,6 +80,86 @@ bootout_if_loaded() {
         if /bin/launchctl print "$target" >/dev/null 2>&1; then
             installer_error "existing Hub service is still loaded"
         fi
+    fi
+}
+
+service_is_loaded() {
+    /bin/launchctl print "$(service_target)" >/dev/null 2>&1
+}
+
+upgrade_state_directory() {
+    printf '/private/var/tmp/com.teslatlas.hub-upgrade-%s\n' "$CONSOLE_UID"
+}
+
+require_safe_upgrade_state() {
+    directory=$1
+    [ -d "$directory" ] && [ ! -L "$directory" ] \
+        || installer_error "upgrade state is missing or unsafe"
+    [ "$(/usr/bin/stat -f '%u:%g:%Lp' "$directory")" = '0:0:700' ] \
+        || installer_error "upgrade state has unsafe ownership or permissions"
+}
+
+remove_upgrade_state() {
+    directory=$1
+    case "$directory" in
+        /private/var/tmp/com.teslatlas.hub-upgrade-[0-9]*) ;;
+        *) installer_error "refusing unsafe upgrade state path" ;;
+    esac
+    if [ -e "$directory" ] || [ -L "$directory" ]; then
+        require_safe_upgrade_state "$directory"
+        /usr/bin/find -x "$directory" -depth -delete \
+            || installer_error "cannot remove upgrade state"
+    fi
+}
+
+require_safe_regular_file() {
+    path=$1
+    expected_uid=$2
+    description=$3
+    [ -f "$path" ] && [ ! -L "$path" ] \
+        || installer_error "$description is not a safe regular file"
+    [ "$(/usr/bin/stat -f '%u' "$path")" = "$expected_uid" ] \
+        || installer_error "$description has unexpected owner"
+    mode=$(/usr/bin/stat -f '%Lp' "$path")
+    case "$mode" in
+        *[2367][0-7]|*[0-7][2367]) installer_error "$description is group/world writable" ;;
+    esac
+}
+
+remove_owned_file() {
+    path=$1
+    expected_uid=$2
+    description=$3
+    if [ -e "$path" ] || [ -L "$path" ]; then
+        require_safe_regular_file "$path" "$expected_uid" "$description"
+        /bin/rm -f "$path" || installer_error "cannot remove $description"
+    fi
+}
+
+require_safe_owned_tree() {
+    directory=$1
+    expected_uid=$2
+    description=$3
+    [ -d "$directory" ] && [ ! -L "$directory" ] \
+        || installer_error "$description is not a safe directory"
+    [ "$(/usr/bin/stat -f '%u' "$directory")" = "$expected_uid" ] \
+        || installer_error "$description has unexpected owner"
+    mode=$(/usr/bin/stat -f '%Lp' "$directory")
+    case "$mode" in
+        *[2367][0-7]|*[0-7][2367]) installer_error "$description is group/world writable" ;;
+    esac
+}
+
+remove_owned_tree() {
+    directory=$1
+    expected_uid=$2
+    allowed=$3
+    description=$4
+    [ "$directory" = "$allowed" ] || installer_error "refusing unsafe $description path"
+    if [ -e "$directory" ] || [ -L "$directory" ]; then
+        require_safe_owned_tree "$directory" "$expected_uid" "$description"
+        /usr/bin/find -x "$directory" -depth -delete \
+            || installer_error "cannot remove $description"
     fi
 }
 

@@ -68,6 +68,9 @@ PACKAGE_SCRIPTS="$ROOT/packaging/macos-service/scripts"
 [ -f "$TEMPLATE" ] || die "LaunchAgent template is missing"
 [ -x "$PACKAGE_SCRIPTS/preinstall" ] || die "preinstall script is not executable"
 [ -x "$PACKAGE_SCRIPTS/postinstall" ] || die "postinstall script is not executable"
+[ -x "$PACKAGE_SCRIPTS/uninstall-macos-service.sh" ] || die "uninstall script is not executable"
+"$ROOT/scripts/test-macos-packaging.sh" >/dev/null \
+    || die "macOS packaging source checks failed"
 /usr/bin/plutil -lint "$TEMPLATE" >/dev/null || die "LaunchAgent template is invalid"
 
 if [ -z "$output" ]; then
@@ -90,6 +93,7 @@ trap cleanup EXIT HUP INT TERM
 payload="$staging/payload"
 scripts="$staging/scripts"
 /bin/mkdir -p "$payload/Library/Application Support/Teslatlas Hub/bin" \
+    "$payload/Library/Application Support/Teslatlas Hub/libexec" \
     "$payload/Library/Application Support/Teslatlas Hub/share" "$scripts"
 /usr/bin/lipo -verify_arch arm64 "$binary" \
     || die "binary has no arm64 slice"
@@ -110,6 +114,10 @@ for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS
             "$payload/Library/Application Support/Teslatlas Hub/share/$legal_file"
     fi
 done
+/usr/bin/install -m 0644 "$PACKAGE_SCRIPTS/common.sh" \
+    "$payload/Library/Application Support/Teslatlas Hub/libexec/common.sh"
+/usr/bin/install -m 0755 "$PACKAGE_SCRIPTS/uninstall-macos-service.sh" \
+    "$payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
 /usr/bin/xattr -c "$payload_binary" >/dev/null 2>&1 \
     || die "cannot clear Hub binary metadata"
 [ "$(/usr/bin/lipo -archs "$payload_binary")" = arm64 ] \
@@ -160,6 +168,9 @@ expanded_binary="$expanded/Payload/Library/Application Support/Teslatlas Hub/bin
     || die "generated package has the wrong payload path"
 [ "$(/usr/bin/lipo -archs "$expanded_binary")" = arm64 ] \
     || die "generated package payload is not arm64-only"
+expanded_uninstaller="$expanded/Payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
+[ -f "$expanded_uninstaller" ] && [ ! -L "$expanded_uninstaller" ] && [ -x "$expanded_uninstaller" ] \
+    || die "generated package is missing the privileged uninstaller"
 metadata=$(
     /usr/bin/find "$expanded/Payload" "$expanded/Scripts" \
         \( -name '._*' -o -name '.DS_Store' \) -print -quit

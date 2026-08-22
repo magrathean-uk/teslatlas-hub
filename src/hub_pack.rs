@@ -2217,6 +2217,35 @@ impl ProjectionPackWriter {
         )
     }
 
+    /// Admit a streamed capture before its first source row is decoded. The
+    /// caller supplies a conservative final-output estimate; active SQLite and
+    /// compression files plus the caller's scratch/free-space reserve are
+    /// accounted separately. Per-pack checks still enforce the same reserve.
+    pub fn ensure_incremental_capture_capacity_with_final_estimate(
+        &self,
+        estimated_final_bytes: u64,
+        minimum_free_bytes: u64,
+    ) -> Result<(), ProjectionPackError> {
+        let required =
+            self.incremental_capture_required_bytes(estimated_final_bytes, minimum_free_bytes)?;
+        self.ensure_free_bytes(required)
+    }
+
+    pub(crate) fn incremental_capture_required_bytes(
+        &self,
+        estimated_final_bytes: u64,
+        minimum_free_bytes: u64,
+    ) -> Result<u64, ProjectionPackError> {
+        self.transient_write_bytes()?
+            .checked_add(estimated_final_bytes)
+            .and_then(|value| value.checked_add(minimum_free_bytes))
+            .ok_or(ProjectionPackError::CapacityOverflow)
+    }
+
+    pub(crate) fn incremental_capture_transient_bytes(&self) -> Result<u64, ProjectionPackError> {
+        self.transient_write_bytes()
+    }
+
     /// Write and verify an immutable, complete mirror snapshot. The caller
     /// supplies a bounded projection; the writer never inspects raw telemetry.
     pub fn write_full_snapshot(
@@ -7128,7 +7157,7 @@ mod tests {
             ),
         ];
         for (point, expect_final, expect_staging, expect_cleanup_pending) in cases {
-            let temporary = tempfile::tempdir().expect("fault store");
+            let temporary = crate::private_tempdir().expect("fault store");
             let source = snapshot();
             let _fault = inject(point);
             let result =
@@ -7189,7 +7218,7 @@ mod tests {
     fn existing_content_retry_repeats_the_final_directory_sync() {
         use crate::durability_fault::{DurabilityFaultPoint, inject};
 
-        let temporary = tempfile::tempdir().expect("retry store");
+        let temporary = crate::private_tempdir().expect("retry store");
         let source = snapshot();
         {
             let _fault = inject(DurabilityFaultPoint::PackFinalDirectoryFsync);
@@ -7681,7 +7710,7 @@ mod tests {
     fn writes_a_checked_typed_projection_pack() {
         use std::os::unix::fs::PermissionsExt;
 
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let source = snapshot();
         let built = ProjectionPackWriter::new(temporary.path().join("packs"))
             .write_full_snapshot(&request(&source))
@@ -7742,7 +7771,7 @@ mod tests {
             MAX_COMPRESSION_WORKERS as u32
         );
 
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let source = temporary.path().join("source.bin");
         let first = temporary.path().join("first.zst");
         let second = temporary.path().join("second.zst");
@@ -7762,7 +7791,7 @@ mod tests {
 
     #[test]
     fn signs_and_catalogues_a_typed_snapshot() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let source = snapshot();
         let request = request(&source);
         let built = ProjectionPackWriter::new(temporary.path().join("packs"))
@@ -7798,7 +7827,7 @@ mod tests {
 
     #[test]
     fn signs_several_parent_complete_snapshot_chunks() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let source = snapshot();
         let first_request = request(&source);
         let first = ProjectionPackWriter::new(temporary.path().join("packs"))
@@ -7853,7 +7882,7 @@ mod tests {
     fn rejects_a_position_without_its_drive_or_valid_coordinates() {
         let mut source = snapshot();
         source.positions[0].drive_id = Some(999);
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         assert!(matches!(
             ProjectionPackWriter::new(temporary.path().join("packs"))
                 .write_full_snapshot(&request(&source)),
@@ -7872,7 +7901,7 @@ mod tests {
 
     #[test]
     fn schema_2_0_rejects_positions_outside_the_legacy_layout() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let mut standalone = snapshot();
         standalone.positions[0].drive_id = None;
         assert!(matches!(
@@ -7894,7 +7923,7 @@ mod tests {
 
     #[test]
     fn schema_2_1_state_pack_preserves_ordered_rows_and_open_end_date() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let source = snapshot();
         let states = vec![
             ProjectionState {
@@ -7956,7 +7985,7 @@ mod tests {
 
     #[test]
     fn schema_2_2_full_snapshot_has_exact_physical_rows_and_full_only_metadata() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let source = snapshot_v2_2();
         let request = request_v2_2(&source);
         let built = ProjectionPackWriter::new(temporary.path().join("packs"))
@@ -9255,7 +9284,7 @@ mod tests {
             validate_request_v2_2(&request_v2_2(&signed_open), ProtocolLimits::default()).is_ok(),
             "raw signed IDs, soft selected-subset refs, open rows, NaN, NULL, and FLOAT8 bits are physical source values"
         );
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         ProjectionPackWriter::new(temporary.path().join("signed-physical"))
             .write_full_snapshot_2_2(&request_v2_2(&signed_open))
             .expect("signed extant address/geofence IDs must survive local physical writing");
@@ -9349,7 +9378,7 @@ mod tests {
         let source = snapshot_v2_2();
         assert!(validate_request_v2_2(&request_v2_2(&source), ProtocolLimits::default()).is_ok());
 
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let built = ProjectionPackWriter::new(temporary.path().join("positions"))
             .write_full_snapshot_2_2(&request_v2_2(&source))
             .expect("exact physical positions must write locally");
@@ -9612,7 +9641,7 @@ mod tests {
                 "source smallint selected_car_id {selected_car_id} must remain physical"
             );
 
-            let temporary = tempfile::tempdir().unwrap();
+            let temporary = crate::private_tempdir().unwrap();
             let built = ProjectionPackWriter::new(
                 temporary
                     .path()
@@ -9840,7 +9869,7 @@ mod tests {
             "updates",
         ];
         for table in table_names {
-            let temporary = tempfile::tempdir().unwrap();
+            let temporary = crate::private_tempdir().unwrap();
             let source = snapshot_v2_2();
             let request = request_v2_2(&source);
             let built = ProjectionPackWriter::new(temporary.path().join("packs"))
@@ -9863,7 +9892,7 @@ mod tests {
             );
         }
 
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let source = snapshot_v2_2();
         let request = request_v2_2(&source);
         let built = ProjectionPackWriter::new(temporary.path().join("packs"))
@@ -9916,8 +9945,8 @@ mod tests {
 
     #[test]
     fn schema_2_2_full_snapshot_is_deterministic_across_input_order() {
-        let first_dir = tempfile::tempdir().unwrap();
-        let second_dir = tempfile::tempdir().unwrap();
+        let first_dir = crate::private_tempdir().unwrap();
+        let second_dir = crate::private_tempdir().unwrap();
         let mut first_snapshot = snapshot_v2_2();
         let mut signed_extra_drive = first_snapshot.drives[0].clone();
         signed_extra_drive.id = i32::MIN;
@@ -10193,7 +10222,7 @@ mod tests {
             ("negative-infinity", f64::NEG_INFINITY),
             ("nan-payload", f64::from_bits(0x7ff8_0000_0000_00a5)),
         ] {
-            let temporary = tempfile::tempdir().unwrap();
+            let temporary = crate::private_tempdir().unwrap();
             let mut bit_exact = snapshot_v2_2();
             bit_exact.cars[0].efficiency = Some(efficiency);
             let built = ProjectionPackWriter::new(temporary.path().join(label))
@@ -10385,7 +10414,7 @@ mod tests {
 
     #[test]
     fn schema_2_2_keeps_source_refs_soft_and_enforces_charge_process_scope() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
 
         // Exact source reference values stay soft locally: source targets can
         // be extant but omitted from a selected-car subset, so V3 does not
@@ -10456,7 +10485,7 @@ mod tests {
 
     #[test]
     fn schema_2_0_pack_matches_released_client_layout() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let source = snapshot();
         let built = ProjectionPackWriter::new(temporary.path().join("packs"))
             .write_full_snapshot(&request(&source))
@@ -10553,7 +10582,7 @@ mod tests {
 
     #[test]
     fn typed_delta_rejects_blank_update_version_before_writing_a_pack() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let mut delta = sparse_delta();
         delta.updates[0].version.clear();
 
@@ -10578,7 +10607,7 @@ mod tests {
             ProjectionDeltaEntity::Geofence,
             ProjectionDeltaEntity::Address,
         ] {
-            let temporary = tempfile::tempdir().unwrap();
+            let temporary = crate::private_tempdir().unwrap();
             let packs = temporary.path().join("packs");
             let mut delta = sparse_delta();
             delta.tombstones = vec![ProjectionTombstone {
@@ -10612,7 +10641,7 @@ mod tests {
             ProjectionDeltaEntity::State,
             ProjectionDeltaEntity::Update,
         ] {
-            let temporary = tempfile::tempdir().unwrap();
+            let temporary = crate::private_tempdir().unwrap();
             let packs = temporary.path().join("packs");
             let mut delta = sparse_delta();
             let id = match entity {
@@ -10712,7 +10741,7 @@ mod tests {
 
     #[test]
     fn invalid_car_settings_reject_before_pack_output_in_every_writer_path() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let packs = temporary.path().join("full-v1");
         let mut source = snapshot();
         source.cars[0].settings.suspend_after_idle_min = 0;
@@ -10725,7 +10754,7 @@ mod tests {
         ));
         assert!(!packs.exists());
 
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let packs = temporary.path().join("full-v2");
         let mut source = snapshot();
         source.cars[0].settings.suspend_min = 0;
@@ -10738,7 +10767,7 @@ mod tests {
         ));
         assert!(!packs.exists());
 
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let packs = temporary.path().join("delta-car");
         let mut delta = sparse_delta();
         delta.cars[0].settings.suspend_min = 0;
@@ -10751,7 +10780,7 @@ mod tests {
         ));
         assert!(!packs.exists());
 
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let packs = temporary.path().join("delta-patch");
         let mut delta = sparse_delta();
         delta.cars.clear();
@@ -10774,7 +10803,7 @@ mod tests {
 
     #[test]
     fn writes_sparse_schema_2_1_delta_without_base_copy() {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = crate::private_tempdir().unwrap();
         let delta = sparse_delta();
         let built = ProjectionPackWriter::new(temporary.path().join("packs"))
             .write_delta(&delta_request(&delta))
@@ -10821,8 +10850,8 @@ mod tests {
 
     #[test]
     fn delta_output_is_deterministic_and_rejects_bad_binding_or_parent() {
-        let first_dir = tempfile::tempdir().unwrap();
-        let second_dir = tempfile::tempdir().unwrap();
+        let first_dir = crate::private_tempdir().unwrap();
+        let second_dir = crate::private_tempdir().unwrap();
         let delta = sparse_delta();
         let first = ProjectionPackWriter::new(first_dir.path().join("packs"))
             .write_delta(&delta_request(&delta))
@@ -11093,7 +11122,7 @@ mod tests {
     fn delta_v2_fixtures_regenerate_deterministically_and_validate_lineage() {
         let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/delta-v2");
         let (manifest, expected_files) =
-            fixture_lineage(&tempfile::tempdir().unwrap().path().join("work"));
+            fixture_lineage(&crate::private_tempdir().unwrap().path().join("work"));
         manifest.validate().unwrap();
         for (name, expected) in expected_files {
             let actual = match name.as_str() {

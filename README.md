@@ -70,6 +70,12 @@ pair to the embedded Hub process over stdin, configures one vehicle, installs
 the embedded service package, and starts collection. Tokens are not written to
 temporary files, shown in the UI, or placed in process arguments.
 
+Use **Service Details → Uninstall Hub…** to remove the current user's
+LaunchAgent, service payload, and logs. Uninstall preserves the Hub database and
+configuration by default. Permanent data deletion is a separate choice with a
+second confirmation. The uninstaller refuses to remove the shared service
+payload while another local user still has a Hub LaunchAgent.
+
 ## Debian package (amd64 and ARM64)
 
 Build on the target Debian host. The package script defaults to the host Debian
@@ -105,9 +111,44 @@ sudo teslatlas-hub service status
 sudo -u teslatlas teslatlas-hub status
 ```
 
+The packaged unit is sandboxed: `data_dir` must remain
+`/var/lib/teslatlas-hub`, and an optional `terrain.cache_dir` must be inside
+that directory. `ProtectHome=true` means TLS certificate and key files cannot
+be placed under `/home`, `/root`, or `/run/user`; package-managed TLS material
+belongs below `/etc/teslatlas-hub` and must be readable by `teslatlas` (use
+`teslatlas:teslatlas`; private key mode `0600`, certificate mode `0644` or
+`0600`). To deliberately use another writable path,
+create it as `teslatlas` mode `0700`, then add an administrator-owned drop-in
+before changing the configuration:
+
+```sh
+sudo install -d -o teslatlas -g teslatlas -m 0700 /srv/teslatlas-hub
+sudo systemctl edit teslatlas-hub.service
+```
+
+```ini
+[Service]
+ReadWritePaths=/srv/teslatlas-hub
+```
+
+Run `sudo systemctl daemon-reload` after saving the drop-in. This augments the
+packaged writable path; do not remove `/var/lib/teslatlas-hub` while existing
+Hub data remains there.
+
+Package upgrades restart the service only when it was running before the
+upgrade. An installed but stopped service remains stopped. Package removal
+stops and disables the unit but intentionally retains its data directory and
+the `teslatlas` account.
+
 Service controls are `sudo teslatlas-hub service status|start|stop|restart`.
 Migration stays read-only; after a Linux migration, start the package service
 with `sudo systemctl start teslatlas-hub.service`.
+
+Run packaging regression checks without compiling Hub:
+
+```sh
+sh scripts/test-linux-packaging.sh
+```
 
 ## CLI setup
 

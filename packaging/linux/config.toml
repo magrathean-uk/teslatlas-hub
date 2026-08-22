@@ -1,5 +1,12 @@
 # Teslatlas Hub Debian configuration.
 # Run `teslatlas-hub bootstrap`, then `setup` or `migrate` before collection.
+#
+# The packaged systemd unit permits writes only below /var/lib/teslatlas-hub.
+# Keep data_dir at this value. If terrain.cache_dir is set, keep it below this
+# directory too. To use another path, add its exact absolute path with a
+# systemd drop-in ReadWritePaths= entry before changing this file; see README.
+# ProtectHome=true also means TLS files under home directories are unavailable
+# to the service. Put package-managed TLS files under /etc/teslatlas-hub.
 data_dir = "/var/lib/teslatlas-hub"
 bind = "127.0.0.1:8080"
 
