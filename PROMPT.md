@@ -3,7 +3,7 @@
 ## Result
 
 Ship `hub/` as a practical one-vehicle TeslaMate replacement for Apple-silicon
-macOS and Debian ARM64. New Mac users connect their Tesla account in the native
+macOS and Debian amd64/ARM64. New Mac users connect their Tesla account in the native
 app, configure Hub without token files, install the embedded service package,
 and start collection. Linux keeps full CLI/package operation.
 
@@ -46,8 +46,13 @@ repositories, evidence trees, or separate target directories.
   directories, evidence archives, benchmark data, or long-lived VM images.
 - Run one Cargo process at a time. Use focused tests while coding and one final
   suite/check/Clippy/release pass near handoff.
-- If a disposable Linux guest is required, keep one ARM64 guest below 6 GiB
-  under `/tmp` and delete it immediately after verification.
+- If a disposable Linux guest is required, keep it below 6 GiB and delete it
+  immediately after verification. For an unavoidable native remote build,
+  transfer only the Hub source to one named `/var/tmp` directory; exclude
+  targets and artifacts, then delete that exact directory after the `.deb` is
+  copied back. Keep `CARGO_HOME` and `RUSTUP_HOME` inside that directory for
+  that build command only; never edit shell profiles or leave a Cargo/Rustup
+  path pointing at the disposable directory.
 - Clean disposable debug/test artefacts before handoff; retain at most the
   normal release cache needed for the next developer.
 

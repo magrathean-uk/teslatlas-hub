@@ -507,8 +507,8 @@ impl TeslaStreamSupervisor {
                                 subscribed = true;
                                 ever_subscribed = true;
                                 // A raw WebSocket handshake proves transport
-                                // only. Reset remote backoff after Tesla's
-                                // control hello proves a healthy stream.
+                                // only. Tesla's acknowledgement or valid
+                                // telemetry proves a healthy stream.
                                 if let Some(receipt) = subscribe_receipt.take() {
                                     self.complete_stream_attempt(
                                         receipt,
@@ -519,6 +519,7 @@ impl TeslaStreamSupervisor {
                             let valid_after_handshake = subscribed
                                 && matches!(event, StreamEvent::Healthy | StreamEvent::Telemetry(_));
                             let terminal = matches!(event, StreamEvent::AuthRejected | StreamEvent::ProtocolViolation);
+                            let should_reconnect = matches!(event, StreamEvent::TransportUnavailable);
                             if terminal
                                 && let Some(receipt) = subscribe_receipt.take() {
                                     let outcome = if matches!(event, StreamEvent::AuthRejected) {
@@ -532,6 +533,7 @@ impl TeslaStreamSupervisor {
                                 return Ok(disconnected_termination(ever_subscribed));
                             }
                             if terminal { break false; }
+                            if should_reconnect { break false; }
                             if !valid_after_handshake {
                                 continue;
                             }
@@ -754,7 +756,7 @@ fn equal_jitter(delay: Duration) -> Duration {
 }
 
 fn resets_backoff(event: &StreamEvent) -> bool {
-    matches!(event, StreamEvent::Healthy)
+    matches!(event, StreamEvent::Healthy | StreamEvent::Telemetry(_))
 }
 
 fn apply_health_backoff_reset(
@@ -814,24 +816,44 @@ pub struct StreamUpdate {
 }
 
 fn decode_message(tag: &str, message: Message) -> Option<StreamEvent> {
-    let text = match message {
-        Message::Text(text) => text,
-        Message::Binary(_) => return Some(StreamEvent::ProtocolViolation),
-        _ => return None,
-    };
-    let wire: StreamWire<'_> = serde_json::from_str(&text).ok()?;
+    match message {
+        Message::Text(text) => serde_json::from_str::<StreamWire<'_>>(&text)
+            .ok()
+            .and_then(|wire| decode_wire(tag, wire)),
+        Message::Binary(bytes) => {
+            let Ok(text) = std::str::from_utf8(&bytes) else {
+                return Some(StreamEvent::ProtocolViolation);
+            };
+            serde_json::from_str::<StreamWire<'_>>(text)
+                .ok()
+                .and_then(|wire| decode_wire(tag, wire))
+        }
+        _ => None,
+    }
+}
+
+fn decode_wire(tag: &str, wire: StreamWire<'_>) -> Option<StreamEvent> {
     match wire.msg_type {
         "control:hello" => Some(decode_control_hello(wire.code, wire.connection_timeout)),
-        "data:update" => parse_data_update_parts(wire.tag?, wire.timestamp, wire.value?)
+        "data:update" if wire.tag.is_some_and(|frame_tag| frame_tag != tag) => None,
+        "data:update" => parse_data_update_parts(tag, wire.timestamp, wire.value?)
             .ok()
-            .filter(|update| update.tag == tag)
             .map(|update| StreamEvent::Telemetry(Box::new(update))),
-        "data:error" => match wire.value {
-            Some("vehicle_offline") | Some("Vehicle is offline") => {
-                Some(StreamEvent::VehicleOffline)
-            }
-            Some(value) if value.contains("Can't validate token") => {
+        "data:error" if wire.tag.is_some_and(|frame_tag| frame_tag != tag) => None,
+        "data:error" => match (wire.error_type, wire.value) {
+            (Some("vehicle_error"), Some("Vehicle is offline"))
+            | (_, Some("vehicle_offline"))
+            | (_, Some("Vehicle is offline")) => Some(StreamEvent::VehicleOffline),
+            (Some("client_error"), Some(value)) if value.contains("Can't validate token") => {
                 Some(StreamEvent::AuthRejected)
+            }
+            (_, Some(value)) if value.contains("Can't validate token") => {
+                Some(StreamEvent::AuthRejected)
+            }
+            // TeslaMate v4.1.1 retries this result after a bounded delay. End
+            // this socket promptly so the supervisor's backoff owns that retry.
+            (Some("vehicle_disconnected"), _) | (Some("client_error"), _) => {
+                Some(StreamEvent::TransportUnavailable)
             }
             _ => Some(StreamEvent::TransportUnavailable),
         },
@@ -849,6 +871,8 @@ struct StreamWire<'a> {
     timestamp: Option<i64>,
     #[serde(borrow, default)]
     value: Option<&'a str>,
+    #[serde(borrow, default)]
+    error_type: Option<&'a str>,
     #[serde(default)]
     code: Option<i64>,
     #[serde(default)]
@@ -1217,7 +1241,6 @@ mod tests {
                 .unwrap(),
         ));
         for event in [
-            telemetry,
             StreamEvent::VehicleOffline,
             StreamEvent::AuthRejected,
             StreamEvent::TransportUnavailable,
@@ -1231,6 +1254,16 @@ mod tests {
         }
         assert_eq!(remote.current, Duration::from_millis(10));
         assert_eq!(connect.current, Duration::from_millis(10));
+        assert!(apply_health_backoff_reset(
+            Some(&telemetry),
+            &mut remote,
+            &mut connect
+        ));
+        assert_eq!(remote.current, initial);
+        assert_eq!(connect.current, initial);
+
+        let _ = remote.next();
+        let _ = connect.next();
         assert!(apply_health_backoff_reset(
             Some(&StreamEvent::Healthy),
             &mut remote,
@@ -1457,6 +1490,56 @@ mod tests {
                 .unwrap(),
             Some(StreamEvent::Healthy)
         );
+        stop.send(()).unwrap();
+        timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn tagless_binary_telemetry_marks_subscription_live() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(tcp).await.unwrap();
+            let subscribe = ws.next().await.unwrap().unwrap();
+            assert!(matches!(subscribe, Message::Text(ref text) if text.contains(r#""tag":"42""#)));
+            ws.send(Message::Binary(
+                r#"{"msg_type":"data:update","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#
+                    .as_bytes()
+                    .to_vec()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+            let unsubscribe = timeout(Duration::from_secs(1), ws.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert!(
+                matches!(unsubscribe, Message::Text(ref text) if text.contains("data:unsubscribe"))
+            );
+        });
+        let (events, mut received) = mpsc::channel(4);
+        let supervisor = legacy_supervisor(9, 42, endpoint, events).unwrap();
+        let (stop, shutdown) = oneshot::channel();
+        let task = tokio::spawn(supervisor.run(shutdown));
+
+        let event = timeout(Duration::from_secs(1), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let StreamEvent::Telemetry(update) = event else {
+            panic!("tagless binary Tesla telemetry must be delivered")
+        };
+        assert_eq!(update.tag, "42");
+        assert_eq!(update.speed, Some(42));
+
         stop.send(()).unwrap();
         timeout(Duration::from_secs(2), task)
             .await
@@ -1865,7 +1948,7 @@ mod tests {
     }
 
     #[test]
-    fn binary_telemetry_is_rejected() {
+    fn binary_and_tagless_tesla_stream_frames_are_decoded() {
         let hello = r#"{"msg_type":"control:hello","connection_timeout":15}"#;
         assert_eq!(
             decode_message("42", Message::Text(hello.into())),
@@ -1873,20 +1956,27 @@ mod tests {
         );
         assert_eq!(
             decode_message("42", Message::Binary(hello.as_bytes().to_vec().into())),
-            Some(StreamEvent::ProtocolViolation)
+            Some(StreamEvent::Healthy)
         );
 
-        let update = r#"{"msg_type":"data:update","tag":"42","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#;
-        let text = decode_message("42", Message::Text(update.into()));
-        assert!(matches!(text, Some(StreamEvent::Telemetry(_))));
-        assert_eq!(
-            decode_message("42", Message::Binary(update.as_bytes().to_vec().into())),
-            Some(StreamEvent::ProtocolViolation)
-        );
+        let update = r#"{"msg_type":"data:update","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#;
+        for message in [
+            Message::Text(update.into()),
+            Message::Binary(update.as_bytes().to_vec().into()),
+        ] {
+            let Some(StreamEvent::Telemetry(update)) = decode_message("42", message) else {
+                panic!("Tesla data:update must decode")
+            };
+            assert_eq!(update.tag, "42");
+            assert_eq!(update.timestamp_ms, 1_700_000_000_123);
+        }
+
+        let other_tag = r#"{"msg_type":"data:update","tag":"9","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#;
+        assert_eq!(decode_message("42", Message::Text(other_tag.into())), None);
     }
 
     #[test]
-    fn non_utf8_binary_and_websocket_control_frames_are_ignored() {
+    fn non_utf8_binary_is_a_protocol_violation_and_control_frames_are_ignored() {
         assert_eq!(
             decode_message("42", Message::Binary(vec![0xff, 0xfe].into())),
             Some(StreamEvent::ProtocolViolation)
@@ -1904,6 +1994,55 @@ mod tests {
         );
 
         assert_eq!(event, Some(StreamEvent::Healthy));
+    }
+
+    #[test]
+    fn teslamate_v4_tagless_data_errors_are_classified() {
+        let disconnected = decode_message(
+            "9",
+            Message::Text(
+                r#"{"msg_type":"data:error","tag":"9","error_type":"vehicle_disconnected"}"#.into(),
+            ),
+        );
+        assert_eq!(disconnected, Some(StreamEvent::TransportUnavailable));
+
+        let offline = decode_message(
+            "9",
+            Message::Text(
+                r#"{"msg_type":"data:error","tag":"9","error_type":"vehicle_error","value":"Vehicle is offline"}"#
+                    .into(),
+            ),
+        );
+        assert_eq!(offline, Some(StreamEvent::VehicleOffline));
+
+        let tagless_offline = decode_message(
+            "9",
+            Message::Binary(
+                r#"{"msg_type":"data:error","error_type":"vehicle_error","value":"Vehicle is offline"}"#
+                    .as_bytes()
+                    .to_vec()
+                    .into(),
+            ),
+        );
+        assert_eq!(tagless_offline, Some(StreamEvent::VehicleOffline));
+
+        let rejected = decode_message(
+            "9",
+            Message::Text(
+                r#"{"msg_type":"data:error","tag":"9","error_type":"client_error","value":"Can't validate token"}"#
+                    .into(),
+            ),
+        );
+        assert_eq!(rejected, Some(StreamEvent::AuthRejected));
+
+        let other_vehicle = decode_message(
+            "9",
+            Message::Text(
+                r#"{"msg_type":"data:error","tag":"10","error_type":"vehicle_disconnected"}"#
+                    .into(),
+            ),
+        );
+        assert_eq!(other_vehicle, None);
     }
 
     #[test]

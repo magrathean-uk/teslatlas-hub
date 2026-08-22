@@ -2,7 +2,7 @@ Package: teslatlas-hub
 Version: @VERSION@
 Section: utils
 Priority: optional
-Architecture: arm64
+Architecture: @ARCHITECTURE@
 Depends: adduser, ca-certificates, systemd
 Maintainer: Magrathean UK Ltd <contact@magrathean.uk>
 Description: Self-hosted Tesla telemetry hub

@@ -23,7 +23,7 @@ The paid Teslatlas application is a separate product and is not part of this rep
 
 The current `v1.0.0-alpha.1` implementation is narrower than the planned cross-platform product:
 
-- macOS 12 or later on Apple silicon, and Debian 13 ARM64;
+- macOS 12 or later on Apple silicon, and Debian 13 amd64 or ARM64;
 - one vehicle;
 - legacy Owner API token authentication with native Tesla OAuth onboarding; no official Fleet API integration;
 - PostgreSQL history import, encrypted token/key transfer, token refresh, Owner API polling, Tesla streaming, lifecycle persistence, backup and repair;
@@ -70,17 +70,25 @@ pair to the embedded Hub process over stdin, configures one vehicle, installs
 the embedded service package, and starts collection. Tokens are not written to
 temporary files, shown in the UI, or placed in process arguments.
 
-## Debian ARM64 package
+## Debian package (amd64 and ARM64)
 
-Build the package from an ARM64 Debian host (or the supplied development VM):
+Build on the target Debian host. The package script defaults to the host Debian
+architecture and accepts only `amd64` or `arm64`; it verifies that the binary
+matches before creating the package.
+
+Building requires Rust 1.98 plus Debian's `build-essential`, `pkg-config`,
+`libssl-dev`, `dpkg-dev`, and `binutils` packages (`readelf` is the ELF
+architecture check). Installing a finished package needs only its declared
+runtime dependencies.
 
 ```sh
 cargo build --locked --release
 scripts/build-deb.sh \
   --binary target/release/teslatlas-hub \
   --version 1.0.0-alpha.1 \
-  --output dist/teslatlas-hub_1.0.0-alpha.1_arm64.deb
-sudo dpkg -i dist/teslatlas-hub_1.0.0-alpha.1_arm64.deb
+  --architecture "$(dpkg --print-architecture)" \
+  --output "dist/teslatlas-hub_1.0.0-alpha.1_$(dpkg --print-architecture).deb"
+sudo dpkg -i "dist/teslatlas-hub_1.0.0-alpha.1_$(dpkg --print-architecture).deb"
 ```
 
 The package creates the private `teslatlas` service user, configuration at

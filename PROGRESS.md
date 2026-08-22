@@ -9,15 +9,26 @@ Current: on 2026-08-22, `cargo update` found zero resolvable updates;
 `matchit` 0.8.4 remains Axum 0.8.9's exact dependency. Rust format, all-target
 check, 703 tests (701 passed, 2 intentional ignores), Clippy `-D warnings`, and
 release build passed. The release macOS app/package built, ad-hoc signature
-verification passed, and 6 AppKit/OAuth tests passed. No Tesla login, token
-exchange, installation, service mutation, network exposure, or vehicle command
-was performed.
+verification passed, and 6 AppKit/OAuth tests passed. A native Debian 13 amd64
+package was built, installed, and tested loopback-only on the VPS. Its
+direct read-only TeslaMate v4.1.1 cutover imported 10,782,432 positions into
+about 1.86 GiB / 447 packs; source counts stayed unchanged. The 3.9 GiB native
+build directory and its accidental shell-profile reference were removed. No
+vehicle command or concurrent token refresher was used. Tesla's live binary,
+tagless stream variant is now covered by 25 native Debian stream tests and the
+corrected amd64 package was deployed at 21:46 +08 and opened a Tesla TLS stream.
+The parked vehicle did not emit telemetry before teardown, so a physical stream
+row remains pending. Hub was then fully removed from the VPS, including its
+package, unit, 2.0 GiB data, config, system account, and temporary build state;
+TeslaMate and TeslaMateAPI are healthy and VPS free space is 28 GiB. All retained
+Hub source and release artifacts are local under this `hub/` checkout.
 
 Next: live Tesla OAuth/setup, a clean-Mac administrator package install and
 launchd lifecycle, one forced live token-expiry refresh, physical-iOS
 full-history/current-state sync, one Debian ARM64 package rebuild/smoke, and
-longer Mac/Linux restart/endurance validation remain external proof. Driving
-stream validation remains deferred. Production-corpus compaction acceptance is
+longer Mac/Linux restart/endurance validation remain external proof. Repeat the
+physical stream witness while the vehicle emits telemetry; driving-stream
+validation remains deferred. Production-corpus compaction acceptance is
 optional because it needs a disposable copy of the 1.88 GiB migrated store;
 bounded compaction tests pass.
 
@@ -26,6 +37,31 @@ The local TeslaMate PostgreSQL copy remains a deliberate old-schema negative
 fixture and is read-only.
 
 ## Completed
+
+- Tesla stream wire compatibility — live VPS evidence showed Tesla returning a
+  binary WebSocket JSON frame and no top-level `tag`, both accepted by
+  TeslaMate v4.1.1 but rejected by Hub. Hub now decodes UTF-8 binary JSON,
+  binds a missing tag to the active subscription, preserves rejection of an
+  explicit foreign tag, and treats valid telemetry as stream health when no
+  `control:hello` arrives. A local WebSocket regression test covers the exact
+  binary/tagless/no-hello sequence and orderly unsubscribe; 25 native Debian
+  stream tests passed. The amd64 package was rebuilt, ELF/package-verified,
+  installed, and Hub restarted cleanly. It established a Tesla TLS stream
+  connection. No raw or current stream row arrived while the parked vehicle
+  was quiet. The one 5.6 GiB remote source/build directory was deleted
+  immediately after copying the 6.5 MiB package back. Hub was later purged in
+  full and TeslaMate restored healthy; VPS free space is 28 GiB.
+
+- Native Debian amd64 package and direct cutover — built the 5.9 MiB amd64
+  package natively on Debian 13, verified its ELF/package architecture, and
+  installed it at `/usr/bin/teslatlas-hub`. During the test, the loopback-only
+  systemd service was active while TeslaMate stayed stopped, preserving one
+  legacy-token refresher. Its final repeatable-read, read-only TeslaMate v4.1.1 migration
+  had 105 source migrations, 10,782,432 positions, and unchanged source
+  counts; Hub finished at about 1.86 GiB with 447 packs. The single named
+  `/var/tmp` build directory, private build inputs, and its stray `.zshenv`
+  source line were removed. The package, unit, data, config, and service account
+  were removed after testing; TeslaMate is healthy and VPS root has 28 GiB free.
 
 - Native onboarding and recovery security — adapted Tesla Auth v0.15.0 PKCE,
   callback/state/issuer routing, private WebKit login, bounded no-redirect token
