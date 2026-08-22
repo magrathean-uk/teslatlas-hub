@@ -24,6 +24,7 @@ use teslatlas_hub::teslamate_import::derive_effective_import_profile;
 use teslatlas_hub::{
     collector,
     config::HubConfig,
+    credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials, restore_credentials},
     credentials::{OwnerTokens, TeslaMatePostgresPassword},
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{HubStore, ObservationVerificationError, TeslaMateLegacyTokenStore},
@@ -375,17 +376,6 @@ enum ControlCommand {
     Pause,
     /// Resume Owner API and streaming collection for the selected car.
     Resume,
-    /// Wake the selected vehicle. Requires a fresh explicit confirmation.
-    Wake {
-        #[arg(long)]
-        confirm: bool,
-    },
-    /// Start climate control for the selected vehicle. Requires a fresh explicit confirmation.
-    #[command(name = "climate-start")]
-    ClimateStart {
-        #[arg(long)]
-        confirm: bool,
-    },
     /// Stop collection and remove the persisted Tesla account credentials.
     #[command(name = "sign-out")]
     SignOut,
@@ -451,11 +441,24 @@ enum Command {
     #[cfg(unix)]
     Setup {
         /// Legacy Owner API access-token file, or `-` for stdin.
-        #[arg(long)]
-        access_token_file: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "tokens_stdin",
+            requires = "refresh_token_file",
+            conflicts_with = "tokens_stdin"
+        )]
+        access_token_file: Option<PathBuf>,
         /// Legacy Owner API refresh-token file, or `-` for stdin.
-        #[arg(long)]
-        refresh_token_file: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "tokens_stdin",
+            requires = "access_token_file",
+            conflicts_with = "tokens_stdin"
+        )]
+        refresh_token_file: Option<PathBuf>,
+        /// Read one bounded {accessToken,refreshToken} JSON object from stdin.
+        #[arg(long, conflicts_with_all = ["access_token_file", "refresh_token_file"])]
+        tokens_stdin: bool,
         /// Tesla Owner API vehicle id. Required only when discovery finds multiple vehicles.
         #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
         vehicle_id: Option<i64>,
@@ -575,6 +578,26 @@ enum Command {
         #[arg(long)]
         destination: PathBuf,
     },
+    /// Export decryption/signing keys into a separately encrypted, secret-bearing file.
+    #[command(name = "export-recovery-credentials")]
+    ExportRecoveryCredentials {
+        /// New encrypted recovery file. Never store beside the default data backup.
+        #[arg(long)]
+        destination: PathBuf,
+        /// Owned mode-0600 file containing exactly 32 random bytes.
+        #[arg(long)]
+        recovery_key_file: PathBuf,
+    },
+    /// Restore a separately encrypted key export into a data-only restore.
+    #[command(name = "restore-recovery-credentials")]
+    RestoreRecoveryCredentials {
+        /// Existing encrypted, secret-bearing recovery file.
+        #[arg(long)]
+        source: PathBuf,
+        /// Owned mode-0600 file containing the exact 32-byte recovery key.
+        #[arg(long)]
+        recovery_key_file: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -681,24 +704,6 @@ async fn run_control(
                     "vehicleId": vehicle_id,
                 })
             );
-        }
-        ControlCommand::Wake { confirm } => {
-            run_explicit_vehicle_command(
-                &store,
-                &config,
-                teslatlas_hub::collector::ExplicitVehicleCommand::Wake,
-                *confirm,
-            )
-            .await?;
-        }
-        ControlCommand::ClimateStart { confirm } => {
-            run_explicit_vehicle_command(
-                &store,
-                &config,
-                teslatlas_hub::collector::ExplicitVehicleCommand::ClimateStart,
-                *confirm,
-            )
-            .await?;
         }
         ControlCommand::SignOut => {
             #[cfg(target_os = "macos")]
@@ -819,28 +824,6 @@ async fn run_control(
             writer.flush()?;
         }
     }
-    Ok(())
-}
-
-async fn run_explicit_vehicle_command(
-    store: &HubStore,
-    config: &HubConfig,
-    command: teslatlas_hub::collector::ExplicitVehicleCommand,
-    confirmed: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if !confirmed {
-        return Err("refusing vehicle command without --confirm".into());
-    }
-    let receipt =
-        teslatlas_hub::collector::issue_explicit_vehicle_command(store, config, command).await?;
-    println!(
-        "{}",
-        serde_json::json!({
-            "status": "accepted",
-            "command": receipt.command,
-            "vehicleEid": receipt.vehicle_eid,
-        })
-    );
     Ok(())
 }
 
@@ -1180,12 +1163,27 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Setup {
             access_token_file,
             refresh_token_file,
+            tokens_stdin,
             vehicle_id,
         } => {
-            let tokens = OwnerTokens::from_file_bytes(
-                read_migration_secret(&access_token_file, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
-                read_migration_secret(&refresh_token_file, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
-            )?;
+            let tokens = if tokens_stdin {
+                read_setup_tokens_from_stdin()?
+            } else {
+                OwnerTokens::from_file_bytes(
+                    read_migration_secret(
+                        access_token_file
+                            .as_deref()
+                            .ok_or("setup access-token file is missing")?,
+                        MAX_MIGRATION_TOKEN_FILE_BYTES,
+                    )?,
+                    read_migration_secret(
+                        refresh_token_file
+                            .as_deref()
+                            .ok_or("setup refresh-token file is missing")?,
+                        MAX_MIGRATION_TOKEN_FILE_BYTES,
+                    )?,
+                )?
+            };
             let report =
                 collector::setup_native_vehicle(&store, &config, &tokens, vehicle_id).await?;
             let encryption_key = random_encryption_key();
@@ -1372,6 +1370,23 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let report = create_data_backup(&store, &destination)?;
             println!("{}", serde_json::to_string(&report)?);
         }
+        Command::ExportRecoveryCredentials {
+            destination,
+            recovery_key_file,
+        } => {
+            let recovery_key = read_recovery_encryption_key(&recovery_key_file)?;
+            let report =
+                export_credentials(&store, &config.data_dir, &destination, &recovery_key[..])?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        Command::RestoreRecoveryCredentials {
+            source,
+            recovery_key_file,
+        } => {
+            let recovery_key = read_recovery_encryption_key(&recovery_key_file)?;
+            let report = restore_credentials(&store, &config.data_dir, &source, &recovery_key[..])?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
         Command::VerifyBackup { .. } | Command::RestoreData { .. } => {
             unreachable!("immutable data-recovery commands return before writable Hub state")
         }
@@ -1392,6 +1407,8 @@ fn command_requires_user_hub_admission(command: &Command) -> bool {
             | Command::Pair { .. }
             | Command::Repair
             | Command::Backup { .. }
+            | Command::ExportRecoveryCredentials { .. }
+            | Command::RestoreRecoveryCredentials { .. }
     )
 }
 
@@ -1440,7 +1457,17 @@ const MAX_MIGRATION_TOKEN_BYTES: usize =
 #[cfg(unix)]
 const MAX_MIGRATION_TOKEN_FILE_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES + 2;
 #[cfg(unix)]
+const MAX_SETUP_TOKENS_STDIN_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES * 2 + 128;
+#[cfg(unix)]
 const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
+
+#[cfg(unix)]
+#[derive(serde::Deserialize, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SetupTokensStdin {
+    access_token: String,
+    refresh_token: String,
+}
 
 #[cfg(unix)]
 fn migration_stop_confirmed(answer: &str) -> bool {
@@ -1696,6 +1723,33 @@ fn read_migration_secret(
         return read_bounded_migration_secret(std::io::stdin(), maximum).map_err(Into::into);
     }
     read_migration_secret_file(path, maximum).map_err(Into::into)
+}
+
+#[cfg(unix)]
+fn read_setup_tokens_from_stdin() -> Result<OwnerTokens, Box<dyn std::error::Error>> {
+    let bytes = read_bounded_migration_secret(std::io::stdin(), MAX_SETUP_TOKENS_STDIN_BYTES)?;
+    let mut input: SetupTokensStdin = serde_json::from_slice(&bytes)?;
+    OwnerTokens::from_file_bytes(
+        zeroize::Zeroizing::new(std::mem::take(&mut input.access_token).into_bytes()),
+        zeroize::Zeroizing::new(std::mem::take(&mut input.refresh_token).into_bytes()),
+    )
+    .map_err(Into::into)
+}
+
+#[cfg(unix)]
+fn read_recovery_encryption_key(
+    path: &Path,
+) -> Result<zeroize::Zeroizing<[u8; RECOVERY_ENCRYPTION_KEY_BYTES]>, Box<dyn std::error::Error>> {
+    let bytes = read_migration_secret(path, RECOVERY_ENCRYPTION_KEY_BYTES)?;
+    if bytes.len() != RECOVERY_ENCRYPTION_KEY_BYTES {
+        return Err(format!(
+            "credential-recovery encryption key must be exactly {RECOVERY_ENCRYPTION_KEY_BYTES} bytes"
+        )
+        .into());
+    }
+    let mut key = zeroize::Zeroizing::new([0_u8; RECOVERY_ENCRYPTION_KEY_BYTES]);
+    key.copy_from_slice(&bytes);
+    Ok(key)
 }
 
 #[cfg(unix)]
@@ -2284,27 +2338,14 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn bootstrap_and_explicit_vehicle_controls_parse() {
+    fn bootstrap_parses_and_vehicle_commands_are_absent() {
         let bootstrap = Cli::try_parse_from(["teslatlas-hub", "bootstrap"]).expect("bootstrap CLI");
         assert!(matches!(bootstrap.command, Command::Bootstrap));
-
-        let wake = Cli::try_parse_from(["teslatlas-hub", "control", "wake"]).expect("wake CLI");
-        assert!(matches!(
-            wake.command,
-            Command::Control {
-                command: ControlCommand::Wake { confirm: false }
-            }
-        ));
-
-        let climate =
+        assert!(Cli::try_parse_from(["teslatlas-hub", "control", "wake"]).is_err());
+        assert!(
             Cli::try_parse_from(["teslatlas-hub", "control", "climate-start", "--confirm"])
-                .expect("climate CLI");
-        assert!(matches!(
-            climate.command,
-            Command::Control {
-                command: ControlCommand::ClimateStart { confirm: true }
-            }
-        ));
+                .is_err()
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -3391,8 +3432,9 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Setup {
-                access_token_file,
-                refresh_token_file,
+                access_token_file: Some(access_token_file),
+                refresh_token_file: Some(refresh_token_file),
+                tokens_stdin: false,
                 vehicle_id: Some(70),
             } if access_token_file.as_path() == Path::new("access")
                 && refresh_token_file.as_path() == Path::new("refresh")
@@ -3410,6 +3452,22 @@ mod tests {
             ])
             .is_err()
         );
+        assert!(Cli::try_parse_from(["teslatlas-hub", "setup"]).is_err());
+        assert!(
+            Cli::try_parse_from(["teslatlas-hub", "setup", "--access-token-file", "access",])
+                .is_err()
+        );
+        let stdin = Cli::try_parse_from(["teslatlas-hub", "setup", "--tokens-stdin"])
+            .expect("stdin setup CLI");
+        assert!(matches!(
+            stdin.command,
+            Command::Setup {
+                access_token_file: None,
+                refresh_token_file: None,
+                tokens_stdin: true,
+                vehicle_id: None,
+            }
+        ));
     }
 
     #[cfg(target_os = "macos")]
@@ -3440,8 +3498,9 @@ mod tests {
     fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         assert!(command_requires_user_hub_admission(&Command::Init));
         assert!(command_requires_user_hub_admission(&Command::Setup {
-            access_token_file: PathBuf::from("access"),
-            refresh_token_file: PathBuf::from("refresh"),
+            access_token_file: Some(PathBuf::from("access")),
+            refresh_token_file: Some(PathBuf::from("refresh")),
+            tokens_stdin: false,
             vehicle_id: None,
         }));
         assert!(command_requires_user_hub_admission(&Command::Serve));
@@ -3465,6 +3524,18 @@ mod tests {
         assert!(command_requires_user_hub_admission(&Command::Backup {
             destination: PathBuf::from("backup"),
         }));
+        assert!(command_requires_user_hub_admission(
+            &Command::ExportRecoveryCredentials {
+                destination: PathBuf::from("credentials.tthcr"),
+                recovery_key_file: PathBuf::from("recovery.key"),
+            }
+        ));
+        assert!(command_requires_user_hub_admission(
+            &Command::RestoreRecoveryCredentials {
+                source: PathBuf::from("credentials.tthcr"),
+                recovery_key_file: PathBuf::from("recovery.key"),
+            }
+        ));
         assert!(!command_requires_user_hub_admission(&Command::Doctor));
         assert!(!command_requires_user_hub_admission(&Command::Legal));
         assert!(!command_requires_user_hub_admission(&Command::Status));

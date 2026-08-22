@@ -1,10 +1,11 @@
 //! Bounded Hub data-backup generation, immutable verification, and restore.
 //!
-//! A backup generation contains the Hub catalogue (including pairing database
-//! rows), every immutable pack referenced by that catalogue, each current
-//! schema-2.2 manifest's signed no-op body, and the private keys required to
-//! resume cursor signing and decrypt a stored TeslaMate token pair. It omits
-//! TLS/configuration/LaunchAgent state, so restore leaves the service stopped.
+//! A backup generation contains the Hub catalogue (including encrypted token
+//! rows and pairing rows), every immutable pack referenced by that catalogue,
+//! and each current schema-2.2 manifest's signed no-op body. Decryption and
+//! signing keys are deliberately excluded. TLS/configuration/service state is
+//! also omitted, so restore leaves the service stopped and collector authority
+//! absent.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -31,28 +32,29 @@ use crate::{
     updates_delivery::{SignedNoOpState, validate_schema_22_pair},
 };
 
-const BACKUP_KIND: &str = "teslatlas-hub-data-backup-v2";
-const COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v2";
-const BACKUP_SCOPE: &str = "hub_data_pairing_and_optional_collector_credentials";
-const MANIFEST_NAME: &str = "backup-v2.json";
+const BACKUP_KIND: &str = "teslatlas-hub-data-backup-v3";
+const COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v3";
+const BACKUP_SCOPE: &str = "hub_data_and_pairing_without_keys";
+const MANIFEST_NAME: &str = "backup-v3.json";
 const COMPLETION_NAME: &str = "BACKUP_COMPLETE";
 const DATA_DIRECTORY: &str = "data";
 const CATALOGUE_MEMBER: &str = "data/hub.sqlite";
 const PACK_DIRECTORY: &str = "data/packs/sha256";
 const SCHEMA_22_NOOP_DIRECTORY: &str = "data/packs/noop";
-const SECRET_DIRECTORY: &str = "data/secrets";
-const TESLAMATE_KEY_MEMBER: &str = "data/secrets/teslamate-encryption.key";
-const CURSOR_KEY_MEMBER: &str = "data/secrets/hub-cursor.key";
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
 const MAX_SCHEMA_22_NOOP_BYTES: u64 = 16 * 1024;
-const MAX_TESLAMATE_KEY_BYTES: u64 = 16 * 1024;
-const CURSOR_KEY_BYTES: u64 = 32;
 const MAX_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_COMPLETION_BYTES: u64 = 4 * 1024;
 const MAX_BACKUP_MEMBERS: usize = 4_096;
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
-const EXCLUDED_HOST_STATE: [&str; 3] = ["tls_identity", "hub_configuration", "launch_agent_state"];
+const EXCLUDED_HOST_STATE: [&str; 5] = [
+    "collector_decryption_key",
+    "cursor_signing_key",
+    "tls_identity",
+    "hub_configuration",
+    "service_state",
+];
 
 #[derive(Debug, Error)]
 pub enum DataRecoveryError {
@@ -219,7 +221,6 @@ pub fn create_data_backup(
     let payload = staging.path.join(DATA_DIRECTORY);
     store.backup_to(&payload)?;
     seal_staged_catalogue(&payload)?;
-    copy_recovery_secrets(store, &live_data, &payload)?;
     protect_payload_tree(&payload)?;
 
     let copied_store = HubStore::open_immutable_read_only(&payload)?;
@@ -300,9 +301,9 @@ pub fn verify_data_backup(source: &Path) -> Result<DataRecoveryReport, DataRecov
     report("data_backup_verified", &source, &manifest)
 }
 
-/// Restore Hub data and any backed-up collector credentials into a new private
-/// directory. TLS, configuration, and LaunchAgent state remain host-local, so
-/// the restored collector is never started by this operation.
+/// Restore Hub data into a new private directory. Collector keys, TLS,
+/// configuration, and service state remain absent, so the restored collector
+/// cannot start until credentials are explicitly recovered or replaced.
 pub fn restore_data_backup(
     source: &Path,
     destination: &Path,
@@ -336,13 +337,6 @@ pub fn restore_data_backup(
         .any(|member| schema_22_noop_member_filename(&member.path).is_some())
     {
         create_private_directory(&staging.path.join("packs").join("noop"))?;
-    }
-    if manifest
-        .members
-        .iter()
-        .any(|member| member.path.starts_with(&format!("{SECRET_DIRECTORY}/")))
-    {
-        create_private_directory(&staging.path.join("secrets"))?;
     }
     for member in &manifest.members {
         let relative = member
@@ -404,15 +398,7 @@ fn report(
         total_bytes,
         scope: BACKUP_SCOPE,
         clean_host_ready: false,
-        collector_authority: if manifest
-            .members
-            .iter()
-            .any(|member| member.path == TESLAMATE_KEY_MEMBER)
-        {
-            "credentials_restored_service_stopped"
-        } else {
-            "absent"
-        },
+        collector_authority: "absent",
         excluded_host_state: EXCLUDED_HOST_STATE.to_vec(),
     })
 }
@@ -466,37 +452,10 @@ fn resolve_existing_private_directory(
         .map_err(|source| io_error("resolving data-backup directory", path, source))
 }
 
-fn copy_recovery_secrets(
-    store: &HubStore,
-    live_data: &Path,
-    payload: &Path,
-) -> Result<(), DataRecoveryError> {
-    let tokens = store.load_teslamate_legacy_tokens()?;
-    let encryption_key = tokens
-        .as_ref()
-        .map(|tokens| crate::teslamate_credentials::load_key_for_tokens(live_data, tokens))
-        .transpose()?;
-    let cursor_key = crate::teslamate_credentials::load_existing_cursor_key_bytes(live_data)?;
-    if encryption_key.is_none() && cursor_key.is_none() {
-        return Ok(());
-    }
-
-    let secrets = payload.join("secrets");
-    create_private_directory(&secrets)?;
-    if let Some(key) = encryption_key {
-        write_private_file(&secrets.join("teslamate-encryption.key"), key.as_bytes())?;
-    }
-    if let Some(key) = cursor_key {
-        write_private_file(&secrets.join("hub-cursor.key"), &key)?;
-    }
-    Ok(())
-}
-
 fn protect_payload_tree(payload: &Path) -> Result<(), DataRecoveryError> {
     let packs = payload.join("packs");
     let sha_directory = packs.join("sha256");
     let noop_directory = packs.join("noop");
-    let secrets = payload.join("secrets");
     let expected_noops = current_schema_22_noop_pairs(payload)?;
     require_real_directory(payload, "backup data payload")?;
     require_real_directory(&packs, "backup packs directory")?;
@@ -562,37 +521,6 @@ fn protect_payload_tree(payload: &Path) -> Result<(), DataRecoveryError> {
         let path = entry.path();
         require_regular_file(&path, "backup pack")?;
         set_mode(&path, PRIVATE_FILE_MODE, "protecting backup pack")?;
-    }
-    match fs::symlink_metadata(&secrets) {
-        Err(source) if source.kind() == io::ErrorKind::NotFound => {}
-        Err(source) => return Err(io_error("inspecting backup secrets", &secrets, source)),
-        Ok(_) => {
-            require_real_directory(&secrets, "backup secrets directory")?;
-            set_mode(
-                &secrets,
-                PRIVATE_DIRECTORY_MODE,
-                "protecting backup secrets directory",
-            )?;
-            let mut names = BTreeSet::new();
-            for entry in read_directory(&secrets)? {
-                let name = entry
-                    .file_name()
-                    .into_string()
-                    .map_err(|_| invalid("backup secret filename is not UTF-8"))?;
-                if !matches!(name.as_str(), "teslamate-encryption.key" | "hub-cursor.key") {
-                    return Err(invalid(format!("unexpected backup secret: {name}")));
-                }
-                let metadata = require_regular_file(&entry.path(), "backup secret")?;
-                if metadata.nlink() != 1 {
-                    return Err(invalid(format!("backup secret has multiple links: {name}")));
-                }
-                set_mode(&entry.path(), PRIVATE_FILE_MODE, "protecting backup secret")?;
-                names.insert(name);
-            }
-            if names.is_empty() {
-                return Err(invalid("backup secrets directory is empty"));
-            }
-        }
     }
     Ok(())
 }
@@ -678,17 +606,6 @@ fn inventory_payload(payload: &Path) -> Result<Vec<BackupMember>, DataRecoveryEr
         )?);
         if members.len() > MAX_BACKUP_MEMBERS {
             return Err(invalid("backup contains too many members"));
-        }
-    }
-    for (name, member_path) in [
-        ("hub-cursor.key", CURSOR_KEY_MEMBER),
-        ("teslamate-encryption.key", TESLAMATE_KEY_MEMBER),
-    ] {
-        let path = payload.join("secrets").join(name);
-        match fs::symlink_metadata(&path) {
-            Ok(_) => members.push(inventory_file(&path, member_path.to_owned())?),
-            Err(source) if source.kind() == io::ErrorKind::NotFound => {}
-            Err(source) => return Err(io_error("inspecting backup secret", &path, source)),
         }
     }
     members.sort_by(|left, right| left.path.cmp(&right.path));
@@ -785,20 +702,6 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError>
             }
             continue;
         }
-        if member.path == TESLAMATE_KEY_MEMBER {
-            if member.size == 0 || member.size > MAX_TESLAMATE_KEY_BYTES {
-                return Err(invalid(
-                    "TeslaMate encryption-key backup size is outside its bound",
-                ));
-            }
-            continue;
-        }
-        if member.path == CURSOR_KEY_MEMBER {
-            if member.size != CURSOR_KEY_BYTES {
-                return Err(invalid("Hub cursor-key backup must be exactly 32 bytes"));
-            }
-            continue;
-        }
         let filename = member
             .path
             .strip_prefix(&format!("{PACK_DIRECTORY}/"))
@@ -856,46 +759,6 @@ fn read_backup_envelope(
     Ok((manifest, manifest_bytes, marker))
 }
 
-fn secret_member_names(members: &[BackupMember]) -> BTreeSet<String> {
-    members
-        .iter()
-        .filter_map(|member| member.path.strip_prefix(&format!("{SECRET_DIRECTORY}/")))
-        .map(str::to_owned)
-        .collect()
-}
-
-fn validate_secret_catalogue_consistency(
-    data: &Path,
-    members: &[BackupMember],
-) -> Result<(), DataRecoveryError> {
-    let connection = open_immutable_catalogue(data)?;
-    let token_rows: i64 = connection
-        .query_row("SELECT COUNT(*) FROM teslamate_legacy_tokens", [], |row| {
-            row.get(0)
-        })
-        .map_err(DataRecoveryError::CatalogueIdentity)?;
-    let manifest_rows: i64 = connection
-        .query_row("SELECT COUNT(*) FROM sync_manifests", [], |row| row.get(0))
-        .map_err(DataRecoveryError::CatalogueIdentity)?;
-    let has_teslamate_key = members
-        .iter()
-        .any(|member| member.path == TESLAMATE_KEY_MEMBER);
-    let has_cursor_key = members
-        .iter()
-        .any(|member| member.path == CURSOR_KEY_MEMBER);
-    if !matches!(token_rows, 0 | 1) || has_teslamate_key != (token_rows == 1) {
-        return Err(invalid(
-            "TeslaMate token rows and backed-up encryption key are inconsistent",
-        ));
-    }
-    if manifest_rows > 0 && !has_cursor_key {
-        return Err(invalid(
-            "signed manifests require the backed-up Hub cursor key",
-        ));
-    }
-    Ok(())
-}
-
 fn validate_backup_tree(
     root: &Path,
     manifest: &BackupManifest,
@@ -917,21 +780,7 @@ fn validate_backup_tree(
         "data-backup root",
     )?;
     let data = root.join(DATA_DIRECTORY);
-    let expected_secrets = secret_member_names(&manifest.members);
-    if expected_secrets.is_empty() {
-        require_directory_entries(&data, ["hub.sqlite", "packs"], "data-backup payload")?;
-    } else {
-        require_directory_entries(
-            &data,
-            ["hub.sqlite", "packs", "secrets"],
-            "data-backup payload",
-        )?;
-        require_directory_entry_set(
-            &data.join("secrets"),
-            &expected_secrets,
-            "data-backup secrets directory",
-        )?;
-    }
+    require_directory_entries(&data, ["hub.sqlite", "packs"], "data-backup payload")?;
     let expected_noops = current_schema_22_noop_pairs(&data)?;
     if expected_noops.is_empty() {
         require_directory_entries(
@@ -974,8 +823,6 @@ fn validate_backup_tree(
         ));
     }
     validate_schema_22_noop_directory(&data, &expected_noops)?;
-    validate_secret_catalogue_consistency(&data, &manifest.members)?;
-
     for member in &manifest.members {
         let path = root.join(&member.path);
         let metadata = require_regular_file(&path, "data-backup member")?;
@@ -1005,21 +852,7 @@ fn validate_restored_data_tree(
     root: &Path,
     members: &[BackupMember],
 ) -> Result<(), DataRecoveryError> {
-    let expected_secrets = secret_member_names(members);
-    if expected_secrets.is_empty() {
-        require_directory_entries(root, ["hub.sqlite", "packs"], "restored data root")?;
-    } else {
-        require_directory_entries(
-            root,
-            ["hub.sqlite", "packs", "secrets"],
-            "restored data root",
-        )?;
-        require_directory_entry_set(
-            &root.join("secrets"),
-            &expected_secrets,
-            "restored secrets directory",
-        )?;
-    }
+    require_directory_entries(root, ["hub.sqlite", "packs"], "restored data root")?;
     let expected_noops = current_schema_22_noop_pairs(root)?;
     if expected_noops.is_empty() {
         require_directory_entries(&root.join("packs"), ["sha256"], "restored packs directory")?;
@@ -1055,7 +888,6 @@ fn validate_restored_data_tree(
         ));
     }
     validate_schema_22_noop_directory(root, &expected_noops)?;
-    validate_secret_catalogue_consistency(root, members)?;
     for member in members {
         let relative = member
             .path
@@ -1168,9 +1000,6 @@ fn sync_payload(payload: &Path, members: &[BackupMember]) -> Result<(), DataReco
         sync_directory(&payload.join("packs").join("noop"))?;
     }
     sync_directory(&payload.join("packs"))?;
-    if !secret_member_names(members).is_empty() {
-        sync_directory(&payload.join("secrets"))?;
-    }
     sync_directory(payload)
 }
 
@@ -1190,9 +1019,6 @@ fn sync_restored_data(root: &Path, members: &[BackupMember]) -> Result<(), DataR
         sync_directory(&root.join("packs").join("noop"))?;
     }
     sync_directory(&root.join("packs"))?;
-    if !secret_member_names(members).is_empty() {
-        sync_directory(&root.join("secrets"))?;
-    }
     sync_directory(root)
 }
 
@@ -1793,11 +1619,9 @@ mod tests {
         let created = create_data_backup(&store, &backup).expect("create data backup");
         assert_eq!(created.scope, BACKUP_SCOPE);
         assert!(!created.clean_host_ready);
-        assert_eq!(
-            created.collector_authority,
-            "credentials_restored_service_stopped"
-        );
+        assert_eq!(created.collector_authority, "absent");
         assert_eq!(permission_mode(&fs::metadata(&backup).unwrap()), 0o700);
+        assert!(!backup.join("data/secrets").exists());
 
         let before = tree_snapshot(&backup);
         let verified = verify_data_backup(&backup).expect("verify data backup");
@@ -1819,11 +1643,7 @@ mod tests {
         assert_eq!(restored_report.installation_id, installation_id);
         assert!(!restored_report.clean_host_ready);
         assert_eq!(tree_snapshot(&backup), before);
-        assert_eq!(
-            fs::read(restored.join("secrets/hub-cursor.key")).expect("restored cursor key"),
-            source_cursor
-        );
-        assert!(restored.join("secrets/teslamate-encryption.key").is_file());
+        assert!(!restored.join("secrets").exists());
         assert!(!restored.join("tls").exists());
 
         let restored_store = HubStore::open_immutable_read_only(&restored).expect("restored store");
@@ -1853,10 +1673,16 @@ mod tests {
             .load_teslamate_legacy_tokens()
             .expect("restored token row")
             .expect("restored credentials");
-        let restored_key =
-            crate::teslamate_credentials::load_key_for_tokens(&restored, &restored_tokens)
-                .expect("restored encryption key");
-        assert_eq!(restored_key.as_bytes(), encryption_key);
+        assert!(
+            crate::teslamate_credentials::load_key_for_tokens(&restored, &restored_tokens).is_err(),
+            "default data restore must not recover the credential key"
+        );
+        assert_eq!(
+            fs::read(crate::teslamate_credentials::cursor_key_path(source_data))
+                .expect("source cursor key after backup"),
+            source_cursor,
+            "backup must not mutate source key material"
+        );
     }
 
     #[test]

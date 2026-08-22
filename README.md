@@ -11,7 +11,7 @@ The Hub is aimed primarily at new self-hosted installations. It also includes an
 Teslatlas Hub is intended to provide:
 
 - a native Rust collector and local data store;
-- authenticated local synchronisation for the separately distributed Teslatlas client;
+- loopback-only local synchronisation for the separately distributed Teslatlas client;
 - service and CLI operation on macOS and Linux;
 - an automated bootstrap/install path;
 - new installations that do not require TeslaMate or Grafana;
@@ -25,7 +25,7 @@ The current `v1.0.0-alpha.1` implementation is narrower than the planned cross-p
 
 - macOS 12 or later on Apple silicon, and Debian 13 ARM64;
 - one vehicle;
-- legacy Owner API token authentication; no official Fleet API integration;
+- legacy Owner API token authentication with native Tesla OAuth onboarding; no official Fleet API integration;
 - PostgreSQL history import, encrypted token/key transfer, token refresh, Owner API polling, Tesla streaming, lifecycle persistence, backup and repair;
 - native AppKit control app plus full CLI access;
 - a per-user LaunchAgent on macOS or a systemd service on Debian;
@@ -36,7 +36,7 @@ The current `v1.0.0-alpha.1` implementation is narrower than the planned cross-p
 Teslatlas Hub:
 
 - collects and stores vehicle telemetry under the operator's control;
-- exposes a local authenticated sync interface;
+- exposes a loopback-only local sync interface;
 - does not require TeslaMate for a new installation;
 - does not modify or write to a TeslaMate database during migration;
 - does not grant any right to use a vehicle manufacturer's API, account, service or trade marks;
@@ -56,7 +56,7 @@ Tesla, vehicle model names, TeslaMate and all third-party marks belong to their 
 
 ## Build the current macOS alpha
 
-Requirements for the current tagged alpha are Rust 1.97, Xcode 27 and XcodeGen.
+Requirements for the current tagged alpha are Rust 1.98, Xcode 27 and XcodeGen.
 
 ```sh
 cargo build --locked --release
@@ -64,6 +64,11 @@ scripts/build-macos-app.sh
 ```
 
 The app is written to `dist/Teslatlas Hub.app`. Current alpha builds are ad-hoc signed and are not notarised.
+Open the app and choose **Set Up Hub** (or **Connect Tesla**). It performs the
+PKCE Tesla login in a private WebKit session, passes the resulting legacy token
+pair to the embedded Hub process over stdin, configures one vehicle, installs
+the embedded service package, and starts collection. Tokens are not written to
+temporary files, shown in the UI, or placed in process arguments.
 
 ## Debian ARM64 package
 
@@ -141,13 +146,45 @@ teslatlas-hub --config /absolute/path/config.toml doctor
 teslatlas-hub legal
 ```
 
-Wake and climate start are explicit one-car commands. They are not used by
-scheduled collection and require a fresh command-line confirmation:
+Vehicle commands are intentionally absent. Only the resident collector owns
+the refresh token and Hub never starts a second credential manager.
+
+## Backup and credential recovery
+
+The normal backup is data-only. It contains the catalogue, encrypted token row,
+pairing state, and immutable packs. It deliberately excludes the TeslaMate
+decryption key, Hub cursor-signing key, TLS identity, configuration, and service
+state:
 
 ```sh
-teslatlas-hub --config /absolute/path/config.toml control wake --confirm
-teslatlas-hub --config /absolute/path/config.toml control climate-start --confirm
+teslatlas-hub --config /absolute/path/config.toml backup \
+  --destination /backups/hub-data-2026-08-22
+teslatlas-hub verify-backup --source /backups/hub-data-2026-08-22
+teslatlas-hub restore-data \
+  --source /backups/hub-data-2026-08-22 \
+  --destination /restore/hub-data
 ```
+
+Credential disaster recovery is separate and explicit. Create a random raw
+32-byte key in a private mode-0600 file, then export an AES-256-GCM encrypted,
+secret-bearing recovery file. Store the data backup, encrypted credential file,
+and its encryption key separately.
+
+```sh
+umask 077
+openssl rand 32 > /private/hub-recovery.key
+teslatlas-hub --config /absolute/path/config.toml export-recovery-credentials \
+  --destination /separate-private-location/hub-credentials.tthcr \
+  --recovery-key-file /private/hub-recovery.key
+
+teslatlas-hub --config /absolute/path/restored-config.toml restore-recovery-credentials \
+  --source /separate-private-location/hub-credentials.tthcr \
+  --recovery-key-file /private/hub-recovery.key
+```
+
+Credential restore requires the matching data-backup installation ID and an
+absent `secrets/` directory; it never overwrites existing key material. Restore
+credentials only while the service is stopped.
 
 ## Optional TeslaMate migration
 
@@ -189,10 +226,15 @@ The migration code reads `private.tokens` only for the explicit credential-trans
 
 Vehicle telemetry includes precise location, travel history, identifiers and credential material. Treat the host, backups, logs, exported packs and secret files as sensitive systems.
 
+The default plaintext listener is a loopback transport, not an authentication
+boundary. Every local process is trusted for this interface. Never port-forward,
+proxy, tunnel, or otherwise expose the plaintext port. Any non-loopback listener
+requires TLS and authentication at the Hub or a trusted network boundary.
+
 Before deployment:
 
 1. use a dedicated operating-system account;
-2. bind the Hub only to required interfaces;
+2. keep the plaintext Hub listener on loopback only;
 3. require authentication and TLS across untrusted networks;
 4. restrict database roles to the minimum privileges;
 5. keep secrets outside source control and shell history;

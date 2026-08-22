@@ -18,6 +18,15 @@ Reviewed compatibility revision:
 
 The repository contains TeslaMate-specific facts, names, schema mappings, fingerprints, behavioural compatibility and fixtures. It must not claim that no TeslaMate material or influence exists.
 
+## Tesla Auth reference material
+
+The native macOS OAuth onboarding flow adapts the endpoint constants, PKCE
+authorization shape, `tesla://auth/callback` handling, China issuer routing,
+and no-redirect 30-second token exchange from Tesla Auth `v0.15.0`, revision
+`68da1f850e9cb87ac0e54c608d5a2e90d3ad1608` (MIT, © 2021 Adrian Kumpf).
+The Wry/Tao GUI and Rust dependency graph are not bundled; macOS uses native
+WebKit, CryptoKit, Security, and URLSession.
+
 ## File classification
 
 Every release file must be classified as:

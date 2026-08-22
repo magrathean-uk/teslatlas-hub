@@ -19,12 +19,13 @@ final class MainWindowController: NSWindowController {
     private let titlebarTitle = NSTextField(labelWithString: "Teslatlas Hub")
     private let stopButton = NSButton(title: "Stop Hub", target: nil, action: nil)
     private let restartButton = NSButton(title: "Restart", target: nil, action: nil)
-    private let installButton = NSButton(title: "Install Service", target: nil, action: nil)
+    private let installButton = NSButton(title: "Set Up Hub", target: nil, action: nil)
     private var titlebarAccessory: NSTitlebarAccessoryViewController?
     private var importSheet: ImportSheetController?
     private var logsWindow: LogsWindowController?
     private var detailsWindow: ServiceDetailsWindowController?
     private var diagnosticsWindow: DiagnosticsWindowController?
+    private var authWindow: TeslaAuthWindowController?
 
     init(controller: HubController) {
         self.controller = controller
@@ -54,11 +55,12 @@ final class MainWindowController: NSWindowController {
                 titlebarTitle.centerYAnchor.constraint(equalTo: titlebar.centerYAnchor)
             ])
         }
-        let controls = NSStackView(views: [compactButton("Import", "square.and.arrow.down", #selector(importPressed)),
+        let controls = NSStackView(views: [compactButton("Connect Tesla", "person.badge.key", #selector(connectTeslaPressed)),
+                                           compactButton("Import", "square.and.arrow.down", #selector(importPressed)),
                                            compactButton("Logs", "doc.text", #selector(logsPressed))])
         controls.spacing = 8
         controls.alignment = .centerY
-        let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 176, height: 38))
+        let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 330, height: 38))
         controls.translatesAutoresizingMaskIntoConstraints = false
         wrapper.addSubview(controls)
         NSLayoutConstraint.activate([
@@ -165,7 +167,7 @@ final class MainWindowController: NSWindowController {
         restartButton.controlSize = .large
         restartButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 86).isActive = true
         installButton.target = self
-        installButton.action = #selector(installPressed)
+        installButton.action = #selector(connectTeslaPressed)
         installButton.bezelStyle = .rounded
         installButton.controlSize = .large
         installButton.keyEquivalent = "\r"
@@ -253,7 +255,7 @@ final class MainWindowController: NSWindowController {
             self.heroTitle.stringValue = snapshot.health.title
             self.heroSubtitle.stringValue = snapshot.health == .running
                 ? "Teslatlas Hub is running in the background."
-                : "Install the service, then import your TeslaMate data."
+                : "Connect Tesla to configure and install the Hub service."
             self.serviceValue.stringValue = snapshot.service
             self.accountValue.stringValue = snapshot.account
             self.vehicleName.stringValue = snapshot.vehicleName
@@ -264,6 +266,7 @@ final class MainWindowController: NSWindowController {
             self.accountDot.contentTintColor = snapshot.account == "Connected" ? .systemGreen : .systemGray
             let vehicleUnavailable = snapshot.vehicle.localizedCaseInsensitiveContains("offline")
                 || snapshot.vehicle.localizedCaseInsensitiveContains("no imported")
+                || snapshot.vehicle.localizedCaseInsensitiveContains("no configured")
                 || snapshot.vehicle == "Unknown"
             self.vehicleDot.contentTintColor = vehicleUnavailable ? .systemGray : .systemGreen
             self.databaseDot.contentTintColor = snapshot.database.hasPrefix("Healthy") ? .systemGreen : .systemGray
@@ -367,9 +370,34 @@ final class MainWindowController: NSWindowController {
         logsWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
-    @objc private func installPressed() {
-        controller.installService { [weak self] result in
-            switch result { case .success: self?.update(); case let .failure(error): self?.showError(error) }
+    @objc private func connectTeslaPressed() {
+        guard authWindow == nil else {
+            authWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        do {
+            let auth = try TeslaAuthWindowController { [weak self] result in
+                guard let self else { return }
+                self.authWindow = nil
+                switch result {
+                case let .success(tokens):
+                    self.installButton.isEnabled = false
+                    self.controller.configureTeslaAccount(tokens: tokens) { setup in
+                        self.installButton.isEnabled = true
+                        switch setup {
+                        case .success: self.update()
+                        case let .failure(error): self.showError(error)
+                        }
+                    }
+                case let .failure(error):
+                    if error as? TeslaAuthError != .cancelled { self.showError(error) }
+                }
+            }
+            authWindow = auth
+            auth.showWindow(nil)
+            auth.window?.makeKeyAndOrderFront(nil)
+        } catch {
+            showError(error)
         }
     }
 

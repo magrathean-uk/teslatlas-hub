@@ -36,6 +36,11 @@ struct HubActivity {
     let color: NSColor
 }
 
+struct HubSetupInvocation: Equatable {
+    let arguments: [String]
+    let standardInput: String
+}
+
 struct HubSnapshot {
     var health: HubHealth
     var service: String
@@ -75,12 +80,12 @@ struct HubSnapshot {
         service: "Not installed",
         account: "Not configured",
         vehicleName: "Vehicle",
-        vehicle: "No imported vehicle",
-        database: "Waiting for import",
+        vehicle: "No configured vehicle",
+        database: "Waiting for setup or import",
         activity: [],
         version: HubRelease.fallbackVersion,
         dataDirectory: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/Teslatlas Hub/data"),
-        diagnosticLines: ["Hub has not been imported or installed."]
+        diagnosticLines: ["Hub has not been configured or installed."]
     )
 }
 
@@ -354,6 +359,89 @@ final class HubController {
         }
     }
 
+    func configureTeslaAccount(tokens: TeslaAuthTokens,
+                               vehicleID: Int64? = nil,
+                               completion: @escaping (Result<Void, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        let invocation: HubSetupInvocation
+        do {
+            try ensureConfig()
+            invocation = try Self.setupInvocation(configPath: configPath,
+                                                  tokens: tokens,
+                                                  vehicleID: vehicleID)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        let installed = isServiceInstalled
+        let finish: (Result<Void, Error>) -> Void = { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { completion(result); return }
+                switch result {
+                case .success:
+                    self.refresh { _ in completion(.success(())) }
+                case .failure:
+                    completion(result)
+                }
+            }
+        }
+        let runSetup = { [weak self] in
+            guard let self else { return }
+            self.commandRunner.run(arguments: invocation.arguments,
+                                   stdin: invocation.standardInput) { result in
+                switch result {
+                case .success:
+                    self.installer.install { install in
+                        switch install {
+                        case .success:
+                            finish(.success(()))
+                        case let .failure(installError):
+                            guard installed else { finish(.failure(installError)); return }
+                            self.serviceRunner.run(arguments: ["service", "start"]) { _ in
+                                finish(.failure(installError))
+                            }
+                        }
+                    }
+                case let .failure(setupError):
+                    guard installed else { finish(.failure(setupError)); return }
+                    self.serviceRunner.run(arguments: ["service", "start"]) { _ in
+                        finish(.failure(setupError))
+                    }
+                }
+            }
+        }
+        if installed {
+            serviceRunner.run(arguments: ["service", "stop"]) { result in
+                switch result {
+                case .success: runSetup()
+                case let .failure(error): finish(.failure(error))
+                }
+            }
+        } else {
+            runSetup()
+        }
+    }
+
+    static func setupInvocation(configPath: URL,
+                                tokens: TeslaAuthTokens,
+                                vehicleID: Int64?) throws -> HubSetupInvocation {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "accessToken": tokens.accessToken,
+            "refreshToken": tokens.refreshToken
+        ], options: [])
+        guard let input = String(data: payload, encoding: .utf8) else {
+            throw HubActionError.commandFailed("Could not encode Tesla login credentials.")
+        }
+        var arguments = ["--config", configPath.path, "setup", "--tokens-stdin"]
+        if let vehicleID {
+            guard vehicleID > 0 else {
+                throw HubActionError.commandFailed("Tesla vehicle ID must be positive.")
+            }
+            arguments += ["--vehicle-id", String(vehicleID)]
+        }
+        return HubSetupInvocation(arguments: arguments, standardInput: input)
+    }
+
     func startHub(completion: @escaping (Result<Void, Error>) -> Void) {
         runServiceCommand(["service", "start"], completion: completion)
     }
@@ -446,16 +534,16 @@ final class HubController {
         let vehicle = root["vehicle"] as? [String: Any]
         let credentials = root["legacyCredentials"] as? [String: Any]
         let ready = root["ready"] as? Bool ?? false
-        let vehicleName = vehicle?["displayName"] as? String ?? "No imported vehicle"
+        let vehicleName = vehicle?["displayName"] as? String ?? "No configured vehicle"
         let vehicleSummary: String
         if let observed = vehicle?["latestObservedAtMs"] as? NSNumber {
             vehicleSummary = "Last seen \(relativeAge(milliseconds: observed.int64Value))"
         } else {
-            vehicleSummary = vehicle == nil ? "No imported vehicle" : "No observations yet"
+            vehicleSummary = vehicle == nil ? "No configured vehicle" : "No observations yet"
         }
         let account = (credentials?["present"] as? Bool == true) ? "Connected" : "Not configured"
         let dbBytes = database?["bytes"] as? NSNumber
-        let dbText = dbBytes.map { "Healthy · \($0.int64Value / 1_048_576) MB" } ?? "Waiting for import"
+        let dbText = dbBytes.map { "Healthy · \($0.int64Value / 1_048_576) MB" } ?? "Waiting for setup or import"
         let dataDirectory = (database?["path"] as? String).map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
         let service = ready ? "Installed and running" : "Installed · needs attention"
         return HubSnapshot(health: ready ? .running : .degraded,

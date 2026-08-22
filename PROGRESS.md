@@ -1,26 +1,40 @@
 # Hub progress
 
-Status: Rust 1.98 dependencies and Mac/Linux release packaging are current.
-Compact direct migration is measured on the exact stopped TeslaMate v4.1.1 VPS
-source. TeslaMate is restored and healthy. Driving remains deferred.
+Status: Rust 1.98 dependencies are current. Native macOS Tesla login/setup,
+single refresh ownership, honest loopback documentation, data-only backup v3,
+and separately encrypted credential recovery are implemented and hermetically
+validated. Compact migration remains measured on TeslaMate v4.1.1.
 
-Current: on 2026-08-21, current Mac and native Debian 13 ARM64 release binaries
-imported the stopped source read-only: 105 migrations and 10,782,430 positions.
-The Mac final store was 1,967,036 KiB (1.88 GiB), with a sampled 3,081,344 KiB
-(2.94 GiB) peak; Linux final data was 1,966,668 KiB (1.88 GiB). Both retained
-one 11,096,061-row state catalogue, zero legacy inventory rows, and 446 packs.
-SQLite integrity and `doctor` passed; source counts were unchanged. Both exact
-test stores and tunnels were deleted after their receipts.
+Current: on 2026-08-22, `cargo update` found zero resolvable updates;
+`matchit` 0.8.4 remains Axum 0.8.9's exact dependency. Rust format, all-target
+check, 703 tests (701 passed, 2 intentional ignores), Clippy `-D warnings`, and
+release build passed. The release macOS app/package built, ad-hoc signature
+verification passed, and 6 AppKit/OAuth tests passed. No Tesla login, token
+exchange, installation, service mutation, network exposure, or vehicle command
+was performed.
 
-Next: physical-iOS full-history sync, a clean-Mac package install and launchd
-lifecycle, live token-expiry refresh, and longer Mac/Linux restart/endurance
-validation remain separate from the completed migration and packaging receipts.
-Production-corpus compaction acceptance is optional because it needs a
-disposable copy of the 1.88 GiB migrated store; bounded compaction tests pass.
+Next: live Tesla OAuth/setup, a clean-Mac administrator package install and
+launchd lifecycle, one forced live token-expiry refresh, physical-iOS
+full-history/current-state sync, one Debian ARM64 package rebuild/smoke, and
+longer Mac/Linux restart/endurance validation remain external proof. Driving
+stream validation remains deferred. Production-corpus compaction acceptance is
+optional because it needs a disposable copy of the 1.88 GiB migrated store;
+bounded compaction tests pass.
 
-Blocked: real wake and climate commands still require immediate explicit confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
+Blocked: no known source feature blocker inside the declared one-vehicle scope.
+The local TeslaMate PostgreSQL copy remains a deliberate old-schema negative
+fixture and is read-only.
 
 ## Completed
+
+- Native onboarding and recovery security — adapted Tesla Auth v0.15.0 PKCE,
+  callback/state/issuer routing, private WebKit login, bounded no-redirect token
+  exchange, and stdin-only Rust setup into the AppKit installer flow. Removed
+  wake/climate CLI transport and its second credential-manager path. Plaintext
+  sync is documented as a loopback trust boundary, not authentication. Backup
+  v3 excludes both local keys; explicit AES-256-GCM credential export binds the
+  installation ID and rejects wrong keys, tampering, or overwrite. Focused and
+  full validation is recorded above.
 
 - Rust 1.98 dependency and packaging refresh — updated the minimum toolchain to
   Rust 1.98 and all resolvable lockfile packages; `matchit` 0.8.4 remains Axum
@@ -86,9 +100,15 @@ Blocked: real wake and climate commands still require immediate explicit confirm
 
 - Linux portability — fixed Unix-sized Rustix mode/device handling, Linux service error formatting, root-owned packaged config admission, normal non-022 test umasks, Linux service CLI wording, and host-only byte-fixture execution. The package builder now removes only its exact temporary staging directory.
 
-- Linux CLI delivery — added bootstrap, systemd `status|start|stop|restart`, explicit `control wake --confirm` and `control climate-start --confirm` with a local fake Owner API test, Debian package files, and Linux documentation. Host format, focused Owner API test, and binary check passed.
+- Linux CLI delivery (historical) — added bootstrap, systemd
+  `status|start|stop|restart`, Debian package files, and Linux documentation.
+  The earlier wake/climate commands and command-only credential path are now
+  intentionally removed for TeslaMate parity and single refresh ownership.
 
-- Debian native portability — QEMU ARM64 compilation exposed platform-sized Rustix mode types and systemd test lifetimes; both are now portable. The native fake wake/climate test passed; later native package acceptance also passed.
+- Debian native portability — QEMU ARM64 compilation exposed platform-sized
+  Rustix mode types and systemd test lifetimes; both are portable. Later native
+  package acceptance passed; its historical fake wake/climate surface has since
+  been removed.
 
 - Linux runtime gates — lifted the existing admitted Unix runtime for setup, read-only migration, serving, and bounded observation; added the small systemd `status/start/stop/restart` adapter. Host format and all-target Rust check passed; Debian ARM64 compilation and package smoke were later completed in one bounded native QEMU guest.
 
@@ -98,7 +118,10 @@ Blocked: real wake and climate commands still require immediate explicit confirm
 
 - Charge and geofence parity — charge cost edits now accept total, per-kWh, or per-minute input; geofence changes relabel bounded historical drive/charge pages, optionally calculate missing matching charge costs, and enforce TeslaMate's sub-5-km radius — 2 focused tests passed.
 
-- Credential continuity — `control sign-out` now stops the LaunchAgent, refuses a concurrently running direct Hub, deletes the token row and both key generations, while backup v2 verifies and restores the encryption and cursor keys with the service stopped — 4 focused tests passed.
+- Credential continuity (historical, superseded in part) — `control sign-out`
+  stops the LaunchAgent, refuses a concurrently running direct Hub, and deletes
+  the token row and both key generations. The former backup-v2 key restoration
+  was replaced by current data-only backup v3 plus separate encrypted recovery.
 
 - Native TeslaMate controls — added live pause/resume and settings pickup within 30 seconds, geofence create/list/delete, completed-charge cost replacement, bounded TeslaMate-compatible GPX export, and rated-range charge-consensus efficiency recalculation — 5 focused tests passed.
 

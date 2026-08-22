@@ -20,10 +20,11 @@ final class HubControllerTests: XCTestCase {
         var failures = 0
         let done: (Result<Void, Error>) -> Void = { result in
             if case .failure = result { failures += 1 }
-            if failures == 4 { expectation.fulfill() }
+            if failures == 5 { expectation.fulfill() }
         }
         controller.installService(completion: done)
         controller.importTeslaMate(source: "postgres://example", carID: "1", passwordFile: "/tmp/password", encryptionKeyFile: "/tmp/encryption", completion: done)
+        controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh"), completion: done)
         controller.stopHub(completion: done)
         controller.restartHub(completion: done)
         wait(for: [expectation], timeout: 1)
@@ -43,6 +44,55 @@ final class HubControllerTests: XCTestCase {
         let runner = CountingRunner()
         runner.run(arguments: ["migrate"], stdin: "n\n") { _ in }
         XCTAssertEqual(runner.stdin, "n\n")
+    }
+
+    func testSetupInvocationKeepsTokensOutOfArguments() throws {
+        let tokens = TeslaAuthTokens(accessToken: "access-secret", refreshToken: "refresh-secret")
+        let invocation = try HubController.setupInvocation(
+            configPath: URL(fileURLWithPath: "/tmp/config.toml"),
+            tokens: tokens,
+            vehicleID: 70
+        )
+        XCTAssertEqual(invocation.arguments, [
+            "--config", "/tmp/config.toml", "setup", "--tokens-stdin", "--vehicle-id", "70"
+        ])
+        XCTAssertFalse(invocation.arguments.joined().contains("access-secret"))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(invocation.standardInput.utf8)) as? [String: String])
+        XCTAssertEqual(json["accessToken"], "access-secret")
+        XCTAssertEqual(json["refreshToken"], "refresh-secret")
+    }
+
+    func testTeslaOAuthUsesPKCEAndExactCallbackContract() throws {
+        let verifier = String(repeating: "v", count: 64)
+        let flow = try TeslaOAuthFlow(state: "expected-state", verifier: verifier)
+        let query = Dictionary(uniqueKeysWithValues:
+            URLComponents(url: flow.authorizationURL, resolvingAgainstBaseURL: false)!
+                .queryItems!.map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(query["client_id"], "ownerapi")
+        XCTAssertEqual(query["redirect_uri"], "tesla://auth/callback")
+        XCTAssertEqual(query["scope"], "openid email offline_access")
+        XCTAssertEqual(query["state"], "expected-state")
+        XCTAssertEqual(query["code_challenge_method"], "S256")
+        XCTAssertNotEqual(query["code_challenge"], verifier)
+
+        let callback = try XCTUnwrap(URL(string:
+            "tesla://auth/callback?code=one-time-code&state=expected-state&issuer=https%3A%2F%2Fauth.tesla.cn"))
+        guard case let .exchange(exchange) = try flow.callback(callback) else {
+            return XCTFail("expected token exchange")
+        }
+        XCTAssertEqual(exchange.url, TeslaOAuthFlow.chinaTokenEndpoint)
+        let body = String(decoding: exchange.body, as: UTF8.self)
+        XCTAssertTrue(body.contains("client_id=ownerapi"))
+        XCTAssertTrue(body.contains("code_verifier=\(verifier)"))
+        XCTAssertFalse(body.contains("refresh"))
+
+        let mismatch = URL(string:
+            "tesla://auth/callback?code=x&state=wrong&issuer=https%3A%2F%2Fauth.tesla.com")!
+        XCTAssertThrowsError(try flow.callback(mismatch)) { error in
+            XCTAssertEqual(error as? TeslaAuthError, .stateMismatch)
+        }
+        let cancelled = URL(string: "tesla://auth/callback?error=login_cancelled")!
+        XCTAssertEqual(try flow.callback(cancelled), .cancelled)
     }
 }
 

@@ -5,6 +5,7 @@
 
 pub mod collector;
 pub mod config;
+pub mod credential_recovery;
 pub mod credentials;
 pub mod crypto;
 pub mod current_state;
