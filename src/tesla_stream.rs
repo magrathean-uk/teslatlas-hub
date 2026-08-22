@@ -745,7 +745,7 @@ fn equal_jitter(delay: Duration) -> Duration {
     let lower = upper / 2;
     let width = upper.saturating_sub(lower);
     let mut bytes = [0_u8; 8];
-    let random = if getrandom::getrandom(&mut bytes).is_ok() {
+    let random = if getrandom::fill(&mut bytes).is_ok() {
         u64::from_le_bytes(bytes) as u128
     } else {
         0

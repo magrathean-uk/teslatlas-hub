@@ -161,7 +161,7 @@ fn encrypt_cloak_value(
     plaintext: &[u8],
 ) -> Result<Vec<u8>, TeslaMateTokenError> {
     let mut nonce_bytes = [0_u8; NONCE_BYTES];
-    getrandom::getrandom(&mut nonce_bytes).expect("system entropy");
+    getrandom::fill(&mut nonce_bytes).expect("system entropy");
     let nonce = Nonce::from(nonce_bytes);
     let mut ciphertext_and_tag = cipher
         .encrypt(

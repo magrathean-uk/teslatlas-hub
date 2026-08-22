@@ -20,7 +20,8 @@ ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 APP_SOURCE="$ROOT/macos/TeslatlasHubApp"
 DERIVED="$ROOT/target/macos-app"
 GENERATED="$DERIVED/generated"
-PROJECT="$APP_SOURCE/TeslatlasHubApp.xcodeproj"
+PROJECT_DIR="$DERIVED/project"
+PROJECT="$PROJECT_DIR/TeslatlasHubApp.xcodeproj"
 RUST_BINARY="$ROOT/target/release/teslatlas-hub"
 SERVICE_PACKAGE="$GENERATED/TeslatlasHubService.pkg"
 PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
@@ -61,7 +62,21 @@ reject_appledouble() {
     [ -z "$metadata" ] || die "AppleDouble metadata in $path"
 }
 
-command -v cargo >/dev/null 2>&1 || die "cargo is required"
+RUST_CARGO=$(command -v cargo) || die "cargo is required"
+RUST_COMPILER=$(command -v rustc) || die "rustc is required"
+if command -v rustup >/dev/null 2>&1; then
+    RUST_CARGO=$(rustup which --toolchain stable cargo) \
+        || die "cannot find the stable rustup cargo"
+    RUST_COMPILER=$(rustup which --toolchain stable rustc) \
+        || die "cannot find the stable rustup rustc"
+fi
+[ -x "$RUST_CARGO" ] || die "cargo is not executable"
+[ -x "$RUST_COMPILER" ] || die "rustc is not executable"
+RUST_TOOLCHAIN_LIB="$($RUST_COMPILER --print sysroot)/lib"
+[ -d "$RUST_TOOLCHAIN_LIB" ] || die "Rust toolchain library directory is missing"
+if [ -n "${DYLD_FALLBACK_LIBRARY_PATH-}" ]; then
+    RUST_TOOLCHAIN_LIB="$RUST_TOOLCHAIN_LIB:$DYLD_FALLBACK_LIBRARY_PATH"
+fi
 command -v xcodegen >/dev/null 2>&1 || die "xcodegen is required"
 command -v xcodebuild >/dev/null 2>&1 || die "xcodebuild is required"
 [ "$(/usr/bin/uname -m)" = arm64 ] || die "an Apple-silicon Mac is required"
@@ -80,14 +95,30 @@ marketing_version=${version%%-*}
 
 ensure_real_directory "$DERIVED"
 ensure_real_directory "$GENERATED"
+case "$PROJECT_DIR" in
+    "$ROOT/target/macos-app/project") ;;
+    *) die "refusing unsafe generated project directory" ;;
+esac
+if [ -e "$PROJECT_DIR" ] || [ -L "$PROJECT_DIR" ]; then
+    [ -d "$PROJECT_DIR" ] && [ ! -L "$PROJECT_DIR" ] \
+        || die "unsafe generated project directory"
+    /usr/bin/find "$PROJECT_DIR" -depth -delete
+fi
+ensure_real_directory "$PROJECT_DIR"
 ensure_real_directory "$DIST"
+/usr/bin/ditto --noextattr --norsrc \
+    "$APP_SOURCE/TeslatlasHubApp" "$PROJECT_DIR/TeslatlasHubApp"
+/usr/bin/ditto --noextattr --norsrc \
+    "$APP_SOURCE/TeslatlasHubAppTests" "$PROJECT_DIR/TeslatlasHubAppTests"
+/usr/bin/install -m 0644 "$APP_SOURCE/project.yml" "$PROJECT_DIR/project.yml"
 
 (
     cd "$ROOT"
     # The Xcode 27 linker corrupts optimized Rust proc-macro dylibs. Keep only
     # build-time helpers unoptimized; the shipped Hub binary remains optimized.
-    CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_OPT_LEVEL=0 \
-        cargo build --locked --release --bin teslatlas-hub
+    DYLD_FALLBACK_LIBRARY_PATH="$RUST_TOOLCHAIN_LIB" RUSTC="$RUST_COMPILER" \
+        CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_OPT_LEVEL=0 \
+        "$RUST_CARGO" build --locked --release --bin teslatlas-hub
 )
 
 "$ROOT/scripts/build-macos-service-package.sh" \
@@ -95,7 +126,9 @@ ensure_real_directory "$DIST"
     --version "$version" \
     --output "$SERVICE_PACKAGE" >/dev/null
 
-xcodegen generate --quiet --spec "$APP_SOURCE/project.yml" --project "$APP_SOURCE"
+xcodegen generate --quiet \
+    --spec "$PROJECT_DIR/project.yml" \
+    --project "$PROJECT_DIR"
 xcodebuild \
     -project "$PROJECT" \
     -scheme TeslatlasHubApp \

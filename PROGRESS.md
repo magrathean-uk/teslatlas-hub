@@ -1,7 +1,8 @@
 # Hub progress
 
-Status: compact direct migration is measured on the exact stopped TeslaMate
-v4.1.1 VPS source. TeslaMate is restored and healthy. Driving remains deferred.
+Status: Rust 1.98 dependencies and Mac/Linux release packaging are current.
+Compact direct migration is measured on the exact stopped TeslaMate v4.1.1 VPS
+source. TeslaMate is restored and healthy. Driving remains deferred.
 
 Current: on 2026-08-21, current Mac and native Debian 13 ARM64 release binaries
 imported the stopped source read-only: 105 migrations and 10,782,430 positions.
@@ -11,12 +12,25 @@ one 11,096,061-row state catalogue, zero legacy inventory rows, and 446 packs.
 SQLite integrity and `doctor` passed; source counts were unchanged. Both exact
 test stores and tunnels were deleted after their receipts.
 
-Next: normal runtime validation remains separate from these completed migration
-receipts.
+Next: physical-iOS full-history sync, a clean-Mac package install and launchd
+lifecycle, live token-expiry refresh, and longer Mac/Linux restart/endurance
+validation remain separate from the completed migration and packaging receipts.
+Production-corpus compaction acceptance is optional because it needs a
+disposable copy of the 1.88 GiB migrated store; bounded compaction tests pass.
 
 Blocked: real wake and climate commands still require immediate explicit confirmation. The local TeslaMate PostgreSQL copy stays read-only and intentionally fails the 105-migration admission gate.
 
 ## Completed
+
+- Rust 1.98 dependency and packaging refresh — updated the minimum toolchain to
+  Rust 1.98 and all resolvable lockfile packages; `matchit` 0.8.4 remains Axum
+  0.8.9's exact requirement. Mac format, all-target check, 702 tests with 2
+  intentional ignores, Clippy `-D warnings`, release build, 4 macOS app tests,
+  app assembly, and strict ad-hoc signature verification passed. A native
+  Debian 13 ARM64 guest built and installed the 5.3 MiB package, then passed
+  version, bootstrap, doctor, and systemd status smoke checks. Package SHA-256 is
+  `1fee14f4d77839265df64869d29aeb5d4c3944baaf562289cc3c5a61dcacbda7`;
+  the bounded QEMU guest was deleted.
 
 - Compact direct catalogue — current direct imports retain one digest/state
   catalogue rather than a second `teslamate_import_projection_rows` copy.
@@ -66,7 +80,7 @@ Blocked: real wake and climate commands still require immediate explicit confirm
 
 - Debian ARM64 v4.1.1 migration boundary — one 5.5 GiB QEMU Debian 13 guest installed the Hub package, reached the real stopped v4.1.1 source through a loopback-only SSH tunnel, and copied until its deliberate 64 MiB stage cap returned stage database byte limit exceeded. The service remained inactive and the stage was empty afterward (660 KiB local state). The guest, package test data, private password file, tunnel, and 2.6 GiB host debug cache were deleted. No TeslaMate PostgreSQL write or vehicle command ran.
 
-- Current Debian ARM64 package and live collection — one 5.5 GiB QEMU Debian 13 guest compiled `447c904` natively from the mounted Hub source and existing offline Cargo registry. The 5.3 MiB package (`523beee58b1e83790c82c0a4601a38741ce4321eb6695b8b3fcca57661652b18`) installed, bootstrapped, reported status, completed systemd start/restart/stop, and made a bounded default-streaming live observation with `is_climate_on=true`. Host format, 664 library + 34 CLI + 1 TLS tests (2 intentional fixtures ignored), and Clippy `-D warnings` passed. No vehicle command ran.
+- Earlier Debian ARM64 package and live collection — one 5.5 GiB QEMU Debian 13 guest compiled `447c904` natively from the mounted Hub source and existing offline Cargo registry. The 5.3 MiB package (`523beee58b1e83790c82c0a4601a38741ce4321eb6695b8b3fcca57661652b18`) installed, bootstrapped, reported status, completed systemd start/restart/stop, and made a bounded default-streaming live observation with `is_climate_on=true`. Host format, 664 library + 34 CLI + 1 TLS tests (2 intentional fixtures ignored), and Clippy `-D warnings` passed. No vehicle command ran.
 
 - Debian ARM64 acceptance — an earlier Debian 13 ARM64 QEMU guest built and package-tested the broader bootstrap, status, systemd lifecycle, backup, verification, restore, repair, and read-only migration-rejection surface. The dummy migration request safely refused the 17 GiB stage requirement before any PostgreSQL connection; no real Tesla or vehicle command ran.
 
@@ -74,9 +88,9 @@ Blocked: real wake and climate commands still require immediate explicit confirm
 
 - Linux CLI delivery — added bootstrap, systemd `status|start|stop|restart`, explicit `control wake --confirm` and `control climate-start --confirm` with a local fake Owner API test, Debian package files, and Linux documentation. Host format, focused Owner API test, and binary check passed.
 
-- Debian native portability — QEMU ARM64 compilation exposed platform-sized Rustix mode types and systemd test lifetimes; both are now portable. The native fake wake/climate test passed. Release package acceptance remains next.
+- Debian native portability — QEMU ARM64 compilation exposed platform-sized Rustix mode types and systemd test lifetimes; both are now portable. The native fake wake/climate test passed; later native package acceptance also passed.
 
-- Linux runtime gates — lifted the existing admitted Unix runtime for setup, read-only migration, serving, and bounded observation; added the small systemd `status/start/stop/restart` adapter. Host format and all-target Rust check passed; Debian ARM64 compilation is deliberately deferred to the single QEMU guest because this host has no Linux C cross-compiler.
+- Linux runtime gates — lifted the existing admitted Unix runtime for setup, read-only migration, serving, and bounded observation; added the small systemd `status/start/stop/restart` adapter. Host format and all-target Rust check passed; Debian ARM64 compilation and package smoke were later completed in one bounded native QEMU guest.
 
 - Final integration — fixed monotonic observation IDs after bounded raw-row pruning, preventing later Owner/stream telemetry from being skipped after SQLite row reuse; corrected historical migration fixtures and current-snapshot assertions — collector 60/60 and all 8 affected upgrade tests passed.
 

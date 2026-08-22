@@ -13206,7 +13206,7 @@ fn paired_device_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PairedDev
 
 fn random_secret_wire() -> String {
     let mut bytes = Zeroizing::new([0_u8; PAIRING_SECRET_BYTES]);
-    getrandom::getrandom(&mut *bytes).expect("operating system entropy for pairing credential");
+    getrandom::fill(&mut *bytes).expect("operating system entropy for pairing credential");
     hex::encode(bytes.as_slice())
 }
 

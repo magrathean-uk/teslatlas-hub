@@ -25,7 +25,7 @@ const PREVIOUS_KEY_FILE_NAME: &str = ".teslamate-encryption.previous.key";
 /// Generate a new local key for a user-supplied legacy token pair.
 pub fn random_encryption_key() -> Zeroizing<Vec<u8>> {
     let mut key = Zeroizing::new(vec![0_u8; 32]);
-    getrandom::getrandom(key.as_mut_slice()).expect("system entropy");
+    getrandom::fill(key.as_mut_slice()).expect("system entropy");
     key
 }
 
@@ -349,7 +349,7 @@ fn create_cursor_key_once(
 ) -> Result<crate::protocol::CursorKey, TeslaMateCredentialError> {
     let temporary = secrets_dir.join(format!(".hub-cursor-{}.tmp", Uuid::new_v4()));
     let mut bytes = [0_u8; CURSOR_KEY_BYTES];
-    getrandom::getrandom(&mut bytes).expect("system entropy");
+    getrandom::fill(&mut bytes).expect("system entropy");
     let created = (|| {
         let mut file = OpenOptions::new()
             .write(true)

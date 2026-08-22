@@ -35,7 +35,7 @@ impl std::fmt::Debug for ManifestSigning {
 
 #[cfg(test)]
 mod tests {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::engine::general_purpose::STANDARD;
     use ed25519_dalek::{Signature, VerifyingKey};
 
     use super::*;
