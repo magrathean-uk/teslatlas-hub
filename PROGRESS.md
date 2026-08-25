@@ -60,7 +60,9 @@ Current work plan:
   check keeps Fleet Hub collection under read-only observation without vehicle
   commands or a second refresh owner.
 - Produce a Developer ID-signed, notarized, provenance-bound macOS release using
-  existing local Apple credentials. Physical iOS sync remains outside Hub scope.
+  matching Apple credentials. The available 4AA Developer ID identities sign
+  the exact app and package successfully, but the only usable local notary key
+  belongs to NPS. Physical iOS sync remains outside Hub scope.
 
 Driving-stream handover plan for 2026-08-25: keep VPS TeslaMate running until a
 new short test window is explicitly approved; record TeslaMate and Hub database
@@ -82,8 +84,11 @@ polling; legacy Owner API keeps TeslaMate-compatible vehicle streaming.
 
 Blocked: no known code blocker. Real Developer ID notarization is blocked by a
 local credential team mismatch: the application/installer identities and App
-Store Connect notary key belong to different Apple teams. The local old-schema
-TeslaMate PostgreSQL copy remains an intentional read-only negative fixture.
+Store Connect notary key belong to different Apple teams. A disposable signing
+proof passed for both exact artifacts with timestamps and hardened runtime, then
+was deleted. No matching notary profile, API key, or app-specific password was
+found locally. The local old-schema TeslaMate PostgreSQL copy remains an
+intentional read-only negative fixture.
 
 ## Three-platform review, 2026-08-22
 
