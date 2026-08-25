@@ -65,6 +65,22 @@ For every dependency record:
 
 Unknown or incompatible licensing blocks release.
 
+## Tesla Vehicle Command SDK and `tesla-http-proxy`
+
+Upstream: https://github.com/teslamotors/vehicle-command
+Reviewed release: `v0.4.1`
+Reviewed revision: `49977a18fd68567501d59e16a6c9e4a8b9348544`
+Licence: Apache License 2.0
+
+The macOS service includes the upstream `cmd/tesla-http-proxy` executable as a
+separate process. It is built from the pinned upstream source for arm64 with a
+macOS 12 deployment target. No Tesla command private key, TLS private key,
+OAuth token, or session cache is included in the application or package.
+
+The upstream `LICENSE` file applies to this component. Its Go module graph is
+fixed by the upstream `go.mod` and `go.sum`; the exact source revision and
+build inputs are recorded in `PROVENANCE.md`.
+
 ## Data and services
 
 Map, elevation, geocoding, weather, timezone, certificate and API providers may impose attribution, caching, database-right and rate conditions independent of software copyright.

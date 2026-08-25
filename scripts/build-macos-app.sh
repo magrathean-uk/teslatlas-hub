@@ -23,6 +23,7 @@ GENERATED="$DERIVED/generated"
 PROJECT_DIR="$DERIVED/project"
 PROJECT="$PROJECT_DIR/TeslatlasHubApp.xcodeproj"
 RUST_BINARY="$ROOT/target/release/teslatlas-hub"
+PROXY_BINARY="$ROOT/target/release/tesla-http-proxy"
 SERVICE_PACKAGE="$GENERATED/TeslatlasHubService.pkg"
 PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
 DIST="$ROOT/dist"
@@ -135,8 +136,12 @@ ensure_real_directory "$DIST"
         "$RUST_CARGO" build --locked --release --bin teslatlas-hub
 )
 
+"$ROOT/scripts/build-tesla-command-proxy.sh" \
+    --output "$PROXY_BINARY" >/dev/null
+
 "$ROOT/scripts/build-macos-service-package.sh" \
     --binary "$RUST_BINARY" \
+    --proxy-binary "$PROXY_BINARY" \
     --version "$version" \
     --output "$SERVICE_PACKAGE" >/dev/null
 
@@ -167,6 +172,9 @@ xcodebuild \
 resources="$PRODUCT/Contents/Resources"
 /bin/mkdir -p "$resources"
 /usr/bin/install -m 0755 "$RUST_BINARY" "$resources/teslatlas-hub"
+# Keep a separately signed app resource for release provenance; the service
+# package copy is the LaunchAgent's runtime sibling beside the Hub binary.
+/usr/bin/install -m 0755 "$PROXY_BINARY" "$resources/tesla-http-proxy"
 /usr/bin/install -m 0644 "$SERVICE_PACKAGE" "$resources/TeslatlasHubService.pkg"
 for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md; do
     if [ -f "$ROOT/$legal_file" ]; then
@@ -182,6 +190,23 @@ is_executable_macho "$resources/teslatlas-hub" \
 require_macos_12_or_earlier "$resources/teslatlas-hub"
 [ -f "$resources/TeslatlasHubService.pkg" ] \
     || die "service package resource is missing"
+[ "$(/usr/bin/lipo -archs "$resources/tesla-http-proxy")" = arm64 ] \
+    || die "embedded Tesla command proxy is not arm64-only"
+is_executable_macho "$resources/tesla-http-proxy" \
+    || die "embedded Tesla command proxy is not a Mach-O executable"
+proxy_minimum_macos=$(
+    /usr/bin/otool -l "$resources/tesla-http-proxy" | /usr/bin/awk '
+        $1 == "cmd" { command = $2 }
+        command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit }
+        command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }
+    '
+)
+proxy_minimum_major=${proxy_minimum_macos%%.*}
+case "$proxy_minimum_macos" in
+    ''|*[!0-9.]*) die "cannot read proxy macOS deployment target" ;;
+esac
+[ "$proxy_minimum_major" -le 12 ] \
+    || die "embedded Tesla command proxy requires macOS $proxy_minimum_macos"
 reject_appledouble "$resources"
 app_binary="$PRODUCT/Contents/MacOS/Teslatlas Hub"
 [ "$(/usr/bin/lipo -archs "$app_binary")" = arm64 ] \
@@ -190,6 +215,7 @@ is_executable_macho "$app_binary" || die "App binary is not a Mach-O executable"
 require_macos_12_or_earlier "$app_binary"
 
 /usr/bin/codesign --force --sign - --timestamp=none "$resources/teslatlas-hub" >/dev/null
+/usr/bin/codesign --force --sign - --timestamp=none "$resources/tesla-http-proxy" >/dev/null
 /usr/bin/codesign --force --deep --sign - --timestamp=none "$PRODUCT" >/dev/null
 /usr/bin/codesign --verify --deep --strict "$PRODUCT"
 

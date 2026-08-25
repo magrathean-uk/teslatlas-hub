@@ -27,6 +27,21 @@ and no-redirect 30-second token exchange from Tesla Auth `v0.15.0`, revision
 The Wry/Tao GUI and Rust dependency graph are not bundled; macOS uses native
 WebKit, CryptoKit, Security, and URLSession.
 
+## Tesla Vehicle Command SDK
+
+The macOS service separately bundles Tesla's official `tesla-http-proxy` from
+`https://github.com/teslamotors/vehicle-command`, release `v0.4.1`, revision
+`49977a18fd68567501d59e16a6c9e4a8b9348544`. It is Apache-2.0 licensed and is
+built from the pinned upstream `go.mod`/`go.sum` with Go 1.23 or newer,
+`CGO_ENABLED=1`, `GOOS=darwin`, `GOARCH=arm64`, and
+`MACOSX_DEPLOYMENT_TARGET=12.0`. No upstream source is linked into the Rust
+Hub; the proxy remains a separately executed program.
+
+The package contains only the proxy executable and applicable notices. Its
+command-authentication private key, TLS private key, certificate, OAuth
+tokens, and session cache are created or supplied at runtime below the user's
+private Hub data directory.
+
 ## File classification
 
 Every release file must be classified as:

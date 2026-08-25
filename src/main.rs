@@ -3,7 +3,7 @@ use std::{
     io::{Read, Write},
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
-    process::ExitCode,
+    process::{ExitCode, Stdio},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -150,6 +150,115 @@ impl Drop for MacServeWorker {
     fn drop(&mut self) {
         self.request_stop();
         self.task.abort();
+    }
+}
+
+#[cfg(unix)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MacCommandProxySpec {
+    executable: PathBuf,
+    host: String,
+    port: u16,
+    command_key: PathBuf,
+    certificate: PathBuf,
+    tls_key: PathBuf,
+    session_cache: PathBuf,
+}
+
+#[cfg(unix)]
+impl MacCommandProxySpec {
+    fn arguments(&self) -> Vec<String> {
+        vec![
+            "-host".to_owned(),
+            self.host.clone(),
+            "-port".to_owned(),
+            self.port.to_string(),
+            "-key-file".to_owned(),
+            self.command_key.to_string_lossy().into_owned(),
+            "-cert".to_owned(),
+            self.certificate.to_string_lossy().into_owned(),
+            "-tls-key".to_owned(),
+            self.tls_key.to_string_lossy().into_owned(),
+            "-session-cache".to_owned(),
+            self.session_cache.to_string_lossy().into_owned(),
+        ]
+    }
+}
+
+#[cfg(unix)]
+struct MacCommandProxy {
+    child: tokio::process::Child,
+    address: std::net::SocketAddr,
+}
+
+#[cfg(unix)]
+impl MacCommandProxy {
+    async fn start(spec: MacCommandProxySpec) -> std::io::Result<Self> {
+        let mut command = tokio::process::Command::new(&spec.executable);
+        command
+            .args(spec.arguments())
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true);
+        let child = command.spawn()?;
+        let address_host = if spec.host == "localhost" {
+            "127.0.0.1"
+        } else {
+            spec.host.as_str()
+        };
+        let address = std::net::SocketAddr::new(
+            address_host
+                .parse()
+                .map_err(|_| std::io::Error::other("Fleet command proxy host is invalid"))?,
+            spec.port,
+        );
+        Ok(Self { child, address })
+    }
+
+    async fn wait_ready(&mut self) -> std::io::Result<()> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = self.child.try_wait()? {
+                return Err(std::io::Error::other(format!(
+                    "Tesla command proxy exited before readiness: {status}"
+                )));
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Tesla command proxy did not become ready",
+                ));
+            }
+            if let Ok(Ok(stream)) = tokio::time::timeout(
+                Duration::from_millis(200),
+                tokio::net::TcpStream::connect(self.address),
+            )
+            .await
+            {
+                drop(stream);
+                return Ok(());
+            }
+        }
+    }
+
+    async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        self.child.wait().await
+    }
+
+    async fn stop(&mut self) -> std::io::Result<()> {
+        if self.child.try_wait()?.is_none() {
+            self.child.start_kill()?;
+        }
+        tokio::time::timeout(Duration::from_secs(5), self.child.wait())
+            .await
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Tesla command proxy did not stop",
+                )
+            })?
+            .map(|_| ())
     }
 }
 
@@ -332,6 +441,166 @@ where
             }
         }
     }
+}
+
+#[cfg(unix)]
+async fn run_macos_serve_with_optional_proxy<C, S, CF, SF, Control>(
+    proxy: Option<MacCommandProxySpec>,
+    collector_enabled: bool,
+    collector_start: CF,
+    server_start: SF,
+    control: Control,
+) -> std::io::Result<()>
+where
+    C: Future<Output = std::io::Result<()>> + Send + 'static,
+    S: Future<Output = std::io::Result<()>> + Send + 'static,
+    CF: FnOnce(tokio::sync::oneshot::Sender<CursorKey>, tokio::sync::oneshot::Receiver<()>) -> C,
+    SF: FnOnce(Option<CursorKey>, tokio::sync::oneshot::Receiver<()>) -> S,
+    Control: Future<Output = MacServeControl>,
+{
+    let Some(spec) = proxy else {
+        return run_macos_serve_supervisor(
+            collector_enabled,
+            collector_start,
+            server_start,
+            control,
+        )
+        .await;
+    };
+
+    let mut proxy = MacCommandProxy::start(spec).await?;
+    if let Err(error) = proxy.wait_ready().await {
+        let _ = proxy.stop().await;
+        return Err(error);
+    }
+
+    let serve =
+        run_macos_serve_supervisor(collector_enabled, collector_start, server_start, control);
+    tokio::pin!(serve);
+    let result = tokio::select! {
+        result = &mut serve => result,
+        result = proxy.wait() => match result {
+            Ok(status) => Err(std::io::Error::other(format!(
+                "Tesla command proxy exited while Serve was active: {status}"
+            ))),
+            Err(error) => Err(std::io::Error::other(format!(
+                "Tesla command proxy wait failed: {error}"
+            ))),
+        },
+    };
+    let stop_result = proxy.stop().await;
+    match (result, stop_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Ok(()), Err(error)) => Err(error),
+        (Err(error), _) => Err(error),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn mac_command_proxy_spec(
+    config: &HubConfig,
+) -> Result<Option<MacCommandProxySpec>, Box<dyn std::error::Error>> {
+    if config.collector.provider != CollectorProvider::Fleet {
+        return Ok(None);
+    }
+    let Some(endpoint) = config.collector.fleet_command_proxy_url.as_deref() else {
+        return Ok(None);
+    };
+    let url = url::Url::parse(endpoint).map_err(|_| "Fleet command proxy URL cannot be parsed")?;
+    let host = url
+        .host_str()
+        .ok_or("Fleet command proxy URL has no host")?;
+    let is_loopback = host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .map(|address| address.is_loopback())
+            .unwrap_or(false);
+    if url.scheme() != "https"
+        || !is_loopback
+        || url.username() != ""
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/"
+    {
+        return Err("Fleet command proxy URL is not a plain loopback HTTPS root".into());
+    }
+    let port = url.port().unwrap_or(443);
+    let address_host = if host == "localhost" {
+        "127.0.0.1"
+    } else {
+        host
+    };
+    let _: std::net::SocketAddr = std::net::SocketAddr::new(
+        address_host
+            .parse()
+            .map_err(|_| "Fleet command proxy loopback address is invalid")?,
+        port,
+    );
+
+    let executable = std::env::current_exe()?
+        .parent()
+        .ok_or("Hub executable has no parent directory")?
+        .join("tesla-http-proxy");
+    require_proxy_executable(&executable)?;
+    let secrets = config.data_dir.join("secrets");
+    let command_key = secrets.join("fleet-command-key.pem");
+    let tls_key = secrets.join("fleet-proxy-tls-key.pem");
+    require_proxy_private_file(&command_key, "Fleet command key")?;
+    require_proxy_private_file(&tls_key, "Fleet proxy TLS key")?;
+    let certificate = config
+        .collector
+        .fleet_command_proxy_root_certificate_path
+        .clone()
+        .ok_or("Fleet command proxy root certificate is not configured")?;
+    require_proxy_regular_file(&certificate, "Fleet proxy TLS certificate")?;
+
+    Ok(Some(MacCommandProxySpec {
+        executable,
+        host: host.to_owned(),
+        port,
+        command_key,
+        certificate,
+        tls_key,
+        session_cache: config.data_dir.join("fleet-command-session-cache.json"),
+    }))
+}
+
+#[cfg(target_os = "macos")]
+fn require_proxy_executable(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|_| format!("Tesla command proxy is missing: {}", path.display()))?;
+    if metadata.file_type().is_symlink()
+        || !metadata.file_type().is_file()
+        || metadata.mode() & 0o111 == 0
+    {
+        return Err(format!(
+            "Tesla command proxy is not a safe executable: {}",
+            path.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn require_proxy_private_file(path: &Path, label: &str) -> Result<(), Box<dyn std::error::Error>> {
+    require_proxy_regular_file(path, label)?;
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.mode() & 0o077 != 0 || metadata.uid() != getuid().as_raw() {
+        return Err(format!("{label} has unsafe ownership or permissions").into());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn require_proxy_regular_file(path: &Path, label: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|_| format!("{label} is missing: {}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!("{label} is not a regular file: {}", path.display()).into());
+    }
+    Ok(())
 }
 
 #[derive(Debug, Parser)]
@@ -1630,7 +1899,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let server_config = config;
                 let server_admission = std::sync::Arc::clone(&admission);
                 let control_admission = std::sync::Arc::clone(&admission);
-                run_macos_serve_supervisor(
+                #[cfg(target_os = "macos")]
+                let command_proxy = mac_command_proxy_spec(&server_config)?;
+                #[cfg(not(target_os = "macos"))]
+                let command_proxy = None;
+                run_macos_serve_with_optional_proxy(
+                    command_proxy,
                     collector_enabled,
                     move |ready, shutdown| async move {
                         collector::run_supervised_for_admitted_user(
@@ -2676,11 +2950,12 @@ mod tests {
     use super::{
         MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
         MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
-        MAX_MIGRATION_TOKEN_FILE_BYTES, MacServeControl, MacServeWorkerStopTimeout,
-        MigrationSecretReadError, ServiceCommand, clear_provider_credentials,
-        command_requires_user_hub_admission, decode_setup_fleet_stdin, migration_start_requested,
-        migration_stop_confirmed, read_migration_encryption_key, read_migration_postgres_password,
-        read_migration_secret, read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
+        MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec, MacServeControl,
+        MacServeWorkerStopTimeout, MigrationSecretReadError, ServiceCommand,
+        clear_provider_credentials, command_requires_user_hub_admission, decode_setup_fleet_stdin,
+        migration_start_requested, migration_stop_confirmed, read_migration_encryption_key,
+        read_migration_postgres_password, read_migration_secret,
+        read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
         validate_streaming_setting,
     };
     use teslatlas_hub::db::HubStore;
@@ -2707,6 +2982,39 @@ mod tests {
         .expect("test cursor")
         .as_str()
         .to_owned()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_command_proxy_arguments_use_private_data_paths() {
+        let spec = MacCommandProxySpec {
+            executable: PathBuf::from(
+                "/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy",
+            ),
+            host: "127.0.0.1".to_owned(),
+            port: 4443,
+            command_key: PathBuf::from("/private/data/secrets/fleet-command-key.pem"),
+            certificate: PathBuf::from("/private/data/fleet-proxy-tls-cert.pem"),
+            tls_key: PathBuf::from("/private/data/secrets/fleet-proxy-tls-key.pem"),
+            session_cache: PathBuf::from("/private/data/fleet-command-session-cache.json"),
+        };
+        assert_eq!(
+            spec.arguments(),
+            vec![
+                "-host",
+                "127.0.0.1",
+                "-port",
+                "4443",
+                "-key-file",
+                "/private/data/secrets/fleet-command-key.pem",
+                "-cert",
+                "/private/data/fleet-proxy-tls-cert.pem",
+                "-tls-key",
+                "/private/data/secrets/fleet-proxy-tls-key.pem",
+                "-session-cache",
+                "/private/data/fleet-command-session-cache.json",
+            ]
+        );
     }
 
     #[cfg(target_os = "macos")]

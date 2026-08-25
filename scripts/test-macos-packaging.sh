@@ -14,6 +14,7 @@ PLIST="$ROOT/packaging/macos-service/com.teslatlas.hub.plist.in"
 CLI_PLIST="$ROOT/packaging/com.teslatlas.hub.plist.in"
 APP_BUILD="$ROOT/scripts/build-macos-app.sh"
 SERVICE_BUILD="$ROOT/scripts/build-macos-service-package.sh"
+PROXY_BUILD="$ROOT/scripts/build-tesla-command-proxy.sh"
 APP_INFO="$ROOT/macos/TeslatlasHubApp/TeslatlasHubApp/Info.plist"
 TEST_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/teslatlas-hub-macos-package-test.XXXXXX")
 trap '/usr/bin/find "$TEST_ROOT" -depth -delete' EXIT HUP INT TERM
@@ -48,6 +49,7 @@ for script in "$SCRIPTS/common.sh" "$PREINSTALL" "$POSTINSTALL" "$UNINSTALL"; do
 done
 /bin/sh -n "$APP_BUILD" || fail "invalid macOS app build script"
 /bin/sh -n "$SERVICE_BUILD" || fail "invalid macOS service build script"
+/bin/sh -n "$PROXY_BUILD" || fail "invalid Tesla command proxy build script"
 /usr/bin/plutil -lint "$PLIST" >/dev/null || fail "invalid LaunchAgent template"
 /usr/bin/plutil -lint "$CLI_PLIST" >/dev/null || fail "invalid CLI LaunchAgent template"
 /usr/bin/grep -q '<integer>63</integer>' "$PLIST" \
@@ -114,6 +116,26 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "service package does not use mapped prerelease identity"
 /usr/bin/grep -Fq '<key>TeslatlasHubVersion</key>' "$APP_INFO" \
     || fail "app bundle does not carry exact Hub version"
+/usr/bin/grep -Fq -- '--proxy-binary "$PROXY_BINARY"' "$APP_BUILD" \
+    || fail "app build does not package Tesla command proxy"
+/usr/bin/grep -Fq -- 'build-tesla-command-proxy.sh' "$APP_BUILD" \
+    || fail "app build does not build pinned Tesla command proxy"
+/usr/bin/grep -Fq -- '--proxy-binary PATH' "$SERVICE_BUILD" \
+    || fail "service package has no proxy binary input"
+/usr/bin/grep -Fq 'payload_proxy_binary=' "$SERVICE_BUILD" \
+    || fail "service package does not install Tesla command proxy"
+/usr/bin/grep -Fq 'tesla-http-proxy' "$PLIST" \
+    && fail "proxy must not have a second LaunchAgent"
+/usr/bin/grep -Fq '49977a18fd68567501d59e16a6c9e4a8b9348544' "$PROXY_BUILD" \
+    || fail "proxy build is not pinned to the reviewed Tesla source"
+/usr/bin/grep -Fq 'VERSION=v0.4.1' "$PROXY_BUILD" \
+    || fail "proxy build has no reviewed Tesla version"
+/usr/bin/grep -Fq "github.com/teslamotors/vehicle-command" "$PROXY_BUILD" \
+    || fail "proxy build does not validate the Tesla module"
+/usr/bin/grep -Fq 'GOARCH=arm64' "$PROXY_BUILD" \
+    || fail "proxy build is not arm64-only"
+/usr/bin/grep -Fq 'MACOSX_DEPLOYMENT_TARGET=12.0' "$PROXY_BUILD" \
+    || fail "proxy build has no macOS 12 deployment target"
 
 /usr/bin/grep -q 'delete_data=0' "$UNINSTALL" \
     || fail "uninstall must preserve data by default"

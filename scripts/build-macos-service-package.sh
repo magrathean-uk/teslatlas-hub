@@ -11,7 +11,7 @@ export COPYFILE_DISABLE
 
 usage() {
     cat <<'EOF'
-Usage: scripts/build-macos-service-package.sh --binary PATH --version VERSION [--output PATH]
+Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --version VERSION [--output PATH]
 
 Builds an unsigned local macOS 12+ arm64 installer package. The package never
 installs or starts the Hub during its build.
@@ -33,6 +33,7 @@ is_executable_macho() {
 # END TESTABLE MACH-O HELPER
 
 binary=
+proxy_binary=
 version=
 output=
 while [ "$#" -gt 0 ]; do
@@ -40,6 +41,11 @@ while [ "$#" -gt 0 ]; do
         --binary)
             [ "$#" -ge 2 ] || die "--binary requires a path"
             binary=$2
+            shift 2
+            ;;
+        --proxy-binary)
+            [ "$#" -ge 2 ] || die "--proxy-binary requires a path"
+            proxy_binary=$2
             shift 2
             ;;
         --version)
@@ -64,6 +70,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "$binary" ] || die "--binary is required"
+[ -n "$proxy_binary" ] || die "--proxy-binary is required"
 [ -n "$version" ] || die "--version is required"
 /usr/bin/printf '%s\n' "$version" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
     || die "version must be semver with an optional prerelease: $version"
@@ -77,6 +84,8 @@ case "$version" in
 esac
 [ -f "$binary" ] && [ ! -L "$binary" ] && [ -x "$binary" ] \
     || die "binary must be an executable regular file"
+[ -f "$proxy_binary" ] && [ ! -L "$proxy_binary" ] && [ -x "$proxy_binary" ] \
+    || die "proxy binary must be an executable regular file"
 
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 TEMPLATE="$ROOT/packaging/macos-service/com.teslatlas.hub.plist.in"
@@ -113,6 +122,8 @@ scripts="$staging/scripts"
     "$payload/Library/Application Support/Teslatlas Hub/share" "$scripts"
 /usr/bin/lipo -verify_arch arm64 "$binary" \
     || die "binary has no arm64 slice"
+/usr/bin/lipo -verify_arch arm64 "$proxy_binary" \
+    || die "proxy binary has no arm64 slice"
 payload_binary="$payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub"
 architectures=$(/usr/bin/lipo -archs "$binary") \
     || die "cannot inspect binary architectures"
@@ -123,6 +134,11 @@ else
     /usr/bin/lipo "$binary" -thin arm64 -output "$payload_binary" \
         || die "cannot extract arm64 binary slice"
 fi
+/usr/bin/lipo -archs "$proxy_binary" | /usr/bin/grep -qx arm64 \
+    || die "proxy binary must be arm64-only"
+payload_proxy_binary="$payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
+/usr/bin/install -m 0755 "$proxy_binary" "$payload_proxy_binary" \
+    || die "cannot copy Tesla command proxy"
 /usr/bin/find "$payload/Library/Application Support/Teslatlas Hub/share" -type f -delete
 for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md; do
     if [ -f "$ROOT/$legal_file" ]; then
@@ -134,12 +150,14 @@ done
     "$payload/Library/Application Support/Teslatlas Hub/libexec/common.sh"
 /usr/bin/install -m 0755 "$PACKAGE_SCRIPTS/uninstall-macos-service.sh" \
     "$payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
-/usr/bin/xattr -c "$payload_binary" >/dev/null 2>&1 \
+/usr/bin/xattr -c "$payload_binary" "$payload_proxy_binary" >/dev/null 2>&1 \
     || die "cannot clear Hub binary metadata"
 [ "$(/usr/bin/lipo -archs "$payload_binary")" = arm64 ] \
     || die "payload binary is not arm64-only"
 is_executable_macho "$payload_binary" \
     || die "payload binary is not a Mach-O executable"
+is_executable_macho "$payload_proxy_binary" \
+    || die "payload proxy binary is not a Mach-O executable"
 
 minimum_macos=$(
     /usr/bin/otool -l "$payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub" \
@@ -155,6 +173,20 @@ esac
 minimum_major=${minimum_macos%%.*}
 [ "$minimum_major" -le 12 ] \
     || die "binary requires macOS $minimum_macos; macOS 12 compatibility is required"
+proxy_minimum_macos=$(
+    /usr/bin/otool -l "$payload_proxy_binary" \
+        | /usr/bin/awk '
+            $1 == "cmd" { command = $2 }
+            command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit }
+            command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }
+        '
+)
+case "$proxy_minimum_macos" in
+    ''|*[!0-9.]*) die "cannot read proxy macOS deployment target" ;;
+esac
+proxy_minimum_major=${proxy_minimum_macos%%.*}
+[ "$proxy_minimum_major" -le 12 ] \
+    || die "proxy requires macOS $proxy_minimum_macos; macOS 12 compatibility is required"
 
 /usr/bin/install -m 0644 "$TEMPLATE" "$scripts/com.teslatlas.hub.plist.in"
 /usr/bin/install -m 0644 "$PACKAGE_SCRIPTS/common.sh" "$scripts/common.sh"
@@ -188,6 +220,13 @@ expanded_binary="$expanded/Payload/Library/Application Support/Teslatlas Hub/bin
     || die "generated package payload is not arm64-only"
 is_executable_macho "$expanded_binary" \
     || die "generated package payload is not a Mach-O executable"
+expanded_proxy_binary="$expanded/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
+[ -f "$expanded_proxy_binary" ] && [ ! -L "$expanded_proxy_binary" ] \
+    || die "generated package has no Tesla command proxy"
+[ "$(/usr/bin/lipo -archs "$expanded_proxy_binary")" = arm64 ] \
+    || die "generated package proxy is not arm64-only"
+is_executable_macho "$expanded_proxy_binary" \
+    || die "generated package proxy is not a Mach-O executable"
 expanded_uninstaller="$expanded/Payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
 [ -f "$expanded_uninstaller" ] && [ ! -L "$expanded_uninstaller" ] && [ -x "$expanded_uninstaller" ] \
     || die "generated package is missing the privileged uninstaller"
