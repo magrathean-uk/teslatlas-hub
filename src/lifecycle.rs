@@ -622,6 +622,9 @@ fn default_next_update_id() -> i64 {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LifecycleDelta {
     pub drives: Vec<ProjectionDrive>,
+    /// Drive IDs rejected during close. The durable path uses these to remove
+    /// provisional children instead of leaving orphaned open rows.
+    pub discarded_drive_ids: Vec<i64>,
     pub positions: Vec<ProjectionPosition>,
     pub charges: Vec<ProjectionCharge>,
     pub charge_samples: Vec<ProjectionChargeSample>,
@@ -1105,8 +1108,12 @@ pub(crate) fn apply_sample_with_offline_drive_timeout(
     // close while the other opens on successive samples, but one sample never
     // starts both simultaneously in a coherent Tesla response.
     if let Some(closed) = maybe_close_drive(&mut state, car_id, &parsed, offline_drive_timeout)? {
-        delta.positions.extend(closed.positions);
-        delta.drives.push(closed.drive);
+        if let Some(completed) = closed.completed {
+            delta.positions.extend(completed.positions);
+            delta.drives.push(completed.drive);
+        } else {
+            delta.discarded_drive_ids.push(closed.drive_id);
+        }
     }
     if let Some(closed) = maybe_close_charge(&mut state, car_id, &parsed)? {
         if let (Some(latitude), Some(longitude)) =
@@ -1197,6 +1204,14 @@ pub fn apply_samples(
         state = step.state;
         quarantined |= step.quarantined;
         total.drives.extend(step.delta.drives);
+        for discarded_drive_id in &step.delta.discarded_drive_ids {
+            total
+                .open_drive_positions
+                .retain(|position| position.drive_id != Some(*discarded_drive_id));
+        }
+        total
+            .discarded_drive_ids
+            .extend(step.delta.discarded_drive_ids);
         total.positions.extend(step.delta.positions);
         total.charges.extend(step.delta.charges);
         total.charge_samples.extend(step.delta.charge_samples);
@@ -1227,11 +1242,14 @@ pub fn force_close_open_sessions(
         return Err(LifecycleError::InvalidCarId);
     }
     let mut delta = LifecycleDelta::default();
-    if let Some(open) = state.open_drive.take()
-        && let Some(closed) = finalize_drive(open)?
-    {
-        delta.positions.extend(closed.positions);
-        delta.drives.push(closed.drive);
+    if let Some(open) = state.open_drive.take() {
+        let drive_id = open.id;
+        if let Some(closed) = finalize_drive(open)? {
+            delta.positions.extend(closed.positions);
+            delta.drives.push(closed.drive);
+        } else {
+            delta.discarded_drive_ids.push(drive_id);
+        }
     }
     if let Some(open) = state.open_charge.take() {
         let closed = finalize_charge(open, Some(closed_at_ms))?;
@@ -1559,6 +1577,11 @@ struct ClosedDrive {
     positions: Vec<ProjectionPosition>,
 }
 
+struct DriveClose {
+    drive_id: i64,
+    completed: Option<ClosedDrive>,
+}
+
 struct ClosedCharge {
     charge: ProjectionCharge,
     samples: Vec<ProjectionChargeSample>,
@@ -1569,7 +1592,7 @@ fn maybe_close_drive(
     car_id: i64,
     sample: &ParsedSample,
     offline_drive_timeout: Duration,
-) -> Result<Option<ClosedDrive>, LifecycleError> {
+) -> Result<Option<DriveClose>, LifecycleError> {
     let Some(open) = state.open_drive.as_ref() else {
         return Ok(None);
     };
@@ -1579,9 +1602,6 @@ fn maybe_close_drive(
         .last_position_date_ms
         .or_else(|| open.positions.last().map(|position| position.date_ms))
         .unwrap_or(open.start_date_ms);
-    let position_count = open
-        .position_count
-        .max(u32::try_from(open.positions.len()).unwrap_or(u32::MAX));
     let offline_timed_out = sample.phase == VehiclePhase::Offline
         && sample.drive_timestamp_ms.saturating_sub(last_position_at) >= offline_drive_timeout_ms;
     let should_close = matches!(sample.phase, VehiclePhase::Asleep | VehiclePhase::Updating)
@@ -1589,8 +1609,7 @@ fn maybe_close_drive(
         || (matches!(sample.phase, VehiclePhase::Online | VehiclePhase::Charging)
             && sample.drive_data_present
             && !is_drive_shift(sample.shift_state.as_deref())
-            && sample.speed.unwrap_or(0) <= 0
-            && position_count > 0);
+            && sample.speed.unwrap_or(0) <= 0);
     if !should_close {
         return Ok(None);
     }
@@ -1598,6 +1617,7 @@ fn maybe_close_drive(
         .open_drive
         .take()
         .expect("open drive was checked before close");
+    let drive_id = open.id;
     let append_endpoint = sample.drive_data_present
         && matches!(sample.phase, VehiclePhase::Online | VehiclePhase::Charging)
         && !is_drive_shift(sample.shift_state.as_deref())
@@ -1614,7 +1634,10 @@ fn maybe_close_drive(
             open.positions.push(position);
         }
     }
-    finalize_drive(open)
+    Ok(Some(DriveClose {
+        drive_id,
+        completed: finalize_drive(open)?,
+    }))
 }
 
 fn position_from_sample(
@@ -2812,6 +2835,19 @@ mod tests {
         }
     }
 
+    fn fleet_sample(id: i64, at_ms: i64, vehicle_data: Value) -> LifecycleSample {
+        LifecycleSample {
+            observation_id: id,
+            observed_at_ms: at_ms,
+            vehicle_state: "online".to_owned(),
+            payload: json!({
+                "record_type": "fleet_api_vehicle_data_v1",
+                "source_vehicle_id": "9",
+                "provider_raw_json": {"response": vehicle_data},
+            }),
+        }
+    }
+
     fn discovery(id: i64, at_ms: i64, state: &str) -> LifecycleSample {
         LifecycleSample {
             observation_id: id,
@@ -3183,8 +3219,49 @@ mod tests {
         ];
 
         let step = apply_samples(OpenSessionState::new(), 1, &samples).expect("project");
+        assert!(step.state.open_drive.is_none());
         assert!(step.delta.drives.is_empty());
         assert!(step.delta.positions.is_empty());
+        assert_eq!(step.delta.discarded_drive_ids, vec![1]);
+    }
+
+    #[test]
+    fn fleet_parked_sample_clears_zero_position_drive() {
+        let start = 1_800_000_055_000_i64;
+        let samples = [
+            fleet_sample(
+                1,
+                start,
+                json!({
+                    "drive_state": {
+                        "shift_state": "D",
+                        "speed": 20,
+                        "timestamp": start
+                    },
+                    "vehicle_state": {"odometer": 1000.0}
+                }),
+            ),
+            fleet_sample(
+                2,
+                start + 60_000,
+                json!({
+                    "drive_state": {
+                        "shift_state": null,
+                        "speed": null,
+                        "timestamp": start + 60_000
+                    },
+                    "vehicle_state": {"odometer": 1000.1}
+                }),
+            ),
+        ];
+
+        let step = apply_samples(OpenSessionState::new(), 1, &samples).expect("project");
+        assert!(step.state.open_drive.is_none());
+        assert_eq!(step.state.phase, VehiclePhase::Online);
+        assert_eq!(step.state.last_observation_id, 2);
+        assert!(step.delta.drives.is_empty());
+        assert!(step.delta.positions.is_empty());
+        assert_eq!(step.delta.discarded_drive_ids, vec![1]);
     }
 
     #[test]

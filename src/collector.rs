@@ -5561,6 +5561,14 @@ fn materialise_vehicle_lifecycle(
             .count();
         report.charge_samples_materialised += 0; // closed-session samples counted below
         total_delta.drives.extend(step.delta.drives);
+        for discarded_drive_id in &step.delta.discarded_drive_ids {
+            total_delta
+                .open_drive_positions
+                .retain(|position| position.drive_id != Some(*discarded_drive_id));
+        }
+        total_delta
+            .discarded_drive_ids
+            .extend(step.delta.discarded_drive_ids);
         total_delta.positions.extend(step.delta.positions);
         total_delta.charges.extend(step.delta.charges);
         total_delta.charge_samples.extend(step.delta.charge_samples);
@@ -8127,6 +8135,254 @@ mod tests {
     }
 
     #[test]
+    fn fleet_atomic_collection_closes_located_drive_after_restart_without_duplicates() {
+        let temp = crate::private_tempdir().expect("temporary store");
+        let t0 = 1_800_000_100_000_i64;
+        let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
+        let collection = |vehicle_data: serde_json::Value| ManualCollection {
+            vehicles: vec![vehicle.clone()],
+            snapshots: vec![
+                VehicleData::from_provider_raw_json(
+                    VehicleId::from_test(9),
+                    json!({"response": vehicle_data}),
+                )
+                .expect("Fleet response"),
+            ],
+            failures: vec![],
+        };
+
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let first = collection(json!({
+            "drive_state": {
+                "shift_state": "D",
+                "speed": 20,
+                "latitude": 47.5,
+                "longitude": 19.0,
+                "timestamp": t0
+            },
+            "vehicle_state": {"odometer": 1000.0}
+        }));
+        persist_collection_atomic_for_provider(&store, &first, t0, CollectorProvider::Fleet)
+            .expect("open Fleet drive");
+        drop(store);
+
+        let store = HubStore::initialize(temp.path()).expect("restart store");
+        let second = collection(json!({
+            "drive_state": {
+                "shift_state": "D",
+                "speed": 30,
+                "latitude": 47.51,
+                "longitude": 19.01,
+                "timestamp": t0 + 60_000
+            },
+            "vehicle_state": {"odometer": 1001.0}
+        }));
+        persist_collection_atomic_for_provider(
+            &store,
+            &second,
+            t0 + 60_000,
+            CollectorProvider::Fleet,
+        )
+        .expect("continue Fleet drive");
+
+        let terminal = collection(json!({
+            "drive_state": {
+                "shift_state": null,
+                "speed": null,
+                "latitude": 47.52,
+                "longitude": 19.02,
+                "timestamp": t0 + 120_000
+            },
+            "vehicle_state": {"odometer": 1002.0}
+        }));
+        let report = persist_collection_atomic_for_provider(
+            &store,
+            &terminal,
+            t0 + 120_000,
+            CollectorProvider::Fleet,
+        )
+        .expect("close Fleet drive");
+        assert_eq!(report.drives_closed, 1);
+        assert_eq!(report.positions_materialised, 2);
+        assert_eq!(report.lifecycle_quarantines, 0);
+
+        let duplicate = persist_collection_atomic_for_provider(
+            &store,
+            &terminal,
+            t0 + 120_001,
+            CollectorProvider::Fleet,
+        )
+        .expect("repeat terminal sample");
+        assert_eq!(duplicate.observations_already_present, 1);
+        assert_eq!(duplicate.drives_closed, 0);
+
+        let connection = store.open().expect("database");
+        let vehicle_id = connection
+            .query_row("SELECT vehicle_id FROM vehicles", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .expect("vehicle id")
+            .parse::<Uuid>()
+            .expect("vehicle UUID");
+        let lifecycle = store
+            .load_lifecycle_state(vehicle_id)
+            .expect("lifecycle query")
+            .expect("lifecycle state");
+        let open = OpenSessionState::decode(&lifecycle.open_session_json).expect("open session");
+        assert!(open.open_drive.is_none());
+        assert!(!lifecycle.quarantined);
+        let drive_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM materialised_drives", [], |row| {
+                row.get(0)
+            })
+            .expect("drive count");
+        assert_eq!(drive_count, 1);
+        let position_counts: (i64, i64) = connection
+            .query_row(
+                "SELECT COUNT(*), COUNT(drive_id) FROM materialised_positions",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("position counts");
+        assert_eq!(position_counts, (4, 3));
+    }
+
+    #[test]
+    fn fleet_atomic_collection_discards_one_position_drive_without_open_row_leak() {
+        let temp = crate::private_tempdir().expect("temporary store");
+        let t0 = 1_800_000_400_000_i64;
+        let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
+        let collection = |vehicle_data: serde_json::Value| ManualCollection {
+            vehicles: vec![vehicle.clone()],
+            snapshots: vec![
+                VehicleData::from_provider_raw_json(
+                    VehicleId::from_test(9),
+                    json!({"response": vehicle_data}),
+                )
+                .expect("Fleet response"),
+            ],
+            failures: vec![],
+        };
+
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let moving = collection(json!({
+            "drive_state": {
+                "shift_state": "D",
+                "speed": 20,
+                "latitude": 47.5,
+                "longitude": 19.0,
+                "timestamp": t0
+            },
+            "vehicle_state": {"odometer": 1000.0}
+        }));
+        persist_collection_atomic_for_provider(&store, &moving, t0, CollectorProvider::Fleet)
+            .expect("open Fleet drive");
+        drop(store);
+
+        let store = HubStore::initialize(temp.path()).expect("restart store");
+        let parked = collection(json!({
+            "drive_state": {
+                "shift_state": null,
+                "speed": null,
+                "timestamp": t0 + 60_000
+            },
+            "vehicle_state": {"odometer": 1000.1}
+        }));
+        let report = persist_collection_atomic_for_provider(
+            &store,
+            &parked,
+            t0 + 60_000,
+            CollectorProvider::Fleet,
+        )
+        .expect("discard incomplete Fleet drive");
+        assert_eq!(report.drives_closed, 0);
+
+        let connection = store.open().expect("database");
+        let drive_row_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM lifecycle_open_rows
+                 WHERE domain IN ('drive', 'position')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("drive row count");
+        assert_eq!(drive_row_count, 0);
+        let completed: (i64, i64) = connection
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM materialised_drives),
+                    (SELECT COUNT(*) FROM materialised_positions)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("completed row counts");
+        assert_eq!(completed, (0, 0));
+    }
+
+    #[test]
+    fn non_atomic_batch_discards_short_drive_without_rows_after_restart() {
+        let temp = crate::private_tempdir().expect("temporary store");
+        let t0 = 1_800_000_500_000_i64;
+        let collection = ManualCollection {
+            vehicles: vec![Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online")],
+            snapshots: vec![
+                VehicleData::for_test(
+                    9,
+                    json!({
+                        "drive_state": {
+                            "shift_state": "D",
+                            "speed": 20,
+                            "latitude": 47.5,
+                            "longitude": 19.0,
+                            "timestamp": t0
+                        },
+                        "vehicle_state": {"odometer": 1000.0}
+                    }),
+                ),
+                VehicleData::for_test(
+                    9,
+                    json!({
+                        "drive_state": {
+                            "shift_state": "P",
+                            "speed": 0,
+                            "timestamp": t0 + 60_000
+                        },
+                        "vehicle_state": {"odometer": 1000.1}
+                    }),
+                ),
+            ],
+            failures: vec![],
+        };
+        let store = HubStore::initialize(temp.path()).expect("store");
+        persist_collection(&store, &collection, t0 + 60_000).expect("persist observations");
+        materialise_lifecycle_for_collection(&store, &collection, t0 + 60_000)
+            .expect("discard incomplete drive");
+        drop(store);
+
+        let store = HubStore::initialize(temp.path()).expect("restart store");
+        let connection = store.open().expect("database");
+        let drive_row_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM lifecycle_open_rows
+                 WHERE domain IN ('drive', 'position')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("drive row count");
+        assert_eq!(drive_row_count, 0);
+        let completed: (i64, i64) = connection
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM materialised_drives),
+                    (SELECT COUNT(*) FROM materialised_positions)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("completed row counts");
+        assert_eq!(completed, (0, 0));
+    }
+
+    #[test]
     fn oversized_compaction_defers_only_while_an_aggregate_slot_remains() {
         let limits = ProtocolLimits::default();
         let row_capacity = ProjectionPackError::TooManyRows;
@@ -10117,6 +10373,29 @@ mod tests {
             )
             .expect("online transition");
         assert_eq!(resumed.state, "online");
+    }
+
+    #[test]
+    fn stream_disabled_vehicle_polls_immediately_after_waking_then_uses_drive_cadence() {
+        let now = Instant::now();
+        let mut asleep = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "asleep");
+        asleep.settings.use_streaming_api = false;
+        let vehicle_id = asleep.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![asleep], now);
+        assert!(scheduler.due_vehicles(now).is_empty());
+
+        let woke_at = now + Duration::from_secs(30);
+        let mut online = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        online.settings.use_streaming_api = false;
+        scheduler.accept_discovery(vec![online], woke_at);
+        assert_eq!(scheduler.due_vehicles(woke_at), vec![vehicle_id]);
+
+        scheduler.vehicle_succeeded(vehicle_id, PollPhase::Driving, false, woke_at);
+        assert_eq!(
+            scheduler.vehicles[&vehicle_id].next_poll,
+            woke_at + test_cadence().driving
+        );
     }
 
     #[test]

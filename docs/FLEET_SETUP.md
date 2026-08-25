@@ -147,7 +147,9 @@ test "$oauth_status" -eq 0
 Use `--vehicle-id TESLA_EID` instead of `--all-vehicles` to select one vehicle.
 Hub verifies the selected regional Fleet API by listing the account's vehicles,
 then encrypts the credentials in its private store. Only the resident collector
-owns refresh-token rotation.
+owns refresh-token rotation. Setup and service preflight reject tokens missing
+`vehicle_device_data` or `vehicle_location`; `status` exposes only safe scope
+booleans and a redacted scope status.
 
 ## 5. Verify collection without a vehicle command
 

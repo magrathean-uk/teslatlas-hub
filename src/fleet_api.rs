@@ -31,6 +31,7 @@ const MAX_CLIENT_ID_BYTES: usize = 255;
 const MIN_TOKEN_LIFETIME_SECONDS: u64 = 60;
 const MAX_TOKEN_LIFETIME_SECONDS: u64 = 365 * 24 * 60 * 60;
 const ACCEPT_JSON: HeaderValue = HeaderValue::from_static("application/json");
+const VEHICLE_DATA_ENDPOINTS: &str = "location_data;charge_state;climate_state;drive_state;gui_settings;vehicle_config;vehicle_state";
 const CONTENT_TYPE_JSON: HeaderValue = HeaderValue::from_static("application/json");
 const CONTENT_TYPE_FORM: HeaderValue =
     HeaderValue::from_static("application/x-www-form-urlencoded");
@@ -464,6 +465,7 @@ impl FleetApi {
         let raw_json: Value = execute_json(
             self.client
                 .get(endpoint)
+                .query(&[("endpoints", VEHICLE_DATA_ENDPOINTS)])
                 .header(ACCEPT, ACCEPT_JSON.clone())
                 .bearer_auth(access_token.expose()),
         )
@@ -991,7 +993,11 @@ mod tests {
         request: Request<Body>,
     ) -> impl IntoResponse {
         let method = request.method().to_string();
-        let path = request.uri().path().to_owned();
+        let route_path = request.uri().path().to_owned();
+        let path = request
+            .uri()
+            .path_and_query()
+            .map_or_else(|| route_path.clone(), |value| value.as_str().to_owned());
         let authorization_ok = request
             .headers()
             .get("authorization")
@@ -1036,13 +1042,13 @@ mod tests {
             }
             FakeResponse::Normal => {}
         }
-        if path == "/oauth2/v3/token" {
+        if route_path == "/oauth2/v3/token" {
             (
                 StatusCode::OK,
                 r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#,
             )
                 .into_response()
-        } else if path == "/api/1/vehicles" {
+        } else if route_path == "/api/1/vehicles" {
             (
                 StatusCode::OK,
                 format!(
@@ -1050,13 +1056,13 @@ mod tests {
                 ),
             )
                 .into_response()
-        } else if path.ends_with("/vehicle_data") {
+        } else if route_path.ends_with("/vehicle_data") {
             (
                 StatusCode::OK,
                 r#"{"response":{"drive_state":{"timestamp":1700000000000},"charge_state":{"battery_level":80}}}"#,
             )
                 .into_response()
-        } else if path.ends_with("/wake_up") {
+        } else if route_path.ends_with("/wake_up") {
             (StatusCode::OK, r#"{"response":{"state":"online"}}"#).into_response()
         } else {
             (
@@ -1225,7 +1231,10 @@ mod tests {
         assert_eq!(requests[0].path, "/api/1/vehicles");
         assert_eq!(
             requests[1].path,
-            format!("/api/1/vehicles/{TEST_VIN}/vehicle_data")
+            format!(
+                "/api/1/vehicles/{TEST_VIN}/vehicle_data?endpoints={}",
+                VEHICLE_DATA_ENDPOINTS.replace(';', "%3B")
+            )
         );
         assert!(requests.iter().all(|request| request.method == "GET"));
     }

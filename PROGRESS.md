@@ -6,13 +6,13 @@ bounded provider-response retention, and opt-in TeslaMate write-back. The final
 review fixed configured offline timeout use, durable stream audit receipts,
 post-send Fleet refresh fencing, one-to-one VIN/EID rotation, recursive raw JSON
 credential redaction, Fleet-only status, short-lived writer WAL cleanup, and the
-China token endpoint. One live Fleet drive exposed the lifecycle-capture defect
-recorded below.
+China token endpoint. The Fleet drive-capture defect exposed by one live drive
+is fixed and installed; one new physical drive remains the final live proof.
 
-Current verification on 2026-08-25: 748 library + 39 CLI + 1 TLS tests passed
-(788 total; 2 intentional fixture tests ignored); all-target Clippy with
-`-D warnings`, release build, ShellCheck, Linux packaging tests, macOS packaging
-checks, and 27 AppKit tests passed. Live EMEA Fleet authorization, vehicle
+Current verification on 2026-08-25: 757 library + 42 CLI + 1 TLS tests passed
+(800 total; 2 intentional fixture tests ignored); all-target Clippy with
+`-D warnings`, release build, and macOS app/package checks passed. Live EMEA
+Fleet authorization, vehicle
 discovery, vehicle-data polling, partner registration, and virtual-key pairing
 passed on macOS. The root package upgraded the running legacy per-user service,
 the installed Hub now supervises the loopback Tesla command proxy as its child,
@@ -26,11 +26,13 @@ zero affected rows and left charge cost `0.10` unchanged.
 Current artifact:
 
 - macOS ARM64 app, embedded Hub SHA-256
-  `f818ef855652e5383421e0643a38623662ff50ac697ccd4d8e08fb0fdb35658f`;
+  `d67fe6265c0647b0f723c0bff899ccd4ac94d3c8d83afd7c373eafde2db72736`;
+  installed root Hub SHA-256
+  `1e4e78fdfa92686555cf0352c9d9b9023935f58ab3605110d1844f7ae60ed663`;
   embedded Tesla command proxy SHA-256
   `ee61a89137c8eb73db4db1d57f2e393a084221e51421b06087e1677a2c631cc2`;
   embedded service package SHA-256
-  `d7a517c4732bc80d004a9ed249d8870572110fbe1aef8c63ddd64fa75990c658`;
+  `2da3f22d50421ffce32f6cc994b723e9ed315b35eca3f91b16bb4bca095f302d`;
   deep strict ad-hoc signature verification passed.
 - Debian 13 amd64 package SHA-256
   `b4ba561c173ac6b4df759247a26d4d3ca28406c45b4eacb8709e7ef00e089ebc`.
@@ -60,8 +62,10 @@ Current work plan:
 - 2026-08-25 through 2026-08-31: the active `Teslatlas Fleet endurance` daily
   check keeps Fleet Hub collection under read-only observation without vehicle
   commands or a second refresh owner.
-- Fix and re-test Fleet REST drive lifecycle capture; the first physical drive
-  advanced observations but produced no materialised drive or positions.
+- Completed 2026-08-25: repaired Fleet REST endpoint selection, scope admission,
+  polling cadence, and incomplete-drive cleanup; production-path restart and
+  idempotence regressions pass. One physical drive is still required for live
+  moving-coordinate and closed-drive proof.
 - Produce a Developer ID-signed, notarized, provenance-bound macOS release using
   matching Apple credentials. The available 4AA Developer ID identities sign
   the exact app and package successfully, but the only usable local notary key
@@ -92,17 +96,20 @@ first scheduled refresh is still in the future.
 
 Physical Fleet drive observation on 2026-08-25: the installed Fleet Hub had
 remained ready and continued advancing current observations while the operator
-drove. The post-drive catalogue still contained zero materialised drives and
-positions, no `driving` lifecycle state, and no stream-session receipt. This is
-not drive-parity proof. Fleet REST lifecycle capture remains an open defect;
-legacy streaming was not exercised by this drive.
+drove. It opened a driving lifecycle with a nonzero maximum speed, but the
+provider observations contained no coordinates, so it retained zero positions
+and could not materialise a drive. The repaired collector now requests the
+location endpoint, verifies the location scope, closes zero-position sessions,
+and removes rejected provisional rows. That old drive is not recoverable; a new
+physical drive is still required for parity proof. Legacy streaming was not
+exercised by this drive.
 
 Deliberate exclusions: TeslaFi import, `addresses.raw`, Grafana/MQTT/dashboard,
 and native Fleet Telemetry ingestion. Fleet currently uses official REST
 polling; legacy Owner API keeps TeslaMate-compatible vehicle streaming.
 
-Blocked: Fleet REST drive lifecycle capture needs repair and another physical
-drive check. Real Developer ID notarization is separately blocked by a local
+Blocked: Fleet REST drive capture needs one new physical-drive confirmation.
+Real Developer ID notarization is separately blocked by a local
 credential team mismatch: the application/installer identities and App Store
 Connect notary key belong to different Apple teams. A disposable signing proof
 passed for both exact artifacts with timestamps and hardened runtime, then was
@@ -127,6 +134,21 @@ read-only negative fixture.
   Independent macOS, Debian, and Rust reviews found no concrete blocker.
 
 ## Completed
+
+- Fleet REST drive repair — the Fleet vehicle-data request now explicitly
+  includes location data; setup/preflight verify device-data and location JWT
+  scopes while status stays recovery-safe. Parked samples clear incomplete
+  drives, and rejected zero/one-position drives delete provisional rows across
+  atomic, non-atomic, and restart paths. Production-shaped Fleet tests cover
+  driving, restart, parked close, duplicate retry, and incomplete-drive cleanup.
+  The final root package is installed and running: provider Fleet, one vehicle,
+  observation advanced, token refresh current/scheduled, all required scopes
+  present, proxy child bound only to `127.0.0.1:4443`, SQLite integrity `ok`, no
+  quarantine/open drive, and zero-byte WAL. No vehicle command ran; VPS
+  TeslaMate was not touched. Final cleanup removed 30,047 generated target
+  files (16.3 GiB), the accidental duplicate Rust 1.98 toolchain, the bounded
+  preinstall backup, and the leftover Hub Xcode temporary directory; the 57 MB
+  final app/package remains in `dist/`.
 
 - Final native Linux packages — final packaging rejects symlink binary inputs
   and includes `PROVENANCE.md`. Native Debian 13 amd64 and ARM64 builds used

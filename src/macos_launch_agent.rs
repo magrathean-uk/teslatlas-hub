@@ -716,7 +716,8 @@ mod tests {
         let store = seed_selected_car(data_dir);
         load_or_create_cursor_key(data_dir).expect("cursor key");
         let credentials = FleetSetupCredentials::new(
-            "fleet-access".to_owned(),
+            "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iXX0.sig"
+                .to_owned(),
             "fleet-refresh".to_owned(),
             "fleet-client".to_owned(),
             FleetRegion::EuropeMiddleEastAndAfrica,

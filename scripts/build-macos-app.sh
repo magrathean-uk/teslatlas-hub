@@ -70,14 +70,20 @@ reject_appledouble() {
     [ -z "$metadata" ] || die "AppleDouble metadata in $path"
 }
 
-RUST_CARGO=$(command -v cargo) || die "cargo is required"
-RUST_COMPILER=$(command -v rustc) || die "rustc is required"
-if command -v rustup >/dev/null 2>&1; then
-    RUST_CARGO=$(rustup which --toolchain stable cargo) \
-        || die "cannot find the stable rustup cargo"
-    RUST_COMPILER=$(rustup which --toolchain stable rustc) \
-        || die "cannot find the stable rustup rustc"
-fi
+command -v rustup >/dev/null 2>&1 || die "rustup is required for the pinned Rust build"
+RUST_TOOLCHAIN=$(
+    /usr/bin/sed -nE 's/^rust-version = "([0-9]+\.[0-9]+(\.[0-9]+)?)"$/\1/p' \
+        "$ROOT/Cargo.toml"
+)
+case "$RUST_TOOLCHAIN" in
+    *.*.*) ;;
+    *.*) RUST_TOOLCHAIN="$RUST_TOOLCHAIN.0" ;;
+    *) die "cannot read the pinned Rust version" ;;
+esac
+RUST_CARGO=$(rustup which --toolchain "$RUST_TOOLCHAIN" cargo) \
+    || die "cannot find Rust $RUST_TOOLCHAIN cargo"
+RUST_COMPILER=$(rustup which --toolchain "$RUST_TOOLCHAIN" rustc) \
+    || die "cannot find Rust $RUST_TOOLCHAIN rustc"
 [ -x "$RUST_CARGO" ] || die "cargo is not executable"
 [ -x "$RUST_COMPILER" ] || die "rustc is not executable"
 RUST_TOOLCHAIN_LIB="$($RUST_COMPILER --print sysroot)/lib"

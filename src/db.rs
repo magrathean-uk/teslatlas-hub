@@ -11123,6 +11123,14 @@ impl HubStore {
             state = step.state;
             quarantined |= step.quarantined;
             delta.drives.extend(step.delta.drives);
+            for discarded_drive_id in &step.delta.discarded_drive_ids {
+                delta
+                    .open_drive_positions
+                    .retain(|position| position.drive_id != Some(*discarded_drive_id));
+            }
+            delta
+                .discarded_drive_ids
+                .extend(step.delta.discarded_drive_ids);
             delta.positions.extend(step.delta.positions);
             delta.charges.extend(step.delta.charges);
             delta.charge_samples.extend(step.delta.charge_samples);
@@ -11237,6 +11245,14 @@ impl HubStore {
             state = step.state;
             quarantined |= step.quarantined;
             delta.drives.extend(step.delta.drives);
+            for discarded_drive_id in &step.delta.discarded_drive_ids {
+                delta
+                    .open_drive_positions
+                    .retain(|position| position.drive_id != Some(*discarded_drive_id));
+            }
+            delta
+                .discarded_drive_ids
+                .extend(step.delta.discarded_drive_ids);
             delta.positions.extend(step.delta.positions);
             delta.charges.extend(step.delta.charges);
             delta.charge_samples.extend(step.delta.charge_samples);
@@ -13034,6 +13050,23 @@ impl HubStore {
                     "DELETE FROM lifecycle_open_rows
                      WHERE vehicle_id = ?1 AND domain = 'drive' AND source_row_id = ?2",
                     params![vehicle_key, drive.id],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+        for drive_id in &delta.discarded_drive_ids {
+            transaction
+                .execute(
+                    "DELETE FROM lifecycle_open_rows
+                     WHERE vehicle_id = ?1 AND domain = 'position'
+                       AND parent_source_row_id = ?2",
+                    params![vehicle_key, drive_id],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+            transaction
+                .execute(
+                    "DELETE FROM lifecycle_open_rows
+                     WHERE vehicle_id = ?1 AND domain = 'drive' AND source_row_id = ?2",
+                    params![vehicle_key, drive_id],
                 )
                 .map_err(StoreError::LifecycleWrite)?;
         }

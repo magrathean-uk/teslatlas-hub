@@ -30,8 +30,9 @@ use teslatlas_hub::{
     db::{HubStore, ObservationVerificationError, TeslaMateLegacyTokenStore},
     fleet_api::FleetRegion,
     fleet_credentials::{
-        FleetSetupCredentials, migrate_legacy_fleet_credentials, persist_fleet_setup_credentials,
-        remove_fleet_key_and_tokens, validate_stored_fleet_credentials,
+        FleetCredentialError, FleetSetupCredentials, migrate_legacy_fleet_credentials,
+        persist_fleet_setup_credentials, remove_fleet_key_and_tokens, stored_fleet_scope_summary,
+        validate_stored_fleet_credentials,
     },
     gpx::export_drive_gpx,
     hub_pack::GeofenceBillingType,
@@ -1773,6 +1774,26 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());
             let legacy_credentials = store.load_teslamate_legacy_tokens()?;
             let fleet_credentials = store.load_fleet_tokens()?;
+            let (fleet_scope_summary, fleet_scope_status) = if fleet_credentials.is_some() {
+                match stored_fleet_scope_summary(&store, &config.data_dir) {
+                    Ok(summary) => (summary, Some("ready")),
+                    Err(error) => {
+                        let status = match error {
+                            FleetCredentialError::MissingCollectionScopes => {
+                                "missing_collection_scopes"
+                            }
+                            FleetCredentialError::InvalidAccessTokenClaims => {
+                                "invalid_access_token_claims"
+                            }
+                            FleetCredentialError::MigrationRequired => "migration_required",
+                            _ => "unavailable",
+                        };
+                        (None, Some(status))
+                    }
+                }
+            } else {
+                (None, None)
+            };
             let selected_credentials_present = match config.collector.provider {
                 CollectorProvider::Legacy => legacy_credentials.is_some(),
                 CollectorProvider::Fleet => fleet_credentials.is_some(),
@@ -1808,6 +1829,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         "present": fleet_credentials.is_some(),
                         "expiresAt": fleet_credentials.as_ref().map(|credentials| credentials.expires_at()),
                         "nextRefreshAt": fleet_credentials.as_ref().map(|credentials| credentials.next_refresh_at()),
+                        "scopes": fleet_scope_summary,
+                        "scopeStatus": fleet_scope_status,
                     },
                 })
             );
@@ -2624,14 +2647,15 @@ fn decode_setup_fleet_stdin(
     bytes: &[u8],
 ) -> Result<FleetSetupCredentials, Box<dyn std::error::Error>> {
     let mut input: SetupFleetStdin = serde_json::from_slice(bytes)?;
-    FleetSetupCredentials::new(
+    let credentials = FleetSetupCredentials::new(
         std::mem::take(&mut input.access_token),
         std::mem::take(&mut input.refresh_token),
         std::mem::take(&mut input.client_id),
         input.region,
         input.expires_in_seconds,
-    )
-    .map_err(Into::into)
+    )?;
+    credentials.require_collection_scopes()?;
+    Ok(credentials)
 }
 
 #[cfg(unix)]
@@ -4545,9 +4569,15 @@ mod tests {
         );
         assert!(
             decode_setup_fleet_stdin(
-                br#"{"accessToken":"access","refreshToken":"refresh","clientId":"client","region":"europe_middle_east_and_africa","expiresInSeconds":3600}"#,
+                br#"{"accessToken":"e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iLCJ2ZWhpY2xlX2NtZHMiLCJ2ZWhpY2xlX2NoYXJnaW5nX2NtZHMiXX0.sig","refreshToken":"refresh","clientId":"client","region":"europe_middle_east_and_africa","expiresInSeconds":3600}"#,
             )
             .is_ok()
+        );
+        assert!(
+            decode_setup_fleet_stdin(
+                br#"{"accessToken":"e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig","refreshToken":"refresh","clientId":"client","region":"europe_middle_east_and_africa","expiresInSeconds":3600}"#,
+            )
+            .is_err()
         );
         assert!(
             decode_setup_fleet_stdin(

@@ -1,10 +1,12 @@
 //! Encrypted persistence and one resident refresh owner for Fleet OAuth.
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rustix::{
     fs::{CWD, FileType, Mode, OFlags, RenameFlags, fstat, open, renameat_with},
     io::Errno,
     process::getuid,
 };
+use serde::Serialize;
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -44,6 +46,21 @@ const PRIVATE_FILE_MODE: u32 = 0o600;
 const FLEET_KEY_FILE_NAME: &str = "fleet-credentials.key";
 const FLEET_KEY_PENDING_FILE_NAME: &str = ".fleet-credentials.pending.key";
 const FLEET_KEY_MIGRATION_MARKER: &str = ".fleet-credentials-key-migration";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FleetScopeSummary {
+    pub vehicle_device_data: bool,
+    pub vehicle_location: bool,
+    pub vehicle_commands: bool,
+    pub vehicle_charging_commands: bool,
+}
+
+impl FleetScopeSummary {
+    const fn collection_ready(self) -> bool {
+        self.vehicle_device_data && self.vehicle_location
+    }
+}
 
 pub fn fleet_key_path(data_dir: &Path) -> PathBuf {
     data_dir.join("secrets").join(FLEET_KEY_FILE_NAME)
@@ -99,6 +116,14 @@ impl FleetSetupCredentials {
 
     pub(crate) const fn region(&self) -> FleetRegion {
         self.region
+    }
+
+    pub fn require_collection_scopes(&self) -> Result<(), FleetCredentialError> {
+        let summary = fleet_scope_summary(&self.access_token)?;
+        if !summary.collection_ready() {
+            return Err(FleetCredentialError::MissingCollectionScopes);
+        }
+        Ok(())
     }
 }
 
@@ -197,14 +222,69 @@ pub fn validate_stored_fleet_credentials(
     {
         return Err(FleetCredentialError::RotationOutcomeUnknown);
     }
-    FleetAccessToken::new(plaintext.access_token().to_owned())?;
-    FleetRefreshToken::new(plaintext.refresh_token().to_owned())?;
-    FleetClientId::parse(stored.client_id())?;
-    FleetRegion::from_storage_code(stored.region())?;
     if migration_required {
         return Err(FleetCredentialError::MigrationRequired);
     }
+    let access_token = FleetAccessToken::new(plaintext.access_token().to_owned())?;
+    if !fleet_scope_summary(access_token.expose())?.collection_ready() {
+        return Err(FleetCredentialError::MissingCollectionScopes);
+    }
+    FleetRefreshToken::new(plaintext.refresh_token().to_owned())?;
+    FleetClientId::parse(stored.client_id())?;
+    FleetRegion::from_storage_code(stored.region())?;
     Ok(())
+}
+
+pub fn stored_fleet_scope_summary(
+    store: &HubStore,
+    data_dir: &Path,
+) -> Result<Option<FleetScopeSummary>, FleetCredentialError> {
+    let Some(stored) = store.load_fleet_tokens()? else {
+        return Ok(None);
+    };
+    let encryption_key =
+        load_existing_fleet_key_bytes(data_dir)?.ok_or(FleetCredentialError::MigrationRequired)?;
+    let plaintext =
+        decrypt_legacy_owner_tokens(&encryption_key, stored.access(), stored.refresh())?;
+    fleet_scope_summary(plaintext.access_token()).map(Some)
+}
+
+fn fleet_scope_summary(access_token: &str) -> Result<FleetScopeSummary, FleetCredentialError> {
+    let mut parts = access_token.split('.');
+    let Some(header) = parts.next() else {
+        return Err(FleetCredentialError::InvalidAccessTokenClaims);
+    };
+    let Some(payload) = parts.next() else {
+        return Err(FleetCredentialError::InvalidAccessTokenClaims);
+    };
+    let Some(signature) = parts.next() else {
+        return Err(FleetCredentialError::InvalidAccessTokenClaims);
+    };
+    if header.is_empty() || payload.is_empty() || signature.is_empty() || parts.next().is_some() {
+        return Err(FleetCredentialError::InvalidAccessTokenClaims);
+    }
+    let decoded = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| FleetCredentialError::InvalidAccessTokenClaims)?;
+    let claims: serde_json::Value = serde_json::from_slice(&decoded)
+        .map_err(|_| FleetCredentialError::InvalidAccessTokenClaims)?;
+    let scopes = claims
+        .get("scp")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(FleetCredentialError::InvalidAccessTokenClaims)?;
+    if scopes
+        .iter()
+        .any(|scope| scope.as_str().is_none_or(str::is_empty))
+    {
+        return Err(FleetCredentialError::InvalidAccessTokenClaims);
+    }
+    let has = |required: &str| scopes.iter().any(|scope| scope.as_str() == Some(required));
+    Ok(FleetScopeSummary {
+        vehicle_device_data: has("vehicle_device_data"),
+        vehicle_location: has("vehicle_location"),
+        vehicle_commands: has("vehicle_cmds"),
+        vehicle_charging_commands: has("vehicle_charging_cmds"),
+    })
 }
 
 pub(crate) struct FleetAuthManager {
@@ -872,6 +952,10 @@ pub enum FleetCredentialError {
     },
     #[error("Fleet token lifetime is invalid")]
     InvalidLifetime,
+    #[error("Fleet access token claims are invalid")]
+    InvalidAccessTokenClaims,
+    #[error("Fleet authorization is missing vehicle data or location access; reconnect Tesla")]
+    MissingCollectionScopes,
     #[error("system clock is before the Unix epoch")]
     Clock(#[source] std::time::SystemTimeError),
     #[error("system clock does not fit Fleet token scheduling")]
@@ -903,6 +987,8 @@ impl FleetCredentialError {
                 | Self::MigrationRequired
                 | Self::UnsafeKeyMaterial
                 | Self::UnsafeMigrationState
+                | Self::InvalidAccessTokenClaims
+                | Self::MissingCollectionScopes
                 | Self::KeyIo { .. }
                 | Self::Cipher(_)
                 | Self::Key(_)
@@ -927,6 +1013,34 @@ mod tests {
 
     use super::*;
 
+    const TEST_SCOPED_ACCESS: &str = "e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iLCJ2ZWhpY2xlX2NtZHMiLCJ2ZWhpY2xlX2NoYXJnaW5nX2NtZHMiXX0.sig";
+
+    #[test]
+    fn fleet_scope_claims_are_bounded_and_collection_scopes_are_required() {
+        let summary = fleet_scope_summary(TEST_SCOPED_ACCESS).expect("scope summary");
+        assert!(summary.vehicle_device_data);
+        assert!(summary.vehicle_location);
+        assert!(summary.vehicle_commands);
+        assert!(summary.vehicle_charging_commands);
+
+        let missing_location = FleetSetupCredentials::new(
+            "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig".to_owned(),
+            "fleet-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            FleetRegion::EuropeMiddleEastAndAfrica,
+            28_800,
+        )
+        .expect("syntactically valid credentials");
+        assert!(matches!(
+            missing_location.require_collection_scopes(),
+            Err(FleetCredentialError::MissingCollectionScopes)
+        ));
+        assert!(matches!(
+            fleet_scope_summary("not-a-jwt"),
+            Err(FleetCredentialError::InvalidAccessTokenClaims)
+        ));
+    }
+
     #[test]
     fn fleet_setup_round_trips_encrypted_and_redacted() {
         let temporary = crate::private_tempdir().expect("temporary Hub");
@@ -934,7 +1048,7 @@ mod tests {
         crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
             .expect("cursor key");
         let credentials = FleetSetupCredentials::new(
-            "fleet-access".to_owned(),
+            TEST_SCOPED_ACCESS.to_owned(),
             "fleet-refresh".to_owned(),
             "fleet-client".to_owned(),
             FleetRegion::EuropeMiddleEastAndAfrica,
@@ -953,8 +1067,8 @@ mod tests {
         assert!(
             !stored
                 .access()
-                .windows(12)
-                .any(|part| part == b"fleet-access")
+                .windows(TEST_SCOPED_ACCESS.len())
+                .any(|part| part == TEST_SCOPED_ACCESS.as_bytes())
         );
         assert!(
             !stored
@@ -964,12 +1078,40 @@ mod tests {
         );
         validate_stored_fleet_credentials(&store, temporary.path()).expect("read-only validation");
         let manager = FleetAuthManager::from_store(store, temporary.path()).expect("manager");
-        assert_eq!(manager.access_token().expose(), "fleet-access");
+        assert_eq!(manager.access_token().expose(), TEST_SCOPED_ACCESS);
         assert_eq!(manager.region(), FleetRegion::EuropeMiddleEastAndAfrica);
         let rendered = format!("{credentials:?} {manager:?} {stored:?}");
-        assert!(!rendered.contains("fleet-access"));
+        assert!(!rendered.contains(TEST_SCOPED_ACCESS));
         assert!(!rendered.contains("fleet-refresh"));
         assert!(!rendered.contains("fleet-client"));
+    }
+
+    #[test]
+    fn stored_fleet_credentials_require_collection_scopes() {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+            .expect("cursor key");
+        let credentials = FleetSetupCredentials::new(
+            "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig".to_owned(),
+            "fleet-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            FleetRegion::EuropeMiddleEastAndAfrica,
+            28_800,
+        )
+        .expect("syntactically valid credentials");
+        persist_fleet_setup_credentials(
+            &store,
+            temporary.path(),
+            &credentials,
+            UNIX_EPOCH + std::time::Duration::from_secs(1_000),
+        )
+        .expect("persist");
+
+        assert!(matches!(
+            validate_stored_fleet_credentials(&store, temporary.path()),
+            Err(FleetCredentialError::MissingCollectionScopes)
+        ));
     }
 
     #[test]
