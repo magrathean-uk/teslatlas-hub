@@ -51,6 +51,20 @@ Current work plan:
 - Produce a Developer ID-signed, notarized, provenance-bound macOS release using
   existing local Apple credentials. Physical iOS sync remains outside Hub scope.
 
+Driving-stream handover plan for 2026-08-25: keep VPS TeslaMate running until a
+new short test window is explicitly approved; record TeslaMate and Hub database
+watermarks; stop TeslaMate once; transfer the current legacy token pair to Hub;
+observe one physical drive; verify stream samples and the closed drive; hand the
+latest rotated pair back in one PostgreSQL transaction; stop legacy Hub; restart
+and health-check TeslaMate. Any failed step aborts to TeslaMate restart. Fleet
+Hub may continue polling separately because it owns a different Fleet token.
+
+Fleet endurance baseline on 2026-08-25: local Fleet Hub ready with one vehicle,
+latest observation ID 461, database 2.3 MB, next token refresh scheduled for
+2026-08-25 13:51 UTC, and token expiry at 14:21 UTC. The VPS TeslaMate and
+TeslaMateAPI containers were both healthy. Recheck through 2026-08-31; do not
+issue endurance vehicle commands.
+
 Deliberate exclusions: TeslaFi import, `addresses.raw`, Grafana/MQTT/dashboard,
 and native Fleet Telemetry ingestion. Fleet currently uses official REST
 polling; legacy Owner API keeps TeslaMate-compatible vehicle streaming.
