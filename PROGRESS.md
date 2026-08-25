@@ -8,8 +8,8 @@ post-send Fleet refresh fencing, one-to-one VIN/EID rotation, recursive raw JSON
 credential redaction, Fleet-only status, short-lived writer WAL cleanup, and the
 China token endpoint. No known code blocker remains.
 
-Current verification on 2026-08-25: 748 library + 38 CLI + 1 TLS tests passed
-(787 total; 2 intentional fixture tests ignored); all-target Clippy with
+Current verification on 2026-08-25: 748 library + 39 CLI + 1 TLS tests passed
+(788 total; 2 intentional fixture tests ignored); all-target Clippy with
 `-D warnings`, release build, ShellCheck, Linux packaging tests, macOS packaging
 checks, and 27 AppKit tests passed. Live EMEA Fleet authorization, vehicle
 discovery, vehicle-data polling, partner registration, and virtual-key pairing
@@ -31,10 +31,14 @@ Current artifact:
   embedded service package SHA-256
   `d7a517c4732bc80d004a9ed249d8870572110fbe1aef8c63ddd64fa75990c658`;
   deep strict ad-hoc signature verification passed.
+- Debian 13 amd64 package SHA-256
+  `b4ba561c173ac6b4df759247a26d4d3ca28406c45b4eacb8709e7ef00e089ebc`.
+- Debian 13 ARM64 package SHA-256
+  `8f7d111c12f4f6a9b4c7a57f26f3ca476fd56a6b74966a52d2db1df53834181d`.
 
-Linux package source and lifecycle-fault contracts pass. Earlier native Debian
-amd64 and ARM64 receipts remain historical evidence; no source-identical native
-Linux artifact was rebuilt after the final fixes.
+Both Linux packages were built natively from commit `e19ff55` on Debian 13,
+installed, bootstrapped, checked, started on loopback, and stopped. Their build
+roots, test installs, and ARM64 VM were deleted. TeslaMate stayed healthy.
 
 The final stopped TeslaMate v4.1.1 migration read 105 migrations, 10,782,436
 positions, 3,267 drives, and 1 car into about 1.86 GiB / 446 packs. Source
@@ -50,10 +54,11 @@ Current work plan:
   macOS, expose confirmed non-charging controls in the Hub app, and test the
   installed app climate start/stop against the paired car.
 - 2026-08-25: prepare a short physical driving-stream handover window.
-- 2026-08-25: rebuild and install source-identical Debian amd64 and ARM64
-  packages, run package/service smoke checks, and delete disposable build data.
-- 2026-08-25 through 2026-08-31: keep Fleet Hub collection running for refresh
-  rotation/endurance evidence without vehicle commands or a second refresh owner.
+- Completed 2026-08-25: rebuilt and installed source-identical Debian amd64 and
+  ARM64 packages, ran package/service smoke checks, and deleted disposable data.
+- 2026-08-25 through 2026-08-31: the active `Teslatlas Fleet endurance` daily
+  check keeps Fleet Hub collection under read-only observation without vehicle
+  commands or a second refresh owner.
 - Produce a Developer ID-signed, notarized, provenance-bound macOS release using
   existing local Apple credentials. Physical iOS sync remains outside Hub scope.
 
@@ -66,7 +71,7 @@ and health-check TeslaMate. Any failed step aborts to TeslaMate restart. Fleet
 Hub may continue polling separately because it owns a different Fleet token.
 
 Fleet endurance baseline on 2026-08-25: local Fleet Hub ready with one vehicle,
-latest observation ID 461, database 2.3 MB, next token refresh scheduled for
+latest observation ID 910, database 3.6 MB, next token refresh scheduled for
 2026-08-25 13:51 UTC, and token expiry at 14:21 UTC. The VPS TeslaMate and
 TeslaMateAPI containers were both healthy. Recheck through 2026-08-31; do not
 issue endurance vehicle commands.
@@ -97,6 +102,19 @@ TeslaMate PostgreSQL copy remains an intentional read-only negative fixture.
   Independent macOS, Debian, and Rust reviews found no concrete blocker.
 
 ## Completed
+
+- Final native Linux packages — final packaging rejects symlink binary inputs
+  and includes `PROVENANCE.md`. Native Debian 13 amd64 and ARM64 builds used
+  Rust 1.98; package regression, ELF/loader identity, fresh install, bootstrap,
+  doctor, status, loopback systemd lifecycle, and package content checks passed.
+  No Tesla credential, API, or command was used. VPS TeslaMate/TeslaMateAPI
+  remained healthy; both build roots, test installs, and the ARM64 VM were
+  removed.
+
+- Build cleanup — removed the 4.0 GiB project target, 4,415 stale Hub test files
+  totalling 1.68 GB from the macOS temp directory, and 31 MB of superseded
+  per-user Hub binaries. Retained artifacts total 56 MB; the installed app and
+  root service total 76 MB.
 
 - Managed macOS command service and complete controls — pinned Tesla's official
   `vehicle-command` v0.4.1 source, packaged its loopback proxy beside Hub, and
