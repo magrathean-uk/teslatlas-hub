@@ -2,10 +2,12 @@
 
 ## Result
 
-Ship `hub/` as a practical one-vehicle TeslaMate replacement for Apple-silicon
+Ship `hub/` as a practical multi-vehicle TeslaMate replacement for Apple-silicon
 macOS and Debian amd64/ARM64. New Mac users connect their Tesla account in the native
 app, configure Hub without token files, install the embedded service package,
-and start collection. Linux keeps full CLI/package operation.
+and start collection. Linux keeps full CLI/package operation. Support the legacy
+Owner API and Tesla Fleet API, explicit wake/control commands, bounded TeslaMate
+write-back, and retained provider raw JSON. TeslaFi import is not required.
 
 ## Normal development
 
@@ -24,18 +26,23 @@ repositories, evidence trees, or separate target directories.
 
 1. Keep the HTTP trust boundary honest: plaintext stays loopback-only and is
    not described as authenticated.
-2. Keep exactly one refresh-token owner: the resident collector. Do not expose
-   wake/climate commands or construct command-only credential managers.
+2. Keep exactly one refresh-token owner: the resident service. Collection and
+   commands must share it; never construct a command-only credential manager.
 3. Keep normal backup data-only. Exclude decryption/signing keys. Offer key
    disaster recovery only as an explicit, separately encrypted export.
 4. Integrate Tesla Auth-compatible PKCE login in the macOS app using native
    WebKit. Pass tokens to the embedded Rust CLI through bounded stdin, never
    files, argv, UI output, or logs. Configure before package install so the
    package can start a ready service.
-5. Preserve direct read-only TeslaMate v4.1.1 migration, compact disk use,
-   macOS LaunchAgent operation, Debian systemd packaging, local sync, repair,
-   and one-vehicle telemetry collection.
-6. Run final Rust/macOS checks once. Run Linux package/runtime proof only when
+5. Preserve compact TeslaMate v4.1.1 migration, macOS LaunchAgent operation,
+   Debian systemd packaging, local sync, repair, and telemetry collection while
+   extending every relevant identity and lifecycle path to multiple vehicles.
+6. Add Fleet API collection and explicit wake/control commands through the same
+   resident credential owner. Keep commands authenticated, bounded, auditable,
+   and off unless directly requested.
+7. Add explicit transactional TeslaMate write-back and provider raw JSON
+   retention. Write-back is opt-in and must not run during ordinary migration.
+8. Run final Rust/macOS checks once. Run Linux package/runtime proof only when
    Linux behavior or dependencies changed; reuse the one normal Cargo cache.
 
 ## Resource limits
@@ -58,10 +65,12 @@ repositories, evidence trees, or separate target directories.
 
 ## Safety
 
-- TeslaMate PostgreSQL access remains read-only.
+- TeslaMate PostgreSQL migration access remains read-only. A separate explicit
+  write-back command may write only its declared bounded transaction.
 - Never print or persist plaintext Tesla tokens outside the protected Hub
   credential store. Never place them in process arguments.
-- Never send vehicle wake, climate, or other control commands.
+- Never send a real vehicle command during development or testing without the
+  user's explicit live-test instruction. Hermetic fake-server tests are allowed.
 - Never run two processes that can refresh the same token pair.
 - Never expose the plaintext loopback listener through forwarding, proxying,
   tunnelling, or a non-loopback bind without TLS and authentication.
@@ -72,8 +81,11 @@ repositories, evidence trees, or separate target directories.
 
 Done means the native macOS login/setup/install path works hermetically; default
 backup excludes keys; encrypted credential recovery round-trips and rejects
-wrong keys/tampering/overwrite; one refresh owner is enforced; Rust format,
-tests, Clippy, and release build pass; the AppKit app builds/tests; Linux still
-cross-checks or package-tests as appropriate; temporary build/test data is
-removed; and `PROGRESS.md` separates completed proof from deferred physical
-driving, live refresh-expiry, clean-host install, iOS sync, and endurance tests.
+wrong keys/tampering/overwrite; one refresh owner is enforced; multiple vehicles
+collect and sync independently through legacy and Fleet sources; fake-server
+wake/control tests pass; write-back is bounded and opt-in; provider raw JSON
+round-trips; Rust format, tests, Clippy, and release build pass; the AppKit app
+builds/tests; Linux still cross-checks or package-tests as appropriate; temporary
+build/test data is removed; and `PROGRESS.md` separates completed proof from
+deferred live commands, physical driving, clean-host install, iOS sync, and
+endurance tests.

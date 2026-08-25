@@ -154,8 +154,31 @@ struct TeslaOAuthFlow {
     }
 }
 
-private final class TeslaTokenExchange: NSObject, URLSessionTaskDelegate {
+struct TeslaTokenResponseBuffer {
+    static let maximumBytes = 64 * 1024
+    private(set) var data = Data()
+
+    mutating func append(_ chunk: Data) -> Bool {
+        guard chunk.count <= Self.maximumBytes - data.count else { return false }
+        data.append(chunk)
+        return true
+    }
+}
+
+private final class TeslaTokenExchange: NSObject, URLSessionDataDelegate {
     private var session: URLSession?
+    private var completion: ((Result<TeslaAuthTokens, Error>) -> Void)?
+    private var responseAccepted = false
+    private var responseBody = TeslaTokenResponseBuffer()
+    private var completed = false
+    private let delegateQueue: OperationQueue
+
+    override init() {
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        delegateQueue = queue
+        super.init()
+    }
 
     func start(_ exchange: TeslaTokenExchangeRequest,
                completion: @escaping (Result<TeslaAuthTokens, Error>) -> Void) {
@@ -170,39 +193,74 @@ private final class TeslaTokenExchange: NSObject, URLSessionTaskDelegate {
         configuration.timeoutIntervalForResource = 30
         configuration.httpShouldSetCookies = false
         configuration.httpCookieAcceptPolicy = .never
-        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        self.completion = completion
+        let session = URLSession(configuration: configuration,
+                                 delegate: self,
+                                 delegateQueue: delegateQueue)
         self.session = session
-        session.dataTask(with: request) { [weak self] data, response, error in
-            defer {
-                session.finishTasksAndInvalidate()
-                self?.session = nil
-            }
-            guard error == nil,
-                  let response = response as? HTTPURLResponse,
-                  (200...299).contains(response.statusCode),
-                  let data, data.count <= 64 * 1024 else {
-                completion(.failure(TeslaAuthError.exchangeFailed))
-                return
-            }
-            struct TokenResponse: Decodable {
-                let accessToken: String
-                let refreshToken: String
-                let expiresIn: Double
+        session.dataTask(with: request).resume()
+    }
 
-                enum CodingKeys: String, CodingKey {
-                    case accessToken = "access_token"
-                    case refreshToken = "refresh_token"
-                    case expiresIn = "expires_in"
-                }
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                    didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let response = response as? HTTPURLResponse,
+              (200...299).contains(response.statusCode),
+              response.expectedContentLength < 0 ||
+                response.expectedContentLength <= Int64(TeslaTokenResponseBuffer.maximumBytes) else {
+            completionHandler(.cancel)
+            finish(.failure(TeslaAuthError.exchangeFailed))
+            return
+        }
+        responseAccepted = true
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                    didReceive data: Data) {
+        guard !completed else { return }
+        guard responseBody.append(data) else {
+            dataTask.cancel()
+            finish(.failure(TeslaAuthError.exchangeFailed))
+            return
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    didCompleteWithError error: Error?) {
+        guard !completed else { return }
+        guard error == nil, responseAccepted else {
+            finish(.failure(TeslaAuthError.exchangeFailed))
+            return
+        }
+        struct TokenResponse: Decodable {
+            let accessToken: String
+            let refreshToken: String
+            let expiresIn: Double
+
+            enum CodingKeys: String, CodingKey {
+                case accessToken = "access_token"
+                case refreshToken = "refresh_token"
+                case expiresIn = "expires_in"
             }
-            guard let token = try? JSONDecoder().decode(TokenResponse.self, from: data),
-                  !token.accessToken.isEmpty, !token.refreshToken.isEmpty, token.expiresIn > 0 else {
-                completion(.failure(TeslaAuthError.invalidResponse))
-                return
-            }
-            completion(.success(TeslaAuthTokens(accessToken: token.accessToken,
-                                                refreshToken: token.refreshToken)))
-        }.resume()
+        }
+        guard let token = try? JSONDecoder().decode(TokenResponse.self, from: responseBody.data),
+              !token.accessToken.isEmpty, !token.refreshToken.isEmpty, token.expiresIn > 0 else {
+            finish(.failure(TeslaAuthError.invalidResponse))
+            return
+        }
+        finish(.success(TeslaAuthTokens(accessToken: token.accessToken,
+                                        refreshToken: token.refreshToken)))
+    }
+
+    private func finish(_ result: Result<TeslaAuthTokens, Error>) {
+        guard !completed else { return }
+        completed = true
+        let callback = completion
+        completion = nil
+        session?.finishTasksAndInvalidate()
+        session = nil
+        callback?(result)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask,

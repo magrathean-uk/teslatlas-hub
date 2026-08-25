@@ -13,21 +13,20 @@ use crate::{
     teslamate_projection::{TeslaMateDrive, TeslaMateState},
 };
 
-pub const TESLAMATE_SOURCE_PARITY_LEDGER_VERSION: u16 = 2;
+pub const TESLAMATE_SOURCE_PARITY_LEDGER_VERSION: u16 = 4;
 pub const TESLAMATE_SOURCE_PARITY_REVIEWED_DENOMINATOR: u16 = 17;
 
 /// What survives for one reviewed source field or value domain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TeslaMateSourceFactDisposition {
-    /// The exact fact is represented by THP1 and accepted by the app.
+    /// The exact fact is represented by the current Hub projection pack.
     PreservedInPack,
     /// The value is not in THP1, but a typed capture binds it to duplicate
     /// detection so a source change cannot be reported as unchanged.
     FingerprintOnly,
-    /// The value is proposed for sensitive exclusion, but remains blocked
-    /// until an explicit future approval path exists.
-    ProposedSensitiveExclusionBlocked,
+    /// The value is deliberately outside the product boundary.
+    DeliberatelyExcluded,
     /// The current adapter drops, does not read, or rejects the value.
     UnsupportedOrLost,
 }
@@ -86,8 +85,16 @@ pub const TESLAMATE_SOURCE_PARITY_ENTRIES: [TeslaMateSourceParityEntry; 17] = [
     preserved("cars", "display_priority", "exact schema-2.2 source value"),
     preserved("cars", "inserted_at", "exact schema-2.2 source timestamp"),
     preserved("cars", "updated_at", "exact schema-2.2 source timestamp"),
-    preserved("drives", "start_km", "exact schema-2.2 FLOAT8 bits"),
-    preserved("drives", "end_km", "exact schema-2.2 FLOAT8 bits"),
+    preserved(
+        "drives",
+        "start_km",
+        "exact IEEE-754 source bits in the schema-2.2 drive pack",
+    ),
+    preserved(
+        "drives",
+        "end_km",
+        "exact IEEE-754 source bits in the schema-2.2 drive pack",
+    ),
     preserved("settings", "unit_of_length", "exact schema-2.2 enum"),
     preserved("settings", "unit_of_temperature", "exact schema-2.2 enum"),
     preserved("settings", "unit_of_pressure", "exact schema-2.2 enum"),
@@ -109,7 +116,7 @@ pub const TESLAMATE_SOURCE_PARITY_ENTRIES: [TeslaMateSourceParityEntry; 17] = [
     TeslaMateSourceParityEntry {
         source_relation: "addresses",
         source_field_or_domain: "raw",
-        disposition: TeslaMateSourceFactDisposition::ProposedSensitiveExclusionBlocked,
+        disposition: TeslaMateSourceFactDisposition::DeliberatelyExcluded,
         capture: TeslaMateSourceCaptureStatus::NotRead,
         fingerprint: TeslaMateSourceFingerprintStatus::DeliberatelyNotHashed,
         current_app_impact: "deliberately excluded because it is not app-visible and may contain unrelated provider data",
@@ -127,7 +134,7 @@ pub struct TeslaMateSourceParityCounts {
     pub reviewed_field_or_value_domains: u16,
     pub preserved_in_pack: u16,
     pub fingerprint_only: u16,
-    pub proposed_sensitive_exclusion_blocked: u16,
+    pub deliberately_excluded: u16,
     pub unsupported_or_lost: u16,
 }
 
@@ -149,13 +156,13 @@ impl TeslaMateSourceParityReport {
             ledger_version: TESLAMATE_SOURCE_PARITY_LEDGER_VERSION,
             scope: "reviewed-source-facts",
             thp1_schema: "2.2",
-            schema_upgrade_required_for_remaining_fields: "none",
+            schema_upgrade_required_for_remaining_fields: "not-applicable-addresses-raw-deliberately-excluded",
             all_teslamate_fields_preserved: false,
             counts: TeslaMateSourceParityCounts {
                 reviewed_field_or_value_domains: TESLAMATE_SOURCE_PARITY_REVIEWED_DENOMINATOR,
                 preserved_in_pack: 16,
                 fingerprint_only: 0,
-                proposed_sensitive_exclusion_blocked: 1,
+                deliberately_excluded: 1,
                 unsupported_or_lost: 0,
             },
             entries: &TESLAMATE_SOURCE_PARITY_ENTRIES,
@@ -347,14 +354,14 @@ mod tests {
         assert_eq!(report.counts.reviewed_field_or_value_domains, 17);
         assert_eq!(report.counts.preserved_in_pack, 16);
         assert_eq!(report.counts.fingerprint_only, 0);
-        assert_eq!(report.counts.proposed_sensitive_exclusion_blocked, 1);
+        assert_eq!(report.counts.deliberately_excluded, 1);
         assert_eq!(report.counts.unsupported_or_lost, 0);
         assert!(!report.all_teslamate_fields_preserved);
         assert_eq!(
             report.require_all_teslamate_fields(),
             Err(TeslaMateFullParityUnavailable {
                 reviewed_denominator: 17,
-                schema_upgrade_required: "none",
+                schema_upgrade_required: "not-applicable-addresses-raw-deliberately-excluded",
             })
         );
 
@@ -362,7 +369,7 @@ mod tests {
             let index = match entry.disposition {
                 TeslaMateSourceFactDisposition::PreservedInPack => 0,
                 TeslaMateSourceFactDisposition::FingerprintOnly => 1,
-                TeslaMateSourceFactDisposition::ProposedSensitiveExclusionBlocked => 2,
+                TeslaMateSourceFactDisposition::DeliberatelyExcluded => 2,
                 TeslaMateSourceFactDisposition::UnsupportedOrLost => 3,
             };
             counts[index] += 1;
@@ -372,7 +379,10 @@ mod tests {
 
         let json = serde_json::to_value(report).expect("serialize public parity report");
         assert_eq!(json["allTeslamateFieldsPreserved"], false);
-        assert_eq!(json["schemaUpgradeRequiredForRemainingFields"], "none");
+        assert_eq!(
+            json["schemaUpgradeRequiredForRemainingFields"],
+            "not-applicable-addresses-raw-deliberately-excluded"
+        );
         assert_eq!(json["counts"]["preservedInPack"], 16);
     }
 

@@ -42,8 +42,11 @@ case "$architecture" in
         ;;
     *) echo "unsupported Debian architecture: $architecture" >&2; exit 65 ;;
 esac
+printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+    || { echo "version must be semver with an optional prerelease" >&2; exit 65; }
 case "$version" in
-    *[!0-9A-Za-z.+:~-]*) echo "invalid Debian version" >&2; exit 65 ;;
+    *-*) debian_version=${version%%-*}\~${version#*-}-1 ;;
+    *) debian_version=$version-1 ;;
 esac
 elf_header_field() {
     LC_ALL=C readelf -h "$binary" 2>/dev/null | awk -F: -v field="$1" '
@@ -66,6 +69,7 @@ actual_class=$(elf_header_field 'Class')
 actual_data=$(elf_header_field 'Data')
 actual_os_abi=$(elf_header_field 'OS/ABI')
 actual_machine=$(elf_header_field 'Machine')
+actual_type=$(elf_header_field 'Type')
 [ "$actual_class" = 'ELF64' ] || {
     echo "binary ELF class is ${actual_class:-unknown}, expected ELF64" >&2
     exit 65
@@ -82,6 +86,10 @@ esac
     echo "binary machine is ${actual_machine:-unknown}, expected $expected_machine for $architecture" >&2
     exit 65
 }
+case "$actual_type" in
+    'EXEC (Executable file)'|'DYN (Position-Independent Executable file)') ;;
+    *) echo "binary ELF type is ${actual_type:-unknown}, expected an executable" >&2; exit 65 ;;
+esac
 
 actual_interpreter=$(LC_ALL=C readelf -l "$binary" 2>/dev/null | awk '
     /Requesting program interpreter:/ {
@@ -127,7 +135,7 @@ printf '%s\n' \
     '' \
     'Package: teslatlas-hub' \
     "Architecture: $architecture" \
-    'Description: Self-hosted Tesla telemetry hub' > "$stage/debian/control"
+    'Description: Self-hosted multi-car Tesla telemetry hub' > "$stage/debian/control"
 runtime_dependencies=
 if [ "$binary_is_dynamic" = true ]; then
     command -v dpkg-shlibdeps >/dev/null 2>&1 || {
@@ -170,11 +178,16 @@ install -D -m 0644 "$root/packaging/linux/teslatlas-hub.service" \
     "$package_root/lib/systemd/system/teslatlas-hub.service"
 install -D -m 0644 "$root/packaging/linux/config.toml" \
     "$package_root/etc/teslatlas-hub/config.toml"
+install -D -m 0644 "$root/LICENSE" "$package_root/usr/share/doc/teslatlas-hub/copyright"
+install -D -m 0644 "$root/NOTICE" "$package_root/usr/share/doc/teslatlas-hub/NOTICE"
+install -D -m 0644 "$root/THIRD_PARTY_NOTICES.md" \
+    "$package_root/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md"
+install -D -m 0755 "$root/packaging/linux/preinst" "$package_root/DEBIAN/preinst"
 install -D -m 0755 "$root/packaging/linux/postinst" "$package_root/DEBIAN/postinst"
 install -D -m 0755 "$root/packaging/linux/prerm" "$package_root/DEBIAN/prerm"
 install -D -m 0755 "$root/packaging/linux/postrm" "$package_root/DEBIAN/postrm"
 sed \
-    -e "s/@VERSION@/$version/g" \
+    -e "s/@VERSION@/$debian_version/g" \
     -e "s/@ARCHITECTURE@/$architecture/g" \
     -e "s|@RUNTIME_DEPENDS@|$escaped_runtime_dependency_suffix|g" \
     "$root/packaging/linux/control.in" > "$package_root/DEBIAN/control"

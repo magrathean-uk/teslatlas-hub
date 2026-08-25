@@ -30,6 +30,7 @@ const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_HGT_BYTES: u64 = SRTM1_BYTES;
 const MAX_SOURCE_BYTES: u64 = 16;
 const MAX_TILE_CACHE_BYTES: u64 = MAX_HGT_BYTES + MAX_SOURCE_BYTES;
+const TEMPORARY_FILE_MAX_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Error)]
 pub enum TerrainCacheError {
@@ -117,6 +118,7 @@ impl TerrainCache {
             return Err(TerrainCacheError::InvalidConfig);
         }
         fs::create_dir_all(&options.root).map_err(TerrainCacheError::Io)?;
+        cleanup_stale_temporary_files(&options.root, SystemTime::now())?;
         crate::crypto::install_default_provider();
         let client = Client::builder()
             .connect_timeout(options.connect_timeout)
@@ -296,6 +298,16 @@ impl TerrainCache {
         for entry in fs::read_dir(&self.options.root).map_err(TerrainCacheError::Io)? {
             let entry = entry.map_err(TerrainCacheError::Io)?;
             let path = entry.path();
+            if is_owned_temporary_name(&entry.file_name()) {
+                let metadata = match fs::symlink_metadata(&path) {
+                    Ok(metadata) if metadata.file_type().is_file() => metadata,
+                    Ok(_) => continue,
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(TerrainCacheError::Io(error)),
+                };
+                total = total.saturating_add(metadata.len());
+                continue;
+            }
             if path.extension().and_then(|value| value.to_str()) != Some("hgt") {
                 continue;
             }
@@ -468,6 +480,58 @@ impl TerrainCache {
         let _ = fs::remove_file(self.source_path(tile));
         let _ = fs::remove_file(self.tile_path(tile));
     }
+}
+
+fn cleanup_stale_temporary_files(root: &Path, now: SystemTime) -> Result<(), TerrainCacheError> {
+    let mut removed = false;
+    for entry in fs::read_dir(root).map_err(TerrainCacheError::Io)? {
+        let entry = entry.map_err(TerrainCacheError::Io)?;
+        if !is_owned_temporary_name(&entry.file_name()) {
+            continue;
+        }
+        let metadata = match fs::symlink_metadata(entry.path()) {
+            Ok(metadata) if metadata.file_type().is_file() => metadata,
+            Ok(_) => continue,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(TerrainCacheError::Io(error)),
+        };
+        let stale = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= TEMPORARY_FILE_MAX_AGE);
+        if !stale {
+            continue;
+        }
+        match fs::remove_file(entry.path()) {
+            Ok(()) => removed = true,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(TerrainCacheError::Io(error)),
+        }
+    }
+    if removed {
+        File::open(root)
+            .and_then(|directory| directory.sync_all())
+            .map_err(TerrainCacheError::Io)?;
+    }
+    Ok(())
+}
+
+fn is_owned_temporary_name(name: &std::ffi::OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    let mut parts = name.split('.');
+    matches!(parts.next(), Some(""))
+        && matches!(parts.next(), Some("archive" | "hgt" | "source"))
+        && parts.next().is_some_and(|value| {
+            !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        && parts.next().is_some_and(|value| {
+            !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        && matches!(parts.next(), Some("tmp"))
+        && parts.next().is_none()
 }
 
 fn write_source_atomic(path: &Path, source: &str) -> Result<(), TerrainCacheError> {
@@ -761,6 +825,43 @@ mod tests {
         assert!(ESA_SRTM_BASE.starts_with("https://"));
         assert!(!AWS_SKADI_BASE.contains("http://"));
         assert!(!ESA_SRTM_BASE.contains("http://"));
+    }
+
+    #[test]
+    fn startup_removes_only_stale_owned_temporary_files() {
+        let dir = tempdir().unwrap();
+        let stale = dir.path().join(".archive.123.0.tmp");
+        let fresh = dir.path().join(".hgt.123.1.tmp");
+        let unrelated = dir.path().join("notes.tmp");
+        fs::write(&stale, b"stale").unwrap();
+        fs::write(&fresh, b"fresh").unwrap();
+        fs::write(&unrelated, b"keep").unwrap();
+        File::options()
+            .write(true)
+            .open(&stale)
+            .unwrap()
+            .set_times(FileTimes::new().set_modified(SystemTime::UNIX_EPOCH))
+            .unwrap();
+
+        TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+
+        assert!(!stale.exists());
+        assert!(fresh.exists());
+        assert!(unrelated.exists());
+    }
+
+    #[test]
+    fn cache_quota_counts_fresh_temporary_files() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(".source.123.0.tmp"), b"x").unwrap();
+        let mut opts = options(dir.path(), "http://127.0.0.1:1/");
+        opts.max_cache_bytes = MAX_TILE_CACHE_BYTES;
+        let cache = TerrainCache::new(opts).unwrap();
+
+        assert!(matches!(
+            cache.enforce_cache_quota(None, MAX_TILE_CACHE_BYTES),
+            Err(TerrainCacheError::CacheQuotaExceeded)
+        ));
     }
 
     #[tokio::test]

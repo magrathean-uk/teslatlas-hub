@@ -5,6 +5,8 @@
 //! serialized so a collector can resume after a process or host restart and
 //! produce identical completed drives, positions, charges, and charge samples.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use thiserror::Error;
@@ -15,8 +17,8 @@ use crate::hub_pack::{
     normalize_tesla_model_code,
 };
 use crate::teslamate_projection::{
-    TeslaMateChargingProcess, TeslaMateDrive, TeslaMateOpenSession, TeslaMatePosition,
-    TeslaMateState,
+    TeslaMateCharge, TeslaMateChargingProcess, TeslaMateDrive, TeslaMateOpenSession,
+    TeslaMatePosition, TeslaMateState, project_charge_sample,
 };
 
 /// Maximum UTF-8 bytes retained for one vehicle's open-session blob.
@@ -27,6 +29,7 @@ use crate::teslamate_projection::{
 /// checkpointing and therefore from recovering safely. Keep a finite corrupt
 /// input guard, but size it for multi-day real-world continuations.
 pub const MAX_OPEN_SESSION_BYTES: usize = 128 * 1024 * 1024;
+pub(crate) const DEFAULT_OFFLINE_DRIVE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 /// One ordered observation already validated and stored by the Hub.
 #[derive(Debug, Clone, PartialEq)]
@@ -205,8 +208,14 @@ pub fn seed_imported_open_session_state(
         .max_timestamp_ms
         .max(session.watermarks.charges.max_timestamp_ms);
     state.imported_state_watermark_ms = session.watermarks.states.max_timestamp_ms;
-    state.open_drive = session.drive.as_ref().map(open_drive_from_source);
-    state.open_charge = session.charge.as_ref().map(open_charge_from_source);
+    state.open_drive = session
+        .drive
+        .as_ref()
+        .map(|row| open_drive_from_source(row, &session.drive_positions));
+    state.open_charge = session
+        .charge
+        .as_ref()
+        .map(|row| open_charge_from_source(row, &session.charge_samples));
     state.open_state = session.state.as_ref().map(open_state_from_source);
     state.phase = if state.open_drive.is_some() {
         VehiclePhase::Driving
@@ -282,8 +291,8 @@ fn session_max_timestamp(session: &TeslaMateOpenSession) -> Option<i64> {
         .max()
 }
 
-fn open_drive_from_source(row: &TeslaMateDrive) -> OpenDrive {
-    OpenDrive {
+fn open_drive_from_source(row: &TeslaMateDrive, positions: &[TeslaMatePosition]) -> OpenDrive {
+    let mut open = OpenDrive {
         id: row.id,
         car_id: row.car_id,
         start_date_ms: row.start_date_ms,
@@ -292,8 +301,8 @@ fn open_drive_from_source(row: &TeslaMateDrive) -> OpenDrive {
         start_soc: None,
         start_rated_range_km: row.start_rated_range_km,
         speed_max: row.speed_max,
-        outside_temp_sum: row.outside_temp_avg.unwrap_or(0.0),
-        outside_temp_count: u32::from(row.outside_temp_avg.is_some()),
+        outside_temp_sum: 0.0,
+        outside_temp_count: 0,
         position_count: 0,
         last_position_date_ms: None,
         last_latitude: None,
@@ -302,21 +311,59 @@ fn open_drive_from_source(row: &TeslaMateDrive) -> OpenDrive {
         last_rated_range_km: None,
         last_odometer: None,
         first_odometer: None,
-        power_max: None,
-        power_min: None,
+        power_max: row.power_max,
+        power_min: row.power_min,
         inside_temp_sum: 0.0,
         inside_temp_count: 0,
-        start_ideal_range_km: None,
-        end_ideal_range_km: None,
+        start_ideal_range_km: row.start_ideal_range_km,
+        end_ideal_range_km: row.end_ideal_range_km,
         elevation_ascent: 0,
         elevation_descent: 0,
         last_elevation: None,
         positions: Vec::new(),
+    };
+
+    let mut ordered = positions.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|position| (position.date_ms, position.id));
+    if let Some(first) = ordered.first() {
+        open.start_latitude = Some(first.latitude);
+        open.start_longitude = Some(first.longitude);
+        open.start_soc = first.battery_level;
+        open.start_rated_range_km = open.start_rated_range_km.or(first.rated_battery_range_km);
     }
+    for position in ordered {
+        let position = imported_position(position);
+        if let Some(speed) = position.speed {
+            open.speed_max = Some(open.speed_max.map_or(speed, |max| max.max(speed)));
+        }
+        observe_drive_position(&mut open, &position);
+        if let Some(temp) = position.outside_temp {
+            open.outside_temp_sum += temp;
+            open.outside_temp_count = open.outside_temp_count.saturating_add(1);
+        }
+    }
+    open.first_odometer = row.start_km.or(open.first_odometer);
+    open.last_odometer = row.end_km.or(open.last_odometer);
+    open.elevation_ascent = row.ascent.unwrap_or(open.elevation_ascent);
+    open.elevation_descent = row.descent.unwrap_or(open.elevation_descent);
+    if let Some(average) = row.outside_temp_avg {
+        let count = open.outside_temp_count.max(1);
+        open.outside_temp_sum = average * f64::from(count);
+        open.outside_temp_count = count;
+    }
+    if let Some(average) = row.inside_temp_avg {
+        let count = open.inside_temp_count.max(1);
+        open.inside_temp_sum = average * f64::from(count);
+        open.inside_temp_count = count;
+    }
+    open
 }
 
-fn open_charge_from_source(row: &TeslaMateChargingProcess) -> OpenCharge {
-    OpenCharge {
+fn open_charge_from_source(
+    row: &TeslaMateChargingProcess,
+    samples: &[TeslaMateCharge],
+) -> OpenCharge {
+    let mut open = OpenCharge {
         id: row.id,
         car_id: row.car_id,
         start_date_ms: row.start_date_ms,
@@ -328,11 +375,11 @@ fn open_charge_from_source(row: &TeslaMateChargingProcess) -> OpenCharge {
         is_dc: None,
         fast_charger_type: None,
         max_charger_power_kw: None,
-        outside_temp_sum: row.outside_temp_avg.unwrap_or(0.0),
-        outside_temp_count: u32::from(row.outside_temp_avg.is_some()),
-        first_energy_added: row.charge_energy_added,
-        max_energy_added: row.charge_energy_added,
-        last_energy_added: row.charge_energy_added,
+        outside_temp_sum: 0.0,
+        outside_temp_count: 0,
+        first_energy_added: None,
+        max_energy_added: None,
+        last_energy_added: None,
         last_battery_level: row.end_battery_level.or(row.start_battery_level),
         last_ideal_range_km: row.end_ideal_range_km.or(row.start_ideal_range_km),
         last_rated_range_km: row.end_rated_range_km.or(row.start_rated_range_km),
@@ -341,7 +388,56 @@ fn open_charge_from_source(row: &TeslaMateChargingProcess) -> OpenCharge {
         last_sample_timestamp_ms: None,
         last_sample_power_kw: None,
         samples: Vec::new(),
+    };
+
+    let mut ordered = samples.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|sample| (sample.date_ms, sample.id));
+    for sample in ordered {
+        let sample = project_charge_sample(sample);
+        if open.sample_count == 0 {
+            open.start_battery_level = open.start_battery_level.or(sample.battery_level);
+            open.start_ideal_range_km = open.start_ideal_range_km.or(sample.ideal_range_km);
+            open.start_rated_range_km = open.start_rated_range_km.or(sample.rated_range_km);
+        }
+        if let Some(energy) = sample.charge_energy_added_kwh {
+            open.first_energy_added.get_or_insert(energy);
+            open.max_energy_added =
+                Some(open.max_energy_added.map_or(energy, |max| max.max(energy)));
+            open.last_energy_added = Some(energy);
+        }
+        open.last_battery_level = sample.battery_level.or(open.last_battery_level);
+        open.last_ideal_range_km = sample.ideal_range_km.or(open.last_ideal_range_km);
+        open.last_rated_range_km = sample.rated_range_km.or(open.last_rated_range_km);
+        if let Some(power) = sample.charger_power_kw {
+            open.max_charger_power_kw = Some(
+                open.max_charger_power_kw
+                    .map_or(power, |max| max.max(power)),
+            );
+        }
+        if let Some(is_dc) = sample.fast_charger_present {
+            open.is_dc = Some(open.is_dc.unwrap_or(false) || is_dc);
+        }
+        if sample.fast_charger_type.is_some() {
+            open.fast_charger_type = sample.fast_charger_type.clone();
+        }
+        if let Some(temp) = sample.outside_temp_c {
+            open.outside_temp_sum += temp;
+            open.outside_temp_count = open.outside_temp_count.saturating_add(1);
+        }
+        observe_charge_sample(&mut open, &sample);
     }
+    open.energy_used_kwh = row.charge_energy_used_kwh.or(open.energy_used_kwh);
+    if open.first_energy_added.is_none() {
+        open.first_energy_added = row.charge_energy_added;
+        open.max_energy_added = row.charge_energy_added;
+        open.last_energy_added = row.charge_energy_added;
+    }
+    if let Some(average) = row.outside_temp_avg {
+        let count = open.outside_temp_count.max(1);
+        open.outside_temp_sum = average * f64::from(count);
+        open.outside_temp_count = count;
+    }
+    open
 }
 
 fn open_state_from_source(row: &TeslaMateState) -> OpenState {
@@ -826,6 +922,26 @@ mod stream_fixture_tests {
         assert!(duplicate.delta.drives.is_empty());
         assert!(duplicate.delta.positions.is_empty());
     }
+
+    #[test]
+    fn newer_local_id_with_older_provider_time_only_advances_cursor() {
+        let current = sample(1, 1_700_000_002_000, 100.2, "P");
+        let projected = apply_sample(OpenSessionState::new(), 9, &current).unwrap();
+        let expected_phase = projected.state.phase;
+        let expected_timestamp = projected.state.last_observed_at_ms;
+
+        let stale = sample(2, 1_700_000_001_000, 99.9, "D");
+        let ignored = apply_sample(projected.state, 9, &stale).unwrap();
+
+        assert_eq!(ignored.state.last_observation_id, 2);
+        assert_eq!(ignored.state.last_observed_at_ms, expected_timestamp);
+        assert_eq!(ignored.state.phase, expected_phase);
+        assert_eq!(
+            ignored.state.last_drive_timestamp_ms,
+            Some(current.observed_at_ms)
+        );
+        assert_eq!(ignored.delta, LifecycleDelta::default());
+    }
 }
 
 /// Project one already-stored observation onto the open session.
@@ -834,12 +950,24 @@ mod stream_fixture_tests {
 /// restarts and retries stay idempotent. Out-of-order IDs after the cursor are
 /// also ignored rather than rewriting history.
 pub fn apply_sample(
-    mut state: OpenSessionState,
+    state: OpenSessionState,
     car_id: i64,
     sample: &LifecycleSample,
 ) -> Result<LifecycleStep, LifecycleError> {
+    apply_sample_with_offline_drive_timeout(state, car_id, sample, DEFAULT_OFFLINE_DRIVE_TIMEOUT)
+}
+
+pub(crate) fn apply_sample_with_offline_drive_timeout(
+    mut state: OpenSessionState,
+    car_id: i64,
+    sample: &LifecycleSample,
+    offline_drive_timeout: Duration,
+) -> Result<LifecycleStep, LifecycleError> {
     if car_id <= 0 {
         return Err(LifecycleError::InvalidCarId);
+    }
+    if offline_drive_timeout.is_zero() {
+        return Err(LifecycleError::InvalidOfflineDriveTimeout);
     }
     if sample.observation_id <= state.last_observation_id {
         return Ok(LifecycleStep {
@@ -848,24 +976,25 @@ pub fn apply_sample(
             quarantined: false,
         });
     }
+    if state
+        .last_observed_at_ms
+        .is_some_and(|watermark| sample.observed_at_ms < watermark)
+    {
+        // Provider responses can arrive out of order even though their local
+        // observation IDs are increasing. Consume the durable cursor without
+        // letting an older snapshot rewrite lifecycle state or transitions.
+        state.last_observation_id = sample.observation_id;
+        return Ok(LifecycleStep {
+            state,
+            delta: LifecycleDelta::default(),
+            quarantined: false,
+        });
+    }
 
-    let mut parsed = match parse_sample(sample) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            // Corrupt payload cannot poison durable history. Quarantine open
-            // sessions and skip the sample while advancing the cursor.
-            state.last_observation_id = sample.observation_id;
-            state.last_observed_at_ms = Some(sample.observed_at_ms);
-            state.open_drive = None;
-            state.open_charge = None;
-            state.phase = phase_from_vehicle_state(&sample.vehicle_state);
-            return Ok(LifecycleStep {
-                state,
-                delta: LifecycleDelta::default(),
-                quarantined: true,
-            });
-        }
-    };
+    // A malformed provider sample must not advance the durable cursor or
+    // discard an open drive/charge prefix. The enclosing database transaction
+    // rolls back and a later valid observation can continue the same session.
+    let mut parsed = parse_sample(sample)?;
 
     let drive_fresh = state
         .imported_drive_watermark_ms
@@ -975,7 +1104,7 @@ pub fn apply_sample(
     // Charge and drive transitions are independent enough that either can
     // close while the other opens on successive samples, but one sample never
     // starts both simultaneously in a coherent Tesla response.
-    if let Some(closed) = maybe_close_drive(&mut state, car_id, &parsed)? {
+    if let Some(closed) = maybe_close_drive(&mut state, car_id, &parsed, offline_drive_timeout)? {
         delta.positions.extend(closed.positions);
         delta.drives.push(closed.drive);
     }
@@ -1192,12 +1321,16 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
         .as_object()
         .ok_or(LifecycleError::InvalidPayload)?;
     let vehicle_data = match root.get("record_type").and_then(Value::as_str) {
-        Some("owner_api_vehicle_data_v1") => Some(
+        Some("owner_api_vehicle_data_v1" | "fleet_api_vehicle_data_v1") => Some(
             root.get("vehicle_data")
+                .or_else(|| {
+                    root.get("provider_raw_json")
+                        .and_then(|raw| raw.get("response"))
+                })
                 .and_then(Value::as_object)
                 .ok_or(LifecycleError::InvalidPayload)?,
         ),
-        Some("owner_api_discovery_v1") => None,
+        Some("owner_api_discovery_v1" | "fleet_api_discovery_v1") => None,
         Some("tesla_stream_update_v1") => Some(
             root.get("fields")
                 .and_then(Value::as_object)
@@ -1435,11 +1568,13 @@ fn maybe_close_drive(
     state: &mut OpenSessionState,
     car_id: i64,
     sample: &ParsedSample,
+    offline_drive_timeout: Duration,
 ) -> Result<Option<ClosedDrive>, LifecycleError> {
     let Some(open) = state.open_drive.as_ref() else {
         return Ok(None);
     };
-    const OFFLINE_DRIVE_TIMEOUT_MS: i64 = 15 * 60 * 1_000;
+    let offline_drive_timeout_ms =
+        i64::try_from(offline_drive_timeout.as_millis()).unwrap_or(i64::MAX);
     let last_position_at = open
         .last_position_date_ms
         .or_else(|| open.positions.last().map(|position| position.date_ms))
@@ -1448,7 +1583,7 @@ fn maybe_close_drive(
         .position_count
         .max(u32::try_from(open.positions.len()).unwrap_or(u32::MAX));
     let offline_timed_out = sample.phase == VehiclePhase::Offline
-        && sample.drive_timestamp_ms.saturating_sub(last_position_at) >= OFFLINE_DRIVE_TIMEOUT_MS;
+        && sample.drive_timestamp_ms.saturating_sub(last_position_at) >= offline_drive_timeout_ms;
     let should_close = matches!(sample.phase, VehiclePhase::Asleep | VehiclePhase::Updating)
         || offline_timed_out
         || (matches!(sample.phase, VehiclePhase::Online | VehiclePhase::Charging)
@@ -2498,6 +2633,8 @@ fn mph_to_kmh(mph: f64) -> i64 {
 pub enum LifecycleError {
     #[error("lifecycle car id must be positive")]
     InvalidCarId,
+    #[error("offline drive timeout must be positive")]
+    InvalidOfflineDriveTimeout,
     #[error("lifecycle observation payload is not a valid owner_api_vehicle_data_v1 object")]
     InvalidPayload,
     #[error("lifecycle coordinates are outside the WGS84 domain")]
@@ -2686,6 +2823,230 @@ mod tests {
                 "source_vehicle_state": state,
             }),
         }
+    }
+
+    fn imported_position_fixture(
+        id: i64,
+        drive_id: i64,
+        at_ms: i64,
+        latitude: f64,
+        odometer: f64,
+        battery_level: i64,
+        outside_temp: f64,
+        inside_temp: f64,
+    ) -> TeslaMatePosition {
+        serde_json::from_value(json!({
+            "id": id,
+            "car_id": 1,
+            "drive_id": drive_id,
+            "date_ms": at_ms,
+            "latitude": latitude,
+            "longitude": 19.0,
+            "elevation": 100 + id,
+            "speed": 30,
+            "power": id as f64,
+            "odometer": odometer,
+            "ideal_battery_range_km": 300.0 - id as f64,
+            "est_battery_range_km": null,
+            "rated_battery_range_km": 280.0 - id as f64,
+            "battery_level": battery_level,
+            "usable_battery_level": battery_level,
+            "fan_status": null,
+            "driver_temp_setting": null,
+            "passenger_temp_setting": null,
+            "is_climate_on": false,
+            "is_rear_defroster_on": false,
+            "is_front_defroster_on": false,
+            "outside_temp": outside_temp,
+            "inside_temp": inside_temp,
+            "battery_heater": false,
+            "battery_heater_on": false,
+            "battery_heater_no_power": false,
+            "tpms_pressure_fl": null,
+            "tpms_pressure_fr": null,
+            "tpms_pressure_rl": null,
+            "tpms_pressure_rr": null
+        }))
+        .expect("imported position fixture")
+    }
+
+    fn imported_charge_fixture(
+        id: i64,
+        process_id: i64,
+        at_ms: i64,
+        energy_added: f64,
+        battery_level: i64,
+        outside_temp: f64,
+    ) -> TeslaMateCharge {
+        serde_json::from_value(json!({
+            "id": id,
+            "charging_process_id": process_id,
+            "date_ms": at_ms,
+            "battery_heater": false,
+            "battery_heater_on": false,
+            "battery_heater_no_power": false,
+            "battery_level": battery_level,
+            "usable_battery_level": battery_level,
+            "charge_energy_added_kwh": energy_added,
+            "charger_actual_current": 16.0,
+            "charger_phases": 3,
+            "charger_pilot_current": 16.0,
+            "charger_power_kw": 11.0,
+            "charger_voltage": 230.0,
+            "charge_cable": "IEC",
+            "fast_charger_present": false,
+            "fast_charger_brand": null,
+            "fast_charger_type": null,
+            "ideal_range_km": 150.0 + id as f64,
+            "rated_range_km": 140.0 + id as f64,
+            "not_enough_power_to_heat": false,
+            "outside_temp_c": outside_temp
+        }))
+        .expect("imported charge fixture")
+    }
+
+    #[test]
+    fn imported_active_drive_survives_restart_and_immediate_terminal_sample() {
+        let start = 1_800_100_000_000_i64;
+        let drive: TeslaMateDrive = serde_json::from_value(json!({
+            "id": 70,
+            "car_id": 1,
+            "start_date_ms": start,
+            "end_date_ms": null,
+            "start_position_id": 700,
+            "end_position_id": 701,
+            "start_address_id": null,
+            "end_address_id": null,
+            "start_geofence_id": null,
+            "end_geofence_id": null,
+            "outside_temp_avg": 18.0,
+            "inside_temp_avg": 20.0,
+            "speed_max": 50,
+            "power_max": 12.0,
+            "power_min": -5.0,
+            "start_ideal_range_km": 300.0,
+            "end_ideal_range_km": 298.0,
+            "start_rated_range_km": 280.0,
+            "end_rated_range_km": 278.0,
+            "start_km": 100.0,
+            "end_km": 100.8,
+            "distance_km": null,
+            "duration_min": null,
+            "ascent": 7,
+            "descent": 2
+        }))
+        .expect("imported drive");
+        let mut session = TeslaMateOpenSession {
+            car_id: 1,
+            drive: Some(drive),
+            drive_positions: vec![
+                imported_position_fixture(700, 70, start, 47.5, 100.0, 80, 17.0, 19.0),
+                imported_position_fixture(701, 70, start + 60_000, 47.51, 100.8, 78, 19.0, 21.0),
+            ],
+            ..Default::default()
+        };
+        session.watermarks.positions.max_timestamp_ms = Some(start + 60_000);
+        let seeded = seed_imported_open_session_state(uuid::Uuid::nil(), &session, None)
+            .expect("seed imported drive");
+        assert_eq!(seeded.open_drive.as_ref().unwrap().position_count, 2);
+
+        let restored = OpenSessionState::decode(&seeded.encode().expect("encode seeded drive"))
+            .expect("restore seeded drive");
+        let terminal = sample(
+            1,
+            start + 120_000,
+            json!({
+                "drive_state": {
+                    "shift_state": "P",
+                    "speed": 0,
+                    "latitude": 47.52,
+                    "longitude": 19.0,
+                    "timestamp": start + 120_000
+                },
+                "vehicle_state": {"odometer": 101.0 / 1.609_344},
+                "charge_state": {"battery_level": 77, "battery_range": 277.0},
+                "climate_state": {"inside_temp": 22.0, "outside_temp": 20.0}
+            }),
+        );
+        let direct = apply_sample(seeded, 1, &terminal).expect("close seeded drive");
+        let restarted = apply_sample(restored, 1, &terminal).expect("close restored drive");
+        assert_eq!(restarted.delta.drives, direct.delta.drives);
+        let closed = &restarted.delta.drives[0];
+        assert_eq!(closed.distance_km, Some(1.0));
+        assert_eq!(closed.start_latitude, Some(47.5));
+        assert_eq!(closed.end_latitude, Some(47.52));
+        assert_eq!(closed.outside_temp_avg, Some(18.0));
+        assert!((closed.inside_temp_avg.unwrap() - 20.666_666_666_666_668).abs() < 1e-9);
+        assert_eq!(closed.ascent, Some(7));
+        assert_eq!(closed.descent, Some(2));
+    }
+
+    #[test]
+    fn imported_active_charge_survives_restart_and_immediate_terminal_sample() {
+        let start = 1_800_200_000_000_i64;
+        let process: TeslaMateChargingProcess = serde_json::from_value(json!({
+            "id": 80,
+            "car_id": 1,
+            "position_id": null,
+            "address_id": null,
+            "geofence_id": null,
+            "start_date_ms": start,
+            "end_date_ms": null,
+            "charge_energy_added": 3.0,
+            "charge_energy_used_kwh": 0.9166666666666666,
+            "start_ideal_range_km": 151.0,
+            "end_ideal_range_km": 152.0,
+            "start_battery_level": 40,
+            "end_battery_level": 50,
+            "duration_min": null,
+            "outside_temp_avg": 11.0,
+            "start_rated_range_km": 141.0,
+            "end_rated_range_km": 142.0,
+            "cost": null
+        }))
+        .expect("imported charging process");
+        let mut session = TeslaMateOpenSession {
+            car_id: 1,
+            charge: Some(process),
+            charge_samples: vec![
+                imported_charge_fixture(1, 80, start, 1.0, 40, 10.0),
+                imported_charge_fixture(2, 80, start + 300_000, 4.0, 50, 12.0),
+            ],
+            ..Default::default()
+        };
+        session.watermarks.charges.max_timestamp_ms = Some(start + 300_000);
+        let seeded = seed_imported_open_session_state(uuid::Uuid::nil(), &session, None)
+            .expect("seed imported charge");
+        assert_eq!(seeded.open_charge.as_ref().unwrap().sample_count, 2);
+
+        let restored = OpenSessionState::decode(&seeded.encode().expect("encode seeded charge"))
+            .expect("restore seeded charge");
+        let terminal = sample(
+            1,
+            start + 600_000,
+            json!({
+                "drive_state": {"shift_state": "P", "speed": 0},
+                "charge_state": {
+                    "charging_state": "Complete",
+                    "timestamp": start + 600_000,
+                    "battery_level": 80,
+                    "charge_energy_added": 10.0,
+                    "charger_power": 0.0,
+                    "battery_range": 180.0,
+                    "ideal_battery_range": 190.0
+                }
+            }),
+        );
+        let direct = apply_sample(seeded, 1, &terminal).expect("close seeded charge");
+        let restarted = apply_sample(restored, 1, &terminal).expect("close restored charge");
+        assert_eq!(restarted.delta.charges, direct.delta.charges);
+        let closed = &restarted.delta.charges[0];
+        assert_eq!(closed.charge_energy_added, Some(9.0));
+        assert_eq!(closed.charge_energy_used_kwh, Some(0.9166666666666666));
+        assert_eq!(closed.start_battery_level, Some(40));
+        assert_eq!(closed.end_battery_level, Some(80));
+        assert_eq!(closed.outside_temp_avg, Some(11.0));
+        assert_eq!(closed.duration_min, Some(10));
     }
 
     #[test]
@@ -2980,6 +3341,55 @@ mod tests {
         assert!(timed_out.state.open_drive.is_none());
         assert_eq!(timed_out.delta.drives.len(), 1);
         assert_eq!(timed_out.delta.positions.len(), 2);
+    }
+
+    #[test]
+    fn offline_discovery_uses_the_configured_drive_timeout() {
+        let start = 1_800_000_085_000_i64;
+        let active = apply_samples(
+            OpenSessionState::new(),
+            1,
+            &[
+                sample(
+                    1,
+                    start,
+                    json!({
+                        "drive_state":{"shift_state":"D","speed":20,"latitude":47.5,"longitude":19.0,"timestamp":start},
+                        "vehicle_state":{"odometer":1000.0}
+                    }),
+                ),
+                sample(
+                    2,
+                    start + 1_000,
+                    json!({
+                        "drive_state":{"shift_state":"D","speed":20,"latitude":47.51,"longitude":19.01,"timestamp":start + 1_000},
+                        "vehicle_state":{"odometer":1000.1}
+                    }),
+                ),
+            ],
+        )
+        .expect("active drive")
+        .state;
+
+        let short = apply_sample_with_offline_drive_timeout(
+            active.clone(),
+            1,
+            &discovery(3, start + 31_000, "offline"),
+            Duration::from_secs(30),
+        )
+        .expect("short timeout");
+        assert!(short.state.open_drive.is_none());
+        assert_eq!(short.delta.drives.len(), 1);
+
+        let long = apply_sample_with_offline_drive_timeout(
+            active,
+            1,
+            &discovery(3, start + 16 * 60 * 1_000, "offline"),
+            Duration::from_secs(60 * 60),
+        )
+        .expect("long timeout");
+        assert!(long.state.open_drive.is_some());
+        assert!(long.delta.drives.is_empty());
     }
 
     #[test]
@@ -3799,7 +4209,7 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_payload_quarantines_open_session_without_losing_prior_history() {
+    fn corrupt_payload_is_rejected_without_advancing_or_discarding_open_session() {
         let start = 1_800_000_300_000_i64;
         let good = sample(
             1,
@@ -3814,15 +4224,17 @@ mod tests {
         };
         let mid = apply_sample(OpenSessionState::new(), 1, &good).expect("open drive");
         assert!(mid.state.open_drive.is_some());
-        let step = apply_sample(mid.state, 1, &bad).expect("quarantine");
-        assert!(step.quarantined);
-        assert!(step.state.open_drive.is_none());
-        assert!(step.delta.drives.is_empty());
-        assert_eq!(step.state.last_observation_id, 2);
+        let preserved = mid.state.clone();
+        assert!(matches!(
+            apply_sample(mid.state, 1, &bad),
+            Err(LifecycleError::InvalidPayload)
+        ));
+        assert!(preserved.open_drive.is_some());
+        assert_eq!(preserved.last_observation_id, 1);
     }
 
     #[test]
-    fn regressed_close_time_does_not_materialize_an_invalid_drive() {
+    fn regressed_close_time_does_not_regress_or_close_the_active_drive() {
         let start = 1_800_000_325_000_i64;
         let open = sample(
             1,
@@ -3838,8 +4250,10 @@ mod tests {
             .expect("open drive")
             .state;
 
-        let step = apply_sample(state, 1, &regressed_end).expect("discard invalid drive");
-        assert!(step.state.open_drive.is_none());
+        let step = apply_sample(state, 1, &regressed_end).expect("ignore stale close");
+        assert!(step.state.open_drive.is_some());
+        assert_eq!(step.state.last_observation_id, 2);
+        assert_eq!(step.state.last_observed_at_ms, Some(start));
         assert!(step.delta.drives.is_empty());
         assert!(step.delta.positions.is_empty());
     }

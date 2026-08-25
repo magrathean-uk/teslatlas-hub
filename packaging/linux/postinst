@@ -3,17 +3,112 @@ set -eu
 
 service=teslatlas-hub.service
 state_file=${TESLATLAS_HUB_MAINTAINER_STATE_FILE:-/run/teslatlas-hub-maintainer.state}
+backup_dir=${TESLATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/teslatlas-hub-package-upgrade}
+health_attempts=${TESLATLAS_HUB_HEALTH_ATTEMPTS:-10}
+health_delay=${TESLATLAS_HUB_HEALTH_DELAY_SECONDS:-1}
+health_timeout=${TESLATLAS_HUB_HEALTH_TIMEOUT_SECONDS:-5}
+preflight_timeout=${TESLATLAS_HUB_PREFLIGHT_TIMEOUT_SECONDS:-120}
+bootstrap_timeout=${TESLATLAS_HUB_BOOTSTRAP_TIMEOUT_SECONDS:-300}
+hub_binary=${TESLATLAS_HUB_BINARY:-/usr/bin/teslatlas-hub}
+unit_file=${TESLATLAS_HUB_UNIT_FILE:-/lib/systemd/system/teslatlas-hub.service}
+config_file=${TESLATLAS_HUB_CONFIG:-/etc/teslatlas-hub/config.toml}
+runuser_binary=${TESLATLAS_HUB_RUNUSER:-/usr/sbin/runuser}
+timeout_binary=${TESLATLAS_HUB_TIMEOUT:-/usr/bin/timeout}
+forward_only=0
+
+hub_is_ready() {
+    status=$(
+        "$timeout_binary" "$health_timeout" "$runuser_binary" -u teslatlas -- \
+            "$hub_binary" --config "$config_file" status 2>/dev/null
+    ) || return 1
+    printf '%s' "$status" | grep -Fq '"ready":true'
+}
+
+hub_preflight() {
+    "$timeout_binary" "$preflight_timeout" "$runuser_binary" -u teslatlas -- \
+        "$hub_binary" --config "$config_file" preflight >/dev/null 2>&1
+}
+
+hub_bootstrap() {
+    "$timeout_binary" "$bootstrap_timeout" "$runuser_binary" -u teslatlas -- \
+        "$hub_binary" --config "$config_file" bootstrap >/dev/null 2>&1
+}
+
+ensure_offline_defaults() {
+    [ -f "$config_file" ] && [ ! -L "$config_file" ] || return 0
+    offline_tmp="${config_file}.teslatlas.$$"
+    awk '
+        function flush_default() {
+            if (current != "" && !has_enabled) {
+                print "enabled = false"
+            }
+        }
+        {
+            header = $0
+            sub(/[[:space:]]*#.*/, "", header)
+            sub(/^[[:space:]]*/, "", header)
+            sub(/[[:space:]]*$/, "", header)
+            if (header ~ /^\[\[?[^]]+\]\]?$/) {
+                flush_default()
+                current = ""
+                has_enabled = 0
+                if (header == "[geocoder]") {
+                    current = "geocoder"
+                    found_geocoder = 1
+                } else if (header == "[terrain]") {
+                    current = "terrain"
+                    found_terrain = 1
+                }
+            }
+            if (current != "" && $0 ~ /^[[:space:]]*enabled[[:space:]]*=/) {
+                has_enabled = 1
+            }
+            print
+        }
+        END {
+            flush_default()
+            if (!found_geocoder) {
+                print ""
+                print "[geocoder]"
+                print "enabled = false"
+            }
+            if (!found_terrain) {
+                print ""
+                print "[terrain]"
+                print "enabled = false"
+            }
+        }
+    ' "$config_file" > "$offline_tmp"
+    mv -f "$offline_tmp" "$config_file"
+}
+
+remove_upgrade_backup() {
+    [ ! -e "$backup_dir" ] && [ ! -L "$backup_dir" ] && return 0
+    [ -d "$backup_dir" ] && [ ! -L "$backup_dir" ] || return 1
+    find "$backup_dir" -depth -delete
+}
+
+restore_upgrade_payload() {
+    [ -f "$backup_dir/teslatlas-hub" ] && [ ! -L "$backup_dir/teslatlas-hub" ] || return 1
+    [ -f "$backup_dir/teslatlas-hub.service" ] \
+        && [ ! -L "$backup_dir/teslatlas-hub.service" ] || return 1
+    install -o root -g root -m 0755 "$backup_dir/teslatlas-hub" "$hub_binary"
+    install -o root -g root -m 0644 "$backup_dir/teslatlas-hub.service" "$unit_file"
+}
 
 restore_service_state() {
-    [ -d /run/systemd/system ] || return 0
+    if [ ! -d /run/systemd/system ]; then
+        rm -f "$state_file"
+        return 0
+    fi
     restored=1
     systemctl daemon-reload || restored=0
 
     [ -f "$state_file" ] || return 0
-    IFS=' ' read -r was_active was_enabled < "$state_file" || return 0
+    IFS=' ' read -r was_active was_enabled < "$state_file" || return 1
     case "$was_active:$was_enabled" in
         0:0|0:1|1:0|1:1) ;;
-        *) return 0 ;;
+        *) return 1 ;;
     esac
 
     if [ "$was_enabled" = 1 ]; then
@@ -27,12 +122,86 @@ restore_service_state() {
         systemctl stop "$service" || restored=0
     fi
     [ "$restored" = 1 ] && rm -f "$state_file"
-    return 0
+    [ "$restored" = 1 ]
+}
+
+rollback_upgrade() {
+    reason=$1
+    if [ -d /run/systemd/system ]; then
+        systemctl stop "$service" || true
+    fi
+    if restore_upgrade_payload && restore_service_state; then
+        remove_upgrade_backup || true
+        echo "$reason; restored the installed Teslatlas Hub" >&2
+    else
+        echo "$reason; automatic rollback failed, retained $backup_dir" >&2
+    fi
+    exit 1
+}
+
+retain_forward_only_stopped() {
+    retained=1
+    if [ -d /run/systemd/system ]; then
+        systemctl stop "$service" || retained=0
+        systemctl daemon-reload || retained=0
+        if [ -f "$state_file" ]; then
+            IFS=' ' read -r _ was_enabled < "$state_file" || retained=0
+            case "${was_enabled:-}" in
+                1) systemctl enable "$service" || retained=0 ;;
+                0) systemctl disable "$service" || retained=0 ;;
+                *) retained=0 ;;
+            esac
+        fi
+    fi
+    if [ "$retained" = 1 ]; then
+        rm -f "$state_file"
+        remove_upgrade_backup || retained=0
+    fi
+    [ "$retained" = 1 ]
+}
+
+fail_forward_only() {
+    reason=$1
+    if retain_forward_only_stopped; then
+        echo "TESLATLAS_FORWARD_ONLY_UPGRADE: $reason; new Hub retained stopped" >&2
+    else
+        echo "TESLATLAS_FORWARD_ONLY_UPGRADE: $reason; cleanup incomplete at $backup_dir" >&2
+    fi
+    exit 1
+}
+
+begin_forward_only() {
+    forward_only=1
+    if [ -d "$backup_dir" ] && [ ! -L "$backup_dir" ]; then
+        install -o root -g root -m 0600 /dev/null "$backup_dir/forward-only"
+    fi
+}
+
+fail_upgrade() {
+    reason=$1
+    if [ "$forward_only" = 1 ] \
+        || { [ -f "$backup_dir/forward-only" ] && [ ! -L "$backup_dir/forward-only" ]; }; then
+        fail_forward_only "$reason"
+    fi
+    if [ -d "$backup_dir" ] && [ ! -L "$backup_dir" ]; then
+        rollback_upgrade "$reason"
+    fi
+    echo "$reason; service remains stopped" >&2
+    exit 1
 }
 
 case "${1:-}" in
     abort-remove|abort-deconfigure|abort-upgrade)
-        restore_service_state
+        if [ "${1:-}" = abort-upgrade ] && [ -d "$backup_dir" ]; then
+            if [ -f "$backup_dir/forward-only" ] && [ ! -L "$backup_dir/forward-only" ]; then
+                retain_forward_only_stopped || exit 1
+                exit 0
+            else
+                restore_upgrade_payload || exit 1
+                remove_upgrade_backup || exit 1
+            fi
+        fi
+        restore_service_state || exit 1
         exit 0
         ;;
 esac
@@ -43,18 +212,60 @@ fi
 
 install -d -o teslatlas -g teslatlas -m 0700 /var/lib/teslatlas-hub
 install -d -o root -g teslatlas -m 0750 /etc/teslatlas-hub
-if [ -f /etc/teslatlas-hub/config.toml ]; then
-    chown root:teslatlas /etc/teslatlas-hub/config.toml
-    chmod 0640 /etc/teslatlas-hub/config.toml
+if [ -e "$config_file" ] || [ -L "$config_file" ]; then
+    [ -f "$config_file" ] && [ ! -L "$config_file" ] || {
+        echo "Teslatlas Hub configuration is not a regular file" >&2
+        exit 1
+    }
+    ensure_offline_defaults
+    chown root:teslatlas "$config_file"
+    chmod 0640 "$config_file"
+fi
+
+if [ "${1:-}" = configure ] && [ -n "${2:-}" ] && ! hub_preflight; then
+    begin_forward_only
+    hub_bootstrap || fail_upgrade "schema migration failed"
+    hub_preflight || fail_upgrade "migrated Hub failed read-only admission"
 fi
 
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload
-    if [ "${1:-}" = configure ] && [ -n "${2:-}" ] && systemctl is-active --quiet "$service"; then
-        systemctl restart "$service"
+    if [ "${1:-}" = configure ] && [ -n "${2:-}" ]; then
+        was_active=0
+        if [ -f "$state_file" ]; then
+            IFS=' ' read -r was_active _ < "$state_file" || was_active=0
+        elif systemctl is-active --quiet "$service"; then
+            was_active=1
+        fi
+        case "$was_active" in 0|1) ;; *) was_active=0 ;; esac
+
+        if [ "$was_active" = 1 ]; then
+            systemctl start "$service" || fail_upgrade "New Hub failed to start"
+        else
+            systemctl stop "$service" || true
+        fi
+        if [ "$was_active" = 1 ]; then
+            attempt=1
+            ready=0
+            while [ "$attempt" -le "$health_attempts" ]; do
+                systemctl is-active --quiet "$service" || {
+                    fail_upgrade "New Hub failed to remain active"
+                }
+                if hub_is_ready; then
+                    ready=1
+                    break
+                fi
+                [ "$attempt" -eq "$health_attempts" ] || sleep "$health_delay"
+                attempt=$((attempt + 1))
+            done
+            if [ "$ready" != 1 ]; then
+                fail_upgrade "New Hub did not become ready"
+            fi
+        fi
     fi
 fi
 
 if [ "${1:-}" = configure ]; then
     rm -f "$state_file"
+    remove_upgrade_backup || true
 fi

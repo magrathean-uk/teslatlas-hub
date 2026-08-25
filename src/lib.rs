@@ -14,6 +14,8 @@ pub mod db;
 mod durability_fault;
 #[cfg(test)]
 pub mod fake_tesla;
+pub mod fleet_api;
+pub mod fleet_credentials;
 pub mod geocoder;
 pub mod gpx;
 pub mod http_range;
@@ -47,6 +49,7 @@ pub mod teslamate_reader;
 pub mod teslamate_schema;
 pub mod teslamate_stage;
 pub mod teslamate_token;
+pub mod teslamate_writeback;
 pub mod transport;
 pub mod updates_delivery;
 pub mod updates_logical;

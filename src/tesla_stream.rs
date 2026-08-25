@@ -27,9 +27,16 @@ use tokio_tungstenite::{
     },
 };
 use url::Url;
+use uuid::Uuid;
 
 use crate::{
     credentials::{LegacyAuthManager, LegacyAuthManagerError},
+    db::{
+        HubStore, OutboundRequestCompletion, OutboundRequestOperation, OutboundRequestOutcome,
+        OutboundRequestPrecondition, OutboundRequestReceiptId, OutboundRequestSafetyClass,
+        OutboundRequestStart, OutboundRequestTransport, StoreError, StreamSessionReceiptId,
+        StreamSessionTerminalOutcome,
+    },
     owner_api::{StreamVehicleId, VehicleId},
 };
 
@@ -174,6 +181,8 @@ pub enum StreamSupervisorError {
     CredentialAuthorityUnavailable,
     #[error("stream peer violated the bounded wire protocol")]
     ProtocolViolation,
+    #[error("stream audit failed")]
+    Audit(#[from] StoreError),
 }
 
 /// Live, stream-owned prerequisite for a potentially waking `vehicle_data`
@@ -207,11 +216,7 @@ impl StreamPowerGate {
     }
 }
 
-/// Durable, run-scoped capability for outbound streaming operations. It owns a
-/// clone of the Hub store so a spawned supervisor never borrows its collector.
-/// Synchronous cancellation fence for one stream supervisor lifetime. Tokio
-/// task abort drops this guard, so a started session cannot remain open merely
-/// because async teardown did not run.
+/// Bounded reconnect delay for one stream supervisor.
 #[derive(Clone)]
 struct Backoff {
     initial: Duration,
@@ -248,6 +253,7 @@ pub(crate) struct TeslaStreamSupervisor {
     events: mpsc::Sender<StreamEvent>,
     policy: SupervisorPolicy,
     power_gate: Option<Arc<StreamPowerGate>>,
+    audit_store: Option<HubStore>,
 }
 
 #[derive(Clone)]
@@ -256,9 +262,120 @@ enum StreamCredential {
 }
 
 enum StreamRunTermination {
-    Orderly,
+    Orderly {
+        unsubscribe_receipt_id: Option<OutboundRequestReceiptId>,
+    },
     CancelledBeforeSubscription,
     TransportEnded,
+}
+
+/// Durable receipts for one supervisor lifetime. Explicit returns call
+/// `finish`; task abort drops this value without rewriting the started session,
+/// preserving evidence that teardown did not complete.
+struct StreamSessionAudit {
+    store: Option<HubStore>,
+    session_id: Option<StreamSessionReceiptId>,
+    correlation_id: Uuid,
+    vehicle_tesla_id: i64,
+}
+
+impl StreamSessionAudit {
+    fn start(
+        store: Option<HubStore>,
+        vehicle_id: VehicleId,
+    ) -> Result<Self, StreamSupervisorError> {
+        let vehicle_tesla_id = i64::try_from(vehicle_id.get())
+            .map_err(|_| StoreError::InvalidOutboundRequestVehicleId)?;
+        let correlation_id = Uuid::new_v4();
+        let session_id = store
+            .as_ref()
+            .map(|store| store.begin_stream_session(correlation_id, vehicle_tesla_id))
+            .transpose()?;
+        Ok(Self {
+            store,
+            session_id,
+            correlation_id,
+            vehicle_tesla_id,
+        })
+    }
+
+    fn begin_attempt(
+        &self,
+        operation: OutboundRequestOperation,
+    ) -> Result<Option<OutboundRequestReceiptId>, StreamSupervisorError> {
+        let Some(store) = self.store.as_ref() else {
+            return Ok(None);
+        };
+        store
+            .begin_outbound_request(&OutboundRequestStart {
+                correlation_id: self.correlation_id,
+                vehicle_tesla_id: Some(self.vehicle_tesla_id),
+                transport: OutboundRequestTransport::Stream,
+                operation,
+                safety_class: OutboundRequestSafetyClass::NonWakeEndpoint,
+                precondition: OutboundRequestPrecondition::NotRequired,
+            })
+            .map(Some)
+            .map_err(StreamSupervisorError::Audit)
+    }
+
+    fn complete_attempt(
+        &self,
+        receipt_id: Option<OutboundRequestReceiptId>,
+        outcome: OutboundRequestOutcome,
+    ) -> Result<(), StreamSupervisorError> {
+        let (Some(store), Some(receipt_id)) = (self.store.as_ref(), receipt_id) else {
+            return Ok(());
+        };
+        store
+            .complete_outbound_request(
+                receipt_id,
+                &OutboundRequestCompletion {
+                    outcome,
+                    http_status: None,
+                    retry_after_seconds: None,
+                },
+            )
+            .map_err(StreamSupervisorError::Audit)
+    }
+
+    fn finish(
+        &mut self,
+        termination: Result<&StreamRunTermination, ()>,
+    ) -> Result<(), StreamSupervisorError> {
+        let (Some(store), Some(session_id)) = (self.store.as_ref(), self.session_id) else {
+            return Ok(());
+        };
+        let result = match termination {
+            Ok(StreamRunTermination::Orderly {
+                unsubscribe_receipt_id: Some(receipt_id),
+            }) => store
+                .complete_stream_session_orderly(session_id, *receipt_id)
+                .map_err(StreamSupervisorError::Audit),
+            Ok(StreamRunTermination::Orderly {
+                unsubscribe_receipt_id: None,
+            }) => Err(StreamSupervisorError::OrderlyShutdownUnavailable),
+            Ok(StreamRunTermination::CancelledBeforeSubscription) => store
+                .complete_stream_session_terminal(
+                    session_id,
+                    StreamSessionTerminalOutcome::CancelledBeforeSubscription,
+                )
+                .map_err(StreamSupervisorError::Audit),
+            Ok(StreamRunTermination::TransportEnded) => store
+                .complete_stream_session_terminal(
+                    session_id,
+                    StreamSessionTerminalOutcome::TransportEnded,
+                )
+                .map_err(StreamSupervisorError::Audit),
+            Err(()) => store
+                .complete_stream_session_terminal(session_id, StreamSessionTerminalOutcome::Failed)
+                .map_err(StreamSupervisorError::Audit),
+        };
+        if result.is_ok() {
+            self.session_id = None;
+        }
+        result
+    }
 }
 
 enum EventDelivery {
@@ -276,6 +393,7 @@ impl TeslaStreamSupervisor {
         endpoint: String,
         client: Client,
         events: mpsc::Sender<StreamEvent>,
+        store: HubStore,
     ) -> Result<Self, StreamSupervisorError> {
         Self::new_legacy_auth_with_endpoint_policy(
             vehicle_id,
@@ -286,6 +404,7 @@ impl TeslaStreamSupervisor {
             client,
             events,
             false,
+            Some(store),
         )
     }
 
@@ -308,6 +427,30 @@ impl TeslaStreamSupervisor {
             client,
             events,
             true,
+            None,
+        )
+    }
+
+    #[cfg(test)]
+    fn new_legacy_auth_for_test_production_policy(
+        vehicle_id: VehicleId,
+        stream_vehicle_id: StreamVehicleId,
+        manager: Arc<Mutex<LegacyAuthManager>>,
+        region: StreamRegion,
+        endpoint: String,
+        client: Client,
+        events: mpsc::Sender<StreamEvent>,
+    ) -> Result<Self, StreamSupervisorError> {
+        Self::new_legacy_auth_with_endpoint_policy(
+            vehicle_id,
+            stream_vehicle_id,
+            manager,
+            region,
+            endpoint,
+            client,
+            events,
+            false,
+            None,
         )
     }
 
@@ -321,6 +464,7 @@ impl TeslaStreamSupervisor {
         client: Client,
         events: mpsc::Sender<StreamEvent>,
         allow_loopback_plaintext: bool,
+        audit_store: Option<HubStore>,
     ) -> Result<Self, StreamSupervisorError> {
         let endpoint = endpoint_for_region(region, endpoint, allow_loopback_plaintext)?;
         let tag = stream_vehicle_id.to_string();
@@ -336,6 +480,7 @@ impl TeslaStreamSupervisor {
             events,
             policy: DEFAULT_POLICY,
             power_gate: None,
+            audit_store,
         })
     }
     #[cfg(test)]
@@ -356,20 +501,41 @@ impl TeslaStreamSupervisor {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_audit_store(mut self, store: HubStore) -> Self {
+        self.audit_store = Some(store);
+        self
+    }
+
     pub(crate) async fn run(
         self,
         mut shutdown: oneshot::Receiver<()>,
     ) -> Result<(), StreamSupervisorError> {
-        let result = self.run_until_termination(&mut shutdown).await;
+        let mut audit = match StreamSessionAudit::start(self.audit_store.clone(), self.vehicle_id) {
+            Ok(audit) => audit,
+            Err(error) => {
+                if let Some(gate) = self.power_gate.as_ref() {
+                    gate.revoke();
+                }
+                return Err(error);
+            }
+        };
+        let result = self.run_until_termination(&mut shutdown, &audit).await;
+        let audit_result = audit.finish(match &result {
+            Ok(termination) => Ok(termination),
+            Err(_) => Err(()),
+        });
         if let Some(gate) = self.power_gate.as_ref() {
             gate.revoke();
         }
+        audit_result?;
         result.map(|_| ())
     }
 
     async fn run_until_termination(
         &self,
         shutdown: &mut oneshot::Receiver<()>,
+        audit: &StreamSessionAudit,
     ) -> Result<StreamRunTermination, StreamSupervisorError> {
         let mut remote_backoff =
             Backoff::new(self.policy.backoff_initial, self.policy.remote_backoff_cap);
@@ -380,11 +546,12 @@ impl TeslaStreamSupervisor {
             self.assert_sensitive_access().await?;
             let endpoint = self.endpoint.clone();
             let connect_receipt =
-                self.begin_stream_attempt(crate::db::OutboundRequestOperation::StreamConnect)?;
+                self.begin_stream_attempt(audit, OutboundRequestOperation::StreamConnect)?;
             if let Err(error) = self.assert_sensitive_access().await {
                 self.complete_stream_attempt(
+                    audit,
                     connect_receipt,
-                    crate::db::OutboundRequestOutcome::AuthenticationRejected,
+                    OutboundRequestOutcome::AuthenticationRejected,
                 )?;
                 return Err(error);
             }
@@ -396,15 +563,17 @@ impl TeslaStreamSupervisor {
             let (mut socket, _) = match connection {
                 Ok(Ok(value)) => {
                     self.complete_stream_attempt(
+                        audit,
                         connect_receipt,
-                        crate::db::OutboundRequestOutcome::Success,
+                        OutboundRequestOutcome::Success,
                     )?;
                     value
                 }
                 Ok(Err(_)) | Err(_) => {
                     self.complete_stream_attempt(
+                        audit,
                         connect_receipt,
-                        crate::db::OutboundRequestOutcome::TransportError,
+                        OutboundRequestOutcome::TransportError,
                     )?;
                     if self
                         .emit_event(StreamEvent::TransportUnavailable, shutdown)
@@ -448,19 +617,21 @@ impl TeslaStreamSupervisor {
             let subscribe = subscribe_frame(&self.tag, &access_token)
                 .map_err(StreamSupervisorError::InvalidEndpoint)?;
             let subscribe_receipt =
-                self.begin_stream_attempt(crate::db::OutboundRequestOperation::StreamSubscribe)?;
+                self.begin_stream_attempt(audit, OutboundRequestOperation::StreamSubscribe)?;
             if let Err(error) = self.assert_sensitive_access().await {
                 self.complete_stream_attempt(
+                    audit,
                     subscribe_receipt,
-                    crate::db::OutboundRequestOutcome::AuthenticationRejected,
+                    OutboundRequestOutcome::AuthenticationRejected,
                 )?;
                 let _ = socket.close(None).await;
                 return Err(error);
             }
             if socket.send(Message::Text(subscribe.into())).await.is_err() {
                 self.complete_stream_attempt(
+                    audit,
                     subscribe_receipt,
-                    crate::db::OutboundRequestOutcome::TransportError,
+                    OutboundRequestOutcome::TransportError,
                 )?;
                 if self
                     .emit_event(StreamEvent::TransportUnavailable, shutdown)
@@ -484,8 +655,9 @@ impl TeslaStreamSupervisor {
                     _ = &mut silence => {
                         if let Some(receipt) = subscribe_receipt.take() {
                             self.complete_stream_attempt(
+                                audit,
                                 receipt,
-                                crate::db::OutboundRequestOutcome::TransportError,
+                                OutboundRequestOutcome::TransportError,
                             )?;
                         }
                         if self.emit_event(StreamEvent::TransportUnavailable, shutdown).await?.is_shutdown() {
@@ -511,8 +683,9 @@ impl TeslaStreamSupervisor {
                                 // telemetry proves a healthy stream.
                                 if let Some(receipt) = subscribe_receipt.take() {
                                     self.complete_stream_attempt(
+                                        audit,
                                         receipt,
-                                        crate::db::OutboundRequestOutcome::Success,
+                                        OutboundRequestOutcome::Success,
                                     )?;
                                 }
                             }
@@ -520,15 +693,16 @@ impl TeslaStreamSupervisor {
                                 && matches!(event, StreamEvent::Healthy | StreamEvent::Telemetry(_));
                             let terminal = matches!(event, StreamEvent::AuthRejected | StreamEvent::ProtocolViolation);
                             let should_reconnect = matches!(event, StreamEvent::TransportUnavailable);
-                            if terminal
-                                && let Some(receipt) = subscribe_receipt.take() {
-                                    let outcome = if matches!(event, StreamEvent::AuthRejected) {
-                                        crate::db::OutboundRequestOutcome::AuthenticationRejected
-                                    } else {
-                                        crate::db::OutboundRequestOutcome::ProtocolError
-                                    };
-                                    self.complete_stream_attempt(receipt, outcome)?;
-                                }
+                            if let Some(receipt) = subscribe_receipt.take() {
+                                let outcome = if matches!(event, StreamEvent::AuthRejected) {
+                                    OutboundRequestOutcome::AuthenticationRejected
+                                } else if matches!(event, StreamEvent::ProtocolViolation) {
+                                    OutboundRequestOutcome::ProtocolError
+                                } else {
+                                    OutboundRequestOutcome::Success
+                                };
+                                self.complete_stream_attempt(audit, receipt, outcome)?;
+                            }
                             if self.emit_event(event, shutdown).await?.is_shutdown() {
                                 return Ok(disconnected_termination(ever_subscribed));
                             }
@@ -544,8 +718,9 @@ impl TeslaStreamSupervisor {
                         Some(Err(WebSocketError::Capacity(_))) => {
                             if let Some(receipt) = subscribe_receipt.take() {
                                 self.complete_stream_attempt(
+                                    audit,
                                     receipt,
-                                    crate::db::OutboundRequestOutcome::ProtocolError,
+                                    OutboundRequestOutcome::ProtocolError,
                                 )?;
                             }
                             // Tungstenite reports a received size violation
@@ -567,8 +742,9 @@ impl TeslaStreamSupervisor {
                         Some(Err(_)) | None => {
                             if let Some(receipt) = subscribe_receipt.take() {
                                 self.complete_stream_attempt(
+                                    audit,
                                     receipt,
-                                    crate::db::OutboundRequestOutcome::TransportError,
+                                    OutboundRequestOutcome::TransportError,
                                 )?;
                             }
                             if self.emit_event(StreamEvent::TransportUnavailable, shutdown).await?.is_shutdown() {
@@ -583,8 +759,9 @@ impl TeslaStreamSupervisor {
             if clean {
                 if let Some(receipt) = subscribe_receipt.take() {
                     self.complete_stream_attempt(
+                        audit,
                         receipt,
-                        crate::db::OutboundRequestOutcome::Cancelled,
+                        OutboundRequestOutcome::Cancelled,
                     )?;
                 }
                 if !subscribed {
@@ -596,12 +773,13 @@ impl TeslaStreamSupervisor {
                 // the refresh path a second time during orderly shutdown.
                 let unsubscribe = unsubscribe_frame(&self.tag)
                     .map_err(|_| StreamSupervisorError::OrderlyShutdownUnavailable)?;
-                let receipt = self
-                    .begin_stream_attempt(crate::db::OutboundRequestOperation::StreamUnsubscribe)?;
+                let receipt =
+                    self.begin_stream_attempt(audit, OutboundRequestOperation::StreamUnsubscribe)?;
                 if let Err(error) = self.assert_sensitive_access().await {
                     self.complete_stream_attempt(
+                        audit,
                         receipt,
-                        crate::db::OutboundRequestOutcome::AuthenticationRejected,
+                        OutboundRequestOutcome::AuthenticationRejected,
                     )?;
                     let _ = socket.close(None).await;
                     return Err(error);
@@ -612,14 +790,17 @@ impl TeslaStreamSupervisor {
                     .is_err()
                 {
                     self.complete_stream_attempt(
+                        audit,
                         receipt,
-                        crate::db::OutboundRequestOutcome::TransportError,
+                        OutboundRequestOutcome::TransportError,
                     )?;
                     return Err(StreamSupervisorError::OrderlyShutdownUnavailable);
                 }
-                self.complete_stream_attempt(receipt, crate::db::OutboundRequestOutcome::Success)?;
+                self.complete_stream_attempt(audit, receipt, OutboundRequestOutcome::Success)?;
                 let _ = socket.close(None).await;
-                return Ok(StreamRunTermination::Orderly);
+                return Ok(StreamRunTermination::Orderly {
+                    unsubscribe_receipt_id: receipt,
+                });
             }
             if wait_or_shutdown(remote_backoff.next(), shutdown).await {
                 return Ok(disconnected_termination(ever_subscribed));
@@ -645,19 +826,19 @@ impl TeslaStreamSupervisor {
 
     fn begin_stream_attempt(
         &self,
-        operation: crate::db::OutboundRequestOperation,
-    ) -> Result<Option<()>, StreamSupervisorError> {
-        let _ = (self.vehicle_id, operation);
-        Ok(Some(()))
+        audit: &StreamSessionAudit,
+        operation: OutboundRequestOperation,
+    ) -> Result<Option<OutboundRequestReceiptId>, StreamSupervisorError> {
+        audit.begin_attempt(operation)
     }
 
     fn complete_stream_attempt(
         &self,
-        receipt: Option<()>,
-        outcome: crate::db::OutboundRequestOutcome,
+        audit: &StreamSessionAudit,
+        receipt: Option<OutboundRequestReceiptId>,
+        outcome: OutboundRequestOutcome,
     ) -> Result<(), StreamSupervisorError> {
-        let _ = (receipt, outcome);
-        Ok(())
+        audit.complete_attempt(receipt, outcome)
     }
 
     async fn access_token(&self) -> Result<String, AccessTokenError> {
@@ -1056,7 +1237,7 @@ mod tests {
         .with_test_schedule(2_000_000_000, 1_900_000_000);
         let manager = LegacyAuthManager::for_test(auth, Arc::new(|_, _| Ok(())));
         let client = reqwest::Client::builder().https_only(true).build().unwrap();
-        TeslaStreamSupervisor::new_legacy_auth(
+        TeslaStreamSupervisor::new_legacy_auth_for_test_production_policy(
             VehicleId::from_test(9),
             StreamVehicleId::from_test(9),
             Arc::new(Mutex::new(manager)),
@@ -1279,6 +1460,8 @@ mod tests {
 
     #[tokio::test]
     async fn loopback_socket_closes_1009_after_an_oversized_single_frame() {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -1320,7 +1503,9 @@ mod tests {
             );
         });
         let (events, mut received) = mpsc::channel(8);
-        let supervisor = legacy_supervisor(9, 9, endpoint, events).unwrap();
+        let supervisor = legacy_supervisor(9, 9, endpoint, events)
+            .unwrap()
+            .with_audit_store(store.clone());
         let (_stop, shutdown) = oneshot::channel();
         let task = tokio::spawn(supervisor.run(shutdown));
         assert_eq!(
@@ -1349,6 +1534,16 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        let session_outcome: String = store
+            .open()
+            .expect("receipt catalogue")
+            .query_row(
+                "SELECT outcome FROM stream_session_receipts ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("failed stream session receipt");
+        assert_eq!(session_outcome, "failed");
     }
 
     #[tokio::test]
@@ -1460,6 +1655,8 @@ mod tests {
 
     #[tokio::test]
     async fn local_mock_receives_subscribe_and_unsubscribe() {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -1481,7 +1678,9 @@ mod tests {
             assert!(matches!(second,Message::Text(ref text) if text.contains("data:unsubscribe")));
         });
         let (events, mut received) = mpsc::channel(4);
-        let supervisor = legacy_supervisor(9, 42, endpoint, events).unwrap();
+        let supervisor = legacy_supervisor(9, 42, endpoint, events)
+            .unwrap()
+            .with_audit_store(store.clone());
         let (stop, shutdown) = oneshot::channel();
         let task = tokio::spawn(supervisor.run(shutdown));
         assert_eq!(
@@ -1497,6 +1696,91 @@ mod tests {
             .unwrap()
             .unwrap();
         server.await.unwrap();
+
+        let connection = store.open().expect("receipt catalogue");
+        let receipts: Vec<(String, String)> = connection
+            .prepare(
+                "SELECT operation, outcome
+                   FROM outbound_request_receipts
+                  ORDER BY id",
+            )
+            .expect("outbound receipt query")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("outbound receipt rows")
+            .collect::<Result<_, _>>()
+            .expect("outbound receipt collection");
+        assert_eq!(
+            receipts,
+            vec![
+                ("stream_connect".to_owned(), "success".to_owned()),
+                ("stream_subscribe".to_owned(), "success".to_owned()),
+                ("stream_unsubscribe".to_owned(), "success".to_owned()),
+            ]
+        );
+        let session: (String, Option<i64>) = connection
+            .query_row(
+                "SELECT outcome, unsubscribe_receipt_id
+                   FROM stream_session_receipts
+                  ORDER BY id DESC LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("stream session receipt");
+        assert_eq!(session.0, "orderly_shutdown");
+        assert_eq!(session.1, Some(3));
+    }
+
+    #[tokio::test]
+    async fn aborted_stream_run_leaves_started_session_evidence() {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let (events, _received) = mpsc::channel(4);
+        let supervisor = legacy_supervisor(9, 9, "ws://127.0.0.1:9/streaming/".to_owned(), events)
+            .unwrap()
+            .with_audit_store(store.clone())
+            .with_policy(SupervisorPolicy {
+                connect_timeout: Duration::from_millis(100),
+                silence_timeout: Duration::from_secs(1),
+                backoff_initial: Duration::from_millis(5),
+                remote_backoff_cap: Duration::from_millis(10),
+                connect_backoff_cap: Duration::from_millis(10),
+            });
+        let (_stop, shutdown) = oneshot::channel();
+        let task = tokio::spawn(supervisor.run(shutdown));
+        timeout(Duration::from_secs(1), async {
+            loop {
+                let started: i64 = store
+                    .open()
+                    .expect("receipt catalogue")
+                    .query_row(
+                        "SELECT COUNT(*) FROM stream_session_receipts WHERE outcome = 'started'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .expect("started session count");
+                if started == 1 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("stream session must be durable before abort");
+        task.abort();
+        assert!(task.await.expect_err("aborted stream task").is_cancelled());
+
+        let session: (String, Option<i64>) = store
+            .open()
+            .expect("receipt catalogue")
+            .query_row(
+                "SELECT outcome, unsubscribe_receipt_id
+                   FROM stream_session_receipts
+                  ORDER BY id DESC LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("stream session receipt");
+        assert_eq!(session, ("started".to_owned(), None));
     }
 
     #[tokio::test]

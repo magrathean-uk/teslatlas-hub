@@ -11,7 +11,7 @@ use rustix::{
     fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open},
     process::getuid,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
@@ -158,6 +158,8 @@ impl TlsListenerConfig {
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CollectorConfig {
+    #[serde(default)]
+    pub provider: CollectorProvider,
     #[serde(default = "default_owner_api_base_url")]
     pub owner_api_base_url: Option<String>,
     #[serde(default = "default_owner_api_timeout_seconds")]
@@ -190,6 +192,13 @@ pub struct CollectorConfig {
     /// Region for provider tokens; absent means derive from the API host.
     #[serde(default)]
     pub stream_region: Option<crate::tesla_stream::StreamRegion>,
+    /// Optional loopback Tesla vehicle-command proxy used by Fleet commands.
+    /// Fleet wake remains a direct Fleet API call and does not use this proxy.
+    #[serde(default)]
+    pub fleet_command_proxy_url: Option<String>,
+    /// Optional PEM trust root for the loopback Fleet command proxy.
+    #[serde(default)]
+    pub fleet_command_proxy_root_certificate_path: Option<PathBuf>,
     #[serde(default = "default_stream_health_timeout_seconds")]
     pub stream_health_timeout_seconds: u64,
     /// Enables explicit legacy owner-auth refresh calls. No secret is read
@@ -198,10 +207,19 @@ pub struct CollectorConfig {
     pub legacy_auth: LegacyAuthConfig,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectorProvider {
+    #[default]
+    Legacy,
+    Fleet,
+}
+
 impl fmt::Debug for CollectorConfig {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("CollectorConfig")
+            .field("provider", &self.provider)
             .field(
                 "owner_api_base_url",
                 &self.owner_api_base_url.as_ref().map(|_| "[redacted]"),
@@ -228,6 +246,17 @@ impl fmt::Debug for CollectorConfig {
                 &self.stream_endpoint_override.as_ref().map(|_| "[redacted]"),
             )
             .field("stream_region", &self.stream_region)
+            .field(
+                "fleet_command_proxy_url",
+                &self.fleet_command_proxy_url.as_ref().map(|_| "[loopback]"),
+            )
+            .field(
+                "fleet_command_proxy_root_certificate_path",
+                &self
+                    .fleet_command_proxy_root_certificate_path
+                    .as_ref()
+                    .map(|_| "[configured]"),
+            )
             .field(
                 "stream_health_timeout_seconds",
                 &self.stream_health_timeout_seconds,
@@ -292,6 +321,7 @@ const fn default_stream_health_timeout_seconds() -> u64 {
 impl Default for CollectorConfig {
     fn default() -> Self {
         Self {
+            provider: CollectorProvider::Legacy,
             owner_api_base_url: default_owner_api_base_url(),
             request_timeout_seconds: default_owner_api_timeout_seconds(),
             interval_seconds: default_collector_interval_seconds(),
@@ -306,6 +336,8 @@ impl Default for CollectorConfig {
             updating_poll_seconds: default_updating_poll_seconds(),
             stream_endpoint_override: None,
             stream_region: None,
+            fleet_command_proxy_url: None,
+            fleet_command_proxy_root_certificate_path: None,
             stream_health_timeout_seconds: default_stream_health_timeout_seconds(),
             legacy_auth: LegacyAuthConfig::default(),
         }
@@ -775,6 +807,18 @@ impl HubConfig {
             crate::tesla_stream::validate_endpoint_override(endpoint)
                 .map_err(|_| ConfigError::InvalidStreamEndpoint)?;
         }
+        if let Some(endpoint) = self.collector.fleet_command_proxy_url.as_deref() {
+            crate::fleet_api::FleetCommandProxyBase::parse(endpoint)
+                .map_err(|_| ConfigError::InvalidFleetCommandProxy)?;
+        }
+        if let Some(path) = self
+            .collector
+            .fleet_command_proxy_root_certificate_path
+            .as_deref()
+            && (!path.is_absolute() || self.collector.fleet_command_proxy_url.is_none())
+        {
+            return Err(ConfigError::InvalidFleetCommandProxy);
+        }
         let source_set = self.teslamate.source_url.is_some();
         let source_key_set = self.teslamate.source_key.is_some();
         if source_set != source_key_set {
@@ -867,6 +911,8 @@ pub enum ConfigError {
     StreamRegionRequired,
     #[error("stream endpoint override is invalid or unsafe")]
     InvalidStreamEndpoint,
+    #[error("Fleet command proxy configuration is invalid or unsafe")]
+    InvalidFleetCommandProxy,
     #[error("geocoder endpoint is invalid or unsafe")]
     InvalidGeocoderEndpoint,
     #[error("geocoder language is invalid")]

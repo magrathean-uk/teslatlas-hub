@@ -68,40 +68,92 @@ pub fn restart_installed(data_dir: &Path) -> io::Result<()> {
     restart_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
 }
 
-/// Refuse to replace a running LaunchAgent unless this data directory has one
-/// configured car and a usable legacy credential pair. This runs before any
-/// installer file or launchctl mutation.
+/// Refuse to replace a running LaunchAgent unless this data directory has a
+/// configured car and at least one usable provider credential pair.
 pub fn preflight_hub(data_dir: &Path) -> io::Result<()> {
+    let store = preflight_store(data_dir)?;
+    if provider_credentials_are_usable(&store, data_dir, crate::config::CollectorProvider::Legacy)
+        .is_ok()
+        || provider_credentials_are_usable(
+            &store,
+            data_dir,
+            crate::config::CollectorProvider::Fleet,
+        )
+        .is_ok()
+    {
+        return Ok(());
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        "usable Legacy or Fleet credentials are required before install",
+    ))
+}
+
+/// Validate the credentials selected by configuration without mutating them.
+pub fn preflight_hub_for_provider(
+    data_dir: &Path,
+    provider: crate::config::CollectorProvider,
+) -> io::Result<()> {
+    let store = preflight_store(data_dir)?;
+    provider_credentials_are_usable(&store, data_dir, provider)
+}
+
+fn preflight_store(data_dir: &Path) -> io::Result<crate::db::HubStore> {
     let store = crate::db::HubStore::open_read_only(data_dir).map_err(|error| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("Hub data is unavailable: {error}"),
         )
     })?;
-    store
-        .selected_tesla_eid()
+    if store
+        .configured_tesla_vehicles()
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "one configured vehicle is required before install",
-            )
-        })?;
-    let tokens = store
-        .load_teslamate_legacy_tokens()
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "legacy Owner API credentials are required before install",
-            )
-        })?;
-    crate::teslamate_credentials::load_key_for_tokens(data_dir, &tokens).map_err(|error| {
-        io::Error::new(
+        .is_empty()
+    {
+        return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("legacy Owner API credentials are unusable: {error}"),
-        )
-    })?;
+            "at least one configured vehicle is required before install",
+        ));
+    }
+    Ok(store)
+}
+
+fn provider_credentials_are_usable(
+    store: &crate::db::HubStore,
+    data_dir: &Path,
+    provider: crate::config::CollectorProvider,
+) -> io::Result<()> {
+    match provider {
+        crate::config::CollectorProvider::Legacy => {
+            let tokens = store
+                .load_teslamate_legacy_tokens()
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "legacy Owner API credentials are required before install",
+                    )
+                })?;
+            crate::teslamate_credentials::load_key_for_tokens(data_dir, &tokens).map_err(
+                |error| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("legacy Owner API credentials are unusable: {error}"),
+                    )
+                },
+            )?;
+        }
+        crate::config::CollectorProvider::Fleet => {
+            crate::fleet_credentials::validate_stored_fleet_credentials(store, data_dir).map_err(
+                |error| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Fleet credentials are unusable: {error}"),
+                    )
+                },
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -596,11 +648,14 @@ fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
 mod tests {
     use super::*;
     use crate::{
+        config::CollectorProvider,
         credentials::OwnerTokens,
         db::{HubStore, TeslaMateLegacyTokenStore},
+        fleet_api::FleetRegion,
+        fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
         hub_pack::ProjectionCarSettings,
         protocol::CursorKey,
-        teslamate_credentials::replace_key_and_tokens,
+        teslamate_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
         teslamate_import::{TeslaMateImportRequest, TeslaMateImportScope, publish_history},
         teslamate_projection::{TeslaMateCar, TeslaMateHistory},
         teslamate_token::encrypt_legacy_owner_tokens,
@@ -655,6 +710,32 @@ mod tests {
         let (access, refresh) = encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
         let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored tokens");
         replace_key_and_tokens(data_dir, &store, key, &stored).expect("credentials");
+    }
+
+    fn seed_fleet_ready_hub(data_dir: &Path) {
+        let store = seed_selected_car(data_dir);
+        load_or_create_cursor_key(data_dir).expect("cursor key");
+        let credentials = FleetSetupCredentials::new(
+            "fleet-access".to_owned(),
+            "fleet-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            FleetRegion::EuropeMiddleEastAndAfrica,
+            3_600,
+        )
+        .expect("Fleet credentials");
+        persist_fleet_setup_credentials(&store, data_dir, &credentials, SystemTime::now())
+            .expect("persist Fleet credentials");
+    }
+
+    #[test]
+    fn provider_preflight_accepts_only_the_selected_usable_credentials() {
+        let temporary = crate::private_tempdir().expect("temporary directory");
+        seed_fleet_ready_hub(temporary.path());
+
+        preflight_hub_for_provider(temporary.path(), CollectorProvider::Fleet)
+            .expect("Fleet preflight");
+        preflight_hub(temporary.path()).expect("generic provider preflight");
+        assert!(preflight_hub_for_provider(temporary.path(), CollectorProvider::Legacy).is_err());
     }
 
     fn assert_no_install_artifacts(data: &Path, home: &Path) {

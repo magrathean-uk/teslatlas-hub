@@ -1,8 +1,15 @@
 import AppKit
+import Darwin
 import Foundation
 
 private enum HubRelease {
     static let fallbackVersion = "1.0.0-alpha.1"
+    static var bundledVersion: String {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "TeslatlasHubVersion") as? String,
+              !value.isEmpty,
+              !value.contains("$(") else { return fallbackVersion }
+        return value
+    }
 }
 
 enum HubHealth: Equatable {
@@ -93,6 +100,7 @@ enum HubActionError: LocalizedError {
     case preview
     case missingResource(String)
     case commandFailed(String)
+    case commandTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -102,6 +110,8 @@ enum HubActionError: LocalizedError {
             return "Embedded resource is missing: \(name)"
         case let .commandFailed(message):
             return message
+        case .commandTimedOut:
+            return "Hub command timed out."
         }
     }
 }
@@ -150,26 +160,34 @@ final class BoundedProcessOutput {
 
 enum HubProcessExecutor {
     static let defaultMaximumOutputBytes = 256 * 1024
+    static let defaultTimeout: TimeInterval = 5 * 60
+    static let defaultTerminationGrace: TimeInterval = 2
+    static let defaultOutputDrainTimeout: TimeInterval = 2
 
     static func run(executable: URL,
                     arguments: [String],
                     stdin: String? = nil,
                     maximumOutputBytes: Int = defaultMaximumOutputBytes,
+                    timeout: TimeInterval = defaultTimeout,
+                    terminationGrace: TimeInterval = defaultTerminationGrace,
+                    outputDrainTimeout: TimeInterval = defaultOutputDrainTimeout,
                     completion: @escaping (Result<String, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
             let output = Pipe()
             let retained = BoundedProcessOutput(maximumBytes: maximumOutputBytes)
             let reader = DispatchGroup()
+            let terminated = DispatchSemaphore(value: 0)
             process.executableURL = executable
             process.arguments = arguments
             process.standardOutput = output
             process.standardError = output
             if stdin != nil { process.standardInput = Pipe() }
+            process.terminationHandler = { _ in terminated.signal() }
             do {
                 try process.run()
                 reader.enter()
-                DispatchQueue.global(qos: .utility).async {
+                DispatchQueue.global(qos: .userInitiated).async {
                     while true {
                         let chunk = output.fileHandleForReading.readData(ofLength: 16 * 1024)
                         if chunk.isEmpty { break }
@@ -181,8 +199,21 @@ enum HubProcessExecutor {
                     input.fileHandleForWriting.write(Data(stdin.utf8))
                     input.fileHandleForWriting.closeFile()
                 }
-                process.waitUntilExit()
-                reader.wait()
+                if terminated.wait(timeout: .now() + max(0.001, timeout)) == .timedOut {
+                    let pid = process.processIdentifier
+                    if process.isRunning { process.terminate() }
+                    if terminated.wait(timeout: .now() + max(0.001, terminationGrace)) == .timedOut {
+                        if process.isRunning { Darwin.kill(pid, SIGKILL) }
+                        _ = terminated.wait(timeout: .now() + max(0.001, terminationGrace))
+                    }
+                    _ = reader.wait(timeout: .now() + max(0.001, outputDrainTimeout))
+                    completion(.failure(HubActionError.commandTimedOut))
+                    return
+                }
+                guard reader.wait(timeout: .now() + max(0.001, outputDrainTimeout)) == .success else {
+                    completion(.failure(HubActionError.commandFailed("Hub command output did not close.")))
+                    return
+                }
                 let text = String(decoding: retained.snapshot(), as: UTF8.self)
                 if process.terminationStatus == 0 {
                     completion(.success(text))
@@ -213,6 +244,34 @@ final class EmbeddedHubCommandRunner: HubCommandRunning {
         HubProcessExecutor.run(executable: executable,
                                arguments: arguments,
                                stdin: stdin,
+                               timeout: Self.timeout(for: arguments),
+                               completion: completion)
+    }
+
+    private static func timeout(for arguments: [String]) -> TimeInterval {
+        if arguments.contains("migrate") { return 24 * 60 * 60 }
+        if arguments.contains("setup") { return 5 * 60 }
+        if arguments.contains("status") || arguments.contains("preflight") { return 30 }
+        return HubProcessExecutor.defaultTimeout
+    }
+}
+
+final class InstalledHubCommandRunner: HubCommandRunning {
+    private let executable = URL(fileURLWithPath: "/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub")
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        runProcess(arguments: arguments, stdin: nil, completion: completion)
+    }
+
+    func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
+        runProcess(arguments: arguments, stdin: stdin, completion: completion)
+    }
+
+    private func runProcess(arguments: [String], stdin: String?, completion: @escaping (Result<String, Error>) -> Void) {
+        HubProcessExecutor.run(executable: executable,
+                               arguments: arguments,
+                               stdin: stdin,
+                               timeout: arguments.contains("setup") ? 5 * 60 : 30,
                                completion: completion)
     }
 }
@@ -233,13 +292,9 @@ final class EmbeddedInstaller: HubInstalling {
     }
 
     func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
-        let script = URL(fileURLWithPath: "/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh")
-        let available = FileManager.default.isExecutableFile(atPath: script.path)
-        let package = available ? nil : Bundle.main.url(forResource: "TeslatlasHubService", withExtension: "pkg")
+        let package = Bundle.main.url(forResource: "TeslatlasHubService", withExtension: "pkg")
         do {
-            let command = try Self.uninstallCommand(scriptPath: script.path,
-                                                    packagePath: package?.path,
-                                                    installedUninstallerAvailable: available,
+            let command = try Self.uninstallCommand(packagePath: package?.path,
                                                     deleteData: deleteData)
             runAdministratorCommand(command, completion: completion)
         } catch {
@@ -247,33 +302,35 @@ final class EmbeddedInstaller: HubInstalling {
         }
     }
 
-    static func uninstallCommand(scriptPath: String,
-                                 packagePath: String?,
-                                 installedUninstallerAvailable: Bool,
+    static func uninstallCommand(packagePath: String?,
                                  deleteData: Bool) throws -> String {
-        let option = deleteData ? " --delete-data" : ""
-        let uninstall = "/bin/sh \(shellQuote(scriptPath))\(option)"
-        guard !installedUninstallerAvailable else { return uninstall }
         guard let packagePath else {
             throw HubActionError.missingResource("TeslatlasHubService.pkg")
         }
-        return "/usr/sbin/installer -pkg \(shellQuote(packagePath)) -target /" +
-            " && /usr/bin/test -x \(shellQuote(scriptPath)) && \(uninstall)"
+        let option = deleteData ? " --delete-data" : ""
+        let payload = "$staging/expanded/Payload/Library/Application Support/Teslatlas Hub/libexec"
+        return "staging=$(/usr/bin/mktemp -d /private/var/tmp/teslatlas-hub-uninstall.XXXXXX)" +
+            " || exit 1; " +
+            "trap '/usr/bin/find \"$staging\" -depth -delete' EXIT HUP INT TERM; " +
+            "/usr/bin/test \"$(/usr/bin/stat -f '%u:%Lp' \"$staging\")\" = 0:700" +
+            " && /usr/bin/test -f \(shellQuote(packagePath))" +
+            " && /usr/bin/test ! -L \(shellQuote(packagePath))" +
+            " && /usr/sbin/pkgutil --expand-full \(shellQuote(packagePath)) \"$staging/expanded\"" +
+            " && uninstaller=\"\(payload)/uninstall-macos-service.sh\"" +
+            " && common=\"\(payload)/common.sh\"" +
+            " && /usr/bin/test -f \"$uninstaller\" && /usr/bin/test ! -L \"$uninstaller\"" +
+            " && /usr/bin/test -x \"$uninstaller\"" +
+            " && /usr/bin/test -f \"$common\" && /usr/bin/test ! -L \"$common\"" +
+            " && /bin/sh \"$uninstaller\"\(option)"
     }
 
     private func runAdministratorCommand(_ command: String,
                                          completion: @escaping (Result<String, Error>) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            var errorInfo: NSDictionary?
-            let script = NSAppleScript(source: "do shell script \"\(Self.appleScriptQuote(command))\" with administrator privileges")
-            let result = script?.executeAndReturnError(&errorInfo)
-            if let errorInfo {
-                let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Administrator installation failed."
-                completion(.failure(HubActionError.commandFailed(message)))
-            } else {
-                completion(.success(result?.stringValue ?? ""))
-            }
-        }
+        let script = "do shell script \"\(Self.appleScriptQuote(command))\" with administrator privileges"
+        HubProcessExecutor.run(executable: URL(fileURLWithPath: "/usr/bin/osascript"),
+                               arguments: ["-e", script],
+                               timeout: 15 * 60,
+                               completion: completion)
     }
 
     private static func shellQuote(_ value: String) -> String { "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'" }
@@ -282,7 +339,10 @@ final class EmbeddedInstaller: HubInstalling {
 
 private enum ProcessRunner {
     static func run(executable: URL, arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
-        HubProcessExecutor.run(executable: executable, arguments: arguments, completion: completion)
+        HubProcessExecutor.run(executable: executable,
+                               arguments: arguments,
+                               timeout: 30,
+                               completion: completion)
     }
 }
 
@@ -378,6 +438,7 @@ final class LaunchctlServiceController: HubServiceControlling {
 final class HubController {
     let previewMode: Bool
     private let commandRunner: HubCommandRunning
+    private let installedCommandRunner: HubCommandRunning
     private let installer: HubInstalling
     private let serviceRunner: HubServiceControlling
     private let homeDirectory: URL
@@ -386,12 +447,14 @@ final class HubController {
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment,
          commandRunner: HubCommandRunning = EmbeddedHubCommandRunner(),
+         installedCommandRunner: HubCommandRunning = InstalledHubCommandRunner(),
          installer: HubInstalling = EmbeddedInstaller(),
          serviceRunner: HubServiceControlling = LaunchctlServiceController(),
          homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
          serviceInstalledOverride: Bool? = nil) {
         previewMode = environment["TESLATLAS_HUB_UI_PREVIEW"] == "1"
         self.commandRunner = commandRunner
+        self.installedCommandRunner = installedCommandRunner
         self.installer = installer
         self.serviceRunner = serviceRunner
         self.homeDirectory = homeDirectory
@@ -406,9 +469,10 @@ final class HubController {
         }
         serviceRunner.loadedState { [weak self] loaded in
             guard let self else { return }
-            self.commandRunner.run(arguments: ["--config", self.configPath.path, "status"]) { result in
+            let installed = self.isServiceInstalled
+            let runner = installed ? self.installedCommandRunner : self.commandRunner
+            runner.run(arguments: ["--config", self.configPath.path, "status"]) { result in
                 DispatchQueue.main.async {
-                    let installed = self.isServiceInstalled
                     if case let .success(output) = result, let status = self.parseStatus(output) {
                         self.snapshot = self.statusSnapshot(status, installed: installed, loaded: loaded)
                     } else {
@@ -533,11 +597,13 @@ final class HubController {
                                completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         let invocation: HubSetupInvocation
+        let installedInvocation: HubSetupInvocation
         do {
             try ensureConfig()
             invocation = try Self.setupInvocation(configPath: configPath,
                                                   tokens: tokens,
                                                   vehicleID: vehicleID)
+            installedInvocation = Self.oldCompatibleSetupInvocation(invocation)
         } catch {
             completion(.failure(error))
             return
@@ -554,63 +620,85 @@ final class HubController {
                 }
             }
         }
+        let restartAfterFailure: (String, Error) -> Void = { [weak self] action, actionError in
+            guard let self else { return }
+            self.serviceRunner.run(arguments: ["service", "start"]) { restartResult in
+                switch restartResult {
+                case .success:
+                    finish(.failure(actionError))
+                case let .failure(restartError):
+                    finish(.failure(HubActionError.commandFailed(
+                        "\(action): \(actionError.localizedDescription) Hub restart also failed: \(restartError.localizedDescription)"
+                    )))
+                }
+            }
+        }
+        let installAndStart = { [weak self] in
+            guard let self else { return }
+            self.installer.install { installResult in
+                switch installResult {
+                case .success:
+                    guard installed else { finish(.success(())); return }
+                    self.serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
+                        switch stopResult {
+                        case .success:
+                            self.installedCommandRunner.run(arguments: invocation.arguments,
+                                                            stdin: invocation.standardInput) { setupResult in
+                                self.serviceRunner.run(arguments: ["service", "start"]) { startResult in
+                                    switch (setupResult, startResult) {
+                                    case (.success, .success): finish(.success(()))
+                                    case let (.failure(setupError), .success): finish(.failure(setupError))
+                                    case let (.success, .failure(startError)): finish(.failure(startError))
+                                    case let (.failure(setupError), .failure(startError)):
+                                        finish(.failure(HubActionError.commandFailed(
+                                            "Tesla setup failed: \(setupError.localizedDescription) Hub restart also failed: \(startError.localizedDescription)"
+                                        )))
+                                    }
+                                }
+                            }
+                        case let .failure(stopError):
+                            finish(.failure(stopError))
+                        }
+                    }
+                case let .failure(installError):
+                    guard installed else { finish(.failure(installError)); return }
+                    if Self.isForwardOnlyUpgradeFailure(installError) {
+                        finish(.failure(installError))
+                    } else {
+                        restartAfterFailure("Service update failed", installError)
+                    }
+                }
+            }
+        }
         let runSetup = { [weak self] in
             guard let self else { return }
-            self.commandRunner.run(arguments: invocation.arguments,
-                                   stdin: invocation.standardInput) { result in
+            let setupRunner = installed ? self.installedCommandRunner : self.commandRunner
+            let handleSetupResult: (Result<String, Error>) -> Void = { result in
                 switch result {
                 case .success:
-                    guard installed else {
-                        self.installer.install { install in
-                            switch install {
-                            case .success: finish(.success(()))
-                            case let .failure(installError): finish(.failure(installError))
-                            }
-                        }
-                        return
-                    }
-                    self.serviceRunner.run(arguments: ["service", "start"]) { start in
-                        switch start {
-                        case .success: finish(.success(()))
-                        case let .failure(startError): finish(.failure(startError))
-                        }
-                    }
+                    installAndStart()
                 case let .failure(setupError):
                     guard installed else { finish(.failure(setupError)); return }
-                    self.serviceRunner.run(arguments: ["service", "start"]) { restartResult in
-                        switch restartResult {
-                        case .success:
-                            finish(.failure(setupError))
-                        case let .failure(restartError):
-                            finish(.failure(HubActionError.commandFailed(
-                                "Tesla setup failed: \(setupError.localizedDescription) Hub restart also failed: \(restartError.localizedDescription)"
-                            )))
-                        }
-                    }
+                    restartAfterFailure("Tesla setup failed", setupError)
+                }
+            }
+            setupRunner.run(arguments: invocation.arguments,
+                            stdin: invocation.standardInput) { result in
+                if installed,
+                   case let .failure(error) = result,
+                   Self.isAllVehiclesUnsupported(error) {
+                    setupRunner.run(arguments: installedInvocation.arguments,
+                                    stdin: installedInvocation.standardInput,
+                                    completion: handleSetupResult)
+                } else {
+                    handleSetupResult(result)
                 }
             }
         }
         if installed {
             serviceRunner.run(arguments: ["service", "stop"]) { result in
                 switch result {
-                case .success:
-                    self.installer.install { installResult in
-                        switch installResult {
-                        case .success:
-                            runSetup()
-                        case let .failure(installError):
-                            self.serviceRunner.run(arguments: ["service", "start"]) { restartResult in
-                                switch restartResult {
-                                case .success:
-                                    finish(.failure(installError))
-                                case let .failure(restartError):
-                                    finish(.failure(HubActionError.commandFailed(
-                                        "Service update failed: \(installError.localizedDescription) Hub restart also failed: \(restartError.localizedDescription)"
-                                    )))
-                                }
-                            }
-                        }
-                    }
+                case .success: runSetup()
                 case let .failure(error): finish(.failure(error))
                 }
             }
@@ -635,8 +723,27 @@ final class HubController {
                 throw HubActionError.commandFailed("Tesla vehicle ID must be positive.")
             }
             arguments += ["--vehicle-id", String(vehicleID)]
+        } else {
+            arguments.append("--all-vehicles")
         }
         return HubSetupInvocation(arguments: arguments, standardInput: input)
+    }
+
+    static func oldCompatibleSetupInvocation(_ invocation: HubSetupInvocation) -> HubSetupInvocation {
+        HubSetupInvocation(arguments: invocation.arguments.filter { $0 != "--all-vehicles" },
+                           standardInput: invocation.standardInput)
+    }
+
+    static func isForwardOnlyUpgradeFailure(_ error: Error) -> Bool {
+        error.localizedDescription.contains("TESLATLAS_FORWARD_ONLY_UPGRADE")
+    }
+
+    static func isAllVehiclesUnsupported(_ error: Error) -> Bool {
+        let message = error.localizedDescription.lowercased()
+        return message.contains("--all-vehicles")
+            && (message.contains("unexpected argument")
+                || message.contains("unknown option")
+                || message.contains("unrecognized option"))
     }
 
     func startHub(completion: @escaping (Result<Void, Error>) -> Void) {
@@ -708,13 +815,78 @@ final class HubController {
         try manager.setAttributes([.posixPermissions: NSNumber(value: 0o700)], ofItemAtPath: configFolder.path)
         try manager.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
         try manager.setAttributes([.posixPermissions: NSNumber(value: 0o700)], ofItemAtPath: dataDirectory.path)
-        guard !manager.fileExists(atPath: configPath.path) else { return }
-        let content = "data_dir = \(Self.tomlBasicString(dataDirectory.path))\nbind = \"127.0.0.1:8080\"\n"
+        if manager.fileExists(atPath: configPath.path) {
+            let values = try configPath.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else {
+                throw HubActionError.commandFailed("Hub configuration is not a regular file.")
+            }
+            guard let fileSize = values.fileSize, fileSize <= 1024 * 1024 else {
+                throw HubActionError.commandFailed("Hub configuration is too large.")
+            }
+            let original = try String(contentsOf: configPath, encoding: .utf8)
+            let updated = Self.addOfflineDefaults(to: original)
+            if updated != original {
+                try Data(updated.utf8).write(to: configPath, options: .atomic)
+                try manager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: configPath.path)
+            }
+            return
+        }
+        let content = """
+        data_dir = \(Self.tomlBasicString(dataDirectory.path))
+        bind = "127.0.0.1:8080"
+
+        [geocoder]
+        enabled = false
+
+        [terrain]
+        enabled = false
+        """ + "\n"
         let temporary = configFolder.appendingPathComponent(".config.\(UUID().uuidString).tmp")
         try Data(content.utf8).write(to: temporary)
         try manager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: temporary.path)
         do { try manager.moveItem(at: temporary, to: configPath) }
         catch { try? manager.removeItem(at: temporary); throw error }
+    }
+
+    static func addOfflineDefaults(to content: String) -> String {
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func isTableHeader(_ line: String) -> Bool {
+            let value = uncommented(line)
+            return value.hasPrefix("[") && value.contains("]")
+        }
+        func hasEnabled(from start: Int, to end: Int) -> Bool {
+            guard start < end else { return false }
+            return lines[start..<end].contains { line in
+                let value = uncommented(line)
+                guard value.hasPrefix("enabled") else { return false }
+                return value.dropFirst("enabled".count)
+                    .trimmingCharacters(in: .whitespaces).hasPrefix("=")
+            }
+        }
+
+        var changed = false
+        for name in ["geocoder", "terrain"] {
+            if let table = lines.firstIndex(where: { uncommented($0) == "[\(name)]" }) {
+                let end = lines[(table + 1)...].firstIndex(where: isTableHeader) ?? lines.endIndex
+                if !hasEnabled(from: table + 1, to: end) {
+                    lines.insert("enabled = false", at: table + 1)
+                    changed = true
+                }
+            } else {
+                if !lines.isEmpty && lines.last != "" { lines.append("") }
+                lines.append("[\(name)]")
+                lines.append("enabled = false")
+                changed = true
+            }
+        }
+        guard changed else { return content }
+        if content.hasSuffix("\n") && lines.last != "" { lines.append("") }
+        return lines.joined(separator: "\n")
     }
 
     static func tomlBasicString(_ value: String) -> String {
@@ -750,10 +922,13 @@ final class HubController {
         guard let data = output.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         let database = root["database"] as? [String: Any]
-        let vehicle = root["vehicle"] as? [String: Any]
-        let credentials = root["legacyCredentials"] as? [String: Any]
+        let vehicles = root["vehicles"] as? [[String: Any]] ?? []
+        let vehicle = root["vehicle"] as? [String: Any] ?? vehicles.first
+        let credentials = root["credentials"] as? [String: Any]
         let ready = root["ready"] as? Bool ?? false
-        let vehicleName = vehicle?["displayName"] as? String ?? "No configured vehicle"
+        let vehicleName = vehicles.count > 1
+            ? "\(vehicles.count) vehicles"
+            : vehicle?["displayName"] as? String ?? "No configured vehicle"
         let vehicleSummary: String
         if let observed = vehicle?["latestObservedAtMs"] as? NSNumber {
             vehicleSummary = "Last seen \(relativeAge(milliseconds: observed.int64Value))"
@@ -796,6 +971,14 @@ final class HubController {
         case .unknown:
             result.health = .degraded
             result.service = "Installed · service state unavailable"
+        }
+        if status.version != HubRelease.bundledVersion {
+            result.health = .degraded
+            result.service = "Installed · version mismatch"
+            result.diagnosticLines.insert(
+                "Version mismatch: service \(status.version), app \(HubRelease.bundledVersion)",
+                at: 0
+            )
         }
         return result
     }

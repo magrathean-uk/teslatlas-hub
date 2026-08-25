@@ -2,15 +2,16 @@
 
 ## Overview
 
-All Rust dependencies across `Cargo.toml` and `Cargo.lock` in **Teslatlas Hub** have been upgraded to their newest current releases on crates.io under **Rust 1.97.0 / Edition 2024**. All major and minor breaking changes have been refactored and verified.
+All Rust dependencies across `Cargo.toml` and `Cargo.lock` in **Teslatlas Hub** were upgraded to the newest compatible crates.io releases resolved on 2026-08-19 under **Rust 1.98.0 / Edition 2024**. `Cargo.lock` pins that reviewed set; `Cargo.toml` requires Rust 1.98.
 
 ## Verification & Test Evidence
 
-* **Unit Test Suite**: 584 passed, 0 failed, 2 ignored.
-* **CLI & Supervisor Test Suite**: 18 passed, 0 failed.
+* **Unit Test Suite**: 747 passed, 0 failed, 2 ignored.
+* **CLI & Supervisor Test Suite**: 38 passed, 0 failed.
 * **TLS End-to-End Test Suite**: 1 passed (`tests/tls_import_e2e.rs`).
-* **Release Build**: `cargo build --release` completed successfully in 54.53s.
-* **Total**: 603 passed, 0 failed.
+* **Static Gates**: `cargo check --all-targets --locked` and `cargo clippy --all-targets --locked -- -D warnings` passed.
+* **Release Build**: `cargo build --release --locked` completed successfully.
+* **Total**: 786 passed, 0 failed, verified again on 2026-08-25.
 
 ## Upgraded Major & Minor Dependencies
 

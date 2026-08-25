@@ -56,6 +56,13 @@ require_macos_12_or_earlier() {
         || die "requires macOS $version, not macOS 12: $1"
 }
 
+is_executable_macho() {
+    /usr/bin/otool -hv "$1" 2>/dev/null | /usr/bin/awk '
+        $1 ~ /^MH_MAGIC(_64)?$/ && $5 == "EXECUTE" { executable = 1 }
+        END { exit(executable ? 0 : 1) }
+    '
+}
+
 reject_appledouble() {
     path=$1
     metadata=$(/usr/bin/find "$path" \( -name '._*' -o -name '.DS_Store' \) -print -quit)
@@ -92,6 +99,13 @@ version=$(
 /usr/bin/printf '%s\n' "$version" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
     || die "invalid package version: $version"
 marketing_version=${version%%-*}
+case "$version" in
+    *-alpha.[0-9]*) bundle_version="${marketing_version}a${version##*-alpha.}" ;;
+    *-beta.[0-9]*) bundle_version="${marketing_version}b${version##*-beta.}" ;;
+    *-rc.[0-9]*) bundle_version="${marketing_version}fc${version##*-rc.}" ;;
+    *-*) die "unsupported prerelease for macOS version: $version" ;;
+    *) bundle_version=$marketing_version ;;
+esac
 
 ensure_real_directory "$DERIVED"
 ensure_real_directory "$GENERATED"
@@ -144,7 +158,8 @@ xcodebuild \
     ONLY_ACTIVE_ARCH=YES \
     MACOSX_DEPLOYMENT_TARGET=12.0 \
     MARKETING_VERSION="$marketing_version" \
-    CURRENT_PROJECT_VERSION=1 \
+    CURRENT_PROJECT_VERSION="$bundle_version" \
+    TESLATLAS_HUB_VERSION="$version" \
     CODE_SIGNING_ALLOWED=NO \
     build >/dev/null
 
@@ -162,6 +177,8 @@ done
     || die "cannot clear resource metadata"
 [ "$(/usr/bin/lipo -archs "$resources/teslatlas-hub")" = arm64 ] \
     || die "embedded Hub binary is not arm64-only"
+is_executable_macho "$resources/teslatlas-hub" \
+    || die "embedded Hub binary is not a Mach-O executable"
 require_macos_12_or_earlier "$resources/teslatlas-hub"
 [ -f "$resources/TeslatlasHubService.pkg" ] \
     || die "service package resource is missing"
@@ -169,6 +186,7 @@ reject_appledouble "$resources"
 app_binary="$PRODUCT/Contents/MacOS/Teslatlas Hub"
 [ "$(/usr/bin/lipo -archs "$app_binary")" = arm64 ] \
     || die "App binary is not arm64-only"
+is_executable_macho "$app_binary" || die "App binary is not a Mach-O executable"
 require_macos_12_or_earlier "$app_binary"
 
 /usr/bin/codesign --force --sign - --timestamp=none "$resources/teslatlas-hub" >/dev/null

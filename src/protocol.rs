@@ -59,6 +59,7 @@ const CURSOR_FORMAT_VERSION: u8 = 1;
 const CURSOR_PAYLOAD_BYTES: usize = 77;
 const CURSOR_TAG_BYTES: usize = 32;
 const MANIFEST_SIGNING_SEED_DOMAIN: &[u8] = b"teslatlas-hub/manifest-ed25519-signing-seed/v1";
+const FLEET_CREDENTIAL_ENCRYPTION_DOMAIN: &[u8] = b"teslatlas-hub/fleet-credential-encryption/v1";
 
 /// Version of the manifest and cursor envelope, not the Hub binary version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -927,6 +928,10 @@ impl CursorKey {
     /// reusing the cursor HMAC key.
     pub(crate) fn manifest_signing_seed(&self) -> [u8; 32] {
         hmac_sha256(&self.0, MANIFEST_SIGNING_SEED_DOMAIN)
+    }
+
+    pub(crate) fn fleet_credential_encryption_key(&self) -> [u8; 32] {
+        hmac_sha256(&self.0, FLEET_CREDENTIAL_ENCRYPTION_DOMAIN)
     }
 }
 

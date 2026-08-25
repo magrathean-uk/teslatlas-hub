@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use crate::{
     BUILD_VERSION,
-    db::{HubStore, SCHEMA_VERSION, StoreError},
+    db::{APPLICATION_ID, HubStore, SCHEMA_VERSION, StoreError},
     protocol::{
         HUB_PROJECTION_SCHEMA_V3, LINEAGE_PROTOCOL_V2, PROTOCOL_NAME, PROTOCOL_V1, ProtocolVersion,
         SyncManifest, TransferMode,
@@ -53,6 +53,7 @@ const COPY_BUFFER_BYTES: usize = 1024 * 1024;
 // allocate a second copy: the staged backup/restore remains one payload copy.
 const COPY_CAPACITY_HEADROOM_DIVISOR: u64 = 20;
 const COPY_CAPACITY_FIXED_HEADROOM_BYTES: u64 = 8 * 1024 * 1024;
+const MIN_RESTORABLE_SCHEMA_VERSION: i32 = 52;
 const EXCLUDED_HOST_STATE: [&str; 5] = [
     "collector_decryption_key",
     "cursor_signing_key",
@@ -313,15 +314,17 @@ pub fn verify_data_backup(source: &Path) -> Result<DataRecoveryReport, DataRecov
     validate_backup_tree(&source, &manifest, &manifest_bytes, &marker)?;
 
     let data = source.join(DATA_DIRECTORY);
-    let store = HubStore::open_immutable_read_only(&data)?;
-    store.catalogue_check()?;
-    let installation_id = immutable_database_identity(&data)?;
+    let installation_id = immutable_database_identity_at_schema(&data, manifest.hub_schema)?;
     if installation_id != manifest.installation_id {
         return Err(invalid(
             "manifest installation ID does not match the immutable catalogue",
         ));
     }
-    store.verify_immutable_snapshot_unchanged()?;
+    if manifest.hub_schema == SCHEMA_VERSION {
+        let store = HubStore::open_immutable_read_only(&data)?;
+        store.catalogue_check()?;
+        store.verify_immutable_snapshot_unchanged()?;
+    }
     report("data_backup_verified", &source, &manifest)
 }
 
@@ -343,14 +346,18 @@ pub fn restore_data_backup(
     let (manifest, manifest_bytes, marker) = read_backup_envelope(&source)?;
     validate_backup_tree(&source, &manifest, &manifest_bytes, &marker)?;
     let source_data = source.join(DATA_DIRECTORY);
-    let source_store = HubStore::open_immutable_read_only(&source_data)?;
-    source_store.catalogue_check()?;
-    if immutable_database_identity(&source_data)? != manifest.installation_id {
+    if immutable_database_identity_at_schema(&source_data, manifest.hub_schema)?
+        != manifest.installation_id
+    {
         return Err(invalid(
             "manifest installation ID does not match the immutable source catalogue",
         ));
     }
-    source_store.verify_immutable_snapshot_unchanged()?;
+    if manifest.hub_schema == SCHEMA_VERSION {
+        let source_store = HubStore::open_immutable_read_only(&source_data)?;
+        source_store.catalogue_check()?;
+        source_store.verify_immutable_snapshot_unchanged()?;
+    }
 
     admit_staging_capacity(&parent, manifest_copy_bytes(&manifest)?)?;
     let staging = StagingDirectory::create(&parent)?;
@@ -373,6 +380,30 @@ pub fn restore_data_backup(
         copy_verified_member(&from, &to, member)?;
     }
 
+    validate_restored_data_tree(&staging.path, &manifest.members, false)?;
+    validate_backup_tree(&source, &manifest, &manifest_bytes, &marker)?;
+    if immutable_database_identity_at_schema(&source_data, manifest.hub_schema)?
+        != manifest.installation_id
+    {
+        return Err(invalid(
+            "source catalogue installation ID changed during restore",
+        ));
+    }
+
+    let migrated = manifest.hub_schema != SCHEMA_VERSION;
+    if migrated {
+        let migrated_store = HubStore::initialize(&staging.path)?;
+        migrated_store.catalogue_check()?;
+        if migrated_store.installation_id()? != manifest.installation_id {
+            return Err(invalid(
+                "migrated catalogue installation ID does not match the backup manifest",
+            ));
+        }
+        drop(migrated_store);
+        seal_staged_catalogue(&staging.path)?;
+        remove_migration_host_state(&staging.path, &manifest.members)?;
+    }
+
     let restored_store = HubStore::open_immutable_read_only(&staging.path)?;
     restored_store.catalogue_check()?;
     if immutable_database_identity(&staging.path)? != manifest.installation_id {
@@ -381,7 +412,7 @@ pub fn restore_data_backup(
         ));
     }
     restored_store.verify_immutable_snapshot_unchanged()?;
-    validate_restored_data_tree(&staging.path, &manifest.members)?;
+    validate_restored_data_tree(&staging.path, &manifest.members, migrated)?;
     sync_restored_data(&staging.path, &manifest.members)?;
 
     let report = report("data_restored", &destination, &manifest)?;
@@ -726,10 +757,10 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError>
     {
         return Err(invalid("data-backup build identifier is invalid"));
     }
-    if manifest.hub_schema != SCHEMA_VERSION {
+    if !(MIN_RESTORABLE_SCHEMA_VERSION..=SCHEMA_VERSION).contains(&manifest.hub_schema) {
         return Err(invalid(format!(
-            "data-backup schema {} is not supported by schema {}",
-            manifest.hub_schema, SCHEMA_VERSION
+            "data-backup schema {} is outside the supported restore range {} through {}",
+            manifest.hub_schema, MIN_RESTORABLE_SCHEMA_VERSION, SCHEMA_VERSION
         )));
     }
     if manifest.protocol != expected_protocol() {
@@ -936,6 +967,7 @@ fn validate_backup_tree(
 fn validate_restored_data_tree(
     root: &Path,
     members: &[BackupMember],
+    catalogue_migrated: bool,
 ) -> Result<(), DataRecoveryError> {
     require_directory_entries(root, ["hub.sqlite", "packs"], "restored data root")?;
     let expected_noops = current_schema_22_noop_pairs(root)?;
@@ -980,15 +1012,46 @@ fn validate_restored_data_tree(
             .ok_or_else(|| invalid("restored member is outside the data scope"))?;
         let path = root.join(relative);
         let metadata = require_regular_file(&path, "restored data member")?;
+        let content_changed = member.path == CATALOGUE_MEMBER && catalogue_migrated;
         if permission_mode(&metadata) != member.mode
-            || metadata.len() != member.size
-            || sha256_file_hex(&path)? != member.sha256
+            || (!content_changed
+                && (metadata.len() != member.size || sha256_file_hex(&path)? != member.sha256))
         {
             return Err(invalid(format!(
                 "restored data member differs from its manifest: {}",
                 member.path
             )));
         }
+    }
+    Ok(())
+}
+
+fn remove_migration_host_state(
+    root: &Path,
+    members: &[BackupMember],
+) -> Result<(), DataRecoveryError> {
+    let publication_lock = root.join(".publication.lock");
+    let metadata = require_regular_file(&publication_lock, "migration publication lock")?;
+    if permission_mode(&metadata) != PRIVATE_FILE_MODE || metadata.nlink() != 1 {
+        return Err(invalid("migration publication lock has unsafe metadata"));
+    }
+    fs::remove_file(&publication_lock).map_err(|source| {
+        io_error(
+            "removing migration-only publication lock",
+            &publication_lock,
+            source,
+        )
+    })?;
+
+    if !members
+        .iter()
+        .any(|member| schema_22_noop_member_filename(&member.path).is_some())
+    {
+        let noop = root.join("packs").join("noop");
+        require_directory_entries(&noop, [], "migration-created no-op directory")?;
+        fs::remove_dir(&noop).map_err(|source| {
+            io_error("removing migration-created no-op directory", &noop, source)
+        })?;
     }
     Ok(())
 }
@@ -1108,14 +1171,39 @@ fn sync_restored_data(root: &Path, members: &[BackupMember]) -> Result<(), DataR
 }
 
 fn immutable_database_identity(data: &Path) -> Result<Uuid, DataRecoveryError> {
+    immutable_database_identity_at_schema(data, SCHEMA_VERSION)
+}
+
+fn immutable_database_identity_at_schema(
+    data: &Path,
+    expected_schema: i32,
+) -> Result<Uuid, DataRecoveryError> {
     let connection = open_immutable_catalogue(data)?;
+    let application_id: i32 = connection
+        .query_row("PRAGMA application_id", [], |row| row.get(0))
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    if application_id != APPLICATION_ID {
+        return Err(invalid(format!(
+            "immutable catalogue application ID {application_id} does not match {APPLICATION_ID}",
+        )));
+    }
     let schema: i32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(DataRecoveryError::CatalogueIdentity)?;
-    if schema != SCHEMA_VERSION {
+    if schema != expected_schema {
         return Err(invalid(format!(
-            "immutable catalogue schema {schema} does not match {SCHEMA_VERSION}",
+            "immutable catalogue schema {schema} does not match declared schema {expected_schema}",
         )));
+    }
+    let quick_check = connection
+        .prepare("PRAGMA quick_check")
+        .map_err(DataRecoveryError::CatalogueIdentity)?
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(DataRecoveryError::CatalogueIdentity)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    if quick_check != ["ok"] {
+        return Err(invalid("immutable catalogue quick-check failed"));
     }
     let installation_id: String = connection
         .query_row(
@@ -1636,6 +1724,241 @@ mod tests {
         (temporary, store)
     }
 
+    fn reseal_backup_as_schema(backup: &Path, schema: i32) -> BackupManifest {
+        let catalogue = backup.join(CATALOGUE_MEMBER);
+        if (52..SCHEMA_VERSION).contains(&schema) {
+            let connection = Connection::open_with_flags(
+                &catalogue,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .expect("open historical catalogue fixture");
+            downgrade_catalogue_fixture(&connection, schema);
+            drop(connection);
+        }
+
+        let manifest_path = backup.join(MANIFEST_NAME);
+        let mut manifest: BackupManifest =
+            parse_canonical_json(&fs::read(&manifest_path).expect("manifest bytes"))
+                .expect("typed manifest");
+        manifest.hub_schema = schema;
+        let catalogue_member = manifest
+            .members
+            .iter_mut()
+            .find(|member| member.path == CATALOGUE_MEMBER)
+            .expect("catalogue member");
+        catalogue_member.size = fs::metadata(&catalogue).expect("catalogue metadata").len();
+        catalogue_member.sha256 = sha256_file_hex(&catalogue).expect("catalogue digest");
+        let manifest_bytes = canonical_json(&manifest).expect("historical manifest");
+        fs::write(&manifest_path, &manifest_bytes).expect("write historical manifest");
+        set_mode(
+            &manifest_path,
+            PRIVATE_FILE_MODE,
+            "historical manifest mode",
+        )
+        .unwrap();
+
+        let marker = CompletionMarker {
+            kind: COMPLETION_KIND.to_owned(),
+            generation: manifest.generation,
+            manifest_sha256: sha256_bytes_hex(&manifest_bytes),
+        };
+        let marker_path = backup.join(COMPLETION_NAME);
+        fs::write(&marker_path, canonical_json(&marker).unwrap()).expect("write historical marker");
+        set_mode(&marker_path, PRIVATE_FILE_MODE, "historical marker mode").unwrap();
+        manifest
+    }
+
+    fn downgrade_catalogue_fixture(connection: &Connection, schema: i32) {
+        assert!((52..=54).contains(&schema));
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 DROP TABLE fleet_refresh_input_fences;
+                 DROP TABLE fleet_refresh_receipt_bindings;
+                 CREATE TABLE fleet_tokens_v54 (
+                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+                    access BLOB NOT NULL CHECK(length(access) BETWEEN 1 AND 16424),
+                    refresh BLOB NOT NULL CHECK(length(refresh) BETWEEN 1 AND 16424),
+                    client_id TEXT NOT NULL
+                        CHECK(length(CAST(client_id AS BLOB)) BETWEEN 1 AND 255),
+                    region TEXT NOT NULL CHECK(region IN ('na', 'eu', 'cn')),
+                    expires_at INTEGER NOT NULL CHECK(expires_at > 0),
+                    next_refresh_at INTEGER NOT NULL
+                        CHECK(next_refresh_at > 0 AND next_refresh_at < expires_at)
+                 ) STRICT;
+                 INSERT INTO fleet_tokens_v54(
+                    singleton_id, access, refresh, client_id, region,
+                    expires_at, next_refresh_at
+                 )
+                 SELECT singleton_id, access, refresh, client_id, region,
+                        expires_at, next_refresh_at
+                   FROM fleet_tokens;
+                 DROP TABLE fleet_tokens;
+                 ALTER TABLE fleet_tokens_v54 RENAME TO fleet_tokens;
+                 CREATE TABLE current_observations_v54 (
+                    vehicle_id TEXT NOT NULL
+                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    record_type TEXT NOT NULL CHECK(record_type IN (
+                        'owner_api_discovery_v1',
+                        'owner_api_vehicle_data_v1',
+                        'tesla_stream_update_v1'
+                    )),
+                    observation_id INTEGER NOT NULL CHECK(observation_id > 0),
+                    source_id TEXT NOT NULL
+                        REFERENCES sources(source_id) ON DELETE RESTRICT,
+                    observed_at_ms INTEGER NOT NULL CHECK(observed_at_ms >= 0),
+                    received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0),
+                    payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
+                    payload_json TEXT NOT NULL CHECK(json_valid(payload_json))
+                        CHECK(length(CAST(payload_json AS BLOB)) <= 262144),
+                    PRIMARY KEY(vehicle_id, record_type)
+                 ) STRICT, WITHOUT ROWID;
+                 INSERT INTO current_observations_v54(
+                    vehicle_id, record_type, observation_id, source_id,
+                    observed_at_ms, received_at_ms, payload_sha256, payload_json
+                 )
+                 SELECT vehicle_id, record_type, observation_id, source_id,
+                        observed_at_ms, received_at_ms, payload_sha256, payload_json
+                   FROM current_observations;
+                 DROP TABLE current_observations;
+                 ALTER TABLE current_observations_v54 RENAME TO current_observations;
+                 PRAGMA user_version = 54;
+                 COMMIT;",
+            )
+            .expect("recreate schema 54 fixture");
+        if schema == 54 {
+            return;
+        }
+
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 CREATE TABLE outbound_request_receipts_v53 (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    correlation_id TEXT NOT NULL CHECK(length(correlation_id) = 36),
+                    started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),
+                    completed_at_ms INTEGER,
+                    duration_ms INTEGER,
+                    vehicle_tesla_id INTEGER CHECK(vehicle_tesla_id > 0),
+                    transport TEXT NOT NULL CHECK(transport IN (
+                        'owner_api', 'stream', 'legacy_auth'
+                    )),
+                    operation TEXT NOT NULL CHECK(operation IN (
+                        'products', 'vehicle_probe', 'vehicle_data', 'token_refresh',
+                        'stream_connect', 'stream_subscribe', 'stream_unsubscribe'
+                    )),
+                    safety_class TEXT NOT NULL CHECK(safety_class IN (
+                        'non_wake_endpoint', 'conditional_read', 'direct_wake_command'
+                    )),
+                    precondition TEXT NOT NULL CHECK(precondition IN (
+                        'not_required', 'stream_power_confirmed'
+                    )),
+                    outcome TEXT NOT NULL CHECK(outcome IN (
+                        'started', 'success', 'http_error', 'timeout',
+                        'transport_error', 'authentication_rejected',
+                        'protocol_error', 'response_too_large', 'cancelled'
+                    )),
+                    http_status INTEGER CHECK(http_status BETWEEN 100 AND 599),
+                    retry_after_seconds INTEGER CHECK(retry_after_seconds >= 0),
+                    CHECK(
+                        (outcome = 'started' AND completed_at_ms IS NULL
+                         AND duration_ms IS NULL AND http_status IS NULL
+                         AND retry_after_seconds IS NULL)
+                        OR
+                        (outcome <> 'started' AND completed_at_ms IS NOT NULL
+                         AND duration_ms IS NOT NULL
+                         AND completed_at_ms >= started_at_ms
+                         AND duration_ms >= 0)
+                    )
+                 ) STRICT;
+                 INSERT INTO outbound_request_receipts_v53(
+                    id, correlation_id, started_at_ms, completed_at_ms,
+                    duration_ms, vehicle_tesla_id, transport, operation,
+                    safety_class, precondition, outcome, http_status,
+                    retry_after_seconds
+                 )
+                 SELECT id, correlation_id, started_at_ms, completed_at_ms,
+                        duration_ms, vehicle_tesla_id, transport, operation,
+                        safety_class, precondition, outcome, http_status,
+                        retry_after_seconds
+                   FROM outbound_request_receipts;
+                 CREATE TABLE legacy_refresh_receipt_bindings_v53 (
+                    receipt_id INTEGER PRIMARY KEY NOT NULL
+                        REFERENCES outbound_request_receipts_v53(id) ON DELETE CASCADE,
+                    attempt_id TEXT NOT NULL UNIQUE CHECK(length(attempt_id) = 36),
+                    input_credential_generation TEXT NOT NULL
+                        CHECK(length(input_credential_generation) = 36),
+                    output_credential_generation TEXT
+                        CHECK(output_credential_generation IS NULL
+                              OR length(output_credential_generation) = 36),
+                    CHECK(output_credential_generation IS NULL
+                          OR output_credential_generation <> input_credential_generation)
+                 ) STRICT;
+                 INSERT INTO legacy_refresh_receipt_bindings_v53(
+                    receipt_id, attempt_id, input_credential_generation,
+                    output_credential_generation
+                 )
+                 SELECT receipt_id, attempt_id, input_credential_generation,
+                        output_credential_generation
+                   FROM legacy_refresh_receipt_bindings;
+                 DROP TABLE legacy_refresh_receipt_bindings;
+                 DROP TABLE outbound_request_receipts;
+                 ALTER TABLE outbound_request_receipts_v53
+                    RENAME TO outbound_request_receipts;
+                 ALTER TABLE legacy_refresh_receipt_bindings_v53
+                    RENAME TO legacy_refresh_receipt_bindings;
+                 CREATE INDEX outbound_request_receipts_proof
+                    ON outbound_request_receipts(
+                        correlation_id, id, safety_class, outcome
+                    );
+                 CREATE INDEX outbound_request_receipts_retention
+                    ON outbound_request_receipts(outcome, completed_at_ms, id);
+                 CREATE UNIQUE INDEX legacy_refresh_receipt_output_generation
+                    ON legacy_refresh_receipt_bindings(output_credential_generation)
+                    WHERE output_credential_generation IS NOT NULL;
+                 DROP TABLE fleet_tokens;
+                 PRAGMA user_version = 53;
+                 COMMIT;",
+            )
+            .expect("recreate schema 53 fixture");
+        if schema == 53 {
+            return;
+        }
+
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 CREATE TABLE lifecycle_open_rows_v52 (
+                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE CASCADE,
+                    source_table TEXT NOT NULL,
+                    source_row_id INTEGER NOT NULL CHECK(source_row_id > 0),
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    car_id INTEGER NOT NULL CHECK(car_id > 0),
+                    domain TEXT NOT NULL CHECK(domain IN (
+                        'drive', 'position', 'charge', 'charge_sample', 'state',
+                        'standalone_position'
+                    )),
+                    parent_source_row_id INTEGER,
+                    row_json TEXT NOT NULL CHECK(json_valid(row_json)),
+                    PRIMARY KEY(source_id, source_table, source_row_id)
+                 ) STRICT;
+                 INSERT INTO lifecycle_open_rows_v52(
+                    source_id, source_table, source_row_id, vehicle_id, car_id,
+                    domain, parent_source_row_id, row_json
+                 )
+                 SELECT source_id, source_table, source_row_id, vehicle_id, car_id,
+                        domain, parent_source_row_id, row_json
+                   FROM lifecycle_open_rows;
+                 DROP TABLE lifecycle_open_rows;
+                 ALTER TABLE lifecycle_open_rows_v52 RENAME TO lifecycle_open_rows;
+                 CREATE INDEX lifecycle_open_rows_vehicle_domain
+                    ON lifecycle_open_rows(vehicle_id, domain, source_row_id);
+                 PRAGMA user_version = 52;
+                 COMMIT;",
+            )
+            .expect("recreate schema 52 fixture");
+    }
+
     #[test]
     fn staging_capacity_admission_rejects_simulated_low_space() {
         let copy_bytes = 101_u64;
@@ -1818,6 +2141,70 @@ mod tests {
             source_cursor,
             "backup must not mutate source key material"
         );
+    }
+
+    #[test]
+    fn historical_restore_migrates_schema_52_through_54_without_touching_source_or_pack_members() {
+        for schema in [52, 53, 54] {
+            let (temporary, store) = create_fixture();
+            publish_schema_22_fixture(&store);
+            let installation_id = store.installation_id().expect("installation ID");
+            let backup = temporary.path().join(format!("schema-{schema}-backup"));
+            create_data_backup(&store, &backup).expect("create current backup fixture");
+            let manifest = reseal_backup_as_schema(&backup, schema);
+            verify_data_backup(&backup).expect("verify historical backup");
+            let source_before = tree_snapshot(&backup);
+
+            let restored = temporary.path().join(format!("schema-{schema}-restored"));
+            restore_data_backup(&backup, &restored).expect("restore historical backup");
+
+            assert_eq!(tree_snapshot(&backup), source_before);
+            assert_eq!(
+                immutable_database_identity(&restored).expect("current restored identity"),
+                installation_id
+            );
+            let restored_store =
+                HubStore::open_immutable_read_only(&restored).expect("current restored store");
+            restored_store
+                .catalogue_check()
+                .expect("current restored catalogue");
+            restored_store
+                .verify_immutable_snapshot_unchanged()
+                .expect("restored catalogue remains immutable");
+
+            for member in manifest
+                .members
+                .iter()
+                .filter(|member| member.path != CATALOGUE_MEMBER)
+            {
+                let relative = member.path.strip_prefix("data/").unwrap();
+                let path = restored.join(relative);
+                let metadata = fs::metadata(&path).expect("restored member metadata");
+                assert_eq!(permission_mode(&metadata), member.mode);
+                assert_eq!(metadata.len(), member.size);
+                assert_eq!(sha256_file_hex(&path).unwrap(), member.sha256);
+            }
+        }
+    }
+
+    #[test]
+    fn historical_restore_rejects_schema_outside_52_through_55() {
+        for schema in [51, 56] {
+            let (temporary, store) = create_fixture();
+            let backup = temporary.path().join(format!("schema-{schema}-backup"));
+            create_data_backup(&store, &backup).expect("create backup fixture");
+            reseal_backup_as_schema(&backup, schema);
+            let source_before = tree_snapshot(&backup);
+            let restored = temporary.path().join(format!("schema-{schema}-restored"));
+
+            assert!(matches!(
+                restore_data_backup(&backup, &restored),
+                Err(DataRecoveryError::InvalidBackup(message))
+                    if message.contains("outside the supported restore range")
+            ));
+            assert!(!restored.exists());
+            assert_eq!(tree_snapshot(&backup), source_before);
+        }
     }
 
     #[test]

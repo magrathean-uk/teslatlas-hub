@@ -21,15 +21,23 @@ The paid Teslatlas application is a separate product and is not part of this rep
 
 ## Current alpha scope
 
-The current `v1.0.0-alpha.1` implementation is narrower than the planned cross-platform product:
+The current `v1.0.0-alpha.1` implementation includes:
 
 - macOS 12 or later on Apple silicon, and Debian 13 amd64 or ARM64;
-- one vehicle;
-- legacy Owner API token authentication with native Tesla OAuth onboarding; no official Fleet API integration;
-- PostgreSQL history import, encrypted token/key transfer, token refresh, Owner API polling, Tesla streaming, lifecycle persistence, backup and repair;
-- native AppKit control app plus full CLI access;
+- independent collection for every configured vehicle on an account;
+- legacy Owner API authentication with native Tesla OAuth onboarding, polling,
+  and Tesla streaming;
+- official Fleet API authentication, discovery, polling, token rotation, direct
+  wake, and signed commands through a local Tesla vehicle-command proxy;
+- PostgreSQL history import, encrypted credential transfer, lifecycle
+  persistence, backup, repair, bounded provider-response retention, and an
+  explicit charge-cost write-back command;
+- a native AppKit control app for legacy onboarding plus full CLI operation;
 - a per-user LaunchAgent on macOS or a systemd service on Debian;
-- no Grafana, MQTT, multi-vehicle collection, or App Store build.
+- no Grafana, MQTT, TeslaFi import, bundled dashboard, or App Store build.
+
+Legacy mode uses Tesla's streaming endpoint while driving. Fleet mode currently
+uses bounded REST polling; native Fleet Telemetry streaming is not implemented.
 
 ## Project boundaries
 
@@ -41,6 +49,10 @@ Teslatlas Hub:
 - does not modify or write to a TeslaMate database during migration;
 - does not grant any right to use a vehicle manufacturer's API, account, service or trade marks;
 - is not designed for safety-critical, emergency, autonomous-driving or vehicle-control decisions.
+
+The separate `write-back` command is never called by migration or collection.
+It can update only one selected TeslaMate charging-process cost, defaults to a
+locked-row dry run, and requires `--apply` to commit.
 
 A separate client does not become covered by this repository's licence merely because it communicates with the Hub through a documented protocol. That conclusion can change where code is copied, linked or combined, or where the programs form one derivative work.
 
@@ -66,9 +78,17 @@ scripts/build-macos-app.sh
 The app is written to `dist/Teslatlas Hub.app`. Current alpha builds are ad-hoc signed and are not notarised.
 Open the app and choose **Set Up Hub** (or **Connect Tesla**). It performs the
 PKCE Tesla login in a private WebKit session, passes the resulting legacy token
-pair to the embedded Hub process over stdin, configures one vehicle, installs
-the embedded service package, and starts collection. Tokens are not written to
+pair to the embedded Hub process over stdin, configures the account, installs
+the embedded service package, and starts collection. On an older installed Hub,
+reconnect first refreshes its existing vehicle with old-compatible arguments;
+after the new service passes migration and health admission, the new binary
+configures every vehicle on the account. Tokens are not written to
 temporary files, shown in the UI, or placed in process arguments.
+
+macOS service upgrades keep the old payload only until the new binary begins a
+bounded `bootstrap`. That is the same forward-only boundary: after migration
+starts, failure retains the new service stopped for repair or package retry
+instead of restoring an old binary onto a potentially newer schema.
 
 Use **Service Details → Uninstall Hub…** to remove the current user's
 LaunchAgent, service payload, and logs. Uninstall preserves the Hub database and
@@ -99,13 +119,16 @@ sudo dpkg -i "dist/teslatlas-hub_1.0.0-alpha.1_$(dpkg --print-architecture).deb"
 
 The package creates the private `teslatlas` service user, configuration at
 `/etc/teslatlas-hub/config.toml`, and data directory at
-`/var/lib/teslatlas-hub`. Bootstrap and setup run as that service user:
+`/var/lib/teslatlas-hub`. New and existing minimal package configurations get
+explicit offline defaults for geocoding and terrain; existing table settings
+are never overridden. Bootstrap and setup run as that service user:
 
 ```sh
 sudo -u teslatlas teslatlas-hub bootstrap
 sudo -u teslatlas teslatlas-hub setup \
   --access-token-file /private/access-token \
-  --refresh-token-file /private/refresh-token
+  --refresh-token-file /private/refresh-token \
+  --all-vehicles
 sudo systemctl enable --now teslatlas-hub.service
 sudo teslatlas-hub service status
 sudo -u teslatlas teslatlas-hub status
@@ -136,9 +159,17 @@ packaged writable path; do not remove `/var/lib/teslatlas-hub` while existing
 Hub data remains there.
 
 Package upgrades restart the service only when it was running before the
-upgrade. An installed but stopped service remains stopped. Package removal
-stops and disables the unit but intentionally retains its data directory and
-the `teslatlas` account.
+upgrade. Before replacement, one old binary and unit copy is kept temporarily
+under `/run`. Health failures after successful read-only admission restore that
+payload. If admission fails on an existing database, the new binary runs a
+bounded `bootstrap`, which includes the existing transactional schema
+migrations, without copying the database. Bootstrap is the forward-only
+boundary: a migration or later admission/health failure retains the new binary
+stopped, because the old binary may not understand the advanced schema.
+Reinstall the same or a newer package after correcting the reported problem;
+automatic downgrade is intentionally unavailable. An installed but stopped
+service remains stopped. Package removal stops and disables the unit but
+intentionally retains its data directory and the `teslatlas` account.
 
 Service controls are `sudo teslatlas-hub service status|start|stop|restart`.
 Migration stays read-only; after a Linux migration, start the package service
@@ -159,15 +190,39 @@ data_dir = "/Users/me/Library/Application Support/Teslatlas Hub/data"
 bind = "127.0.0.1:8080"
 ```
 
-Initialize and configure one vehicle without TeslaMate. Token files must be
-private (`chmod 600`); add `--vehicle-id ID` only when the account has more
-than one vehicle.
+Initialize and configure every legacy Owner API vehicle without TeslaMate.
+Token files must be private (`chmod 600`). Use `--vehicle-id ID` instead of
+`--all-vehicles` only to select one account vehicle.
 
 ```sh
 teslatlas-hub --config /absolute/path/config.toml init
 teslatlas-hub --config /absolute/path/config.toml setup \
   --access-token-file /absolute/path/access-token \
-  --refresh-token-file /absolute/path/refresh-token
+  --refresh-token-file /absolute/path/refresh-token \
+  --all-vehicles
+```
+
+For Fleet API operation, set the provider before setup:
+
+```toml
+[collector]
+provider = "fleet"
+
+# Optional. Required only for signed vehicle commands, not collection or wake.
+fleet_command_proxy_url = "https://127.0.0.1:4443/"
+fleet_command_proxy_root_certificate_path = "/absolute/path/proxy-ca.pem"
+```
+
+Feed one bounded JSON object to `setup-fleet` through stdin. It contains
+`accessToken`, `refreshToken`, `clientId`, `region`, and `expiresInSeconds`;
+`region` is `north_america_and_asia_pacific`,
+`europe_middle_east_and_africa`, or `china`. Obtain these third-party Fleet
+credentials through Tesla's documented authorization flow. Do not put them in
+arguments, logs, or shell history.
+
+```sh
+credential-helper-that-writes-json | \
+  teslatlas-hub --config /absolute/path/config.toml setup-fleet --all-vehicles
 ```
 
 Run without installation:
@@ -195,8 +250,27 @@ teslatlas-hub --config /absolute/path/config.toml doctor
 teslatlas-hub legal
 ```
 
-Vehicle commands are intentionally absent. Only the resident collector owns
-the refresh token and Hub never starts a second credential manager.
+Only the resident collector owns and refreshes provider credentials. Explicit
+vehicle actions go through its private local control socket, require
+`--confirm`, and require `--vehicle-id UUID` when more than one car is
+configured:
+
+```sh
+teslatlas-hub --config /absolute/path/config.toml control \
+  --vehicle-id HUB-VEHICLE-UUID wake --confirm
+teslatlas-hub --config /absolute/path/config.toml control \
+  --vehicle-id HUB-VEHICLE-UUID climate-start --confirm
+```
+
+Supported actions are wake, climate start/stop, charging start/stop, charge
+limit, lock/unlock, flash lights, and horn. Fleet commands require the optional
+loopback command proxy above. Fleet wake uses the direct Fleet endpoint.
+
+Successful provider vehicle-data envelopes are recursively stripped of
+credential-like fields, including authorization, tokens, passwords, secrets,
+API keys, and cookies, and kept only as bounded current observations. Raw
+processing rows are pruned after lifecycle projection; this is not an
+unbounded provider-response archive.
 
 ## Backup and credential recovery
 
@@ -270,6 +344,23 @@ teslatlas-hub --config /absolute/path/config.toml migrate \
 ```
 
 The migration code reads `private.tokens` only for the explicit credential-transfer path. Imported ciphertext remains encrypted at rest; the matching key is written to a mode-0600 file and plaintext tokens exist only in process memory when required. Use a dedicated source role with only the minimum privileges needed for the selected migration mode.
+
+## Optional bounded TeslaMate write-back
+
+Write-back is separate from migration and ordinary collection. The command
+below locks and validates exactly one charging-process row, then rolls back and
+prints a receipt:
+
+```sh
+teslatlas-hub write-back \
+  --source postgresql://writer@127.0.0.1/teslamate \
+  --car-id 1 \
+  --postgres-password-file /absolute/path/postgres-password \
+  charge-cost --charging-process-id 604 --cost 12.34
+```
+
+Repeat with `--apply` after checking the dry-run receipt to commit that one
+cost. No other TeslaMate table or field is writable through Hub.
 
 ## Security and operational warning
 

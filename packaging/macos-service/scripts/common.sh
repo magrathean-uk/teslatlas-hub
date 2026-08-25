@@ -51,6 +51,26 @@ read_console_user() {
         || installer_error "console user does not own its home"
 }
 
+refuse_other_user_launch_agents() {
+    account_table=$(/usr/bin/dscl . -list /Users UniqueID 2>/dev/null) \
+        || installer_error "cannot enumerate local users"
+    for account in $(printf '%s\n' "$account_table" | /usr/bin/awk '$2 >= 501 { print $1 }'); do
+        [ "$account" = "$CONSOLE_USER" ] && continue
+        account_home=$(
+            /usr/bin/dscl . -read "/Users/$account" NFSHomeDirectory 2>/dev/null \
+                | /usr/bin/awk -F ': ' '/^NFSHomeDirectory: / { print $2; exit }'
+        )
+        case "$account_home" in
+            /*) ;;
+            *) installer_error "cannot inspect local user home: $account" ;;
+        esac
+        other_plist="$account_home/Library/LaunchAgents/$LABEL.plist"
+        if [ -e "$other_plist" ] || [ -L "$other_plist" ]; then
+            installer_error "shared Hub binary upgrade refused while another user has a Hub LaunchAgent: $account"
+        fi
+    done
+}
+
 service_target() {
     printf 'gui/%s/%s\n' "$CONSOLE_UID" "$LABEL"
 }

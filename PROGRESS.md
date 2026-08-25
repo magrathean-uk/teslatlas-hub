@@ -1,24 +1,29 @@
 # Hub progress
 
-Status: current Rust 1.98 source has one verified artifact for macOS ARM64,
-Debian amd64, and Debian ARM64. The full review found no remaining concrete
-Rust, migration, security, macOS lifecycle, or Debian lifecycle blocker.
+Status: current Rust 1.98 source implements legacy Owner API and official Fleet
+API setup, discovery, polling, refresh, multi-car collection, wake/control,
+bounded provider-response retention, and opt-in TeslaMate write-back. The final
+review fixed configured offline timeout use, durable stream audit receipts,
+post-send Fleet refresh fencing, one-to-one VIN/EID rotation, recursive raw JSON
+credential redaction, and Fleet-only macOS status. No known code blocker remains.
 
-Current: 736 Rust tests passed with 2 intentional ignores; release Clippy with
-`-D warnings`, ShellCheck, Linux packaging tests, macOS packaging checks, and 16
-AppKit tests passed. The current artifacts are:
+Current verification on 2026-08-25: 747 library + 38 CLI + 1 TLS tests passed
+(786 total; 2 intentional fixture tests ignored); all-target check, Clippy with
+`-D warnings`, release build, ShellCheck, Linux packaging tests, macOS packaging
+checks, and 24 AppKit tests passed. The local TeslaMate PostgreSQL write-back
+dry-run reported zero affected rows and left charge cost `0.10` unchanged.
+
+Current artifact:
 
 - macOS ARM64 app, embedded Hub SHA-256
-  `9632e77610abec8bfd0c5151f9a23fdb99ae8f15f78eb0eb3b017accdd0fb6ce`;
+  `323b0a807c67590a274acd7ca4225b4509e43a08249acbbf0aa2b7bf77f99455`;
+  embedded service package SHA-256
+  `208eb17f10686d959d736aa0b37b3b1e5ad5eb45dca0eb1f2f6b82461fefa6fa`;
   deep strict ad-hoc signature verification passed.
-- Debian amd64 package, SHA-256
-  `42445738bfb44498075e5227f5b6d570d24f3462c5f0b315f02bd3fd2b00b906`;
-  native Debian 13 install, bootstrap, doctor, systemd, loopback API, and live
-  Tesla token refresh passed.
-- Debian ARM64 package, SHA-256
-  `805c90e856c1650fd09b8b3269c0d9b82aa10d3487c00176f6647e9e3d455121`;
-  the AArch64 executable ran under Debian 13 ARM64 user emulation and package
-  install, bootstrap, doctor, and purge passed.
+
+Linux package source and lifecycle-fault contracts pass. Earlier native Debian
+amd64 and ARM64 receipts remain historical evidence; no source-identical native
+Linux artifact was rebuilt after the final fixes.
 
 The final stopped TeslaMate v4.1.1 migration read 105 migrations, 10,782,436
 positions, 3,267 drives, and 1 car into about 1.86 GiB / 446 packs. Source
@@ -28,9 +33,14 @@ refreshed successfully itself. Hub, its data, build inputs, emulation packages,
 and caches were removed from the VPS. TeslaMate and TeslaMateAPI are healthy;
 VPS root has 28 GiB free. No vehicle command ran.
 
-Next: physical driving-stream observation. Clean-machine macOS lifecycle,
-physical ARM64 hardware, physical iOS sync, and signed/notarized release remain
-external release evidence, not known code blockers.
+Next external evidence: real Fleet authorization/discovery/refresh/commands,
+physical driving-stream observation, source-identical native Debian amd64 and
+ARM64 installs, clean-machine macOS lifecycle, physical iOS sync, endurance,
+and signed/notarized release. These are not claimed by local tests.
+
+Deliberate exclusions: TeslaFi import, `addresses.raw`, Grafana/MQTT/dashboard,
+and native Fleet Telemetry ingestion. Fleet currently uses official REST
+polling; legacy Owner API keeps TeslaMate-compatible vehicle streaming.
 
 Blocked: no known code blocker. The local old-schema TeslaMate PostgreSQL copy
 remains an intentional read-only negative fixture.

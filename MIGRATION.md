@@ -16,7 +16,7 @@ The importer must:
 - query only reviewed relations;
 - never repair, migrate or write to the source;
 - fail closed on unknown schema;
-- stage output separately;
+- write output only to Hub-owned storage separate from the source;
 - verify integrity and counts before cutover;
 - preserve rollback.
 
@@ -30,6 +30,10 @@ The operator must have authority, back up and test recovery, stop concurrent cre
 
 A tagged release must disclose imported and omitted records, transformations, units, time treatment, precision, open-session handling, deduplication and unsupported customisations.
 
-## No write-back
+## Separate bounded write-back
 
-Migration is not a continuing write-back bridge. Any bidirectional feature requires a new security, data-integrity and legal review.
+Migration is always read-only and is not a continuing bridge. A separate,
+explicit `write-back charge-cost` command can lock and update one selected
+TeslaMate charging-process cost. It defaults to rollback and requires
+`--apply` to commit. Ordinary migration and collection never call it; no other
+TeslaMate table or field is writable through Hub.

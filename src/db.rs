@@ -33,7 +33,7 @@ use crate::{
         MAX_TEXT_BYTES, ProjectionBinding, ProjectionCar, ProjectionCarSettings,
         ProjectionCarSettingsPatch, ProjectionDelta, ProjectionDeltaEntity, ProjectionDrive,
         ProjectionPackError, ProjectionPackRequest, ProjectionPackWriter, ProjectionPosition,
-        ProjectionSnapshot, ProjectionTombstone,
+        ProjectionSnapshot, ProjectionTombstone, cleanup_stale_pack_staging,
     },
     protocol::{
         CursorKey, HUB_PROJECTION_SCHEMA_V2, HUB_PROJECTION_SCHEMA_V3, LINEAGE_PROTOCOL_V2,
@@ -53,7 +53,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 52;
+pub const SCHEMA_VERSION: i32 = 55;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -338,6 +338,95 @@ impl std::fmt::Debug for TeslaMateLegacyTokenStore {
             .debug_struct("TeslaMateLegacyTokenStore")
             .field("access", &"[redacted]")
             .field("refresh", &"[redacted]")
+            .field("expires_at", &self.expires_at)
+            .field("next_refresh_at", &self.next_refresh_at)
+            .field(
+                "credential_generation",
+                &self.credential_generation.map(|_| "[redacted]"),
+            )
+            .finish()
+    }
+}
+
+/// Encrypted official Fleet OAuth pair and its public refresh metadata.
+#[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
+pub struct FleetTokenStore {
+    access: Vec<u8>,
+    refresh: Vec<u8>,
+    client_id: String,
+    region: String,
+    expires_at: i64,
+    next_refresh_at: i64,
+    #[zeroize(skip)]
+    credential_generation: Option<Uuid>,
+}
+
+impl FleetTokenStore {
+    pub fn new(
+        access: Vec<u8>,
+        refresh: Vec<u8>,
+        client_id: String,
+        region: String,
+        expires_at: i64,
+        next_refresh_at: i64,
+        credential_generation: Option<Uuid>,
+    ) -> Result<Self, StoreError> {
+        if access.is_empty()
+            || refresh.is_empty()
+            || access.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
+            || refresh.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
+            || client_id.is_empty()
+            || client_id.len() > 255
+            || client_id.chars().any(char::is_control)
+            || !matches!(region.as_str(), "na" | "eu" | "cn")
+            || next_refresh_at <= 0
+            || expires_at <= next_refresh_at
+            || credential_generation.is_some_and(|generation| generation.is_nil())
+        {
+            return Err(StoreError::InvalidFleetTokenStore);
+        }
+        Ok(Self {
+            access,
+            refresh,
+            client_id,
+            region,
+            expires_at,
+            next_refresh_at,
+            credential_generation,
+        })
+    }
+
+    pub fn access(&self) -> &[u8] {
+        &self.access
+    }
+    pub fn refresh(&self) -> &[u8] {
+        &self.refresh
+    }
+    pub fn client_id(&self) -> &str {
+        &self.client_id
+    }
+    pub fn region(&self) -> &str {
+        &self.region
+    }
+    pub const fn expires_at(&self) -> i64 {
+        self.expires_at
+    }
+    pub const fn next_refresh_at(&self) -> i64 {
+        self.next_refresh_at
+    }
+    pub(crate) const fn credential_generation(&self) -> Option<Uuid> {
+        self.credential_generation
+    }
+}
+
+impl std::fmt::Debug for FleetTokenStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FleetTokenStore")
+            .field("access", &"[redacted]")
+            .field("refresh", &"[redacted]")
+            .field("client_id", &"[redacted]")
+            .field("region", &self.region)
             .field("expires_at", &self.expires_at)
             .field("next_refresh_at", &self.next_refresh_at)
             .field(
@@ -1097,6 +1186,7 @@ impl HubStore {
         // Never discard a staged import while another process owns its
         // publication workflow. A busy gate makes startup retryable instead.
         let publication_gate = store.try_acquire_publication_gate()?;
+        cleanup_stale_pack_staging(store.packs_dir()).map_err(StoreError::PackStartupRepair)?;
         store.recover_stale_import_projection_state_spools(&publication_gate, &connection)?;
         cleanup_abandoned_import_generations(&connection)?;
         Ok(store)
@@ -1869,6 +1959,617 @@ impl HubStore {
             },
         )
         .transpose()
+    }
+
+    pub fn replace_fleet_tokens(&self, tokens: &FleetTokenStore) -> Result<(), StoreError> {
+        self.replace_fleet_tokens_inner(tokens, false)
+    }
+
+    /// Replace Fleet ciphertext and remove the superseded bytes from the live
+    /// SQLite database and its local WAL. Used only by the one-time key split.
+    pub(crate) fn replace_fleet_tokens_and_scrub(
+        &self,
+        tokens: &FleetTokenStore,
+    ) -> Result<(), StoreError> {
+        self.replace_fleet_tokens_inner(tokens, true)
+    }
+
+    fn replace_fleet_tokens_inner(
+        &self,
+        tokens: &FleetTokenStore,
+        scrub_superseded: bool,
+    ) -> Result<(), StoreError> {
+        let replacement_generation = tokens
+            .credential_generation()
+            .map(|value| value.to_string());
+        let mut connection = self.open()?;
+        if scrub_superseded {
+            connection
+                .execute_batch("PRAGMA secure_delete = ON;")
+                .map_err(StoreError::FleetTokenStore)?;
+        }
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        if let Some(generation) = replacement_generation.as_ref() {
+            let consumed: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM fleet_refresh_input_fences
+                         WHERE input_credential_generation = ?1
+                    )",
+                    params![generation],
+                    |row| row.get(0),
+                )
+                .map_err(StoreError::FleetRefreshReceipt)?;
+            if consumed {
+                return Err(StoreError::FleetRefreshOutcomeUnknown);
+            }
+        }
+        let unresolved_inputs = transaction
+            .prepare(
+                "SELECT b.input_credential_generation
+                   FROM fleet_refresh_receipt_bindings AS b
+                   JOIN outbound_request_receipts AS r ON r.id = b.receipt_id
+                  WHERE r.outcome = 'started'",
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(StoreError::FleetRefreshReceipt)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if !unresolved_inputs.is_empty() {
+            let current_generation: Option<String> = transaction
+                .query_row(
+                    "SELECT credential_generation FROM fleet_tokens
+                      WHERE singleton_id = 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(StoreError::FleetTokenStore)?
+                .flatten();
+            if unresolved_inputs.len() != 1
+                || current_generation.as_ref() != unresolved_inputs.first()
+                || replacement_generation.is_none()
+                || replacement_generation.as_ref() == unresolved_inputs.first()
+            {
+                return Err(StoreError::FleetRefreshOutcomeUnknown);
+            }
+            let completed_at_ms = outbound_request_clock_ms()?;
+            transaction
+                .execute(
+                    "UPDATE outbound_request_receipts
+                        SET completed_at_ms = MAX(?1, started_at_ms),
+                            duration_ms = MAX(?1, started_at_ms) - started_at_ms,
+                            outcome = 'cancelled'
+                      WHERE outcome = 'started' AND id IN (
+                        SELECT receipt_id FROM fleet_refresh_receipt_bindings)",
+                    params![completed_at_ms],
+                )
+                .map_err(StoreError::FleetRefreshReceipt)?;
+        }
+        transaction
+            .execute(
+                "INSERT INTO fleet_tokens(
+                    singleton_id, access, refresh, client_id, region,
+                    expires_at, next_refresh_at, credential_generation
+                 ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(singleton_id) DO UPDATE SET
+                    access = excluded.access,
+                    refresh = excluded.refresh,
+                    client_id = excluded.client_id,
+                    region = excluded.region,
+                    expires_at = excluded.expires_at,
+                    next_refresh_at = excluded.next_refresh_at,
+                    credential_generation = excluded.credential_generation",
+                params![
+                    tokens.access(),
+                    tokens.refresh(),
+                    tokens.client_id(),
+                    tokens.region(),
+                    tokens.expires_at(),
+                    tokens.next_refresh_at(),
+                    replacement_generation,
+                ],
+            )
+            .map_err(StoreError::FleetTokenStore)?;
+        transaction.commit().map_err(StoreError::FleetTokenStore)?;
+        if scrub_superseded {
+            let (busy, remaining, checkpointed): (i64, i64, i64) = connection
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })
+                .map_err(StoreError::FleetTokenStore)?;
+            if busy != 0 || remaining != checkpointed {
+                return Err(StoreError::FleetCredentialScrubIncomplete);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn load_fleet_tokens(&self) -> Result<Option<FleetTokenStore>, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        let row = connection
+            .query_row(
+                "SELECT access, refresh, client_id, region, expires_at, next_refresh_at,
+                        credential_generation
+                   FROM fleet_tokens WHERE singleton_id = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(StoreError::FleetTokenStore)?;
+        row.map(
+            |(access, refresh, client_id, region, expires_at, next_refresh_at, generation)| {
+                let generation = generation
+                    .map(|value| Uuid::parse_str(&value))
+                    .transpose()
+                    .map_err(|_| StoreError::InvalidFleetTokenStore)?;
+                FleetTokenStore::new(
+                    access,
+                    refresh,
+                    client_id,
+                    region,
+                    expires_at,
+                    next_refresh_at,
+                    generation,
+                )
+            },
+        )
+        .transpose()
+    }
+
+    pub(crate) fn bind_fleet_credential_generation(
+        &self,
+        tokens: &FleetTokenStore,
+        generation: Uuid,
+    ) -> Result<(), StoreError> {
+        if generation.is_nil() {
+            return Err(StoreError::InvalidFleetRefreshGeneration);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let row: Option<(Vec<u8>, Vec<u8>, Option<String>)> = transaction
+            .query_row(
+                "SELECT access, refresh, credential_generation
+                   FROM fleet_tokens WHERE singleton_id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(StoreError::FleetTokenStore)?;
+        let (access, refresh, stored_generation) =
+            row.ok_or(StoreError::FleetRefreshOutcomeUnknown)?;
+        if access != tokens.access() || refresh != tokens.refresh() {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        match stored_generation {
+            Some(stored) if stored == generation.to_string() => {}
+            Some(_) => return Err(StoreError::FleetRefreshOutcomeUnknown),
+            None => {
+                let unresolved: bool = transaction
+                    .query_row(
+                        "SELECT EXISTS(
+                            SELECT 1 FROM outbound_request_receipts AS r
+                            JOIN fleet_refresh_receipt_bindings AS b
+                              ON b.receipt_id = r.id
+                            WHERE r.outcome = 'started')",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .map_err(StoreError::FleetRefreshReceipt)?;
+                if unresolved {
+                    return Err(StoreError::FleetRefreshOutcomeUnknown);
+                }
+                let updated = transaction
+                    .execute(
+                        "UPDATE fleet_tokens SET credential_generation = ?1
+                          WHERE singleton_id = 1 AND credential_generation IS NULL
+                            AND access = ?2 AND refresh = ?3",
+                        params![generation.to_string(), tokens.access(), tokens.refresh()],
+                    )
+                    .map_err(StoreError::FleetTokenStore)?;
+                if updated != 1 {
+                    return Err(StoreError::FleetRefreshOutcomeUnknown);
+                }
+            }
+        }
+        transaction.commit().map_err(StoreError::FleetTokenStore)
+    }
+
+    pub(crate) fn begin_fleet_refresh(
+        &self,
+        input_generation: Uuid,
+    ) -> Result<OutboundRequestReceiptId, StoreError> {
+        if input_generation.is_nil() {
+            return Err(StoreError::InvalidFleetRefreshGeneration);
+        }
+        let started_at_ms = outbound_request_clock_ms()?;
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let current: Option<String> = transaction
+            .query_row(
+                "SELECT credential_generation FROM fleet_tokens WHERE singleton_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::FleetTokenStore)?
+            .flatten();
+        if current.as_deref() != Some(input_generation.to_string().as_str()) {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        let unavailable: bool = transaction
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM outbound_request_receipts AS r
+                    JOIN fleet_refresh_receipt_bindings AS b ON b.receipt_id = r.id
+                    WHERE r.outcome = 'started'
+                 ) OR EXISTS(
+                    SELECT 1 FROM fleet_refresh_input_fences
+                    WHERE input_credential_generation = ?1
+                 )",
+                params![input_generation.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if unavailable {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        ensure_outbound_request_capacity(&transaction)?;
+        let fence_count: i64 = transaction
+            .query_row(
+                "SELECT COUNT(*) FROM fleet_refresh_input_fences",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if fence_count >= MAX_LEGACY_REFRESH_INPUT_FENCES {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        transaction
+            .execute(
+                "INSERT INTO outbound_request_receipts(
+                    correlation_id, started_at_ms, vehicle_tesla_id, transport,
+                    operation, safety_class, precondition, outcome
+                 ) VALUES (?1, ?2, NULL, 'fleet_api', 'token_refresh',
+                           'non_wake_endpoint', 'not_required', 'started')",
+                params![Uuid::new_v4().to_string(), started_at_ms],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        let receipt_id = OutboundRequestReceiptId(transaction.last_insert_rowid());
+        transaction
+            .execute(
+                "INSERT INTO fleet_refresh_input_fences(input_credential_generation)
+                 VALUES (?1)",
+                params![input_generation.to_string()],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        transaction
+            .execute(
+                "INSERT INTO fleet_refresh_receipt_bindings(
+                    receipt_id, attempt_id, input_credential_generation
+                 ) VALUES (?1, ?2, ?3)",
+                params![
+                    receipt_id.0,
+                    Uuid::new_v4().to_string(),
+                    input_generation.to_string()
+                ],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        transaction
+            .commit()
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        Ok(receipt_id)
+    }
+
+    pub(crate) fn cancel_unsent_fleet_refresh(
+        &self,
+        receipt_id: OutboundRequestReceiptId,
+        input_generation: Uuid,
+    ) -> Result<(), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let deleted = transaction
+            .execute(
+                "DELETE FROM fleet_refresh_receipt_bindings
+                  WHERE receipt_id = ?1 AND input_credential_generation = ?2
+                    AND EXISTS(SELECT 1 FROM outbound_request_receipts
+                               WHERE id = ?1 AND outcome = 'started')",
+                params![receipt_id.0, input_generation.to_string()],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if deleted != 1 {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        transaction
+            .execute(
+                "DELETE FROM fleet_refresh_input_fences
+                  WHERE input_credential_generation = ?1",
+                params![input_generation.to_string()],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        let completed_at_ms = outbound_request_clock_ms()?;
+        let completed = transaction
+            .execute(
+                "UPDATE outbound_request_receipts
+                    SET completed_at_ms = MAX(?2, started_at_ms),
+                        duration_ms = MAX(?2, started_at_ms) - started_at_ms,
+                        outcome = 'cancelled'
+                  WHERE id = ?1 AND outcome = 'started'",
+                params![receipt_id.0, completed_at_ms],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if completed != 1 {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        transaction
+            .commit()
+            .map_err(StoreError::FleetRefreshReceipt)
+    }
+
+    /// Terminalize a refresh attempt whose provider response proves the input
+    /// refresh token was not consumed. The generation may then be retried.
+    pub(crate) fn complete_retryable_fleet_refresh_failure(
+        &self,
+        receipt_id: OutboundRequestReceiptId,
+        input_generation: Uuid,
+        completion: &OutboundRequestCompletion,
+    ) -> Result<(), StoreError> {
+        completion.validate()?;
+        if receipt_id.0 <= 0
+            || input_generation.is_nil()
+            || !matches!(
+                completion.outcome,
+                OutboundRequestOutcome::HttpError
+                    | OutboundRequestOutcome::TransportError
+                    | OutboundRequestOutcome::AuthenticationRejected
+            )
+        {
+            return Err(StoreError::InvalidFleetRefreshFailure);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let stored_input: Option<String> = transaction
+            .query_row(
+                "SELECT b.input_credential_generation
+                   FROM fleet_refresh_receipt_bindings AS b
+                   JOIN outbound_request_receipts AS r ON r.id = b.receipt_id
+                  WHERE b.receipt_id = ?1 AND r.outcome = 'started'",
+                params![receipt_id.0],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        let current: Option<String> = transaction
+            .query_row(
+                "SELECT credential_generation FROM fleet_tokens WHERE singleton_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::FleetTokenStore)?
+            .flatten();
+        let input = input_generation.to_string();
+        if stored_input.as_deref() != Some(input.as_str())
+            || current.as_deref() != Some(input.as_str())
+        {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        let deleted = transaction
+            .execute(
+                "DELETE FROM fleet_refresh_input_fences
+                  WHERE input_credential_generation = ?1",
+                params![input],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if deleted != 1 {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        let completed_at_ms = outbound_request_clock_ms()?.max(
+            transaction
+                .query_row(
+                    "SELECT started_at_ms FROM outbound_request_receipts WHERE id = ?1",
+                    params![receipt_id.0],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(StoreError::FleetRefreshReceipt)?,
+        );
+        let completed = transaction
+            .execute(
+                "UPDATE outbound_request_receipts
+                    SET completed_at_ms = ?2, duration_ms = ?2 - started_at_ms,
+                        outcome = ?3, http_status = ?4, retry_after_seconds = ?5
+                  WHERE id = ?1 AND outcome = 'started'",
+                params![
+                    receipt_id.0,
+                    completed_at_ms,
+                    completion.outcome.as_str(),
+                    completion.http_status,
+                    completion
+                        .retry_after_seconds
+                        .map(i64::try_from)
+                        .transpose()
+                        .map_err(|_| StoreError::InvalidOutboundRequestRetryAfter)?
+                ],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if completed != 1 {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        prune_expired_outbound_request_receipts(&transaction)?;
+        transaction
+            .commit()
+            .map_err(StoreError::FleetRefreshReceipt)
+    }
+
+    pub(crate) fn complete_fleet_refresh(
+        &self,
+        receipt_id: OutboundRequestReceiptId,
+        input_generation: Uuid,
+        output_generation: Uuid,
+        tokens: &FleetTokenStore,
+    ) -> Result<(), StoreError> {
+        if receipt_id.0 <= 0
+            || input_generation.is_nil()
+            || output_generation.is_nil()
+            || input_generation == output_generation
+            || tokens.credential_generation() != Some(output_generation)
+        {
+            return Err(StoreError::InvalidFleetRefreshGeneration);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let stored_input: String = transaction
+            .query_row(
+                "SELECT b.input_credential_generation
+                   FROM fleet_refresh_receipt_bindings AS b
+                   JOIN outbound_request_receipts AS r ON r.id = b.receipt_id
+                  WHERE b.receipt_id = ?1 AND r.outcome = 'started'",
+                params![receipt_id.0],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::FleetRefreshReceipt)?
+            .ok_or(StoreError::FleetRefreshOutcomeUnknown)?;
+        let current: Option<String> = transaction
+            .query_row(
+                "SELECT credential_generation FROM fleet_tokens WHERE singleton_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::FleetTokenStore)?
+            .flatten();
+        if stored_input != input_generation.to_string()
+            || current.as_deref() != Some(input_generation.to_string().as_str())
+        {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        let output_consumed: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM fleet_refresh_input_fences
+                               WHERE input_credential_generation = ?1)",
+                params![output_generation.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if output_consumed {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        let updated = transaction
+            .execute(
+                "UPDATE fleet_tokens SET access = ?1, refresh = ?2, client_id = ?3,
+                        region = ?4, expires_at = ?5, next_refresh_at = ?6,
+                        credential_generation = ?7
+                  WHERE singleton_id = 1 AND credential_generation = ?8",
+                params![
+                    tokens.access(),
+                    tokens.refresh(),
+                    tokens.client_id(),
+                    tokens.region(),
+                    tokens.expires_at(),
+                    tokens.next_refresh_at(),
+                    output_generation.to_string(),
+                    input_generation.to_string(),
+                ],
+            )
+            .map_err(StoreError::FleetTokenStore)?;
+        if updated != 1 {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        let bound = transaction
+            .execute(
+                "UPDATE fleet_refresh_receipt_bindings
+                    SET output_credential_generation = ?2
+                  WHERE receipt_id = ?1 AND output_credential_generation IS NULL",
+                params![receipt_id.0, output_generation.to_string()],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if bound != 1 {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        let completed_at_ms = outbound_request_clock_ms()?.max(
+            transaction
+                .query_row(
+                    "SELECT started_at_ms FROM outbound_request_receipts WHERE id = ?1",
+                    params![receipt_id.0],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(StoreError::FleetRefreshReceipt)?,
+        );
+        let completed = transaction
+            .execute(
+                "UPDATE outbound_request_receipts
+                    SET completed_at_ms = ?2, duration_ms = ?2 - started_at_ms,
+                        outcome = 'success', http_status = 200
+                  WHERE id = ?1 AND outcome = 'started'",
+                params![receipt_id.0, completed_at_ms],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        if completed != 1 {
+            return Err(StoreError::FleetRefreshOutcomeUnknown);
+        }
+        transaction
+            .commit()
+            .map_err(StoreError::FleetRefreshReceipt)
+    }
+
+    pub fn has_unresolved_fleet_refresh(&self) -> Result<bool, StoreError> {
+        self.open_read_only_connection()?
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM outbound_request_receipts AS r
+                    JOIN fleet_refresh_receipt_bindings AS b ON b.receipt_id = r.id
+                    WHERE r.outcome = 'started')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::FleetRefreshReceipt)
+    }
+
+    pub fn clear_fleet_tokens(&self) -> Result<(), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let completed_at_ms = outbound_request_clock_ms()?;
+        transaction
+            .execute(
+                "UPDATE outbound_request_receipts
+                    SET completed_at_ms = MAX(?1, started_at_ms),
+                        duration_ms = MAX(?1, started_at_ms) - started_at_ms,
+                        outcome = 'cancelled'
+                  WHERE outcome = 'started' AND id IN (
+                    SELECT receipt_id FROM fleet_refresh_receipt_bindings)",
+                params![completed_at_ms],
+            )
+            .map_err(StoreError::FleetRefreshReceipt)?;
+        transaction
+            .execute("DELETE FROM fleet_tokens WHERE singleton_id = 1", [])
+            .map_err(StoreError::FleetTokenStore)?;
+        transaction.commit().map_err(StoreError::FleetTokenStore)
     }
 
     /// Delete the sole persisted TeslaMate token pair.
@@ -4212,76 +4913,148 @@ impl HubStore {
         })
     }
 
-    /// The single configured car eligible for Owner API collection. A V2
-    /// binding and Tesla EID are durable setup/import facts; do not infer the
-    /// selection from mutable discovery data.
-    pub fn selected_tesla_eid(&self) -> Result<Option<(i64, ProjectionCarSettings)>, StoreError> {
+    /// All configured cars eligible for account-owned collection. V2 bindings
+    /// and Tesla EIDs are durable setup/import facts; never infer targets from
+    /// mutable discovery data.
+    pub fn configured_tesla_vehicles(
+        &self,
+    ) -> Result<Vec<(Uuid, i64, ProjectionCarSettings)>, StoreError> {
         let connection = self.open()?;
         let mut statement = connection
             .prepare(
-                "SELECT eid.alias_value,
+                "SELECT binding.vehicle_id, eid.alias_value,
                         settings.enabled, settings.use_streaming_api,
                         settings.suspend_after_idle_min, settings.suspend_min,
                         settings.req_not_unlocked, settings.free_supercharging,
                         settings.lfp_battery, settings.suspend_min_resolved,
                         car.car_json
                    FROM v2_base_bindings AS binding
-                   JOIN vehicle_identity_aliases AS eid
+                   LEFT JOIN vehicle_identity_aliases AS eid
                      ON eid.vehicle_id = binding.vehicle_id
                     AND eid.alias_kind = 'tesla_eid'
                    LEFT JOIN car_settings AS settings
                      ON settings.vehicle_id = binding.vehicle_id
                    LEFT JOIN materialised_cars AS car
-                     ON car.vehicle_id = binding.vehicle_id",
+                     ON car.vehicle_id = binding.vehicle_id
+                  ORDER BY binding.vehicle_id, eid.alias_value",
             )
             .map_err(StoreError::Query)?;
         let mut rows = statement.query([]).map_err(StoreError::Query)?;
-        let Some(row) = rows.next().map_err(StoreError::Query)? else {
-            return Ok(None);
-        };
-        let values = (
-            row.get::<_, String>(0).map_err(StoreError::Query)?,
-            row.get::<_, Option<i64>>(1).map_err(StoreError::Query)?,
-            row.get::<_, Option<i64>>(2).map_err(StoreError::Query)?,
-            row.get::<_, Option<i64>>(3).map_err(StoreError::Query)?,
-            row.get::<_, Option<i64>>(4).map_err(StoreError::Query)?,
-            row.get::<_, Option<i64>>(5).map_err(StoreError::Query)?,
-            row.get::<_, Option<i64>>(6).map_err(StoreError::Query)?,
-            row.get::<_, Option<i64>>(7).map_err(StoreError::Query)?,
-            row.get::<_, Option<i64>>(8).map_err(StoreError::Query)?,
-            row.get::<_, Option<String>>(9).map_err(StoreError::Query)?,
-        );
-        if rows.next().map_err(StoreError::Query)?.is_some() {
-            return Err(StoreError::LineageCatalogConflict);
+        let mut configured = Vec::new();
+        let mut previous_vehicle_id = None;
+        while let Some(row) = rows.next().map_err(StoreError::Query)? {
+            let vehicle_id = Uuid::parse_str(&row.get::<_, String>(0).map_err(StoreError::Query)?)
+                .map_err(|_| StoreError::InvalidStoredUuid("configured vehicle"))?;
+            if previous_vehicle_id == Some(vehicle_id) {
+                return Err(StoreError::LineageCatalogConflict);
+            }
+            previous_vehicle_id = Some(vehicle_id);
+            let eid = row
+                .get::<_, Option<String>>(1)
+                .map_err(StoreError::Query)?
+                .and_then(|eid| eid.parse::<i64>().ok())
+                .filter(|eid| *eid > 0)
+                .ok_or(StoreError::LineageCatalogConflict)?;
+            let enabled = row.get::<_, Option<i64>>(2).map_err(StoreError::Query)?;
+            let settings = match enabled {
+                None => row
+                    .get::<_, Option<String>>(10)
+                    .map_err(StoreError::Query)?
+                    .map(|car| {
+                        serde_json::from_str::<ProjectionCar>(&car)
+                            .map(|car| car.settings)
+                            .map_err(StoreError::DeserializeLifecycleRow)
+                    })
+                    .transpose()?
+                    .unwrap_or_default(),
+                Some(enabled) => ProjectionCarSettings {
+                    enabled: enabled != 0,
+                    use_streaming_api: row
+                        .get::<_, Option<i64>>(3)
+                        .map_err(StoreError::Query)?
+                        .unwrap_or_default()
+                        != 0,
+                    suspend_after_idle_min: row
+                        .get::<_, Option<i64>>(4)
+                        .map_err(StoreError::Query)?
+                        .unwrap_or_default(),
+                    suspend_min: row
+                        .get::<_, Option<i64>>(5)
+                        .map_err(StoreError::Query)?
+                        .unwrap_or_default(),
+                    req_not_unlocked: row
+                        .get::<_, Option<i64>>(6)
+                        .map_err(StoreError::Query)?
+                        .unwrap_or_default()
+                        != 0,
+                    free_supercharging: row
+                        .get::<_, Option<i64>>(7)
+                        .map_err(StoreError::Query)?
+                        .unwrap_or_default()
+                        != 0,
+                    lfp_battery: row
+                        .get::<_, Option<i64>>(8)
+                        .map_err(StoreError::Query)?
+                        .unwrap_or_default()
+                        != 0,
+                    suspend_min_resolved: row
+                        .get::<_, Option<i64>>(9)
+                        .map_err(StoreError::Query)?
+                        .unwrap_or_default()
+                        != 0,
+                },
+            };
+            configured.push((vehicle_id, eid, settings));
         }
-        let eid = values
-            .0
-            .parse::<i64>()
-            .ok()
-            .filter(|eid| *eid > 0)
-            .ok_or(StoreError::LineageCatalogConflict)?;
-        let settings = match values.1 {
-            None => values
-                .9
-                .map(|car| {
-                    serde_json::from_str::<ProjectionCar>(&car)
-                        .map(|car| car.settings)
-                        .map_err(StoreError::DeserializeLifecycleRow)
-                })
-                .transpose()?
-                .unwrap_or_default(),
-            Some(enabled) => ProjectionCarSettings {
-                enabled: enabled != 0,
-                use_streaming_api: values.2.unwrap_or_default() != 0,
-                suspend_after_idle_min: values.3.unwrap_or_default(),
-                suspend_min: values.4.unwrap_or_default(),
-                req_not_unlocked: values.5.unwrap_or_default() != 0,
-                free_supercharging: values.6.unwrap_or_default() != 0,
-                lfp_battery: values.7.unwrap_or_default() != 0,
-                suspend_min_resolved: values.8.unwrap_or_default() != 0,
-            },
-        };
-        Ok(Some((eid, settings)))
+        Ok(configured)
+    }
+
+    /// Resolve the durable Tesla EID and VIN for one configured Hub vehicle.
+    /// Vehicle commands use this exact identity instead of mutable discovery.
+    pub fn configured_tesla_vehicle_identity(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<(i64, Option<String>)>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open()?;
+        let row: Option<(i64, Option<String>, Option<String>)> = connection
+            .query_row(
+                "SELECT COUNT(eid.alias_value), MIN(eid.alias_value), vehicle.vin
+                   FROM v2_base_bindings AS binding
+                   JOIN vehicles AS vehicle ON vehicle.vehicle_id = binding.vehicle_id
+                   LEFT JOIN vehicle_identity_aliases AS eid
+                     ON eid.vehicle_id = binding.vehicle_id
+                    AND eid.alias_kind = 'tesla_eid'
+                  WHERE binding.vehicle_id = ?1
+                  GROUP BY binding.vehicle_id, vehicle.vin",
+                params![vehicle_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        row.map(|(eid_count, eid, vin)| {
+            if eid_count != 1 {
+                return Err(StoreError::LineageCatalogConflict);
+            }
+            let eid = eid
+                .and_then(|eid| eid.parse::<i64>().ok())
+                .filter(|eid| *eid > 0)
+                .ok_or(StoreError::LineageCatalogConflict)?;
+            Ok((eid, vin))
+        })
+        .transpose()
+    }
+
+    /// Compatibility helper for call sites which intentionally require one car.
+    pub fn selected_tesla_eid(&self) -> Result<Option<(i64, ProjectionCarSettings)>, StoreError> {
+        let configured = self.configured_tesla_vehicles()?;
+        match configured.as_slice() {
+            [] => Ok(None),
+            [(_, eid, settings)] => Ok(Some((*eid, settings.clone()))),
+            _ => Err(StoreError::LineageCatalogConflict),
+        }
     }
 
     pub fn v2_lineage_pack_count(&self, vehicle_id: Uuid) -> Result<usize, StoreError> {
@@ -9448,6 +10221,45 @@ impl HubStore {
         source_car_id: i64,
     ) -> Result<ObservationWatermark, ObservationVerificationError> {
         let target = self.resolve_observation_target(source_car_id)?;
+        self.observation_watermark_for_target(source_car_id, target)
+    }
+
+    /// Capture the latest durable observation for an exact Hub vehicle. This
+    /// avoids ambiguity when separate imported vehicles reuse the same
+    /// pack-local TeslaMate car id.
+    pub fn observation_watermark_for_vehicle(
+        &self,
+        vehicle_id: Uuid,
+        source_car_id: i64,
+    ) -> Result<ObservationWatermark, ObservationVerificationError> {
+        require_positive_db(source_car_id, "source car id")
+            .map_err(|_| ObservationVerificationError::InvalidSourceCarId)?;
+        let connection = self.open_read_only_connection()?;
+        let source_id = connection
+            .query_row(
+                "SELECT source_id FROM vehicles WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?
+            .map(|source_id| parse_stored_uuid("observation source", &source_id))
+            .transpose()?
+            .ok_or(ObservationVerificationError::NoVehicleMapping)?;
+        self.observation_watermark_for_target(
+            source_car_id,
+            ObservationTarget {
+                vehicle_id,
+                source_id,
+            },
+        )
+    }
+
+    fn observation_watermark_for_target(
+        &self,
+        source_car_id: i64,
+        target: ObservationTarget,
+    ) -> Result<ObservationWatermark, ObservationVerificationError> {
         let connection = self.open_read_only_connection()?;
         let latest = latest_observation_metadata(&connection, target.vehicle_id, None)?;
         Ok(ObservationWatermark {
@@ -9571,17 +10383,20 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        let reserved_legacy_refresh: bool = transaction
+        let reserved_refresh: bool = transaction
             .query_row(
                 "SELECT EXISTS(
                     SELECT 1 FROM legacy_refresh_receipt_bindings
+                     WHERE receipt_id = ?1
+                ) OR EXISTS(
+                    SELECT 1 FROM fleet_refresh_receipt_bindings
                      WHERE receipt_id = ?1
                 )",
                 params![receipt_id.0],
                 |row| row.get(0),
             )
             .map_err(StoreError::OutboundRequestReceipt)?;
-        if reserved_legacy_refresh {
+        if reserved_refresh {
             return Err(StoreError::ReservedLegacyRefreshReceipt);
         }
         let started_at_ms: Option<i64> = transaction
@@ -10258,11 +11073,7 @@ impl HubStore {
         let existing = load_lifecycle_state_in_transaction(&transaction, input.vehicle_id)?;
         let mut state = match existing.as_ref() {
             Some(record) => crate::lifecycle::OpenSessionState::decode(&record.open_session_json)
-                .unwrap_or_else(|_| {
-                    let mut clean = crate::lifecycle::OpenSessionState::new();
-                    clean.last_observation_id = record.last_observation_id;
-                    clean
-                }),
+                .map_err(|_| StoreError::InvalidLifecycleSession)?,
             None => crate::lifecycle::OpenSessionState::new(),
         };
         // Do not rehydrate full open child collections on every observation.
@@ -10344,6 +11155,21 @@ impl HubStore {
         received_at_ms: i64,
         car_id: i64,
     ) -> Result<OwnerObservationResult, StoreError> {
+        self.accept_owner_observation_and_lifecycle_with_offline_timeout(
+            input,
+            received_at_ms,
+            car_id,
+            crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT,
+        )
+    }
+
+    pub(crate) fn accept_owner_observation_and_lifecycle_with_offline_timeout(
+        &self,
+        input: &ObservationInput,
+        received_at_ms: i64,
+        car_id: i64,
+        offline_drive_timeout: std::time::Duration,
+    ) -> Result<OwnerObservationResult, StoreError> {
         input.validate()?;
         validate_timestamp("observation received_at_ms", received_at_ms)?;
         if car_id <= 0 {
@@ -10359,11 +11185,7 @@ impl HubStore {
         let existing = load_lifecycle_state_in_transaction(&transaction, input.vehicle_id)?;
         let mut state = match existing.as_ref() {
             Some(record) => crate::lifecycle::OpenSessionState::decode(&record.open_session_json)
-                .unwrap_or_else(|_| {
-                    let mut clean = crate::lifecycle::OpenSessionState::new();
-                    clean.last_observation_id = record.last_observation_id;
-                    clean
-                }),
+                .map_err(|_| StoreError::InvalidLifecycleSession)?,
             None => crate::lifecycle::OpenSessionState::new(),
         };
         // Incremental path: no full open-child rehydrate per observation.
@@ -10382,8 +11204,13 @@ impl HubStore {
                 vehicle_state: observation_vehicle_state(&observation.payload),
                 payload: observation.payload,
             };
-            let step = crate::lifecycle::apply_sample(state, car_id, &sample)
-                .map_err(StoreError::LifecycleProjection)?;
+            let step = crate::lifecycle::apply_sample_with_offline_drive_timeout(
+                state,
+                car_id,
+                &sample,
+                offline_drive_timeout,
+            )
+            .map_err(StoreError::LifecycleProjection)?;
             state = step.state;
             quarantined |= step.quarantined;
             delta.drives.extend(step.delta.drives);
@@ -12451,6 +13278,7 @@ impl HubStore {
                 "upsert",
                 &position_json,
             )?;
+            mark_export_dirty_in_transaction(&transaction, candidate.vehicle_id)?;
         }
         upsert_terrain_provenance(
             &transaction,
@@ -12602,8 +13430,8 @@ impl HubStore {
             catalog_shas.insert(sha);
         }
 
-        let mut orphaned_packs_removed = 0;
-        let mut freed_bytes = 0;
+        let (mut orphaned_packs_removed, mut freed_bytes) =
+            cleanup_stale_pack_staging(self.packs_dir()).map_err(StoreError::PackStartupRepair)?;
         for packs_dir in [
             self.packs_dir().to_path_buf(),
             self.packs_dir().join("sha256"),
@@ -13132,6 +13960,7 @@ pub struct OutboundRequestWatermark {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutboundRequestTransport {
     OwnerApi,
+    FleetApi,
     Stream,
     LegacyAuth,
 }
@@ -13140,6 +13969,7 @@ impl OutboundRequestTransport {
     const fn as_str(self) -> &'static str {
         match self {
             Self::OwnerApi => "owner_api",
+            Self::FleetApi => "fleet_api",
             Self::Stream => "stream",
             Self::LegacyAuth => "legacy_auth",
         }
@@ -13147,6 +13977,7 @@ impl OutboundRequestTransport {
     fn parse(value: &str) -> Option<Self> {
         match value {
             "owner_api" => Some(Self::OwnerApi),
+            "fleet_api" => Some(Self::FleetApi),
             "stream" => Some(Self::Stream),
             "legacy_auth" => Some(Self::LegacyAuth),
             _ => None,
@@ -13159,6 +13990,8 @@ pub enum OutboundRequestOperation {
     Products,
     VehicleProbe,
     VehicleData,
+    VehicleWake,
+    VehicleCommand,
     TokenRefresh,
     StreamConnect,
     StreamSubscribe,
@@ -13171,6 +14004,8 @@ impl OutboundRequestOperation {
             Self::Products => "products",
             Self::VehicleProbe => "vehicle_probe",
             Self::VehicleData => "vehicle_data",
+            Self::VehicleWake => "vehicle_wake",
+            Self::VehicleCommand => "vehicle_command",
             Self::TokenRefresh => "token_refresh",
             Self::StreamConnect => "stream_connect",
             Self::StreamSubscribe => "stream_subscribe",
@@ -13182,6 +14017,8 @@ impl OutboundRequestOperation {
             "products" => Some(Self::Products),
             "vehicle_probe" => Some(Self::VehicleProbe),
             "vehicle_data" => Some(Self::VehicleData),
+            "vehicle_wake" => Some(Self::VehicleWake),
+            "vehicle_command" => Some(Self::VehicleCommand),
             "token_refresh" => Some(Self::TokenRefresh),
             "stream_connect" => Some(Self::StreamConnect),
             "stream_subscribe" => Some(Self::StreamSubscribe),
@@ -13196,6 +14033,7 @@ pub enum OutboundRequestSafetyClass {
     NonWakeEndpoint,
     ConditionalRead,
     DirectWakeCommand,
+    ExplicitVehicleCommand,
 }
 
 impl OutboundRequestSafetyClass {
@@ -13204,6 +14042,7 @@ impl OutboundRequestSafetyClass {
             Self::NonWakeEndpoint => "non_wake_endpoint",
             Self::ConditionalRead => "conditional_read",
             Self::DirectWakeCommand => "direct_wake_command",
+            Self::ExplicitVehicleCommand => "explicit_vehicle_command",
         }
     }
     fn parse(value: &str) -> Option<Self> {
@@ -13211,6 +14050,7 @@ impl OutboundRequestSafetyClass {
             "non_wake_endpoint" => Some(Self::NonWakeEndpoint),
             "conditional_read" => Some(Self::ConditionalRead),
             "direct_wake_command" => Some(Self::DirectWakeCommand),
+            "explicit_vehicle_command" => Some(Self::ExplicitVehicleCommand),
             _ => None,
         }
     }
@@ -13308,6 +14148,20 @@ impl OutboundRequestStart {
                 || self.precondition != OutboundRequestPrecondition::StreamPowerConfirmed)
         {
             return Err(StoreError::InvalidVehicleDataAuditPrecondition);
+        }
+        if self.operation == OutboundRequestOperation::VehicleWake
+            && (self.vehicle_tesla_id.is_none()
+                || self.safety_class != OutboundRequestSafetyClass::DirectWakeCommand
+                || self.precondition != OutboundRequestPrecondition::NotRequired)
+        {
+            return Err(StoreError::InvalidVehicleActionAudit);
+        }
+        if self.operation == OutboundRequestOperation::VehicleCommand
+            && (self.vehicle_tesla_id.is_none()
+                || self.safety_class != OutboundRequestSafetyClass::ExplicitVehicleCommand
+                || self.precondition != OutboundRequestPrecondition::NotRequired)
+        {
+            return Err(StoreError::InvalidVehicleActionAudit);
         }
         Ok(())
     }
@@ -13734,6 +14588,30 @@ fn register_vehicle_aliases(
     vehicle_id: Uuid,
     descriptor: &VehicleDescriptor,
 ) -> Result<(), StoreError> {
+    // A VIN match is the durable car identity when Tesla changes the EID
+    // exposed by a provider. Keep exactly one current EID alias so commands
+    // and settings cannot select an arbitrary historical value.
+    if let (Some(vin), Some(eid)) = (&descriptor.vin, descriptor.tesla_eid) {
+        let stored_vin: Option<String> = transaction
+            .query_row(
+                "SELECT vin FROM vehicles WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?
+            .flatten();
+        if stored_vin.as_deref() == Some(vin.as_str()) {
+            transaction
+                .execute(
+                    "DELETE FROM vehicle_identity_aliases
+                      WHERE vehicle_id = ?1 AND alias_kind = 'tesla_eid'
+                        AND alias_value <> ?2",
+                    params![vehicle_id.to_string(), eid.to_string()],
+                )
+                .map_err(StoreError::RegisterVehicle)?;
+        }
+    }
     let mut aliases = vec![(
         "source_key",
         format!("{}:{}", descriptor.source_id, descriptor.source_vehicle_key),
@@ -15667,6 +16545,215 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 52;
     }
 
+    if version == 52 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                CREATE TABLE lifecycle_open_rows_v53 (
+                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE CASCADE,
+                    source_table TEXT NOT NULL,
+                    source_row_id INTEGER NOT NULL CHECK(source_row_id > 0),
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    car_id INTEGER NOT NULL CHECK(car_id > 0),
+                    domain TEXT NOT NULL CHECK(domain IN (
+                        'drive', 'position', 'charge', 'charge_sample', 'state',
+                        'standalone_position'
+                    )),
+                    parent_source_row_id INTEGER,
+                    row_json TEXT NOT NULL CHECK(json_valid(row_json)),
+                    PRIMARY KEY(source_id, vehicle_id, source_table, source_row_id)
+                ) STRICT;
+                INSERT INTO lifecycle_open_rows_v53(
+                    source_id, source_table, source_row_id, vehicle_id, car_id,
+                    domain, parent_source_row_id, row_json
+                )
+                SELECT source_id, source_table, source_row_id, vehicle_id, car_id,
+                       domain, parent_source_row_id, row_json
+                  FROM lifecycle_open_rows;
+                DROP TABLE lifecycle_open_rows;
+                ALTER TABLE lifecycle_open_rows_v53 RENAME TO lifecycle_open_rows;
+                CREATE INDEX lifecycle_open_rows_vehicle_domain
+                    ON lifecycle_open_rows(vehicle_id, domain, source_row_id);
+                PRAGMA user_version = 53;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 53;
+    }
+
+    if version == 53 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                CREATE TABLE outbound_request_receipts_v54 (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    correlation_id TEXT NOT NULL CHECK(length(correlation_id) = 36),
+                    started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),
+                    completed_at_ms INTEGER,
+                    duration_ms INTEGER,
+                    vehicle_tesla_id INTEGER CHECK(vehicle_tesla_id > 0),
+                    transport TEXT NOT NULL CHECK(transport IN (
+                        'owner_api', 'fleet_api', 'stream', 'legacy_auth'
+                    )),
+                    operation TEXT NOT NULL CHECK(operation IN (
+                        'products', 'vehicle_probe', 'vehicle_data',
+                        'vehicle_wake', 'vehicle_command', 'token_refresh',
+                        'stream_connect', 'stream_subscribe', 'stream_unsubscribe'
+                    )),
+                    safety_class TEXT NOT NULL CHECK(safety_class IN (
+                        'non_wake_endpoint', 'conditional_read',
+                        'direct_wake_command', 'explicit_vehicle_command'
+                    )),
+                    precondition TEXT NOT NULL CHECK(precondition IN (
+                        'not_required', 'stream_power_confirmed'
+                    )),
+                    outcome TEXT NOT NULL CHECK(outcome IN (
+                        'started', 'success', 'http_error', 'timeout',
+                        'transport_error', 'authentication_rejected',
+                        'protocol_error', 'response_too_large', 'cancelled'
+                    )),
+                    http_status INTEGER CHECK(http_status BETWEEN 100 AND 599),
+                    retry_after_seconds INTEGER CHECK(retry_after_seconds >= 0),
+                    CHECK(
+                        (outcome = 'started' AND completed_at_ms IS NULL
+                         AND duration_ms IS NULL AND http_status IS NULL
+                         AND retry_after_seconds IS NULL)
+                        OR
+                        (outcome <> 'started' AND completed_at_ms IS NOT NULL
+                         AND duration_ms IS NOT NULL
+                         AND completed_at_ms >= started_at_ms
+                         AND duration_ms >= 0)
+                    )
+                ) STRICT;
+                INSERT INTO outbound_request_receipts_v54(
+                    id, correlation_id, started_at_ms, completed_at_ms,
+                    duration_ms, vehicle_tesla_id, transport, operation,
+                    safety_class, precondition, outcome, http_status,
+                    retry_after_seconds
+                )
+                SELECT id, correlation_id, started_at_ms, completed_at_ms,
+                       duration_ms, vehicle_tesla_id, transport, operation,
+                       safety_class, precondition, outcome, http_status,
+                       retry_after_seconds
+                  FROM outbound_request_receipts;
+                CREATE TABLE legacy_refresh_receipt_bindings_v54 (
+                    receipt_id INTEGER PRIMARY KEY NOT NULL
+                        REFERENCES outbound_request_receipts_v54(id) ON DELETE CASCADE,
+                    attempt_id TEXT NOT NULL UNIQUE CHECK(length(attempt_id) = 36),
+                    input_credential_generation TEXT NOT NULL
+                        CHECK(length(input_credential_generation) = 36),
+                    output_credential_generation TEXT
+                        CHECK(output_credential_generation IS NULL
+                              OR length(output_credential_generation) = 36),
+                    CHECK(output_credential_generation IS NULL
+                          OR output_credential_generation <> input_credential_generation)
+                ) STRICT;
+                INSERT INTO legacy_refresh_receipt_bindings_v54(
+                    receipt_id, attempt_id, input_credential_generation,
+                    output_credential_generation
+                )
+                SELECT receipt_id, attempt_id, input_credential_generation,
+                       output_credential_generation
+                  FROM legacy_refresh_receipt_bindings;
+                DROP TABLE legacy_refresh_receipt_bindings;
+                DROP TABLE outbound_request_receipts;
+                ALTER TABLE outbound_request_receipts_v54
+                    RENAME TO outbound_request_receipts;
+                ALTER TABLE legacy_refresh_receipt_bindings_v54
+                    RENAME TO legacy_refresh_receipt_bindings;
+                CREATE INDEX outbound_request_receipts_proof
+                    ON outbound_request_receipts(
+                        correlation_id, id, safety_class, outcome
+                    );
+                CREATE INDEX outbound_request_receipts_retention
+                    ON outbound_request_receipts(outcome, completed_at_ms, id);
+                CREATE UNIQUE INDEX legacy_refresh_receipt_output_generation
+                    ON legacy_refresh_receipt_bindings(output_credential_generation)
+                    WHERE output_credential_generation IS NOT NULL;
+                CREATE TABLE IF NOT EXISTS fleet_tokens (
+                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+                    access BLOB NOT NULL CHECK(length(access) BETWEEN 1 AND 16424),
+                    refresh BLOB NOT NULL CHECK(length(refresh) BETWEEN 1 AND 16424),
+                    client_id TEXT NOT NULL
+                        CHECK(length(CAST(client_id AS BLOB)) BETWEEN 1 AND 255),
+                    region TEXT NOT NULL CHECK(region IN ('na', 'eu', 'cn')),
+                    expires_at INTEGER NOT NULL CHECK(expires_at > 0),
+                    next_refresh_at INTEGER NOT NULL
+                        CHECK(next_refresh_at > 0 AND next_refresh_at < expires_at)
+                ) STRICT;
+                PRAGMA user_version = 54;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 54;
+    }
+
+    if version == 54 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                ALTER TABLE fleet_tokens ADD COLUMN credential_generation TEXT
+                    CHECK(credential_generation IS NULL
+                          OR length(credential_generation) = 36);
+                CREATE TABLE fleet_refresh_receipt_bindings (
+                    receipt_id INTEGER PRIMARY KEY NOT NULL
+                        REFERENCES outbound_request_receipts(id) ON DELETE CASCADE,
+                    attempt_id TEXT NOT NULL UNIQUE CHECK(length(attempt_id) = 36),
+                    input_credential_generation TEXT NOT NULL
+                        CHECK(length(input_credential_generation) = 36),
+                    output_credential_generation TEXT
+                        CHECK(output_credential_generation IS NULL
+                              OR length(output_credential_generation) = 36),
+                    CHECK(output_credential_generation IS NULL
+                          OR output_credential_generation <> input_credential_generation)
+                ) STRICT;
+                CREATE UNIQUE INDEX fleet_refresh_receipt_output_generation
+                    ON fleet_refresh_receipt_bindings(output_credential_generation)
+                    WHERE output_credential_generation IS NOT NULL;
+                CREATE TABLE fleet_refresh_input_fences (
+                    input_credential_generation TEXT PRIMARY KEY COLLATE NOCASE
+                        CHECK(length(input_credential_generation) = 36)
+                ) STRICT, WITHOUT ROWID;
+                CREATE TABLE current_observations_v55 (
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    record_type TEXT NOT NULL CHECK(record_type IN (
+                        'owner_api_discovery_v1',
+                        'owner_api_vehicle_data_v1',
+                        'fleet_api_discovery_v1',
+                        'fleet_api_vehicle_data_v1',
+                        'tesla_stream_update_v1'
+                    )),
+                    observation_id INTEGER NOT NULL CHECK(observation_id > 0),
+                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,
+                    observed_at_ms INTEGER NOT NULL CHECK(observed_at_ms >= 0),
+                    received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0),
+                    payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
+                    payload_json TEXT NOT NULL CHECK(json_valid(payload_json))
+                        CHECK(length(CAST(payload_json AS BLOB)) <= 262144),
+                    PRIMARY KEY(vehicle_id, record_type)
+                ) STRICT, WITHOUT ROWID;
+                INSERT INTO current_observations_v55(
+                    vehicle_id, record_type, observation_id, source_id,
+                    observed_at_ms, received_at_ms, payload_sha256, payload_json
+                )
+                SELECT vehicle_id, record_type, observation_id, source_id,
+                       observed_at_ms, received_at_ms, payload_sha256, payload_json
+                  FROM current_observations;
+                DROP TABLE current_observations;
+                ALTER TABLE current_observations_v55 RENAME TO current_observations;
+                PRAGMA user_version = 55;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 55;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {
@@ -16023,7 +17110,11 @@ fn append_observation_in_transaction(
         .filter(|value| {
             matches!(
                 *value,
-                "owner_api_discovery_v1" | "owner_api_vehicle_data_v1" | "tesla_stream_update_v1"
+                "owner_api_discovery_v1"
+                    | "owner_api_vehicle_data_v1"
+                    | "fleet_api_discovery_v1"
+                    | "fleet_api_vehicle_data_v1"
+                    | "tesla_stream_update_v1"
             )
         });
     if let Some(record_type) = record_type
@@ -16361,7 +17452,7 @@ fn insert_open_row<T: Serialize>(
                 source_id, source_table, source_row_id, vehicle_id, car_id,
                 domain, parent_source_row_id, row_json
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-             ON CONFLICT(source_id, source_table, source_row_id) DO NOTHING",
+             ON CONFLICT(source_id, vehicle_id, source_table, source_row_id) DO NOTHING",
             params![
                 source_id,
                 source_table,
@@ -17282,6 +18373,20 @@ pub enum StoreError {
     InvalidTeslaMateTokenSchedule,
     #[error("cannot access TeslaMate token store: {0}")]
     TeslaMateTokenStore(rusqlite::Error),
+    #[error("Fleet token store is invalid")]
+    InvalidFleetTokenStore,
+    #[error("cannot access Fleet token store: {0}")]
+    FleetTokenStore(rusqlite::Error),
+    #[error("cannot access Fleet refresh receipt: {0}")]
+    FleetRefreshReceipt(rusqlite::Error),
+    #[error("Fleet refresh outcome is ambiguous; replace credentials before retrying")]
+    FleetRefreshOutcomeUnknown,
+    #[error("Fleet credential generation is invalid")]
+    InvalidFleetRefreshGeneration,
+    #[error("Fleet retryable refresh failure receipt is invalid")]
+    InvalidFleetRefreshFailure,
+    #[error("Fleet credential ciphertext WAL scrub did not complete")]
+    FleetCredentialScrubIncomplete,
     #[error("invalid address cache record")]
     InvalidAddressCache,
     #[error("cannot write address cache: {0}")]
@@ -17377,6 +18482,8 @@ pub enum StoreError {
     TerrainCarMissing(Uuid),
     #[error("cannot publish terrain projection pack: {0}")]
     TerrainPack(ProjectionPackError),
+    #[error("cannot repair projection pack staging: {0}")]
+    PackStartupRepair(ProjectionPackError),
     #[error("cannot register source: {0}")]
     RegisterSource(rusqlite::Error),
     #[error("cannot register vehicle: {0}")]
@@ -17616,7 +18723,7 @@ pub enum StoreError {
     InvalidOutboundRequestReceiptId,
     #[error("outbound request receipt is missing or already terminal")]
     OutboundRequestReceiptNotStarted,
-    #[error("legacy token refresh receipts require the dedicated refresh API")]
+    #[error("token refresh receipts require the dedicated refresh API")]
     ReservedLegacyRefreshReceipt,
     #[error("outbound request correlation id must not be nil")]
     NilOutboundRequestCorrelationId,
@@ -17624,6 +18731,8 @@ pub enum StoreError {
     InvalidOutboundRequestVehicleId,
     #[error("vehicle_data audit records require conditional_read and stream_power_confirmed")]
     InvalidVehicleDataAuditPrecondition,
+    #[error("vehicle action audit classification is invalid")]
+    InvalidVehicleActionAudit,
     #[error("cannot read the store clock for outbound request auditing: {0}")]
     OutboundRequestClock(std::time::SystemTimeError),
     #[error("outbound request audit clock does not fit epoch milliseconds")]
@@ -17731,6 +18840,7 @@ mod tests {
     }
 
     fn remove_v50_current_observation_schema(connection: &Connection) {
+        remove_v55_fleet_schema(connection);
         connection
             .execute_batch(
                 "DROP TABLE current_observations;
@@ -17744,6 +18854,17 @@ mod tests {
                  END;",
             )
             .expect("remove v50 current-observation schema");
+    }
+
+    fn remove_v55_fleet_schema(connection: &Connection) {
+        connection
+            .execute_batch(
+                "DROP TABLE fleet_refresh_input_fences;
+                 DROP INDEX fleet_refresh_receipt_output_generation;
+                 DROP TABLE fleet_refresh_receipt_bindings;
+                 DROP TABLE fleet_tokens;",
+            )
+            .expect("remove v55 Fleet schema");
     }
 
     #[test]
@@ -18221,6 +19342,7 @@ mod tests {
         let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
+        remove_v55_fleet_schema(&connection);
         connection
             .execute_batch(
                 "DROP TABLE paired_devices;
@@ -18309,6 +19431,7 @@ mod tests {
             crate::teslamate_token::encrypt_legacy_owner_tokens(key_bytes, &plaintext)
                 .expect("encrypt v51 pair");
         let connection = store.open().expect("current catalogue");
+        remove_v55_fleet_schema(&connection);
         connection
             .execute_batch(
                 "DROP TABLE teslamate_legacy_tokens;
@@ -18373,6 +19496,7 @@ mod tests {
         let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
+        remove_v55_fleet_schema(&connection);
         connection
             .execute_batch(
                 "DROP TABLE teslamate_legacy_tokens;
@@ -18404,10 +19528,87 @@ mod tests {
     }
 
     #[test]
+    fn upgrades_v52_lifecycle_open_row_key_to_include_vehicle() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("current store");
+        let (source, vehicle) = test_registered_vehicle(&store);
+        let row = crate::teslamate_projection::TeslaMateState {
+            id: 1,
+            car_id: 10,
+            state: "online".into(),
+            start_date_ms: 1_000,
+            end_date_ms: None,
+        };
+        let row_json = serde_json::to_string(&row).expect("state JSON");
+        let connection = store.open().expect("current catalogue");
+        remove_v55_fleet_schema(&connection);
+        connection
+            .execute_batch(
+                "DROP TABLE lifecycle_open_rows;
+                 CREATE TABLE lifecycle_open_rows (
+                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE CASCADE,
+                    source_table TEXT NOT NULL,
+                    source_row_id INTEGER NOT NULL CHECK(source_row_id > 0),
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    car_id INTEGER NOT NULL CHECK(car_id > 0),
+                    domain TEXT NOT NULL CHECK(domain IN (
+                        'drive', 'position', 'charge', 'charge_sample', 'state',
+                        'standalone_position'
+                    )),
+                    parent_source_row_id INTEGER,
+                    row_json TEXT NOT NULL CHECK(json_valid(row_json)),
+                    PRIMARY KEY(source_id, source_table, source_row_id)
+                 ) STRICT;
+                 CREATE INDEX lifecycle_open_rows_vehicle_domain
+                    ON lifecycle_open_rows(vehicle_id, domain, source_row_id);
+                 PRAGMA user_version = 52;",
+            )
+            .expect("recreate v52 open-row key");
+        connection
+            .execute(
+                "INSERT INTO lifecycle_open_rows(
+                    source_id, source_table, source_row_id, vehicle_id, car_id,
+                    domain, parent_source_row_id, row_json
+                 ) VALUES (?1, 'states', 1, ?2, 10, 'state', NULL, ?3)",
+                params![
+                    source.source_id.to_string(),
+                    vehicle.vehicle_id.to_string(),
+                    row_json
+                ],
+            )
+            .expect("historical open row");
+        drop(connection);
+        drop(store);
+
+        let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v52 store");
+        let connection = upgraded.open().expect("upgraded catalogue");
+        assert_eq!(
+            schema_version(&connection).expect("schema version"),
+            SCHEMA_VERSION
+        );
+        let schema: String = connection
+            .query_row(
+                "SELECT sql FROM sqlite_master
+                  WHERE type = 'table' AND name = 'lifecycle_open_rows'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("open-row schema");
+        assert!(schema.contains("PRIMARY KEY(source_id, vehicle_id, source_table, source_row_id)"));
+        let rows: i64 = connection
+            .query_row("SELECT COUNT(*) FROM lifecycle_open_rows", [], |row| {
+                row.get(0)
+            })
+            .expect("preserved open rows");
+        assert_eq!(rows, 1);
+    }
+
+    #[test]
     fn unbound_historical_legacy_receipt_does_not_block_credential_recovery() {
         let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("current store");
         let connection = store.open().expect("current catalogue");
+        remove_v55_fleet_schema(&connection);
         let future_start = i64::MAX - 1;
         connection
             .execute(
@@ -19516,6 +20717,120 @@ mod tests {
     }
 
     #[test]
+    fn fleet_refresh_intent_fences_restart_and_commits_successor_atomically() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let input_generation = Uuid::from_u128(101);
+        let input = FleetTokenStore::new(
+            b"old-access-envelope".to_vec(),
+            b"old-refresh-envelope".to_vec(),
+            "owner-client".to_owned(),
+            "eu".to_owned(),
+            2_000,
+            1_750,
+            Some(input_generation),
+        )
+        .expect("input Fleet tokens");
+        store
+            .replace_fleet_tokens(&input)
+            .expect("input Fleet tokens persist");
+
+        assert!(matches!(
+            store.begin_fleet_refresh(Uuid::new_v4()),
+            Err(StoreError::FleetRefreshOutcomeUnknown)
+        ));
+        let first_receipt = store
+            .begin_fleet_refresh(input_generation)
+            .expect("Fleet refresh intent persists");
+        assert!(matches!(
+            store.complete_outbound_request(
+                first_receipt,
+                &OutboundRequestCompletion {
+                    outcome: OutboundRequestOutcome::Cancelled,
+                    http_status: None,
+                    retry_after_seconds: None,
+                },
+            ),
+            Err(StoreError::ReservedLegacyRefreshReceipt)
+        ));
+        drop(store);
+
+        let restarted = HubStore::open_existing(temporary.path()).expect("restart opens");
+        assert!(
+            restarted
+                .has_unresolved_fleet_refresh()
+                .expect("restart retains Fleet refresh intent")
+        );
+        assert!(matches!(
+            restarted.begin_fleet_refresh(input_generation),
+            Err(StoreError::FleetRefreshOutcomeUnknown)
+        ));
+        restarted
+            .cancel_unsent_fleet_refresh(first_receipt, input_generation)
+            .expect("definitely-unsent Fleet refresh cancels");
+
+        let receipt = restarted
+            .begin_fleet_refresh(input_generation)
+            .expect("Fleet refresh restarts after pre-send cancellation");
+        let output_generation = Uuid::from_u128(102);
+        let output = FleetTokenStore::new(
+            b"new-access-envelope".to_vec(),
+            b"new-refresh-envelope".to_vec(),
+            "owner-client".to_owned(),
+            "eu".to_owned(),
+            3_000,
+            2_750,
+            Some(output_generation),
+        )
+        .expect("output Fleet tokens");
+        restarted
+            .complete_fleet_refresh(receipt, input_generation, output_generation, &output)
+            .expect("Fleet successor commits atomically");
+        assert!(
+            !restarted
+                .has_unresolved_fleet_refresh()
+                .expect("Fleet intent completed")
+        );
+        let persisted = restarted
+            .load_fleet_tokens()
+            .expect("Fleet tokens load")
+            .expect("Fleet tokens remain");
+        assert_eq!(persisted.access(), output.access());
+        assert_eq!(persisted.credential_generation(), Some(output_generation));
+        assert!(matches!(
+            restarted.replace_fleet_tokens(&input),
+            Err(StoreError::FleetRefreshOutcomeUnknown)
+        ));
+
+        restarted
+            .begin_fleet_refresh(output_generation)
+            .expect("next Fleet refresh intent persists");
+        assert!(matches!(
+            restarted.replace_fleet_tokens(&output),
+            Err(StoreError::FleetRefreshOutcomeUnknown)
+        ));
+        let replacement_generation = Uuid::from_u128(103);
+        let replacement = FleetTokenStore::new(
+            b"operator-access-envelope".to_vec(),
+            b"operator-refresh-envelope".to_vec(),
+            "owner-client".to_owned(),
+            "eu".to_owned(),
+            4_000,
+            3_750,
+            Some(replacement_generation),
+        )
+        .expect("operator replacement Fleet tokens");
+        restarted
+            .replace_fleet_tokens(&replacement)
+            .expect("different operator credentials recover ambiguity");
+        assert!(
+            !restarted
+                .has_unresolved_fleet_refresh()
+                .expect("operator replacement terminalizes old intent")
+        );
+    }
+
+    #[test]
     fn appends_canonical_json_once_and_retries_idempotently() {
         let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store initializes");
@@ -19696,6 +21011,78 @@ mod tests {
                 .expect("new current observation")[0],
             second.append.observation
         );
+    }
+
+    #[test]
+    fn invalid_open_session_rolls_back_observations_without_resetting_state() {
+        let temp = crate::private_tempdir().expect("temp directory");
+        let store = HubStore::initialize(temp.path()).expect("store initializes");
+        let (source, vehicle) = test_registered_vehicle(&store);
+        let input = ObservationInput {
+            source_id: source.source_id,
+            vehicle_id: vehicle.vehicle_id,
+            observed_at_ms: 10_000,
+            payload: serde_json::json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "source_vehicle_id": "9",
+                "source_vehicle_state": "online",
+                "vehicle_data": {
+                    "drive_state": {"shift_state": "P", "speed": 0},
+                    "charge_state": {"charging_state": "Disconnected"},
+                    "vehicle_state": {"timestamp": 10_000}
+                }
+            }),
+        };
+        let accepted = store
+            .accept_owner_observation_and_lifecycle(&input, 10_001, 1)
+            .expect("initial observation");
+        let corrupt = b"not-json".to_vec();
+        store
+            .open()
+            .expect("open")
+            .execute(
+                "UPDATE vehicle_lifecycle_state SET open_session_json = ?2
+                 WHERE vehicle_id = ?1",
+                params![vehicle.vehicle_id.to_string(), corrupt],
+            )
+            .expect("simulate corrupt durable lifecycle state");
+        let preserved = store
+            .load_lifecycle_state(vehicle.vehicle_id)
+            .expect("load corrupt state")
+            .expect("lifecycle state");
+
+        let mut newer = input;
+        newer.observed_at_ms = 20_000;
+        newer.payload["vehicle_data"]["vehicle_state"]["timestamp"] = serde_json::json!(20_000);
+        assert!(matches!(
+            store.accept_owner_observation_and_lifecycle(&newer, 20_001, 1),
+            Err(StoreError::InvalidLifecycleSession)
+        ));
+        assert!(matches!(
+            store.accept_stream_observation_and_lifecycle(&newer, 20_001, 1),
+            Err(StoreError::InvalidLifecycleSession)
+        ));
+        assert_eq!(
+            store
+                .load_lifecycle_state(vehicle.vehicle_id)
+                .expect("load preserved state")
+                .expect("preserved lifecycle state"),
+            preserved
+        );
+        assert_eq!(
+            store
+                .current_observations_for_vehicle(vehicle.vehicle_id)
+                .expect("preserved current observation"),
+            vec![accepted.append.observation]
+        );
+        let raw_count: i64 = store
+            .open()
+            .expect("open")
+            .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| {
+                row.get(0)
+            })
+            .expect("raw observation count");
+        assert_eq!(raw_count, 0);
     }
 
     #[test]
@@ -23948,6 +25335,92 @@ mod tests {
     }
 
     #[test]
+    fn imported_open_rows_with_reused_source_ids_are_isolated_by_vehicle() {
+        let temp = crate::private_tempdir().expect("temp directory");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let source = store
+            .register_source(&SourceDescriptor::new("teslamate", "multi-car"), 1_000)
+            .expect("source");
+        let first_vehicle = store
+            .register_vehicle(
+                &VehicleDescriptor::new(source.source_id, "first-car"),
+                1_001,
+            )
+            .expect("first vehicle");
+        let second_vehicle = store
+            .register_vehicle(
+                &VehicleDescriptor::new(source.source_id, "second-car"),
+                1_002,
+            )
+            .expect("second vehicle");
+        let first_session = crate::teslamate_projection::TeslaMateOpenSession {
+            car_id: 10,
+            state: Some(crate::teslamate_projection::TeslaMateState {
+                id: 1,
+                car_id: 10,
+                state: "online".into(),
+                start_date_ms: 1_000,
+                end_date_ms: None,
+            }),
+            ..Default::default()
+        };
+        let second_session = crate::teslamate_projection::TeslaMateOpenSession {
+            car_id: 20,
+            state: Some(crate::teslamate_projection::TeslaMateState {
+                id: 1,
+                car_id: 20,
+                state: "asleep".into(),
+                start_date_ms: 2_000,
+                end_date_ms: None,
+            }),
+            ..Default::default()
+        };
+
+        let first = store
+            .seed_imported_open_session(
+                source.source_id,
+                first_vehicle.vehicle_id,
+                10,
+                &first_session,
+                1_000,
+            )
+            .expect("first open session");
+        let second = store
+            .seed_imported_open_session(
+                source.source_id,
+                second_vehicle.vehicle_id,
+                20,
+                &second_session,
+                2_000,
+            )
+            .expect("second open session");
+        assert_eq!(first.provisional_rows_inserted, 1);
+        assert_eq!(second.provisional_rows_inserted, 1);
+        assert_eq!(
+            store
+                .load_imported_open_session(source.source_id, first_vehicle.vehicle_id)
+                .expect("load first session"),
+            Some(first_session)
+        );
+        assert_eq!(
+            store
+                .load_imported_open_session(source.source_id, second_vehicle.vehicle_id)
+                .expect("load second session"),
+            Some(second_session)
+        );
+        let rows: i64 = store
+            .open()
+            .expect("open")
+            .query_row(
+                "SELECT COUNT(*) FROM lifecycle_open_rows WHERE source_id = ?1",
+                params![source.source_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("open row count");
+        assert_eq!(rows, 2);
+    }
+
+    #[test]
     fn finalize_import_generation_promotes_fresh_vehicle_from_zero_cursor() {
         let temp = crate::private_tempdir().expect("temp directory");
         let store = HubStore::initialize(temp.path()).expect("store");
@@ -26168,6 +27641,15 @@ mod terrain_background_tests {
 
         let candidates = store.terrain_candidates(4_000, 1_000).expect("candidates");
         assert_eq!(candidates.len(), 3);
+        let dirty_revision_before: i64 = store
+            .open()
+            .expect("open")
+            .query_row(
+                "SELECT dirty_revision FROM export_outbox WHERE vehicle_id = ?1",
+                params![vehicle.vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("initial dirty revision");
         for (candidate, elevation) in candidates.into_iter().zip([100_i16, 110, 90]) {
             assert!(
                 store
@@ -26183,6 +27665,16 @@ mod terrain_background_tests {
                     .expect("terrain result")
             );
         }
+        let dirty_revision_after_terrain: i64 = store
+            .open()
+            .expect("open")
+            .query_row(
+                "SELECT dirty_revision FROM export_outbox WHERE vehicle_id = ?1",
+                params![vehicle.vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("terrain dirty revision");
+        assert_eq!(dirty_revision_after_terrain, dirty_revision_before + 3);
         let history = store
             .materialised_history(vehicle.vehicle_id)
             .expect("history");
@@ -26220,6 +27712,16 @@ mod terrain_background_tests {
                 )
                 .expect("authoritative result")
         );
+        let dirty_revision_after_noop: i64 = store
+            .open()
+            .expect("open")
+            .query_row(
+                "SELECT dirty_revision FROM export_outbox WHERE vehicle_id = ?1",
+                params![vehicle.vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("authoritative dirty revision");
+        assert_eq!(dirty_revision_after_noop, dirty_revision_after_terrain);
         assert_eq!(
             store
                 .materialised_history(vehicle.vehicle_id)
@@ -26450,6 +27952,16 @@ mod observation_verification_tests {
             store.observation_watermark(17),
             Err(ObservationVerificationError::AmbiguousVehicleMapping)
         ));
+        let first = store
+            .observation_watermark_for_vehicle(vehicle.vehicle_id, 17)
+            .expect("exact first vehicle watermark");
+        let second = store
+            .observation_watermark_for_vehicle(other_vehicle.vehicle_id, 17)
+            .expect("exact second vehicle watermark");
+        assert_eq!(first.vehicle_id, vehicle.vehicle_id);
+        assert_eq!(first.source_id, source.source_id);
+        assert_eq!(second.vehicle_id, other_vehicle.vehicle_id);
+        assert_eq!(second.source_id, other_source.source_id);
     }
 }
 

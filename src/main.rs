@@ -23,13 +23,19 @@ use teslatlas_hub::protocol::CursorKey;
 use teslatlas_hub::teslamate_import::derive_effective_import_profile;
 use teslatlas_hub::{
     collector,
-    config::HubConfig,
+    config::{CollectorProvider, HubConfig},
     credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials, restore_credentials},
     credentials::{OwnerTokens, TeslaMatePostgresPassword},
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{HubStore, ObservationVerificationError, TeslaMateLegacyTokenStore},
+    fleet_api::FleetRegion,
+    fleet_credentials::{
+        FleetSetupCredentials, migrate_legacy_fleet_credentials, persist_fleet_setup_credentials,
+        remove_fleet_key_and_tokens, validate_stored_fleet_credentials,
+    },
     gpx::export_drive_gpx,
     hub_pack::GeofenceBillingType,
+    owner_api::LegacyVehicleAction,
     server,
     teslamate::ReadOnlySource,
     teslamate_credentials::{
@@ -45,6 +51,7 @@ use teslatlas_hub::{
     teslamate_token::{
         decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
     },
+    teslamate_writeback::{TeslaMateCost, write_back_charge_cost},
 };
 use tracing_subscriber::EnvFilter;
 
@@ -385,6 +392,65 @@ enum ControlCommand {
     /// Stop collection and remove the persisted Tesla account credentials.
     #[command(name = "sign-out")]
     SignOut,
+    /// Explicitly wake the selected car once.
+    Wake {
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    /// Start climate control once.
+    #[command(name = "climate-start")]
+    ClimateStart {
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    /// Stop climate control once.
+    #[command(name = "climate-stop")]
+    ClimateStop {
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    /// Start charging once.
+    #[command(name = "charge-start")]
+    ChargeStart {
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    /// Stop charging once.
+    #[command(name = "charge-stop")]
+    ChargeStop {
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    /// Set the charging limit percentage once.
+    #[command(name = "set-charge-limit")]
+    SetChargeLimit {
+        #[arg(long, value_parser = clap::value_parser!(u8).range(50..=100))]
+        percent: u8,
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    /// Lock the selected car once.
+    Lock {
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    /// Unlock the selected car once.
+    Unlock {
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    /// Flash the selected car's lights once.
+    #[command(name = "flash-lights")]
+    FlashLights {
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
+    /// Honk the selected car's horn once.
+    #[command(name = "honk-horn")]
+    HonkHorn {
+        #[arg(long, required = true)]
+        confirm: bool,
+    },
     /// List configured geofences.
     Geofences,
     /// Create a geofence, or replace one by id.
@@ -435,6 +501,22 @@ enum ControlCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum WriteBackCommand {
+    /// Copy one total cost into a TeslaMate charging process.
+    #[command(name = "charge-cost")]
+    ChargeCost {
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        charging_process_id: i64,
+        /// Exact numeric(14,2) value, for example 12.34.
+        #[arg(long)]
+        cost: TeslaMateCost,
+        /// Commit. Omit for a locked-row dry run and rollback.
+        #[arg(long)]
+        apply: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum Command {
     /// Print licence, source, and independence notices.
     Legal,
@@ -443,7 +525,7 @@ enum Command {
     /// Create the configured local store for a packaged Linux installation.
     #[cfg(unix)]
     Bootstrap,
-    /// Configure one vehicle directly from private Owner token files.
+    /// Configure one or every vehicle directly from private Owner tokens.
     #[cfg(unix)]
     Setup {
         /// Legacy Owner API access-token file, or `-` for stdin.
@@ -466,8 +548,22 @@ enum Command {
         #[arg(long, conflicts_with_all = ["access_token_file", "refresh_token_file"])]
         tokens_stdin: bool,
         /// Tesla Owner API vehicle id. Required only when discovery finds multiple vehicles.
-        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..), conflicts_with = "all_vehicles")]
         vehicle_id: Option<i64>,
+        /// Configure every vehicle returned by the Tesla account.
+        #[arg(long)]
+        all_vehicles: bool,
+    },
+    /// Configure one or every Fleet API vehicle from bounded JSON read only from stdin.
+    #[cfg(unix)]
+    #[command(name = "setup-fleet")]
+    SetupFleet {
+        /// Tesla Fleet API vehicle id. Required only when discovery finds multiple vehicles.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..), conflicts_with = "all_vehicles")]
+        vehicle_id: Option<i64>,
+        /// Configure every vehicle returned by the Tesla account.
+        #[arg(long)]
+        all_vehicles: bool,
     },
     /// Read-only validate the database and print a machine-readable health report.
     Doctor,
@@ -511,8 +607,11 @@ enum Command {
         #[command(subcommand)]
         command: ServiceCommand,
     },
-    /// Inspect or change the one configured car while the service is running.
+    /// Inspect or change configured cars while the service is running.
     Control {
+        /// Hub vehicle UUID. Optional only when exactly one car is published.
+        #[arg(long)]
+        vehicle_id: Option<uuid::Uuid>,
         #[command(subcommand)]
         command: ControlCommand,
     },
@@ -545,6 +644,21 @@ enum Command {
             conflicts_with = "encryption_key_file"
         )]
         refresh_token_file: Option<PathBuf>,
+    },
+    /// Explicit allow-listed write-back to TeslaMate PostgreSQL.
+    #[cfg(unix)]
+    WriteBack {
+        /// Password-free PostgreSQL URL. Password is read from a file or stdin.
+        #[arg(long)]
+        source: String,
+        /// Positive TeslaMate car id owning the target row.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        car_id: i64,
+        /// PostgreSQL password file, or `-` for stdin.
+        #[arg(long)]
+        postgres_password_file: PathBuf,
+        #[command(subcommand)]
+        command: WriteBackCommand,
     },
     /// Display one short-lived, single-use device pairing QR.
     #[command(alias = "create-pairing")]
@@ -630,18 +744,73 @@ async fn main() -> ExitCode {
     }
 }
 
-fn control_target(store: &HubStore) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+fn control_target(
+    store: &HubStore,
+    requested_vehicle_id: Option<uuid::Uuid>,
+) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
     let vehicles = store.published_vehicles()?;
-    if vehicles.len() != 1 {
-        return Err("control commands require exactly one published car".into());
-    }
-    let vehicle_id = vehicles[0].vehicle_id;
+    let vehicle_id = match requested_vehicle_id {
+        Some(vehicle_id)
+            if vehicles
+                .iter()
+                .any(|vehicle| vehicle.vehicle_id == vehicle_id) =>
+        {
+            vehicle_id
+        }
+        Some(_) => return Err("--vehicle-id does not identify a published car".into()),
+        None if vehicles.len() == 1 => vehicles[0].vehicle_id,
+        None => return Err("control command requires --vehicle-id with multiple cars".into()),
+    };
     store.v2_projection_binding(vehicle_id)?;
     Ok(vehicle_id)
 }
 
+fn explicit_vehicle_action(
+    command: &ControlCommand,
+) -> Result<Option<LegacyVehicleAction>, Box<dyn std::error::Error>> {
+    let (confirmed, action) = match command {
+        ControlCommand::Wake { confirm } => (*confirm, LegacyVehicleAction::Wake),
+        ControlCommand::ClimateStart { confirm } => (*confirm, LegacyVehicleAction::ClimateStart),
+        ControlCommand::ClimateStop { confirm } => (*confirm, LegacyVehicleAction::ClimateStop),
+        ControlCommand::ChargeStart { confirm } => (*confirm, LegacyVehicleAction::ChargeStart),
+        ControlCommand::ChargeStop { confirm } => (*confirm, LegacyVehicleAction::ChargeStop),
+        ControlCommand::SetChargeLimit { percent, confirm } => {
+            (*confirm, LegacyVehicleAction::SetChargeLimit(*percent))
+        }
+        ControlCommand::Lock { confirm } => (*confirm, LegacyVehicleAction::Lock),
+        ControlCommand::Unlock { confirm } => (*confirm, LegacyVehicleAction::Unlock),
+        ControlCommand::FlashLights { confirm } => (*confirm, LegacyVehicleAction::FlashLights),
+        ControlCommand::HonkHorn { confirm } => (*confirm, LegacyVehicleAction::HonkHorn),
+        _ => return Ok(None),
+    };
+    if !confirmed {
+        return Err("vehicle action requires --confirm".into());
+    }
+    Ok(Some(action))
+}
+
+fn validate_streaming_setting(
+    provider: CollectorProvider,
+    streaming: Option<bool>,
+) -> Result<(), &'static str> {
+    if provider == CollectorProvider::Fleet && streaming == Some(true) {
+        return Err("Fleet provider does not support legacy streaming");
+    }
+    Ok(())
+}
+
+fn clear_provider_credentials(
+    data_dir: &Path,
+    store: &HubStore,
+) -> Result<(), Box<dyn std::error::Error>> {
+    remove_fleet_key_and_tokens(data_dir, store)?;
+    remove_key_and_tokens(data_dir, store)?;
+    Ok(())
+}
+
 async fn run_control(
     config_path: &Path,
+    requested_vehicle_id: Option<uuid::Uuid>,
     command: &ControlCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = HubConfig::load(config_path)?;
@@ -659,12 +828,51 @@ async fn run_control(
             );
             return Ok(());
         }
+        ControlCommand::SignOut => {
+            #[cfg(target_os = "macos")]
+            teslatlas_hub::macos_launch_agent::stop_installed()?;
+            #[cfg(target_os = "linux")]
+            teslatlas_hub::linux_systemd::apply(teslatlas_hub::linux_systemd::ServiceAction::Stop)?;
+
+            #[cfg(unix)]
+            let _admission = AdmittedUserHub::admit(&config.data_dir)?;
+            clear_provider_credentials(&config.data_dir, &store)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "signed_out",
+                    "service": "stopped",
+                })
+            );
+            return Ok(());
+        }
         _ => {}
     }
-    let vehicle_id = control_target(&store)?;
+    let vehicle_id = control_target(&store, requested_vehicle_id)?;
+    if let Some(action) = explicit_vehicle_action(command)? {
+        let report =
+            collector::request_resident_vehicle_action(&config.data_dir, vehicle_id, action)
+                .await?;
+        println!("{}", serde_json::to_string(&report)?);
+        return Ok(());
+    }
     match command {
-        ControlCommand::PairedDevices | ControlCommand::RevokeDevice { .. } => {
-            unreachable!("device-only controls returned before vehicle selection")
+        ControlCommand::PairedDevices
+        | ControlCommand::RevokeDevice { .. }
+        | ControlCommand::SignOut => {
+            unreachable!("global controls returned before vehicle selection")
+        }
+        ControlCommand::Wake { .. }
+        | ControlCommand::ClimateStart { .. }
+        | ControlCommand::ClimateStop { .. }
+        | ControlCommand::ChargeStart { .. }
+        | ControlCommand::ChargeStop { .. }
+        | ControlCommand::SetChargeLimit { .. }
+        | ControlCommand::Lock { .. }
+        | ControlCommand::Unlock { .. }
+        | ControlCommand::FlashLights { .. }
+        | ControlCommand::HonkHorn { .. } => {
+            unreachable!("vehicle actions returned before local controls")
         }
         ControlCommand::Settings {
             enabled,
@@ -675,6 +883,7 @@ async fn run_control(
             free_supercharging,
             lfp_battery,
         } => {
+            validate_streaming_setting(config.collector.provider, *streaming)?;
             let mut settings = store.load_car_settings(vehicle_id)?;
             let changed = enabled.is_some()
                 || streaming.is_some()
@@ -726,24 +935,6 @@ async fn run_control(
                 serde_json::json!({
                     "status": if settings.enabled { "running" } else { "paused" },
                     "vehicleId": vehicle_id,
-                })
-            );
-        }
-        ControlCommand::SignOut => {
-            #[cfg(target_os = "macos")]
-            teslatlas_hub::macos_launch_agent::stop_installed()?;
-            #[cfg(target_os = "linux")]
-            teslatlas_hub::linux_systemd::apply(teslatlas_hub::linux_systemd::ServiceAction::Stop)?;
-
-            #[cfg(unix)]
-            let _admission = AdmittedUserHub::admit(&config.data_dir)?;
-            remove_key_and_tokens(&config.data_dir, &store)?;
-            println!(
-                "{}",
-                serde_json::json!({
-                    "status": "signed_out",
-                    "vehicleId": vehicle_id,
-                    "service": "stopped",
                 })
             );
         }
@@ -854,6 +1045,40 @@ async fn run_control(
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
 
+    #[cfg(unix)]
+    if let Command::WriteBack {
+        source,
+        car_id,
+        postgres_password_file,
+        command,
+    } = &cli.command
+    {
+        let source = ReadOnlySource::parse(source)?;
+        let password = TeslaMatePostgresPassword::from_bytes(&read_migration_secret(
+            postgres_password_file,
+            MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES,
+        )?)?;
+        match command {
+            WriteBackCommand::ChargeCost {
+                charging_process_id,
+                cost,
+                apply,
+            } => {
+                let receipt = write_back_charge_cost(
+                    &source,
+                    &password,
+                    *car_id,
+                    *charging_process_id,
+                    *cost,
+                    *apply,
+                )
+                .await?;
+                println!("{}", serde_json::to_string(&receipt)?);
+            }
+        }
+        return Ok(());
+    }
+
     #[cfg(target_os = "macos")]
     if let Command::Service { command } = &cli.command {
         match command {
@@ -869,6 +1094,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
             ServiceCommand::Start => {
                 let config = HubConfig::load(&config_path)?;
+                teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
+                    &config.data_dir,
+                    config.collector.provider,
+                )?;
                 teslatlas_hub::macos_launch_agent::start_installed(&config.data_dir)?;
                 println!("{}", serde_json::json!({"status": "running"}));
             }
@@ -878,6 +1107,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
             ServiceCommand::Restart => {
                 let config = HubConfig::load(&config_path)?;
+                teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
+                    &config.data_dir,
+                    config.collector.provider,
+                )?;
                 teslatlas_hub::macos_launch_agent::restart_installed(&config.data_dir)?;
                 println!("{}", serde_json::json!({"status": "running"}));
             }
@@ -912,8 +1145,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if let Command::Control { command } = &cli.command {
-        return run_control(&config_path, command).await;
+    if let Command::Control {
+        vehicle_id,
+        command,
+    } = &cli.command
+    {
+        return run_control(&config_path, *vehicle_id, command).await;
     }
 
     #[cfg(not(unix))]
@@ -925,6 +1162,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     if matches!(&cli.command, Command::Install) {
         let config = HubConfig::load(&config_path)?;
         let admission = AdmittedUserHub::admit(&config.data_dir)?;
+        teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
+            &config.data_dir,
+            config.collector.provider,
+        )?;
         let installed =
             teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, &config_path)?;
         drop(admission);
@@ -973,6 +1214,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(target_os = "macos")]
         if start_hub {
             let config = HubConfig::load(&config_path)?;
+            teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
+                &config.data_dir,
+                config.collector.provider,
+            )?;
             let installed =
                 teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, &config_path)?;
             teslatlas_hub::macos_launch_agent::start_prepared(&installed)?;
@@ -1031,27 +1276,34 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let config = HubConfig::load(&config_path)?;
             let store = HubStore::open_read_only(&config.data_dir)?;
             let vehicles = store.published_vehicles()?;
-            if vehicles.len() > 1 {
-                return Err("native control status requires exactly one published car".into());
+            let configured = store.configured_tesla_vehicles()?;
+            let mut vehicle_summaries = Vec::with_capacity(vehicles.len());
+            for vehicle in &vehicles {
+                let binding = store.v2_projection_binding(vehicle.vehicle_id)?;
+                let watermark = store.observation_watermark_for_vehicle(
+                    vehicle.vehicle_id,
+                    binding.selected_car_id,
+                )?;
+                let tesla_eid = configured.iter().find_map(|(vehicle_id, eid, _)| {
+                    (*vehicle_id == vehicle.vehicle_id).then_some(*eid)
+                });
+                vehicle_summaries.push(serde_json::json!({
+                    "vehicleId": vehicle.vehicle_id,
+                    "displayName": vehicle.display_name,
+                    "sourceCarId": binding.selected_car_id,
+                    "teslaEid": tesla_eid,
+                    "latestObservationId": watermark.observation_id,
+                    "latestObservedAtMs": watermark.observed_at_ms,
+                    "latestReceivedAtMs": watermark.received_at_ms,
+                }));
             }
-            let selected = store.selected_tesla_eid()?;
-            let vehicle = match vehicles.first() {
-                Some(vehicle) => {
-                    let binding = store.v2_projection_binding(vehicle.vehicle_id)?;
-                    let watermark = store.observation_watermark(binding.selected_car_id)?;
-                    Some(serde_json::json!({
-                        "vehicleId": vehicle.vehicle_id,
-                        "displayName": vehicle.display_name,
-                        "sourceCarId": binding.selected_car_id,
-                        "teslaEid": selected.as_ref().map(|(eid, _)| *eid),
-                        "latestObservationId": watermark.observation_id,
-                        "latestObservedAtMs": watermark.observed_at_ms,
-                        "latestReceivedAtMs": watermark.received_at_ms,
-                    }))
-                }
-                None => None,
+            let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());
+            let legacy_credentials = store.load_teslamate_legacy_tokens()?;
+            let fleet_credentials = store.load_fleet_tokens()?;
+            let selected_credentials_present = match config.collector.provider {
+                CollectorProvider::Legacy => legacy_credentials.is_some(),
+                CollectorProvider::Fleet => fleet_credentials.is_some(),
             };
-            let credentials = store.load_teslamate_legacy_tokens()?;
             let readiness = store
                 .service_readiness_at(config.collector.interval_seconds > 0, current_epoch_ms()?);
             let database_bytes = fs::metadata(store.database_path())?.len();
@@ -1066,13 +1318,23 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     },
                     "ready": readiness.is_ok(),
                     "readinessReason": readiness.err().map(|failure| failure.code),
+                    "provider": config.collector.provider,
                     "vehicle": vehicle,
+                    "vehicles": vehicle_summaries,
+                    "credentials": {
+                        "present": selected_credentials_present,
+                    },
                     "legacyCredentials": {
-                        "present": credentials.is_some(),
-                        "expiresAt": credentials.as_ref().map(TeslaMateLegacyTokenStore::expires_at),
-                        "nextRefreshAt": credentials
+                        "present": legacy_credentials.is_some(),
+                        "expiresAt": legacy_credentials.as_ref().map(TeslaMateLegacyTokenStore::expires_at),
+                        "nextRefreshAt": legacy_credentials
                             .as_ref()
                             .map(TeslaMateLegacyTokenStore::next_refresh_at),
+                    },
+                    "fleetCredentials": {
+                        "present": fleet_credentials.is_some(),
+                        "expiresAt": fleet_credentials.as_ref().map(|credentials| credentials.expires_at()),
+                        "nextRefreshAt": fleet_credentials.as_ref().map(|credentials| credentials.next_refresh_at()),
                     },
                 })
             );
@@ -1084,11 +1346,30 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let store = HubStore::open_immutable_read_only(&config.data_dir)?;
             store.catalogue_check()?;
             store.verify_immutable_snapshot_unchanged()?;
+            let configured = store.configured_tesla_vehicles()?;
+            if configured.is_empty() {
+                return Err("at least one configured vehicle is required".into());
+            }
+            match config.collector.provider {
+                CollectorProvider::Legacy => {
+                    let tokens = store
+                        .load_teslamate_legacy_tokens()?
+                        .ok_or("legacy Owner API credentials are required")?;
+                    teslatlas_hub::teslamate_credentials::load_key_for_tokens(
+                        &config.data_dir,
+                        &tokens,
+                    )?;
+                }
+                CollectorProvider::Fleet => {
+                    validate_stored_fleet_credentials(&store, &config.data_dir)?;
+                }
+            }
             println!(
                 "{}",
                 serde_json::json!({
                     "status": "ready",
                     "version": teslatlas_hub::BUILD_VERSION,
+                    "provider": config.collector.provider,
                 })
             );
             return Ok(());
@@ -1174,6 +1455,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(unix)]
         Command::Bootstrap => {
+            migrate_legacy_fleet_credentials(&store, &config.data_dir)?;
             println!(
                 "{}",
                 serde_json::json!({
@@ -1189,6 +1471,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             refresh_token_file,
             tokens_stdin,
             vehicle_id,
+            all_vehicles,
         } => {
             let tokens = if tokens_stdin {
                 read_setup_tokens_from_stdin()?
@@ -1208,21 +1491,75 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     )?,
                 )?
             };
-            let report =
-                collector::setup_native_vehicle(&store, &config, &tokens, vehicle_id).await?;
-            let encryption_key = random_encryption_key();
-            let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, &tokens)?;
-            let stored = TeslaMateLegacyTokenStore::imported(access, refresh)?;
-            replace_key_and_tokens(&config.data_dir, &store, &encryption_key, &stored)?;
-            println!(
-                "{}",
+            let report = if all_vehicles {
+                let report = collector::setup_native_vehicles(&store, &config, &tokens).await?;
+                serde_json::json!({
+                    "status": "configured",
+                    "vehicles": report.vehicles,
+                    "snapshotsPublished": report.snapshots_published,
+                })
+            } else {
+                let report =
+                    collector::setup_native_vehicle(&store, &config, &tokens, vehicle_id).await?;
                 serde_json::json!({
                     "status": "configured",
                     "selectedVehicleId": report.selected_vehicle_id,
                     "displayName": report.display_name,
                     "snapshotsPublished": report.snapshots_published,
                 })
-            );
+            };
+            let encryption_key = random_encryption_key();
+            let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, &tokens)?;
+            let stored = TeslaMateLegacyTokenStore::imported(access, refresh)?;
+            replace_key_and_tokens(&config.data_dir, &store, &encryption_key, &stored)?;
+            println!("{report}");
+        }
+        #[cfg(unix)]
+        Command::SetupFleet {
+            vehicle_id,
+            all_vehicles,
+        } => {
+            if config.collector.provider != CollectorProvider::Fleet {
+                return Err("setup-fleet requires collector.provider = \"fleet\"".into());
+            }
+            let credentials = read_setup_fleet_from_stdin()?;
+            let admission = admitted_user_hub
+                .as_deref()
+                .ok_or("Fleet setup reached runtime without user admission")?;
+            let report = if all_vehicles {
+                let report =
+                    collector::setup_fleet_vehicles(&store, &config, &credentials, admission)
+                        .await?;
+                serde_json::json!({
+                    "status": "configured",
+                    "provider": "fleet",
+                    "vehicles": report.vehicles,
+                    "snapshotsPublished": report.snapshots_published,
+                })
+            } else {
+                let report = collector::setup_fleet_vehicle(
+                    &store,
+                    &config,
+                    &credentials,
+                    admission,
+                    vehicle_id,
+                )
+                .await?;
+                serde_json::json!({
+                    "status": "configured",
+                    "provider": "fleet",
+                    "selectedVehicleId": report.selected_vehicle_id,
+                    "displayName": report.display_name,
+                    "snapshotsPublished": report.snapshots_published,
+                })
+            };
+            persist_fleet_setup_credentials(
+                &store,
+                &config.data_dir,
+                &credentials,
+                SystemTime::now(),
+            )?;
+            println!("{report}");
         }
         Command::Legal
         | Command::Doctor
@@ -1244,7 +1581,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(unix)]
             {
                 #[cfg(target_os = "macos")]
-                teslatlas_hub::macos_launch_agent::preflight_hub(&config.data_dir)?;
+                teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
+                    &config.data_dir,
+                    config.collector.provider,
+                )?;
                 let admission =
                     admitted_user_hub.ok_or("Serve reached runtime without user admission")?;
                 admission.assert_sensitive_access()?;
@@ -1360,6 +1700,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Migrate { .. } => {
             unreachable!("migration returns before opening common Hub state")
         }
+        #[cfg(unix)]
+        Command::WriteBack { .. } => {
+            unreachable!("write-back returns before opening common Hub state")
+        }
         Command::Pair {
             label,
             expires_in_seconds,
@@ -1425,6 +1769,7 @@ fn command_requires_user_hub_admission(command: &Command) -> bool {
         Command::Init
             | Command::Bootstrap
             | Command::Setup { .. }
+            | Command::SetupFleet { .. }
             | Command::Serve
             | Command::Observe { .. }
             | Command::Migrate { .. }
@@ -1440,9 +1785,13 @@ fn collector_can_start(
     store: &HubStore,
     config: &HubConfig,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    let credentials_present = match config.collector.provider {
+        CollectorProvider::Legacy => store.load_teslamate_legacy_tokens()?.is_some(),
+        CollectorProvider::Fleet => store.load_fleet_tokens()?.is_some(),
+    };
     Ok(config.collector.interval_seconds > 0
-        && store.selected_tesla_eid()?.is_some()
-        && store.load_teslamate_legacy_tokens()?.is_some())
+        && !store.configured_tesla_vehicles()?.is_empty()
+        && credentials_present)
 }
 
 fn default_config_path() -> PathBuf {
@@ -1483,6 +1832,8 @@ const MAX_MIGRATION_TOKEN_FILE_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES + 2;
 #[cfg(unix)]
 const MAX_SETUP_TOKENS_STDIN_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES * 2 + 128;
 #[cfg(unix)]
+const MAX_SETUP_FLEET_STDIN_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES * 2 + 1_024;
+#[cfg(unix)]
 const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
 
 #[cfg(unix)]
@@ -1491,6 +1842,19 @@ const MAX_MIGRATION_ENCRYPTION_KEY_BYTES: usize = 16 * 1024;
 struct SetupTokensStdin {
     access_token: String,
     refresh_token: String,
+}
+
+#[cfg(unix)]
+#[derive(serde::Deserialize, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SetupFleetStdin {
+    access_token: String,
+    refresh_token: String,
+    client_id: String,
+    #[zeroize(skip)]
+    region: FleetRegion,
+    #[zeroize(skip)]
+    expires_in_seconds: u64,
 }
 
 #[cfg(unix)]
@@ -1758,6 +2122,27 @@ fn read_setup_tokens_from_stdin() -> Result<OwnerTokens, Box<dyn std::error::Err
         zeroize::Zeroizing::new(std::mem::take(&mut input.refresh_token).into_bytes()),
     )
     .map_err(Into::into)
+}
+
+#[cfg(unix)]
+fn decode_setup_fleet_stdin(
+    bytes: &[u8],
+) -> Result<FleetSetupCredentials, Box<dyn std::error::Error>> {
+    let mut input: SetupFleetStdin = serde_json::from_slice(bytes)?;
+    FleetSetupCredentials::new(
+        std::mem::take(&mut input.access_token),
+        std::mem::take(&mut input.refresh_token),
+        std::mem::take(&mut input.client_id),
+        input.region,
+        input.expires_in_seconds,
+    )
+    .map_err(Into::into)
+}
+
+#[cfg(unix)]
+fn read_setup_fleet_from_stdin() -> Result<FleetSetupCredentials, Box<dyn std::error::Error>> {
+    let bytes = read_bounded_migration_secret(std::io::stdin(), MAX_SETUP_FLEET_STDIN_BYTES)?;
+    decode_setup_fleet_stdin(&bytes)
 }
 
 #[cfg(unix)]
@@ -2257,10 +2642,11 @@ mod tests {
         MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
         MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
         MAX_MIGRATION_TOKEN_FILE_BYTES, MacServeControl, MacServeWorkerStopTimeout,
-        MigrationSecretReadError, ServiceCommand, command_requires_user_hub_admission,
-        migration_start_requested, migration_stop_confirmed, read_migration_encryption_key,
-        read_migration_postgres_password, read_migration_secret,
-        read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
+        MigrationSecretReadError, ServiceCommand, clear_provider_credentials,
+        command_requires_user_hub_admission, decode_setup_fleet_stdin, migration_start_requested,
+        migration_stop_confirmed, read_migration_encryption_key, read_migration_postgres_password,
+        read_migration_secret, read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
+        validate_streaming_setting,
     };
     use teslatlas_hub::db::HubStore;
     #[cfg(target_os = "macos")]
@@ -2301,13 +2687,28 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn bootstrap_parses_and_vehicle_commands_are_absent() {
+    fn bootstrap_and_explicit_vehicle_commands_parse() {
         let bootstrap = Cli::try_parse_from(["teslatlas-hub", "bootstrap"]).expect("bootstrap CLI");
         assert!(matches!(bootstrap.command, Command::Bootstrap));
         assert!(Cli::try_parse_from(["teslatlas-hub", "control", "wake"]).is_err());
+        let wake = Cli::try_parse_from([
+            "teslatlas-hub",
+            "control",
+            "--vehicle-id",
+            "00000000-0000-0000-0000-000000000001",
+            "wake",
+            "--confirm",
+        ])
+        .expect("confirmed wake CLI");
+        assert!(matches!(
+            wake.command,
+            Command::Control {
+                vehicle_id: Some(_),
+                command: ControlCommand::Wake { confirm: true }
+            }
+        ));
         assert!(
-            Cli::try_parse_from(["teslatlas-hub", "control", "climate-start", "--confirm"])
-                .is_err()
+            Cli::try_parse_from(["teslatlas-hub", "control", "climate-start", "--confirm"]).is_ok()
         );
     }
 
@@ -2318,7 +2719,8 @@ mod tests {
         assert!(matches!(
             list.command,
             Command::Control {
-                command: ControlCommand::PairedDevices
+                command: ControlCommand::PairedDevices,
+                ..
             }
         ));
         let revoke = Cli::try_parse_from([
@@ -2331,7 +2733,8 @@ mod tests {
         assert!(matches!(
             revoke.command,
             Command::Control {
-                command: ControlCommand::RevokeDevice { .. }
+                command: ControlCommand::RevokeDevice { .. },
+                ..
             }
         ));
     }
@@ -3368,7 +3771,8 @@ mod tests {
                     enabled: Some(false),
                     suspend_min: Some(12),
                     ..
-                }
+                },
+                ..
             }
         ));
 
@@ -3382,7 +3786,8 @@ mod tests {
         assert!(matches!(
             sign_out.command,
             Command::Control {
-                command: ControlCommand::SignOut
+                command: ControlCommand::SignOut,
+                ..
             }
         ));
     }
@@ -3424,6 +3829,7 @@ mod tests {
                 refresh_token_file: Some(refresh_token_file),
                 tokens_stdin: false,
                 vehicle_id: Some(70),
+                all_vehicles: false,
             } if access_token_file.as_path() == Path::new("access")
                 && refresh_token_file.as_path() == Path::new("refresh")
         ));
@@ -3454,8 +3860,138 @@ mod tests {
                 refresh_token_file: None,
                 tokens_stdin: true,
                 vehicle_id: None,
+                all_vehicles: false,
             }
         ));
+        assert!(
+            Cli::try_parse_from([
+                "teslatlas-hub",
+                "setup",
+                "--tokens-stdin",
+                "--all-vehicles",
+                "--vehicle-id",
+                "70",
+            ])
+            .is_err()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn fleet_setup_is_stdin_only_and_decodes_bounded_fields() {
+        let selected = Cli::try_parse_from(["teslatlas-hub", "setup-fleet", "--vehicle-id", "70"])
+            .expect("Fleet setup CLI");
+        assert!(matches!(
+            selected.command,
+            Command::SetupFleet {
+                vehicle_id: Some(70),
+                all_vehicles: false,
+            }
+        ));
+        let all = Cli::try_parse_from(["teslatlas-hub", "setup-fleet", "--all-vehicles"])
+            .expect("all Fleet vehicles CLI");
+        assert!(matches!(
+            all.command,
+            Command::SetupFleet {
+                vehicle_id: None,
+                all_vehicles: true,
+            }
+        ));
+        assert!(
+            Cli::try_parse_from([
+                "teslatlas-hub",
+                "setup-fleet",
+                "--all-vehicles",
+                "--vehicle-id",
+                "70",
+            ])
+            .is_err()
+        );
+        assert!(
+            decode_setup_fleet_stdin(
+                br#"{"accessToken":"access","refreshToken":"refresh","clientId":"client","region":"europe_middle_east_and_africa","expiresInSeconds":3600}"#,
+            )
+            .is_ok()
+        );
+        assert!(
+            decode_setup_fleet_stdin(
+                br#"{"accessToken":"access","refreshToken":"refresh","clientId":"client","region":"eu","expiresInSeconds":3600}"#,
+            )
+            .is_err()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn fleet_rejects_enabling_legacy_streaming() {
+        use teslatlas_hub::config::CollectorProvider;
+
+        assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(true)).is_err());
+        assert!(validate_streaming_setting(CollectorProvider::Fleet, Some(false)).is_ok());
+        assert!(validate_streaming_setting(CollectorProvider::Legacy, Some(true)).is_ok());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sign_out_clears_both_providers_but_preserves_cursor_key() {
+        use teslatlas_hub::{
+            credentials::OwnerTokens,
+            db::TeslaMateLegacyTokenStore,
+            fleet_api::FleetRegion,
+            fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
+            teslamate_credentials::{
+                load_or_create_cursor_key, random_encryption_key, replace_key_and_tokens,
+            },
+            teslamate_token::encrypt_legacy_owner_tokens,
+        };
+
+        let temporary = tempfile::tempdir().expect("temporary Hub");
+        fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
+            .expect("private temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let cursor_before = load_or_create_cursor_key(temporary.path()).expect("cursor key");
+        let cursor_proof = supervisor_cursor_proof(&cursor_before);
+        let legacy = OwnerTokens::from_file_bytes(
+            zeroize::Zeroizing::new(b"access".to_vec()),
+            zeroize::Zeroizing::new(b"refresh".to_vec()),
+        )
+        .expect("legacy credentials");
+        let legacy_key = random_encryption_key();
+        let (access, refresh) =
+            encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
+        let legacy_store =
+            TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+        replace_key_and_tokens(temporary.path(), &store, &legacy_key, &legacy_store)
+            .expect("persist legacy");
+        let fleet = FleetSetupCredentials::new(
+            "fleet-access".to_owned(),
+            "fleet-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            FleetRegion::EuropeMiddleEastAndAfrica,
+            3_600,
+        )
+        .expect("Fleet credentials");
+        persist_fleet_setup_credentials(
+            &store,
+            temporary.path(),
+            &fleet,
+            std::time::SystemTime::now(),
+        )
+        .expect("persist Fleet");
+        assert!(teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
+
+        clear_provider_credentials(temporary.path(), &store).expect("sign out");
+
+        assert!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("legacy row")
+                .is_none()
+        );
+        assert!(store.load_fleet_tokens().expect("Fleet row").is_none());
+        assert!(!teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
+        let cursor_after = load_or_create_cursor_key(temporary.path()).expect("cursor remains");
+        assert_eq!(supervisor_cursor_proof(&cursor_after), cursor_proof);
     }
 
     #[cfg(target_os = "macos")]
@@ -3490,6 +4026,11 @@ mod tests {
             refresh_token_file: Some(PathBuf::from("refresh")),
             tokens_stdin: false,
             vehicle_id: None,
+            all_vehicles: false,
+        }));
+        assert!(command_requires_user_hub_admission(&Command::SetupFleet {
+            vehicle_id: None,
+            all_vehicles: true,
         }));
         assert!(command_requires_user_hub_admission(&Command::Serve));
         assert!(command_requires_user_hub_admission(&Command::Observe {
@@ -3532,6 +4073,7 @@ mod tests {
             command: ServiceCommand::Status,
         }));
         assert!(!command_requires_user_hub_admission(&Command::Control {
+            vehicle_id: None,
             command: ControlCommand::Pause,
         }));
     }

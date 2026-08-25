@@ -3,6 +3,7 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=common.sh
 . "$SCRIPT_DIR/common.sh"
 
@@ -17,12 +18,129 @@ STDOUT="$LOG_DIRECTORY/hub.out.log"
 STDERR="$LOG_DIRECTORY/hub.err.log"
 TEMPLATE="$SCRIPT_DIR/com.teslatlas.hub.plist.in"
 STATE_DIRECTORY=$(upgrade_state_directory)
+rendered_plist=
 temporary_plist=
 service_stopped=0
 completed=0
 rollback_failed=0
+forward_only=0
+health_attempts=10
+preflight_timeout_seconds=120
+bootstrap_timeout_seconds=300
+status_timeout_seconds=15
+service_timeout_seconds=30
+termination_grace_seconds=2
+deadline_sequence=0
 
 require_safe_upgrade_state "$STATE_DIRECTORY"
+
+# BEGIN TESTABLE DEADLINE HELPER
+run_with_deadline() {
+    timeout_seconds=$1
+    grace_seconds=$2
+    shift 2
+    deadline_sequence=$((deadline_sequence + 1))
+    expired="$STATE_DIRECTORY/deadline-expired.$$.$deadline_sequence"
+    /bin/rm -f "$expired"
+
+    "$@" &
+    command_pid=$!
+    (
+        timer_pid=
+        # shellcheck disable=SC2329 # invoked by the trap below
+        stop_timer() {
+            if [ -n "$timer_pid" ]; then
+                /bin/kill -TERM "$timer_pid" >/dev/null 2>&1 || true
+            fi
+            exit 0
+        }
+        trap stop_timer HUP INT TERM
+        /bin/sleep "$timeout_seconds" &
+        timer_pid=$!
+        wait "$timer_pid" || exit 0
+        timer_pid=
+        if /bin/kill -0 "$command_pid" >/dev/null 2>&1; then
+            : > "$expired"
+            /bin/kill -TERM "$command_pid" >/dev/null 2>&1 || true
+            /bin/sleep "$grace_seconds" &
+            timer_pid=$!
+            wait "$timer_pid" || exit 0
+            timer_pid=
+            /bin/kill -KILL "$command_pid" >/dev/null 2>&1 || true
+        fi
+    ) &
+    watchdog_pid=$!
+
+    if wait "$command_pid"; then
+        command_status=0
+    else
+        command_status=$?
+    fi
+    /bin/kill -TERM "$watchdog_pid" >/dev/null 2>&1 || true
+    wait "$watchdog_pid" >/dev/null 2>&1 || true
+    if [ -f "$expired" ]; then
+        /bin/rm -f "$expired"
+        return 124
+    fi
+    return "$command_status"
+}
+# END TESTABLE DEADLINE HELPER
+
+service_is_loaded_bounded() {
+    run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
+        /bin/launchctl print "$(service_target)" >/dev/null 2>&1
+}
+
+stop_loaded_service_bounded() {
+    if service_is_loaded_bounded; then
+        run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
+            /bin/launchctl bootout "$(service_target)" \
+            || installer_error "cannot stop existing Hub service"
+        if service_is_loaded_bounded; then
+            installer_error "existing Hub service is still loaded"
+        else
+            load_status=$?
+            [ "$load_status" -ne 124 ] \
+                || installer_error "timed out checking stopped Hub service"
+        fi
+    else
+        load_status=$?
+        [ "$load_status" -ne 124 ] \
+            || installer_error "timed out checking existing Hub service"
+    fi
+}
+
+install_launch_agent_atomically() {
+    source_plist=$1
+    if [ ! -f "$source_plist" ] || [ -L "$source_plist" ]; then
+        printf '%s\n' 'Teslatlas Hub installer: prepared LaunchAgent is not a safe regular file' >&2
+        return 1
+    fi
+    source_owner_mode=$(/usr/bin/stat -f '%u:%Lp' "$source_plist") || return 1
+    case "$source_owner_mode" in
+        0:*[2367][0-7]|0:*[0-7][2367])
+            printf '%s\n' 'Teslatlas Hub installer: prepared LaunchAgent is writable by group or world' >&2
+            return 1
+            ;;
+        0:*) ;;
+        *)
+            printf '%s\n' 'Teslatlas Hub installer: prepared LaunchAgent has unexpected owner' >&2
+            return 1
+            ;;
+    esac
+    temporary_plist="$STATE_DIRECTORY/launch-agent.installing"
+    /usr/bin/install -o root -g wheel -m 0600 "$source_plist" "$temporary_plist" \
+        || { printf '%s\n' 'Teslatlas Hub installer: cannot prepare LaunchAgent install' >&2; return 1; }
+    [ "$(/usr/bin/stat -f '%d' "$temporary_plist")" = "$(/usr/bin/stat -f '%d' "$LAUNCH_AGENTS")" ] \
+        || { printf '%s\n' 'Teslatlas Hub installer: LaunchAgent and protected temporary file are on different filesystems' >&2; return 1; }
+    /usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_plist" \
+        || { printf '%s\n' 'Teslatlas Hub installer: cannot set LaunchAgent ownership' >&2; return 1; }
+    /bin/chmod 0600 "$temporary_plist" \
+        || { printf '%s\n' 'Teslatlas Hub installer: cannot protect LaunchAgent plist' >&2; return 1; }
+    /bin/mv -fh "$temporary_plist" "$PLIST" \
+        || { printf '%s\n' 'Teslatlas Hub installer: cannot atomically install LaunchAgent plist' >&2; return 1; }
+    temporary_plist=
+}
 
 finish() {
     status=$?
@@ -30,27 +148,34 @@ finish() {
     if [ -n "$temporary_plist" ] && { [ -e "$temporary_plist" ] || [ -L "$temporary_plist" ]; }; then
         /bin/rm -f "$temporary_plist" || status=1
     fi
-    if [ "$completed" -ne 1 ]; then
-        if [ "$service_stopped" -eq 1 ]; then
-            /bin/launchctl bootout "$(service_target)" >/dev/null 2>&1 || true
-        fi
+    if [ -n "$rendered_plist" ] && { [ -e "$rendered_plist" ] || [ -L "$rendered_plist" ]; }; then
+        /bin/rm -f "$rendered_plist" || status=1
+    fi
+    if [ "$completed" -ne 1 ] && [ "$service_stopped" -eq 1 ]; then
+        /bin/launchctl bootout "$(service_target)" >/dev/null 2>&1 || true
+    fi
+    if [ "$completed" -ne 1 ] && [ "$forward_only" -eq 0 ]; then
         if [ -f "$STATE_DIRECTORY/teslatlas-hub" ] && [ ! -L "$STATE_DIRECTORY/teslatlas-hub" ]; then
             /usr/bin/install -o root -g wheel -m 0755 "$STATE_DIRECTORY/teslatlas-hub" "$BINARY" \
                 || { status=1; rollback_failed=1; }
         fi
         if [ -f "$STATE_DIRECTORY/launch-agent.plist" ] && [ ! -L "$STATE_DIRECTORY/launch-agent.plist" ]; then
-            /usr/bin/install -o "$CONSOLE_UID" -g "$CONSOLE_GID" -m 0600 \
-                "$STATE_DIRECTORY/launch-agent.plist" "$PLIST" \
+            install_launch_agent_atomically "$STATE_DIRECTORY/launch-agent.plist" \
                 || { status=1; rollback_failed=1; }
         elif [ "$service_stopped" -eq 1 ] && { [ -e "$PLIST" ] || [ -L "$PLIST" ]; }; then
             /bin/rm -f "$PLIST" || { status=1; rollback_failed=1; }
         fi
         if [ "$service_stopped" -eq 1 ] && [ -f "$STATE_DIRECTORY/was-loaded" ]; then
-            /bin/launchctl bootstrap "$(service_domain)" "$PLIST" >/dev/null 2>&1 \
+            run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
+                /bin/launchctl bootstrap "$(service_domain)" "$PLIST" >/dev/null 2>&1 \
                 || { status=1; rollback_failed=1; }
-            /bin/launchctl kickstart -k "$(service_target)" >/dev/null 2>&1 \
+            run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
+                /bin/launchctl kickstart -k "$(service_target)" >/dev/null 2>&1 \
                 || { status=1; rollback_failed=1; }
         fi
+    elif [ "$completed" -ne 1 ] && [ "$forward_only" -eq 1 ]; then
+        printf '%s\n' \
+            'TESLATLAS_FORWARD_ONLY_UPGRADE: new Hub retained stopped after schema migration failure' >&2
     fi
     if [ "$completed" -eq 1 ] || [ "$rollback_failed" -eq 0 ]; then
         remove_upgrade_state "$STATE_DIRECTORY" || status=1
@@ -85,20 +210,18 @@ for log in "$STDOUT" "$STDERR"; do
     /bin/chmod 0600 "$log" || installer_error "cannot protect Hub log"
 done
 
-temporary_plist=$(/usr/bin/mktemp "$LAUNCH_AGENTS/.${LABEL}.XXXXXX") \
-    || installer_error "cannot create temporary LaunchAgent plist"
+rendered_plist="$STATE_DIRECTORY/launch-agent.rendered"
+/usr/bin/install -o root -g wheel -m 0600 /dev/null "$rendered_plist" \
+    || installer_error "cannot create protected temporary LaunchAgent plist"
 /usr/bin/sed \
     -e "s|@BINARY@|$(xml_sed_replacement "$BINARY")|g" \
     -e "s|@CONFIG@|$(xml_sed_replacement "$CONFIG")|g" \
     -e "s|@STDOUT@|$(xml_sed_replacement "$STDOUT")|g" \
     -e "s|@STDERR@|$(xml_sed_replacement "$STDERR")|g" \
-    "$TEMPLATE" >"$temporary_plist" \
+    "$TEMPLATE" >"$rendered_plist" \
     || installer_error "cannot render LaunchAgent plist"
-/usr/bin/plutil -lint "$temporary_plist" >/dev/null \
+/usr/bin/plutil -lint "$rendered_plist" >/dev/null \
     || installer_error "rendered LaunchAgent plist is invalid"
-/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_plist" \
-    || installer_error "cannot set LaunchAgent ownership"
-/bin/chmod 0600 "$temporary_plist" || installer_error "cannot protect LaunchAgent plist"
 
 previously_installed=0
 if [ -f "$STATE_DIRECTORY/teslatlas-hub" ] || [ -f "$STATE_DIRECTORY/launch-agent.plist" ]; then
@@ -108,20 +231,37 @@ fi
 if [ -f "$STATE_DIRECTORY/was-loaded" ]; then
     service_stopped=1
 fi
-if service_is_loaded; then
+if service_is_loaded_bounded; then
     service_stopped=1
-    bootout_if_loaded
+    stop_loaded_service_bounded
+else
+    load_status=$?
+    [ "$load_status" -ne 124 ] \
+        || installer_error "timed out checking existing Hub service"
 fi
 
-# The read-only preflight uses an immutable SQLite view. Run it only after the
-# old writer is stopped; any failure restores the old payload and loaded state.
+# The read-only preflight uses an immutable SQLite view. A schema-changing
+# upgrade is forward-only once bootstrap begins: SQLite migrations are
+# transactional, but the old binary must never be restored onto a newer schema.
 ready=0
-if /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
-    "$BINARY" --config "$CONFIG" preflight >/dev/null 2>&1; then
+if run_with_deadline "$preflight_timeout_seconds" "$termination_grace_seconds" \
+    /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
+        "$BINARY" --config "$CONFIG" preflight >/dev/null 2>&1; then
     ready=1
 fi
-if [ -f "$STATE_DIRECTORY/was-loaded" ] && [ "$ready" -ne 1 ]; then
-    installer_error "new Hub failed preflight; restoring the running version"
+if [ "$previously_installed" -eq 1 ] && [ "$ready" -ne 1 ]; then
+    forward_only=1
+    /usr/bin/install -o root -g wheel -m 0600 /dev/null "$STATE_DIRECTORY/forward-only" \
+        || installer_error "TESLATLAS_FORWARD_ONLY_UPGRADE: cannot record schema migration boundary"
+    run_with_deadline "$bootstrap_timeout_seconds" "$termination_grace_seconds" \
+        /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
+            "$BINARY" --config "$CONFIG" bootstrap >/dev/null 2>&1 \
+        || installer_error "TESLATLAS_FORWARD_ONLY_UPGRADE: schema migration failed; new Hub retained stopped"
+    run_with_deadline "$preflight_timeout_seconds" "$termination_grace_seconds" \
+        /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
+            "$BINARY" --config "$CONFIG" preflight >/dev/null 2>&1 \
+        || installer_error "TESLATLAS_FORWARD_ONLY_UPGRADE: migrated Hub failed admission; new Hub retained stopped"
+    ready=1
 fi
 
 should_start=0
@@ -129,15 +269,34 @@ if [ "$ready" -eq 1 ] && { [ -f "$STATE_DIRECTORY/was-loaded" ] || [ "$previousl
     should_start=1
 fi
 
-/bin/mv -f "$temporary_plist" "$PLIST" || installer_error "cannot install LaunchAgent plist"
-temporary_plist=
+install_launch_agent_atomically "$rendered_plist" \
+    || installer_error "cannot install LaunchAgent plist"
 
 if [ "$should_start" -eq 1 ]; then
     service_stopped=1
-    /bin/launchctl bootstrap "$(service_domain)" "$PLIST" \
+    run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
+        /bin/launchctl bootstrap "$(service_domain)" "$PLIST" \
         || installer_error "cannot bootstrap Hub service"
-    /bin/launchctl kickstart -k "$(service_target)" \
+    run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
+        /bin/launchctl kickstart -k "$(service_target)" \
         || installer_error "cannot start Hub service"
+
+    healthy=0
+    attempt=1
+    while [ "$attempt" -le "$health_attempts" ]; do
+        if service_is_loaded_bounded && status=$(
+            run_with_deadline "$status_timeout_seconds" "$termination_grace_seconds" \
+                /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
+                "$BINARY" --config "$CONFIG" status 2>/dev/null
+        ) && printf '%s\n' "$status" | /usr/bin/grep -Eq '"ready":[[:space:]]*true'; then
+            healthy=1
+            break
+        fi
+        /bin/sleep 1
+        attempt=$((attempt + 1))
+    done
+    [ "$healthy" -eq 1 ] \
+        || installer_error "new Hub did not become ready; restoring the installed version"
 fi
 
 completed=1

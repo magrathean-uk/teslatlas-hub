@@ -10,7 +10,7 @@ use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{self, Write},
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -40,6 +40,7 @@ const COMPRESSION_LEVEL: i32 = 4;
 // publish them, while the API service must serve the same inode through the
 // shared data group. Staging stays owner-private until verification succeeds.
 const SHARED_IMMUTABLE_PACK_MODE: u32 = 0o640;
+const PRIVATE_STAGING_DIRECTORY_MODE: u32 = 0o700;
 pub(crate) const MAX_TEXT_BYTES: usize = 16 * 1024;
 const THP2_2_GLOBAL_SETTINGS_FIELD_COUNT: u64 = 11;
 const THP2_2_CAR_SETTINGS_FIELD_COUNT: u64 = 8;
@@ -2261,12 +2262,7 @@ impl ProjectionPackWriter {
         )?;
         let staging_dir = self.packs_dir.join(".staging");
         let content_dir = self.packs_dir.join("sha256");
-        fs::create_dir_all(&staging_dir).map_err(|source| {
-            ProjectionPackError::CreateDirectory {
-                path: staging_dir.clone(),
-                source,
-            }
-        })?;
+        ensure_private_staging_directory(&staging_dir)?;
         fs::create_dir_all(&content_dir).map_err(|source| {
             ProjectionPackError::CreateDirectory {
                 path: content_dir.clone(),
@@ -2355,12 +2351,7 @@ impl ProjectionPackWriter {
         )?;
         let staging_dir = self.packs_dir.join(".staging");
         let content_dir = self.packs_dir.join("sha256");
-        fs::create_dir_all(&staging_dir).map_err(|source| {
-            ProjectionPackError::CreateDirectory {
-                path: staging_dir.clone(),
-                source,
-            }
-        })?;
+        ensure_private_staging_directory(&staging_dir)?;
         fs::create_dir_all(&content_dir).map_err(|source| {
             ProjectionPackError::CreateDirectory {
                 path: content_dir.clone(),
@@ -2436,12 +2427,7 @@ impl ProjectionPackWriter {
         )?;
         let staging_dir = self.packs_dir.join(".staging");
         let content_dir = self.packs_dir.join("sha256");
-        fs::create_dir_all(&staging_dir).map_err(|source| {
-            ProjectionPackError::CreateDirectory {
-                path: staging_dir.clone(),
-                source,
-            }
-        })?;
+        ensure_private_staging_directory(&staging_dir)?;
         fs::create_dir_all(&content_dir).map_err(|source| {
             ProjectionPackError::CreateDirectory {
                 path: content_dir.clone(),
@@ -2509,12 +2495,7 @@ impl ProjectionPackWriter {
         )?;
         let staging_dir = self.packs_dir.join(".staging");
         let content_dir = self.packs_dir.join("sha256");
-        fs::create_dir_all(&staging_dir).map_err(|source| {
-            ProjectionPackError::CreateDirectory {
-                path: staging_dir.clone(),
-                source,
-            }
-        })?;
+        ensure_private_staging_directory(&staging_dir)?;
         fs::create_dir_all(&content_dir).map_err(|source| {
             ProjectionPackError::CreateDirectory {
                 path: content_dir.clone(),
@@ -2595,12 +2576,7 @@ impl ProjectionPackWriter {
 
     fn ensure_free_bytes(&self, required: u64) -> Result<(), ProjectionPackError> {
         let staging_dir = self.packs_dir.join(".staging");
-        fs::create_dir_all(&staging_dir).map_err(|source| {
-            ProjectionPackError::CreateDirectory {
-                path: staging_dir.clone(),
-                source,
-            }
-        })?;
+        ensure_private_staging_directory(&staging_dir)?;
         let available = available_bytes(&staging_dir)?;
         if available < required {
             return Err(ProjectionPackError::InsufficientFreeSpace {
@@ -6743,6 +6719,127 @@ fn validate_optional_text_with_source_width(
     Ok(())
 }
 
+fn ensure_private_staging_directory(path: &Path) -> Result<(), ProjectionPackError> {
+    fs::create_dir_all(path).map_err(|source| ProjectionPackError::CreateDirectory {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let metadata =
+        fs::symlink_metadata(path).map_err(|source| ProjectionPackError::InspectStaging {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_dir()
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || mode & 0o022 != 0
+    {
+        return Err(ProjectionPackError::UnsafeStaging(path.to_path_buf()));
+    }
+    if mode != PRIVATE_STAGING_DIRECTORY_MODE {
+        fs::set_permissions(
+            path,
+            fs::Permissions::from_mode(PRIVATE_STAGING_DIRECTORY_MODE),
+        )
+        .map_err(|source| ProjectionPackError::ProtectStaging {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+fn is_owned_staging_name(name: &std::ffi::OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    [
+        ".projection.sqlite.tmp",
+        ".projection.zst.tmp",
+        ".projection-2-2.sqlite.tmp",
+        ".projection-2-2.zst.tmp",
+        ".projection-delta.sqlite.tmp",
+        ".projection-delta.zst.tmp",
+    ]
+    .iter()
+    .any(|suffix| {
+        name.strip_suffix(suffix)
+            .is_some_and(|uuid| uuid.len() == 36 && Uuid::parse_str(uuid).is_ok())
+    })
+}
+
+/// Remove only exact, Hub-owned projection temporary files. The caller must
+/// hold the publication gate so no active writer can still own these names.
+pub(crate) fn cleanup_stale_pack_staging(
+    packs_dir: &Path,
+) -> Result<(usize, u64), ProjectionPackError> {
+    let staging = packs_dir.join(".staging");
+    match fs::symlink_metadata(&staging) {
+        Ok(_) => ensure_private_staging_directory(&staging)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok((0, 0)),
+        Err(source) => {
+            return Err(ProjectionPackError::InspectStaging {
+                path: staging,
+                source,
+            });
+        }
+    }
+
+    let mut candidates = Vec::new();
+    for entry in fs::read_dir(&staging).map_err(|source| ProjectionPackError::InspectStaging {
+        path: staging.clone(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| ProjectionPackError::InspectStaging {
+            path: staging.clone(),
+            source,
+        })?;
+        if !is_owned_staging_name(&entry.file_name()) {
+            continue;
+        }
+        let path = entry.path();
+        let metadata =
+            fs::symlink_metadata(&path).map_err(|source| ProjectionPackError::InspectStaging {
+                path: path.clone(),
+                source,
+            })?;
+        let mode = metadata.permissions().mode() & 0o777;
+        if !metadata.file_type().is_file()
+            || metadata.uid() != rustix::process::geteuid().as_raw()
+            || !matches!(mode, 0o600 | SHARED_IMMUTABLE_PACK_MODE)
+            || !(1..=2).contains(&metadata.nlink())
+        {
+            return Err(ProjectionPackError::UnsafeStaging(path));
+        }
+        candidates.push((path, metadata.len(), metadata.nlink()));
+    }
+
+    let mut removed = 0_usize;
+    let mut freed_bytes = 0_u64;
+    for (path, bytes, links) in candidates {
+        match fs::remove_file(&path) {
+            Ok(()) => {
+                removed += 1;
+                if links == 1 {
+                    freed_bytes = freed_bytes.saturating_add(bytes);
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(source) => return Err(ProjectionPackError::CleanupStaging { path, source }),
+        }
+    }
+    if removed != 0 {
+        File::open(&staging)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|source| ProjectionPackError::CleanupStaging {
+                path: staging,
+                source,
+            })?;
+    }
+    Ok((removed, freed_bytes))
+}
+
 struct StagedFile {
     path: PathBuf,
     cleanup_on_drop: bool,
@@ -6856,6 +6953,14 @@ pub enum ProjectionPackError {
     InsufficientFreeSpace { required: u64, available: u64 },
     #[error("cannot create pack directory {path}: {source}")]
     CreateDirectory { path: PathBuf, source: io::Error },
+    #[error("cannot inspect projection pack staging path {path}: {source}")]
+    InspectStaging { path: PathBuf, source: io::Error },
+    #[error("projection pack staging path is unsafe: {0}")]
+    UnsafeStaging(PathBuf),
+    #[error("cannot protect projection pack staging directory {path}: {source}")]
+    ProtectStaging { path: PathBuf, source: io::Error },
+    #[error("cannot clean projection pack staging path {path}: {source}")]
+    CleanupStaging { path: PathBuf, source: io::Error },
     #[error("cannot create temporary projection pack {path}: {source}")]
     CreateTemporary { path: PathBuf, source: io::Error },
     #[error("cannot inspect temporary projection pack {path}: {source}")]
@@ -7212,6 +7317,55 @@ mod tests {
                 "restart-visible staging outcome for {point:?}"
             );
         }
+    }
+
+    #[test]
+    fn startup_cleanup_removes_only_owned_staging_files() {
+        let temporary = crate::private_tempdir().expect("pack root");
+        let staging = temporary.path().join(".staging");
+        ensure_private_staging_directory(&staging).expect("private staging");
+        let private = staging.join(format!("{}.projection.sqlite.tmp", Uuid::new_v4()));
+        let linked = staging.join(format!("{}.projection.zst.tmp", Uuid::new_v4()));
+        let final_link = temporary.path().join("linked-pack");
+        let unrelated = staging.join("notes.tmp");
+        fs::write(&private, b"private").unwrap();
+        fs::set_permissions(&private, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::write(&linked, b"linked").unwrap();
+        fs::set_permissions(
+            &linked,
+            fs::Permissions::from_mode(SHARED_IMMUTABLE_PACK_MODE),
+        )
+        .unwrap();
+        fs::hard_link(&linked, &final_link).unwrap();
+        fs::write(&unrelated, b"keep").unwrap();
+
+        let (removed, freed_bytes) = cleanup_stale_pack_staging(temporary.path()).expect("cleanup");
+
+        assert_eq!(removed, 2);
+        assert_eq!(freed_bytes, 7);
+        assert!(!private.exists());
+        assert!(!linked.exists());
+        assert_eq!(fs::read(final_link).unwrap(), b"linked");
+        assert_eq!(fs::read(unrelated).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn startup_cleanup_rejects_an_owned_name_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let temporary = crate::private_tempdir().expect("pack root");
+        let staging = temporary.path().join(".staging");
+        ensure_private_staging_directory(&staging).expect("private staging");
+        let target = temporary.path().join("target");
+        fs::write(&target, b"keep").unwrap();
+        let link = staging.join(format!("{}.projection.sqlite.tmp", Uuid::new_v4()));
+        symlink(&target, &link).unwrap();
+
+        assert!(matches!(
+            cleanup_stale_pack_staging(temporary.path()),
+            Err(ProjectionPackError::UnsafeStaging(path)) if path == link
+        ));
+        assert_eq!(fs::read(target).unwrap(), b"keep");
     }
 
     #[test]

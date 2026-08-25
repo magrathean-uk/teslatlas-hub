@@ -9,6 +9,9 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     future::Future,
+    io::Read,
+    os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -16,25 +19,34 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::time::{Instant, MissedTickBehavior, sleep, timeout};
 use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{UnixListener, UnixStream},
     sync::{mpsc, oneshot, watch},
     task::{JoinError, JoinHandle},
 };
 use uuid::Uuid;
 
 use crate::{
-    config::{CollectorCadence, ConfigError, HubConfig, TerrainConfig},
+    config::{CollectorCadence, CollectorProvider, ConfigError, HubConfig, TerrainConfig},
     credentials::{CredentialError, LegacyAuthManager, LegacyAuthManagerError, OwnerTokens},
     db::{
-        HubStore, ObservationInput, SUPERVISED_COLLECTOR_HEARTBEAT_INTERVAL, SourceDescriptor,
-        StoreError, StreamObservationResult, SupervisedCollectorLease, SupervisedCollectorState,
-        VehicleDescriptor,
+        HubStore, ObservationInput, OutboundRequestCompletion, OutboundRequestOperation,
+        OutboundRequestOutcome, OutboundRequestPrecondition, OutboundRequestSafetyClass,
+        OutboundRequestStart, OutboundRequestTransport, SUPERVISED_COLLECTOR_HEARTBEAT_INTERVAL,
+        SourceDescriptor, StoreError, StreamObservationResult, SupervisedCollectorLease,
+        SupervisedCollectorState, VehicleDescriptor,
     },
+    fleet_api::{
+        FleetApi, FleetApiConfigError, FleetApiError, FleetAuthApi, FleetCommand,
+        FleetCommandProxy, FleetCommandProxyBase, FleetCommandResult, VehicleVin, WakeResult,
+    },
+    fleet_credentials::{FleetAuthManager, FleetCredentialError, FleetSetupCredentials},
     geocoder::{AdmittedUserEgressGuard, Geocoder, GeocoderError},
     hub_pack::{
         ProjectionBinding, ProjectionCar, ProjectionDeltaPackRequest, ProjectionPackError,
@@ -47,8 +59,9 @@ use crate::{
     },
     location::Wgs84Point,
     owner_api::{
-        ManualCollection, OwnerApi, OwnerApiAuthError, OwnerApiConfigError, OwnerApiError,
-        StreamVehicleId, Vehicle, VehicleCollectionFailure, VehicleData, VehicleId,
+        LegacyVehicleAction, LegacyVehicleActionResult, ManualCollection, OwnerApi,
+        OwnerApiAuthError, OwnerApiConfigError, OwnerApiError, StreamVehicleId, Vehicle,
+        VehicleCollectionFailure, VehicleData, VehicleId,
     },
     protocol::{
         CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V2, LineageDelta, OpaqueCursor, PROTOCOL_V1,
@@ -64,10 +77,37 @@ use crate::{
 use crate::db::StreamFaultPoint;
 const OWNER_API_SOURCE_KIND: &str = "owner_api_compat";
 const OWNER_API_SOURCE_KEY: &str = "local_installation_v1";
+const FLEET_API_SOURCE_KIND: &str = "fleet_api_compat";
+const FLEET_API_SOURCE_KEY: &str = "local_installation_v1";
 const EARLIEST_PLAUSIBLE_TIMESTAMP_MS: i64 = 946_684_800_000; // 2000-01-01 UTC
 const FUTURE_TIMESTAMP_SKEW_MS: i64 = 5 * 60 * 1000;
 const STREAM_SOURCE_KIND: &str = OWNER_API_SOURCE_KIND;
 const STREAM_SOURCE_KEY: &str = OWNER_API_SOURCE_KEY;
+
+fn provider_source(provider: CollectorProvider) -> SourceDescriptor {
+    match provider {
+        CollectorProvider::Legacy => {
+            SourceDescriptor::new(OWNER_API_SOURCE_KIND, OWNER_API_SOURCE_KEY)
+        }
+        CollectorProvider::Fleet => {
+            SourceDescriptor::new(FLEET_API_SOURCE_KIND, FLEET_API_SOURCE_KEY)
+        }
+    }
+}
+
+const fn provider_vehicle_data_record_type(provider: CollectorProvider) -> &'static str {
+    match provider {
+        CollectorProvider::Legacy => "owner_api_vehicle_data_v1",
+        CollectorProvider::Fleet => "fleet_api_vehicle_data_v1",
+    }
+}
+
+const fn provider_discovery_record_type(provider: CollectorProvider) -> &'static str {
+    match provider {
+        CollectorProvider::Legacy => "owner_api_discovery_v1",
+        CollectorProvider::Fleet => "fleet_api_discovery_v1",
+    }
+}
 const TERRAIN_PAGE_LIMIT: u32 = 1_000;
 const TERRAIN_PERIOD: Duration = Duration::from_secs(6 * 60 * 60);
 const TERRAIN_LOOKUP_BUDGET: Duration = Duration::from_millis(100);
@@ -306,6 +346,18 @@ pub struct NativeSetupReport {
     pub selected_vehicle_id: i64,
     pub display_name: Option<String>,
     pub snapshots_published: usize,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct NativeSetupBatchReport {
+    pub vehicles: Vec<NativeSetupVehicle>,
+    pub snapshots_published: usize,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct NativeSetupVehicle {
+    pub vehicle_id: i64,
+    pub display_name: Option<String>,
 }
 
 #[derive(Clone)]
@@ -735,6 +787,15 @@ async fn finish_collection(
     cursor_key: &CursorKey,
     collection: &ManualCollection,
 ) -> Result<ManualCollectionReport, CollectorError> {
+    finish_collection_for_provider(store, cursor_key, collection, CollectorProvider::Legacy).await
+}
+
+async fn finish_collection_for_provider(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    collection: &ManualCollection,
+    provider: CollectorProvider,
+) -> Result<ManualCollectionReport, CollectorError> {
     for failure in &collection.failures {
         tracing::warn!(
             vehicle_id = failure.vehicle_id.get(),
@@ -744,19 +805,22 @@ async fn finish_collection(
     }
     let publication_gate = store.acquire_publication_gate().await?;
     let received_at_ms = current_epoch_millis()?;
-    let mut report = persist_collection_atomic(store, collection, received_at_ms)?;
-    let lifecycle = materialise_lifecycle_for_collection(store, collection, received_at_ms)?;
+    let mut report =
+        persist_collection_atomic_for_provider(store, collection, received_at_ms, provider)?;
+    let lifecycle =
+        materialise_lifecycle_for_collection_provider(store, collection, received_at_ms, provider)?;
     report.drives_closed += lifecycle.drives_closed;
     report.charges_closed += lifecycle.charges_closed;
     report.positions_materialised += lifecycle.positions_materialised;
     report.charge_samples_materialised += lifecycle.charge_samples_materialised;
     report.lifecycle_quarantines += lifecycle.lifecycle_quarantines;
-    report.snapshots_published = publish_compatibility_snapshots(
+    report.snapshots_published = publish_compatibility_snapshots_for_provider(
         store,
         &publication_gate,
         cursor_key,
         collection,
         received_at_ms,
+        provider,
     )?;
     Ok(report)
 }
@@ -795,6 +859,813 @@ pub async fn setup_native_vehicle(
     .await
 }
 
+/// Configure every discovered vehicle from one account-wide legacy pair.
+/// Discovery is one bounded products request and never wakes a vehicle.
+pub async fn setup_native_vehicles(
+    store: &HubStore,
+    config: &HubConfig,
+    tokens: &OwnerTokens,
+) -> Result<NativeSetupBatchReport, CollectorError> {
+    if store.database_path() != config.data_dir.join("hub.sqlite") {
+        return Err(CollectorError::NativeSetupStoreMismatch);
+    }
+    if !config.collector.legacy_auth.enabled {
+        return Err(CollectorError::NativeSetupLegacyAuthRequired);
+    }
+    let auth = LegacyAuth::from_access_token(
+        tokens.access_token().to_owned(),
+        tokens.refresh_token().to_owned(),
+    )?;
+    let client = OwnerApi::new(
+        config
+            .collector
+            .owner_api_options_for_region(auth.region())?,
+    )?;
+    setup_native_vehicles_with_client(store, &config.data_dir, &client, &auth).await
+}
+
+/// Configure one vehicle from a bounded Fleet OAuth credential object.
+/// Discovery is read-only and never wakes a vehicle.
+pub async fn setup_fleet_vehicle(
+    store: &HubStore,
+    config: &HubConfig,
+    credentials: &FleetSetupCredentials,
+    admission: &crate::hub_user_process::AdmittedUserHub,
+    requested_vehicle_id: Option<i64>,
+) -> Result<NativeSetupReport, CollectorError> {
+    if store.database_path() != config.data_dir.join("hub.sqlite") {
+        return Err(CollectorError::NativeSetupStoreMismatch);
+    }
+    if config.collector.provider != CollectorProvider::Fleet {
+        return Err(CollectorError::NativeSetupFleetProviderRequired);
+    }
+    let client = FleetApi::new(
+        credentials.region(),
+        Duration::from_secs(config.collector.request_timeout_seconds),
+    )?;
+    let access_token = credentials.access_token()?;
+    admission.assert_sensitive_access()?;
+    let vehicles = client.list_vehicles(&access_token).await?;
+    ensure_fleet_inventory_contains_configured(store, &vehicles)?;
+    let mut vehicle = select_native_setup_vehicle(vehicles, requested_vehicle_id)?;
+    let existing = store.configured_tesla_vehicles()?;
+    if let Some(settings) = configured_settings_for_discovered_vehicle(store, &existing, &vehicle)?
+    {
+        vehicle.settings = settings;
+    }
+    vehicle.settings.use_streaming_api = false;
+    let selected_vehicle_id =
+        i64::try_from(vehicle.id.get()).map_err(|_| CollectorError::NativeSetupVehicleIdInvalid)?;
+    let display_name = vehicle.display_name.clone();
+    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+        .map_err(|error| {
+            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
+        })?;
+    let report = finish_collection_for_provider(
+        store,
+        &cursor_key,
+        &ManualCollection {
+            vehicles: vec![vehicle],
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        },
+        CollectorProvider::Fleet,
+    )
+    .await?;
+    Ok(NativeSetupReport {
+        selected_vehicle_id,
+        display_name,
+        snapshots_published: report.snapshots_published,
+    })
+}
+
+/// Configure every vehicle returned by one Fleet account without waking any.
+pub async fn setup_fleet_vehicles(
+    store: &HubStore,
+    config: &HubConfig,
+    credentials: &FleetSetupCredentials,
+    admission: &crate::hub_user_process::AdmittedUserHub,
+) -> Result<NativeSetupBatchReport, CollectorError> {
+    if store.database_path() != config.data_dir.join("hub.sqlite") {
+        return Err(CollectorError::NativeSetupStoreMismatch);
+    }
+    if config.collector.provider != CollectorProvider::Fleet {
+        return Err(CollectorError::NativeSetupFleetProviderRequired);
+    }
+    let client = FleetApi::new(
+        credentials.region(),
+        Duration::from_secs(config.collector.request_timeout_seconds),
+    )?;
+    let access_token = credentials.access_token()?;
+    admission.assert_sensitive_access()?;
+    let mut vehicles = client.list_vehicles(&access_token).await?;
+    ensure_fleet_inventory_contains_configured(store, &vehicles)?;
+    if vehicles.is_empty() {
+        return Err(CollectorError::NativeSetupNoVehicles);
+    }
+    vehicles.sort_by_key(|vehicle| vehicle.id);
+    vehicles.dedup_by_key(|vehicle| vehicle.id);
+    let existing = store.configured_tesla_vehicles()?;
+    for vehicle in &mut vehicles {
+        if let Some(settings) =
+            configured_settings_for_discovered_vehicle(store, &existing, vehicle)?
+        {
+            vehicle.settings = settings;
+        }
+        vehicle.settings.use_streaming_api = false;
+    }
+    let configured = vehicles
+        .iter()
+        .map(|vehicle| {
+            i64::try_from(vehicle.id.get())
+                .map(|vehicle_id| NativeSetupVehicle {
+                    vehicle_id,
+                    display_name: vehicle.display_name.clone(),
+                })
+                .map_err(|_| CollectorError::NativeSetupVehicleIdInvalid)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+        .map_err(|error| {
+            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
+        })?;
+    let report = finish_collection_for_provider(
+        store,
+        &cursor_key,
+        &ManualCollection {
+            vehicles,
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        },
+        CollectorProvider::Fleet,
+    )
+    .await?;
+    Ok(NativeSetupBatchReport {
+        vehicles: configured,
+        snapshots_published: report.snapshots_published,
+    })
+}
+
+fn configured_settings_for_discovered_vehicle(
+    store: &HubStore,
+    configured: &[(Uuid, i64, crate::hub_pack::ProjectionCarSettings)],
+    discovered: &Vehicle,
+) -> Result<Option<crate::hub_pack::ProjectionCarSettings>, CollectorError> {
+    let mut matched = None;
+    for (hub_vehicle_id, configured_eid, settings) in configured {
+        let (_, configured_vin) = store
+            .configured_tesla_vehicle_identity(*hub_vehicle_id)?
+            .ok_or(StoreError::LineageCatalogConflict)?;
+        let identity_matches = *configured_eid as u64 == discovered.id.get()
+            || configured_vin
+                .as_deref()
+                .filter(|vin| !vin.is_empty())
+                .is_some_and(|vin| vin.eq_ignore_ascii_case(&discovered.vin));
+        if identity_matches {
+            if matched.is_some() {
+                return Err(CollectorError::FleetSetupInventoryMismatch);
+            }
+            matched = Some(settings.clone());
+        }
+    }
+    Ok(matched)
+}
+
+fn ensure_fleet_inventory_contains_configured(
+    store: &HubStore,
+    discovered: &[Vehicle],
+) -> Result<(), CollectorError> {
+    let mut matched_discovered = HashSet::new();
+    for (hub_vehicle_id, configured_eid, _) in store.configured_tesla_vehicles()? {
+        let (_, configured_vin) = store
+            .configured_tesla_vehicle_identity(hub_vehicle_id)?
+            .ok_or(StoreError::LineageCatalogConflict)?;
+        let matches = discovered
+            .iter()
+            .enumerate()
+            .filter_map(|(index, vehicle)| {
+                (vehicle.id.get() == configured_eid as u64
+                    || configured_vin
+                        .as_deref()
+                        .filter(|vin| !vin.is_empty())
+                        .is_some_and(|vin| vin.eq_ignore_ascii_case(&vehicle.vin)))
+                .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        if matches.len() != 1 || !matched_discovered.insert(matches[0]) {
+            return Err(CollectorError::FleetSetupInventoryMismatch);
+        }
+    }
+    Ok(())
+}
+
+/// Execute one explicitly confirmed legacy vehicle action. This path never
+/// refreshes or retries credentials and is not reachable from the collector.
+async fn execute_resident_legacy_vehicle_action(
+    store: &HubStore,
+    client: &OwnerApi,
+    manager: &Arc<tokio::sync::Mutex<LegacyAuthManager>>,
+    fuse: &Arc<tokio::sync::Mutex<LegacyAuthFuse>>,
+    refresh: &Arc<LegacyRefreshCoordinator>,
+    hub_vehicle_id: Uuid,
+    action: LegacyVehicleAction,
+) -> Result<LegacyVehicleActionReport, ResidentActionExecutionError> {
+    refresh
+        .wait_for_prior()
+        .await
+        .map_err(|_| ResidentActionExecutionError::Authentication)?;
+    let tesla_eid = store
+        .configured_tesla_vehicles()?
+        .into_iter()
+        .find_map(|(vehicle_id, eid, _)| (vehicle_id == hub_vehicle_id).then_some(eid))
+        .ok_or(ResidentActionExecutionError::VehicleMissing)?;
+    let vehicle_id =
+        VehicleId::try_from_i64(tesla_eid).ok_or(ResidentActionExecutionError::VehicleMissing)?;
+    let receipt_id = store.begin_outbound_request(&OutboundRequestStart {
+        correlation_id: Uuid::new_v4(),
+        vehicle_tesla_id: Some(tesla_eid),
+        transport: OutboundRequestTransport::OwnerApi,
+        operation: if action == LegacyVehicleAction::Wake {
+            OutboundRequestOperation::VehicleWake
+        } else {
+            OutboundRequestOperation::VehicleCommand
+        },
+        safety_class: if action == LegacyVehicleAction::Wake {
+            OutboundRequestSafetyClass::DirectWakeCommand
+        } else {
+            OutboundRequestSafetyClass::ExplicitVehicleCommand
+        },
+        precondition: OutboundRequestPrecondition::NotRequired,
+    })?;
+    let result = {
+        let mut fuse = fuse.lock().await;
+        let mut manager = manager.lock().await;
+        client
+            .execute_vehicle_action_with_legacy_auth_fused(
+                &mut manager,
+                &mut fuse,
+                vehicle_id,
+                action,
+            )
+            .await
+    };
+    if matches!(
+        &result,
+        Err(OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(401)))
+    ) {
+        refresh
+            .enqueue(client.clone(), Arc::clone(manager), Arc::clone(fuse))
+            .await;
+    }
+    let completion = legacy_action_completion(result.as_ref().err());
+    store
+        .complete_outbound_request(receipt_id, &completion)
+        .map_err(ResidentActionExecutionError::CompletionUnknown)?;
+    Ok(LegacyVehicleActionReport {
+        provider: CollectorProvider::Legacy,
+        hub_vehicle_id,
+        tesla_eid,
+        action,
+        result: result?,
+        audit_receipt_id: receipt_id.0,
+    })
+}
+
+async fn execute_resident_fleet_vehicle_action(
+    store: &HubStore,
+    api: &FleetApi,
+    auth_api: &FleetAuthApi,
+    command_proxy: Option<&FleetCommandProxy>,
+    manager: &Arc<tokio::sync::Mutex<FleetAuthManager>>,
+    hub_vehicle_id: Uuid,
+    action: LegacyVehicleAction,
+) -> Result<LegacyVehicleActionReport, ResidentActionExecutionError> {
+    let (tesla_eid, vin) = store
+        .configured_tesla_vehicle_identity(hub_vehicle_id)?
+        .ok_or(ResidentActionExecutionError::VehicleMissing)?;
+    let vin = vin
+        .as_deref()
+        .ok_or(ResidentActionExecutionError::VehicleMissing)
+        .and_then(|vin| {
+            VehicleVin::parse(vin).map_err(|_| ResidentActionExecutionError::VehicleMissing)
+        })?;
+    let mut manager = manager.lock().await;
+    manager
+        .refresh_if_due(auth_api, SystemTime::now())
+        .await
+        .map_err(ResidentActionExecutionError::FleetCredential)?;
+    let receipt_id = store.begin_outbound_request(&OutboundRequestStart {
+        correlation_id: Uuid::new_v4(),
+        vehicle_tesla_id: Some(tesla_eid),
+        transport: OutboundRequestTransport::FleetApi,
+        operation: if action == LegacyVehicleAction::Wake {
+            OutboundRequestOperation::VehicleWake
+        } else {
+            OutboundRequestOperation::VehicleCommand
+        },
+        safety_class: if action == LegacyVehicleAction::Wake {
+            OutboundRequestSafetyClass::DirectWakeCommand
+        } else {
+            OutboundRequestSafetyClass::ExplicitVehicleCommand
+        },
+        precondition: OutboundRequestPrecondition::NotRequired,
+    })?;
+    let access_token = match manager.access_token_for_sensitive_use() {
+        Ok(token) => token,
+        Err(error) => {
+            store
+                .complete_outbound_request(
+                    receipt_id,
+                    &OutboundRequestCompletion {
+                        outcome: OutboundRequestOutcome::Cancelled,
+                        http_status: None,
+                        retry_after_seconds: None,
+                    },
+                )
+                .map_err(ResidentActionExecutionError::CompletionUnknown)?;
+            return Err(ResidentActionExecutionError::FleetCredential(error));
+        }
+    };
+    let result = match action {
+        LegacyVehicleAction::Wake => api
+            .wake(access_token, &vin)
+            .await
+            .map(|WakeResult { state }| LegacyVehicleActionResult { state: Some(state) }),
+        action => {
+            let proxy = command_proxy.ok_or(FleetApiError::CommandProxyUnavailable);
+            match proxy {
+                Ok(proxy) => proxy
+                    .execute(access_token, &vin, fleet_command(action)?)
+                    .await
+                    .map(|FleetCommandResult { .. }| LegacyVehicleActionResult { state: None }),
+                Err(error) => Err(error),
+            }
+        }
+    };
+    if matches!(result, Err(FleetApiError::HttpStatus(401 | 403))) {
+        manager.mark_refresh_due();
+    }
+    let completion = fleet_action_completion(result.as_ref().err());
+    store
+        .complete_outbound_request(receipt_id, &completion)
+        .map_err(ResidentActionExecutionError::CompletionUnknown)?;
+    Ok(LegacyVehicleActionReport {
+        provider: CollectorProvider::Fleet,
+        hub_vehicle_id,
+        tesla_eid,
+        action,
+        result: result.map_err(ResidentActionExecutionError::FleetProvider)?,
+        audit_receipt_id: receipt_id.0,
+    })
+}
+
+fn fleet_command(
+    action: LegacyVehicleAction,
+) -> Result<FleetCommand, ResidentActionExecutionError> {
+    match action {
+        LegacyVehicleAction::Wake => Err(ResidentActionExecutionError::FleetProvider(
+            FleetApiError::InvalidCommand,
+        )),
+        LegacyVehicleAction::ClimateStart => Ok(FleetCommand::ClimateStart),
+        LegacyVehicleAction::ClimateStop => Ok(FleetCommand::ClimateStop),
+        LegacyVehicleAction::ChargeStart => Ok(FleetCommand::ChargeStart),
+        LegacyVehicleAction::ChargeStop => Ok(FleetCommand::ChargeStop),
+        LegacyVehicleAction::SetChargeLimit(percent) => {
+            Ok(FleetCommand::SetChargeLimit { percent })
+        }
+        LegacyVehicleAction::Lock => Ok(FleetCommand::Lock),
+        LegacyVehicleAction::Unlock => Ok(FleetCommand::Unlock),
+        LegacyVehicleAction::FlashLights => Ok(FleetCommand::FlashLights),
+        LegacyVehicleAction::HonkHorn => Ok(FleetCommand::HonkHorn),
+    }
+}
+
+#[derive(Debug, Error)]
+enum ResidentActionExecutionError {
+    #[error("vehicle command target is not configured")]
+    VehicleMissing,
+    #[error("vehicle command audit could not start")]
+    Audit(#[from] StoreError),
+    #[error("resident vehicle credential authority is unavailable")]
+    Authentication,
+    #[error("vehicle provider rejected the command")]
+    Provider(#[from] OwnerApiAuthError),
+    #[error("Fleet provider rejected the command")]
+    FleetProvider(#[from] FleetApiError),
+    #[error("Fleet credential authority is unavailable")]
+    FleetCredential(#[from] FleetCredentialError),
+    #[error("vehicle command outcome is ambiguous because its audit could not complete")]
+    CompletionUnknown(StoreError),
+}
+
+fn legacy_action_completion(error: Option<&OwnerApiAuthError>) -> OutboundRequestCompletion {
+    let (outcome, http_status, retry_after_seconds) = match error {
+        None => (OutboundRequestOutcome::Success, Some(200), None),
+        Some(OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(401)))
+        | Some(OwnerApiAuthError::NotSignedIn) => (
+            OutboundRequestOutcome::AuthenticationRejected,
+            Some(401),
+            None,
+        ),
+        Some(OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(status))) => {
+            (OutboundRequestOutcome::HttpError, Some(*status), None)
+        }
+        Some(OwnerApiAuthError::Owner(OwnerApiError::RateLimited {
+            retry_after_seconds,
+        })) => (
+            OutboundRequestOutcome::HttpError,
+            Some(429),
+            Some(*retry_after_seconds),
+        ),
+        Some(OwnerApiAuthError::Owner(OwnerApiError::RequestTimeout)) => {
+            (OutboundRequestOutcome::Timeout, None, None)
+        }
+        Some(OwnerApiAuthError::Owner(OwnerApiError::Transport | OwnerApiError::ResponseRead)) => {
+            (OutboundRequestOutcome::TransportError, None, None)
+        }
+        Some(OwnerApiAuthError::Owner(OwnerApiError::ResponseTooLarge)) => {
+            (OutboundRequestOutcome::ResponseTooLarge, None, None)
+        }
+        Some(_) => (OutboundRequestOutcome::ProtocolError, None, None),
+    };
+    OutboundRequestCompletion {
+        outcome,
+        http_status,
+        retry_after_seconds,
+    }
+}
+
+fn fleet_action_completion(error: Option<&FleetApiError>) -> OutboundRequestCompletion {
+    let (outcome, http_status, retry_after_seconds) = match error {
+        None => (OutboundRequestOutcome::Success, Some(200), None),
+        Some(FleetApiError::HttpStatus(status @ (401 | 403))) => (
+            OutboundRequestOutcome::AuthenticationRejected,
+            Some(*status),
+            None,
+        ),
+        Some(FleetApiError::HttpStatus(status)) => {
+            (OutboundRequestOutcome::HttpError, Some(*status), None)
+        }
+        Some(FleetApiError::RateLimited {
+            retry_after_seconds,
+        }) => (
+            OutboundRequestOutcome::HttpError,
+            Some(429),
+            Some(*retry_after_seconds),
+        ),
+        Some(FleetApiError::RequestTimeout) => (OutboundRequestOutcome::Timeout, None, None),
+        Some(
+            FleetApiError::RequestNotSent | FleetApiError::Transport | FleetApiError::ResponseRead,
+        ) => (OutboundRequestOutcome::TransportError, None, None),
+        Some(FleetApiError::ResponseTooLarge) => {
+            (OutboundRequestOutcome::ResponseTooLarge, None, None)
+        }
+        Some(_) => (OutboundRequestOutcome::ProtocolError, None, None),
+    };
+    OutboundRequestCompletion {
+        outcome,
+        http_status,
+        retry_after_seconds,
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyVehicleActionReport {
+    pub provider: CollectorProvider,
+    pub hub_vehicle_id: Uuid,
+    pub tesla_eid: i64,
+    pub action: LegacyVehicleAction,
+    pub result: LegacyVehicleActionResult,
+    pub audit_receipt_id: i64,
+}
+
+const RESIDENT_CONTROL_PROTOCOL: u8 = 1;
+const RESIDENT_CONTROL_REQUEST_BYTES: u64 = 8 * 1024;
+const RESIDENT_CONTROL_RESPONSE_BYTES: u64 = 16 * 1024;
+const RESIDENT_CONTROL_IO_TIMEOUT: Duration = Duration::from_secs(30);
+const RESIDENT_CONTROL_SOCKET_NAME: &str = ".vehicle-control.sock";
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ResidentVehicleActionRequest {
+    protocol: u8,
+    hub_vehicle_id: Uuid,
+    action: LegacyVehicleAction,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum ResidentVehicleActionFailure {
+    InvalidRequest,
+    VehicleMissing,
+    AuthenticationRejected,
+    ProviderRejected,
+    AuditUnavailable,
+    OutcomeAmbiguous,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum ResidentVehicleActionResponse {
+    Ok { report: LegacyVehicleActionReport },
+    Error { code: ResidentVehicleActionFailure },
+}
+
+#[derive(Debug, Error)]
+pub enum ResidentVehicleActionError {
+    #[error("resident Hub vehicle-control service is unavailable")]
+    Unavailable,
+    #[error("resident Hub vehicle-control request timed out")]
+    Timeout,
+    #[error("resident Hub vehicle-control protocol failed")]
+    Protocol,
+    #[error("vehicle command target is not configured")]
+    VehicleMissing,
+    #[error("resident Hub credentials rejected the vehicle command")]
+    AuthenticationRejected,
+    #[error("vehicle provider rejected the command")]
+    ProviderRejected,
+    #[error("vehicle command audit is unavailable")]
+    AuditUnavailable,
+    #[error("vehicle command outcome is ambiguous; do not repeat it")]
+    OutcomeAmbiguous,
+}
+
+pub async fn request_resident_vehicle_action(
+    data_dir: &Path,
+    hub_vehicle_id: Uuid,
+    action: LegacyVehicleAction,
+) -> Result<LegacyVehicleActionReport, ResidentVehicleActionError> {
+    let request = ResidentVehicleActionRequest {
+        protocol: RESIDENT_CONTROL_PROTOCOL,
+        hub_vehicle_id,
+        action,
+    };
+    let request = serde_json::to_vec(&request).map_err(|_| ResidentVehicleActionError::Protocol)?;
+    if request.len() as u64 > RESIDENT_CONTROL_REQUEST_BYTES {
+        return Err(ResidentVehicleActionError::Protocol);
+    }
+    let path = data_dir.join(RESIDENT_CONTROL_SOCKET_NAME);
+    let response = tokio::time::timeout(RESIDENT_CONTROL_IO_TIMEOUT, async move {
+        let mut socket = UnixStream::connect(path)
+            .await
+            .map_err(|_| ResidentVehicleActionError::Unavailable)?;
+        socket
+            .write_all(&request)
+            .await
+            .map_err(|_| ResidentVehicleActionError::Unavailable)?;
+        socket
+            .shutdown()
+            .await
+            .map_err(|_| ResidentVehicleActionError::Unavailable)?;
+        let mut response = Vec::new();
+        (&mut socket)
+            .take(RESIDENT_CONTROL_RESPONSE_BYTES + 1)
+            .read_to_end(&mut response)
+            .await
+            .map_err(|_| ResidentVehicleActionError::Protocol)?;
+        if response.len() as u64 > RESIDENT_CONTROL_RESPONSE_BYTES {
+            return Err(ResidentVehicleActionError::Protocol);
+        }
+        serde_json::from_slice::<ResidentVehicleActionResponse>(&response)
+            .map_err(|_| ResidentVehicleActionError::Protocol)
+    })
+    .await
+    .map_err(|_| ResidentVehicleActionError::Timeout)??;
+
+    match response {
+        ResidentVehicleActionResponse::Ok { report } => Ok(report),
+        ResidentVehicleActionResponse::Error { code } => Err(match code {
+            ResidentVehicleActionFailure::InvalidRequest => ResidentVehicleActionError::Protocol,
+            ResidentVehicleActionFailure::VehicleMissing => {
+                ResidentVehicleActionError::VehicleMissing
+            }
+            ResidentVehicleActionFailure::AuthenticationRejected => {
+                ResidentVehicleActionError::AuthenticationRejected
+            }
+            ResidentVehicleActionFailure::ProviderRejected => {
+                ResidentVehicleActionError::ProviderRejected
+            }
+            ResidentVehicleActionFailure::AuditUnavailable => {
+                ResidentVehicleActionError::AuditUnavailable
+            }
+            ResidentVehicleActionFailure::OutcomeAmbiguous => {
+                ResidentVehicleActionError::OutcomeAmbiguous
+            }
+        }),
+    }
+}
+
+struct ResidentControlSocket {
+    listener: UnixListener,
+    path: PathBuf,
+    device: u64,
+    inode: u64,
+}
+
+impl ResidentControlSocket {
+    fn bind(data_dir: &Path) -> Result<Self, CollectorError> {
+        let path = data_dir.join(RESIDENT_CONTROL_SOCKET_NAME);
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata)
+                if metadata.file_type().is_socket()
+                    && metadata.uid() == rustix::process::getuid().as_raw()
+                    && metadata.nlink() == 1 =>
+            {
+                std::fs::remove_file(&path).map_err(|_| CollectorError::ResidentControlSocket)?;
+            }
+            Ok(_) => return Err(CollectorError::ResidentControlSocket),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(CollectorError::ResidentControlSocket),
+        }
+        let listener =
+            UnixListener::bind(&path).map_err(|_| CollectorError::ResidentControlSocket)?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|_| CollectorError::ResidentControlSocket)?;
+        let metadata =
+            std::fs::symlink_metadata(&path).map_err(|_| CollectorError::ResidentControlSocket)?;
+        if !metadata.file_type().is_socket()
+            || metadata.uid() != rustix::process::getuid().as_raw()
+            || metadata.nlink() != 1
+            || metadata.mode() & 0o777 != 0o600
+        {
+            return Err(CollectorError::ResidentControlSocket);
+        }
+        Ok(Self {
+            listener,
+            path,
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        })
+    }
+
+    async fn serve(
+        self,
+        store: HubStore,
+        client: OwnerApi,
+        manager: Arc<tokio::sync::Mutex<LegacyAuthManager>>,
+        fuse: Arc<tokio::sync::Mutex<LegacyAuthFuse>>,
+        refresh: Arc<LegacyRefreshCoordinator>,
+    ) -> Result<(), CollectorError> {
+        loop {
+            let (mut socket, _) = self
+                .listener
+                .accept()
+                .await
+                .map_err(|_| CollectorError::ResidentControlSocket)?;
+            let response = match tokio::time::timeout(
+                RESIDENT_CONTROL_IO_TIMEOUT,
+                read_resident_vehicle_action_request(&mut socket),
+            )
+            .await
+            {
+                Ok(Ok(request)) if request.protocol == RESIDENT_CONTROL_PROTOCOL => {
+                    match execute_resident_legacy_vehicle_action(
+                        &store,
+                        &client,
+                        &manager,
+                        &fuse,
+                        &refresh,
+                        request.hub_vehicle_id,
+                        request.action,
+                    )
+                    .await
+                    {
+                        Ok(report) => ResidentVehicleActionResponse::Ok { report },
+                        Err(error) => ResidentVehicleActionResponse::Error {
+                            code: classify_resident_action_error(&error),
+                        },
+                    }
+                }
+                _ => ResidentVehicleActionResponse::Error {
+                    code: ResidentVehicleActionFailure::InvalidRequest,
+                },
+            };
+            let response =
+                serde_json::to_vec(&response).map_err(|_| CollectorError::ResidentControlSocket)?;
+            if response.len() as u64 > RESIDENT_CONTROL_RESPONSE_BYTES {
+                return Err(CollectorError::ResidentControlSocket);
+            }
+            let _ = socket.write_all(&response).await;
+            let _ = socket.shutdown().await;
+        }
+    }
+
+    async fn serve_fleet(
+        self,
+        store: HubStore,
+        api: FleetApi,
+        auth_api: FleetAuthApi,
+        command_proxy: Option<FleetCommandProxy>,
+        manager: Arc<tokio::sync::Mutex<FleetAuthManager>>,
+    ) -> Result<(), CollectorError> {
+        loop {
+            let (mut socket, _) = self
+                .listener
+                .accept()
+                .await
+                .map_err(|_| CollectorError::ResidentControlSocket)?;
+            let response = match tokio::time::timeout(
+                RESIDENT_CONTROL_IO_TIMEOUT,
+                read_resident_vehicle_action_request(&mut socket),
+            )
+            .await
+            {
+                Ok(Ok(request)) if request.protocol == RESIDENT_CONTROL_PROTOCOL => {
+                    match execute_resident_fleet_vehicle_action(
+                        &store,
+                        &api,
+                        &auth_api,
+                        command_proxy.as_ref(),
+                        &manager,
+                        request.hub_vehicle_id,
+                        request.action,
+                    )
+                    .await
+                    {
+                        Ok(report) => ResidentVehicleActionResponse::Ok { report },
+                        Err(error) => ResidentVehicleActionResponse::Error {
+                            code: classify_resident_action_error(&error),
+                        },
+                    }
+                }
+                _ => ResidentVehicleActionResponse::Error {
+                    code: ResidentVehicleActionFailure::InvalidRequest,
+                },
+            };
+            let response =
+                serde_json::to_vec(&response).map_err(|_| CollectorError::ResidentControlSocket)?;
+            if response.len() as u64 > RESIDENT_CONTROL_RESPONSE_BYTES {
+                return Err(CollectorError::ResidentControlSocket);
+            }
+            let _ = socket.write_all(&response).await;
+            let _ = socket.shutdown().await;
+        }
+    }
+}
+
+impl Drop for ResidentControlSocket {
+    fn drop(&mut self) {
+        let removable = std::fs::symlink_metadata(&self.path).is_ok_and(|metadata| {
+            metadata.file_type().is_socket()
+                && metadata.uid() == rustix::process::getuid().as_raw()
+                && metadata.nlink() == 1
+                && metadata.dev() == self.device
+                && metadata.ino() == self.inode
+        });
+        if removable {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+async fn read_resident_vehicle_action_request(
+    socket: &mut UnixStream,
+) -> Result<ResidentVehicleActionRequest, ()> {
+    let mut request = Vec::new();
+    socket
+        .take(RESIDENT_CONTROL_REQUEST_BYTES + 1)
+        .read_to_end(&mut request)
+        .await
+        .map_err(|_| ())?;
+    if request.len() as u64 > RESIDENT_CONTROL_REQUEST_BYTES {
+        return Err(());
+    }
+    serde_json::from_slice(&request).map_err(|_| ())
+}
+
+fn classify_resident_action_error(
+    error: &ResidentActionExecutionError,
+) -> ResidentVehicleActionFailure {
+    match error {
+        ResidentActionExecutionError::VehicleMissing => {
+            ResidentVehicleActionFailure::VehicleMissing
+        }
+        ResidentActionExecutionError::Audit(_) => ResidentVehicleActionFailure::AuditUnavailable,
+        ResidentActionExecutionError::Authentication => {
+            ResidentVehicleActionFailure::AuthenticationRejected
+        }
+        ResidentActionExecutionError::CompletionUnknown(_) => {
+            ResidentVehicleActionFailure::OutcomeAmbiguous
+        }
+        ResidentActionExecutionError::Provider(OwnerApiAuthError::NotSignedIn)
+        | ResidentActionExecutionError::Provider(OwnerApiAuthError::Owner(
+            OwnerApiError::HttpStatus(401 | 403),
+        )) => ResidentVehicleActionFailure::AuthenticationRejected,
+        ResidentActionExecutionError::Provider(_) => ResidentVehicleActionFailure::ProviderRejected,
+        ResidentActionExecutionError::FleetCredential(_) => {
+            ResidentVehicleActionFailure::AuthenticationRejected
+        }
+        ResidentActionExecutionError::FleetProvider(FleetApiError::HttpStatus(401 | 403)) => {
+            ResidentVehicleActionFailure::AuthenticationRejected
+        }
+        ResidentActionExecutionError::FleetProvider(_) => {
+            ResidentVehicleActionFailure::ProviderRejected
+        }
+    }
+}
+
 async fn setup_native_vehicle_with_client(
     store: &HubStore,
     data_dir: &std::path::Path,
@@ -802,20 +1673,18 @@ async fn setup_native_vehicle_with_client(
     auth: &LegacyAuth,
     requested_vehicle_id: Option<i64>,
 ) -> Result<NativeSetupReport, CollectorError> {
-    let existing = store.selected_tesla_eid()?;
-    let effective_vehicle_id = requested_vehicle_id.or(existing.as_ref().map(|(id, _)| *id));
+    let existing = store.configured_tesla_vehicles()?;
+    let effective_vehicle_id =
+        requested_vehicle_id.or_else(|| (existing.len() == 1).then(|| existing[0].1));
     let vehicles = client.list_vehicles_with_legacy_auth_once(auth).await?;
     let mut vehicle = select_native_setup_vehicle(vehicles, effective_vehicle_id)?;
     let selected_vehicle_id =
         i64::try_from(vehicle.id.get()).map_err(|_| CollectorError::NativeSetupVehicleIdInvalid)?;
 
-    if let Some((existing_vehicle_id, settings)) = existing {
-        if existing_vehicle_id != selected_vehicle_id {
-            return Err(CollectorError::NativeSetupVehicleConflict {
-                existing: existing_vehicle_id,
-                requested: selected_vehicle_id,
-            });
-        }
+    if let Some((_, _, settings)) = existing
+        .into_iter()
+        .find(|(_, eid, _)| *eid == selected_vehicle_id)
+    {
         vehicle.settings = settings;
     }
 
@@ -838,6 +1707,58 @@ async fn setup_native_vehicle_with_client(
     Ok(NativeSetupReport {
         selected_vehicle_id,
         display_name,
+        snapshots_published: report.snapshots_published,
+    })
+}
+
+async fn setup_native_vehicles_with_client(
+    store: &HubStore,
+    data_dir: &Path,
+    client: &OwnerApi,
+    auth: &LegacyAuth,
+) -> Result<NativeSetupBatchReport, CollectorError> {
+    let existing = store.configured_tesla_vehicles()?;
+    let mut vehicles = client.list_vehicles_with_legacy_auth_once(auth).await?;
+    if vehicles.is_empty() {
+        return Err(CollectorError::NativeSetupNoVehicles);
+    }
+    vehicles.sort_by_key(|vehicle| vehicle.id);
+    vehicles.dedup_by_key(|vehicle| vehicle.id);
+    for vehicle in &mut vehicles {
+        if let Some((_, _, settings)) = existing
+            .iter()
+            .find(|(_, eid, _)| *eid as u64 == vehicle.id.get())
+        {
+            vehicle.settings = settings.clone();
+        }
+    }
+    let configured = vehicles
+        .iter()
+        .map(|vehicle| {
+            i64::try_from(vehicle.id.get())
+                .map(|vehicle_id| NativeSetupVehicle {
+                    vehicle_id,
+                    display_name: vehicle.display_name.clone(),
+                })
+                .map_err(|_| CollectorError::NativeSetupVehicleIdInvalid)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let cursor_key =
+        crate::teslamate_credentials::load_or_create_cursor_key(data_dir).map_err(|error| {
+            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
+        })?;
+    let report = finish_collection(
+        store,
+        &cursor_key,
+        &ManualCollection {
+            vehicles,
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        },
+    )
+    .await?;
+    Ok(NativeSetupBatchReport {
+        vehicles: configured,
         snapshots_published: report.snapshots_published,
     })
 }
@@ -1194,6 +2115,12 @@ where
     if store.database_path() != config.data_dir.join("hub.sqlite") {
         return Err(CollectorError::AdmittedStoreMismatch);
     }
+    if config.collector.provider == CollectorProvider::Fleet {
+        return run_fleet_supervised_for_admitted_user(
+            store, config, admission, ready, true, shutdown,
+        )
+        .await;
+    }
     let _activation = config.collector.supervised_interval()?;
     let cadence = config.collector.cadence()?;
     if !config.collector.legacy_auth.enabled {
@@ -1257,6 +2184,12 @@ where
     if store.database_path() != config.data_dir.join("hub.sqlite") {
         return Err(CollectorError::AdmittedStoreMismatch);
     }
+    if config.collector.provider == CollectorProvider::Fleet {
+        return run_fleet_supervised_for_admitted_user(
+            store, config, admission, ready, false, shutdown,
+        )
+        .await;
+    }
     let _activation = config.collector.supervised_interval()?;
     let cadence = config.collector.cadence()?;
     if !config.collector.legacy_auth.enabled {
@@ -1299,18 +2232,563 @@ where
     .await
 }
 
-fn filter_selected_vehicle(
+#[cfg(unix)]
+async fn run_fleet_supervised_for_admitted_user<F>(
+    store: &HubStore,
+    config: &HubConfig,
+    admission: Arc<crate::hub_user_process::AdmittedUserHub>,
+    ready: oneshot::Sender<CursorKey>,
+    allow_refresh: bool,
+    shutdown: F,
+) -> Result<(), CollectorError>
+where
+    F: Future<Output = ()>,
+{
+    let _activation = config.collector.supervised_interval()?;
+    let cadence = config.collector.cadence()?;
+    let manager = FleetAuthManager::from_store_for_admitted_user(
+        store.clone(),
+        &config.data_dir,
+        Arc::clone(&admission),
+    )?;
+    let api = FleetApi::new(
+        manager.region(),
+        Duration::from_secs(config.collector.request_timeout_seconds),
+    )?;
+    let auth_api = FleetAuthApi::new(Duration::from_secs(
+        config.collector.request_timeout_seconds,
+    ))?;
+    let command_proxy = fleet_command_proxy(config)?;
+    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+        .map_err(|error| {
+            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
+        })?;
+    run_fleet_supervised_with_access(
+        store,
+        config,
+        cadence,
+        api,
+        auth_api,
+        command_proxy,
+        Arc::new(tokio::sync::Mutex::new(manager)),
+        cursor_key,
+        ready,
+        admission,
+        allow_refresh,
+        shutdown,
+    )
+    .await
+}
+
+#[cfg(unix)]
+fn fleet_command_proxy(config: &HubConfig) -> Result<Option<FleetCommandProxy>, CollectorError> {
+    const MAX_CERTIFICATE_BYTES: u64 = 128 * 1024;
+    let Some(endpoint) = config.collector.fleet_command_proxy_url.as_deref() else {
+        return Ok(None);
+    };
+    let base = FleetCommandProxyBase::parse(endpoint)?;
+    let certificate = config
+        .collector
+        .fleet_command_proxy_root_certificate_path
+        .as_deref()
+        .map(|path| {
+            let file = std::fs::File::open(path)
+                .map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
+            let mut bytes = Vec::new();
+            file.take(MAX_CERTIFICATE_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
+            if bytes.len() as u64 > MAX_CERTIFICATE_BYTES {
+                return Err(FleetApiConfigError::InvalidRootCertificate);
+            }
+            Ok(bytes)
+        })
+        .transpose()?;
+    FleetCommandProxy::new(
+        base,
+        Duration::from_secs(config.collector.request_timeout_seconds),
+        certificate.as_deref(),
+    )
+    .map(Some)
+    .map_err(Into::into)
+}
+
+async fn fleet_list_vehicles_with_auth(
+    api: &FleetApi,
+    auth_api: &FleetAuthApi,
+    manager: &Arc<tokio::sync::Mutex<FleetAuthManager>>,
+    allow_refresh: bool,
+) -> Result<Vec<Vehicle>, CollectorError> {
+    let mut manager = manager.lock().await;
+    if allow_refresh {
+        manager.refresh_if_due(auth_api, SystemTime::now()).await?;
+    }
+    let first = api
+        .list_vehicles(manager.access_token_for_sensitive_use()?)
+        .await;
+    if allow_refresh && matches!(first, Err(FleetApiError::HttpStatus(401 | 403))) {
+        manager.mark_refresh_due();
+        manager.refresh_if_due(auth_api, SystemTime::now()).await?;
+        return api
+            .list_vehicles(manager.access_token_for_sensitive_use()?)
+            .await
+            .map_err(Into::into);
+    }
+    first.map_err(Into::into)
+}
+
+async fn fleet_vehicle_data_with_auth(
+    api: &FleetApi,
+    auth_api: &FleetAuthApi,
+    manager: &Arc<tokio::sync::Mutex<FleetAuthManager>>,
+    vehicle: &Vehicle,
+    allow_refresh: bool,
+) -> Result<VehicleData, CollectorError> {
+    let vin = VehicleVin::parse(&vehicle.vin)
+        .map_err(|_| CollectorError::FleetApi(FleetApiError::InvalidResponse))?;
+    let mut manager = manager.lock().await;
+    if allow_refresh {
+        manager.refresh_if_due(auth_api, SystemTime::now()).await?;
+    }
+    let first = api
+        .vehicle_data(manager.access_token_for_sensitive_use()?, vehicle.id, &vin)
+        .await;
+    if allow_refresh && matches!(first, Err(FleetApiError::HttpStatus(401 | 403))) {
+        manager.mark_refresh_due();
+        manager.refresh_if_due(auth_api, SystemTime::now()).await?;
+        return api
+            .vehicle_data(manager.access_token_for_sensitive_use()?, vehicle.id, &vin)
+            .await
+            .map_err(Into::into);
+    }
+    first.map_err(Into::into)
+}
+
+fn fleet_collection_must_stop(error: &CollectorError) -> bool {
+    matches!(
+        error,
+        CollectorError::FleetApi(FleetApiError::HttpStatus(401 | 403))
+    ) || matches!(error, CollectorError::FleetCredential(error) if error.is_sensitive_access_failure())
+}
+
+fn fleet_failure_as_owner_error(error: &CollectorError) -> OwnerApiError {
+    match error {
+        CollectorError::FleetApi(FleetApiError::RequestTimeout) => OwnerApiError::RequestTimeout,
+        CollectorError::FleetApi(FleetApiError::RequestNotSent | FleetApiError::Transport) => {
+            OwnerApiError::Transport
+        }
+        CollectorError::FleetApi(FleetApiError::HttpStatus(status)) => {
+            OwnerApiError::HttpStatus(*status)
+        }
+        CollectorError::FleetApi(FleetApiError::RateLimited {
+            retry_after_seconds,
+        }) => OwnerApiError::RateLimited {
+            retry_after_seconds: *retry_after_seconds,
+        },
+        CollectorError::FleetApi(FleetApiError::ResponseTooLarge) => {
+            OwnerApiError::ResponseTooLarge
+        }
+        CollectorError::FleetApi(FleetApiError::ResponseRead) => OwnerApiError::ResponseRead,
+        CollectorError::FleetApi(_) => OwnerApiError::InvalidVehicleDataEnvelope,
+        CollectorError::FleetCredential(_) => OwnerApiError::LegacyAuth,
+        _ => OwnerApiError::Transport,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_fleet_supervised_with_access<F>(
+    store: &HubStore,
+    config: &HubConfig,
+    cadence: CollectorCadence,
+    api: FleetApi,
+    auth_api: FleetAuthApi,
+    command_proxy: Option<FleetCommandProxy>,
+    manager: Arc<tokio::sync::Mutex<FleetAuthManager>>,
+    cursor_key: CursorKey,
+    ready: oneshot::Sender<CursorKey>,
+    admission: Arc<crate::hub_user_process::AdmittedUserHub>,
+    allow_refresh: bool,
+    shutdown: F,
+) -> Result<(), CollectorError>
+where
+    F: Future<Output = ()>,
+{
+    if store.configured_tesla_vehicles()?.is_empty() {
+        return Err(CollectorError::SelectedVehicleMissing);
+    }
+    let collector_lease = store.acquire_supervised_collector_lease(current_epoch_millis()?)?;
+    let (collector_state, collector_state_rx) = watch::channel(SupervisedCollectorState::Active);
+    let (heartbeat_shutdown, heartbeat_stop) = oneshot::channel();
+    let mut heartbeat_task = tokio::spawn(run_supervised_collector_heartbeat(
+        store.clone(),
+        collector_lease,
+        collector_state_rx,
+        heartbeat_stop,
+        SUPERVISED_COLLECTOR_HEARTBEAT_INTERVAL,
+    ));
+    let mut terrain_worker = spawn_terrain_worker(
+        config.data_dir.clone(),
+        config.terrain.clone(),
+        cursor_key.clone(),
+        Some(Arc::clone(&admission)),
+    );
+    let terrain_wake = terrain_worker.wake.clone();
+    let mut startup_result = terrain_worker.wait_until_initialized().await;
+    if startup_result.is_ok() {
+        startup_result = admission
+            .assert_sensitive_access()
+            .map_err(CollectorError::from);
+    }
+    if startup_result.is_ok() && allow_refresh {
+        startup_result = manager
+            .lock()
+            .await
+            .refresh_if_due(&auth_api, SystemTime::now())
+            .await
+            .map_err(Into::into);
+    }
+    if startup_result.is_ok() {
+        startup_result = terrain_worker.start();
+    }
+    if startup_result.is_ok() && (heartbeat_task.is_finished() || terrain_worker.task.is_finished())
+    {
+        startup_result = Err(CollectorError::SupervisedHeartbeatTask);
+    }
+    let resident_socket = if startup_result.is_ok() && allow_refresh {
+        match ResidentControlSocket::bind(&config.data_dir) {
+            Ok(socket) => Some(socket),
+            Err(error) => {
+                startup_result = Err(error);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if startup_result.is_ok() {
+        startup_result = ready
+            .send(cursor_key.clone())
+            .map_err(|_| CollectorError::SupervisedStartupReadyDropped);
+    }
+    let mut scheduler = VehicleScheduler::new(cadence, Instant::now());
+    let (mut collection_result, heartbeat_finished, terrain_finished) = {
+        let resident_control_loop = async {
+            match resident_socket {
+                Some(socket) => {
+                    socket
+                        .serve_fleet(
+                            store.clone(),
+                            api.clone(),
+                            auth_api.clone(),
+                            command_proxy.clone(),
+                            Arc::clone(&manager),
+                        )
+                        .await
+                }
+                None => std::future::pending::<Result<(), CollectorError>>().await,
+            }
+        };
+        tokio::pin!(resident_control_loop);
+        let collection_loop = async {
+            startup_result?;
+            loop {
+                admission.assert_sensitive_access()?;
+                let configured = store.configured_tesla_vehicles()?;
+                if configured.is_empty() {
+                    return Err(CollectorError::SelectedVehicleMissing);
+                }
+                scheduler.apply_control_settings(&configured, Instant::now());
+                let now = Instant::now();
+                if scheduler.discovery_due(now) {
+                    match fleet_list_vehicles_with_auth(&api, &auth_api, &manager, allow_refresh)
+                        .await
+                    {
+                        Ok(vehicles) => {
+                            let vehicles = filter_configured_vehicles_for_provider(
+                                vehicles,
+                                &configured,
+                                CollectorProvider::Fleet,
+                            );
+                            report_successful_owner_api_request(&collector_state, false);
+                            let events = scheduler.accept_discovery(vehicles, Instant::now());
+                            if !events.is_empty() {
+                                persist_discovery_events_with_timeout(
+                                    store,
+                                    &cursor_key,
+                                    &events,
+                                    CollectorProvider::Fleet,
+                                    cadence.offline_drive_timeout,
+                                )
+                                .await?;
+                            }
+                        }
+                        Err(error) => {
+                            report_terminal_auth_failure(&collector_state, &error);
+                            if fleet_collection_must_stop(&error) {
+                                return Err(error);
+                            }
+                            let delay =
+                                scheduler.discovery_failed_for_error(&error, Instant::now());
+                            tracing::warn!(error = %error, "Fleet discovery failed; backing off");
+                            sleep(delay).await;
+                            continue;
+                        }
+                    }
+                }
+
+                let offline_due = scheduler.due_offline_state_vehicles(Instant::now());
+                if !offline_due.is_empty() {
+                    match fleet_list_vehicles_with_auth(&api, &auth_api, &manager, allow_refresh)
+                        .await
+                    {
+                        Ok(discovered) => {
+                            let discovered = filter_configured_vehicles_for_provider(
+                                discovered,
+                                &configured,
+                                CollectorProvider::Fleet,
+                            );
+                            let mut events = Vec::new();
+                            for vehicle_id in offline_due {
+                                if let Some(vehicle) =
+                                    discovered.iter().find(|vehicle| vehicle.id == vehicle_id)
+                                {
+                                    events.extend(scheduler.accept_vehicle_state(
+                                        vehicle_id,
+                                        vehicle.state.clone(),
+                                        Instant::now(),
+                                    ));
+                                }
+                            }
+                            if !events.is_empty() {
+                                persist_discovery_events_with_timeout(
+                                    store,
+                                    &cursor_key,
+                                    &events,
+                                    CollectorProvider::Fleet,
+                                    cadence.offline_drive_timeout,
+                                )
+                                .await?;
+                            }
+                        }
+                        Err(error) => {
+                            if fleet_collection_must_stop(&error) {
+                                return Err(error);
+                            }
+                            for vehicle_id in offline_due {
+                                scheduler.vehicle_failed_for_error(
+                                    vehicle_id,
+                                    &error,
+                                    Instant::now(),
+                                );
+                            }
+                        }
+                    }
+                }
+
+                for vehicle_id in scheduler.due_service_vehicles(Instant::now()) {
+                    let Some(vehicle) = scheduler
+                        .vehicles()
+                        .into_iter()
+                        .find(|vehicle| vehicle.id == vehicle_id)
+                    else {
+                        continue;
+                    };
+                    match fleet_vehicle_data_with_auth(
+                        &api,
+                        &auth_api,
+                        &manager,
+                        &vehicle,
+                        allow_refresh,
+                    )
+                    .await
+                    {
+                        Ok(snapshot) if snapshot_service_mode(&snapshot) == Some(true) => {
+                            scheduler.service_retry(vehicle_id, Instant::now());
+                        }
+                        Ok(_) => scheduler.service_exited(vehicle_id, Instant::now()),
+                        Err(error) => {
+                            if fleet_collection_must_stop(&error) {
+                                return Err(error);
+                            }
+                            scheduler.vehicle_failed_for_error(vehicle_id, &error, Instant::now());
+                        }
+                    }
+                }
+
+                let due = scheduler.due_vehicles(Instant::now());
+                if !due.is_empty() {
+                    let mut snapshots = Vec::new();
+                    let mut failures = Vec::new();
+                    let mut scheduler_events = Vec::new();
+                    for vehicle_id in due {
+                        let Some(vehicle) = scheduler
+                            .vehicles()
+                            .into_iter()
+                            .find(|vehicle| vehicle.id == vehicle_id)
+                        else {
+                            continue;
+                        };
+                        match fleet_vehicle_data_with_auth(
+                            &api,
+                            &auth_api,
+                            &manager,
+                            &vehicle,
+                            allow_refresh,
+                        )
+                        .await
+                        {
+                            Ok(snapshot) => {
+                                report_successful_owner_api_request(&collector_state, false);
+                                if snapshot_service_mode(&snapshot) == Some(true) {
+                                    scheduler.enter_service_mode(vehicle_id, Instant::now());
+                                    force_close_vehicle_for_service_provider(
+                                        store,
+                                        vehicle_id,
+                                        current_epoch_millis()?,
+                                        CollectorProvider::Fleet,
+                                    )?;
+                                }
+                                if let Some(event) = scheduler.vehicle_succeeded(
+                                    vehicle_id,
+                                    poll_phase(&snapshot),
+                                    sleep_eligible_with_policy(
+                                        &snapshot,
+                                        vehicle.settings.req_not_unlocked,
+                                    ),
+                                    Instant::now(),
+                                ) {
+                                    scheduler_events.push(event);
+                                }
+                                snapshots.push(snapshot);
+                            }
+                            Err(error) => {
+                                report_terminal_auth_failure(&collector_state, &error);
+                                if fleet_collection_must_stop(&error) {
+                                    return Err(error);
+                                }
+                                scheduler.vehicle_failed_for_error(
+                                    vehicle_id,
+                                    &error,
+                                    Instant::now(),
+                                );
+                                failures.push(VehicleCollectionFailure {
+                                    vehicle_id,
+                                    error: fleet_failure_as_owner_error(&error),
+                                });
+                            }
+                        }
+                    }
+                    let collection = ManualCollection {
+                        vehicles: scheduler.vehicles(),
+                        snapshots,
+                        failures,
+                    };
+                    let _report = finish_collection_for_provider(
+                        store,
+                        &cursor_key,
+                        &collection,
+                        CollectorProvider::Fleet,
+                    )
+                    .await?;
+                    #[cfg(test)]
+                    supervised_test_collection_finished(&_report).await;
+                    let _ = terrain_wake.try_send(());
+                    if !scheduler_events.is_empty() {
+                        persist_discovery_events_with_timeout(
+                            store,
+                            &cursor_key,
+                            &scheduler_events,
+                            CollectorProvider::Fleet,
+                            cadence.offline_drive_timeout,
+                        )
+                        .await?;
+                    }
+                }
+                let delay = scheduler.delay_until_next_action(Instant::now());
+                let vehicles = scheduler.vehicles();
+                run_address_enrichment_once_with_runtime_admission(
+                    store,
+                    config,
+                    &cursor_key,
+                    &vehicles,
+                    current_epoch_millis()?,
+                    Some(&admission),
+                )
+                .await?;
+                replay_export_outbox(store, &cursor_key, &vehicles, current_epoch_millis()?)
+                    .await?;
+                if !delay.is_zero() {
+                    sleep(delay.min(CONTROL_SETTINGS_REFRESH)).await;
+                }
+            }
+        };
+        tokio::pin!(collection_loop);
+        tokio::pin!(shutdown);
+        tokio::select! {
+            biased;
+            result = &mut resident_control_loop => (result, false, false),
+            result = &mut collection_loop => (result, false, false),
+            () = &mut shutdown => (Ok(()), false, false),
+            result = &mut heartbeat_task => {
+                let result = result
+                    .map_err(|_| CollectorError::SupervisedHeartbeatTask)
+                    .and_then(|result| result);
+                (result, true, false)
+            }
+            result = terrain_worker.wait_until_exit() => (result, false, true),
+        }
+    };
+    if let Err(error) = &collection_result {
+        report_terminal_auth_failure(&collector_state, error);
+    }
+    let terrain_result = terrain_worker.shutdown(terrain_finished).await;
+    if collection_result.is_ok() {
+        collection_result = terrain_result;
+    }
+    if !heartbeat_finished {
+        let _ = heartbeat_shutdown.send(());
+        let heartbeat_result = heartbeat_task
+            .await
+            .map_err(|_| CollectorError::SupervisedHeartbeatTask)
+            .and_then(|result| result);
+        if collection_result.is_ok() {
+            collection_result = heartbeat_result;
+        }
+    }
+    let release_result = store
+        .release_supervised_collector_lease(collector_lease)
+        .map_err(CollectorError::from);
+    if collection_result.is_ok() {
+        collection_result = release_result;
+    }
+    collection_result
+}
+
+fn filter_configured_vehicles(
     vehicles: Vec<Vehicle>,
-    selected: &(i64, crate::hub_pack::ProjectionCarSettings),
+    configured: &[(uuid::Uuid, i64, crate::hub_pack::ProjectionCarSettings)],
 ) -> Vec<Vehicle> {
-    let (selected_eid, settings) = selected;
+    filter_configured_vehicles_for_provider(vehicles, configured, CollectorProvider::Legacy)
+}
+
+fn filter_configured_vehicles_for_provider(
+    vehicles: Vec<Vehicle>,
+    configured: &[(uuid::Uuid, i64, crate::hub_pack::ProjectionCarSettings)],
+    provider: CollectorProvider,
+) -> Vec<Vehicle> {
     vehicles
         .into_iter()
         .filter_map(|mut vehicle| {
-            (vehicle.id.get() == *selected_eid as u64).then(|| {
-                vehicle.settings = settings.clone();
-                vehicle
-            })
+            configured
+                .iter()
+                .find(|(_, eid, _)| vehicle.id.get() == *eid as u64)
+                .map(|(_, _, settings)| {
+                    vehicle.settings = settings.clone();
+                    if provider == CollectorProvider::Fleet {
+                        vehicle.settings.use_streaming_api = false;
+                    }
+                    vehicle
+                })
         })
         .collect()
 }
@@ -1330,10 +2808,9 @@ async fn run_supervised_with_access<F>(
 where
     F: Future<Output = ()>,
 {
-    let selected_vehicle_eid = store
-        .selected_tesla_eid()?
-        .ok_or(CollectorError::SelectedVehicleMissing)?
-        .0;
+    if store.configured_tesla_vehicles()?.is_empty() {
+        return Err(CollectorError::SelectedVehicleMissing);
+    }
     let collector_lease = store.acquire_supervised_collector_lease(current_epoch_millis()?)?;
     let (collector_state, collector_state_rx) = watch::channel(SupervisedCollectorState::Active);
     let (heartbeat_shutdown, heartbeat_stop) = oneshot::channel();
@@ -1393,6 +2870,28 @@ where
             .map_err(CollectorError::from)
             .map_err(normalize_sensitive_access_error);
     }
+    let resident_control_authority = match &auth {
+        CollectionAuth::Legacy {
+            manager,
+            fuse,
+            refresh,
+            allow_refresh: true,
+            ..
+        } => Some((Arc::clone(manager), Arc::clone(fuse), Arc::clone(refresh))),
+        CollectionAuth::Legacy { .. } => None,
+    };
+    let resident_control_socket = if startup_result.is_ok() && resident_control_authority.is_some()
+    {
+        match ResidentControlSocket::bind(&config.data_dir) {
+            Ok(socket) => Some(socket),
+            Err(error) => {
+                startup_result = Err(error);
+                None
+            }
+        }
+    } else {
+        None
+    };
     if startup_result.is_ok()
         && let Some(ready) = ready
     {
@@ -1412,6 +2911,17 @@ where
     let mut stream_projection_car_ids = HashMap::new();
 
     let (mut collection_result, heartbeat_finished, terrain_finished) = {
+        let resident_control_loop = async {
+            match (resident_control_socket, resident_control_authority) {
+                (Some(socket), Some((manager, fuse, refresh))) => {
+                    socket
+                        .serve(store.clone(), client.clone(), manager, fuse, refresh)
+                        .await
+                }
+                _ => std::future::pending::<Result<(), CollectorError>>().await,
+            }
+        };
+        tokio::pin!(resident_control_loop);
         let collection_loop = async {
             startup_result?;
             'collection: loop {
@@ -1421,12 +2931,12 @@ where
                     sleep(LEGACY_REFRESH_RETRY).await;
                     continue;
                 }
-                let selected_vehicle = store
-                    .selected_tesla_eid()?
-                    .filter(|(eid, _)| *eid == selected_vehicle_eid)
-                    .ok_or(CollectorError::SelectedVehicleMissing)?;
+                let configured_vehicles = store.configured_tesla_vehicles()?;
+                if configured_vehicles.is_empty() {
+                    return Err(CollectorError::SelectedVehicleMissing);
+                }
                 for vehicle_id in
-                    scheduler.apply_control_settings(&selected_vehicle.1, Instant::now())
+                    scheduler.apply_control_settings(&configured_vehicles, Instant::now())
                 {
                     disconnect_vehicle_stream(&mut streams, vehicle_id).await;
                 }
@@ -1452,14 +2962,23 @@ where
                 if scheduler.discovery_due(now) {
                     match list_vehicles_for_auth(&client, &auth).await {
                         Ok(vehicles) => {
-                            let vehicles = filter_selected_vehicle(vehicles, &selected_vehicle);
+                            let vehicles =
+                                filter_configured_vehicles(vehicles, &configured_vehicles);
                             report_successful_owner_api_request(
                                 &collector_state,
                                 stream_authentication_rejected,
                             );
                             let events = scheduler.accept_discovery(vehicles, Instant::now());
+                            disconnect_streams_not_in_scheduler(&mut streams, &scheduler).await;
                             if !events.is_empty() {
-                                persist_discovery_events(store, &cursor_key, &events).await?;
+                                persist_discovery_events_with_timeout(
+                                    store,
+                                    &cursor_key,
+                                    &events,
+                                    CollectorProvider::Legacy,
+                                    cadence.offline_drive_timeout,
+                                )
+                                .await?;
                             }
                             for vehicle in scheduler.vehicles() {
                                 if vehicle.is_online()
@@ -1467,6 +2986,7 @@ where
                                     && scheduler.should_start_stream(vehicle.id)
                                 {
                                     ensure_vehicle_stream(
+                                        store,
                                         &mut streams,
                                         vehicle.id,
                                         vehicle.stream_id,
@@ -1512,7 +3032,14 @@ where
                             let events =
                                 scheduler.accept_vehicle_state(vehicle_id, state, Instant::now());
                             if !events.is_empty() {
-                                persist_discovery_events(store, &cursor_key, &events).await?;
+                                persist_discovery_events_with_timeout(
+                                    store,
+                                    &cursor_key,
+                                    &events,
+                                    CollectorProvider::Legacy,
+                                    cadence.offline_drive_timeout,
+                                )
+                                .await?;
                             }
                         }
                         Err(error) => {
@@ -1563,6 +3090,7 @@ where
                                 && vehicle.settings.use_streaming_api
                             {
                                 ensure_vehicle_stream(
+                                    store,
                                     &mut streams,
                                     vehicle_id,
                                     vehicle.stream_id,
@@ -1649,6 +3177,7 @@ where
                                     && vehicle.settings.use_streaming_api
                                 {
                                     ensure_vehicle_stream(
+                                        store,
                                         &mut streams,
                                         vehicle.id,
                                         vehicle.stream_id,
@@ -1729,7 +3258,14 @@ where
                     supervised_test_collection_finished(&report).await;
                     let _ = terrain_wake.try_send(());
                     if !scheduler_events.is_empty() {
-                        persist_discovery_events(store, &cursor_key, &scheduler_events).await?;
+                        persist_discovery_events_with_timeout(
+                            store,
+                            &cursor_key,
+                            &scheduler_events,
+                            CollectorProvider::Legacy,
+                            cadence.offline_drive_timeout,
+                        )
+                        .await?;
                     }
                     tracing::info!(
                         vehicles = report.vehicles_seen,
@@ -1774,6 +3310,7 @@ where
         tokio::select! {
             biased;
             result = &mut legacy_refresh_failure => (result, false, false),
+            result = &mut resident_control_loop => (result, false, false),
             result = &mut collection_loop => (result, false, false),
             () = &mut shutdown => (Ok(()), false, false),
             result = &mut heartbeat_task => {
@@ -1944,11 +3481,12 @@ fn is_terminal_auth_failure(error: &CollectorError) -> bool {
         error,
         CollectorError::SensitiveAccessUnavailable
             | CollectorError::OwnerApi(OwnerApiError::HttpStatus(401 | 403))
+            | CollectorError::FleetApi(FleetApiError::HttpStatus(401 | 403))
             | CollectorError::OwnerApiAuth(OwnerApiAuthError::NotSignedIn)
             | CollectorError::OwnerApiAuth(OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(
                 403
             )))
-    )
+    ) || matches!(error, CollectorError::FleetCredential(error) if error.is_sensitive_access_failure())
 }
 
 async fn replay_export_outbox(
@@ -2327,6 +3865,7 @@ impl Drop for VehicleStreamRuntime {
 }
 
 fn ensure_vehicle_stream(
+    store: &HubStore,
     streams: &mut Vec<VehicleStreamRuntime>,
     vehicle_id: VehicleId,
     stream_vehicle_id: StreamVehicleId,
@@ -2372,6 +3911,7 @@ fn ensure_vehicle_stream(
         endpoint,
         client.legacy_auth_http_client(),
         events,
+        store.clone(),
     );
     #[cfg(test)]
     let supervisor_result = TeslaStreamSupervisor::new_legacy_auth_for_test(
@@ -2382,7 +3922,8 @@ fn ensure_vehicle_stream(
         endpoint,
         client.legacy_auth_http_client(),
         events,
-    );
+    )
+    .map(|supervisor| supervisor.with_audit_store(store.clone()));
     let supervisor = match supervisor_result {
         Ok(supervisor) => supervisor,
         Err(error) => {
@@ -2450,6 +3991,25 @@ async fn disconnect_vehicle_stream(streams: &mut Vec<VehicleStreamRuntime>, vehi
         }
     }
     streams.retain(|stream| stream.vehicle_id != vehicle_id);
+}
+
+async fn disconnect_streams_not_in_scheduler(
+    streams: &mut Vec<VehicleStreamRuntime>,
+    scheduler: &VehicleScheduler,
+) {
+    let configured = scheduler
+        .vehicles()
+        .into_iter()
+        .map(|vehicle| vehicle.id)
+        .collect::<HashSet<_>>();
+    let stale = streams
+        .iter()
+        .map(|stream| stream.vehicle_id)
+        .filter(|vehicle_id| !configured.contains(vehicle_id))
+        .collect::<Vec<_>>();
+    for vehicle_id in stale {
+        disconnect_vehicle_stream(streams, vehicle_id).await;
+    }
 }
 
 fn is_vehicle_in_service(error: &CollectorError) -> bool {
@@ -2798,12 +4358,34 @@ impl VehicleScheduler {
 
     fn apply_control_settings(
         &mut self,
-        settings: &crate::hub_pack::ProjectionCarSettings,
+        configured: &[(uuid::Uuid, i64, crate::hub_pack::ProjectionCarSettings)],
         now: Instant,
     ) -> Vec<VehicleId> {
         let mut disconnect = Vec::new();
         let mut rediscover = false;
+        let removed = self
+            .vehicles
+            .keys()
+            .copied()
+            .filter(|vehicle_id| {
+                !configured
+                    .iter()
+                    .any(|(_, eid, _)| vehicle_id.get() == *eid as u64)
+            })
+            .collect::<Vec<_>>();
+        for vehicle_id in removed {
+            self.vehicles.remove(&vehicle_id);
+            self.vehicle_fuses.remove(&vehicle_id);
+            disconnect.push(vehicle_id);
+            rediscover = true;
+        }
         for scheduled in self.vehicles.values_mut() {
+            let Some((_, _, settings)) = configured
+                .iter()
+                .find(|(_, eid, _)| scheduled.vehicle.id.get() == *eid as u64)
+            else {
+                continue;
+            };
             if scheduled.settings == *settings {
                 continue;
             }
@@ -3261,8 +4843,22 @@ impl VehicleScheduler {
             error,
             CollectorError::LegacyAuthManager(_)
                 | CollectorError::OwnerApiAuth(OwnerApiAuthError::Auth(_))
+                | CollectorError::FleetCredential(_)
         ) {
             self.vehicle_retry_after(id, LEGACY_REFRESH_RETRY, now);
+            return;
+        }
+        if let CollectorError::FleetApi(error) = error {
+            match error {
+                FleetApiError::RateLimited {
+                    retry_after_seconds,
+                } => self.vehicle_rate_limited(id, *retry_after_seconds, now),
+                FleetApiError::HttpStatus(404) => self.vehicle_not_found(id, now),
+                FleetApiError::RequestTimeout | FleetApiError::HttpStatus(401 | 403) => {
+                    self.vehicle_failed(id, now);
+                }
+                _ => self.vehicle_api_error(id, now),
+            }
             return;
         }
         let Some(error) = owner_api_error(error) else {
@@ -3456,7 +5052,7 @@ impl VehicleScheduler {
         now: Instant,
     ) -> bool {
         let Some(scheduled) = self.vehicles.get_mut(&id) else {
-            return true;
+            return false;
         };
         if !matches!(scheduled.vehicle.state.as_str(), "asleep" | "offline") {
             self.pre_online_power(id, power, now);
@@ -3535,17 +5131,32 @@ impl VehicleScheduler {
     }
 }
 
+#[cfg(test)]
 async fn persist_discovery_events(
     store: &HubStore,
     cursor_key: &CursorKey,
     vehicles: &[Vehicle],
 ) -> Result<(), CollectorError> {
+    persist_discovery_events_with_timeout(
+        store,
+        cursor_key,
+        vehicles,
+        CollectorProvider::Legacy,
+        crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT,
+    )
+    .await
+}
+
+async fn persist_discovery_events_with_timeout(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    vehicles: &[Vehicle],
+    provider: CollectorProvider,
+    offline_drive_timeout: Duration,
+) -> Result<(), CollectorError> {
     let publication_gate = store.acquire_publication_gate().await?;
     let observed_at_ms = current_epoch_millis()?;
-    let source = store.register_source(
-        &SourceDescriptor::new(OWNER_API_SOURCE_KIND, OWNER_API_SOURCE_KEY),
-        observed_at_ms,
-    )?;
+    let source = store.register_source(&provider_source(provider), observed_at_ms)?;
     for vehicle in vehicles {
         let mut descriptor = VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string())
             .with_tesla_identity(Some(vehicle.id.get() as i64), None);
@@ -3557,15 +5168,16 @@ async fn persist_discovery_events(
         let mut live_settings = vehicle.settings.clone();
         live_settings.suspend_min_resolved = false;
         store.upsert_car_settings(registered.vehicle_id, pack_car_id, &live_settings)?;
-        store.accept_owner_observation_and_lifecycle(
+        store.accept_owner_observation_and_lifecycle_with_offline_timeout(
             &ObservationInput {
                 source_id: source.source_id,
                 vehicle_id: registered.vehicle_id,
                 observed_at_ms,
-                payload: discovery_payload(vehicle),
+                payload: discovery_payload(vehicle, provider),
             },
             observed_at_ms,
             pack_car_id,
+            offline_drive_timeout,
         )?;
     }
     let collection = ManualCollection {
@@ -3573,19 +5185,20 @@ async fn persist_discovery_events(
         snapshots: Vec::new(),
         failures: Vec::new(),
     };
-    publish_compatibility_snapshots(
+    publish_compatibility_snapshots_for_provider(
         store,
         &publication_gate,
         cursor_key,
         &collection,
         observed_at_ms,
+        provider,
     )?;
     Ok(())
 }
 
-fn discovery_payload(vehicle: &Vehicle) -> Value {
+fn discovery_payload(vehicle: &Vehicle, provider: CollectorProvider) -> Value {
     serde_json::json!({
-        "record_type": "owner_api_discovery_v1",
+        "record_type": provider_discovery_record_type(provider),
         "source_vehicle_id": vehicle.id.get().to_string(),
         "source_vehicle_state": vehicle.state,
     })
@@ -3705,15 +5318,22 @@ pub fn persist_collection(
     collection: &ManualCollection,
     received_at_ms: i64,
 ) -> Result<ManualCollectionReport, CollectorError> {
-    persist_collection_mode(store, collection, received_at_ms, false)
+    persist_collection_mode(
+        store,
+        collection,
+        received_at_ms,
+        false,
+        CollectorProvider::Legacy,
+    )
 }
 
-fn persist_collection_atomic(
+fn persist_collection_atomic_for_provider(
     store: &HubStore,
     collection: &ManualCollection,
     received_at_ms: i64,
+    provider: CollectorProvider,
 ) -> Result<ManualCollectionReport, CollectorError> {
-    persist_collection_mode(store, collection, received_at_ms, true)
+    persist_collection_mode(store, collection, received_at_ms, true, provider)
 }
 
 fn persist_collection_mode(
@@ -3721,15 +5341,13 @@ fn persist_collection_mode(
     collection: &ManualCollection,
     received_at_ms: i64,
     atomic_lifecycle: bool,
+    provider: CollectorProvider,
 ) -> Result<ManualCollectionReport, CollectorError> {
     if received_at_ms < 0 {
         return Err(CollectorError::InvalidReceiptTimestamp);
     }
 
-    let source = store.register_source(
-        &SourceDescriptor::new(OWNER_API_SOURCE_KIND, OWNER_API_SOURCE_KEY),
-        received_at_ms,
-    )?;
+    let source = store.register_source(&provider_source(provider), received_at_ms)?;
     let mut vehicles = std::collections::BTreeMap::new();
     let mut online_vehicles_seen = 0;
 
@@ -3767,7 +5385,7 @@ fn persist_collection_mode(
             source_id: source.source_id,
             vehicle_id,
             observed_at_ms: observation_timestamp(snapshot, received_at_ms),
-            payload: observation_payload(snapshot, source_vehicle_state),
+            payload: observation_payload(snapshot, source_vehicle_state, provider),
         };
         let append = if atomic_lifecycle {
             let pack_car_id = projection_car_id_for_vehicle(store, vehicle_id, source_vehicle_id)?;
@@ -3827,10 +5445,21 @@ pub fn materialise_lifecycle_for_collection(
     collection: &ManualCollection,
     received_at_ms: i64,
 ) -> Result<LifecycleMaterialisationReport, CollectorError> {
-    let source = store.register_source(
-        &SourceDescriptor::new(OWNER_API_SOURCE_KIND, OWNER_API_SOURCE_KEY),
+    materialise_lifecycle_for_collection_provider(
+        store,
+        collection,
         received_at_ms,
-    )?;
+        CollectorProvider::Legacy,
+    )
+}
+
+fn materialise_lifecycle_for_collection_provider(
+    store: &HubStore,
+    collection: &ManualCollection,
+    received_at_ms: i64,
+    provider: CollectorProvider,
+) -> Result<LifecycleMaterialisationReport, CollectorError> {
+    let source = store.register_source(&provider_source(provider), received_at_ms)?;
     let mut report = LifecycleMaterialisationReport::default();
     for vehicle in &collection.vehicles {
         let mut descriptor = VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string())
@@ -4015,10 +5644,21 @@ fn force_close_vehicle_for_service(
     source_vehicle_id: VehicleId,
     closed_at_ms: i64,
 ) -> Result<(), CollectorError> {
-    let source = store.register_source(
-        &SourceDescriptor::new(OWNER_API_SOURCE_KIND, OWNER_API_SOURCE_KEY),
+    force_close_vehicle_for_service_provider(
+        store,
+        source_vehicle_id,
         closed_at_ms,
-    )?;
+        CollectorProvider::Legacy,
+    )
+}
+
+fn force_close_vehicle_for_service_provider(
+    store: &HubStore,
+    source_vehicle_id: VehicleId,
+    closed_at_ms: i64,
+    provider: CollectorProvider,
+) -> Result<(), CollectorError> {
+    let source = store.register_source(&provider_source(provider), closed_at_ms)?;
     let registered = store.register_vehicle(
         &VehicleDescriptor::new(source.source_id, source_vehicle_id.get().to_string())
             .with_tesla_identity(Some(source_vehicle_id.get() as i64), None),
@@ -4056,10 +5696,25 @@ fn publish_compatibility_snapshots(
     collection: &ManualCollection,
     published_at_ms: i64,
 ) -> Result<usize, CollectorError> {
-    let source = store.register_source(
-        &SourceDescriptor::new(OWNER_API_SOURCE_KIND, OWNER_API_SOURCE_KEY),
+    publish_compatibility_snapshots_for_provider(
+        store,
+        publication_gate,
+        cursor_key,
+        collection,
         published_at_ms,
-    )?;
+        CollectorProvider::Legacy,
+    )
+}
+
+fn publish_compatibility_snapshots_for_provider(
+    store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
+    cursor_key: &CursorKey,
+    collection: &ManualCollection,
+    published_at_ms: i64,
+    provider: CollectorProvider,
+) -> Result<usize, CollectorError> {
+    let source = store.register_source(&provider_source(provider), published_at_ms)?;
     let installation_id = store.installation_id()?;
     let snapshots: HashMap<u64, &VehicleData> = collection
         .snapshots
@@ -4358,11 +6013,15 @@ fn clean_optional_text(value: Option<&str>) -> Option<String> {
     .then(|| value.to_owned())
 }
 
-fn observation_payload(snapshot: &VehicleData, source_vehicle_state: &str) -> Value {
+fn observation_payload(
+    snapshot: &VehicleData,
+    source_vehicle_state: &str,
+    provider: CollectorProvider,
+) -> Value {
     let mut payload = Map::new();
     payload.insert(
         "record_type".to_owned(),
-        Value::String("owner_api_vehicle_data_v1".to_owned()),
+        Value::String(provider_vehicle_data_record_type(provider).to_owned()),
     );
     payload.insert(
         "source_vehicle_id".to_owned(),
@@ -4373,8 +6032,8 @@ fn observation_payload(snapshot: &VehicleData, source_vehicle_state: &str) -> Va
         Value::String(source_vehicle_state.to_owned()),
     );
     payload.insert(
-        "vehicle_data".to_owned(),
-        Value::Object(snapshot.fields().clone()),
+        "provider_raw_json".to_owned(),
+        snapshot.provider_raw_json().clone(),
     );
     Value::Object(payload)
 }
@@ -4463,6 +6122,8 @@ pub enum CollectorError {
     NativeSetupStoreMismatch,
     #[error("native setup requires legacy Owner API authentication to be enabled")]
     NativeSetupLegacyAuthRequired,
+    #[error("Fleet setup requires collector.provider = \"fleet\"")]
+    NativeSetupFleetProviderRequired,
     #[error("native setup found no vehicles")]
     NativeSetupNoVehicles,
     #[error("native setup found {discovered} vehicles; select one with --vehicle-id")]
@@ -4471,6 +6132,12 @@ pub enum CollectorError {
     NativeSetupVehicleIdInvalid,
     #[error("native setup vehicle {0} was not found")]
     NativeSetupVehicleNotFound(i64),
+    #[error("Fleet account does not contain every already-configured vehicle")]
+    FleetSetupInventoryMismatch,
+    #[error("vehicle command target is not configured")]
+    CommandVehicleMissing,
+    #[error("resident vehicle-control socket is unavailable")]
+    ResidentControlSocket,
     #[error(
         "Hub is already configured for vehicle {existing}; refusing requested vehicle {requested}"
     )]
@@ -4520,6 +6187,12 @@ pub enum CollectorError {
     LegacyAuthManager(#[from] LegacyAuthManagerError),
     #[error(transparent)]
     LegacyAuth(#[from] LegacyAuthError),
+    #[error(transparent)]
+    FleetApiConfig(#[from] FleetApiConfigError),
+    #[error(transparent)]
+    FleetApi(#[from] FleetApiError),
+    #[error(transparent)]
+    FleetCredential(#[from] FleetCredentialError),
     #[error(transparent)]
     Projection(#[from] ProjectionPackError),
     #[error(transparent)]
@@ -4618,6 +6291,302 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn resident_control_socket_is_private_bounded_and_service_owned() {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let socket = ResidentControlSocket::bind(temporary.path()).expect("control socket");
+        let socket_path = temporary.path().join(RESIDENT_CONTROL_SOCKET_NAME);
+        let metadata = std::fs::symlink_metadata(&socket_path).expect("socket metadata");
+        assert!(metadata.file_type().is_socket());
+        assert_eq!(metadata.mode() & 0o777, 0o600);
+
+        let client = OwnerApi::for_fake_http(
+            url::Url::parse("http://127.0.0.1:9/").expect("loopback URL"),
+            Duration::from_secs(1),
+        )
+        .expect("bounded Owner client");
+        let manager = Arc::new(tokio::sync::Mutex::new(LegacyAuthManager::for_test(
+            LegacyAuth::for_test(
+                url::Url::parse("https://auth.tesla.com/oauth2/v3/token").expect("issuer URL"),
+                "resident-access",
+                "resident-refresh",
+            ),
+            Arc::new(|_, _| Ok(())),
+        )));
+        let fuse = Arc::new(tokio::sync::Mutex::new(LegacyAuthFuse::default()));
+        let refresh = Arc::new(LegacyRefreshCoordinator::default());
+        let mut task = tokio::spawn(socket.serve(store, client, manager, fuse, refresh));
+
+        let error = request_resident_vehicle_action(
+            temporary.path(),
+            Uuid::new_v4(),
+            LegacyVehicleAction::Wake,
+        )
+        .await
+        .expect_err("unconfigured vehicle rejected locally");
+        assert!(matches!(error, ResidentVehicleActionError::VehicleMissing));
+
+        task.abort();
+        let _ = (&mut task).await;
+        assert!(!socket_path.exists());
+    }
+
+    #[tokio::test]
+    async fn resident_fleet_control_uses_selected_vehicle_shared_bearer_proxy_and_audit() {
+        const SELECTED_EID: i64 = 70;
+        const SELECTED_VIN: &str = "5YJ3E1EA7KF000001";
+        const ACCESS_TOKEN: &str = "resident-fleet-access";
+
+        crate::crypto::install_default_provider();
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let selected = select_native_setup_vehicle(
+            vec![
+                Vehicle::for_test(SELECTED_EID as u64, SELECTED_VIN, "online"),
+                Vehicle::for_test(90, "5YJ3E1EA7KF000002", "online"),
+            ],
+            Some(SELECTED_EID),
+        )
+        .expect("explicit Fleet vehicle selection");
+        let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+            .expect("cursor key");
+        finish_collection_for_provider(
+            &store,
+            &cursor_key,
+            &ManualCollection {
+                vehicles: vec![selected],
+                snapshots: Vec::new(),
+                failures: Vec::new(),
+            },
+            CollectorProvider::Fleet,
+        )
+        .await
+        .expect("persist selected Fleet vehicle");
+        let (hub_vehicle_id, eid, _) = store
+            .configured_tesla_vehicles()
+            .expect("configured vehicles")
+            .into_iter()
+            .next()
+            .expect("selected vehicle");
+        assert_eq!(eid, SELECTED_EID);
+
+        let credentials = FleetSetupCredentials::new(
+            ACCESS_TOKEN.to_owned(),
+            "resident-fleet-refresh".to_owned(),
+            "resident-fleet-client".to_owned(),
+            crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
+            28_800,
+        )
+        .expect("Fleet credentials");
+        crate::fleet_credentials::persist_fleet_setup_credentials(
+            &store,
+            temporary.path(),
+            &credentials,
+            SystemTime::now(),
+        )
+        .expect("persist encrypted Fleet credentials");
+        let manager = Arc::new(tokio::sync::Mutex::new(
+            FleetAuthManager::from_store(store.clone(), temporary.path())
+                .expect("resident Fleet credential manager"),
+        ));
+
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        let proxy_store = store.clone();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("fake proxy listener");
+        let address = listener.local_addr().expect("fake proxy address");
+        let router = Router::new().route(
+            &format!("/api/1/vehicles/{SELECTED_VIN}/command/door_lock"),
+            post(move |headers: HeaderMap, body: axum::body::Bytes| {
+                let recorded = Arc::clone(&recorded);
+                let proxy_store = proxy_store.clone();
+                async move {
+                    let audit_started = proxy_store
+                        .open()
+                        .expect("proxy-side audit catalogue")
+                        .query_row(
+                            "SELECT EXISTS(
+                                SELECT 1 FROM outbound_request_receipts
+                                 WHERE transport = 'fleet_api'
+                                   AND operation = 'vehicle_command'
+                                   AND outcome = 'started'
+                            )",
+                            [],
+                            |row| row.get::<_, bool>(0),
+                        )
+                        .expect("pre-egress audit receipt");
+                    recorded.lock().expect("proxy ledger").push((
+                        audit_started,
+                        headers.get("authorization").is_some_and(|value| {
+                            value.as_bytes() == b"Bearer resident-fleet-access"
+                        }),
+                        headers
+                            .get("content-type")
+                            .is_some_and(|value| value.as_bytes() == b"application/json"),
+                        body.to_vec(),
+                    ));
+                    axum::Json(json!({"response": {"result": true, "reason": ""}}))
+                }
+            }),
+        );
+        let proxy_server = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("fake proxy server");
+        });
+        let proxy_base =
+            FleetCommandProxyBase::parse_loopback_http_for_test(&format!("http://{address}/"))
+                .expect("loopback proxy URL");
+        let proxy = FleetCommandProxy::for_fake_http(proxy_base, Duration::from_secs(2))
+            .expect("fake command proxy");
+        let api = FleetApi::new(
+            crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
+            Duration::from_secs(2),
+        )
+        .expect("Fleet API client");
+        let auth_api = FleetAuthApi::new(Duration::from_secs(2)).expect("Fleet auth client");
+        let socket = ResidentControlSocket::bind(temporary.path()).expect("resident socket");
+        let mut resident =
+            tokio::spawn(socket.serve_fleet(store.clone(), api, auth_api, Some(proxy), manager));
+
+        let report = request_resident_vehicle_action(
+            temporary.path(),
+            hub_vehicle_id,
+            LegacyVehicleAction::Lock,
+        )
+        .await
+        .expect("resident Fleet command");
+        assert_eq!(report.provider, CollectorProvider::Fleet);
+        assert_eq!(report.hub_vehicle_id, hub_vehicle_id);
+        assert_eq!(report.tesla_eid, SELECTED_EID);
+        assert!(matches!(report.action, LegacyVehicleAction::Lock));
+        assert_eq!(report.result.state, None);
+        assert_eq!(
+            *requests.lock().expect("proxy ledger"),
+            vec![(true, true, true, b"{}".to_vec())]
+        );
+
+        let receipt = store
+            .open()
+            .expect("receipt catalogue")
+            .query_row(
+                "SELECT transport, operation, safety_class, precondition, outcome,
+                        http_status, completed_at_ms IS NOT NULL
+                   FROM outbound_request_receipts WHERE id = ?1",
+                [report.audit_receipt_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<u16>>(5)?,
+                        row.get::<_, bool>(6)?,
+                    ))
+                },
+            )
+            .expect("terminal outbound receipt");
+        assert_eq!(
+            receipt,
+            (
+                "fleet_api".to_owned(),
+                "vehicle_command".to_owned(),
+                "explicit_vehicle_command".to_owned(),
+                "not_required".to_owned(),
+                "success".to_owned(),
+                Some(200),
+                true,
+            )
+        );
+
+        resident.abort();
+        let _ = (&mut resident).await;
+        proxy_server.abort();
+        let _ = proxy_server.await;
+    }
+
+    #[tokio::test]
+    async fn fleet_observer_revalidates_admission_before_discovery_egress() {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+            .expect("cursor key");
+        let credentials = FleetSetupCredentials::new(
+            "observer-fleet-access".to_owned(),
+            "observer-fleet-refresh".to_owned(),
+            "observer-fleet-client".to_owned(),
+            crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
+            28_800,
+        )
+        .expect("Fleet credentials");
+        crate::fleet_credentials::persist_fleet_setup_credentials(
+            &store,
+            temporary.path(),
+            &credentials,
+            SystemTime::now(),
+        )
+        .expect("persist Fleet credentials");
+        let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
+            .expect("admit observer");
+        let manager = Arc::new(tokio::sync::Mutex::new(
+            FleetAuthManager::from_store_for_admitted_user(store, temporary.path(), admission)
+                .expect("observer manager"),
+        ));
+
+        let requests = Arc::new(Mutex::new(0_usize));
+        let recorded = Arc::clone(&requests);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("fake Fleet listener");
+        let address = listener.local_addr().expect("fake Fleet address");
+        let router = Router::new().route(
+            "/api/1/vehicles",
+            get(move || {
+                let recorded = Arc::clone(&recorded);
+                async move {
+                    *recorded.lock().expect("request ledger") += 1;
+                    axum::Json(json!({"response": [], "count": 0}))
+                }
+            }),
+        );
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("fake Fleet server");
+        });
+        let base = url::Url::parse(&format!("http://{address}/")).expect("fake Fleet URL");
+        let api = FleetApi::for_fake_http(base.clone(), Duration::from_secs(2))
+            .expect("fake Fleet client");
+        let auth_api = FleetAuthApi::for_fake_http(
+            base.join("oauth2/v3/token").expect("fake auth URL"),
+            Duration::from_secs(2),
+        )
+        .expect("fake auth client");
+
+        let lock_path = temporary
+            .path()
+            .join(crate::user_lifetime_lock::LOCK_FILE_NAME);
+        std::fs::remove_file(&lock_path).expect("remove admitted lock path");
+        std::fs::write(&lock_path, b"").expect("replace admitted lock path");
+        std::fs::set_permissions(&lock_path, std::fs::Permissions::from_mode(0o600))
+            .expect("replacement lock mode");
+
+        assert!(matches!(
+            fleet_list_vehicles_with_auth(&api, &auth_api, &manager, false).await,
+            Err(CollectorError::FleetCredential(
+                FleetCredentialError::SensitiveAccessUnavailable
+            ))
+        ));
+        assert_eq!(*requests.lock().expect("request ledger"), 0);
+
+        server.abort();
+        let _ = server.await;
+    }
+
     #[test]
     fn native_setup_requires_an_explicit_choice_for_multiple_vehicles() {
         let first = Vehicle::for_test(7, "5YJ3E1EA7KF000001", "asleep");
@@ -4632,6 +6601,105 @@ mod tests {
                 .id
                 .get(),
             9
+        );
+    }
+
+    #[tokio::test]
+    async fn fleet_setup_requires_every_configured_vehicle_by_eid_or_vin() {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+            .expect("cursor key");
+        finish_collection_for_provider(
+            &store,
+            &cursor_key,
+            &ManualCollection {
+                vehicles: vec![
+                    Vehicle::for_test(70, "5YJ3E1EA7KF000001", "online"),
+                    Vehicle::for_test(90, "5YJ3E1EA7KF000002", "online"),
+                ],
+                snapshots: Vec::new(),
+                failures: Vec::new(),
+            },
+            CollectorProvider::Fleet,
+        )
+        .await
+        .expect("configured Fleet vehicles");
+
+        let complete_inventory = vec![
+            Vehicle::for_test(70, "5YJ3E1EA7KF000099", "online"),
+            Vehicle::for_test(999, "5YJ3E1EA7KF000002", "online"),
+        ];
+        ensure_fleet_inventory_contains_configured(&store, &complete_inventory)
+            .expect("EID or VIN matches every configured vehicle");
+
+        assert!(matches!(
+            ensure_fleet_inventory_contains_configured(&store, &complete_inventory[..1]),
+            Err(CollectorError::FleetSetupInventoryMismatch)
+        ));
+    }
+
+    #[tokio::test]
+    async fn fleet_vin_match_rotates_eid_without_losing_car_settings() {
+        const VIN: &str = "5YJ3E1EA7KF000001";
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+            .expect("cursor key");
+        let mut original = Vehicle::for_test(70, VIN, "online");
+        original.settings.enabled = false;
+        original.settings.suspend_after_idle_min = 123;
+        original.settings.suspend_min = 456;
+        original.settings.req_not_unlocked = false;
+        finish_collection_for_provider(
+            &store,
+            &cursor_key,
+            &ManualCollection {
+                vehicles: vec![original],
+                snapshots: Vec::new(),
+                failures: Vec::new(),
+            },
+            CollectorProvider::Fleet,
+        )
+        .await
+        .expect("initial Fleet vehicle");
+
+        let existing = store
+            .configured_tesla_vehicles()
+            .expect("configured vehicle");
+        let mut rotated = Vehicle::for_test(999, VIN, "online");
+        rotated.settings = configured_settings_for_discovered_vehicle(&store, &existing, &rotated)
+            .expect("unambiguous VIN match")
+            .expect("existing settings");
+        rotated.settings.use_streaming_api = false;
+        finish_collection_for_provider(
+            &store,
+            &cursor_key,
+            &ManualCollection {
+                vehicles: vec![rotated],
+                snapshots: Vec::new(),
+                failures: Vec::new(),
+            },
+            CollectorProvider::Fleet,
+        )
+        .await
+        .expect("rotated Fleet vehicle");
+
+        let configured = store
+            .configured_tesla_vehicles()
+            .expect("canonical configured vehicle");
+        assert_eq!(configured.len(), 1);
+        assert_eq!(configured[0].1, 999);
+        assert!(!configured[0].2.enabled);
+        assert!(!configured[0].2.use_streaming_api);
+        assert_eq!(configured[0].2.suspend_after_idle_min, 123);
+        assert_eq!(configured[0].2.suspend_min, 456);
+        assert!(!configured[0].2.req_not_unlocked);
+        assert_eq!(
+            store
+                .configured_tesla_vehicle_identity(configured[0].0)
+                .expect("canonical identity"),
+            Some((999, Some(VIN.to_owned())))
         );
     }
 
@@ -4693,6 +6761,52 @@ mod tests {
             crate::macos_launch_agent::preflight_hub(temporary.path())
                 .expect("native setup is service-ready");
         }
+    }
+
+    #[tokio::test]
+    async fn native_setup_can_configure_every_discovered_vehicle_in_one_request() {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&requests);
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("fake listener");
+        let address = listener.local_addr().expect("fake address");
+        let router = Router::new().route(
+            "/api/1/products",
+            get(move || {
+                let counted = Arc::clone(&counted);
+                async move {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(json!({
+                        "response": [
+                            {"vehicle_id": 71, "id": 70, "vin": "5YJ3E1EA7KF000001", "state": "asleep", "display_name": "One"},
+                            {"vehicle_id": 91, "id": 90, "vin": "5YJ3E1EA7KF000002", "state": "online", "display_name": "Two"}
+                        ],
+                        "count": 2
+                    }))
+                }
+            }),
+        );
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.expect("fake server");
+        });
+        let base = url::Url::parse(&format!("http://{address}/")).expect("fake URL");
+        let client =
+            OwnerApi::for_fake_http(base.clone(), Duration::from_secs(2)).expect("Owner client");
+        let auth = LegacyAuth::for_test(base, "setup-access", "setup-refresh");
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+
+        let report = setup_native_vehicles_with_client(&store, temporary.path(), &client, &auth)
+            .await
+            .expect("multi-vehicle setup");
+
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        assert_eq!(report.vehicles.len(), 2);
+        assert_eq!(store.configured_tesla_vehicles().expect("cars").len(), 2);
+        assert_eq!(store.published_vehicles().expect("published").len(), 2);
+        server.abort();
+        let _ = server.await;
     }
 
     #[test]
@@ -5958,6 +8072,53 @@ mod tests {
             ]
         );
         assert_eq!(store.published_vehicles().expect("published cars").len(), 1);
+    }
+
+    #[test]
+    fn fleet_collection_round_trips_sanitized_provider_raw_json_without_duplication() {
+        let temp = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let raw = json!({
+            "response": {
+                "drive_state": {"shift_state": "P", "timestamp": 1_800_000_000_000_i64},
+                "charge_state": {"battery_level": 80}
+            },
+            "provider_trace": "fleet-trace"
+        });
+        let collection = ManualCollection {
+            vehicles: vec![Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online")],
+            snapshots: vec![
+                VehicleData::from_provider_raw_json(VehicleId::from_test(9), raw.clone())
+                    .expect("Fleet response"),
+            ],
+            failures: vec![],
+        };
+
+        persist_collection_atomic_for_provider(
+            &store,
+            &collection,
+            1_800_000_000_001,
+            CollectorProvider::Fleet,
+        )
+        .expect("Fleet raw observation persists");
+        let vehicle_id = store
+            .open()
+            .expect("database")
+            .query_row("SELECT vehicle_id FROM vehicles", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .expect("vehicle id")
+            .parse::<Uuid>()
+            .expect("vehicle UUID");
+        let observations = store
+            .current_observations_for_vehicle(vehicle_id)
+            .expect("current Fleet observation");
+        let fleet = observations
+            .iter()
+            .find(|observation| observation.payload["record_type"] == "fleet_api_vehicle_data_v1")
+            .expect("Fleet current observation");
+        assert_eq!(fleet.payload["provider_raw_json"], raw);
+        assert!(fleet.payload.get("vehicle_data").is_none());
     }
 
     #[test]
@@ -8208,9 +10369,10 @@ mod tests {
             enabled: false,
             ..crate::hub_pack::ProjectionCarSettings::default()
         };
+        let paused_targets = vec![(uuid::Uuid::nil(), 1, paused)];
 
         assert_eq!(
-            scheduler.apply_control_settings(&paused, now + Duration::from_secs(1)),
+            scheduler.apply_control_settings(&paused_targets, now + Duration::from_secs(1)),
             vec![vehicle_id]
         );
         assert!(
@@ -8221,10 +10383,11 @@ mod tests {
         assert!(!scheduler.should_start_stream(vehicle_id));
 
         let resumed = crate::hub_pack::ProjectionCarSettings::default();
+        let resumed_targets = vec![(uuid::Uuid::nil(), 1, resumed)];
         let resumed_at = now + Duration::from_secs(2);
         assert!(
             scheduler
-                .apply_control_settings(&resumed, resumed_at)
+                .apply_control_settings(&resumed_targets, resumed_at)
                 .is_empty()
         );
         assert!(scheduler.discovery_due(resumed_at));
@@ -8232,20 +10395,55 @@ mod tests {
     }
 
     #[test]
-    fn discovery_keeps_only_the_imported_vehicle_and_its_settings() {
+    fn discovery_keeps_all_configured_vehicles_and_their_settings() {
         let first = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
         let second = Vehicle::for_test(2, "5YJ3E1EA7KF000002", "online");
-        let settings = crate::hub_pack::ProjectionCarSettings {
+        let first_settings = crate::hub_pack::ProjectionCarSettings {
             enabled: true,
             use_streaming_api: false,
             suspend_min: 11,
             ..crate::hub_pack::ProjectionCarSettings::default()
         };
+        let second_settings = crate::hub_pack::ProjectionCarSettings {
+            enabled: false,
+            suspend_min: 22,
+            ..crate::hub_pack::ProjectionCarSettings::default()
+        };
+        let ignored = Vehicle::for_test(3, "5YJ3E1EA7KF000003", "online");
 
-        let selected = filter_selected_vehicle(vec![first, second], &(2, settings.clone()));
-        assert_eq!(selected.len(), 1);
-        assert_eq!(selected[0].id.get(), 2);
-        assert_eq!(selected[0].settings, settings);
+        let selected = filter_configured_vehicles(
+            vec![first, second, ignored],
+            &[
+                (uuid::Uuid::nil(), 1, first_settings.clone()),
+                (uuid::Uuid::nil(), 2, second_settings.clone()),
+            ],
+        );
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].id.get(), 1);
+        assert_eq!(selected[0].settings, first_settings);
+        assert_eq!(selected[1].id.get(), 2);
+        assert_eq!(selected[1].settings, second_settings);
+    }
+
+    #[test]
+    fn missing_configured_vehicle_waits_for_normal_discovery_cadence() {
+        let now = Instant::now();
+        let first = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let settings = crate::hub_pack::ProjectionCarSettings::default();
+        let configured = vec![
+            (uuid::Uuid::new_v4(), 1, settings.clone()),
+            (uuid::Uuid::new_v4(), 2, settings),
+        ];
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![first], now);
+
+        let checked_at = now + Duration::from_secs(1);
+        assert!(
+            scheduler
+                .apply_control_settings(&configured, checked_at)
+                .is_empty()
+        );
+        assert!(!scheduler.discovery_due(checked_at));
     }
 
     #[test]
@@ -8386,6 +10584,15 @@ mod tests {
             })
             .expect("raw count");
         assert_eq!(raw_count, 0);
+        assert!(
+            !process_stream_telemetry(
+                &store,
+                &mut scheduler,
+                VehicleId::from_test(99),
+                &update(Some(12)),
+            )
+            .expect("removed vehicle stream frame")
+        );
         assert_eq!(
             store
                 .current_observations_for_vehicle(
@@ -8655,6 +10862,18 @@ mod tests {
         assert_eq!(
             scheduler.vehicles[&second_id].next_poll,
             now + test_cadence().online
+        );
+
+        scheduler.vehicle_failed_for_error(
+            first_id,
+            &CollectorError::FleetApi(FleetApiError::RateLimited {
+                retry_after_seconds: 23,
+            }),
+            now,
+        );
+        assert_eq!(
+            scheduler.vehicles[&first_id].next_poll,
+            now + Duration::from_secs(23)
         );
     }
 

@@ -104,11 +104,17 @@ pub fn build_current_vehicle_summary(
     lifecycle: Option<&LifecycleStateRecord>,
     geofence: Option<String>,
 ) -> CurrentVehicleSummary {
-    let owner = observation(observations, "owner_api_vehicle_data_v1");
+    let owner = latest_observation_of_types(
+        observations,
+        &["owner_api_vehicle_data_v1", "fleet_api_vehicle_data_v1"],
+    );
     let stream = observation(observations, "tesla_stream_update_v1");
-    let discovery = observation(observations, "owner_api_discovery_v1");
+    let discovery = latest_observation_of_types(
+        observations,
+        &["owner_api_discovery_v1", "fleet_api_discovery_v1"],
+    );
     let mut vehicle_data = owner
-        .and_then(|record| record.payload.get("vehicle_data"))
+        .and_then(|record| provider_vehicle_data(&record.payload))
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
@@ -285,6 +291,30 @@ fn observation<'a>(
     })
 }
 
+fn latest_observation_of_types<'a>(
+    observations: &'a [ObservationRecord],
+    record_types: &[&str],
+) -> Option<&'a ObservationRecord> {
+    observations
+        .iter()
+        .filter(|record| {
+            record
+                .payload
+                .get("record_type")
+                .and_then(Value::as_str)
+                .is_some_and(|record_type| record_types.contains(&record_type))
+        })
+        .max_by_key(|record| (record.observed_at_ms, record.observation_id))
+}
+
+fn provider_vehicle_data(payload: &Value) -> Option<&Value> {
+    payload.get("vehicle_data").or_else(|| {
+        payload
+            .get("provider_raw_json")
+            .and_then(|raw| raw.get("response"))
+    })
+}
+
 fn merge_non_null_objects(target: &mut Map<String, Value>, source: &Map<String, Value>) {
     for (key, value) in source {
         if value.is_null() {
@@ -427,5 +457,43 @@ mod tests {
         assert_eq!(summary.sun_roof_percent_open, Some(5));
         assert_eq!(summary.service_mode, Some(true));
         assert_eq!(summary.geofence.as_deref(), Some("Home"));
+    }
+
+    #[test]
+    fn fleet_provider_raw_response_builds_the_same_current_summary() {
+        let stale_owner = record(
+            1,
+            1_000,
+            json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "vehicle_data": {"charge_state": {"battery_level": 10}}
+            }),
+        );
+        let fleet = record(
+            2,
+            2_000,
+            json!({
+                "record_type": "fleet_api_vehicle_data_v1",
+                "source_vehicle_state": "online",
+                "provider_raw_json": {
+                    "response": {
+                        "drive_state": {"latitude": 47.0, "longitude": 19.0},
+                        "charge_state": {"battery_level": 81}
+                    },
+                    "provider_trace": "kept"
+                }
+            }),
+        );
+
+        let summary = build_current_vehicle_summary(
+            Uuid::from_u128(2),
+            &[stale_owner, fleet],
+            None,
+            None,
+            None,
+        );
+        assert_eq!(summary.latitude, Some(47.0));
+        assert_eq!(summary.longitude, Some(19.0));
+        assert_eq!(summary.battery_level, Some(81));
     }
 }

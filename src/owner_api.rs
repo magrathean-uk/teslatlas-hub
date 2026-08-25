@@ -1,8 +1,9 @@
-//! Deliberate, one-shot compatibility reads for a Tesla Owner API endpoint.
+//! Deliberate compatibility requests for a Tesla Owner API endpoint.
 //!
 //! This is not a polling loop or a Fleet implementation. It sends authenticated
 //! reads to the legacy-compatible product list and crate-local `vehicle_data`
-//! paths. Vehicle command routes are intentionally absent.
+//! paths. Vehicle commands are available only through explicit one-shot calls;
+//! the collector never invokes them.
 //!
 //! Legacy authentication is supplied only through typed credential owners;
 //! raw bearer strings never enter the production API.
@@ -16,11 +17,11 @@ use std::{
 use futures_util::StreamExt;
 use reqwest::{
     Client,
-    header::{ACCEPT, HeaderValue},
+    header::{ACCEPT, CONTENT_TYPE, HeaderValue},
     redirect::Policy,
 };
-use serde::{Deserialize, de::DeserializeOwned};
-use serde_json::{Map, Value};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Map, Value, json};
 use thiserror::Error;
 use url::Url;
 
@@ -260,6 +261,104 @@ impl OwnerApi {
         parse_vehicle_list(envelope)
     }
 
+    /// Execute one explicit legacy Owner API action using the resident
+    /// credential owner. A rejected action is never retried: repeating a
+    /// mutation after an ambiguous response would be unsafe.
+    pub(crate) async fn execute_vehicle_action_with_legacy_auth_fused(
+        &self,
+        auth: &mut LegacyAuthManager,
+        fuse: &mut LegacyAuthFuse,
+        vehicle_id: VehicleId,
+        action: LegacyVehicleAction,
+    ) -> Result<LegacyVehicleActionResult, OwnerApiAuthError> {
+        self.prepare_legacy_auth(auth, fuse).await?;
+        let endpoint = self.vehicle_action_endpoint(vehicle_id, action)?;
+        let body = action.request_body_bytes()?;
+        let request = self
+            .client
+            .post(endpoint)
+            .header(ACCEPT, ACCEPT_JSON.clone())
+            .header(CONTENT_TYPE, ACCEPT_JSON.clone())
+            .bearer_auth(auth.access_token_for_sensitive_use()?)
+            .body(body);
+        auth.assert_sensitive_access()?;
+        let result = self.execute_vehicle_action_request(request, action).await;
+        if matches!(result, Err(OwnerApiError::HttpStatus(401))) {
+            fuse.record_unauthorized(SystemTime::now());
+        }
+        result.map_err(OwnerApiAuthError::Owner)
+    }
+
+    /// Execute one explicit legacy Owner API action without refresh or retry.
+    /// Test seam for the exact command wire contract.
+    #[cfg(test)]
+    pub(crate) async fn execute_vehicle_action_once(
+        &self,
+        auth: &LegacyAuth,
+        vehicle_id: VehicleId,
+        action: LegacyVehicleAction,
+    ) -> Result<LegacyVehicleActionResult, OwnerApiError> {
+        let endpoint = self.vehicle_action_endpoint(vehicle_id, action)?;
+        let body = action.request_body_bytes()?;
+        let request = self
+            .client
+            .post(endpoint)
+            .header(ACCEPT, ACCEPT_JSON.clone())
+            .header(CONTENT_TYPE, ACCEPT_JSON.clone())
+            .bearer_auth(auth.access_token())
+            .body(body);
+        self.execute_vehicle_action_request(request, action).await
+    }
+
+    fn vehicle_action_endpoint(
+        &self,
+        vehicle_id: VehicleId,
+        action: LegacyVehicleAction,
+    ) -> Result<Url, OwnerApiError> {
+        if matches!(action, LegacyVehicleAction::SetChargeLimit(percent) if !(50..=100).contains(&percent))
+        {
+            return Err(OwnerApiError::InvalidCommand);
+        }
+        self.base_url.endpoint(&format!(
+            "api/1/vehicles/{vehicle_id}/{}",
+            action.endpoint_suffix()
+        ))
+    }
+
+    async fn execute_vehicle_action_request(
+        &self,
+        request: reqwest::RequestBuilder,
+        action: LegacyVehicleAction,
+    ) -> Result<LegacyVehicleActionResult, OwnerApiError> {
+        match action {
+            LegacyVehicleAction::Wake => {
+                let envelope: ResponseEnvelope<Map<String, Value>> =
+                    self.execute_envelope_request(request).await?;
+                if envelope.count.is_some() || envelope.response.is_empty() {
+                    return Err(OwnerApiError::InvalidCommandResponse);
+                }
+                let state = envelope
+                    .response
+                    .get("state")
+                    .and_then(Value::as_str)
+                    .filter(|state| valid_state(state))
+                    .map(str::to_owned);
+                Ok(LegacyVehicleActionResult { state })
+            }
+            _ => {
+                let envelope: ResponseEnvelope<CommandResponseWire> =
+                    self.execute_envelope_request(request).await?;
+                if envelope.count.is_some() {
+                    return Err(OwnerApiError::InvalidCommandResponse);
+                }
+                if !envelope.response.result {
+                    return Err(OwnerApiError::CommandRejected);
+                }
+                Ok(LegacyVehicleActionResult { state: None })
+            }
+        }
+    }
+
     pub(crate) async fn vehicle_data_with_legacy_auth_fused(
         &self,
         auth: &mut LegacyAuthManager,
@@ -268,7 +367,7 @@ impl OwnerApi {
         power_gate: Option<&StreamPowerGate>,
     ) -> Result<VehicleData, OwnerApiAuthError> {
         let endpoint = self.vehicle_data_endpoint(vehicle_id)?;
-        let envelope: ResponseEnvelope<Map<String, Value>> = self
+        let envelope: Value = self
             .get_envelope_with_legacy_auth_url_fused(auth, fuse, endpoint, power_gate)
             .await?;
         parse_vehicle_data(vehicle_id, envelope).map_err(OwnerApiAuthError::Owner)
@@ -486,17 +585,9 @@ fn parse_vehicle_list(
 
 fn parse_vehicle_data(
     vehicle_id: VehicleId,
-    envelope: ResponseEnvelope<Map<String, Value>>,
+    raw_json: Value,
 ) -> Result<VehicleData, OwnerApiError> {
-    if envelope.count.is_some() || envelope.response.is_empty() {
-        return Err(OwnerApiError::InvalidVehicleDataEnvelope);
-    }
-    let mut fields = envelope.response;
-    scrub_sensitive_fields(&mut fields);
-    if fields.is_empty() {
-        return Err(OwnerApiError::SensitiveDataInResponse);
-    }
-    Ok(VehicleData { vehicle_id, fields })
+    VehicleData::from_provider_raw_json(vehicle_id, raw_json)
 }
 
 impl fmt::Debug for OwnerApi {
@@ -519,6 +610,13 @@ impl VehicleId {
         self.0
     }
 
+    pub(crate) fn try_from_i64(value: i64) -> Option<Self> {
+        u64::try_from(value)
+            .ok()
+            .filter(|value| *value > 0)
+            .map(Self)
+    }
+
     #[cfg(test)]
     pub(crate) fn from_test(value: u64) -> Self {
         Self(value)
@@ -539,6 +637,13 @@ pub struct StreamVehicleId(u64);
 impl StreamVehicleId {
     pub fn get(self) -> u64 {
         self.0
+    }
+
+    pub(crate) fn try_from_i64(value: i64) -> Option<Self> {
+        u64::try_from(value)
+            .ok()
+            .filter(|value| *value > 0)
+            .map(Self)
     }
 
     #[cfg(test)]
@@ -588,6 +693,73 @@ impl Vehicle {
 pub struct VehicleData {
     vehicle_id: VehicleId,
     fields: Map<String, Value>,
+    provider_raw_json: Value,
+}
+
+/// Explicit vehicle mutations supported by the legacy Owner endpoint. These
+/// values never enter the collector scheduler.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LegacyVehicleAction {
+    Wake,
+    ClimateStart,
+    ClimateStop,
+    ChargeStart,
+    ChargeStop,
+    SetChargeLimit(u8),
+    Lock,
+    Unlock,
+    FlashLights,
+    HonkHorn,
+}
+
+impl LegacyVehicleAction {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Wake => "wake",
+            Self::ClimateStart => "climate_start",
+            Self::ClimateStop => "climate_stop",
+            Self::ChargeStart => "charge_start",
+            Self::ChargeStop => "charge_stop",
+            Self::SetChargeLimit(_) => "set_charge_limit",
+            Self::Lock => "lock",
+            Self::Unlock => "unlock",
+            Self::FlashLights => "flash_lights",
+            Self::HonkHorn => "honk_horn",
+        }
+    }
+
+    const fn endpoint_suffix(self) -> &'static str {
+        match self {
+            Self::Wake => "wake_up",
+            Self::ClimateStart => "command/auto_conditioning_start",
+            Self::ClimateStop => "command/auto_conditioning_stop",
+            Self::ChargeStart => "command/charge_start",
+            Self::ChargeStop => "command/charge_stop",
+            Self::SetChargeLimit(_) => "command/set_charge_limit",
+            Self::Lock => "command/door_lock",
+            Self::Unlock => "command/door_unlock",
+            Self::FlashLights => "command/flash_lights",
+            Self::HonkHorn => "command/honk_horn",
+        }
+    }
+
+    fn request_body(self) -> Value {
+        match self {
+            Self::SetChargeLimit(percent) => json!({"percent": percent}),
+            _ => json!({}),
+        }
+    }
+
+    fn request_body_bytes(self) -> Result<Vec<u8>, OwnerApiError> {
+        serde_json::to_vec(&self.request_body()).map_err(|_| OwnerApiError::InvalidCommand)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyVehicleActionResult {
+    pub state: Option<String>,
 }
 
 impl VehicleData {
@@ -599,6 +771,38 @@ impl VehicleData {
         &self.fields
     }
 
+    pub fn provider_raw_json(&self) -> &Value {
+        &self.provider_raw_json
+    }
+
+    pub(crate) fn from_provider_raw_json(
+        vehicle_id: VehicleId,
+        mut raw_json: Value,
+    ) -> Result<Self, OwnerApiError> {
+        let count_is_invalid = raw_json
+            .as_object()
+            .and_then(|root| root.get("count"))
+            .is_some_and(|count| !count.is_null());
+        if count_is_invalid {
+            return Err(OwnerApiError::InvalidVehicleDataEnvelope);
+        }
+        scrub_sensitive_value(&mut raw_json);
+        let fields = raw_json
+            .as_object()
+            .and_then(|root| root.get("response"))
+            .and_then(Value::as_object)
+            .cloned()
+            .ok_or(OwnerApiError::InvalidVehicleDataEnvelope)?;
+        if fields.is_empty() {
+            return Err(OwnerApiError::SensitiveDataInResponse);
+        }
+        Ok(Self {
+            vehicle_id,
+            fields,
+            provider_raw_json: raw_json,
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(vehicle_id: u64, fields: Value) -> Self {
         let fields = fields
@@ -607,6 +811,7 @@ impl VehicleData {
             .clone();
         Self {
             vehicle_id: VehicleId(vehicle_id),
+            provider_raw_json: serde_json::json!({"response": fields.clone()}),
             fields,
         }
     }
@@ -688,6 +893,12 @@ pub enum OwnerApiError {
     InvalidVehicleRecord,
     #[error("owner API vehicle-data envelope is invalid")]
     InvalidVehicleDataEnvelope,
+    #[error("owner API vehicle command response is invalid")]
+    InvalidCommandResponse,
+    #[error("owner API vehicle command is invalid")]
+    InvalidCommand,
+    #[error("owner API vehicle command was rejected")]
+    CommandRejected,
     #[error("owner API response contains a credential-shaped field")]
     SensitiveDataInResponse,
     #[error("owner API conditional read lost its live stream-power prerequisite")]
@@ -714,6 +925,13 @@ struct ResponseEnvelope<T> {
     response: T,
     #[serde(default)]
     count: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct CommandResponseWire {
+    result: bool,
+    #[serde(default, rename = "reason")]
+    _reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -852,15 +1070,26 @@ fn parse_vehicle_state(fields: Map<String, Value>) -> Result<String, OwnerApiErr
 
 fn scrub_sensitive_fields(fields: &mut Map<String, Value>) {
     fields.retain(|key, value| {
-        let sensitive = matches!(
-            key.to_ascii_lowercase().as_str(),
-            "access_token"
-                | "refresh_token"
-                | "authorization"
-                | "token"
-                | "tokens"
-                | "backseat_token"
-        );
+        let normalized = key
+            .bytes()
+            .filter(u8::is_ascii_alphanumeric)
+            .map(|byte| byte.to_ascii_lowercase())
+            .collect::<Vec<_>>();
+        let normalized = std::str::from_utf8(&normalized).unwrap_or_default();
+        let sensitive = normalized == "authorization"
+            || normalized.ends_with("authorization")
+            || normalized == "tokens"
+            || normalized.ends_with("token")
+            || normalized == "password"
+            || normalized.ends_with("password")
+            || normalized == "apikey"
+            || normalized.ends_with("apikey")
+            || normalized == "cookie"
+            || normalized.ends_with("cookie")
+            || normalized == "cookies"
+            || normalized.ends_with("cookies")
+            || normalized == "secret"
+            || normalized.ends_with("secret");
         if !sensitive {
             scrub_sensitive_value(value);
         }
@@ -937,11 +1166,11 @@ mod tests {
     };
 
     use axum::{
-        Router,
+        Json, Router,
         extract::{Path as AxumPath, State},
         http::{HeaderMap, StatusCode, Uri},
         response::IntoResponse,
-        routing::get,
+        routing::{get, post},
     };
     use tokio::{net::TcpListener, task::JoinHandle};
 
@@ -956,6 +1185,7 @@ mod tests {
         requests: Arc<Mutex<Vec<FakeRequest>>>,
         vehicles_body: Arc<Mutex<String>>,
         data_bodies: Arc<Mutex<BTreeMap<String, (StatusCode, String)>>>,
+        action_bodies: Arc<Mutex<Vec<Value>>>,
     }
 
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1123,6 +1353,93 @@ mod tests {
         }
     }
 
+    #[test]
+    fn provider_payload_scrubber_removes_nested_token_key_variants() {
+        let mut value = serde_json::json!({
+            "accessToken": "one",
+            "nested": [{
+                "refresh-token": "two",
+                "Backseat_Token": "three",
+                "xAuthorization": "four",
+                "token_type": "Bearer",
+                "battery_level": 80
+            }],
+            "state": "online"
+        });
+        scrub_sensitive_value(&mut value);
+
+        let rendered = value.to_string();
+        for secret in ["one", "two", "three", "four"] {
+            assert!(!rendered.contains(secret));
+        }
+        assert_eq!(value["nested"][0]["token_type"], "Bearer");
+        assert_eq!(value["nested"][0]["battery_level"], 80);
+        assert_eq!(value["state"], "online");
+    }
+
+    #[test]
+    fn provider_payload_scrubber_removes_credential_key_variants_without_losing_telemetry() {
+        let mut value = serde_json::json!({
+            "password": "password-secret",
+            "api-key": "api-key-secret",
+            "cookie": "cookie-secret",
+            "session_secret": "session-secret",
+            "nested": [{
+                "PassWord": "nested-password-secret",
+                "x_api_key": "nested-api-key-secret",
+                "set-cookie": "nested-cookie-secret",
+                "session-secret": "nested-session-secret",
+                "cookie_status": "present",
+                "battery_level": 80
+            }],
+            "token_type": "Bearer",
+            "state": "online"
+        });
+        scrub_sensitive_value(&mut value);
+
+        let rendered = value.to_string();
+        for secret in [
+            "password-secret",
+            "api-key-secret",
+            "cookie-secret",
+            "session-secret",
+            "nested-password-secret",
+            "nested-api-key-secret",
+            "nested-cookie-secret",
+            "nested-session-secret",
+        ] {
+            assert!(!rendered.contains(secret), "secret survived: {secret}");
+        }
+        assert_eq!(value["nested"][0]["cookie_status"], "present");
+        assert_eq!(value["nested"][0]["battery_level"], 80);
+        assert_eq!(value["token_type"], "Bearer");
+        assert_eq!(value["state"], "online");
+    }
+
+    #[test]
+    fn vehicle_data_retains_the_sanitized_provider_json_envelope() {
+        let data = parse_vehicle_data(
+            VehicleId(7),
+            serde_json::json!({
+                "response": {
+                    "charge_state": {"battery_level": 80},
+                    "nested": {"accessToken": "secret"}
+                },
+                "provider_trace": "trace-1"
+            }),
+        )
+        .expect("provider response parses");
+
+        assert_eq!(data.fields()["charge_state"]["battery_level"], 80);
+        assert_eq!(data.provider_raw_json()["provider_trace"], "trace-1");
+        assert!(
+            data.provider_raw_json()["response"]["nested"]
+                .as_object()
+                .is_some_and(Map::is_empty)
+        );
+        assert!(!data.provider_raw_json().to_string().contains("secret"));
+    }
+
     struct FakeServer {
         base_url: Url,
         _task: JoinHandle<()>,
@@ -1206,6 +1523,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn explicit_vehicle_actions_use_exact_paths_bodies_and_one_request_each() {
+        let state = FakeState::default();
+        let fake = FakeServer::start(
+            Router::new()
+                .route("/api/1/vehicles/{vehicle_id}/wake_up", post(wake_handler))
+                .route(
+                    "/api/1/vehicles/{vehicle_id}/command/{command}",
+                    post(command_handler),
+                )
+                .with_state(state.clone()),
+        )
+        .await;
+        let auth = crate::legacy_auth::LegacyAuth::for_test(
+            fake.base_url.clone(),
+            TEST_TOKEN,
+            "test-refresh-token",
+        );
+        let client = fake.client(Duration::from_secs(2));
+
+        let wake = client
+            .execute_vehicle_action_once(&auth, VehicleId(70), LegacyVehicleAction::Wake)
+            .await
+            .expect("wake response");
+        assert_eq!(wake.state.as_deref(), Some("online"));
+        client
+            .execute_vehicle_action_once(
+                &auth,
+                VehicleId(70),
+                LegacyVehicleAction::SetChargeLimit(80),
+            )
+            .await
+            .expect("set charge limit response");
+        let mut manager = crate::credentials::LegacyAuthManager::for_test(
+            crate::legacy_auth::LegacyAuth::for_test(
+                fake.base_url.clone(),
+                TEST_TOKEN,
+                "test-refresh-token",
+            ),
+            Arc::new(|_, _| Ok(())),
+        );
+        let mut fuse = LegacyAuthFuse::default();
+        client
+            .execute_vehicle_action_with_legacy_auth_fused(
+                &mut manager,
+                &mut fuse,
+                VehicleId(70),
+                LegacyVehicleAction::ClimateStart,
+            )
+            .await
+            .expect("resident command response");
+        assert!(matches!(
+            client
+                .execute_vehicle_action_once(
+                    &auth,
+                    VehicleId(70),
+                    LegacyVehicleAction::SetChargeLimit(49),
+                )
+                .await,
+            Err(OwnerApiError::InvalidCommand)
+        ));
+
+        let requests = state.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[0].path, "/api/1/vehicles/70/wake_up");
+        assert_eq!(
+            requests[1].path,
+            "/api/1/vehicles/70/command/set_charge_limit"
+        );
+        assert_eq!(
+            requests[2].path,
+            "/api/1/vehicles/70/command/auto_conditioning_start"
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request.authorization_is_expected)
+        );
+        drop(requests);
+        assert_eq!(
+            *state.action_bodies.lock().expect("action bodies"),
+            vec![json!({}), json!({"percent": 80}), json!({})]
+        );
+    }
+
+    #[tokio::test]
     async fn missing_or_stale_sensitive_admission_blocks_before_owner_transport() {
         let state = FakeState::with_vehicles(r#"{"response":[],"count":0}"#);
         let fake = FakeServer::spawn(state.clone()).await;
@@ -1275,6 +1678,48 @@ mod tests {
             .cloned()
             .unwrap_or((StatusCode::NOT_FOUND, r#"{"error":"not_found"}"#.to_owned()));
         response.into_response()
+    }
+
+    async fn wake_handler(
+        State(state): State<FakeState>,
+        AxumPath(vehicle_id): AxumPath<String>,
+        headers: HeaderMap,
+        Json(body): Json<Value>,
+    ) -> impl IntoResponse {
+        record_with_method(
+            &state,
+            &headers,
+            &format!("/api/1/vehicles/{vehicle_id}/wake_up"),
+            "",
+            "POST",
+        );
+        state
+            .action_bodies
+            .lock()
+            .expect("action body lock")
+            .push(body);
+        Json(json!({"response": {"state": "online", "id": 70}}))
+    }
+
+    async fn command_handler(
+        State(state): State<FakeState>,
+        AxumPath((vehicle_id, command)): AxumPath<(String, String)>,
+        headers: HeaderMap,
+        Json(body): Json<Value>,
+    ) -> impl IntoResponse {
+        record_with_method(
+            &state,
+            &headers,
+            &format!("/api/1/vehicles/{vehicle_id}/command/{command}"),
+            "",
+            "POST",
+        );
+        state
+            .action_bodies
+            .lock()
+            .expect("action body lock")
+            .push(body);
+        Json(json!({"response": {"result": true, "reason": ""}}))
     }
 
     fn record(state: &FakeState, headers: &HeaderMap, path: &str) {

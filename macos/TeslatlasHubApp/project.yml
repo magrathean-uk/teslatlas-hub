@@ -27,6 +27,7 @@ targets:
       properties:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        TeslatlasHubVersion: "$(TESLATLAS_HUB_VERSION)"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.hub.app

@@ -25,6 +25,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     db::{HubStore, StoreError},
+    fleet_credentials::load_existing_fleet_key_bytes,
+    protocol::CursorKey,
     teslamate_credentials::{
         TeslaMateCredentialError, load_existing_cursor_key_bytes, load_key, load_key_for_tokens,
     },
@@ -38,12 +40,13 @@ const AUTH_TAG_BYTES: usize = 16;
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
 const MAX_TESLAMATE_KEY_BYTES: usize = 16 * 1024;
-const MAX_PLAINTEXT_BYTES: usize = 16 + 1 + 2 + MAX_TESLAMATE_KEY_BYTES + 32;
+const MAX_PLAINTEXT_BYTES: usize = 16 + 1 + 2 + MAX_TESLAMATE_KEY_BYTES + 32 + 32;
 const MAX_EXPORT_BYTES: usize =
     FILE_MAGIC.len() + NONCE_BYTES + MAX_PLAINTEXT_BYTES + AUTH_TAG_BYTES;
 const TESLAMATE_KEY_FLAG: u8 = 1 << 0;
 const CURSOR_KEY_FLAG: u8 = 1 << 1;
-const KNOWN_FLAGS: u8 = TESLAMATE_KEY_FLAG | CURSOR_KEY_FLAG;
+const FLEET_KEY_FLAG: u8 = 1 << 2;
+const KNOWN_FLAGS: u8 = TESLAMATE_KEY_FLAG | CURSOR_KEY_FLAG | FLEET_KEY_FLAG;
 
 #[derive(Debug, Error)]
 pub enum CredentialRecoveryError {
@@ -90,12 +93,14 @@ pub struct CredentialRecoveryReport {
     pub encryption: &'static str,
     pub teslamate_key_included: bool,
     pub cursor_key_included: bool,
+    pub fleet_key_included: bool,
 }
 
 struct DecodedPayload {
     installation_id: Uuid,
     teslamate_key: Option<Zeroizing<Vec<u8>>>,
     cursor_key: Option<Zeroizing<Vec<u8>>>,
+    fleet_key: Option<Zeroizing<Vec<u8>>>,
 }
 
 /// Export only local decryption/signing keys into a separately encrypted file.
@@ -121,7 +126,36 @@ pub fn export_credentials(
         None => None,
     };
     let cursor_key = load_existing_cursor_key_bytes(data_dir)?;
-    if teslamate_key.is_none() && cursor_key.is_none() {
+    let fleet_tokens = store.load_fleet_tokens()?;
+    let fleet_key = if let Some(tokens) = fleet_tokens.as_ref() {
+        match load_existing_fleet_key_bytes(data_dir)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?
+        {
+            Some(key) => {
+                drop(decrypt_legacy_owner_tokens(
+                    &key,
+                    tokens.access(),
+                    tokens.refresh(),
+                )?);
+                Some(key)
+            }
+            None => {
+                let cursor = cursor_key
+                    .as_ref()
+                    .ok_or(CredentialRecoveryError::CatalogueMismatch)?;
+                let legacy = fleet_encryption_key(cursor)?;
+                drop(decrypt_legacy_owner_tokens(
+                    legacy.as_ref(),
+                    tokens.access(),
+                    tokens.refresh(),
+                )?);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if teslamate_key.is_none() && cursor_key.is_none() && fleet_key.is_none() {
         return Err(CredentialRecoveryError::NoKeyMaterial);
     }
 
@@ -129,6 +163,7 @@ pub fn export_credentials(
         installation_id,
         teslamate_key.as_ref().map(|key| key.as_bytes()),
         cursor_key.as_deref().map(Vec::as_slice),
+        fleet_key.as_deref().map(Vec::as_slice),
     )?;
     let mut nonce_bytes = [0_u8; NONCE_BYTES];
     getrandom::fill(&mut nonce_bytes).expect("system entropy");
@@ -157,6 +192,7 @@ pub fn export_credentials(
         installation_id,
         teslamate_key.is_some(),
         cursor_key.is_some(),
+        fleet_key.is_some(),
     ))
 }
 
@@ -176,6 +212,7 @@ pub fn restore_credentials(
     }
 
     let stored_tokens = store.load_teslamate_legacy_tokens()?;
+    let fleet_tokens = store.load_fleet_tokens()?;
     if stored_tokens.is_some() != payload.teslamate_key.is_some() {
         return Err(CredentialRecoveryError::CatalogueMismatch);
     }
@@ -186,6 +223,27 @@ pub fn restore_credentials(
             tokens.refresh(),
         )?);
     }
+    if fleet_tokens.is_none() && payload.fleet_key.is_some() {
+        return Err(CredentialRecoveryError::CatalogueMismatch);
+    }
+    if let Some(tokens) = fleet_tokens.as_ref() {
+        match (payload.fleet_key.as_ref(), payload.cursor_key.as_ref()) {
+            (Some(key), _) => drop(decrypt_legacy_owner_tokens(
+                key,
+                tokens.access(),
+                tokens.refresh(),
+            )?),
+            (None, Some(cursor)) => {
+                let legacy = fleet_encryption_key(cursor)?;
+                drop(decrypt_legacy_owner_tokens(
+                    legacy.as_ref(),
+                    tokens.access(),
+                    tokens.refresh(),
+                )?);
+            }
+            (None, None) => return Err(CredentialRecoveryError::CatalogueMismatch),
+        }
+    }
     let manifest_count: i64 = store
         .open()?
         .query_row("SELECT COUNT(*) FROM sync_manifests", [], |row| row.get(0))
@@ -193,7 +251,10 @@ pub fn restore_credentials(
     if manifest_count > 0 && payload.cursor_key.is_none() {
         return Err(CredentialRecoveryError::CatalogueMismatch);
     }
-    if payload.teslamate_key.is_none() && payload.cursor_key.is_none() {
+    if payload.teslamate_key.is_none()
+        && payload.cursor_key.is_none()
+        && payload.fleet_key.is_none()
+    {
         return Err(CredentialRecoveryError::NoKeyMaterial);
     }
 
@@ -205,6 +266,30 @@ pub fn restore_credentials(
     if restored_cursor.as_deref() != payload.cursor_key.as_deref() {
         return Err(CredentialRecoveryError::CatalogueMismatch);
     }
+    let restored_fleet_key = load_existing_fleet_key_bytes(data_dir)
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+    if restored_fleet_key.as_deref() != payload.fleet_key.as_deref() {
+        return Err(CredentialRecoveryError::CatalogueMismatch);
+    }
+    if let Some(tokens) = fleet_tokens.as_ref() {
+        if let Some(key) = restored_fleet_key.as_ref() {
+            drop(decrypt_legacy_owner_tokens(
+                key,
+                tokens.access(),
+                tokens.refresh(),
+            )?);
+        } else {
+            let cursor = restored_cursor
+                .as_ref()
+                .ok_or(CredentialRecoveryError::CatalogueMismatch)?;
+            let legacy = fleet_encryption_key(cursor)?;
+            drop(decrypt_legacy_owner_tokens(
+                legacy.as_ref(),
+                tokens.access(),
+                tokens.refresh(),
+            )?);
+        }
+    }
 
     Ok(report(
         "restored",
@@ -212,6 +297,7 @@ pub fn restore_credentials(
         payload.installation_id,
         payload.teslamate_key.is_some(),
         payload.cursor_key.is_some(),
+        payload.fleet_key.is_some(),
     ))
 }
 
@@ -221,6 +307,7 @@ fn report(
     installation_id: Uuid,
     teslamate_key_included: bool,
     cursor_key_included: bool,
+    fleet_key_included: bool,
 ) -> CredentialRecoveryReport {
     CredentialRecoveryReport {
         status,
@@ -230,6 +317,7 @@ fn report(
         encryption: "AES-256-GCM",
         teslamate_key_included,
         cursor_key_included,
+        fleet_key_included,
     }
 }
 
@@ -240,10 +328,20 @@ fn recovery_cipher(recovery_key: &[u8]) -> Result<Aes256Gcm, CredentialRecoveryE
     Aes256Gcm::new_from_slice(recovery_key).map_err(|_| CredentialRecoveryError::InvalidRecoveryKey)
 }
 
+fn fleet_encryption_key(cursor_key: &[u8]) -> Result<Zeroizing<[u8; 32]>, CredentialRecoveryError> {
+    let cursor_key: [u8; 32] = cursor_key
+        .try_into()
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+    Ok(Zeroizing::new(
+        CursorKey::from_bytes(cursor_key).fleet_credential_encryption_key(),
+    ))
+}
+
 fn encode_payload(
     installation_id: Uuid,
     teslamate_key: Option<&[u8]>,
     cursor_key: Option<&[u8]>,
+    fleet_key: Option<&[u8]>,
 ) -> Result<Zeroizing<Vec<u8>>, CredentialRecoveryError> {
     let mut flags = 0_u8;
     if teslamate_key.is_some() {
@@ -251,6 +349,9 @@ fn encode_payload(
     }
     if cursor_key.is_some() {
         flags |= CURSOR_KEY_FLAG;
+    }
+    if fleet_key.is_some() {
+        flags |= FLEET_KEY_FLAG;
     }
     let teslamate_key = teslamate_key.unwrap_or_default();
     if teslamate_key.len() > MAX_TESLAMATE_KEY_BYTES {
@@ -263,6 +364,11 @@ fn encode_payload(
             "cursor key length is invalid",
         ));
     }
+    if fleet_key.is_some_and(|key| key.len() != 32) {
+        return Err(CredentialRecoveryError::InvalidPayload(
+            "Fleet key length is invalid",
+        ));
+    }
     let key_length = u16::try_from(teslamate_key.len())
         .map_err(|_| CredentialRecoveryError::InvalidPayload("TeslaMate key length is invalid"))?;
     let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_PLAINTEXT_BYTES));
@@ -272,6 +378,9 @@ fn encode_payload(
     bytes.extend_from_slice(teslamate_key);
     if let Some(cursor_key) = cursor_key {
         bytes.extend_from_slice(cursor_key);
+    }
+    if let Some(fleet_key) = fleet_key {
+        bytes.extend_from_slice(fleet_key);
     }
     Ok(bytes)
 }
@@ -323,6 +432,7 @@ fn decode_payload(bytes: Zeroizing<Vec<u8>>) -> Result<DecodedPayload, Credentia
     let expected = 19_usize
         .checked_add(key_length)
         .and_then(|length| length.checked_add(if flags & CURSOR_KEY_FLAG != 0 { 32 } else { 0 }))
+        .and_then(|length| length.checked_add(if flags & FLEET_KEY_FLAG != 0 { 32 } else { 0 }))
         .ok_or(CredentialRecoveryError::InvalidPayload(
             "payload length overflowed",
         ))?;
@@ -335,13 +445,17 @@ fn decode_payload(bytes: Zeroizing<Vec<u8>>) -> Result<DecodedPayload, Credentia
         ));
     }
     let teslamate_end = 19 + key_length;
+    let cursor_end = teslamate_end + if flags & CURSOR_KEY_FLAG != 0 { 32 } else { 0 };
     let teslamate_key = (key_length > 0).then(|| Zeroizing::new(bytes[19..teslamate_end].to_vec()));
-    let cursor_key =
-        (flags & CURSOR_KEY_FLAG != 0).then(|| Zeroizing::new(bytes[teslamate_end..].to_vec()));
+    let cursor_key = (flags & CURSOR_KEY_FLAG != 0)
+        .then(|| Zeroizing::new(bytes[teslamate_end..cursor_end].to_vec()));
+    let fleet_key =
+        (flags & FLEET_KEY_FLAG != 0).then(|| Zeroizing::new(bytes[cursor_end..].to_vec()));
     Ok(DecodedPayload {
         installation_id,
         teslamate_key,
         cursor_key,
+        fleet_key,
     })
 }
 
@@ -467,6 +581,9 @@ fn publish_secrets_directory(
         }
         if let Some(key) = payload.cursor_key.as_ref() {
             write_private_file(&staging.join("hub-cursor.key"), key)?;
+        }
+        if let Some(key) = payload.fleet_key.as_ref() {
+            write_private_file(&staging.join("fleet-credentials.key"), key)?;
         }
         sync_directory(&staging)?;
         rename_no_replace(&staging, &destination)?;
@@ -634,5 +751,67 @@ mod tests {
             export_credentials(&store, &data, &export, &recovery_key),
             Err(CredentialRecoveryError::DestinationExists)
         ));
+    }
+
+    #[test]
+    fn fleet_only_credentials_round_trip_with_the_dedicated_key() {
+        let temporary = tempfile::tempdir().expect("temporary root");
+        let source_data = temporary.path().join("fleet-source");
+        let source = HubStore::initialize(&source_data).expect("source store");
+        load_or_create_cursor_key(&source_data).expect("source cursor");
+        let credentials = crate::fleet_credentials::FleetSetupCredentials::new(
+            "fleet-recovery-access".to_owned(),
+            "fleet-recovery-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
+            28_800,
+        )
+        .expect("Fleet credentials");
+        crate::fleet_credentials::persist_fleet_setup_credentials(
+            &source,
+            &source_data,
+            &credentials,
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000),
+        )
+        .expect("Fleet row persists");
+        let source_fleet_key = load_existing_fleet_key_bytes(&source_data)
+            .expect("source Fleet key read")
+            .expect("source Fleet key");
+
+        let data_backup = temporary.path().join("fleet-data-backup");
+        create_data_backup(&source, &data_backup).expect("Fleet data backup");
+        let restored_data = temporary.path().join("fleet-restored");
+        restore_data_backup(&data_backup, &restored_data).expect("Fleet data restore");
+        let restored = HubStore::initialize(&restored_data).expect("restored store");
+        assert!(
+            load_existing_fleet_key_bytes(&restored_data)
+                .expect("data-only restore Fleet key check")
+                .is_none()
+        );
+
+        let recovery_key = [11_u8; RECOVERY_ENCRYPTION_KEY_BYTES];
+        let export = temporary.path().join("fleet-credentials.tthcr");
+        let report = export_credentials(&source, &source_data, &export, &recovery_key)
+            .expect("Fleet credential export");
+        assert!(report.fleet_key_included);
+        restore_credentials(&restored, &restored_data, &export, &recovery_key)
+            .expect("Fleet credential restore");
+
+        let restored_fleet_key = load_existing_fleet_key_bytes(&restored_data)
+            .expect("restored Fleet key read")
+            .expect("restored Fleet key");
+        assert_eq!(restored_fleet_key.as_slice(), source_fleet_key.as_slice());
+        let restored_fleet = restored
+            .load_fleet_tokens()
+            .expect("Fleet row loads")
+            .expect("Fleet row remains");
+        let decrypted = decrypt_legacy_owner_tokens(
+            &restored_fleet_key,
+            restored_fleet.access(),
+            restored_fleet.refresh(),
+        )
+        .expect("Fleet row decrypts");
+        assert_eq!(decrypted.access_token(), "fleet-recovery-access");
+        assert_eq!(decrypted.refresh_token(), "fleet-recovery-refresh");
     }
 }

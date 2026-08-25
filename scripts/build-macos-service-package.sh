@@ -23,6 +23,15 @@ die() {
     exit 1
 }
 
+# BEGIN TESTABLE MACH-O HELPER
+is_executable_macho() {
+    /usr/bin/otool -hv "$1" 2>/dev/null | /usr/bin/awk '
+        $1 ~ /^MH_MAGIC(_64)?$/ && $5 == "EXECUTE" { executable = 1 }
+        END { exit(executable ? 0 : 1) }
+    '
+}
+# END TESTABLE MACH-O HELPER
+
 binary=
 version=
 output=
@@ -58,7 +67,14 @@ done
 [ -n "$version" ] || die "--version is required"
 /usr/bin/printf '%s\n' "$version" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
     || die "version must be semver with an optional prerelease: $version"
-package_version=${version%%-*}
+package_base_version=${version%%-*}
+case "$version" in
+    *-alpha.[0-9]*) package_version="${package_base_version}a${version##*-alpha.}" ;;
+    *-beta.[0-9]*) package_version="${package_base_version}b${version##*-beta.}" ;;
+    *-rc.[0-9]*) package_version="${package_base_version}fc${version##*-rc.}" ;;
+    *-*) die "unsupported prerelease for macOS package version: $version" ;;
+    *) package_version=$package_base_version ;;
+esac
 [ -f "$binary" ] && [ ! -L "$binary" ] && [ -x "$binary" ] \
     || die "binary must be an executable regular file"
 
@@ -122,6 +138,8 @@ done
     || die "cannot clear Hub binary metadata"
 [ "$(/usr/bin/lipo -archs "$payload_binary")" = arm64 ] \
     || die "payload binary is not arm64-only"
+is_executable_macho "$payload_binary" \
+    || die "payload binary is not a Mach-O executable"
 
 minimum_macos=$(
     /usr/bin/otool -l "$payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub" \
@@ -168,6 +186,8 @@ expanded_binary="$expanded/Payload/Library/Application Support/Teslatlas Hub/bin
     || die "generated package has the wrong payload path"
 [ "$(/usr/bin/lipo -archs "$expanded_binary")" = arm64 ] \
     || die "generated package payload is not arm64-only"
+is_executable_macho "$expanded_binary" \
+    || die "generated package payload is not a Mach-O executable"
 expanded_uninstaller="$expanded/Payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
 [ -f "$expanded_uninstaller" ] && [ ! -L "$expanded_uninstaller" ] && [ -x "$expanded_uninstaller" ] \
     || die "generated package is missing the privileged uninstaller"

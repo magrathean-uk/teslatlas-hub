@@ -3,11 +3,13 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=common.sh
 . "$SCRIPT_DIR/common.sh"
 
 require_root
 read_console_user
+refuse_other_user_launch_agents
 
 STATE_DIRECTORY=$(upgrade_state_directory)
 remove_upgrade_state "$STATE_DIRECTORY"
