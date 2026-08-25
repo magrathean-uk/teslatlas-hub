@@ -16,6 +16,8 @@ APP_BUILD="$ROOT/scripts/build-macos-app.sh"
 SERVICE_BUILD="$ROOT/scripts/build-macos-service-package.sh"
 PROXY_BUILD="$ROOT/scripts/build-tesla-command-proxy.sh"
 APP_INFO="$ROOT/macos/TeslatlasHubApp/TeslatlasHubApp/Info.plist"
+APP_PROJECT="$ROOT/macos/TeslatlasHubApp/project.yml"
+APP_ICON="$ROOT/macos/TeslatlasHubApp/TeslatlasHubApp/Resources/AppIcon.icns"
 TEST_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/teslatlas-hub-macos-package-test.XXXXXX")
 trap '/usr/bin/find "$TEST_ROOT" -depth -delete' EXIT HUP INT TERM
 
@@ -52,6 +54,14 @@ done
 /bin/sh -n "$PROXY_BUILD" || fail "invalid Tesla command proxy build script"
 /usr/bin/plutil -lint "$PLIST" >/dev/null || fail "invalid LaunchAgent template"
 /usr/bin/plutil -lint "$CLI_PLIST" >/dev/null || fail "invalid CLI LaunchAgent template"
+[ -f "$APP_ICON" ] && [ ! -L "$APP_ICON" ] \
+    || fail "Hub app icon is missing or unsafe"
+/usr/bin/file "$APP_ICON" | /usr/bin/grep -Fq 'Mac OS X icon' \
+    || fail "Hub app icon is not an ICNS file"
+/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP_INFO" | /usr/bin/grep -qx AppIcon \
+    || fail "Hub app Info.plist has no app icon"
+/usr/bin/grep -Fq 'CFBundleIconFile: AppIcon' "$APP_PROJECT" \
+    || fail "Hub app project does not preserve the app icon"
 /usr/bin/grep -q '<integer>63</integer>' "$PLIST" \
     || fail "packaged LaunchAgent does not set a private umask"
 /usr/bin/grep -q '<integer>63</integer>' "$CLI_PLIST" \
@@ -105,6 +115,8 @@ assert_before_fixed '"$BINARY" --config "$CONFIG" preflight' '"$BINARY" --config
     || fail "postinstall has no bounded readiness check"
 /usr/bin/grep -Fq 'new Hub did not become ready' "$POSTINSTALL" \
     || fail "postinstall does not fail an unhealthy update"
+/usr/bin/grep -Fq 'migration_handover_install_is_paused' "$POSTINSTALL" \
+    || fail "postinstall has no install-stopped TeslaMate migration path"
 /usr/bin/grep -Fq 'run_with_deadline "$preflight_timeout_seconds"' "$POSTINSTALL" \
     || fail "postinstall preflight has no wall-clock deadline"
 /usr/bin/grep -Fq 'run_with_deadline "$status_timeout_seconds"' "$POSTINSTALL" \
@@ -124,6 +136,10 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "service package does not use mapped prerelease identity"
 /usr/bin/grep -Fq '<key>TeslatlasHubVersion</key>' "$APP_INFO" \
     || fail "app bundle does not carry exact Hub version"
+/usr/bin/grep -Fq 'AppIcon.icns' "$APP_BUILD" \
+    || fail "app build does not require the app icon resource"
+/usr/bin/grep -Fq 'CFBundleIconFile' "$APP_BUILD" \
+    || fail "app build does not verify the app icon Info.plist value"
 /usr/bin/grep -Fq -- '--proxy-binary "$PROXY_BINARY"' "$APP_BUILD" \
     || fail "app build does not package Tesla command proxy"
 /usr/bin/grep -Fq -- 'build-tesla-command-proxy.sh' "$APP_BUILD" \
@@ -178,6 +194,43 @@ elapsed=$(( $(/bin/date +%s) - started ))
 [ "$elapsed" -le 4 ] || fail "deadline helper exceeded its termination grace"
 [ -z "$(/usr/bin/find "$TEST_ROOT" -name 'deadline-expired.*' -print -quit)" ] \
     || fail "deadline helper retained timeout state"
+
+migration_helper="$TEST_ROOT/migration-install-helper.sh"
+/usr/bin/sed -n '/^# BEGIN TESTABLE MIGRATION INSTALL HELPER$/,/^# END TESTABLE MIGRATION INSTALL HELPER$/p' \
+    "$POSTINSTALL" > "$migration_helper"
+# shellcheck source=/dev/null
+. "$COMMON"
+# shellcheck source=/dev/null
+. "$migration_helper"
+migration_home="$TEST_ROOT/migration-home"
+migration_config="$migration_home/config.toml"
+migration_marker="$migration_home/.teslamate-handover-pending"
+/bin/mkdir -m 0700 "$migration_home"
+/usr/bin/printf '%s\n' \
+    'data_dir = "/tmp/hub"' \
+    '' \
+    '[collector]' \
+    'provider = "legacy"' \
+    'interval_seconds = 0' > "$migration_config"
+/usr/bin/printf '%s\n' \
+    '{"phase":"awaiting_verification","previousIntervalSeconds":60}' > "$migration_marker"
+/bin/chmod 0600 "$migration_config" "$migration_marker"
+test_uid=$(/usr/bin/id -u)
+migration_handover_install_is_paused "$migration_marker" "$migration_config" "$test_uid" \
+    || fail "fresh TeslaMate migration was not admitted as install-stopped"
+hub_should_start_after_install 1 0 0 1 \
+    && fail "fresh TeslaMate migration would start Hub before Swift handover"
+hub_should_start_after_install 1 0 0 0 \
+    || fail "normal fresh installation no longer starts Hub"
+/usr/bin/printf '%s\n' \
+    'data_dir = "/tmp/hub"' \
+    '' \
+    '[collector]' \
+    'provider = "legacy"' \
+    'interval_seconds = 60' > "$migration_config"
+if migration_handover_install_is_paused "$migration_marker" "$migration_config" "$test_uid"; then
+    fail "active collector configuration was accepted as install-stopped migration"
+fi
 
 macho_helper="$TEST_ROOT/macho-helper.sh"
 /usr/bin/sed -n '/^# BEGIN TESTABLE MACH-O HELPER$/,/^# END TESTABLE MACH-O HELPER$/p' \

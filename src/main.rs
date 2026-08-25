@@ -47,7 +47,14 @@ use teslatlas_hub::{
         import_selected_from_postgres_with_schema_22,
         import_selected_from_postgres_with_schema_22_and_legacy_token,
     },
-    teslamate_reader::TeslaMateLegacyTokenCiphertexts,
+    teslamate_reader::{
+        TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits, TeslaMateReaderError,
+        check_teslamate_compatibility,
+    },
+    teslamate_schema::{
+        MAX_VALIDATED_MIGRATION, SchemaCompatibilityError, TESLAMATE_V4_MIGRATION_COUNT,
+        TESLAMATE_V4_SOURCE_REVISION,
+    },
     teslamate_token::{
         decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
     },
@@ -838,6 +845,20 @@ enum Command {
     Doctor,
     /// Print the redacted local status consumed by the native control app.
     Status,
+    /// Validate one TeslaMate source against the exact supported schema without mutating Hub.
+    #[cfg(unix)]
+    #[command(name = "teslamate-check")]
+    TeslaMateCheck {
+        /// Password-free PostgreSQL URL. Password is read from a file or stdin.
+        #[arg(long)]
+        source: String,
+        /// Positive TeslaMate car id that will be imported.
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        car_id: i64,
+        /// PostgreSQL password file, or `-` for stdin.
+        #[arg(long)]
+        postgres_password_file: PathBuf,
+    },
     /// Validate that one configured car and its credentials are ready to serve.
     #[cfg(unix)]
     Preflight,
@@ -913,6 +934,9 @@ enum Command {
             conflicts_with = "encryption_key_file"
         )]
         refresh_token_file: Option<PathBuf>,
+        /// Take one live read-only snapshot, never prompt for cutover, and leave Hub stopped.
+        #[arg(long)]
+        online_snapshot: bool,
     },
     /// Explicit allow-listed write-back to TeslaMate PostgreSQL.
     #[cfg(unix)]
@@ -1341,8 +1365,158 @@ impl Drop for CatalogueCheckpointGuard {
     }
 }
 
+#[cfg(unix)]
+const TESLAMATE_REQUIRED_VERSION: &str = "4.1.1";
+
+#[cfg(unix)]
+fn print_teslamate_check_failure(
+    car_id: i64,
+    status: &str,
+    reason_code: &str,
+    observed_migration_version: Option<i64>,
+    guidance: &str,
+) {
+    println!(
+        "{}",
+        serde_json::json!({
+            "status": status,
+            "reasonCode": reason_code,
+            "requiredVersion": TESLAMATE_REQUIRED_VERSION,
+            "pinnedSourceRevision": TESLAMATE_V4_SOURCE_REVISION,
+            "maximumValidatedMigrationVersion": MAX_VALIDATED_MIGRATION,
+            "expectedMigrationCount": TESLAMATE_V4_MIGRATION_COUNT,
+            "selectedCarId": car_id,
+            "observedMigrationVersion": observed_migration_version,
+            "guidance": guidance,
+        })
+    );
+}
+
+#[cfg(unix)]
+fn teslamate_check_failure_details(
+    error: &TeslaMateReaderError,
+) -> (&'static str, &'static str, Option<i64>, &'static str) {
+    match error {
+        TeslaMateReaderError::Schema(SchemaCompatibilityError::LegacyMigration {
+            found, ..
+        }) => (
+            "incompatible",
+            "older_than_4_1_1",
+            Some(*found),
+            "Back up TeslaMate, update it to exact version 4.1.1, allow its migrations to finish, then retry.",
+        ),
+        TeslaMateReaderError::Schema(SchemaCompatibilityError::UnreviewedMigration {
+            found,
+            ..
+        }) => (
+            "incompatible",
+            "newer_than_4_1_1",
+            Some(*found),
+            "This Hub build supports exact TeslaMate 4.1.1 only. Do not downgrade a live database; use a separate compatible backup or wait for a reviewed adapter.",
+        ),
+        TeslaMateReaderError::Schema(_) | TeslaMateReaderError::MissingMigrationVersion => (
+            "incompatible",
+            "schema_mismatch",
+            None,
+            "The source does not match the exact TeslaMate 4.1.1 migration and physical-schema contract. Do not modify or downgrade the live database.",
+        ),
+        TeslaMateReaderError::SelectedCarMissing { .. } => (
+            "incompatible",
+            "selected_car_missing",
+            None,
+            "Choose a car ID that exists in the compatible TeslaMate source, then retry.",
+        ),
+        _ => (
+            "unavailable",
+            "source_unavailable",
+            None,
+            "Check the password-free PostgreSQL URL, read-only database credentials, network, and TLS trust, then retry.",
+        ),
+    }
+}
+
+#[cfg(unix)]
+async fn run_teslamate_check(
+    source_url: &str,
+    car_id: i64,
+    postgres_password_file: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let source = match ReadOnlySource::parse(source_url) {
+        Ok(source) => source,
+        Err(_) => {
+            print_teslamate_check_failure(
+                car_id,
+                "unavailable",
+                "invalid_source",
+                None,
+                "Use a password-free PostgreSQL URL with an explicit read-only user, then retry.",
+            );
+            return Err(std::io::Error::other(
+                "TeslaMate compatibility check failed; see JSON report",
+            )
+            .into());
+        }
+    };
+    let password = match read_migration_postgres_password(postgres_password_file) {
+        Ok(password) => password,
+        Err(_) => {
+            print_teslamate_check_failure(
+                car_id,
+                "unavailable",
+                "credential_unavailable",
+                None,
+                "Provide one safe, bounded PostgreSQL password file or stdin value, then retry.",
+            );
+            return Err(std::io::Error::other(
+                "TeslaMate compatibility check failed; see JSON report",
+            )
+            .into());
+        }
+    };
+    match check_teslamate_compatibility(&source, &password, car_id, TeslaMateReadLimits::default())
+        .await
+    {
+        Ok(schema) => {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "status": "compatible",
+                    "reasonCode": "exact_4_1_1",
+                    "requiredVersion": TESLAMATE_REQUIRED_VERSION,
+                    "pinnedSourceRevision": schema.pinned_source_revision,
+                    "observedMigrationVersion": schema.observed_migration_version,
+                    "observedMigrationCount": schema.observed_migration_count,
+                    "minimumSupportedMigrationVersion": schema.minimum_supported_migration_version,
+                    "maximumValidatedMigrationVersion": schema.maximum_validated_migration_version,
+                    "selectedCarId": car_id,
+                    "guidance": "Exact TeslaMate 4.1.1 compatibility verified. The source is ready for migration.",
+                })
+            );
+            Ok(())
+        }
+        Err(error) => {
+            let (status, reason_code, observed, guidance) = teslamate_check_failure_details(&error);
+            print_teslamate_check_failure(car_id, status, reason_code, observed, guidance);
+            Err(
+                std::io::Error::other("TeslaMate compatibility check failed; see JSON report")
+                    .into(),
+            )
+        }
+    }
+}
+
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
+
+    #[cfg(unix)]
+    if let Command::TeslaMateCheck {
+        source,
+        car_id,
+        postgres_password_file,
+    } = &cli.command
+    {
+        return run_teslamate_check(source, *car_id, postgres_password_file).await;
+    }
 
     #[cfg(unix)]
     if let Command::WriteBack {
@@ -1492,6 +1666,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         encryption_key_file,
         access_token_file,
         refresh_token_file,
+        online_snapshot,
     } = &cli.command
     {
         let start_hub = run_macos_migration(
@@ -1506,6 +1681,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 encryption_key_file: encryption_key_file.as_deref(),
                 access_token_file: access_token_file.as_deref(),
                 refresh_token_file: refresh_token_file.as_deref(),
+                online_snapshot: *online_snapshot,
             },
         )
         .await?;
@@ -1862,6 +2038,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Legal
         | Command::Doctor
         | Command::Status
+        | Command::TeslaMateCheck { .. }
         | Command::Control { .. }
         | Command::ObservationWatermark { .. }
         | Command::VerifyObservation { .. } => {
@@ -2125,6 +2302,7 @@ struct MacMigrationInput<'a> {
     encryption_key_file: Option<&'a Path>,
     access_token_file: Option<&'a Path>,
     refresh_token_file: Option<&'a Path>,
+    online_snapshot: bool,
 }
 
 #[cfg(unix)]
@@ -2209,6 +2387,7 @@ async fn run_macos_migration(
         encryption_key_file,
         access_token_file,
         refresh_token_file,
+        online_snapshot,
     }: MacMigrationInput<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     if car_id <= 0 {
@@ -2257,44 +2436,46 @@ async fn run_macos_migration(
     let store = HubStore::initialize(&config.data_dir)?;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
-    let (initial_report, _) = import_direct_migration_snapshot(
-        &store,
-        &cursor_key,
-        &source,
-        &postgres_password,
-        car_id,
-        limits,
-        false,
-    )
-    .await?;
+    if !online_snapshot {
+        let (initial_report, _) = import_direct_migration_snapshot(
+            &store,
+            &cursor_key,
+            &source,
+            &postgres_password,
+            car_id,
+            limits,
+            false,
+        )
+        .await?;
 
-    println!(
-        "{}",
-        serde_json::json!({
-            "status": "initial-copy-complete",
-            "captureMode": "direct",
-            "selectedCarId": car_id,
-            "projectedRows": initial_report.projected_rows,
-            "snapshotId": initial_report.snapshot_id,
-            "sequence": initial_report.sequence,
-            "profileVersion": profile.version,
-            "parallelCopyLanes": profile.parallel_copy_lanes,
-            "profileReason": profile.reason.as_str(),
-        })
-    );
-    print!("Stop TeslaMate now. Confirm it is stopped before final copy [y/N] ");
-    std::io::stdout().flush()?;
-    let mut answer = String::new();
-    std::io::stdin().read_line(&mut answer)?;
-    if !migration_stop_confirmed(&answer) {
-        return Err(
-            "TeslaMate stop was not confirmed; final migration capture was not started".into(),
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "initial-copy-complete",
+                "captureMode": "direct",
+                "selectedCarId": car_id,
+                "projectedRows": initial_report.projected_rows,
+                "snapshotId": initial_report.snapshot_id,
+                "sequence": initial_report.sequence,
+                "profileVersion": profile.version,
+                "parallelCopyLanes": profile.parallel_copy_lanes,
+                "profileReason": profile.reason.as_str(),
+            })
         );
+        print!("Stop TeslaMate now. Confirm it is stopped before final copy [y/N] ");
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if !migration_stop_confirmed(&answer) {
+            return Err(
+                "TeslaMate stop was not confirmed; final migration capture was not started".into(),
+            );
+        }
     }
 
-    // The operator has now stopped TeslaMate. Re-capture from one new
-    // repeatable-read snapshot so no history row or rotated token can fall in
-    // the interval between the long initial copy and cutover.
+    // Cutover mode re-captures after the operator stops TeslaMate. Online mode
+    // performs this once while TeslaMate remains live. In both modes history
+    // and source ciphertext, when selected, share this exact source snapshot.
     let (report, captured_ciphertexts) = import_direct_migration_snapshot(
         &store,
         &cursor_key,
@@ -2341,7 +2522,7 @@ async fn run_macos_migration(
         "{}",
         serde_json::json!({
             "status": "imported",
-            "captureMode": "direct",
+            "captureMode": if online_snapshot { "online-snapshot" } else { "direct" },
             "selectedCarId": car_id,
             "projectedRows": report.projected_rows,
             "snapshotId": report.snapshot_id,
@@ -2353,6 +2534,11 @@ async fn run_macos_migration(
             "profileReason": profile.reason.as_str(),
         })
     );
+
+    if online_snapshot {
+        catalogue_checkpoint.finish()?;
+        return Ok(false);
+    }
 
     print!("Start Teslatlas Hub now? [y/N] ");
     std::io::stdout().flush()?;
@@ -2956,12 +3142,16 @@ mod tests {
         migration_start_requested, migration_stop_confirmed, read_migration_encryption_key,
         read_migration_postgres_password, read_migration_secret,
         read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
-        validate_streaming_setting,
+        teslamate_check_failure_details, validate_streaming_setting,
     };
     use teslatlas_hub::db::HubStore;
     #[cfg(target_os = "macos")]
     use teslatlas_hub::protocol::{
         CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor, PROTOCOL_V1,
+    };
+    #[cfg(target_os = "macos")]
+    use teslatlas_hub::{
+        teslamate_reader::TeslaMateReaderError, teslamate_schema::SchemaCompatibilityError,
     };
     use uuid::Uuid;
 
@@ -3026,6 +3216,109 @@ mod tests {
         assert!(!migration_start_requested(""));
         assert!(!migration_start_requested("N"));
         assert!(migration_start_requested("y"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn teslamate_check_failures_are_redacted_and_actionable() {
+        let older = TeslaMateReaderError::Schema(SchemaCompatibilityError::LegacyMigration {
+            found: 1,
+            minimum: 2,
+        });
+        let newer = TeslaMateReaderError::Schema(SchemaCompatibilityError::UnreviewedMigration {
+            found: 3,
+            maximum: 2,
+        });
+        let selected = TeslaMateReaderError::SelectedCarMissing { selected_car_id: 7 };
+
+        assert_eq!(
+            teslamate_check_failure_details(&older).1,
+            "older_than_4_1_1"
+        );
+        assert_eq!(teslamate_check_failure_details(&older).2, Some(1));
+        assert!(teslamate_check_failure_details(&older).3.contains("update"));
+        assert_eq!(
+            teslamate_check_failure_details(&newer).1,
+            "newer_than_4_1_1"
+        );
+        assert!(
+            teslamate_check_failure_details(&newer)
+                .3
+                .contains("Do not downgrade")
+        );
+        assert_eq!(
+            teslamate_check_failure_details(&selected).1,
+            "selected_car_missing"
+        );
+        assert!(!teslamate_check_failure_details(&selected).3.contains('7'));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn onboarding_migration_cli_is_explicit_and_noninteractive() {
+        let check = Cli::try_parse_from([
+            "teslatlas-hub",
+            "teslamate-check",
+            "--source",
+            "postgresql://reader@localhost/teslamate",
+            "--car-id",
+            "7",
+            "--postgres-password-file",
+            "password",
+        ])
+        .expect("compatibility-check CLI");
+        assert!(matches!(
+            check.command,
+            Command::TeslaMateCheck { car_id: 7, .. }
+        ));
+        assert!(!command_requires_user_hub_admission(&check.command));
+
+        let migration = Cli::try_parse_from([
+            "teslatlas-hub",
+            "migrate",
+            "--source",
+            "postgresql://reader@localhost/teslamate",
+            "--car-id",
+            "7",
+            "--postgres-password-file",
+            "password",
+            "--encryption-key-file",
+            "key",
+            "--online-snapshot",
+        ])
+        .expect("online migration CLI");
+        assert!(matches!(
+            migration.command,
+            Command::Migrate {
+                online_snapshot: true,
+                ..
+            }
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn teslamate_check_invalid_source_does_not_create_hub_target() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let config = temporary.path().join("absent/config.toml");
+        let cli = Cli::try_parse_from([
+            "teslatlas-hub",
+            "--config",
+            config.to_str().expect("UTF-8 config path"),
+            "teslamate-check",
+            "--source",
+            "not-a-postgres-url",
+            "--car-id",
+            "7",
+            "--postgres-password-file",
+            "unused",
+        ])
+        .expect("compatibility-check CLI");
+
+        let error = run(cli).await.expect_err("invalid source must fail");
+        assert!(error.to_string().contains("see JSON report"));
+        assert!(!config.exists());
+        assert!(!config.parent().expect("config parent").exists());
     }
 
     #[cfg(unix)]
@@ -4386,6 +4679,7 @@ mod tests {
             encryption_key_file: Some(PathBuf::from("key")),
             access_token_file: None,
             refresh_token_file: None,
+            online_snapshot: false,
         }));
         assert!(command_requires_user_hub_admission(&Command::Pair {
             label: "test phone".to_owned(),

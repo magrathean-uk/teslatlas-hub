@@ -8,7 +8,7 @@ final class HubControllerTests: XCTestCase {
         let windowController = MainWindowController(controller: controller)
         XCTAssertEqual(windowController.window?.title, "Teslatlas Hub")
         XCTAssertEqual(windowController.window?.contentRect(forFrameRect: windowController.window!.frame).size,
-                       NSSize(width: 900, height: 568))
+                       NSSize(width: 900, height: 630))
     }
 
     func testServiceDetailsUpdateButtonInstallsCurrentPackage() throws {
@@ -145,7 +145,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(embedded.arguments, [])
     }
 
-    func testVehicleControlConfirmationDefaultsToCancelAndNoChargeControlsExist() {
+    func testAthenaCardShowsVisibleNonChargingControlsAndHidesConnectedAccountButton() {
         let alert = MainWindowController.vehicleControlConfirmation(.climateStart,
                                                                     vehicleName: "Model 3")
         XCTAssertEqual(alert.messageText, "Start Climate for Model 3?")
@@ -153,12 +153,29 @@ final class HubControllerTests: XCTestCase {
 
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let windowController = MainWindowController(controller: controller)
-        let titles = buttons(in: windowController.window?.contentView).map(\.title)
-        XCTAssertTrue(titles.contains("Vehicle Controls…"))
-        XCTAssertFalse(titles.contains { $0.localizedCaseInsensitiveContains("charge") })
-        XCTAssertEqual(HubVehicleControl.allCases.map(\.rawValue), [
-            "wake", "climate-start", "climate-stop", "lock", "unlock", "flash-lights", "honk-horn"
-        ])
+        let settled = expectation(description: "preview dashboard settled")
+        DispatchQueue.main.async {
+            XCTAssertTrue(self.labels(in: windowController.window?.contentView)
+                .contains { $0.stringValue == "Athena" })
+            XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
+                .contains { $0.title == "Vehicle Controls…" })
+            for title in ["Start Climate", "Stop Climate", "Wake", "Lock",
+                          "Unlock", "Flash", "Honk"] {
+                let button = self.buttons(in: windowController.window?.contentView)
+                    .first { $0.title == title }
+                XCTAssertNotNil(button, "missing \(title)")
+                XCTAssertFalse(button?.isHidden ?? true, "hidden \(title)")
+                XCTAssertTrue(button?.isEnabled ?? false, "preview disabled \(title)")
+            }
+            XCTAssertTrue(windowController.connectButton.isHidden)
+            XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
+                .contains { $0.title.localizedCaseInsensitiveContains("charge") })
+            XCTAssertEqual(HubVehicleControl.allCases.map(\.rawValue), [
+                "wake", "climate-start", "climate-stop", "lock", "unlock", "flash-lights", "honk-horn"
+            ])
+            settled.fulfill()
+        }
+        wait(for: [settled], timeout: 1)
     }
 
     func testAmbiguousClimateFailureWarnsAgainstRetry() {
@@ -308,6 +325,7 @@ final class HubControllerTests: XCTestCase {
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: embedded,
                                        installedCommandRunner: installed,
                                        installer: installer,
@@ -332,6 +350,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(installed.arguments[0].contains("--all-vehicles"))
         XCTAssertFalse(installed.arguments[1].contains("--all-vehicles"))
         XCTAssertTrue(installed.arguments[2].contains("--all-vehicles"))
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
     func testInstalledAccountConfigureRestartsOldServiceAfterSetupFailure() throws {
@@ -341,9 +360,10 @@ final class HubControllerTests: XCTestCase {
             result: .failure(HubActionError.commandFailed("setup failed"))
         )
         let installer = ScriptedInstaller(events: events)
-        let service = ScriptedService(events: events)
+        let service = ScriptedService(events: events, loadState: .loaded)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
                                        installedCommandRunner: runner,
                                        installer: installer,
@@ -361,7 +381,65 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try configContents(in: home), original)
         XCTAssertEqual(events.values, ["service:stop", "setup", "service:start"])
+    }
+
+    func testInstalledLegacyFailureKeepsPreviouslyStoppedHubStopped() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(
+            events: events,
+            result: .failure(HubActionError.commandFailed("setup failed"))
+        )
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeCollectorConfig(in: home, provider: "fleet")
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       installer: ScriptedInstaller(events: events),
+                                       serviceRunner: ScriptedService(events: events, loadState: .unloaded),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "stopped setup failure returned")
+
+        controller.configureTeslaAccount(
+            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        ) { result in
+            guard case .failure = result else { return XCTFail("expected setup failure") }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertEqual(events.values, ["service:stop", "setup"])
+    }
+
+    func testInstalledLegacyStopFailureKeepsFleetConfigUnchanged() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success("unused"))
+        let service = ScriptedService(events: events)
+        service.result = .failure(HubActionError.commandFailed("stop failed"))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeCollectorConfig(in: home, provider: "fleet")
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       installer: ScriptedInstaller(events: events),
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "stop failure returned")
+
+        controller.configureTeslaAccount(
+            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        ) { result in
+            guard case .failure = result else { return XCTFail("expected stop failure") }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertEqual(events.values, ["service:stop"])
     }
 
     func testInstalledAccountConfigureRestartsOldServiceAfterInstallFailure() throws {
@@ -371,9 +449,10 @@ final class HubControllerTests: XCTestCase {
             events: events,
             result: .failure(HubActionError.commandFailed("package failed"))
         )
-        let service = ScriptedService(events: events)
+        let service = ScriptedService(events: events, loadState: .loaded)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
                                        installedCommandRunner: runner,
                                        installer: installer,
@@ -391,6 +470,7 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try configContents(in: home), original)
         XCTAssertEqual(events.values, ["service:stop", "setup", "install", "service:start"])
     }
 
@@ -405,6 +485,7 @@ final class HubControllerTests: XCTestCase {
         )
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
+        let original = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
                                        installedCommandRunner: runner,
                                        installer: installer,
@@ -422,6 +503,7 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try configContents(in: home), original)
         XCTAssertEqual(events.values, ["service:stop", "setup", "install"])
     }
 
@@ -429,6 +511,9 @@ final class HubControllerTests: XCTestCase {
         XCTAssertNoThrow(try HubController.validateMigrationSource("postgresql://reader@localhost/teslamate"))
         XCTAssertThrowsError(try HubController.validateMigrationSource("postgresql://reader:secret@localhost/teslamate"))
         XCTAssertThrowsError(try HubController.validateMigrationSource("postgres://reader:s%40cret@localhost/teslamate"))
+        XCTAssertThrowsError(try HubController.validateMigrationSource("https://localhost/teslamate"))
+        XCTAssertThrowsError(try HubController.validateMigrationSource("postgresql:///teslamate"))
+        XCTAssertThrowsError(try HubController.validateMigrationSource("postgresql://localhost"))
     }
 
     func testTOMLBasicStringEscapesPathWithoutBreakingQuotedValue() {
@@ -607,9 +692,28 @@ final class HubControllerTests: XCTestCase {
         return url
     }
 
+    private func writeCollectorConfig(in home: URL, provider: String) throws -> String {
+        let config = home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml")
+        try FileManager.default.createDirectory(at: config.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let content = "data_dir = \"/tmp/hub\"\n\n[collector]\nprovider = \"\(provider)\"\ninterval_seconds = 60\n"
+        try content.write(to: config, atomically: true, encoding: .utf8)
+        return content
+    }
+
+    private func configContents(in home: URL) throws -> String {
+        let config = home.appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml")
+        return try String(contentsOf: config, encoding: .utf8)
+    }
+
     private func buttons(in view: NSView?) -> [NSButton] {
         guard let view else { return [] }
         return (view as? NSButton).map { [$0] } ?? view.subviews.flatMap { buttons(in: $0) }
+    }
+
+    private func labels(in view: NSView?) -> [NSTextField] {
+        guard let view else { return [] }
+        return (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap { labels(in: $0) }
     }
 }
 

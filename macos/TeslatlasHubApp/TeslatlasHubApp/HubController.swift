@@ -48,6 +48,38 @@ struct HubSetupInvocation: Equatable {
     let standardInput: String
 }
 
+struct HubFleetSetupCredentials: Equatable {
+    let accessToken: String
+    let refreshToken: String
+    let clientID: String
+    let region: String
+    let expiresInSeconds: Int64
+}
+
+struct HubTeslaMateCompatibility: Equatable {
+    let compatible: Bool
+    let message: String
+    let reasonCode: String
+    let requiredVersion: String
+}
+
+struct HubOnboardingCheck: Equatable {
+    let title: String
+    let detail: String
+    let passed: Bool
+}
+
+enum HubMigrationHandoverPhase: String, Codable, Equatable {
+    case importing
+    case awaitingVerification = "awaiting_verification"
+    case awaitingHandover = "awaiting_handover"
+}
+
+private struct HubMigrationHandoverState: Codable {
+    var phase: HubMigrationHandoverPhase
+    let previousIntervalSeconds: Int
+}
+
 enum HubVehicleControl: String, CaseIterable, Equatable {
     case wake
     case climateStart = "climate-start"
@@ -97,12 +129,12 @@ struct HubSnapshot {
         health: .running,
         service: "Installed and running",
         account: "Connected",
-        vehicleName: "Model 3",
-        vehicle: "Offline · last seen 2 minutes ago",
+        vehicleName: "Athena",
+        vehicle: "Online · seen just now",
         controlVehicleID: nil,
         database: "Healthy · 18,426 records",
         activity: [
-            HubActivity(message: "Vehicle went offline", age: "2 minutes ago", color: .systemGray),
+            HubActivity(message: "Vehicle online", age: "just now", color: .systemGreen),
             HubActivity(message: "Position stored", age: "4 minutes ago", color: .systemGreen)
         ],
         version: HubRelease.fallbackVersion,
@@ -285,6 +317,7 @@ final class EmbeddedHubCommandRunner: HubCommandRunning {
 
     private static func timeout(for arguments: [String]) -> TimeInterval {
         if arguments.contains("migrate") { return 24 * 60 * 60 }
+        if arguments.contains("teslamate-check") { return 5 * 60 }
         if arguments.contains("setup") { return 5 * 60 }
         if arguments.contains("status") || arguments.contains("preflight") { return 30 }
         return HubProcessExecutor.defaultTimeout
@@ -304,7 +337,9 @@ final class InstalledHubCommandRunner: HubCommandRunning {
 
     private func runProcess(arguments: [String], stdin: String?, completion: @escaping (Result<String, Error>) -> Void) {
         let timeout: TimeInterval
-        if arguments.contains("setup") {
+        if arguments.contains("migrate") {
+            timeout = 24 * 60 * 60
+        } else if arguments.contains("teslamate-check") || arguments.contains("setup") {
             timeout = 5 * 60
         } else if arguments.contains("control") {
             timeout = 45
@@ -480,6 +515,7 @@ final class LaunchctlServiceController: HubServiceControlling {
 
 final class HubController {
     let previewMode: Bool
+    let onboardingPreviewRoute: String?
     private let commandRunner: HubCommandRunning
     private let installedCommandRunner: HubCommandRunning
     private let installer: HubInstalling
@@ -494,20 +530,38 @@ final class HubController {
          installer: HubInstalling = EmbeddedInstaller(),
          serviceRunner: HubServiceControlling = LaunchctlServiceController(),
          homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
-         serviceInstalledOverride: Bool? = nil) {
+         serviceInstalledOverride: Bool? = nil,
+         initialSnapshot: HubSnapshot? = nil) {
         previewMode = environment["TESLATLAS_HUB_UI_PREVIEW"] == "1"
+        onboardingPreviewRoute = environment["TESLATLAS_HUB_ONBOARDING_PREVIEW"]
         self.commandRunner = commandRunner
         self.installedCommandRunner = installedCommandRunner
         self.installer = installer
         self.serviceRunner = serviceRunner
         self.homeDirectory = homeDirectory
         self.serviceInstalledOverride = serviceInstalledOverride
-        snapshot = previewMode ? .previewRunning : .firstRun
+        snapshot = initialSnapshot ?? (previewMode ? .previewRunning : .firstRun)
+    }
+
+    var hasPendingMigrationHandover: Bool {
+        FileManager.default.fileExists(atPath: migrationHandoverMarker.path)
+    }
+
+    var pendingMigrationHandoverPhase: HubMigrationHandoverPhase? {
+        migrationHandoverState?.phase
+    }
+
+    func shouldShowOnboarding(for snapshot: HubSnapshot) -> Bool {
+        onboardingPreviewRoute != nil
+            || hasPendingMigrationHandover
+            || !FileManager.default.fileExists(atPath: configPath.path)
+            || snapshot.health == .needsInstall
+            || snapshot.account == "Not configured"
     }
 
     func refresh(completion: @escaping (HubSnapshot) -> Void) {
         guard !previewMode else {
-            DispatchQueue.main.async { completion(self.snapshot) }
+            completion(snapshot)
             return
         }
         serviceRunner.loadedState { [weak self] loaded in
@@ -552,6 +606,172 @@ final class HubController {
                     completion(.failure(error))
                 }
             }
+        }
+    }
+
+    func checkTeslaMateCompatibility(source: String,
+                                     carID: String,
+                                     passwordFile: String,
+                                     completion: @escaping (Result<HubTeslaMateCompatibility, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        do {
+            try Self.validateMigrationSource(source)
+            guard let selectedCarID = Int64(carID), selectedCarID > 0 else {
+                throw HubActionError.commandFailed("TeslaMate car ID must be a positive number.")
+            }
+            guard !passwordFile.isEmpty else {
+                throw HubActionError.commandFailed("Choose the protected PostgreSQL password file.")
+            }
+            let arguments = ["--config", configPath.path, "teslamate-check",
+                             "--source", source, "--car-id", String(selectedCarID),
+                             "--postgres-password-file", passwordFile]
+            commandRunner.run(arguments: arguments) { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case let .success(output):
+                        guard let report = Self.parseTeslaMateCompatibility(output) else {
+                            completion(.failure(HubActionError.commandFailed(
+                                "TeslaMate compatibility check returned no valid report."
+                            )))
+                            return
+                        }
+                        completion(.success(report))
+                    case let .failure(error):
+                        if let report = Self.parseTeslaMateCompatibility(error.localizedDescription) {
+                            completion(.success(report))
+                        } else {
+                            completion(.failure(error))
+                        }
+                    }
+                }
+            }
+        } catch {
+            completion(.failure(error))
+        }
+    }
+
+    func importTeslaMateOnline(source: String,
+                               carID: String,
+                               passwordFile: String,
+                               encryptionKeyFile: String,
+                               completion: @escaping (Result<Void, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard !encryptionKeyFile.isEmpty else {
+            completion(.failure(HubActionError.commandFailed(
+                "Choose the TeslaMate ENCRYPTION_KEY file."
+            )))
+            return
+        }
+        checkTeslaMateCompatibility(source: source,
+                                    carID: carID,
+                                    passwordFile: passwordFile) { [weak self] checkResult in
+            guard let self else { return }
+            switch checkResult {
+            case let .failure(error):
+                completion(.failure(error))
+            case let .success(report):
+                guard report.compatible else {
+                    completion(.failure(HubActionError.commandFailed(report.message)))
+                    return
+                }
+                self.prepareOnlineMigration(source: source,
+                                            carID: carID,
+                                            passwordFile: passwordFile,
+                                            encryptionKeyFile: encryptionKeyFile,
+                                            completion: completion)
+            }
+        }
+    }
+
+    private func prepareOnlineMigration(source: String,
+                                        carID: String,
+                                        passwordFile: String,
+                                        encryptionKeyFile: String,
+                                        completion: @escaping (Result<Void, Error>) -> Void) {
+        let previousInterval = migrationHandoverState?.previousIntervalSeconds
+            ?? configuredCollectorIntervalSeconds()
+        do {
+            try writeMigrationHandoverMarker(
+                HubMigrationHandoverState(phase: .importing,
+                                          previousIntervalSeconds: previousInterval)
+            )
+            try ensureConfig(provider: "legacy", collectorIntervalSeconds: 0)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        let arguments = ["--config", configPath.path, "migrate",
+                         "--source", source, "--car-id", carID,
+                         "--postgres-password-file", passwordFile,
+                         "--encryption-key-file", encryptionKeyFile,
+                         "--online-snapshot"]
+        let finish: (Result<Void, Error>) -> Void = { result in
+            DispatchQueue.main.async { completion(result) }
+        }
+        let runImport = { [weak self] in
+            guard let self else { return }
+            self.commandRunner.run(arguments: arguments) { result in
+                switch result {
+                case let .success(output):
+                    guard Self.containsOnlineMigrationReport(output) else {
+                        finish(.failure(HubActionError.commandFailed(
+                            "TeslaMate import returned no valid completion report. Hub remains stopped."
+                        )))
+                        return
+                    }
+                    do {
+                        try self.writeMigrationHandoverMarker(
+                            HubMigrationHandoverState(phase: .awaitingVerification,
+                                                      previousIntervalSeconds: previousInterval)
+                        )
+                        finish(.success(()))
+                    } catch {
+                        finish(.failure(HubActionError.commandFailed(
+                            "Import completed, but Hub could not record the safe handover gate: \(error.localizedDescription). Hub remains stopped."
+                        )))
+                    }
+                case let .failure(error):
+                    finish(.failure(error))
+                }
+            }
+        }
+        // This controls Teslatlas Hub only. TeslaMate is never stopped or changed.
+        serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
+            switch stopResult {
+            case .success: runImport()
+            case let .failure(error): finish(.failure(error))
+            }
+        }
+    }
+
+    static func parseTeslaMateCompatibility(_ output: String) -> HubTeslaMateCompatibility? {
+        for line in output.split(whereSeparator: { $0.isNewline }) {
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let status = root["status"] as? String,
+                  let reason = root["reasonCode"] as? String,
+                  let required = root["requiredVersion"] as? String,
+                  let guidance = root["guidance"] as? String else { continue }
+            return HubTeslaMateCompatibility(
+                compatible: status == "compatible"
+                    && reason == "exact_4_1_1"
+                    && required == "4.1.1",
+                message: guidance,
+                reasonCode: reason,
+                requiredVersion: required
+            )
+        }
+        return nil
+    }
+
+    static func containsOnlineMigrationReport(_ output: String) -> Bool {
+        output.split(whereSeparator: { $0.isNewline }).contains { line in
+            guard let data = String(line).data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return false
+            }
+            return root["status"] as? String == "imported"
+                && root["captureMode"] as? String == "online-snapshot"
         }
     }
 
@@ -627,31 +847,36 @@ final class HubController {
     }
 
     static func validateMigrationSource(_ source: String) throws {
-        guard let components = URLComponents(string: source) else {
-            throw HubActionError.commandFailed("PostgreSQL source is not a valid URL.")
+        guard let components = URLComponents(string: source),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "postgres" || scheme == "postgresql",
+              let host = components.host, !host.isEmpty,
+              components.path.count > 1 else {
+            throw HubActionError.commandFailed(
+                "PostgreSQL source must include a postgres or postgresql scheme, host, and database name."
+            )
         }
         guard components.password == nil else {
             throw HubActionError.commandFailed("PostgreSQL source must not contain a password. Use the password file field.")
         }
     }
 
-    func configureTeslaAccount(tokens: TeslaAuthTokens,
-                               vehicleID: Int64? = nil,
+    func configureFleetAccount(credentials: HubFleetSetupCredentials,
                                completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        let installed = isServiceInstalled
         let invocation: HubSetupInvocation
-        let installedInvocation: HubSetupInvocation
+        let originalConfig: String?
         do {
-            try ensureConfig()
-            invocation = try Self.setupInvocation(configPath: configPath,
-                                                  tokens: tokens,
-                                                  vehicleID: vehicleID)
-            installedInvocation = Self.oldCompatibleSetupInvocation(invocation)
+            invocation = try Self.fleetSetupInvocation(configPath: configPath,
+                                                       credentials: credentials)
+            originalConfig = FileManager.default.fileExists(atPath: configPath.path)
+                ? try String(contentsOf: configPath, encoding: .utf8)
+                : nil
         } catch {
             completion(.failure(error))
             return
         }
-        let installed = isServiceInstalled
         let finish: (Result<Void, Error>) -> Void = { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { completion(result); return }
@@ -663,8 +888,238 @@ final class HubController {
                 }
             }
         }
-        let restartAfterFailure: (String, Error) -> Void = { [weak self] action, actionError in
+        let startService = { [weak self] in
             guard let self else { return }
+            self.serviceRunner.run(arguments: ["service", "start"]) { result in
+                switch result {
+                case .success: finish(.success(()))
+                case let .failure(error): finish(.failure(error))
+                }
+            }
+        }
+        guard installed else {
+            do {
+                try ensureConfig(provider: "fleet")
+            } catch {
+                finish(.failure(error))
+                return
+            }
+            commandRunner.run(arguments: invocation.arguments,
+                              stdin: invocation.standardInput) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success:
+                    self.installer.install { installResult in
+                        switch installResult {
+                        case .success:
+                            self.serviceRunner.loadedState { state in
+                                switch state {
+                                case .loaded: finish(.success(()))
+                                case .unloaded: startService()
+                                case let .unknown(error): finish(.failure(error))
+                                }
+                            }
+                        case let .failure(error): finish(.failure(error))
+                        }
+                    }
+                case let .failure(error): finish(.failure(error))
+                }
+            }
+            return
+        }
+
+        if snapshot.account != "Connected" {
+            let failStopped = { [weak self] (setupError: Error) in
+                guard let self else { return }
+                do {
+                    try self.restoreConfig(originalConfig)
+                    finish(.failure(setupError))
+                } catch let recoveryError {
+                    finish(.failure(HubActionError.commandFailed(
+                        "Fleet setup failed: \(setupError.localizedDescription) Hub configuration recovery also failed: \(recoveryError.localizedDescription)"
+                    )))
+                }
+            }
+            serviceRunner.run(arguments: ["service", "stop"]) { [weak self] stopResult in
+                guard let self else { return }
+                guard case .success = stopResult else {
+                    if case let .failure(error) = stopResult { finish(.failure(error)) }
+                    return
+                }
+                do {
+                    try self.ensureConfig(provider: "fleet")
+                } catch {
+                    failStopped(error)
+                    return
+                }
+                // No working old provider exists. Configure with the embedded
+                // current binary, then package that same version. Never restart
+                // the old binary after this point because setup may migrate data.
+                self.commandRunner.run(arguments: invocation.arguments,
+                                       stdin: invocation.standardInput) { setupResult in
+                    switch setupResult {
+                    case .success:
+                        self.installer.install { installResult in
+                            switch installResult {
+                            case .success: startService()
+                            case let .failure(error): failStopped(error)
+                            }
+                        }
+                    case let .failure(error): failStopped(error)
+                    }
+                }
+            }
+            return
+        }
+
+        serviceRunner.loadedState { [weak self] state in
+            guard let self else { return }
+            let wasLoaded: Bool
+            switch state {
+            case .loaded: wasLoaded = true
+            case .unloaded: wasLoaded = false
+            case let .unknown(error):
+                finish(.failure(error))
+                return
+            }
+            let recover = { (setupError: Error, restartIsSafe: Bool) in
+                guard let originalConfig else {
+                    finish(.failure(setupError))
+                    return
+                }
+                do {
+                    try self.restoreConfig(originalConfig)
+                } catch let recoveryError {
+                    finish(.failure(HubActionError.commandFailed(
+                        "Fleet setup failed: \(setupError.localizedDescription) Hub configuration recovery also failed: \(recoveryError.localizedDescription)"
+                    )))
+                    return
+                }
+                guard wasLoaded, restartIsSafe else {
+                    finish(.failure(setupError))
+                    return
+                }
+                self.serviceRunner.run(arguments: ["service", "start"]) { restartResult in
+                    switch restartResult {
+                    case .success: finish(.failure(setupError))
+                    case let .failure(startError):
+                        finish(.failure(HubActionError.commandFailed(
+                            "Fleet setup failed: \(setupError.localizedDescription) Hub restart also failed: \(startError.localizedDescription)"
+                        )))
+                    }
+                }
+            }
+            self.serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
+                guard case .success = stopResult else {
+                    if case let .failure(error) = stopResult { finish(.failure(error)) }
+                    return
+                }
+                // Update the package before setup. Only the newly installed binary may
+                // open and migrate the database for Fleet credentials. Keep the
+                // existing valid provider config through package preflight.
+                self.installer.install { installResult in
+                    switch installResult {
+                    case .success:
+                        do {
+                            try self.ensureConfig(provider: "fleet")
+                        } catch {
+                            recover(error, true)
+                            return
+                        }
+                        self.installedCommandRunner.run(arguments: invocation.arguments,
+                                                        stdin: invocation.standardInput) { setupResult in
+                            switch setupResult {
+                            case .success: startService()
+                            case let .failure(error): recover(error, true)
+                            }
+                        }
+                    case let .failure(error):
+                        recover(error, !Self.isForwardOnlyUpgradeFailure(error))
+                    }
+                }
+            }
+        }
+    }
+
+    static func fleetSetupInvocation(configPath: URL,
+                                     credentials: HubFleetSetupCredentials) throws -> HubSetupInvocation {
+        guard !credentials.accessToken.isEmpty,
+              !credentials.refreshToken.isEmpty,
+              !credentials.clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              ["europe_middle_east_and_africa", "north_america_and_asia_pacific", "china"]
+                .contains(credentials.region),
+              credentials.expiresInSeconds > 0 else {
+            throw HubActionError.commandFailed("Fleet credentials are incomplete or invalid.")
+        }
+        let payload: [String: Any] = [
+            "accessToken": credentials.accessToken,
+            "refreshToken": credentials.refreshToken,
+            "clientId": credentials.clientID,
+            "region": credentials.region,
+            "expiresInSeconds": credentials.expiresInSeconds
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        guard let input = String(data: data, encoding: .utf8) else {
+            throw HubActionError.commandFailed("Could not encode Fleet credentials.")
+        }
+        return HubSetupInvocation(
+            arguments: ["--config", configPath.path, "setup-fleet", "--all-vehicles"],
+            standardInput: input
+        )
+    }
+
+    func configureTeslaAccount(tokens: TeslaAuthTokens,
+                               vehicleID: Int64? = nil,
+                               completion: @escaping (Result<Void, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        let installed = isServiceInstalled
+        let invocation: HubSetupInvocation
+        let installedInvocation: HubSetupInvocation
+        let originalConfig: String?
+        do {
+            invocation = try Self.setupInvocation(configPath: configPath,
+                                                  tokens: tokens,
+                                                  vehicleID: vehicleID)
+            installedInvocation = Self.oldCompatibleSetupInvocation(invocation)
+            originalConfig = installed && FileManager.default.fileExists(atPath: configPath.path)
+                ? try String(contentsOf: configPath, encoding: .utf8)
+                : nil
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        let finish: (Result<Void, Error>) -> Void = { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { completion(result); return }
+                switch result {
+                case .success:
+                    self.refresh { _ in completion(.success(())) }
+                case .failure:
+                    completion(result)
+                }
+            }
+        }
+        var wasLoadedBeforeSetup = false
+        let recover: (String, Error, Bool) -> Void = { [weak self] action, actionError, restartIsSafe in
+            guard let self else { return }
+            if installed {
+                guard let originalConfig else {
+                    finish(.failure(actionError))
+                    return
+                }
+                do {
+                    try self.restoreConfig(originalConfig)
+                } catch let recoveryError {
+                    finish(.failure(HubActionError.commandFailed(
+                        "\(action): \(actionError.localizedDescription) Hub configuration recovery also failed: \(recoveryError.localizedDescription)"
+                    )))
+                    return
+                }
+            }
+            guard installed, restartIsSafe, wasLoadedBeforeSetup else {
+                finish(.failure(actionError))
+                return
+            }
             self.serviceRunner.run(arguments: ["service", "start"]) { restartResult in
                 switch restartResult {
                 case .success:
@@ -687,16 +1142,16 @@ final class HubController {
                         case .success:
                             self.installedCommandRunner.run(arguments: invocation.arguments,
                                                             stdin: invocation.standardInput) { setupResult in
-                                self.serviceRunner.run(arguments: ["service", "start"]) { startResult in
-                                    switch (setupResult, startResult) {
-                                    case (.success, .success): finish(.success(()))
-                                    case let (.failure(setupError), .success): finish(.failure(setupError))
-                                    case let (.success, .failure(startError)): finish(.failure(startError))
-                                    case let (.failure(setupError), .failure(startError)):
-                                        finish(.failure(HubActionError.commandFailed(
-                                            "Tesla setup failed: \(setupError.localizedDescription) Hub restart also failed: \(startError.localizedDescription)"
-                                        )))
+                                switch setupResult {
+                                case .success:
+                                    self.serviceRunner.run(arguments: ["service", "start"]) { startResult in
+                                        switch startResult {
+                                        case .success: finish(.success(()))
+                                        case let .failure(error): finish(.failure(error))
+                                        }
                                     }
+                                case let .failure(error):
+                                    recover("Tesla setup failed", error, true)
                                 }
                             }
                         case let .failure(stopError):
@@ -705,11 +1160,8 @@ final class HubController {
                     }
                 case let .failure(installError):
                     guard installed else { finish(.failure(installError)); return }
-                    if Self.isForwardOnlyUpgradeFailure(installError) {
-                        finish(.failure(installError))
-                    } else {
-                        restartAfterFailure("Service update failed", installError)
-                    }
+                    recover("Service update failed", installError,
+                            !Self.isForwardOnlyUpgradeFailure(installError))
                 }
             }
         }
@@ -722,7 +1174,7 @@ final class HubController {
                     installAndStart()
                 case let .failure(setupError):
                     guard installed else { finish(.failure(setupError)); return }
-                    restartAfterFailure("Tesla setup failed", setupError)
+                    recover("Tesla setup failed", setupError, true)
                 }
             }
             setupRunner.run(arguments: invocation.arguments,
@@ -739,14 +1191,34 @@ final class HubController {
             }
         }
         if installed {
-            serviceRunner.run(arguments: ["service", "stop"]) { result in
-                switch result {
-                case .success: runSetup()
-                case let .failure(error): finish(.failure(error))
+            serviceRunner.loadedState { state in
+                switch state {
+                case .loaded: wasLoadedBeforeSetup = true
+                case .unloaded: wasLoadedBeforeSetup = false
+                case let .unknown(error):
+                    finish(.failure(error))
+                    return
+                }
+                self.serviceRunner.run(arguments: ["service", "stop"]) { result in
+                    switch result {
+                    case .success:
+                        do {
+                            try self.ensureConfig(provider: "legacy")
+                            runSetup()
+                        } catch {
+                            recover("Tesla setup failed", error, true)
+                        }
+                    case let .failure(error): finish(.failure(error))
+                    }
                 }
             }
         } else {
-            runSetup()
+            do {
+                try ensureConfig(provider: "legacy")
+                runSetup()
+            } catch {
+                finish(.failure(error))
+            }
         }
     }
 
@@ -790,6 +1262,12 @@ final class HubController {
     }
 
     func startHub(completion: @escaping (Result<Void, Error>) -> Void) {
+        guard !hasPendingMigrationHandover else {
+            completion(.failure(HubActionError.commandFailed(
+                "Finish the TeslaMate handover before starting Hub."
+            )))
+            return
+        }
         runServiceCommand(["service", "start"], completion: completion)
     }
 
@@ -798,7 +1276,175 @@ final class HubController {
     }
 
     func restartHub(completion: @escaping (Result<Void, Error>) -> Void) {
+        guard !hasPendingMigrationHandover else {
+            completion(.failure(HubActionError.commandFailed(
+                "Finish the TeslaMate handover before restarting Hub."
+            )))
+            return
+        }
         runServiceCommand(["service", "restart"], completion: completion)
+    }
+
+    func acknowledgeMigrationHandoverAndStart(completion: @escaping (Result<Void, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard let handover = migrationHandoverState,
+              handover.phase == .awaitingHandover else {
+            completion(.failure(HubActionError.commandFailed(
+                "Finish the migration checks before starting Hub."
+            )))
+            return
+        }
+        do {
+            try ensureConfig(provider: "legacy",
+                             collectorIntervalSeconds: handover.previousIntervalSeconds)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        serviceRunner.run(arguments: ["service", "start"]) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                do {
+                    try FileManager.default.removeItem(at: self.migrationHandoverMarker)
+                    DispatchQueue.main.async { completion(.success(())) }
+                } catch {
+                    let cleanupError = error
+                    self.serviceRunner.run(arguments: ["service", "stop"]) { _ in
+                        do {
+                            try self.ensureConfig(provider: "legacy", collectorIntervalSeconds: 0)
+                            try self.writeMigrationHandoverMarker(handover)
+                        } catch {
+                            // Preserve the original cleanup failure; Hub was explicitly stopped.
+                        }
+                        DispatchQueue.main.async {
+                            completion(.failure(HubActionError.commandFailed(
+                                "Hub was stopped because the migration handover gate could not be cleared: \(cleanupError.localizedDescription)"
+                            )))
+                        }
+                    }
+                }
+            case let .failure(startError):
+                do {
+                    try self.ensureConfig(provider: "legacy", collectorIntervalSeconds: 0)
+                    try self.writeMigrationHandoverMarker(handover)
+                    DispatchQueue.main.async { completion(.failure(startError)) }
+                } catch {
+                    DispatchQueue.main.async {
+                        completion(.failure(HubActionError.commandFailed(
+                            "Hub did not start: \(startError.localizedDescription). The collector pause could not be restored: \(error.localizedDescription)"
+                        )))
+                    }
+                }
+            }
+        }
+    }
+
+    func runOnboardingChecks(expectRunning: Bool,
+                             completion: @escaping (Result<[HubOnboardingCheck], Error>) -> Void) {
+        if previewMode {
+            let checks = [
+                HubOnboardingCheck(title: "Service", detail: "Installed and running", passed: true),
+                HubOnboardingCheck(title: "Tesla account", detail: "Connected", passed: true),
+                HubOnboardingCheck(title: "Vehicle", detail: "Available", passed: true),
+                HubOnboardingCheck(title: "Database", detail: "Healthy", passed: true),
+                HubOnboardingCheck(title: "Diagnostics", detail: "Passed", passed: true),
+                HubOnboardingCheck(title: "Logs", detail: "Readable", passed: true)
+            ]
+            DispatchQueue.main.async { completion(.success(checks)) }
+            return
+        }
+        if !expectRunning, migrationHandoverState != nil {
+            installer.install { [weak self] installResult in
+                guard let self else { return }
+                switch installResult {
+                case .success:
+                    self.serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
+                        switch stopResult {
+                        case .success:
+                            self.performOnboardingChecks(expectRunning: false,
+                                                         completion: completion)
+                        case let .failure(error):
+                            DispatchQueue.main.async { completion(.failure(error)) }
+                        }
+                    }
+                case let .failure(error):
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                }
+            }
+            return
+        }
+        performOnboardingChecks(expectRunning: expectRunning, completion: completion)
+    }
+
+    private func performOnboardingChecks(expectRunning: Bool,
+                                         completion: @escaping (Result<[HubOnboardingCheck], Error>) -> Void) {
+        refresh { [weak self] snapshot in
+            guard let self else { return }
+            let runner = self.isServiceInstalled ? self.installedCommandRunner : self.commandRunner
+            runner.run(arguments: ["--config", self.configPath.path, "doctor"]) { doctorResult in
+                self.logs { logText in
+                    let servicePassed = expectRunning
+                        ? snapshot.health == .running
+                        : snapshot.health == .stopped
+                    let serviceDetail = expectRunning
+                        ? snapshot.service
+                        : (servicePassed ? "Installed and safely stopped" : snapshot.service)
+                    let vehiclePassed = snapshot.vehicleName != "Vehicle"
+                        && snapshot.vehicleName != "No configured vehicle"
+                        && snapshot.vehicle != "No configured vehicle"
+                        && snapshot.vehicle != "Unknown"
+                    let doctorPassed: Bool
+                    let doctorDetail: String
+                    switch doctorResult {
+                    case .success:
+                        doctorPassed = true
+                        doctorDetail = "Passed"
+                    case let .failure(error):
+                        doctorPassed = false
+                        doctorDetail = Self.conciseDiagnostic(error.localizedDescription)
+                    }
+                    let noLogsYet = logText.hasPrefix("No Hub logs are available yet.")
+                    let logsPassed = expectRunning ? !noLogsYet && !logText.isEmpty : true
+                    let logsDetail = noLogsYet
+                        ? (expectRunning ? "No logs yet" : "No service logs while stopped")
+                        : (logText.isEmpty ? "Unavailable" : "Readable")
+                    let checks = [
+                        HubOnboardingCheck(title: "Service", detail: serviceDetail, passed: servicePassed),
+                        HubOnboardingCheck(title: "Tesla account", detail: snapshot.account,
+                                           passed: snapshot.account == "Connected"),
+                        HubOnboardingCheck(title: "Vehicle", detail: snapshot.vehicleName,
+                                           passed: vehiclePassed),
+                        HubOnboardingCheck(title: "Database", detail: snapshot.database,
+                                           passed: snapshot.database.hasPrefix("Healthy")),
+                        HubOnboardingCheck(title: "Diagnostics", detail: doctorDetail,
+                                           passed: doctorPassed),
+                        HubOnboardingCheck(title: "Logs",
+                                           detail: logsDetail,
+                                           passed: logsPassed)
+                    ]
+                    guard !expectRunning,
+                          checks.allSatisfy(\.passed),
+                          var handover = self.migrationHandoverState else {
+                        completion(.success(checks))
+                        return
+                    }
+                    handover.phase = .awaitingHandover
+                    do {
+                        try self.writeMigrationHandoverMarker(handover)
+                        completion(.success(checks))
+                    } catch {
+                        completion(.failure(error))
+                    }
+                }
+            }
+        }
+    }
+
+    private static func conciseDiagnostic(_ message: String) -> String {
+        let line = message.split(whereSeparator: { $0.isNewline }).first.map(String.init)
+            ?? "Failed"
+        return String(line.prefix(160))
     }
 
     func performVehicleControl(_ action: HubVehicleControl,
@@ -879,7 +1525,45 @@ final class HubController {
 
     private var dataDirectory: URL { configPath.deletingLastPathComponent().appendingPathComponent("data", isDirectory: true) }
 
-    private func ensureConfig() throws {
+    private var migrationHandoverMarker: URL {
+        configPath.deletingLastPathComponent().appendingPathComponent(".teslamate-handover-pending")
+    }
+
+    private var migrationHandoverState: HubMigrationHandoverState? {
+        guard FileManager.default.fileExists(atPath: migrationHandoverMarker.path) else {
+            return nil
+        }
+        guard let values = try? migrationHandoverMarker.resourceValues(
+            forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+        ), values.isRegularFile == true, values.isSymbolicLink != true,
+              let size = values.fileSize, size <= 4_096,
+              let data = try? Data(contentsOf: migrationHandoverMarker),
+              let state = try? JSONDecoder().decode(HubMigrationHandoverState.self, from: data) else {
+            // An unreadable marker remains a safe gate and resumes at verification.
+            return HubMigrationHandoverState(phase: .awaitingVerification,
+                                              previousIntervalSeconds: 60)
+        }
+        return state
+    }
+
+    private func writeMigrationHandoverMarker(_ state: HubMigrationHandoverState) throws {
+        let folder = configPath.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let data = try JSONEncoder().encode(state)
+        try data.write(to: migrationHandoverMarker, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: migrationHandoverMarker.path)
+    }
+
+    private func configuredCollectorIntervalSeconds() -> Int {
+        guard let content = try? String(contentsOf: configPath, encoding: .utf8),
+              let configured = Self.collectorIntervalSeconds(in: content),
+              configured > 0 else { return 60 }
+        return configured
+    }
+
+    private func ensureConfig(provider: String? = nil,
+                              collectorIntervalSeconds: Int? = nil) throws {
         let manager = FileManager.default
         let configFolder = configPath.deletingLastPathComponent()
         try manager.createDirectory(at: configFolder, withIntermediateDirectories: true)
@@ -895,16 +1579,31 @@ final class HubController {
                 throw HubActionError.commandFailed("Hub configuration is too large.")
             }
             let original = try String(contentsOf: configPath, encoding: .utf8)
-            let updated = Self.addOfflineDefaults(to: original)
+            var updated = Self.addOfflineDefaults(to: original)
+            if let provider {
+                updated = Self.settingCollectorProvider(provider, in: updated)
+            }
+            if let collectorIntervalSeconds {
+                updated = Self.settingCollectorInterval(collectorIntervalSeconds, in: updated)
+            }
             if updated != original {
                 try Data(updated.utf8).write(to: configPath, options: .atomic)
                 try manager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: configPath.path)
             }
             return
         }
+        var collectorBlock = ""
+        if provider != nil || collectorIntervalSeconds != nil {
+            collectorBlock = "\n[collector]\n"
+            if let provider { collectorBlock += "provider = \"\(provider)\"\n" }
+            if let collectorIntervalSeconds {
+                collectorBlock += "interval_seconds = \(collectorIntervalSeconds)\n"
+            }
+        }
         let content = """
         data_dir = \(Self.tomlBasicString(dataDirectory.path))
         bind = "127.0.0.1:8080"
+        \(collectorBlock)
 
         [geocoder]
         enabled = false
@@ -917,6 +1616,104 @@ final class HubController {
         try manager.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: temporary.path)
         do { try manager.moveItem(at: temporary, to: configPath) }
         catch { try? manager.removeItem(at: temporary); throw error }
+    }
+
+    private func restoreConfig(_ content: String?) throws {
+        guard let content else { return }
+        try Data(content.utf8).write(to: configPath, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: configPath.path)
+    }
+
+    static func settingCollectorProvider(_ provider: String, in content: String) -> String {
+        precondition(provider == "legacy" || provider == "fleet")
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func isTableHeader(_ line: String) -> Bool {
+            let value = uncommented(line)
+            return value.hasPrefix("[") && value.contains("]")
+        }
+
+        if let table = lines.firstIndex(where: { uncommented($0) == "[collector]" }) {
+            let end = lines[(table + 1)...].firstIndex(where: isTableHeader) ?? lines.endIndex
+            if let setting = lines[(table + 1)..<end].firstIndex(where: { line in
+                let value = uncommented(line)
+                guard let equals = value.firstIndex(of: "=") else { return false }
+                return value[..<equals].trimmingCharacters(in: .whitespaces) == "provider"
+            }) {
+                let indentation = String(lines[setting].prefix { $0 == " " || $0 == "\t" })
+                lines[setting] = "\(indentation)provider = \"\(provider)\""
+            } else {
+                lines.insert("provider = \"\(provider)\"", at: table + 1)
+            }
+        } else {
+            if !lines.isEmpty && lines.last != "" { lines.append("") }
+            lines.append("[collector]")
+            lines.append("provider = \"\(provider)\"")
+        }
+        if content.hasSuffix("\n") && lines.last != "" { lines.append("") }
+        return lines.joined(separator: "\n")
+    }
+
+    static func collectorIntervalSeconds(in content: String) -> Int? {
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func isTableHeader(_ line: String) -> Bool {
+            let value = uncommented(line)
+            return value.hasPrefix("[") && value.contains("]")
+        }
+        guard let table = lines.firstIndex(where: { uncommented($0) == "[collector]" }) else {
+            return nil
+        }
+        let end = lines[(table + 1)...].firstIndex(where: isTableHeader) ?? lines.endIndex
+        for line in lines[(table + 1)..<end] {
+            let value = uncommented(line)
+            guard let equals = value.firstIndex(of: "="),
+                  value[..<equals].trimmingCharacters(in: .whitespaces) == "interval_seconds" else {
+                continue
+            }
+            return Int(value[value.index(after: equals)...].trimmingCharacters(in: .whitespaces))
+        }
+        return nil
+    }
+
+    static func settingCollectorInterval(_ seconds: Int, in content: String) -> String {
+        precondition(seconds >= 0)
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func uncommented(_ line: String) -> String {
+            String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func isTableHeader(_ line: String) -> Bool {
+            let value = uncommented(line)
+            return value.hasPrefix("[") && value.contains("]")
+        }
+        if let table = lines.firstIndex(where: { uncommented($0) == "[collector]" }) {
+            let end = lines[(table + 1)...].firstIndex(where: isTableHeader) ?? lines.endIndex
+            if let setting = lines[(table + 1)..<end].firstIndex(where: { line in
+                let value = uncommented(line)
+                guard let equals = value.firstIndex(of: "=") else { return false }
+                return value[..<equals].trimmingCharacters(in: .whitespaces) == "interval_seconds"
+            }) {
+                let indentation = String(lines[setting].prefix { $0 == " " || $0 == "\t" })
+                lines[setting] = "\(indentation)interval_seconds = \(seconds)"
+            } else {
+                lines.insert("interval_seconds = \(seconds)", at: table + 1)
+            }
+        } else {
+            if !lines.isEmpty && lines.last != "" { lines.append("") }
+            lines.append("[collector]")
+            lines.append("interval_seconds = \(seconds)")
+        }
+        if content.hasSuffix("\n") && lines.last != "" { lines.append("") }
+        return lines.joined(separator: "\n")
     }
 
     static func addOfflineDefaults(to content: String) -> String {

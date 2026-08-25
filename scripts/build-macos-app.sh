@@ -171,6 +171,10 @@ xcodebuild \
 [ -d "$PRODUCT" ] || die "Xcode did not produce the app"
 resources="$PRODUCT/Contents/Resources"
 /bin/mkdir -p "$resources"
+[ -f "$resources/AppIcon.icns" ] && [ ! -L "$resources/AppIcon.icns" ] \
+    || die "App icon resource is missing or unsafe"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$PRODUCT/Contents/Info.plist")" = AppIcon ] \
+    || die "App icon Info.plist value is missing"
 /usr/bin/install -m 0755 "$RUST_BINARY" "$resources/teslatlas-hub"
 # Keep a separately signed app resource for release provenance; the service
 # package copy is the LaunchAgent's runtime sibling beside the Hub binary.
@@ -232,6 +236,11 @@ fi
 /usr/bin/xattr -cr "$DIST_APP" >/dev/null 2>&1 \
     || die "cannot clear distribution metadata"
 reject_appledouble "$DIST_APP"
+[ -f "$DIST_APP/Contents/Resources/AppIcon.icns" ] \
+    && [ ! -L "$DIST_APP/Contents/Resources/AppIcon.icns" ] \
+    || die "distribution app icon resource is missing or unsafe"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$DIST_APP/Contents/Info.plist")" = AppIcon ] \
+    || die "distribution app icon Info.plist value is missing"
 /usr/bin/codesign --verify --deep --strict "$DIST_APP"
 
 printf '%s\n' "$DIST_APP"

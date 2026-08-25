@@ -25,6 +25,7 @@ targets:
     info:
       path: TeslatlasHubApp/Info.plist
       properties:
+        CFBundleIconFile: AppIcon
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         TeslatlasHubVersion: "$(TESLATLAS_HUB_VERSION)"
@@ -32,6 +33,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.hub.app
         PRODUCT_NAME: Teslatlas Hub
+        INFOPLIST_KEY_CFBundleIconFile: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Teslatlas Hub
         INFOPLIST_KEY_LSMinimumSystemVersion: "12.0"
   TeslatlasHubAppTests:

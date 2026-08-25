@@ -6,7 +6,8 @@ bounded provider-response retention, and opt-in TeslaMate write-back. The final
 review fixed configured offline timeout use, durable stream audit receipts,
 post-send Fleet refresh fencing, one-to-one VIN/EID rotation, recursive raw JSON
 credential redaction, Fleet-only status, short-lived writer WAL cleanup, and the
-China token endpoint. No known code blocker remains.
+China token endpoint. One live Fleet drive exposed the lifecycle-capture defect
+recorded below.
 
 Current verification on 2026-08-25: 748 library + 39 CLI + 1 TLS tests passed
 (788 total; 2 intentional fixture tests ignored); all-target Clippy with
@@ -59,6 +60,8 @@ Current work plan:
 - 2026-08-25 through 2026-08-31: the active `Teslatlas Fleet endurance` daily
   check keeps Fleet Hub collection under read-only observation without vehicle
   commands or a second refresh owner.
+- Fix and re-test Fleet REST drive lifecycle capture; the first physical drive
+  advanced observations but produced no materialised drive or positions.
 - Produce a Developer ID-signed, notarized, provenance-bound macOS release using
   matching Apple credentials. The available 4AA Developer ID identities sign
   the exact app and package successfully, but the only usable local notary key
@@ -87,17 +90,25 @@ current record advance from 1013 to 1014 within five seconds, SQLite integrity
 was `ok`, and the WAL was zero bytes. No refresh attempt exists yet because the
 first scheduled refresh is still in the future.
 
+Physical Fleet drive observation on 2026-08-25: the installed Fleet Hub had
+remained ready and continued advancing current observations while the operator
+drove. The post-drive catalogue still contained zero materialised drives and
+positions, no `driving` lifecycle state, and no stream-session receipt. This is
+not drive-parity proof. Fleet REST lifecycle capture remains an open defect;
+legacy streaming was not exercised by this drive.
+
 Deliberate exclusions: TeslaFi import, `addresses.raw`, Grafana/MQTT/dashboard,
 and native Fleet Telemetry ingestion. Fleet currently uses official REST
 polling; legacy Owner API keeps TeslaMate-compatible vehicle streaming.
 
-Blocked: no known code blocker. Real Developer ID notarization is blocked by a
-local credential team mismatch: the application/installer identities and App
-Store Connect notary key belong to different Apple teams. A disposable signing
-proof passed for both exact artifacts with timestamps and hardened runtime, then
-was deleted. No matching notary profile, API key, or app-specific password was
-found locally. The local old-schema TeslaMate PostgreSQL copy remains an
-intentional read-only negative fixture.
+Blocked: Fleet REST drive lifecycle capture needs repair and another physical
+drive check. Real Developer ID notarization is separately blocked by a local
+credential team mismatch: the application/installer identities and App Store
+Connect notary key belong to different Apple teams. A disposable signing proof
+passed for both exact artifacts with timestamps and hardened runtime, then was
+deleted. No matching notary profile, API key, or app-specific password was found
+locally. The local old-schema TeslaMate PostgreSQL copy remains an intentional
+read-only negative fixture.
 
 ## Three-platform review, 2026-08-22
 

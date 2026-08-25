@@ -11,6 +11,7 @@ require_root
 read_console_user
 
 CONFIG="$CONSOLE_HOME/Library/Application Support/Teslatlas Hub/config.toml"
+MIGRATION_HANDOVER_MARKER="$CONSOLE_HOME/Library/Application Support/Teslatlas Hub/.teslamate-handover-pending"
 LAUNCH_AGENTS="$CONSOLE_HOME/Library/LaunchAgents"
 PLIST="$LAUNCH_AGENTS/$LABEL.plist"
 LOG_DIRECTORY="$CONSOLE_HOME/Library/Logs/Teslatlas Hub"
@@ -33,6 +34,37 @@ termination_grace_seconds=2
 deadline_sequence=0
 
 require_safe_upgrade_state "$STATE_DIRECTORY"
+
+# BEGIN TESTABLE MIGRATION INSTALL HELPER
+migration_handover_install_is_paused() {
+    marker=$1
+    config=$2
+    expected_uid=$3
+    if [ ! -e "$marker" ] && [ ! -L "$marker" ]; then
+        return 1
+    fi
+    require_safe_regular_file "$marker" "$expected_uid" "TeslaMate migration handover marker"
+    require_safe_regular_file "$config" "$expected_uid" "Hub configuration"
+    /usr/bin/awk '
+        /^[[:space:]]*\[[^]]+\][[:space:]]*(#.*)?$/ {
+            in_collector = ($0 ~ /^[[:space:]]*\[collector\][[:space:]]*(#.*)?$/)
+        }
+        in_collector && /^[[:space:]]*interval_seconds[[:space:]]*=[[:space:]]*0([[:space:]]*(#.*)?)?$/ {
+            paused = 1
+        }
+        END { exit(paused ? 0 : 1) }
+    ' "$config"
+}
+
+hub_should_start_after_install() {
+    ready=$1
+    previously_installed=$2
+    was_loaded=$3
+    migration_install_stopped=$4
+    [ "$ready" -eq 1 ] && [ "$migration_install_stopped" -eq 0 ] \
+        && { [ "$was_loaded" -eq 1 ] || [ "$previously_installed" -eq 0 ]; }
+}
+# END TESTABLE MIGRATION INSTALL HELPER
 
 # BEGIN TESTABLE DEADLINE HELPER
 run_with_deadline() {
@@ -265,7 +297,17 @@ if [ "$previously_installed" -eq 1 ] && [ "$ready" -ne 1 ]; then
 fi
 
 should_start=0
-if [ "$ready" -eq 1 ] && { [ -f "$STATE_DIRECTORY/was-loaded" ] || [ "$previously_installed" -eq 0 ]; }; then
+migration_install_stopped=0
+if migration_handover_install_is_paused \
+    "$MIGRATION_HANDOVER_MARKER" "$CONFIG" "$CONSOLE_UID"; then
+    migration_install_stopped=1
+fi
+was_loaded=0
+if [ -f "$STATE_DIRECTORY/was-loaded" ]; then
+    was_loaded=1
+fi
+if hub_should_start_after_install \
+    "$ready" "$previously_installed" "$was_loaded" "$migration_install_stopped"; then
     should_start=1
 fi
 

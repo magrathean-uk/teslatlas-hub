@@ -76,14 +76,18 @@ scripts/build-macos-app.sh
 ```
 
 The app is written to `dist/Teslatlas Hub.app`. Current alpha builds are ad-hoc signed and are not notarised.
-Open the app and choose **Set Up Hub** (or **Connect Tesla**). It performs the
-PKCE Tesla login in a private WebKit session, passes the resulting legacy token
-pair to the embedded Hub process over stdin, configures the account, installs
-the embedded service package, and starts collection. On an older installed Hub,
-reconnect first refreshes its existing vehicle with old-compatible arguments;
-after the new service passes migration and health admission, the new binary
-configures every vehicle on the account. Tokens are not written to
-temporary files, shown in the UI, or placed in process arguments.
+Open it and follow the five-step setup. A new installation can use Fleet API
+(recommended; see [Fleet API setup](docs/FLEET_SETUP.md)) or the legacy
+TeslaMate-style login. Fleet credentials and legacy tokens enter the Hub over
+stdin, never process arguments or temporary files. Once connected, the
+dashboard hides **Connect Tesla** and exposes climate, wake, lock, unlock,
+flash, and honk controls; charging controls are deliberately absent.
+
+The migration route accepts exact TeslaMate 4.1.1 only. It checks compatibility
+before copying one read-only PostgreSQL snapshot, installs Hub stopped, runs
+diagnostics, and waits for explicit handover before collection starts. The app
+never stops, removes, or changes TeslaMate. After successful handover, disable
+Tesla access in TeslaMate so both services do not refresh the same account.
 
 macOS service upgrades keep the old payload only until the new binary begins a
 bounded `bootstrap`. That is the same forward-only boundary: after migration

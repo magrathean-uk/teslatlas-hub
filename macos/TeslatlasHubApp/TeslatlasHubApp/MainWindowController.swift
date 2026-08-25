@@ -7,20 +7,21 @@ final class MainWindowController: NSWindowController {
     private let heroSubtitle = NSTextField(labelWithString: "")
     private let serviceValue = NSTextField(labelWithString: "")
     private let accountValue = NSTextField(labelWithString: "")
-    private let vehicleName = NSTextField(labelWithString: "")
-    private let vehicleValue = NSTextField(labelWithString: "")
     private let databaseValue = NSTextField(labelWithString: "")
+    private let vehicleControlName = NSTextField(labelWithString: "Vehicle")
+    private let vehicleControlStatus = NSTextField(labelWithString: "")
     private let serviceDot = NSImageView()
     private let accountDot = NSImageView()
-    private let vehicleDot = NSImageView()
     private let databaseDot = NSImageView()
+    private let vehicleControlDot = NSImageView()
     private let activityStack = NSStackView()
     private let versionLabel = NSTextField(labelWithString: "")
     private let titlebarTitle = NSTextField(labelWithString: "Teslatlas Hub")
     private let stopButton = NSButton(title: "Stop Hub", target: nil, action: nil)
     private let restartButton = NSButton(title: "Restart", target: nil, action: nil)
     private let installButton = NSButton(title: "Set Up Hub", target: nil, action: nil)
-    private let vehicleControlsButton = NSButton(title: "Vehicle Controls…", target: nil, action: nil)
+    let connectButton = NSButton(title: "Connect Tesla", target: nil, action: nil)
+    private var vehicleActionButtons: [NSButton] = []
     private var vehicleControlPending = false
     private var vehicleControlOutcomeUnknown = false
     private var titlebarAccessory: NSTitlebarAccessoryViewController?
@@ -29,14 +30,16 @@ final class MainWindowController: NSWindowController {
     private var detailsWindow: ServiceDetailsWindowController?
     private var diagnosticsWindow: DiagnosticsWindowController?
     private var authWindow: TeslaAuthWindowController?
+    private var onInitialRefresh: ((HubSnapshot) -> Void)?
 
-    init(controller: HubController) {
+    init(controller: HubController, onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
         self.controller = controller
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 568),
+        self.onInitialRefresh = onInitialRefresh
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 630),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "Teslatlas Hub"
-        window.minSize = NSSize(width: 760, height: 548)
+        window.minSize = NSSize(width: 760, height: 610)
         super.init(window: window)
         configureTitlebar(window)
         window.contentView = makeContentView()
@@ -58,7 +61,12 @@ final class MainWindowController: NSWindowController {
                 titlebarTitle.centerYAnchor.constraint(equalTo: titlebar.centerYAnchor)
             ])
         }
-        let controls = NSStackView(views: [compactButton("Connect Tesla", "person.badge.key", #selector(connectTeslaPressed)),
+        connectButton.image = NSImage(systemSymbolName: "person.badge.key", accessibilityDescription: "Connect Tesla")
+        connectButton.imagePosition = .imageLeading
+        connectButton.bezelStyle = .rounded
+        connectButton.target = self
+        connectButton.action = #selector(connectTeslaPressed)
+        let controls = NSStackView(views: [connectButton,
                                            compactButton("Import", "square.and.arrow.down", #selector(importPressed)),
                                            compactButton("Logs", "doc.text", #selector(logsPressed))])
         controls.spacing = 8
@@ -79,10 +87,12 @@ final class MainWindowController: NSWindowController {
 
     private func makeContentView() -> NSView {
         let root = NSView()
+        root.wantsLayer = true
+        root.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         let content = NSStackView()
         content.orientation = .vertical
         content.alignment = .leading
-        content.spacing = 18
+        content.spacing = 12
         content.translatesAutoresizingMaskIntoConstraints = false
 
         let footerLine = separator()
@@ -94,10 +104,10 @@ final class MainWindowController: NSWindowController {
         root.addSubview(footer)
 
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 82),
-            content.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -82),
-            content.topAnchor.constraint(equalTo: root.topAnchor, constant: 48),
-            content.bottomAnchor.constraint(lessThanOrEqualTo: footerLine.topAnchor, constant: -18),
+            content.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 110),
+            content.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -110),
+            content.topAnchor.constraint(equalTo: root.topAnchor, constant: 26),
+            content.bottomAnchor.constraint(lessThanOrEqualTo: footerLine.topAnchor, constant: -12),
             footerLine.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             footerLine.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             footerLine.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -10),
@@ -111,6 +121,11 @@ final class MainWindowController: NSWindowController {
         content.addArrangedSubview(hero)
         hero.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
 
+        let vehicleCard = vehicleCardView()
+        content.addArrangedSubview(vehicleCard)
+        vehicleCard.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+        vehicleCard.heightAnchor.constraint(equalToConstant: 174).isActive = true
+
         let statusBox = NSBox()
         statusBox.boxType = .custom
         statusBox.wantsLayer = true
@@ -119,10 +134,11 @@ final class MainWindowController: NSWindowController {
         statusBox.layer?.borderColor = NSColor.separatorColor.cgColor
         statusBox.fillColor = .controlBackgroundColor
         statusBox.cornerRadius = 8
+        statusBox.contentViewMargins = .zero
         statusBox.contentView = statusRows()
         content.addArrangedSubview(statusBox)
         statusBox.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-        statusBox.heightAnchor.constraint(equalToConstant: 176).isActive = true
+        statusBox.heightAnchor.constraint(equalToConstant: 108).isActive = true
 
         let activity = activityView()
         content.addArrangedSubview(activity)
@@ -134,7 +150,7 @@ final class MainWindowController: NSWindowController {
         let hero = NSStackView()
         hero.orientation = .vertical
         hero.alignment = .centerX
-        hero.spacing = 12
+        hero.spacing = 8
 
         heroDot.imageScaling = .scaleProportionallyDown
         heroDot.widthAnchor.constraint(equalToConstant: 24).isActive = true
@@ -153,8 +169,7 @@ final class MainWindowController: NSWindowController {
         subtitle.alignment = .centerY
         hero.addArrangedSubview(subtitle)
 
-        let actions = NSStackView(views: [stopButton, restartButton, installButton,
-                                          vehicleControlsButton])
+        let actions = NSStackView(views: [stopButton, restartButton, installButton])
         actions.spacing = 12
         actions.alignment = .centerY
         stopButton.target = self
@@ -175,13 +190,102 @@ final class MainWindowController: NSWindowController {
         installButton.bezelStyle = .rounded
         installButton.controlSize = .large
         installButton.keyEquivalent = "\r"
-        vehicleControlsButton.target = self
-        vehicleControlsButton.action = #selector(vehicleControlsPressed)
-        vehicleControlsButton.bezelStyle = .rounded
-        vehicleControlsButton.controlSize = .large
-        vehicleControlsButton.isEnabled = false
         hero.addArrangedSubview(actions)
         return hero
+    }
+
+    private func vehicleCardView() -> NSView {
+        let card = NSBox()
+        card.boxType = .custom
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 8
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = NSColor.separatorColor.cgColor
+        card.fillColor = .controlBackgroundColor
+        card.cornerRadius = 8
+        card.contentViewMargins = .zero
+
+        vehicleControlName.font = .systemFont(ofSize: 16, weight: .semibold)
+        vehicleControlStatus.textColor = .secondaryLabelColor
+        vehicleControlStatus.font = .systemFont(ofSize: 12)
+        let identity = NSStackView(views: [vehicleControlName, vehicleControlStatus])
+        identity.orientation = .vertical
+        identity.alignment = .leading
+        identity.spacing = 1
+        let vehicleIcon = imageView("car.fill", .secondaryLabelColor)
+        vehicleIcon.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        vehicleIcon.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        vehicleControlDot.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Vehicle status")
+        vehicleControlDot.imageScaling = .scaleProportionallyDown
+        vehicleControlDot.widthAnchor.constraint(equalToConstant: 10).isActive = true
+        vehicleControlDot.heightAnchor.constraint(equalToConstant: 10).isActive = true
+        let heading = NSStackView(views: [vehicleIcon, identity, spacer(), vehicleControlDot])
+        heading.spacing = 10
+        heading.alignment = .centerY
+
+        let actions: [(HubVehicleControl, String, String)] = [
+            (.climateStart, "Start Climate", "fan.fill"),
+            (.climateStop, "Stop Climate", "fan.slash.fill"),
+            (.wake, "Wake", "power"),
+            (.lock, "Lock", "lock.fill"),
+            (.unlock, "Unlock", "lock.open.fill"),
+            (.flashLights, "Flash", "light.beacon.max.fill"),
+            (.honkHorn, "Honk", "horn.fill")
+        ]
+        vehicleActionButtons = actions.map { action, title, symbol in
+            vehicleActionButton(action, title: title, symbol: symbol)
+        }
+        let firstRow = NSStackView(views: Array(vehicleActionButtons.prefix(2)))
+        let secondRow = NSStackView(views: Array(vehicleActionButtons.dropFirst(2)))
+        for row in [firstRow, secondRow] {
+            row.spacing = 10
+            row.alignment = .centerY
+            row.distribution = .fillEqually
+        }
+        firstRow.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        secondRow.heightAnchor.constraint(equalToConstant: 50).isActive = true
+        for button in vehicleActionButtons.prefix(2) {
+            button.heightAnchor.constraint(equalTo: firstRow.heightAnchor).isActive = true
+        }
+        for button in vehicleActionButtons.dropFirst(2) {
+            button.heightAnchor.constraint(equalTo: secondRow.heightAnchor).isActive = true
+        }
+        let stack = NSStackView(views: [heading, firstRow, secondRow])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
+        for row in [heading, firstRow, secondRow] {
+            row.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
+        }
+        let container = NSView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+        card.contentView = container
+        return card
+    }
+
+    private func vehicleActionButton(_ action: HubVehicleControl,
+                                     title: String,
+                                     symbol: String) -> NSButton {
+        let button = compactButton(title, symbol, #selector(vehicleCardButtonPressed(_:)))
+        button.identifier = NSUserInterfaceItemIdentifier(action.rawValue)
+        button.controlSize = .large
+        button.bezelStyle = .regularSquare
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 7
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = NSColor.separatorColor.cgColor
+        button.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        button.imagePosition = action == .climateStart || action == .climateStop ? .imageLeading : .imageAbove
+        return button
     }
 
     private func statusRows() -> NSView {
@@ -191,7 +295,6 @@ final class MainWindowController: NSWindowController {
         let views: [NSView] = [
             statusRow("Service", serviceValue, serviceDot, "gearshape.fill"), separator(),
             statusRow("Tesla account", accountValue, accountDot, "person.fill"), separator(),
-            statusRow(vehicleName, vehicleValue, vehicleDot, "car.fill"), separator(),
             statusRow("Database", databaseValue, databaseDot, "cylinder.fill")
         ]
         for view in views {
@@ -220,7 +323,7 @@ final class MainWindowController: NSWindowController {
         row.spacing = 10
         row.alignment = .centerY
         row.edgeInsets = NSEdgeInsets(top: 0, left: 18, bottom: 0, right: 16)
-        row.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        row.heightAnchor.constraint(equalToConstant: 34).isActive = true
         return row
     }
 
@@ -267,8 +370,8 @@ final class MainWindowController: NSWindowController {
                 : "Connect Tesla to configure and install the Hub service."
             self.serviceValue.stringValue = snapshot.service
             self.accountValue.stringValue = snapshot.account
-            self.vehicleName.stringValue = snapshot.vehicleName
-            self.vehicleValue.stringValue = snapshot.vehicle
+            self.vehicleControlName.stringValue = snapshot.vehicleName
+            self.vehicleControlStatus.stringValue = snapshot.vehicle
             self.databaseValue.stringValue = snapshot.database
             self.versionLabel.stringValue = snapshot.version
             self.serviceDot.contentTintColor = snapshot.health.color
@@ -277,20 +380,22 @@ final class MainWindowController: NSWindowController {
                 || snapshot.vehicle.localizedCaseInsensitiveContains("no imported")
                 || snapshot.vehicle.localizedCaseInsensitiveContains("no configured")
                 || snapshot.vehicle == "Unknown"
-            self.vehicleDot.contentTintColor = vehicleUnavailable ? .systemGray : .systemGreen
+            self.vehicleControlDot.contentTintColor = vehicleUnavailable ? .systemGray : .systemGreen
             self.databaseDot.contentTintColor = snapshot.database.hasPrefix("Healthy") ? .systemGreen : .systemGray
 
             self.stopButton.isHidden = snapshot.health == .needsInstall
             self.installButton.isHidden = snapshot.health != .needsInstall
             self.restartButton.isHidden = snapshot.health == .needsInstall || snapshot.health == .stopped
-            self.vehicleControlsButton.isHidden = snapshot.health == .needsInstall
+            self.connectButton.isHidden = snapshot.account == "Connected"
             let controlsAvailable = !self.controller.previewMode
                 && snapshot.health == .running
                 && snapshot.account == "Connected"
                 && snapshot.controlVehicleID != nil
                 && !self.vehicleControlPending
                 && !self.vehicleControlOutcomeUnknown
-            self.vehicleControlsButton.isEnabled = controlsAvailable
+            self.vehicleActionButtons.forEach {
+                $0.isEnabled = controlsAvailable || self.controller.previewMode
+            }
             self.window?.defaultButtonCell = (snapshot.health == .needsInstall
                 ? self.installButton.cell : self.stopButton.cell) as? NSButtonCell
             if snapshot.health == .stopped {
@@ -311,7 +416,7 @@ final class MainWindowController: NSWindowController {
                 empty.heightAnchor.constraint(equalToConstant: 30).isActive = true
                 self.activityStack.addArrangedSubview(empty)
             } else {
-                for (index, entry) in snapshot.activity.enumerated() {
+                for (index, entry) in snapshot.activity.prefix(3).enumerated() {
                     if index > 0 {
                         let line = self.separator()
                         self.activityStack.addArrangedSubview(line)
@@ -330,6 +435,11 @@ final class MainWindowController: NSWindowController {
                     self.activityStack.addArrangedSubview(row)
                     row.widthAnchor.constraint(equalTo: self.activityStack.widthAnchor).isActive = true
                 }
+            }
+            let callback = self.onInitialRefresh
+            self.onInitialRefresh = nil
+            if let callback {
+                DispatchQueue.main.async { callback(snapshot) }
             }
         }
     }
@@ -411,7 +521,7 @@ final class MainWindowController: NSWindowController {
 
     private func runVehicleControl(_ action: HubVehicleControl) {
         vehicleControlPending = true
-        vehicleControlsButton.isEnabled = false
+        vehicleActionButtons.forEach { $0.isEnabled = false }
         controller.performVehicleControl(action) { [weak self] result in
             guard let self else { return }
             self.vehicleControlPending = false
@@ -499,26 +609,8 @@ final class MainWindowController: NSWindowController {
         }
     }
 
-    @objc private func vehicleControlsPressed() {
-        let menu = NSMenu(title: "Vehicle Controls")
-        for action in HubVehicleControl.allCases {
-            if action == .lock || action == .flashLights {
-                menu.addItem(.separator())
-            }
-            let item = NSMenuItem(title: action.title,
-                                  action: #selector(vehicleControlSelected(_:)),
-                                  keyEquivalent: "")
-            item.target = self
-            item.representedObject = action.rawValue
-            menu.addItem(item)
-        }
-        menu.popUp(positioning: nil,
-                   at: NSPoint(x: 0, y: vehicleControlsButton.bounds.height + 4),
-                   in: vehicleControlsButton)
-    }
-
-    @objc private func vehicleControlSelected(_ sender: NSMenuItem) {
-        guard let rawValue = sender.representedObject as? String,
+    @objc private func vehicleCardButtonPressed(_ sender: NSButton) {
+        guard let rawValue = sender.identifier?.rawValue,
               let action = HubVehicleControl(rawValue: rawValue) else { return }
         confirmVehicleControl(action)
     }

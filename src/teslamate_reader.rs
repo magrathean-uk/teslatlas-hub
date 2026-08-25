@@ -156,6 +156,38 @@ pub struct TeslaMateSchemaInfo {
     pub fingerprint: String,
 }
 
+/// Validate one selected TeslaMate car against the exact pinned source
+/// contract without creating or opening any Hub target state. The schema and
+/// selected-car probe run in one read-only, repeatable-read source transaction.
+pub async fn check_teslamate_compatibility(
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    selected_car_id: i64,
+    limits: TeslaMateReadLimits,
+) -> Result<TeslaMateSchemaInfo, TeslaMateReaderError> {
+    let (session, selected_car_id_i16, schema) =
+        open_snapshot_session_with_schema(source, password, selected_car_id, limits).await?;
+    let mut retained_rows = 0_usize;
+    let result = read_cars(
+        session.client(),
+        selected_car_id_i16,
+        limits,
+        &mut retained_rows,
+    )
+    .await
+    .and_then(|cars| {
+        (!cars.is_empty())
+            .then_some(schema)
+            .ok_or(TeslaMateReaderError::SelectedCarMissing { selected_car_id })
+    });
+    let finish = session.finish().await;
+    match (result, finish) {
+        (Err(error), _) => Err(error),
+        (Ok(value), Ok(())) => Ok(value),
+        (Ok(_), Err(error)) => Err(error),
+    }
+}
+
 /// Non-secret identity and exact table counts witnessed from one validated,
 /// read-only, repeatable-read TeslaMate PostgreSQL transaction. This never
 /// reads `private.tokens` (or any private relation contents).
