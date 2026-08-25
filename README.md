@@ -204,6 +204,10 @@ teslatlas-hub --config /absolute/path/config.toml setup \
 
 For Fleet API operation, set the provider before setup:
 
+See [Fleet API setup](docs/FLEET_SETUP.md) for developer-application
+registration, OAuth scopes, secure code exchange, regional setup, verification,
+and virtual-key command requirements.
+
 ```toml
 [collector]
 provider = "fleet"
@@ -220,10 +224,8 @@ Feed one bounded JSON object to `setup-fleet` through stdin. It contains
 credentials through Tesla's documented authorization flow. Do not put them in
 arguments, logs, or shell history.
 
-```sh
-credential-helper-that-writes-json | \
-  teslatlas-hub --config /absolute/path/config.toml setup-fleet --all-vehicles
-```
+The linked guide includes a complete no-temporary-file code-exchange pipeline
+that feeds this JSON directly to `setup-fleet`.
 
 Run without installation:
 

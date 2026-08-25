@@ -1,24 +1,28 @@
 # Hub progress
 
 Status: current Rust 1.98 source implements legacy Owner API and official Fleet
-API setup, discovery, polling, refresh, multi-car collection, wake/control,
+API setup, discovery, polling, regional refresh, multi-car collection, wake/control,
 bounded provider-response retention, and opt-in TeslaMate write-back. The final
 review fixed configured offline timeout use, durable stream audit receipts,
 post-send Fleet refresh fencing, one-to-one VIN/EID rotation, recursive raw JSON
-credential redaction, and Fleet-only macOS status. No known code blocker remains.
+credential redaction, Fleet-only status, short-lived writer WAL cleanup, and the
+China token endpoint. No known code blocker remains.
 
-Current verification on 2026-08-25: 747 library + 38 CLI + 1 TLS tests passed
-(786 total; 2 intentional fixture tests ignored); all-target check, Clippy with
+Current verification on 2026-08-25: 748 library + 38 CLI + 1 TLS tests passed
+(787 total; 2 intentional fixture tests ignored); all-target Clippy with
 `-D warnings`, release build, ShellCheck, Linux packaging tests, macOS packaging
-checks, and 24 AppKit tests passed. The local TeslaMate PostgreSQL write-back
-dry-run reported zero affected rows and left charge cost `0.10` unchanged.
+checks, and 24 AppKit tests passed. Live EMEA Fleet authorization, vehicle
+discovery, and vehicle-data polling also passed on macOS without a wake or
+vehicle command. `status`, immutable preflight, and doctor then passed with a
+zero-byte WAL. The local TeslaMate PostgreSQL write-back dry-run reported zero
+affected rows and left charge cost `0.10` unchanged.
 
 Current artifact:
 
 - macOS ARM64 app, embedded Hub SHA-256
-  `323b0a807c67590a274acd7ca4225b4509e43a08249acbbf0aa2b7bf77f99455`;
+  `8e49f6d458a38d7fb8ca02af7a70889b4d9a165e66f961678eba0d2e9b4b9f79`;
   embedded service package SHA-256
-  `208eb17f10686d959d736aa0b37b3b1e5ad5eb45dca0eb1f2f6b82461fefa6fa`;
+  `ad5934e22f59454d7614403dc1901781ddaa8f95e77c59aa30432cda690e7415`;
   deep strict ad-hoc signature verification passed.
 
 Linux package source and lifecycle-fault contracts pass. Earlier native Debian
@@ -33,10 +37,11 @@ refreshed successfully itself. Hub, its data, build inputs, emulation packages,
 and caches were removed from the VPS. TeslaMate and TeslaMateAPI are healthy;
 VPS root has 28 GiB free. No vehicle command ran.
 
-Next external evidence: real Fleet authorization/discovery/refresh/commands,
-physical driving-stream observation, source-identical native Debian amd64 and
-ARM64 installs, clean-machine macOS lifecycle, physical iOS sync, endurance,
-and signed/notarized release. These are not claimed by local tests.
+Next external evidence: live Fleet refresh rotation, virtual-key command-proxy
+pairing and explicit commands, physical driving-stream observation,
+source-identical native Debian amd64 and ARM64 installs, clean-machine macOS
+lifecycle, physical iOS sync, endurance, and signed/notarized release. These are
+not claimed by local tests.
 
 Deliberate exclusions: TeslaFi import, `addresses.raw`, Grafana/MQTT/dashboard,
 and native Fleet Telemetry ingestion. Fleet currently uses official REST
@@ -62,6 +67,14 @@ remains an intentional read-only negative fixture.
   Independent macOS, Debian, and Rust reviews found no concrete blocker.
 
 ## Completed
+
+- Official Fleet login — completed the EMEA authorization-code flow with the
+  exact selected scopes, configured encrypted Fleet credentials through stdin,
+  discovered the account vehicle, and stored live discovery plus vehicle-data
+  observations. Added the self-hosted setup guide with exact regional endpoints
+  and a no-temporary-file token exchange. Live testing found and fixed
+  short-lived WAL residue, Fleet status reading the pruned raw table, writable
+  status getters, and the Tesla.cn refresh endpoint. No wake or command ran.
 
 - macOS controller/package repair — fixed migration stop/confirm/restart,
   bounded concurrent child output, URL credential parsing, TOML path escaping,

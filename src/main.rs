@@ -836,7 +836,9 @@ async fn run_control(
 
             #[cfg(unix)]
             let _admission = AdmittedUserHub::admit(&config.data_dir)?;
+            let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
             clear_provider_credentials(&config.data_dir, &store)?;
+            catalogue_checkpoint.finish()?;
             println!(
                 "{}",
                 serde_json::json!({
@@ -1040,6 +1042,34 @@ async fn run_control(
         }
     }
     Ok(())
+}
+
+/// Ensures every short-lived local writer leaves a checkpointed catalogue,
+/// including error paths. Successful commands surface checkpoint failures;
+/// failing commands preserve their primary error while still attempting it.
+struct CatalogueCheckpointGuard {
+    store: HubStore,
+    armed: bool,
+}
+
+impl CatalogueCheckpointGuard {
+    fn new(store: HubStore) -> Self {
+        Self { store, armed: true }
+    }
+
+    fn finish(&mut self) -> Result<(), teslatlas_hub::db::StoreError> {
+        let result = self.store.checkpoint_catalogue_for_immutable_read();
+        self.armed = false;
+        result
+    }
+}
+
+impl Drop for CatalogueCheckpointGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = self.store.checkpoint_catalogue_for_immutable_read();
+        }
+    }
 }
 
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
@@ -1280,10 +1310,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let mut vehicle_summaries = Vec::with_capacity(vehicles.len());
             for vehicle in &vehicles {
                 let binding = store.v2_projection_binding(vehicle.vehicle_id)?;
-                let watermark = store.observation_watermark_for_vehicle(
-                    vehicle.vehicle_id,
-                    binding.selected_car_id,
-                )?;
+                let latest =
+                    store.latest_current_observation_metadata_for_vehicle(vehicle.vehicle_id)?;
                 let tesla_eid = configured.iter().find_map(|(vehicle_id, eid, _)| {
                     (*vehicle_id == vehicle.vehicle_id).then_some(*eid)
                 });
@@ -1292,9 +1320,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "displayName": vehicle.display_name,
                     "sourceCarId": binding.selected_car_id,
                     "teslaEid": tesla_eid,
-                    "latestObservationId": watermark.observation_id,
-                    "latestObservedAtMs": watermark.observed_at_ms,
-                    "latestReceivedAtMs": watermark.received_at_ms,
+                    "latestObservationId": latest.as_ref().map_or(0, |observation| observation.observation_id),
+                    "latestObservedAtMs": latest.as_ref().map(|observation| observation.observed_at_ms),
+                    "latestReceivedAtMs": latest.as_ref().map(|observation| observation.received_at_ms),
                 }));
             }
             let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());
@@ -1449,6 +1477,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         admission.assert_store_path(&config.data_dir)?;
     }
     let store = HubStore::initialize(&config.data_dir)?;
+    let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     match cli.command {
         Command::Init => {
             println!("initialized {}", store.database_path().display());
@@ -1581,10 +1610,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(unix)]
             {
                 #[cfg(target_os = "macos")]
-                teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
-                    &config.data_dir,
-                    config.collector.provider,
-                )?;
+                {
+                    store.checkpoint_catalogue_for_immutable_read()?;
+                    teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
+                        &config.data_dir,
+                        config.collector.provider,
+                    )?;
+                }
                 let admission =
                     admitted_user_hub.ok_or("Serve reached runtime without user admission")?;
                 admission.assert_sensitive_access()?;
@@ -1759,6 +1791,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             unreachable!("immutable data-recovery commands return before writable Hub state")
         }
     }
+    catalogue_checkpoint.finish()?;
     Ok(())
 }
 
@@ -1948,6 +1981,7 @@ async fn run_macos_migration(
     };
 
     let store = HubStore::initialize(&config.data_dir)?;
+    let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
     let (initial_report, _) = import_direct_migration_snapshot(
         &store,
@@ -2052,6 +2086,7 @@ async fn run_macos_migration(
     std::io::stdin().read_line(&mut answer)?;
     let start_hub = migration_start_requested(&answer);
 
+    catalogue_checkpoint.finish()?;
     Ok(start_hub)
 }
 

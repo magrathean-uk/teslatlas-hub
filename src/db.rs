@@ -1476,6 +1476,21 @@ impl HubStore {
         &self.database_path
     }
 
+    /// Finish a short-lived writer command with a byte-stable catalogue that
+    /// immutable `doctor` and service preflight can inspect immediately.
+    pub fn checkpoint_catalogue_for_immutable_read(&self) -> Result<(), StoreError> {
+        let connection = self.open()?;
+        let (busy, log_frames, checkpointed): (i64, i64, i64) = connection
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(StoreError::CatalogueCheckpoint)?;
+        if busy != 0 || log_frames != checkpointed {
+            return Err(StoreError::CatalogueCheckpointIncomplete);
+        }
+        Ok(())
+    }
+
     /// Atomically replace the sole persisted TeslaMate token pair.
     pub fn replace_teslamate_legacy_tokens(
         &self,
@@ -1925,7 +1940,7 @@ impl HubStore {
     pub fn load_teslamate_legacy_tokens(
         &self,
     ) -> Result<Option<TeslaMateLegacyTokenStore>, StoreError> {
-        let connection = self.open()?;
+        let connection = self.open_read_only_connection()?;
         let row: Option<(Vec<u8>, Vec<u8>, i64, i64, Option<String>)> = connection
             .query_row(
                 "SELECT access, refresh, expires_at, next_refresh_at, credential_generation
@@ -4800,7 +4815,7 @@ impl HubStore {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
-        let connection = self.open()?;
+        let connection = self.open_read_only_connection()?;
         let immutable: Option<(String, String, String, i64, i64)> = connection
             .query_row(
                 "SELECT binding.snapshot_id, binding.installation_id,
@@ -4861,7 +4876,15 @@ impl HubStore {
             return Err(StoreError::ImmutableBaseBindingMissing(vehicle_id));
         }
 
-        let installation_id = self.installation_id()?;
+        let installation_id = connection
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = ?1",
+                params![INSTALLATION_ID_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(StoreError::InstallationIdentity)?
+            .parse()
+            .map_err(|_| StoreError::InvalidStoredUuid("installation_id"))?;
         let (source_id, generation, source_key, selected_car_id, materialised_car_id): (
             String,
             i64,
@@ -4919,7 +4942,7 @@ impl HubStore {
     pub fn configured_tesla_vehicles(
         &self,
     ) -> Result<Vec<(Uuid, i64, ProjectionCarSettings)>, StoreError> {
-        let connection = self.open()?;
+        let connection = self.open_read_only_connection()?;
         let mut statement = connection
             .prepare(
                 "SELECT binding.vehicle_id, eid.alias_value,
@@ -9716,7 +9739,7 @@ impl HubStore {
     /// device access to this one owner-controlled Hub, not to arbitrary source
     /// databases or credentials.
     pub fn published_vehicles(&self) -> Result<Vec<PublishedVehicle>, StoreError> {
-        let connection = self.open()?;
+        let connection = self.open_read_only_connection()?;
         let mut statement = connection
             .prepare(
                 "SELECT vehicle_id, display_name FROM vehicles \
@@ -11377,7 +11400,7 @@ impl HubStore {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
-        let connection = self.open()?;
+        let connection = self.open_read_only_connection()?;
         let exists = connection
             .query_row(
                 "SELECT 1 FROM vehicles WHERE vehicle_id = ?1",
@@ -11401,6 +11424,48 @@ impl HubStore {
             .query_map(params![vehicle_id.to_string()], observation_from_row)
             .map_err(StoreError::Query)?
             .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)
+    }
+
+    /// Return only the newest durable current-snapshot metadata. Fleet
+    /// observations may be pruned from `raw_observations` after lifecycle
+    /// projection, so operator status must read this table without loading the
+    /// retained JSON payloads.
+    pub fn latest_current_observation_metadata_for_vehicle(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<LatestObservationMetadata>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open_read_only_connection()?;
+        let exists = connection
+            .query_row(
+                "SELECT 1 FROM vehicles WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        if exists.is_none() {
+            return Err(StoreError::UnknownVehicle(vehicle_id));
+        }
+        connection
+            .query_row(
+                "SELECT observation_id, observed_at_ms, received_at_ms
+                 FROM current_observations
+                 WHERE vehicle_id = ?1
+                 ORDER BY observation_id DESC LIMIT 1",
+                params![vehicle_id.to_string()],
+                |row| {
+                    Ok(LatestObservationMetadata {
+                        observation_id: row.get(0)?,
+                        observed_at_ms: row.get(1)?,
+                        received_at_ms: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
             .map_err(StoreError::Query)
     }
 
@@ -14898,18 +14963,18 @@ fn configure_read_only(connection: &Connection) -> Result<(), StoreError> {
         .map_err(StoreError::Configure)
 }
 
-#[derive(Debug, Clone, Copy)]
-struct ObservationMetadata {
-    observation_id: i64,
-    observed_at_ms: i64,
-    received_at_ms: i64,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LatestObservationMetadata {
+    pub observation_id: i64,
+    pub observed_at_ms: i64,
+    pub received_at_ms: i64,
 }
 
 fn latest_observation_metadata(
     connection: &Connection,
     vehicle_id: Uuid,
     after_observation_id: Option<i64>,
-) -> Result<Option<ObservationMetadata>, StoreError> {
+) -> Result<Option<LatestObservationMetadata>, StoreError> {
     connection
         .query_row(
             "SELECT observation_id, observed_at_ms, received_at_ms
@@ -14919,7 +14984,7 @@ fn latest_observation_metadata(
              ORDER BY observation_id DESC LIMIT 1",
             params![vehicle_id.to_string(), after_observation_id],
             |row| {
-                Ok(ObservationMetadata {
+                Ok(LatestObservationMetadata {
                     observation_id: row.get(0)?,
                     observed_at_ms: row.get(1)?,
                     received_at_ms: row.get(2)?,
@@ -18359,6 +18424,10 @@ pub enum StoreError {
     InvalidCataloguePath,
     #[error("hub catalogue has a pending WAL and is not an immutable snapshot")]
     PendingCatalogueWal,
+    #[error("cannot checkpoint Hub catalogue: {0}")]
+    CatalogueCheckpoint(rusqlite::Error),
+    #[error("Hub catalogue checkpoint is busy or incomplete")]
+    CatalogueCheckpointIncomplete,
     #[error("immutable catalogue snapshot mode is required")]
     ImmutableSnapshotRequired,
     #[error("hub catalogue changed during the immutable diagnostic check")]
@@ -19697,6 +19766,67 @@ mod tests {
     }
 
     #[test]
+    fn short_lived_writer_checkpoint_allows_immediate_immutable_preflight() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let imported = TeslaMateLegacyTokenStore::imported(
+            b"access-ciphertext".to_vec(),
+            b"refresh-ciphertext".to_vec(),
+        )
+        .expect("test credentials");
+        let reader = store
+            .open_read_only_connection()
+            .expect("blocking reader opens");
+        reader.execute_batch("BEGIN").expect("read transaction");
+        let _: i64 = reader
+            .query_row("SELECT COUNT(*) FROM vehicles", [], |row| row.get(0))
+            .expect("read snapshot");
+        store
+            .replace_teslamate_legacy_tokens(&imported)
+            .expect("short-lived write");
+        assert!(matches!(
+            HubStore::open_immutable_read_only(temporary.path()),
+            Err(StoreError::PendingCatalogueWal)
+        ));
+        drop(reader);
+
+        store
+            .checkpoint_catalogue_for_immutable_read()
+            .expect("catalogue checkpoint");
+        let immutable = HubStore::open_immutable_read_only(temporary.path())
+            .expect("immutable preflight opens");
+        immutable
+            .verify_immutable_snapshot_unchanged()
+            .expect("immutable snapshot remains stable");
+        drop(immutable);
+
+        assert!(
+            store
+                .published_vehicles()
+                .expect("published vehicles")
+                .is_empty()
+        );
+        assert!(
+            store
+                .configured_tesla_vehicles()
+                .expect("configured vehicles")
+                .is_empty()
+        );
+        assert!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("legacy credentials")
+                .is_some()
+        );
+        assert!(matches!(
+            store.current_observations_for_vehicle(Uuid::new_v4()),
+            Err(StoreError::UnknownVehicle(_))
+        ));
+        HubStore::open_immutable_read_only(temporary.path())
+            .expect("read queries do not create a WAL frame");
+    }
+
+    #[test]
     fn read_only_open_rejects_a_stale_schema_without_migrating_it() {
         let temporary = crate::private_tempdir().expect("temporary database");
         let store = HubStore::initialize(temporary.path()).expect("store initializes");
@@ -20976,6 +21106,17 @@ mod tests {
         assert_eq!(
             current[0].observation_id,
             first.append.observation.observation_id
+        );
+        assert_eq!(
+            store
+                .latest_current_observation_metadata_for_vehicle(vehicle.vehicle_id)
+                .expect("current metadata")
+                .expect("current metadata exists"),
+            LatestObservationMetadata {
+                observation_id: first.append.observation.observation_id,
+                observed_at_ms: 10_000,
+                received_at_ms: 10_001,
+            }
         );
 
         let retry = store

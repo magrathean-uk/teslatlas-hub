@@ -2255,9 +2255,10 @@ where
         manager.region(),
         Duration::from_secs(config.collector.request_timeout_seconds),
     )?;
-    let auth_api = FleetAuthApi::new(Duration::from_secs(
-        config.collector.request_timeout_seconds,
-    ))?;
+    let auth_api = FleetAuthApi::new(
+        manager.region(),
+        Duration::from_secs(config.collector.request_timeout_seconds),
+    )?;
     let command_proxy = fleet_command_proxy(config)?;
     let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
         .map_err(|error| {
@@ -6447,7 +6448,11 @@ mod tests {
             Duration::from_secs(2),
         )
         .expect("Fleet API client");
-        let auth_api = FleetAuthApi::new(Duration::from_secs(2)).expect("Fleet auth client");
+        let auth_api = FleetAuthApi::new(
+            crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
+            Duration::from_secs(2),
+        )
+        .expect("Fleet auth client");
         let socket = ResidentControlSocket::bind(temporary.path()).expect("resident socket");
         let mut resident =
             tokio::spawn(socket.serve_fleet(store.clone(), api, auth_api, Some(proxy), manager));

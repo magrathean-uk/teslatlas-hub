@@ -30,7 +30,6 @@ const MAX_CA_CERTIFICATE_BYTES: usize = 128 * 1024;
 const MAX_CLIENT_ID_BYTES: usize = 255;
 const MIN_TOKEN_LIFETIME_SECONDS: u64 = 60;
 const MAX_TOKEN_LIFETIME_SECONDS: u64 = 365 * 24 * 60 * 60;
-const FLEET_AUTH_TOKEN_URL: &str = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token";
 const ACCEPT_JSON: HeaderValue = HeaderValue::from_static("application/json");
 const CONTENT_TYPE_JSON: HeaderValue = HeaderValue::from_static("application/json");
 const CONTENT_TYPE_FORM: HeaderValue =
@@ -59,6 +58,15 @@ impl FleetRegion {
             Self::NorthAmericaAndAsiaPacific => "na",
             Self::EuropeMiddleEastAndAfrica => "eu",
             Self::China => "cn",
+        }
+    }
+
+    pub const fn auth_token_url(self) -> &'static str {
+        match self {
+            Self::NorthAmericaAndAsiaPacific | Self::EuropeMiddleEastAndAfrica => {
+                "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+            }
+            Self::China => "https://auth.tesla.cn/oauth2/v3/token",
         }
     }
 
@@ -180,8 +188,11 @@ pub struct FleetAuthApi {
 }
 
 impl FleetAuthApi {
-    pub fn new(request_timeout: Duration) -> Result<Self, FleetApiConfigError> {
-        let endpoint = Url::parse(FLEET_AUTH_TOKEN_URL).expect("fixed Fleet auth URL");
+    pub fn new(
+        region: FleetRegion,
+        request_timeout: Duration,
+    ) -> Result<Self, FleetApiConfigError> {
+        let endpoint = Url::parse(region.auth_token_url()).expect("fixed Fleet auth URL");
         Self::build(endpoint, request_timeout, false)
     }
 
@@ -1069,6 +1080,14 @@ mod tests {
         assert_eq!(
             FleetRegion::China.base_url(),
             "https://fleet-api.prd.cn.vn.cloud.tesla.cn/"
+        );
+        assert_eq!(
+            FleetRegion::EuropeMiddleEastAndAfrica.auth_token_url(),
+            "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+        );
+        assert_eq!(
+            FleetRegion::China.auth_token_url(),
+            "https://auth.tesla.cn/oauth2/v3/token"
         );
         assert!(FleetApi::new(FleetRegion::EuropeMiddleEastAndAfrica, Duration::ZERO).is_err());
     }
