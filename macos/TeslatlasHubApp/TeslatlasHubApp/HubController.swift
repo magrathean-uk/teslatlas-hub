@@ -48,12 +48,25 @@ struct HubSetupInvocation: Equatable {
     let standardInput: String
 }
 
+enum HubVehicleControl: String, Equatable {
+    case climateStart = "climate-start"
+    case climateStop = "climate-stop"
+
+    var title: String {
+        switch self {
+        case .climateStart: return "Start Climate"
+        case .climateStop: return "Stop Climate"
+        }
+    }
+}
+
 struct HubSnapshot {
     var health: HubHealth
     var service: String
     var account: String
     var vehicleName: String
     var vehicle: String
+    var controlVehicleID: UUID?
     var database: String
     var activity: [HubActivity]
     var version: String
@@ -66,6 +79,7 @@ struct HubSnapshot {
         account: "Connected",
         vehicleName: "Model 3",
         vehicle: "Offline · last seen 2 minutes ago",
+        controlVehicleID: nil,
         database: "Healthy · 18,426 records",
         activity: [
             HubActivity(message: "Vehicle went offline", age: "2 minutes ago", color: .systemGray),
@@ -88,6 +102,7 @@ struct HubSnapshot {
         account: "Not configured",
         vehicleName: "Vehicle",
         vehicle: "No configured vehicle",
+        controlVehicleID: nil,
         database: "Waiting for setup or import",
         activity: [],
         version: HubRelease.fallbackVersion,
@@ -268,10 +283,18 @@ final class InstalledHubCommandRunner: HubCommandRunning {
     }
 
     private func runProcess(arguments: [String], stdin: String?, completion: @escaping (Result<String, Error>) -> Void) {
+        let timeout: TimeInterval
+        if arguments.contains("setup") {
+            timeout = 5 * 60
+        } else if arguments.contains("control") {
+            timeout = 45
+        } else {
+            timeout = 30
+        }
         HubProcessExecutor.run(executable: executable,
                                arguments: arguments,
                                stdin: stdin,
-                               timeout: arguments.contains("setup") ? 5 * 60 : 30,
+                               timeout: timeout,
                                completion: completion)
     }
 }
@@ -758,6 +781,34 @@ final class HubController {
         runServiceCommand(["service", "restart"], completion: completion)
     }
 
+    func performVehicleControl(_ action: HubVehicleControl,
+                               completion: @escaping (Result<Void, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard snapshot.health == .running else {
+            completion(.failure(HubActionError.commandFailed("Hub must be running before sending a vehicle command.")))
+            return
+        }
+        guard snapshot.account == "Connected" else {
+            completion(.failure(HubActionError.commandFailed("Connect Tesla before sending a vehicle command.")))
+            return
+        }
+        guard let vehicleID = snapshot.controlVehicleID else {
+            completion(.failure(HubActionError.commandFailed("Vehicle controls require exactly one configured vehicle.")))
+            return
+        }
+        let runner = isServiceInstalled ? installedCommandRunner : commandRunner
+        let arguments = ["--config", configPath.path, "control", "--vehicle-id",
+                         vehicleID.uuidString.lowercased(), action.rawValue, "--confirm"]
+        runner.run(arguments: arguments) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success: completion(.success(()))
+                case let .failure(error): completion(.failure(error))
+                }
+            }
+        }
+    }
+
     func logs(completion: @escaping (String) -> Void) {
         if previewMode {
             completion("Preview mode\n\n[INFO] Teslatlas Hub is running in the background.\n[INFO] Vehicle went offline\n[INFO] Position stored\n")
@@ -936,6 +987,9 @@ final class HubController {
             vehicleSummary = vehicle == nil ? "No configured vehicle" : "No observations yet"
         }
         let account = (credentials?["present"] as? Bool == true) ? "Connected" : "Not configured"
+        let controlVehicleID = vehicles.count == 1
+            ? (vehicles[0]["vehicleId"] as? String).flatMap(UUID.init(uuidString:))
+            : nil
         let dbBytes = database?["bytes"] as? NSNumber
         let dbText = dbBytes.map { "Healthy · \($0.int64Value / 1_048_576) MB" } ?? "Waiting for setup or import"
         let dataDirectory = (database?["path"] as? String).map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
@@ -945,6 +999,7 @@ final class HubController {
                            account: account,
                            vehicleName: vehicleName,
                            vehicle: vehicleSummary,
+                           controlVehicleID: controlVehicleID,
                            database: dbText,
                            activity: [],
                            version: root["version"] as? String ?? HubRelease.fallbackVersion,
@@ -959,7 +1014,7 @@ final class HubController {
     }
 
     private func statusSnapshot(_ status: HubSnapshot, installed: Bool, loaded: HubServiceLoadState) -> HubSnapshot {
-        guard installed else { return HubSnapshot(health: .needsInstall, service: "Not installed", account: status.account, vehicleName: status.vehicleName, vehicle: status.vehicle, database: status.database, activity: status.activity, version: status.version, dataDirectory: status.dataDirectory ?? dataDirectory, diagnosticLines: status.diagnosticLines) }
+        guard installed else { return HubSnapshot(health: .needsInstall, service: "Not installed", account: status.account, vehicleName: status.vehicleName, vehicle: status.vehicle, controlVehicleID: nil, database: status.database, activity: status.activity, version: status.version, dataDirectory: status.dataDirectory ?? dataDirectory, diagnosticLines: status.diagnosticLines) }
         var result = status
         switch loaded {
         case .loaded:
@@ -992,7 +1047,7 @@ final class HubController {
         case .unloaded: health = .stopped; service = "Installed but stopped"
         case .unknown: health = .degraded; service = "Installed · service state unavailable"
         }
-        return HubSnapshot(health: health, service: service, account: "Unknown", vehicleName: "Vehicle", vehicle: "Unknown", database: "Unknown", activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [service, "Hub status command did not return a valid report."])
+        return HubSnapshot(health: health, service: service, account: "Unknown", vehicleName: "Vehicle", vehicle: "Unknown", controlVehicleID: nil, database: "Unknown", activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [service, "Hub status command did not return a valid report."])
     }
 
     private func relativeAge(milliseconds: Int64) -> String {

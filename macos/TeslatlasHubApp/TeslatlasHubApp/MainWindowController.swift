@@ -20,6 +20,10 @@ final class MainWindowController: NSWindowController {
     private let stopButton = NSButton(title: "Stop Hub", target: nil, action: nil)
     private let restartButton = NSButton(title: "Restart", target: nil, action: nil)
     private let installButton = NSButton(title: "Set Up Hub", target: nil, action: nil)
+    private let climateStartButton = NSButton(title: "Start Climate…", target: nil, action: nil)
+    private let climateStopButton = NSButton(title: "Stop Climate…", target: nil, action: nil)
+    private var vehicleControlPending = false
+    private var vehicleControlOutcomeUnknown = false
     private var titlebarAccessory: NSTitlebarAccessoryViewController?
     private var importSheet: ImportSheetController?
     private var logsWindow: LogsWindowController?
@@ -150,7 +154,8 @@ final class MainWindowController: NSWindowController {
         subtitle.alignment = .centerY
         hero.addArrangedSubview(subtitle)
 
-        let actions = NSStackView(views: [stopButton, restartButton, installButton])
+        let actions = NSStackView(views: [stopButton, restartButton, installButton,
+                                          climateStartButton, climateStopButton])
         actions.spacing = 12
         actions.alignment = .centerY
         stopButton.target = self
@@ -171,6 +176,16 @@ final class MainWindowController: NSWindowController {
         installButton.bezelStyle = .rounded
         installButton.controlSize = .large
         installButton.keyEquivalent = "\r"
+        climateStartButton.target = self
+        climateStartButton.action = #selector(climateStartPressed)
+        climateStartButton.bezelStyle = .rounded
+        climateStartButton.controlSize = .large
+        climateStartButton.isEnabled = false
+        climateStopButton.target = self
+        climateStopButton.action = #selector(climateStopPressed)
+        climateStopButton.bezelStyle = .rounded
+        climateStopButton.controlSize = .large
+        climateStopButton.isEnabled = false
         hero.addArrangedSubview(actions)
         return hero
     }
@@ -274,6 +289,16 @@ final class MainWindowController: NSWindowController {
             self.stopButton.isHidden = snapshot.health == .needsInstall
             self.installButton.isHidden = snapshot.health != .needsInstall
             self.restartButton.isHidden = snapshot.health == .needsInstall || snapshot.health == .stopped
+            self.climateStartButton.isHidden = snapshot.health == .needsInstall
+            self.climateStopButton.isHidden = snapshot.health == .needsInstall
+            let controlsAvailable = !self.controller.previewMode
+                && snapshot.health == .running
+                && snapshot.account == "Connected"
+                && snapshot.controlVehicleID != nil
+                && !self.vehicleControlPending
+                && !self.vehicleControlOutcomeUnknown
+            self.climateStartButton.isEnabled = controlsAvailable
+            self.climateStopButton.isEnabled = controlsAvailable
             self.window?.defaultButtonCell = (snapshot.health == .needsInstall
                 ? self.installButton.cell : self.stopButton.cell) as? NSButtonCell
             if snapshot.health == .stopped {
@@ -355,6 +380,70 @@ final class MainWindowController: NSWindowController {
 
     private func showError(_ error: Error) { NSAlert(error: error).runModal() }
 
+    static func vehicleControlConfirmation(_ action: HubVehicleControl,
+                                           vehicleName: String) -> NSAlert {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "\(action.title) for \(vehicleName)?"
+        alert.informativeText = "Teslatlas Hub will send this command once."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: action.title)
+        return alert
+    }
+
+    static func vehicleControlOutcomeIsUnknown(_ error: Error) -> Bool {
+        if let actionError = error as? HubActionError,
+           case .commandTimedOut = actionError {
+            return true
+        }
+        let message = error.localizedDescription.lowercased()
+        return message.contains("timed out") || message.contains("outcome is ambiguous")
+    }
+
+    static func unknownVehicleControlOutcomeAlert() -> NSAlert {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Command outcome unknown"
+        alert.informativeText = "Check the vehicle. Do not repeat the command from this app session."
+        return alert
+    }
+
+    private func confirmVehicleControl(_ action: HubVehicleControl) {
+        guard let window, !vehicleControlPending else { return }
+        let alert = Self.vehicleControlConfirmation(action, vehicleName: controller.snapshot.vehicleName)
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertSecondButtonReturn else { return }
+            self?.runVehicleControl(action)
+        }
+    }
+
+    private func runVehicleControl(_ action: HubVehicleControl) {
+        vehicleControlPending = true
+        climateStartButton.isEnabled = false
+        climateStopButton.isEnabled = false
+        controller.performVehicleControl(action) { [weak self] result in
+            guard let self else { return }
+            self.vehicleControlPending = false
+            switch result {
+            case .success:
+                self.update()
+                let accepted = NSAlert()
+                accepted.messageText = "Command accepted"
+                accepted.informativeText = "Check the vehicle to confirm the climate changed."
+                accepted.runModal()
+            case let .failure(error):
+                if Self.vehicleControlOutcomeIsUnknown(error) {
+                    self.vehicleControlOutcomeUnknown = true
+                    self.update()
+                    Self.unknownVehicleControlOutcomeAlert().runModal()
+                    return
+                }
+                self.update()
+                self.showError(error)
+            }
+        }
+    }
+
     @objc private func importPressed() {
         importSheet = ImportSheetController(controller: controller)
         guard let sheet = importSheet, let window else { return }
@@ -418,6 +507,10 @@ final class MainWindowController: NSWindowController {
             switch result { case .success: self?.update(); case let .failure(error): self?.showError(error) }
         }
     }
+
+    @objc private func climateStartPressed() { confirmVehicleControl(.climateStart) }
+
+    @objc private func climateStopPressed() { confirmVehicleControl(.climateStop) }
 
     @objc private func detailsPressed() {
         detailsWindow = ServiceDetailsWindowController(snapshot: controller.snapshot,

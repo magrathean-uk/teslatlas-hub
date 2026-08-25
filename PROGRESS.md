@@ -68,6 +68,17 @@ remains an intentional read-only negative fixture.
 
 ## Completed
 
+- Fleet signed-command onboarding — published the EC public key at the Tesla
+  well-known path without changing the root site, registered `magrathean.uk` as
+  an EMEA Fleet partner, and opened Tesla's virtual-key pairing flow. The macOS
+  Hub app now offers confirmed Start Climate and Stop Climate actions for one
+  ready vehicle through the resident service; charging controls and iOS changes
+  are deliberately absent. The release app built and signed, all 27 AppKit tests
+  passed, and macOS package checks passed. After Tesla-app pairing approval,
+  exactly one live climate-start and one climate-stop command succeeded, each
+  wrote an audit receipt, and subsequent Fleet telemetry reported climate on
+  then off. TeslaMate stayed healthy; no charge command ran.
+
 - Official Fleet login — completed the EMEA authorization-code flow with the
   exact selected scopes, configured encrypted Fleet credentials through stdin,
   discovered the account vehicle, and stored live discovery plus vehicle-data

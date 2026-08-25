@@ -41,12 +41,13 @@ final class HubControllerTests: XCTestCase {
         var failures = 0
         let done: (Result<Void, Error>) -> Void = { result in
             if case .failure = result { failures += 1 }
-            if failures == 6 { expectation.fulfill() }
+            if failures == 7 { expectation.fulfill() }
         }
         controller.installService(completion: done)
         controller.uninstallService(deleteData: false, completion: done)
         controller.importTeslaMate(source: "postgres://example", carID: "1", passwordFile: "/tmp/password", encryptionKeyFile: "/tmp/encryption", completion: done)
         controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh"), completion: done)
+        controller.performVehicleControl(.climateStart, completion: done)
         controller.stopHub(completion: done)
         controller.restartHub(completion: done)
         wait(for: [expectation], timeout: 1)
@@ -98,10 +99,76 @@ final class HubControllerTests: XCTestCase {
         controller.refresh { snapshot in
             XCTAssertEqual(snapshot.vehicleName, "2 vehicles")
             XCTAssertEqual(snapshot.account, "Connected")
+            XCTAssertNil(snapshot.controlVehicleID)
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
+    }
+
+    func testSingleVehicleClimateControlsUseInstalledBinaryExactlyOnce() {
+        let vehicleID = UUID(uuidString: "7A5D69AB-8EA8-4056-8B2F-42C41C28AE36")!
+        let status = """
+        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(vehicleID.uuidString)","displayName":"One"}],"credentials":{"present":true}}
+        """
+        let embedded = RecordingCommandRunner(result: .failure(HubActionError.commandFailed("unused")))
+        let installed = RecordingCommandRunner(result: .success(status))
+        let controller = HubController(commandRunner: embedded,
+                                       installedCommandRunner: installed,
+                                       serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "climate controls sent")
+
+        controller.refresh { snapshot in
+            XCTAssertEqual(snapshot.controlVehicleID, vehicleID)
+            controller.performVehicleControl(.climateStart) { first in
+                if case let .failure(error) = first { XCTFail(error.localizedDescription) }
+                controller.performVehicleControl(.climateStop) { second in
+                    if case let .failure(error) = second { XCTFail(error.localizedDescription) }
+                    finished.fulfill()
+                }
+            }
+        }
+
+        wait(for: [finished], timeout: 2)
+        let config = NSHomeDirectory() + "/Library/Application Support/Teslatlas Hub/config.toml"
+        XCTAssertEqual(installed.arguments, [
+            ["--config", config, "status"],
+            ["--config", config, "control", "--vehicle-id", vehicleID.uuidString.lowercased(),
+             "climate-start", "--confirm"],
+            ["--config", config, "control", "--vehicle-id", vehicleID.uuidString.lowercased(),
+             "climate-stop", "--confirm"]
+        ])
+        XCTAssertEqual(embedded.arguments, [])
+    }
+
+    func testClimateConfirmationDefaultsToCancelAndNoChargeButtonsExist() {
+        let alert = MainWindowController.vehicleControlConfirmation(.climateStart,
+                                                                    vehicleName: "Model 3")
+        XCTAssertEqual(alert.messageText, "Start Climate for Model 3?")
+        XCTAssertEqual(alert.buttons.map(\.title), ["Cancel", "Start Climate"])
+
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let windowController = MainWindowController(controller: controller)
+        let titles = buttons(in: windowController.window?.contentView).map(\.title)
+        XCTAssertTrue(titles.contains("Start Climate…"))
+        XCTAssertTrue(titles.contains("Stop Climate…"))
+        XCTAssertFalse(titles.contains { $0.localizedCaseInsensitiveContains("charge") })
+    }
+
+    func testAmbiguousClimateFailureWarnsAgainstRetry() {
+        XCTAssertTrue(MainWindowController.vehicleControlOutcomeIsUnknown(
+            HubActionError.commandTimedOut
+        ))
+        XCTAssertTrue(MainWindowController.vehicleControlOutcomeIsUnknown(
+            HubActionError.commandFailed("vehicle command outcome is ambiguous")
+        ))
+        XCTAssertFalse(MainWindowController.vehicleControlOutcomeIsUnknown(
+            HubActionError.commandFailed("vehicle is offline")
+        ))
+        let alert = MainWindowController.unknownVehicleControlOutcomeAlert()
+        XCTAssertEqual(alert.messageText, "Command outcome unknown")
+        XCTAssertTrue(alert.informativeText.contains("Do not repeat"))
     }
 
     func testInstalledMigrationStopsConfirmsFinalCopyAndRestarts() throws {
@@ -642,9 +709,13 @@ private final class ScriptedInstaller: HubInstalling {
 
 private final class ScriptedService: HubServiceControlling {
     private let events: EventRecorder
+    private let loadState: HubServiceLoadState
     var result: Result<String, Error> = .success("")
 
-    init(events: EventRecorder) { self.events = events }
+    init(events: EventRecorder, loadState: HubServiceLoadState = .unloaded) {
+        self.events = events
+        self.loadState = loadState
+    }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         events.append("service:\(arguments.last ?? "unknown")")
@@ -652,7 +723,7 @@ private final class ScriptedService: HubServiceControlling {
     }
 
     func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
-        completion(.unloaded)
+        completion(loadState)
     }
 }
 

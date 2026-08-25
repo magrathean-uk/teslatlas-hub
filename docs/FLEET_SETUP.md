@@ -168,6 +168,13 @@ processes with the same Fleet refresh token.
 Wake uses Fleet API directly. Signed commands require Tesla virtual-key pairing
 and a separately configured loopback HTTPS command proxy:
 
+1. Publish the command public key at the well-known path from step 1.
+2. Register that domain as a Tesla partner account in each Fleet API region.
+3. Have the vehicle owner open `https://tesla.com/_ak/EXAMPLE.COM`, scan the QR
+   code, and approve the virtual key in the Tesla app.
+4. Run Tesla's official `tesla-http-proxy` on loopback with the matching private
+   key and a local TLS certificate.
+
 ```toml
 [collector]
 provider = "fleet"
@@ -176,7 +183,9 @@ fleet_command_proxy_root_certificate_path = "/absolute/path/proxy-ca.pem"
 ```
 
 Hub never issues a command implicitly. Every action goes through the resident
-control socket and requires `--confirm`.
+control socket and requires `--confirm`. The macOS Hub app exposes confirmed
+Start Climate and Stop Climate actions when the service is running with exactly
+one configured vehicle. It does not expose charging controls.
 
 ## Revoke access
 
@@ -189,3 +198,4 @@ Official references:
 - <https://developer.tesla.com/docs/fleet-api/getting-started/regions-countries>
 - <https://developer.tesla.com/docs/fleet-api/authentication/third-party-tokens>
 - <https://developer.tesla.com/docs/fleet-api/authentication/overview>
+- <https://github.com/teslamotors/vehicle-command>
