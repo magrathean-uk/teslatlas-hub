@@ -13,18 +13,23 @@ Current verification on 2026-08-25: 748 library + 38 CLI + 1 TLS tests passed
 `-D warnings`, release build, ShellCheck, Linux packaging tests, macOS packaging
 checks, and 27 AppKit tests passed. Live EMEA Fleet authorization, vehicle
 discovery, vehicle-data polling, partner registration, and virtual-key pairing
-passed on macOS. Exactly one climate-start and one climate-stop command each
-wrote an audit receipt; subsequent Fleet telemetry reported climate on and then
-off. No charge command ran. `status`, immutable preflight, and doctor passed
+passed on macOS. The root package upgraded the running legacy per-user service,
+the installed Hub now supervises the loopback Tesla command proxy as its child,
+and the installed Mac app exposes all seven reviewed non-charging controls. One
+additional UI climate-start and UI climate-stop were accepted; subsequent Fleet
+telemetry reported climate on and then off. No charge command ran. `status`,
+immutable preflight, and doctor passed
 with a zero-byte WAL. The local TeslaMate PostgreSQL write-back dry-run reported
 zero affected rows and left charge cost `0.10` unchanged.
 
 Current artifact:
 
 - macOS ARM64 app, embedded Hub SHA-256
-  `8e49f6d458a38d7fb8ca02af7a70889b4d9a165e66f961678eba0d2e9b4b9f79`;
+  `f818ef855652e5383421e0643a38623662ff50ac697ccd4d8e08fb0fdb35658f`;
+  embedded Tesla command proxy SHA-256
+  `ee61a89137c8eb73db4db1d57f2e393a084221e51421b06087e1677a2c631cc2`;
   embedded service package SHA-256
-  `ad5934e22f59454d7614403dc1901781ddaa8f95e77c59aa30432cda690e7415`;
+  `d7a517c4732bc80d004a9ed249d8870572110fbe1aef8c63ddd64fa75990c658`;
   deep strict ad-hoc signature verification passed.
 
 Linux package source and lifecycle-fault contracts pass. Earlier native Debian
@@ -41,9 +46,10 @@ VPS root has 28 GiB free.
 
 Current work plan:
 
-- 2026-08-25: bundle and manage Tesla's official command proxy on macOS, expose
-  confirmed non-charging controls in the Hub app, test the installed app against
-  the paired car, and prepare a short physical driving-stream handover window.
+- Completed 2026-08-25: bundle and manage Tesla's official command proxy on
+  macOS, expose confirmed non-charging controls in the Hub app, and test the
+  installed app climate start/stop against the paired car.
+- 2026-08-25: prepare a short physical driving-stream handover window.
 - 2026-08-25: rebuild and install source-identical Debian amd64 and ARM64
   packages, run package/service smoke checks, and delete disposable build data.
 - 2026-08-25 through 2026-08-31: keep Fleet Hub collection running for refresh
@@ -69,8 +75,10 @@ Deliberate exclusions: TeslaFi import, `addresses.raw`, Grafana/MQTT/dashboard,
 and native Fleet Telemetry ingestion. Fleet currently uses official REST
 polling; legacy Owner API keeps TeslaMate-compatible vehicle streaming.
 
-Blocked: no known code blocker. The local old-schema TeslaMate PostgreSQL copy
-remains an intentional read-only negative fixture.
+Blocked: no known code blocker. Real Developer ID notarization is blocked by a
+local credential team mismatch: the application/installer identities and App
+Store Connect notary key belong to different Apple teams. The local old-schema
+TeslaMate PostgreSQL copy remains an intentional read-only negative fixture.
 
 ## Three-platform review, 2026-08-22
 
@@ -89,6 +97,15 @@ remains an intentional read-only negative fixture.
   Independent macOS, Debian, and Rust reviews found no concrete blocker.
 
 ## Completed
+
+- Managed macOS command service and complete controls — pinned Tesla's official
+  `vehicle-command` v0.4.1 source, packaged its loopback proxy beside Hub, and
+  made Hub own proxy startup, readiness, exit, and shutdown. Fixed a real
+  legacy-to-root package upgrade failure, installed the package, and verified
+  the proxy was the Hub child on `127.0.0.1:4443`. Installed the Mac app in
+  `/Applications`; Wake, Start/Stop Climate, Lock/Unlock, Flash, and Honk
+  deliberately exclude charging. One UI start and stop each produced a command
+  confirmation and Fleet telemetry changed true then false.
 
 - Fleet signed-command onboarding — published the EC public key at the Tesla
   well-known path without changing the root site, registered `magrathean.uk` as

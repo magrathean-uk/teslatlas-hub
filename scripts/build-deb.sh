@@ -21,7 +21,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "$binary" ] && [ -n "$version" ] && [ -n "$output" ] || usage
-[ -f "$binary" ] || { echo "binary is not a regular file" >&2; exit 65; }
+[ -f "$binary" ] && [ ! -L "$binary" ] \
+    || { echo "binary is not a regular file" >&2; exit 65; }
 binary_directory=$(CDPATH='' cd -- "$(dirname -- "$binary")" && pwd)
 binary="$binary_directory/$(basename -- "$binary")"
 command -v readelf >/dev/null 2>&1 || {
@@ -182,6 +183,8 @@ install -D -m 0644 "$root/LICENSE" "$package_root/usr/share/doc/teslatlas-hub/co
 install -D -m 0644 "$root/NOTICE" "$package_root/usr/share/doc/teslatlas-hub/NOTICE"
 install -D -m 0644 "$root/THIRD_PARTY_NOTICES.md" \
     "$package_root/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md"
+install -D -m 0644 "$root/PROVENANCE.md" \
+    "$package_root/usr/share/doc/teslatlas-hub/PROVENANCE.md"
 install -D -m 0755 "$root/packaging/linux/preinst" "$package_root/DEBIAN/preinst"
 install -D -m 0755 "$root/packaging/linux/postinst" "$package_root/DEBIAN/postinst"
 install -D -m 0755 "$root/packaging/linux/prerm" "$package_root/DEBIAN/prerm"

@@ -392,6 +392,7 @@ printf '%s\n' \
     'cmp "$EXPECTED_LICENSE" "$1/usr/share/doc/teslatlas-hub/copyright"' \
     'cmp "$EXPECTED_NOTICE" "$1/usr/share/doc/teslatlas-hub/NOTICE"' \
     'cmp "$EXPECTED_THIRD_PARTY_NOTICES" "$1/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md"' \
+    'cmp "$EXPECTED_PROVENANCE" "$1/usr/share/doc/teslatlas-hub/PROVENANCE.md"' \
     'cp "$1/DEBIAN/control" "$CAPTURED_CONTROL"' \
     ': > "$2"' > "$elf_bin/dpkg-deb"
 chmod 0755 "$elf_bin/dpkg-deb"
@@ -403,11 +404,22 @@ run_package() {
         FAKE_ELF_MODE=$1 FAKE_SHLIBDEPS_MODE=${3:-good} \
             CAPTURED_CONTROL="$captured_control" EXPECTED_LICENSE="$root/LICENSE" \
             EXPECTED_NOTICE="$root/NOTICE" EXPECTED_THIRD_PARTY_NOTICES="$root/THIRD_PARTY_NOTICES.md" \
+            EXPECTED_PROVENANCE="$root/PROVENANCE.md" \
             PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
             sh "$root/scripts/build-deb.sh" --binary fake-binary \
             --version "${4:-1.0.0}" --architecture "$2" --output "$test_root/output.deb"
     ) > "$test_root/package-output" 2>&1
 }
+
+ln -s fake-binary "$test_root/fake-binary-link"
+if (
+    cd "$test_root"
+    PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
+        sh "$root/scripts/build-deb.sh" --binary fake-binary-link \
+        --version 1.0.0 --architecture amd64 --output "$test_root/symlink.deb"
+) >"$test_root/symlink-output" 2>&1; then
+    fail 'symlinked binary accepted'
+fi
 
 run_package good_amd64 amd64 || fail 'valid amd64 ELF rejected'
 grep -Fqx 'Version: 1.0.0-1' "$captured_control" \
