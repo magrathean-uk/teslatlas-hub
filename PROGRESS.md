@@ -11,11 +11,13 @@ China token endpoint. No known code blocker remains.
 Current verification on 2026-08-25: 748 library + 38 CLI + 1 TLS tests passed
 (787 total; 2 intentional fixture tests ignored); all-target Clippy with
 `-D warnings`, release build, ShellCheck, Linux packaging tests, macOS packaging
-checks, and 24 AppKit tests passed. Live EMEA Fleet authorization, vehicle
-discovery, and vehicle-data polling also passed on macOS without a wake or
-vehicle command. `status`, immutable preflight, and doctor then passed with a
-zero-byte WAL. The local TeslaMate PostgreSQL write-back dry-run reported zero
-affected rows and left charge cost `0.10` unchanged.
+checks, and 27 AppKit tests passed. Live EMEA Fleet authorization, vehicle
+discovery, vehicle-data polling, partner registration, and virtual-key pairing
+passed on macOS. Exactly one climate-start and one climate-stop command each
+wrote an audit receipt; subsequent Fleet telemetry reported climate on and then
+off. No charge command ran. `status`, immutable preflight, and doctor passed
+with a zero-byte WAL. The local TeslaMate PostgreSQL write-back dry-run reported
+zero affected rows and left charge cost `0.10` unchanged.
 
 Current artifact:
 
@@ -35,13 +37,19 @@ counts stayed unchanged. Hub refreshed the real legacy token, its encrypted
 successor was handed back in one PostgreSQL transaction, and TeslaMate then
 refreshed successfully itself. Hub, its data, build inputs, emulation packages,
 and caches were removed from the VPS. TeslaMate and TeslaMateAPI are healthy;
-VPS root has 28 GiB free. No vehicle command ran.
+VPS root has 28 GiB free.
 
-Next external evidence: live Fleet refresh rotation, virtual-key command-proxy
-pairing and explicit commands, physical driving-stream observation,
-source-identical native Debian amd64 and ARM64 installs, clean-machine macOS
-lifecycle, physical iOS sync, endurance, and signed/notarized release. These are
-not claimed by local tests.
+Current work plan:
+
+- 2026-08-25: bundle and manage Tesla's official command proxy on macOS, expose
+  confirmed non-charging controls in the Hub app, test the installed app against
+  the paired car, and prepare a short physical driving-stream handover window.
+- 2026-08-25: rebuild and install source-identical Debian amd64 and ARM64
+  packages, run package/service smoke checks, and delete disposable build data.
+- 2026-08-25 through 2026-08-31: keep Fleet Hub collection running for refresh
+  rotation/endurance evidence without vehicle commands or a second refresh owner.
+- Produce a Developer ID-signed, notarized, provenance-bound macOS release using
+  existing local Apple credentials. Physical iOS sync remains outside Hub scope.
 
 Deliberate exclusions: TeslaFi import, `addresses.raw`, Grafana/MQTT/dashboard,
 and native Fleet Telemetry ingestion. Fleet currently uses official REST

@@ -20,8 +20,7 @@ final class MainWindowController: NSWindowController {
     private let stopButton = NSButton(title: "Stop Hub", target: nil, action: nil)
     private let restartButton = NSButton(title: "Restart", target: nil, action: nil)
     private let installButton = NSButton(title: "Set Up Hub", target: nil, action: nil)
-    private let climateStartButton = NSButton(title: "Start Climate…", target: nil, action: nil)
-    private let climateStopButton = NSButton(title: "Stop Climate…", target: nil, action: nil)
+    private let vehicleControlsButton = NSButton(title: "Vehicle Controls…", target: nil, action: nil)
     private var vehicleControlPending = false
     private var vehicleControlOutcomeUnknown = false
     private var titlebarAccessory: NSTitlebarAccessoryViewController?
@@ -155,7 +154,7 @@ final class MainWindowController: NSWindowController {
         hero.addArrangedSubview(subtitle)
 
         let actions = NSStackView(views: [stopButton, restartButton, installButton,
-                                          climateStartButton, climateStopButton])
+                                          vehicleControlsButton])
         actions.spacing = 12
         actions.alignment = .centerY
         stopButton.target = self
@@ -176,16 +175,11 @@ final class MainWindowController: NSWindowController {
         installButton.bezelStyle = .rounded
         installButton.controlSize = .large
         installButton.keyEquivalent = "\r"
-        climateStartButton.target = self
-        climateStartButton.action = #selector(climateStartPressed)
-        climateStartButton.bezelStyle = .rounded
-        climateStartButton.controlSize = .large
-        climateStartButton.isEnabled = false
-        climateStopButton.target = self
-        climateStopButton.action = #selector(climateStopPressed)
-        climateStopButton.bezelStyle = .rounded
-        climateStopButton.controlSize = .large
-        climateStopButton.isEnabled = false
+        vehicleControlsButton.target = self
+        vehicleControlsButton.action = #selector(vehicleControlsPressed)
+        vehicleControlsButton.bezelStyle = .rounded
+        vehicleControlsButton.controlSize = .large
+        vehicleControlsButton.isEnabled = false
         hero.addArrangedSubview(actions)
         return hero
     }
@@ -289,16 +283,14 @@ final class MainWindowController: NSWindowController {
             self.stopButton.isHidden = snapshot.health == .needsInstall
             self.installButton.isHidden = snapshot.health != .needsInstall
             self.restartButton.isHidden = snapshot.health == .needsInstall || snapshot.health == .stopped
-            self.climateStartButton.isHidden = snapshot.health == .needsInstall
-            self.climateStopButton.isHidden = snapshot.health == .needsInstall
+            self.vehicleControlsButton.isHidden = snapshot.health == .needsInstall
             let controlsAvailable = !self.controller.previewMode
                 && snapshot.health == .running
                 && snapshot.account == "Connected"
                 && snapshot.controlVehicleID != nil
                 && !self.vehicleControlPending
                 && !self.vehicleControlOutcomeUnknown
-            self.climateStartButton.isEnabled = controlsAvailable
-            self.climateStopButton.isEnabled = controlsAvailable
+            self.vehicleControlsButton.isEnabled = controlsAvailable
             self.window?.defaultButtonCell = (snapshot.health == .needsInstall
                 ? self.installButton.cell : self.stopButton.cell) as? NSButtonCell
             if snapshot.health == .stopped {
@@ -419,8 +411,7 @@ final class MainWindowController: NSWindowController {
 
     private func runVehicleControl(_ action: HubVehicleControl) {
         vehicleControlPending = true
-        climateStartButton.isEnabled = false
-        climateStopButton.isEnabled = false
+        vehicleControlsButton.isEnabled = false
         controller.performVehicleControl(action) { [weak self] result in
             guard let self else { return }
             self.vehicleControlPending = false
@@ -429,7 +420,7 @@ final class MainWindowController: NSWindowController {
                 self.update()
                 let accepted = NSAlert()
                 accepted.messageText = "Command accepted"
-                accepted.informativeText = "Check the vehicle to confirm the climate changed."
+                accepted.informativeText = action.acceptedMessage
                 accepted.runModal()
             case let .failure(error):
                 if Self.vehicleControlOutcomeIsUnknown(error) {
@@ -508,9 +499,29 @@ final class MainWindowController: NSWindowController {
         }
     }
 
-    @objc private func climateStartPressed() { confirmVehicleControl(.climateStart) }
+    @objc private func vehicleControlsPressed() {
+        let menu = NSMenu(title: "Vehicle Controls")
+        for action in HubVehicleControl.allCases {
+            if action == .lock || action == .flashLights {
+                menu.addItem(.separator())
+            }
+            let item = NSMenuItem(title: action.title,
+                                  action: #selector(vehicleControlSelected(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.representedObject = action.rawValue
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: 0, y: vehicleControlsButton.bounds.height + 4),
+                   in: vehicleControlsButton)
+    }
 
-    @objc private func climateStopPressed() { confirmVehicleControl(.climateStop) }
+    @objc private func vehicleControlSelected(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let action = HubVehicleControl(rawValue: rawValue) else { return }
+        confirmVehicleControl(action)
+    }
 
     @objc private func detailsPressed() {
         detailsWindow = ServiceDetailsWindowController(snapshot: controller.snapshot,

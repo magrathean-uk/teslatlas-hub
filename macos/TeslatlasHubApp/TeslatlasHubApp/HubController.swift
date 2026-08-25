@@ -48,14 +48,34 @@ struct HubSetupInvocation: Equatable {
     let standardInput: String
 }
 
-enum HubVehicleControl: String, Equatable {
+enum HubVehicleControl: String, CaseIterable, Equatable {
+    case wake
     case climateStart = "climate-start"
     case climateStop = "climate-stop"
+    case lock
+    case unlock
+    case flashLights = "flash-lights"
+    case honkHorn = "honk-horn"
 
     var title: String {
         switch self {
+        case .wake: return "Wake Vehicle"
         case .climateStart: return "Start Climate"
         case .climateStop: return "Stop Climate"
+        case .lock: return "Lock Doors"
+        case .unlock: return "Unlock Doors"
+        case .flashLights: return "Flash Lights"
+        case .honkHorn: return "Honk Horn"
+        }
+    }
+
+    var acceptedMessage: String {
+        switch self {
+        case .wake: return "Check the vehicle to confirm it woke."
+        case .climateStart, .climateStop: return "Check the vehicle to confirm the climate changed."
+        case .lock, .unlock: return "Check the vehicle to confirm the doors changed."
+        case .flashLights: return "The flash-lights command was accepted."
+        case .honkHorn: return "The honk-horn command was accepted."
         }
     }
 }
