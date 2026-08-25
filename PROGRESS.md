@@ -64,6 +64,12 @@ Current work plan:
   the exact app and package successfully, but the only usable local notary key
   belongs to NPS. Physical iOS sync remains outside Hub scope.
 
+Goal audit at 2026-08-25 09:41 UTC: managed proxy, Mac controls/live climate,
+both native Linux packages, build cleanup, driving-stream plan, and VPS
+TeslaMate continuity have direct current evidence. Fleet endurance remains open
+until its scheduled checks run. Notarization remains conditional on a matching
+Apple credential, which is not present locally.
+
 Driving-stream handover plan for 2026-08-25: keep VPS TeslaMate running until a
 new short test window is explicitly approved; record TeslaMate and Hub database
 watermarks; stop TeslaMate once; transfer the current legacy token pair to Hub;
