@@ -131,7 +131,9 @@ intentional read-only negative fixture.
   the proxy was the Hub child on `127.0.0.1:4443`. Installed the Mac app in
   `/Applications`; Wake, Start/Stop Climate, Lock/Unlock, Flash, and Honk
   deliberately exclude charging. One UI start and stop each produced a command
-  confirmation and Fleet telemetry changed true then false.
+  confirmation and Fleet telemetry changed true then false. A live proxy
+  termination also made Hub fail closed; launchd restarted Hub and a new proxy,
+  restored the loopback listener, and returned to ready Fleet collection.
 
 - Fleet signed-command onboarding — published the EC public key at the Tesla
   well-known path without changing the root site, registered `magrathean.uk` as
