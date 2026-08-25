@@ -64,6 +64,14 @@ if /usr/bin/grep -q 'bootout_if_loaded' "$PREINSTALL"; then
 fi
 /usr/bin/grep -q 'STATE_DIRECTORY/was-loaded' "$PREINSTALL" \
     || fail "preinstall does not record loaded state"
+loaded_service_block=$(
+    /usr/bin/awk '/^if service_is_loaded; then$/ { capture=1 } capture { print } capture && /^fi$/ { exit }' "$PREINSTALL"
+)
+printf '%s\n' "$loaded_service_block" | /usr/bin/grep -Fq 'require_safe_regular_file "$PLIST"' \
+    || fail "preinstall does not validate the loaded legacy LaunchAgent"
+if printf '%s\n' "$loaded_service_block" | /usr/bin/grep -Fq 'require_safe_regular_file "$BINARY"'; then
+    fail "preinstall rejects a loaded legacy per-user Hub without a root binary"
+fi
 /usr/bin/grep -q 'STATE_DIRECTORY/teslatlas-hub' "$PREINSTALL" \
     || fail "preinstall does not preserve the old binary"
 /usr/bin/grep -q 'STATE_DIRECTORY/launch-agent.plist' "$PREINSTALL" \

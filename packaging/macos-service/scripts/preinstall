@@ -23,8 +23,6 @@ fi
 PLIST="$CONSOLE_HOME/Library/LaunchAgents/$LABEL.plist"
 if service_is_loaded; then
     require_safe_regular_file "$PLIST" "$CONSOLE_UID" "existing LaunchAgent"
-    require_safe_regular_file "$BINARY" 0 "existing Hub binary"
-    [ -x "$BINARY" ] || installer_error "existing Hub binary is not executable"
     /usr/bin/install -o root -g wheel -m 0600 /dev/null "$STATE_DIRECTORY/was-loaded" \
         || installer_error "cannot record loaded service state"
 fi
