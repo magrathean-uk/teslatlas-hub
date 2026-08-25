@@ -76,7 +76,10 @@ Fleet endurance baseline on 2026-08-25: local Fleet Hub ready with one vehicle,
 latest observation ID 910, database 3.6 MB, next token refresh scheduled for
 2026-08-25 13:51 UTC, and token expiry at 14:21 UTC. The VPS TeslaMate and
 TeslaMateAPI containers were both healthy. Recheck through 2026-08-31; do not
-issue endurance vehicle commands.
+issue endurance vehicle commands. At 09:36 UTC a read-only check observed the
+current record advance from 1013 to 1014 within five seconds, SQLite integrity
+was `ok`, and the WAL was zero bytes. No refresh attempt exists yet because the
+first scheduled refresh is still in the future.
 
 Deliberate exclusions: TeslaFi import, `addresses.raw`, Grafana/MQTT/dashboard,
 and native Fleet Telemetry ingestion. Fleet currently uses official REST
