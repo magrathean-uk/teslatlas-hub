@@ -2122,7 +2122,9 @@ where
     if store.database_path() != config.data_dir.join("hub.sqlite") {
         return Err(CollectorError::AdmittedStoreMismatch);
     }
+    crate::diagnostics::log_runtime_inventory(store, config);
     if config.collector.provider == CollectorProvider::Fleet {
+        tracing::info!("starting Fleet collector (Owner tokens are left in place if present)");
         return run_fleet_supervised_for_admitted_user(
             store, config, admission, ready, true, shutdown,
         )
@@ -2251,6 +2253,11 @@ async fn run_fleet_supervised_for_admitted_user<F>(
 where
     F: Future<Output = ()>,
 {
+    tracing::info!(
+        allow_refresh,
+        timeout_seconds = config.collector.request_timeout_seconds,
+        "Fleet supervised collector connecting with stored Fleet credentials"
+    );
     let _activation = config.collector.supervised_interval()?;
     let cadence = config.collector.cadence()?;
     let manager = FleetAuthManager::from_store_for_admitted_user(
@@ -5414,11 +5421,7 @@ fn poll_phase(snapshot: &VehicleData) -> PollPhase {
     let shift = drive
         .and_then(|drive| drive.get("shift_state"))
         .and_then(Value::as_str);
-    let speed = drive
-        .and_then(|drive| drive.get("speed"))
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    if matches!(shift, Some("D" | "R" | "N" | "d" | "r" | "n")) || speed > 0 {
+    if matches!(shift, Some("D" | "R" | "N" | "d" | "r" | "n")) {
         PollPhase::Driving
     } else {
         PollPhase::Online
@@ -10529,6 +10532,16 @@ mod tests {
         assert_eq!(poll_phase(&charging), PollPhase::Charging);
         assert_eq!(poll_phase(&updating), PollPhase::Updating);
         assert_eq!(poll_phase(&online), PollPhase::Online);
+
+        let speed_without_shift =
+            VehicleData::for_test(1, json!({"drive_state":{"shift_state":null,"speed":25}}));
+        let parked_with_speed =
+            VehicleData::for_test(1, json!({"drive_state":{"shift_state":"P","speed":40}}));
+        assert_eq!(poll_phase(&speed_without_shift), PollPhase::Online);
+        assert_eq!(poll_phase(&parked_with_speed), PollPhase::Online);
+        let reverse =
+            VehicleData::for_test(1, json!({"drive_state":{"shift_state":"R","speed":0}}));
+        assert_eq!(poll_phase(&reverse), PollPhase::Driving);
     }
 
     #[test]

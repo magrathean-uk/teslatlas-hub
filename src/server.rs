@@ -68,6 +68,20 @@ pub async fn rustls_config_from_identity(
     rustls_config_from_pem_identity(certificate_pem, private_key_pem).await
 }
 
+/// Read-only validation used by diagnostics. It shares the exact no-follow,
+/// ownership, permission, size, parse, and key-pair checks with `Serve`.
+pub fn validate_tls_identity(tls: &TlsListenerConfig) -> std::io::Result<()> {
+    let certificate_pem = read_tls_identity_file(
+        &tls.certificate_path,
+        MAX_TLS_CERTIFICATE_CHAIN_BYTES,
+        false,
+    )?;
+    let private_key_pem =
+        read_tls_identity_file(&tls.private_key_path, MAX_TLS_PRIVATE_KEY_BYTES, true)?;
+    crate::crypto::install_default_provider();
+    rustls_server_config_from_pem_identity(&certificate_pem, &private_key_pem).map(drop)
+}
+
 /// Read one exact TLS identity inode with fixed bounds and Unix ownership and
 /// permission checks. Pairing and Serve deliberately share this function so a
 /// device cannot pin different bytes from the listener identity.
@@ -738,8 +752,8 @@ async fn capabilities(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn vehicles(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if authorize_device(&state, &headers).is_none() {
-        return unauthorized();
+    if let Err(status) = require_authorized_device(&state, &headers) {
+        return device_auth_reject(status);
     }
     match state.store.published_vehicles() {
         Ok(vehicles) => Json(VehicleList { vehicles }).into_response(),
@@ -755,8 +769,8 @@ async fn current_vehicle(
     Path(vehicle_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if authorize_device(&state, &headers).is_none() {
-        return unauthorized();
+    if let Err(status) = require_authorized_device(&state, &headers) {
+        return device_auth_reject(status);
     }
     let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -877,8 +891,8 @@ async fn manifest(
     Path(vehicle_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if authorize_device(&state, &headers).is_none() {
-        return unauthorized();
+    if let Err(status) = require_authorized_device(&state, &headers) {
+        return device_auth_reject(status);
     }
     let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -1043,8 +1057,8 @@ async fn schema_22_noop(
     Path(vehicle_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if authorize_device(&state, &headers).is_none() {
-        return unauthorized();
+    if let Err(status) = require_authorized_device(&state, &headers) {
+        return device_auth_reject(status);
     }
     let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -1070,8 +1084,9 @@ async fn pack(
     Path(object_name): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let Some(device) = authorize_device(&state, &headers) else {
-        return unauthorized();
+    let device = match require_authorized_device(&state, &headers) {
+        Ok(device) => device,
+        Err(status) => return device_auth_reject(status),
     };
     let Some(digest) = object_name.strip_suffix(".sqlite.zst") else {
         return StatusCode::NOT_FOUND.into_response();
@@ -1118,22 +1133,69 @@ async fn pack(
     .await
 }
 
-fn authorize_device(state: &AppState, headers: &HeaderMap) -> Option<PairedDeviceRecord> {
+fn authorize_device(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Option<PairedDeviceRecord>, crate::db::StoreError> {
     if !state.require_device_auth {
         // A public loopback router has no device principal by design. The
-        // caller uses `is_none` only to distinguish this harmless local mode
-        // from an invalid TLS-facing request.
-        return Some(PairedDeviceRecord {
+        // caller uses `Ok(None)` only after a required-auth lookup fails.
+        return Ok(Some(PairedDeviceRecord {
             device_id: Uuid::nil(),
             display_name: String::new(),
             created_at_ms: 0,
             expires_at_ms: i64::MAX,
             revoked_at_ms: None,
             last_authenticated_at_ms: None,
-        });
+        }));
     }
-    let bearer = bearer_from_headers(headers)?;
-    state.store.authenticate_device(bearer).ok().flatten()
+    let Some(bearer) = bearer_from_headers(headers) else {
+        return Ok(None);
+    };
+    state.store.authenticate_device(bearer)
+}
+
+fn require_authorized_device(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<PairedDeviceRecord, StatusCode> {
+    device_auth_response(device_auth_from_store(authorize_device(state, headers)))
+}
+
+fn device_auth_response(decision: DeviceAuthDecision) -> Result<PairedDeviceRecord, StatusCode> {
+    match decision {
+        DeviceAuthDecision::Allow(device) => Ok(device),
+        DeviceAuthDecision::Unauthorized => Err(StatusCode::UNAUTHORIZED),
+        DeviceAuthDecision::Unavailable => Err(StatusCode::SERVICE_UNAVAILABLE),
+    }
+}
+
+fn device_auth_reject(status: StatusCode) -> Response {
+    if status == StatusCode::UNAUTHORIZED {
+        unauthorized()
+    } else {
+        status.into_response()
+    }
+}
+
+#[derive(Debug)]
+enum DeviceAuthDecision {
+    Allow(PairedDeviceRecord),
+    Unauthorized,
+    Unavailable,
+}
+
+fn device_auth_from_store(
+    result: Result<Option<PairedDeviceRecord>, crate::db::StoreError>,
+) -> DeviceAuthDecision {
+    match result {
+        Ok(Some(device)) => DeviceAuthDecision::Allow(device),
+        Ok(None) => DeviceAuthDecision::Unauthorized,
+        Err(error) => {
+            tracing::error!(%error, "cannot authenticate paired device");
+            DeviceAuthDecision::Unavailable
+        }
+    }
 }
 
 fn bearer_from_headers(headers: &HeaderMap) -> Option<&str> {
@@ -3787,5 +3849,47 @@ mod tests {
             .await
             .expect("corrupt response");
         assert_eq!(corrupt.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn device_auth_store_errors_are_unavailable_not_unauthorized() {
+        let device = PairedDeviceRecord {
+            device_id: Uuid::nil(),
+            display_name: "hub".to_owned(),
+            created_at_ms: 1,
+            expires_at_ms: 2,
+            revoked_at_ms: None,
+            last_authenticated_at_ms: None,
+        };
+        assert!(matches!(
+            device_auth_from_store(Ok(Some(device))),
+            DeviceAuthDecision::Allow(_)
+        ));
+        assert!(matches!(
+            device_auth_from_store(Ok(None)),
+            DeviceAuthDecision::Unauthorized
+        ));
+        assert!(matches!(
+            device_auth_from_store(Err(crate::db::StoreError::Integrity(
+                "database is locked".to_owned()
+            ))),
+            DeviceAuthDecision::Unavailable
+        ));
+        let missing = device_auth_response(device_auth_from_store(Ok(None))).expect_err("401");
+        assert_eq!(missing, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            device_auth_reject(missing).status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let unavailable = device_auth_response(device_auth_from_store(Err(
+            crate::db::StoreError::Integrity("database is locked".to_owned()),
+        )))
+        .expect_err("503");
+        assert_eq!(unavailable, StatusCode::SERVICE_UNAVAILABLE);
+        assert_ne!(unavailable, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            device_auth_reject(unavailable).status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 }

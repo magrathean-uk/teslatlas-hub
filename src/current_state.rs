@@ -195,10 +195,8 @@ pub fn build_current_vehicle_summary(
         is_preconditioning: boolean(climate, "is_preconditioning"),
         locked: boolean(vehicle, "locked"),
         sentry_mode: boolean(vehicle, "sentry_mode"),
-        plugged_in: charge.map(|_| {
-            !charging_state
-                .as_deref()
-                .is_some_and(|state| state == "Disconnected")
+        plugged_in: charging_state.as_deref().map(|state| {
+            !state.eq_ignore_ascii_case("disconnected") && !state.eq_ignore_ascii_case("unplugged")
         }),
         scheduled_charging_start_time: integer(charge, "scheduled_charging_start_time"),
         charge_limit_soc: integer(charge, "charge_limit_soc"),
@@ -460,6 +458,45 @@ mod tests {
     }
 
     #[test]
+    fn stream_range_overlays_owner_ideal_battery_range() {
+        let owner = record(
+            1,
+            1_000,
+            json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "source_vehicle_state": "online",
+                "vehicle_data": {
+                    "charge_state": {"battery_level": 80, "ideal_battery_range": 250.0}
+                }
+            }),
+        );
+        let stream = record(
+            2,
+            2_000,
+            crate::lifecycle::stream_observation_payload(&crate::tesla_stream::StreamUpdate {
+                tag: "9".into(),
+                timestamp_ms: 2_000,
+                speed: Some(10),
+                odometer: Some(100.0),
+                soc: Some(79),
+                elevation: Some(10),
+                est_heading: Some(90),
+                est_lat: Some(1.0),
+                est_lng: Some(2.0),
+                power: Some(5),
+                shift_state: Some("D".into()),
+                range: Some(200),
+                est_range: Some(190),
+                heading: Some(90),
+            }),
+        );
+        let summary =
+            build_current_vehicle_summary(Uuid::from_u128(2), &[owner, stream], None, None, None);
+        assert_eq!(summary.battery_level, Some(79));
+        assert_eq!(summary.ideal_battery_range_km, Some(321.87));
+    }
+
+    #[test]
     fn fleet_provider_raw_response_builds_the_same_current_summary() {
         let stale_owner = record(
             1,
@@ -495,5 +532,59 @@ mod tests {
         assert_eq!(summary.latitude, Some(47.0));
         assert_eq!(summary.longitude, Some(19.0));
         assert_eq!(summary.battery_level, Some(81));
+        assert_eq!(summary.plugged_in, None);
+    }
+
+    #[test]
+    fn plugged_in_requires_charging_state_and_ignores_bare_charge_state() {
+        let stream = record(
+            1,
+            1_000,
+            json!({
+                "record_type": "tesla_stream_update_v1",
+                "source_vehicle_state": "online",
+                "fields": {
+                    "charge_state": {"battery_level": 80, "ideal_battery_range": 200}
+                }
+            }),
+        );
+        let stream_summary =
+            build_current_vehicle_summary(Uuid::from_u128(2), &[stream], None, None, None);
+        assert_eq!(stream_summary.plugged_in, None);
+        assert_eq!(stream_summary.battery_level, Some(80));
+
+        let charging = record(
+            2,
+            2_000,
+            json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "source_vehicle_state": "online",
+                "vehicle_data": {
+                    "charge_state": {"charging_state": "Charging", "battery_level": 50}
+                }
+            }),
+        );
+        assert_eq!(
+            build_current_vehicle_summary(Uuid::from_u128(2), &[charging], None, None, None)
+                .plugged_in,
+            Some(true)
+        );
+
+        let disconnected = record(
+            3,
+            3_000,
+            json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "source_vehicle_state": "online",
+                "vehicle_data": {
+                    "charge_state": {"charging_state": "Disconnected", "battery_level": 50}
+                }
+            }),
+        );
+        assert_eq!(
+            build_current_vehicle_summary(Uuid::from_u128(2), &[disconnected], None, None, None)
+                .plugged_in,
+            Some(false)
+        );
     }
 }

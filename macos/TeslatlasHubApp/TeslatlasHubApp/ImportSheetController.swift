@@ -1,6 +1,9 @@
 import AppKit
 
 final class ImportSheetController: NSWindowController {
+    static let teslaMateStoppedConfirmationDetail =
+        "This alpha completes its final snapshot and leaves Hub stopped until you finish the TeslaMate handover. Continue only after the source TeslaMate collector is stopped."
+
     private let controller: HubController
     private let sourceField = NSTextField(string: "postgres://localhost/teslamate")
     private let carField = NSTextField(string: "1")
@@ -71,8 +74,22 @@ final class ImportSheetController: NSWindowController {
 
     private func button(_ title: String, _ action: Selector) -> NSButton {
         let button = NSButton(title: title, target: self, action: action)
-        button.bezelStyle = .rounded
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: symbol(for: title), accessibilityDescription: title)
+        button.imagePosition = .imageLeading
+        button.contentTintColor = title == "Import" ? .controlAccentColor : .labelColor
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.focusRingType = .default
         return button
+    }
+
+    private func symbol(for title: String) -> String {
+        switch title {
+        case "Choose…": return "folder"
+        case "Import": return "square.and.arrow.down"
+        case "Cancel": return "xmark"
+        default: return "chevron.right"
+        }
     }
 
     private func spacer() -> NSView {
@@ -119,7 +136,7 @@ final class ImportSheetController: NSWindowController {
         }
         let confirmation = NSAlert()
         confirmation.messageText = "Stop TeslaMate before importing"
-        confirmation.informativeText = "This alpha completes its final snapshot and starts Hub automatically. Continue only after the source TeslaMate collector is stopped."
+        confirmation.informativeText = Self.teslaMateStoppedConfirmationDetail
         confirmation.addButton(withTitle: "TeslaMate is stopped")
         confirmation.addButton(withTitle: "Cancel")
         guard confirmation.runModal() == .alertFirstButtonReturn else { return }

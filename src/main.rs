@@ -28,6 +28,7 @@ use teslatlas_hub::{
     credentials::{OwnerTokens, TeslaMatePostgresPassword},
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{HubStore, ObservationVerificationError, StoreError, TeslaMateLegacyTokenStore},
+    diagnostics::{inspect_hub, log_runtime_inventory},
     fleet_api::FleetRegion,
     fleet_credentials::{
         FleetCredentialError, FleetSetupCredentials, migrate_legacy_fleet_credentials,
@@ -49,8 +50,8 @@ use teslatlas_hub::{
         import_selected_from_postgres_with_schema_22_and_legacy_token,
     },
     teslamate_reader::{
-        TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits, TeslaMateReaderError,
-        check_teslamate_compatibility,
+        TeslaMateCheckSnapshot, TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits,
+        TeslaMateReaderError, check_teslamate_compatibility,
     },
     teslamate_schema::{
         MAX_VALIDATED_MIGRATION, SchemaCompatibilityError, TESLAMATE_V4_MIGRATION_COUNT,
@@ -918,11 +919,11 @@ enum Command {
         #[arg(long)]
         all_vehicles: bool,
     },
-    /// Read-only validate the database and print a machine-readable health report.
+    /// Full read-only check of the Hub database, stored Tesla credentials, TLS, and collector readiness.
     Doctor,
     /// Print the redacted local status consumed by the native control app.
     Status,
-    /// Validate one TeslaMate source against the exact supported schema without mutating Hub.
+    /// Validate one TeslaMate source, connection, and selected-car inventory without mutating TeslaMate or Hub.
     #[cfg(unix)]
     #[command(name = "teslamate-check")]
     TeslaMateCheck {
@@ -1169,13 +1170,107 @@ fn validate_streaming_setting(
     Ok(())
 }
 
+#[cfg(unix)]
+fn validate_legacy_setup_provider(provider: CollectorProvider) -> Result<(), &'static str> {
+    if provider != CollectorProvider::Legacy {
+        return Err("setup requires collector.provider = \"legacy\"");
+    }
+    Ok(())
+}
+
 fn clear_provider_credentials(
     data_dir: &Path,
     store: &HubStore,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    remove_fleet_key_and_tokens(data_dir, store)?;
-    remove_key_and_tokens(data_dir, store)?;
+    let mut failures = Vec::new();
+    if let Err(error) = remove_fleet_key_and_tokens(data_dir, store) {
+        failures.push(format!("Fleet credentials: {error}"));
+    }
+    if let Err(error) = remove_key_and_tokens(data_dir, store) {
+        failures.push(format!("Legacy credentials: {error}"));
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "provider credential removal incomplete: {}",
+            failures.join("; ")
+        ))
+        .into())
+    }
+}
+
+fn persist_legacy_setup_and_drop_fleet(
+    data_dir: &Path,
+    store: &HubStore,
+    tokens: &OwnerTokens,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let encryption_key = random_encryption_key();
+    let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, tokens)?;
+    let stored = TeslaMateLegacyTokenStore::imported(access, refresh)?;
+    replace_key_and_tokens(data_dir, store, &encryption_key, &stored).map_err(|error| {
+        provider_switch_outcome_ambiguous("persisting Legacy credentials", error)
+    })?;
+    remove_fleet_key_and_tokens(data_dir, store).map_err(|error| {
+        provider_switch_outcome_ambiguous("removing previous Fleet credentials", error)
+    })?;
     Ok(())
+}
+
+/// Copy TeslaMate Owner tokens into Hub. Import never writes TeslaMate
+/// PostgreSQL and never deletes Fleet credentials — those stay until an
+/// explicit `setup` / `setup-fleet` / `sign-out`.
+fn persist_migrated_legacy_tokens(
+    data_dir: &Path,
+    store: &HubStore,
+    encryption_key: &[u8],
+    stored: &TeslaMateLegacyTokenStore,
+) -> Result<(), Box<dyn std::error::Error>> {
+    replace_key_and_tokens(data_dir, store, encryption_key, stored)?;
+    Ok(())
+}
+
+fn persist_fleet_setup_and_drop_legacy(
+    data_dir: &Path,
+    store: &HubStore,
+    credentials: &FleetSetupCredentials,
+    now: SystemTime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    persist_fleet_setup_credentials(store, data_dir, credentials, now).map_err(|error| {
+        provider_switch_outcome_ambiguous("persisting Fleet credentials", error)
+    })?;
+    remove_key_and_tokens(data_dir, store).map_err(|error| {
+        provider_switch_outcome_ambiguous("removing previous Legacy credentials", error)
+    })?;
+    Ok(())
+}
+
+#[cfg(unix)]
+const PROVIDER_SWITCH_OUTCOME_AMBIGUOUS: &str = "TESLATLAS_PROVIDER_SWITCH_OUTCOME_AMBIGUOUS";
+
+#[cfg(unix)]
+const MIGRATION_OUTCOME_AMBIGUOUS: &str = "TESLATLAS_MIGRATION_OUTCOME_AMBIGUOUS";
+
+#[cfg(unix)]
+fn provider_switch_outcome_ambiguous(
+    action: &str,
+    error: impl std::fmt::Display,
+) -> Box<dyn std::error::Error> {
+    std::io::Error::other(format!(
+        "{PROVIDER_SWITCH_OUTCOME_AMBIGUOUS}: {action}: {error}; Hub must remain stopped until status and diagnostics confirm the selected provider"
+    ))
+    .into()
+}
+
+#[cfg(unix)]
+fn migration_outcome_ambiguous(
+    action: &str,
+    error: impl std::fmt::Display,
+) -> Box<dyn std::error::Error> {
+    std::io::Error::other(format!(
+        "{MIGRATION_OUTCOME_AMBIGUOUS}: {action}: {error}; keep the migration handover gate and Hub stopped"
+    ))
+    .into()
 }
 
 async fn run_control(
@@ -1446,6 +1541,33 @@ impl Drop for CatalogueCheckpointGuard {
 const TESLAMATE_REQUIRED_VERSION: &str = "4.1.1";
 
 #[cfg(unix)]
+fn print_teslamate_check_success(car_id: i64, snapshot: &TeslaMateCheckSnapshot) {
+    println!(
+        "{}",
+        serde_json::json!({
+            "status": "compatible",
+            "reasonCode": "exact_4_1_1",
+            "requiredVersion": TESLAMATE_REQUIRED_VERSION,
+            "pinnedSourceRevision": snapshot.schema.pinned_source_revision,
+            "observedMigrationVersion": snapshot.schema.observed_migration_version,
+            "observedMigrationCount": snapshot.schema.observed_migration_count,
+            "minimumSupportedMigrationVersion": snapshot.schema.minimum_supported_migration_version,
+            "maximumValidatedMigrationVersion": snapshot.schema.maximum_validated_migration_version,
+            "selectedCarId": car_id,
+            "connection": snapshot.connection,
+            "selectedCar": snapshot.selected_car,
+            "openSessions": snapshot.open_sessions,
+            "selectedCarCounts": snapshot.selected_car_counts,
+            "sourceTotals": snapshot.source_totals,
+            "sourceTokensRelationPresent": snapshot.source_tokens_relation_present,
+            "legacyTokenPair": snapshot.legacy_token_pair,
+            "sourceNeverMutated": true,
+            "guidance": "Exact TeslaMate 4.1.1 compatibility verified. The source is read-only and ready for migration. TeslaMate data is not deleted.",
+        })
+    );
+}
+
+#[cfg(unix)]
 fn print_teslamate_check_failure(
     car_id: i64,
     status: &str,
@@ -1503,6 +1625,21 @@ fn teslamate_check_failure_details(
             None,
             "Choose a car ID that exists in the compatible TeslaMate source, then retry.",
         ),
+        TeslaMateReaderError::AmbiguousOpenSession { .. } => (
+            "incompatible",
+            "ambiguous_open_session",
+            None,
+            "The TeslaMate source has more than one open drive, charging process, or state. Finish or repair those sessions, then retry.",
+        ),
+        TeslaMateReaderError::LegacyTokenPairMissing
+        | TeslaMateReaderError::LegacyTokenPairAmbiguous
+        | TeslaMateReaderError::LegacyTokenPairEmpty
+        | TeslaMateReaderError::LegacyTokenCiphertextTooLarge { .. } => (
+            "incompatible",
+            "legacy_token_pair_invalid",
+            None,
+            "TeslaMate must contain exactly one non-empty, bounded legacy OAuth token pair before migration. Repair or re-login to TeslaMate, then retry.",
+        ),
         _ => (
             "unavailable",
             "source_unavailable",
@@ -1553,22 +1690,8 @@ async fn run_teslamate_check(
     match check_teslamate_compatibility(&source, &password, car_id, TeslaMateReadLimits::default())
         .await
     {
-        Ok(schema) => {
-            println!(
-                "{}",
-                serde_json::json!({
-                    "status": "compatible",
-                    "reasonCode": "exact_4_1_1",
-                    "requiredVersion": TESLAMATE_REQUIRED_VERSION,
-                    "pinnedSourceRevision": schema.pinned_source_revision,
-                    "observedMigrationVersion": schema.observed_migration_version,
-                    "observedMigrationCount": schema.observed_migration_count,
-                    "minimumSupportedMigrationVersion": schema.minimum_supported_migration_version,
-                    "maximumValidatedMigrationVersion": schema.maximum_validated_migration_version,
-                    "selectedCarId": car_id,
-                    "guidance": "Exact TeslaMate 4.1.1 compatibility verified. The source is ready for migration.",
-                })
-            );
+        Ok(snapshot) => {
+            print_teslamate_check_success(car_id, &snapshot);
             Ok(())
         }
         Err(error) => {
@@ -1812,17 +1935,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Doctor => {
             let config = HubConfig::load(&config_path)?;
-            let (sqlite_version, database_path) =
-                run_immutable_diagnostic(&config.data_dir, |store| {
-                    store.catalogue_check()?;
-                    Ok((store.sqlite_version()?, store.database_path().to_path_buf()))
-                })?;
-            println!(
-                "{{\"status\":\"ok\",\"version\":\"{}\",\"sqlite\":\"{}\",\"database\":\"{}\"}}",
-                teslatlas_hub::BUILD_VERSION,
-                sqlite_version,
-                database_path.display()
-            );
+            let report = run_immutable_diagnostic(&config.data_dir, |store| {
+                Ok(inspect_hub(store, &config)?)
+            })?;
+            report.log();
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            if !report.is_ok() {
+                return Err(std::io::Error::other("doctor found failures; see JSON report").into());
+            }
             return Ok(());
         }
         Command::Status => {
@@ -2048,6 +2168,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             vehicle_id,
             all_vehicles,
         } => {
+            validate_legacy_setup_provider(config.collector.provider)?;
             let tokens = if tokens_stdin {
                 read_setup_tokens_from_stdin()?
             } else {
@@ -2083,11 +2204,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "snapshotsPublished": report.snapshots_published,
                 })
             };
-            let encryption_key = random_encryption_key();
-            let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, &tokens)?;
-            let stored = TeslaMateLegacyTokenStore::imported(access, refresh)?;
-            replace_key_and_tokens(&config.data_dir, &store, &encryption_key, &stored)?;
+            persist_legacy_setup_and_drop_fleet(&config.data_dir, &store, &tokens)?;
+            catalogue_checkpoint.finish().map_err(|error| {
+                provider_switch_outcome_ambiguous("checkpointing Legacy setup", error)
+            })?;
             println!("{report}");
+            return Ok(());
         }
         #[cfg(unix)]
         Command::SetupFleet {
@@ -2128,13 +2250,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "snapshotsPublished": report.snapshots_published,
                 })
             };
-            persist_fleet_setup_credentials(
-                &store,
+            persist_fleet_setup_and_drop_legacy(
                 &config.data_dir,
+                &store,
                 &credentials,
                 SystemTime::now(),
             )?;
+            catalogue_checkpoint.finish().map_err(|error| {
+                provider_switch_outcome_ambiguous("checkpointing Fleet setup", error)
+            })?;
             println!("{report}");
+            return Ok(());
         }
         Command::Legal
         | Command::Doctor
@@ -2171,6 +2297,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let mut sigterm = signal(SignalKind::terminate())?;
 
                 let collector_enabled = collector_can_start(&store, &config)?;
+                log_runtime_inventory(&store, &config);
+                tracing::info!(
+                    collector_enabled,
+                    provider = ?config.collector.provider,
+                    interval_seconds = config.collector.interval_seconds,
+                    bind = %config.bind,
+                    "Hub serve starting (TeslaMate is not opened; stored tokens are not deleted)"
+                );
                 let collector_store = store.clone();
                 let collector_config = config.clone();
                 let collector_admission = std::sync::Arc::clone(&admission);
@@ -2617,7 +2751,19 @@ async fn run_macos_migration(
         (key, access, refresh)
     };
     let stored = TeslaMateLegacyTokenStore::imported(access_ciphertext, refresh_ciphertext)?;
-    replace_key_and_tokens(&config.data_dir, &store, &encryption_key, &stored)?;
+    let fleet_still_present = store.load_fleet_tokens()?.is_some();
+    persist_migrated_legacy_tokens(&config.data_dir, &store, &encryption_key, &stored)
+        .map_err(|error| migration_outcome_ambiguous("persisting imported credentials", error))?;
+    tracing::info!(
+        selected_car_id = car_id,
+        projected_rows = report.projected_rows,
+        fleet_tokens_preserved = fleet_still_present,
+        "TeslaMate history imported; source PostgreSQL was not written; Fleet tokens were not deleted"
+    );
+
+    catalogue_checkpoint
+        .finish()
+        .map_err(|error| migration_outcome_ambiguous("checkpointing imported catalogue", error))?;
 
     println!(
         "{}",
@@ -2628,6 +2774,10 @@ async fn run_macos_migration(
             "projectedRows": report.projected_rows,
             "snapshotId": report.snapshot_id,
             "sequence": report.sequence,
+            "cutoverUnsettled": report.cutover_unsettled,
+            "retryRecommended": report.cutover_unsettled,
+            "sourceNeverMutated": true,
+            "fleetTokensPreserved": fleet_still_present,
             "accessCiphertextBytes": stored.access().len(),
             "refreshCiphertextBytes": stored.refresh().len(),
             "profileVersion": profile.version,
@@ -2637,7 +2787,6 @@ async fn run_macos_migration(
     );
 
     if online_snapshot {
-        catalogue_checkpoint.finish()?;
         return Ok(false);
     }
 
@@ -2647,7 +2796,6 @@ async fn run_macos_migration(
     std::io::stdin().read_line(&mut answer)?;
     let start_hub = migration_start_requested(&answer);
 
-    catalogue_checkpoint.finish()?;
     Ok(start_hub)
 }
 
@@ -2667,6 +2815,14 @@ async fn import_direct_migration_snapshot(
     ),
     Box<dyn std::error::Error>,
 > {
+    tracing::info!(
+        host = source.host(),
+        port = source.port(),
+        database = source.database_name(),
+        car_id,
+        include_legacy_token,
+        "starting TeslaMate read-only snapshot import"
+    );
     let imported_at_ms = current_epoch_ms()?;
     let request = TeslaMateImportRequest {
         source_key: "teslamate".to_owned(),
@@ -3241,10 +3397,12 @@ mod tests {
         MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec, MacServeControl,
         MacServeWorkerStopTimeout, MigrationSecretReadError, ServiceCommand,
         clear_provider_credentials, command_requires_user_hub_admission, decode_setup_fleet_stdin,
-        migration_start_requested, migration_stop_confirmed, read_migration_encryption_key,
-        read_migration_postgres_password, read_migration_secret,
+        migration_start_requested, migration_stop_confirmed, persist_fleet_setup_and_drop_legacy,
+        persist_legacy_setup_and_drop_fleet, persist_migrated_legacy_tokens,
+        read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
         read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
-        teslamate_check_failure_details, validate_streaming_setting,
+        teslamate_check_failure_details, validate_legacy_setup_provider,
+        validate_streaming_setting,
     };
     use teslatlas_hub::db::HubStore;
     #[cfg(target_os = "macos")]
@@ -3332,6 +3490,11 @@ mod tests {
             maximum: 2,
         });
         let selected = TeslaMateReaderError::SelectedCarMissing { selected_car_id: 7 };
+        let ambiguous = TeslaMateReaderError::AmbiguousOpenSession {
+            drives: 2,
+            charges: 1,
+            states: 1,
+        };
 
         assert_eq!(
             teslamate_check_failure_details(&older).1,
@@ -3353,6 +3516,11 @@ mod tests {
             "selected_car_missing"
         );
         assert!(!teslamate_check_failure_details(&selected).3.contains('7'));
+        assert_eq!(
+            teslamate_check_failure_details(&ambiguous).1,
+            "ambiguous_open_session"
+        );
+        assert!(!teslamate_check_failure_details(&ambiguous).3.contains("2"));
     }
 
     #[cfg(target_os = "macos")]
@@ -4439,6 +4607,85 @@ mod tests {
         assert!(!data_dir.exists());
     }
 
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn doctor_reports_inventory_and_does_not_delete_tokens() {
+        use teslatlas_hub::{
+            credentials::OwnerTokens, db::TeslaMateLegacyTokenStore, fleet_api::FleetRegion,
+            fleet_credentials::FleetSetupCredentials, teslamate_credentials::random_encryption_key,
+            teslamate_token::encrypt_legacy_owner_tokens,
+        };
+
+        let temporary = tempfile::tempdir().expect("temporary Hub");
+        fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
+            .expect("private data directory");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let fleet = FleetSetupCredentials::new(
+            "fleet-access".to_owned(),
+            "fleet-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            FleetRegion::EuropeMiddleEastAndAfrica,
+            3_600,
+        )
+        .expect("Fleet credentials");
+        persist_fleet_setup_and_drop_legacy(
+            temporary.path(),
+            &store,
+            &fleet,
+            std::time::SystemTime::now(),
+        )
+        .expect("seed Fleet");
+        let legacy = OwnerTokens::from_file_bytes(
+            zeroize::Zeroizing::new(b"doctor-access".to_vec()),
+            zeroize::Zeroizing::new(b"doctor-refresh".to_vec()),
+        )
+        .expect("legacy credentials");
+        let encryption_key = random_encryption_key();
+        let (access, refresh) =
+            encrypt_legacy_owner_tokens(&encryption_key, &legacy).expect("encrypt");
+        let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+        persist_migrated_legacy_tokens(temporary.path(), &store, &encryption_key, &stored)
+            .expect("copy TeslaMate tokens without deleting Fleet");
+
+        let config_path = temporary.path().join("config.toml");
+        fs::write(
+            &config_path,
+            format!(
+                "data_dir = {:?}\nbind = '127.0.0.1:18443'\n\n[collector]\ninterval_seconds = 0\n",
+                temporary.path()
+            ),
+        )
+        .expect("write config");
+        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600))
+            .expect("private config");
+
+        run(Cli {
+            config: Some(config_path),
+            command: Command::Doctor,
+        })
+        .await
+        .expect("doctor succeeds on a healthy catalogue");
+
+        assert!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("legacy after doctor")
+                .is_some(),
+            "doctor must not delete Owner tokens"
+        );
+        assert!(
+            store
+                .load_fleet_tokens()
+                .expect("Fleet after doctor")
+                .is_some(),
+            "doctor must not delete Fleet tokens"
+        );
+        let inventory = store.catalogue_inventory().expect("inventory");
+        assert_eq!(inventory.journal_mode, "wal");
+        assert_eq!(inventory.teslamate_legacy_token_rows, 1);
+        assert_eq!(inventory.fleet_token_rows, 1);
+    }
+
     #[test]
     fn immutable_diagnostic_waits_for_a_transient_wal() {
         let temporary = tempfile::tempdir().expect("temporary directory");
@@ -4744,6 +4991,15 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn legacy_setup_requires_legacy_provider_before_mutation() {
+        use teslatlas_hub::config::CollectorProvider;
+
+        assert!(validate_legacy_setup_provider(CollectorProvider::Legacy).is_ok());
+        assert!(validate_legacy_setup_provider(CollectorProvider::Fleet).is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn sign_out_clears_both_providers_but_preserves_cursor_key() {
         use teslatlas_hub::{
             credentials::OwnerTokens,
@@ -4803,6 +5059,168 @@ mod tests {
         assert!(!teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
         let cursor_after = load_or_create_cursor_key(temporary.path()).expect("cursor remains");
         assert_eq!(supervisor_cursor_proof(&cursor_after), cursor_proof);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
+        use teslatlas_hub::{
+            credentials::OwnerTokens,
+            db::TeslaMateLegacyTokenStore,
+            teslamate_credentials::{random_encryption_key, replace_key_and_tokens},
+            teslamate_token::encrypt_legacy_owner_tokens,
+        };
+
+        let temporary = tempfile::tempdir().expect("temporary Hub");
+        fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
+            .expect("private temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let legacy = OwnerTokens::from_file_bytes(
+            zeroize::Zeroizing::new(b"access".to_vec()),
+            zeroize::Zeroizing::new(b"refresh".to_vec()),
+        )
+        .expect("legacy credentials");
+        let legacy_key = random_encryption_key();
+        let (access, refresh) =
+            encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
+        let legacy_store =
+            TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+        replace_key_and_tokens(temporary.path(), &store, &legacy_key, &legacy_store)
+            .expect("persist legacy");
+
+        let invalid_fleet_key = teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path());
+        fs::create_dir(&invalid_fleet_key).expect("invalid Fleet key directory");
+        fs::set_permissions(&invalid_fleet_key, fs::Permissions::from_mode(0o700))
+            .expect("private invalid Fleet key");
+
+        let error = clear_provider_credentials(temporary.path(), &store)
+            .expect_err("Fleet key failure must be reported");
+        assert!(error.to_string().contains("Fleet credentials"));
+        assert!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("legacy row")
+                .is_none(),
+            "Legacy credentials must still be removed"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn setup_clears_the_other_provider_token_generation() {
+        use teslatlas_hub::{
+            credentials::OwnerTokens,
+            db::TeslaMateLegacyTokenStore,
+            fleet_api::FleetRegion,
+            fleet_credentials::FleetSetupCredentials,
+            teslamate_credentials::{random_encryption_key, replace_key_and_tokens},
+            teslamate_token::encrypt_legacy_owner_tokens,
+        };
+
+        let temporary = tempfile::tempdir().expect("temporary Hub");
+        fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
+            .expect("private temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let legacy = OwnerTokens::from_file_bytes(
+            zeroize::Zeroizing::new(b"access".to_vec()),
+            zeroize::Zeroizing::new(b"refresh".to_vec()),
+        )
+        .expect("legacy credentials");
+        let legacy_key = random_encryption_key();
+        let (access, refresh) =
+            encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
+        let legacy_store =
+            TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+        replace_key_and_tokens(temporary.path(), &store, &legacy_key, &legacy_store)
+            .expect("persist legacy");
+        let fleet = FleetSetupCredentials::new(
+            "fleet-access".to_owned(),
+            "fleet-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            FleetRegion::EuropeMiddleEastAndAfrica,
+            3_600,
+        )
+        .expect("Fleet credentials");
+        persist_fleet_setup_and_drop_legacy(
+            temporary.path(),
+            &store,
+            &fleet,
+            std::time::SystemTime::now(),
+        )
+        .expect("setup-fleet drops legacy");
+        assert!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("legacy row")
+                .is_none()
+        );
+        assert!(store.load_fleet_tokens().expect("Fleet row").is_some());
+        assert!(teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
+
+        persist_legacy_setup_and_drop_fleet(temporary.path(), &store, &legacy)
+            .expect("setup drops Fleet");
+        assert!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("legacy row")
+                .is_some()
+        );
+        assert!(store.load_fleet_tokens().expect("Fleet row").is_none());
+        assert!(!teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migrate_copies_legacy_tokens_without_deleting_fleet() {
+        use teslatlas_hub::{
+            credentials::OwnerTokens, db::TeslaMateLegacyTokenStore, fleet_api::FleetRegion,
+            fleet_credentials::FleetSetupCredentials, teslamate_credentials::random_encryption_key,
+            teslamate_token::encrypt_legacy_owner_tokens,
+        };
+
+        let temporary = tempfile::tempdir().expect("temporary Hub");
+        fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
+            .expect("private temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let fleet = FleetSetupCredentials::new(
+            "fleet-access".to_owned(),
+            "fleet-refresh".to_owned(),
+            "fleet-client".to_owned(),
+            FleetRegion::EuropeMiddleEastAndAfrica,
+            3_600,
+        )
+        .expect("Fleet credentials");
+        persist_fleet_setup_and_drop_legacy(
+            temporary.path(),
+            &store,
+            &fleet,
+            std::time::SystemTime::now(),
+        )
+        .expect("seed Fleet");
+        assert!(store.load_fleet_tokens().expect("Fleet row").is_some());
+
+        let legacy = OwnerTokens::from_file_bytes(
+            zeroize::Zeroizing::new(b"migrate-access".to_vec()),
+            zeroize::Zeroizing::new(b"migrate-refresh".to_vec()),
+        )
+        .expect("legacy credentials");
+        let encryption_key = random_encryption_key();
+        let (access, refresh) =
+            encrypt_legacy_owner_tokens(&encryption_key, &legacy).expect("encrypt legacy");
+        let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+        persist_migrated_legacy_tokens(temporary.path(), &store, &encryption_key, &stored)
+            .expect("migrate copies TeslaMate tokens");
+        assert!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("legacy row")
+                .is_some()
+        );
+        assert!(
+            store.load_fleet_tokens().expect("Fleet row").is_some(),
+            "TeslaMate import must not delete Fleet credentials"
+        );
+        assert!(teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
     }
 
     #[cfg(target_os = "macos")]

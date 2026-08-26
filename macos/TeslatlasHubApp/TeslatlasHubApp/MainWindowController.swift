@@ -5,6 +5,7 @@ final class MainWindowController: NSWindowController {
     private let heroDot = NSImageView()
     private let heroTitle = NSTextField(labelWithString: "")
     private let heroSubtitle = NSTextField(labelWithString: "")
+    private let heroStateIcon = NSImageView()
     private let serviceValue = NSTextField(labelWithString: "")
     private let accountValue = NSTextField(labelWithString: "")
     private let databaseValue = NSTextField(labelWithString: "")
@@ -21,15 +22,18 @@ final class MainWindowController: NSWindowController {
     private let restartButton = NSButton(title: "Restart", target: nil, action: nil)
     private let installButton = NSButton(title: "Set Up Hub", target: nil, action: nil)
     let connectButton = NSButton(title: "Connect Tesla", target: nil, action: nil)
+    let importButton = NSButton(title: "Import", target: nil, action: nil)
+    let detailsButton = NSButton(title: "Service Details", target: nil, action: nil)
     private var vehicleActionButtons: [NSButton] = []
     private var vehicleControlPending = false
     private var vehicleControlOutcomeUnknown = false
+    private(set) var accountWorkflowActive = false
+    private var serviceDetailsMutationPending = false
     private var titlebarAccessory: NSTitlebarAccessoryViewController?
-    private var importSheet: ImportSheetController?
     private var logsWindow: LogsWindowController?
-    private var detailsWindow: ServiceDetailsWindowController?
+    private(set) var detailsWindow: ServiceDetailsWindowController?
     private var diagnosticsWindow: DiagnosticsWindowController?
-    private var authWindow: TeslaAuthWindowController?
+    private var onboardingWindow: OnboardingWindowController?
     private var onInitialRefresh: ((HubSnapshot) -> Void)?
 
     init(controller: HubController, onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
@@ -61,13 +65,14 @@ final class MainWindowController: NSWindowController {
                 titlebarTitle.centerYAnchor.constraint(equalTo: titlebar.centerYAnchor)
             ])
         }
-        connectButton.image = NSImage(systemSymbolName: "person.badge.key", accessibilityDescription: "Connect Tesla")
-        connectButton.imagePosition = .imageLeading
-        connectButton.bezelStyle = .rounded
         connectButton.target = self
         connectButton.action = #selector(connectTeslaPressed)
+        configureFlatButton(connectButton, symbol: "person.badge.key")
+        importButton.target = self
+        importButton.action = #selector(importPressed)
+        configureFlatButton(importButton, symbol: "square.and.arrow.down")
         let controls = NSStackView(views: [connectButton,
-                                           compactButton("Import", "square.and.arrow.down", #selector(importPressed)),
+                                           importButton,
                                            compactButton("Logs", "doc.text", #selector(logsPressed))])
         controls.spacing = 8
         controls.alignment = .centerY
@@ -129,11 +134,11 @@ final class MainWindowController: NSWindowController {
         let statusBox = NSBox()
         statusBox.boxType = .custom
         statusBox.wantsLayer = true
-        statusBox.layer?.cornerRadius = 8
+        statusBox.layer?.cornerRadius = 0
         statusBox.layer?.borderWidth = 1
         statusBox.layer?.borderColor = NSColor.separatorColor.cgColor
-        statusBox.fillColor = .controlBackgroundColor
-        statusBox.cornerRadius = 8
+        statusBox.fillColor = .clear
+        statusBox.cornerRadius = 0
         statusBox.contentViewMargins = .zero
         statusBox.contentView = statusRows()
         content.addArrangedSubview(statusBox)
@@ -159,12 +164,13 @@ final class MainWindowController: NSWindowController {
         heroTitle.font = .systemFont(ofSize: 24, weight: .semibold)
         hero.addArrangedSubview(heroTitle)
 
-        let shield = imageView("checkmark.shield", .secondaryLabelColor)
-        shield.widthAnchor.constraint(equalToConstant: 20).isActive = true
-        shield.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        heroStateIcon.imageScaling = .scaleProportionallyDown
+        heroStateIcon.contentTintColor = .secondaryLabelColor
+        heroStateIcon.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        heroStateIcon.heightAnchor.constraint(equalToConstant: 20).isActive = true
         heroSubtitle.font = .systemFont(ofSize: 13)
         heroSubtitle.textColor = .secondaryLabelColor
-        let subtitle = NSStackView(views: [shield, heroSubtitle])
+        let subtitle = NSStackView(views: [heroStateIcon, heroSubtitle])
         subtitle.spacing = 8
         subtitle.alignment = .centerY
         hero.addArrangedSubview(subtitle)
@@ -174,22 +180,18 @@ final class MainWindowController: NSWindowController {
         actions.alignment = .centerY
         stopButton.target = self
         stopButton.action = #selector(stopPressed)
-        stopButton.bezelStyle = .rounded
-        stopButton.bezelColor = .systemBlue
-        stopButton.contentTintColor = .white
+        configureFlatButton(stopButton, symbol: "stop.fill", tint: .systemRed)
         stopButton.controlSize = .large
-        stopButton.keyEquivalent = "\r"
         stopButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
         restartButton.target = self
         restartButton.action = #selector(restartPressed)
-        restartButton.bezelStyle = .rounded
+        configureFlatButton(restartButton, symbol: "arrow.clockwise", tint: .controlAccentColor)
         restartButton.controlSize = .large
         restartButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 86).isActive = true
         installButton.target = self
         installButton.action = #selector(connectTeslaPressed)
-        installButton.bezelStyle = .rounded
+        configureFlatButton(installButton, symbol: "person.badge.key", tint: .controlAccentColor)
         installButton.controlSize = .large
-        installButton.keyEquivalent = "\r"
         hero.addArrangedSubview(actions)
         return hero
     }
@@ -198,11 +200,11 @@ final class MainWindowController: NSWindowController {
         let card = NSBox()
         card.boxType = .custom
         card.wantsLayer = true
-        card.layer?.cornerRadius = 8
+        card.layer?.cornerRadius = 0
         card.layer?.borderWidth = 1
         card.layer?.borderColor = NSColor.separatorColor.cgColor
-        card.fillColor = .controlBackgroundColor
-        card.cornerRadius = 8
+        card.fillColor = .clear
+        card.cornerRadius = 0
         card.contentViewMargins = .zero
 
         vehicleControlName.font = .systemFont(ofSize: 16, weight: .semibold)
@@ -250,12 +252,13 @@ final class MainWindowController: NSWindowController {
         for button in vehicleActionButtons.dropFirst(2) {
             button.heightAnchor.constraint(equalTo: secondRow.heightAnchor).isActive = true
         }
-        let stack = NSStackView(views: [heading, firstRow, secondRow])
+        let actionSeparator = separator()
+        let stack = NSStackView(views: [heading, actionSeparator, firstRow, secondRow])
         stack.orientation = .vertical
         stack.alignment = .centerX
-        stack.spacing = 8
+        stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 12, right: 16)
-        for row in [heading, firstRow, secondRow] {
+        for row in [heading, actionSeparator, firstRow, secondRow] {
             row.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
         }
         let container = NSView()
@@ -277,14 +280,10 @@ final class MainWindowController: NSWindowController {
         let button = compactButton(title, symbol, #selector(vehicleCardButtonPressed(_:)))
         button.identifier = NSUserInterfaceItemIdentifier(action.rawValue)
         button.controlSize = .large
-        button.bezelStyle = .regularSquare
         button.isBordered = false
-        button.wantsLayer = true
-        button.layer?.cornerRadius = 7
-        button.layer?.borderWidth = 1
-        button.layer?.borderColor = NSColor.separatorColor.cgColor
-        button.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        button.font = .systemFont(ofSize: 13, weight: .medium)
         button.imagePosition = action == .climateStart || action == .climateStop ? .imageLeading : .imageAbove
+        button.imageHugsTitle = true
         return button
     }
 
@@ -349,7 +348,10 @@ final class MainWindowController: NSWindowController {
     private func footerView() -> NSView {
         versionLabel.font = .systemFont(ofSize: 11)
         versionLabel.textColor = .secondaryLabelColor
-        let footer = NSStackView(views: [compactButton("Service Details", "info.circle", #selector(detailsPressed)),
+        detailsButton.target = self
+        detailsButton.action = #selector(detailsPressed)
+        configureFlatButton(detailsButton, symbol: "info.circle")
+        let footer = NSStackView(views: [detailsButton,
                                          compactButton("Run Diagnostics", "waveform.path.ecg", #selector(diagnosticsPressed)),
                                          compactButton("Show Data Folder", "folder", #selector(folderPressed)),
                                          spacer(), versionLabel])
@@ -365,11 +367,26 @@ final class MainWindowController: NSWindowController {
             self.heroDot.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 24, weight: .regular)
             self.heroDot.contentTintColor = snapshot.health.color
             self.heroTitle.stringValue = snapshot.health.title
-            self.heroSubtitle.stringValue = snapshot.health == .running
-                ? "Teslatlas Hub is running in the background."
-                : "Connect Tesla to configure and install the Hub service."
+            switch snapshot.health {
+            case .running:
+                self.heroStateIcon.image = NSImage(systemSymbolName: "checkmark.shield", accessibilityDescription: "Running")
+                self.heroStateIcon.contentTintColor = .secondaryLabelColor
+                self.heroSubtitle.stringValue = "Teslatlas Hub is running in the background."
+            case .stopped:
+                self.heroStateIcon.image = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: "Stopped")
+                self.heroStateIcon.contentTintColor = .secondaryLabelColor
+                self.heroSubtitle.stringValue = "Teslatlas Hub is stopped."
+            case .needsInstall:
+                self.heroStateIcon.image = NSImage(systemSymbolName: "person.badge.key", accessibilityDescription: "Setup required")
+                self.heroStateIcon.contentTintColor = .secondaryLabelColor
+                self.heroSubtitle.stringValue = "Choose how Hub connects to Tesla."
+            case .degraded:
+                self.heroStateIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Attention needed")
+                self.heroStateIcon.contentTintColor = .systemOrange
+                self.heroSubtitle.stringValue = "Open diagnostics for details."
+            }
             self.serviceValue.stringValue = snapshot.service
-            self.accountValue.stringValue = snapshot.account
+            self.accountValue.stringValue = snapshot.accountDisplay
             self.vehicleControlName.stringValue = snapshot.vehicleName
             self.vehicleControlStatus.stringValue = snapshot.vehicle
             self.databaseValue.stringValue = snapshot.database
@@ -386,24 +403,59 @@ final class MainWindowController: NSWindowController {
             self.stopButton.isHidden = snapshot.health == .needsInstall
             self.installButton.isHidden = snapshot.health != .needsInstall
             self.restartButton.isHidden = snapshot.health == .needsInstall || snapshot.health == .stopped
-            self.connectButton.isHidden = snapshot.account == "Connected"
+            let mutableActionsAvailable = !self.accountWorkflowActive
+                && !self.serviceDetailsMutationPending
+            let accountActionsAvailable = mutableActionsAvailable
+                && !self.vehicleControlPending
+            self.stopButton.isEnabled = mutableActionsAvailable
+            self.installButton.isEnabled = mutableActionsAvailable
+            self.restartButton.isEnabled = mutableActionsAvailable
+            self.connectButton.isEnabled = accountActionsAvailable
+            self.importButton.isEnabled = accountActionsAvailable
+            self.detailsButton.isEnabled = !self.accountWorkflowActive
+            self.connectButton.isHidden = false
+            if snapshot.account == "Connected" {
+                self.connectButton.title = "Manage Tesla"
+                self.connectButton.image = NSImage(systemSymbolName: "person.crop.circle.badge.checkmark",
+                                                   accessibilityDescription: "Manage Tesla")
+                self.connectButton.action = #selector(self.manageTeslaPressed(_:))
+            } else {
+                self.connectButton.title = "Connect Tesla"
+                self.connectButton.image = NSImage(systemSymbolName: "person.badge.key",
+                                                   accessibilityDescription: "Connect Tesla")
+                self.connectButton.action = #selector(self.connectTeslaPressed)
+            }
             let controlsAvailable = !self.controller.previewMode
                 && snapshot.health == .running
                 && snapshot.account == "Connected"
                 && snapshot.controlVehicleID != nil
                 && !self.vehicleControlPending
                 && !self.vehicleControlOutcomeUnknown
+                && !self.accountWorkflowActive
+                && !self.serviceDetailsMutationPending
             self.vehicleActionButtons.forEach {
                 $0.isEnabled = controlsAvailable || self.controller.previewMode
             }
-            self.window?.defaultButtonCell = (snapshot.health == .needsInstall
-                ? self.installButton.cell : self.stopButton.cell) as? NSButtonCell
+            self.stopButton.keyEquivalent = snapshot.health == .stopped ? "\r" : ""
+            self.installButton.keyEquivalent = snapshot.health == .needsInstall ? "\r" : ""
+            switch snapshot.health {
+            case .needsInstall:
+                self.window?.defaultButtonCell = self.installButton.cell as? NSButtonCell
+            case .stopped:
+                self.window?.defaultButtonCell = self.stopButton.cell as? NSButtonCell
+            case .running, .degraded:
+                self.window?.defaultButtonCell = nil
+            }
             if snapshot.health == .stopped {
                 self.stopButton.title = "Start Hub"
                 self.stopButton.action = #selector(self.startPressed)
+                self.stopButton.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: "Start Hub")
+                self.stopButton.contentTintColor = .controlAccentColor
             } else {
                 self.stopButton.title = "Stop Hub"
                 self.stopButton.action = #selector(self.stopPressed)
+                self.stopButton.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: "Stop Hub")
+                self.stopButton.contentTintColor = .systemRed
             }
 
             self.activityStack.arrangedSubviews.forEach {
@@ -446,11 +498,20 @@ final class MainWindowController: NSWindowController {
 
     private func compactButton(_ title: String, _ symbol: String, _ action: Selector) -> NSButton {
         let button = NSButton(title: title, target: self, action: action)
-        button.bezelStyle = .rounded
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        button.imagePosition = .imageLeading
+        configureFlatButton(button, symbol: symbol)
         button.controlSize = .regular
         return button
+    }
+
+    private func configureFlatButton(_ button: NSButton,
+                                     symbol: String,
+                                     tint: NSColor = .labelColor) {
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
+        button.imagePosition = .imageLeading
+        button.contentTintColor = tint
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.focusRingType = .default
     }
 
     private func sectionLabel(_ title: String) -> NSTextField {
@@ -521,6 +582,8 @@ final class MainWindowController: NSWindowController {
 
     private func runVehicleControl(_ action: HubVehicleControl) {
         vehicleControlPending = true
+        connectButton.isEnabled = false
+        importButton.isEnabled = false
         vehicleActionButtons.forEach { $0.isEnabled = false }
         controller.performVehicleControl(action) { [weak self] result in
             guard let self else { return }
@@ -546,83 +609,194 @@ final class MainWindowController: NSWindowController {
     }
 
     @objc private func importPressed() {
-        importSheet = ImportSheetController(controller: controller)
-        guard let sheet = importSheet, let window else { return }
-        window.beginSheet(sheet.window!) { [weak self] _ in
-            self?.importSheet = nil
-            self?.update()
-        }
+        showOnboarding(route: .migration)
     }
 
     @objc private func logsPressed() {
+        if let logsWindow {
+            logsWindow.showWindow(nil)
+            logsWindow.window?.makeKeyAndOrderFront(nil)
+            return
+        }
         logsWindow = LogsWindowController(controller: controller)
         logsWindow?.showWindow(nil)
         logsWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func connectTeslaPressed() {
-        guard authWindow == nil else {
-            authWindow?.window?.makeKeyAndOrderFront(nil)
-            return
-        }
-        do {
-            let auth = try TeslaAuthWindowController { [weak self] result in
-                guard let self else { return }
-                self.authWindow = nil
-                switch result {
-                case let .success(tokens):
-                    self.installButton.isEnabled = false
-                    self.controller.configureTeslaAccount(tokens: tokens) { setup in
-                        self.installButton.isEnabled = true
-                        switch setup {
-                        case .success: self.update()
-                        case let .failure(error): self.showError(error)
-                        }
-                    }
-                case let .failure(error):
-                    if error as? TeslaAuthError != .cancelled { self.showError(error) }
-                }
+        showOnboarding(route: .provider)
+    }
+
+    @objc private func manageTeslaPressed(_ sender: NSButton) {
+        let menu = NSMenu(title: "Tesla account")
+        menu.addItem(menuItem("Use Fleet API", action: #selector(useFleetPressed)))
+        menu.addItem(menuItem("Use Legacy token", action: #selector(useLegacyPressed)))
+        menu.addItem(menuItem("Migrate from TeslaMate…", action: #selector(migrateTeslaMatePressed)))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Disconnect Tesla…", action: #selector(disconnectTeslaPressed)))
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    private func menuItem(_ title: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func useFleetPressed() { showOnboarding(route: .fleet) }
+
+    @objc private func useLegacyPressed() { showOnboarding(route: .legacy) }
+
+    @objc private func migrateTeslaMatePressed() { showOnboarding(route: .migration) }
+
+    @objc private func disconnectTeslaPressed() {
+        let alert = Self.disconnectConfirmation()
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        controller.signOutTeslaAccount { [weak self] result in
+            switch result {
+            case .success: self?.update()
+            case let .failure(error): self?.showError(error)
             }
-            authWindow = auth
-            auth.showWindow(nil)
-            auth.window?.makeKeyAndOrderFront(nil)
-        } catch {
-            showError(error)
         }
     }
 
+    @discardableResult
+    func showOnboarding(route: HubOnboardingRoute) -> OnboardingWindowController? {
+        if let onboardingWindow, onboardingWindow.window?.isVisible == true {
+            onboardingWindow.navigate(to: route)
+            onboardingWindow.window?.makeKeyAndOrderFront(nil)
+            return onboardingWindow
+        }
+        guard !vehicleControlPending, !serviceDetailsMutationPending else {
+            NSSound.beep()
+            return nil
+        }
+        onboardingWindow = nil
+        let onboarding = OnboardingWindowController(
+            controller: controller,
+            resumeMigrationHandoverPhase: controller.pendingMigrationHandoverPhase,
+            initialRoute: route,
+            onDismiss: { [weak self] in
+                guard let self else { return }
+                self.onboardingWindow = nil
+                self.setAccountWorkflowActive(false)
+            }
+        ) { [weak self] in
+            self?.onboardingWindow?.close()
+        }
+        onboardingWindow = onboarding
+        setAccountWorkflowActive(true)
+        onboarding.showWindow(nil)
+        onboarding.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        return onboarding
+    }
+
+    private func setAccountWorkflowActive(_ active: Bool) {
+        accountWorkflowActive = active
+        let mutableActionsAvailable = !active && !serviceDetailsMutationPending
+        stopButton.isEnabled = mutableActionsAvailable
+        restartButton.isEnabled = mutableActionsAvailable
+        installButton.isEnabled = mutableActionsAvailable
+        connectButton.isEnabled = mutableActionsAvailable
+        importButton.isEnabled = mutableActionsAvailable
+        detailsButton.isEnabled = !active
+        detailsWindow?.setMutationsEnabled(!active)
+        if active {
+            vehicleActionButtons.forEach { $0.isEnabled = false }
+        } else {
+            update()
+        }
+    }
+
+    private func setServiceDetailsMutationPending(_ pending: Bool) {
+        serviceDetailsMutationPending = pending
+        let mutableActionsAvailable = !pending && !accountWorkflowActive
+        stopButton.isEnabled = mutableActionsAvailable
+        restartButton.isEnabled = mutableActionsAvailable
+        installButton.isEnabled = mutableActionsAvailable
+        connectButton.isEnabled = mutableActionsAvailable && !vehicleControlPending
+        importButton.isEnabled = mutableActionsAvailable && !vehicleControlPending
+        if pending {
+            vehicleActionButtons.forEach { $0.isEnabled = false }
+        } else {
+            update()
+        }
+    }
+
+    static func disconnectConfirmation() -> NSAlert {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Disconnect Tesla from Hub?"
+        alert.informativeText = "Hub will stop and remove its stored Fleet and Legacy credentials. Your collected data stays on this Mac."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Disconnect")
+        alert.buttons[0].keyEquivalent = "\r"
+        alert.buttons[1].keyEquivalent = ""
+        return alert
+    }
+
     @objc private func startPressed() {
+        guard !accountWorkflowActive, !serviceDetailsMutationPending else { return }
         controller.startHub { [weak self] result in
             switch result { case .success: self?.update(); case let .failure(error): self?.showError(error) }
         }
     }
 
     @objc private func stopPressed() {
+        guard !accountWorkflowActive, !serviceDetailsMutationPending else { return }
         controller.stopHub { [weak self] result in
             switch result { case .success: self?.update(); case let .failure(error): self?.showError(error) }
         }
     }
 
     @objc private func restartPressed() {
+        guard !accountWorkflowActive, !serviceDetailsMutationPending else { return }
         controller.restartHub { [weak self] result in
             switch result { case .success: self?.update(); case let .failure(error): self?.showError(error) }
         }
     }
 
     @objc private func vehicleCardButtonPressed(_ sender: NSButton) {
+        guard !accountWorkflowActive, !serviceDetailsMutationPending else { return }
         guard let rawValue = sender.identifier?.rawValue,
               let action = HubVehicleControl(rawValue: rawValue) else { return }
         confirmVehicleControl(action)
     }
 
     @objc private func detailsPressed() {
-        detailsWindow = ServiceDetailsWindowController(snapshot: controller.snapshot,
-                                                        controller: controller) { [weak self] in self?.update() }
+        guard !accountWorkflowActive else {
+            NSSound.beep()
+            return
+        }
+        if let detailsWindow {
+            detailsWindow.update(snapshot: controller.snapshot)
+            detailsWindow.setMutationsEnabled(true)
+            detailsWindow.showWindow(nil)
+            detailsWindow.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        detailsWindow = ServiceDetailsWindowController(
+            snapshot: controller.snapshot,
+            controller: controller,
+            mutationAllowed: { [weak self] in
+                guard let self else { return false }
+                return !self.accountWorkflowActive && !self.serviceDetailsMutationPending
+            },
+            onMutationStateChanged: { [weak self] in
+                self?.setServiceDetailsMutationPending($0)
+            }
+        ) { [weak self] in self?.update() }
         detailsWindow?.showWindow(nil)
         detailsWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func diagnosticsPressed() {
+        if let diagnosticsWindow {
+            diagnosticsWindow.showWindow(nil)
+            diagnosticsWindow.window?.makeKeyAndOrderFront(nil)
+            return
+        }
         diagnosticsWindow = DiagnosticsWindowController(controller: controller)
         diagnosticsWindow?.showWindow(nil)
         diagnosticsWindow?.window?.makeKeyAndOrderFront(nil)

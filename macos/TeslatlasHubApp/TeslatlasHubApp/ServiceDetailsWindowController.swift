@@ -2,26 +2,30 @@ import AppKit
 
 final class ServiceDetailsWindowController: NSWindowController {
     private let controller: HubController
+    private let mutationAllowed: () -> Bool
+    private let onMutationStateChanged: (Bool) -> Void
     private let onChanged: () -> Void
+    private let detailsField = NSTextField(labelWithString: "")
+    private let updateButton = NSButton(title: "Update Service…", target: nil, action: nil)
+    private let uninstallButton = NSButton(title: "Uninstall Hub…", target: nil, action: nil)
+    private var mutationsEnabled = true
+    private var mutationPending = false
 
-    init(snapshot: HubSnapshot, controller: HubController, onChanged: @escaping () -> Void) {
+    init(snapshot: HubSnapshot,
+         controller: HubController,
+         mutationAllowed: @escaping () -> Bool = { true },
+         onMutationStateChanged: @escaping (Bool) -> Void = { _ in },
+         onChanged: @escaping () -> Void) {
         self.controller = controller
+        self.mutationAllowed = mutationAllowed
+        self.onMutationStateChanged = onMutationStateChanged
         self.onChanged = onChanged
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 420), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Service Details"
         super.init(window: window)
-        let text = [
-            "Status: \(snapshot.service)",
-            "Account: \(snapshot.account)",
-            "Vehicle: \(snapshot.vehicleName) · \(snapshot.vehicle)",
-            "Database: \(snapshot.database)",
-            "Data folder: \(snapshot.dataDirectory?.path ?? "Not available")",
-            "Version: \(snapshot.version)"
-        ].joined(separator: "\n\n")
-        let field = NSTextField(labelWithString: text)
-        field.font = .systemFont(ofSize: 13)
-        field.lineBreakMode = .byCharWrapping
-        field.translatesAutoresizingMaskIntoConstraints = false
+        detailsField.font = .systemFont(ofSize: 13)
+        detailsField.lineBreakMode = .byCharWrapping
+        detailsField.translatesAutoresizingMaskIntoConstraints = false
 
         let legal = NSTextField(labelWithString: "License: AGPL-3.0-only\nUnofficial project. No Tesla affiliation or warranty.")
         legal.font = .systemFont(ofSize: 11)
@@ -30,23 +34,25 @@ final class ServiceDetailsWindowController: NSWindowController {
         legal.translatesAutoresizingMaskIntoConstraints = false
 
         let sourceButton = NSButton(title: "Open Source", target: self, action: #selector(openSource))
-        sourceButton.bezelStyle = .rounded
+        configureFlatButton(sourceButton, symbol: "chevron.left.forwardslash.chevron.right")
         sourceButton.translatesAutoresizingMaskIntoConstraints = false
         let licenseButton = NSButton(title: "Open License", target: self, action: #selector(openLicense))
-        licenseButton.bezelStyle = .rounded
+        configureFlatButton(licenseButton, symbol: "doc.plaintext")
         licenseButton.translatesAutoresizingMaskIntoConstraints = false
-        let updateButton = NSButton(title: "Update Service…", target: self, action: #selector(updateServicePressed))
-        updateButton.bezelStyle = .rounded
+        updateButton.target = self
+        updateButton.action = #selector(updateServicePressed)
+        configureFlatButton(updateButton, symbol: "arrow.down.circle", tint: .controlAccentColor)
         updateButton.translatesAutoresizingMaskIntoConstraints = false
-        let uninstallButton = NSButton(title: "Uninstall Hub…", target: self, action: #selector(uninstallPressed))
-        uninstallButton.bezelStyle = .rounded
+        uninstallButton.target = self
+        uninstallButton.action = #selector(uninstallPressed)
+        configureFlatButton(uninstallButton, symbol: "trash", tint: .systemRed)
         uninstallButton.translatesAutoresizingMaskIntoConstraints = false
         let buttons = NSStackView(views: [sourceButton, licenseButton, updateButton, uninstallButton])
         buttons.orientation = .horizontal
         buttons.spacing = 8
         buttons.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = NSStackView(views: [field, legal, buttons])
+        let stack = NSStackView(views: [detailsField, legal, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 16
@@ -62,6 +68,34 @@ final class ServiceDetailsWindowController: NSWindowController {
             legal.trailingAnchor.constraint(equalTo: stack.trailingAnchor)
         ])
         window.center()
+        update(snapshot: snapshot)
+    }
+
+    func update(snapshot: HubSnapshot) {
+        detailsField.stringValue = [
+            "Status: \(snapshot.service)",
+            "Account: \(snapshot.accountDisplay)",
+            "Vehicle: \(snapshot.vehicleName) · \(snapshot.vehicle)",
+            "Database: \(snapshot.database)",
+            "Data folder: \(snapshot.dataDirectory?.path ?? "Not available")",
+            "Version: \(snapshot.version)"
+        ].joined(separator: "\n\n")
+    }
+
+    func setMutationsEnabled(_ enabled: Bool) {
+        mutationsEnabled = enabled
+        updateMutationButtons()
+    }
+
+    private func configureFlatButton(_ button: NSButton,
+                                     symbol: String,
+                                     tint: NSColor = .labelColor) {
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
+        button.imagePosition = .imageLeading
+        button.contentTintColor = tint
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.focusRingType = .default
     }
 
     @objc private func openSource() {
@@ -74,7 +108,9 @@ final class ServiceDetailsWindowController: NSWindowController {
     }
 
     @objc private func updateServicePressed() {
+        guard beginMutation() else { return }
         controller.installService { [weak self] result in
+            self?.endMutation()
             switch result {
             case .success:
                 self?.onChanged()
@@ -97,16 +133,12 @@ final class ServiceDetailsWindowController: NSWindowController {
 
         let deleteData = response == .alertSecondButtonReturn
         if deleteData {
-            let confirmation = NSAlert()
-            confirmation.alertStyle = .critical
-            confirmation.messageText = "Permanently delete Hub data?"
-            confirmation.informativeText = "This removes the Hub database and configuration. This cannot be undone."
-            confirmation.addButton(withTitle: "Delete Data and Uninstall")
-            confirmation.addButton(withTitle: "Cancel")
-            guard confirmation.runModal() == .alertFirstButtonReturn else { return }
+            guard Self.deleteDataConfirmation().runModal() == .alertSecondButtonReturn else { return }
         }
 
+        guard beginMutation() else { return }
         controller.uninstallService(deleteData: deleteData) { [weak self] result in
+            self?.endMutation()
             switch result {
             case .success:
                 self?.close()
@@ -115,6 +147,42 @@ final class ServiceDetailsWindowController: NSWindowController {
                 NSAlert(error: error).runModal()
             }
         }
+    }
+
+    private func beginMutation() -> Bool {
+        guard mutationsEnabled, !mutationPending, mutationAllowed() else {
+            NSSound.beep()
+            return false
+        }
+        mutationPending = true
+        updateMutationButtons()
+        onMutationStateChanged(true)
+        return true
+    }
+
+    private func endMutation() {
+        guard mutationPending else { return }
+        mutationPending = false
+        onMutationStateChanged(false)
+        updateMutationButtons()
+    }
+
+    private func updateMutationButtons() {
+        let enabled = mutationsEnabled && !mutationPending
+        updateButton.isEnabled = enabled
+        uninstallButton.isEnabled = enabled
+    }
+
+    static func deleteDataConfirmation() -> NSAlert {
+        let confirmation = NSAlert()
+        confirmation.alertStyle = .critical
+        confirmation.messageText = "Permanently delete Hub data?"
+        confirmation.informativeText = "This removes the Hub database and configuration. This cannot be undone."
+        confirmation.addButton(withTitle: "Cancel")
+        confirmation.addButton(withTitle: "Delete Data and Uninstall")
+        confirmation.buttons[0].keyEquivalent = "\r"
+        confirmation.buttons[1].keyEquivalent = ""
+        return confirmation
     }
 
     @available(*, unavailable)

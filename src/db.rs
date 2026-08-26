@@ -3740,6 +3740,109 @@ impl HubStore {
         self.verify_referenced_packs()
     }
 
+    /// Read-only catalogue inventory for `doctor`. This never mutates SQLite,
+    /// TeslaMate, or stored tokens.
+    pub fn catalogue_inventory(&self) -> Result<CatalogueInventory, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        // SQLite reports `delete` for an `immutable=1` handle even when the
+        // persisted database header is in WAL mode. Doctor uses that handle
+        // for a byte-stable inspection, so read the header in that case.
+        let journal_mode = if self.immutable_snapshot.is_some() {
+            persistent_journal_mode(&self.database_path)?
+        } else {
+            connection
+                .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+                .map_err(StoreError::Query)?
+        };
+        let page_size: i64 = connection
+            .query_row("PRAGMA page_size", [], |row| row.get(0))
+            .map_err(StoreError::Query)?;
+        let page_count: i64 = connection
+            .query_row("PRAGMA page_count", [], |row| row.get(0))
+            .map_err(StoreError::Query)?;
+        let freelist_count: i64 = connection
+            .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+            .map_err(StoreError::Query)?;
+        let synchronous: i64 = connection
+            .query_row("PRAGMA synchronous", [], |row| row.get(0))
+            .map_err(StoreError::Query)?;
+        let foreign_keys: i64 = connection
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .map_err(StoreError::Query)?;
+        let schema_version = schema_version(&connection)?;
+        let referenced_pack_rows =
+            referenced_pack_rows_at(&connection, retired_lineage_clock_ms()?)?;
+        let referenced_packs = u64::try_from(referenced_pack_rows.len())
+            .map_err(|_| StoreError::InvalidStoredCount)?;
+        let referenced_pack_bytes =
+            referenced_pack_rows
+                .iter()
+                .try_fold(0_u64, |total, (_, _, compressed_bytes)| {
+                    let compressed_bytes = u64::try_from(*compressed_bytes)
+                        .map_err(|_| StoreError::InvalidStoredCount)?;
+                    total
+                        .checked_add(compressed_bytes)
+                        .ok_or(StoreError::InvalidStoredCount)
+                })?;
+        let (physical_pack_files, physical_pack_bytes) = physical_pack_inventory(&self.packs_dir)?;
+        let page_size_u = u64::try_from(page_size).map_err(|_| StoreError::InvalidStoredCount)?;
+        let page_count_u = u64::try_from(page_count).map_err(|_| StoreError::InvalidStoredCount)?;
+        let sqlite_page_bytes = page_size_u
+            .checked_mul(page_count_u)
+            .ok_or(StoreError::InvalidStoredCount)?;
+        let wal_path = {
+            let mut path = self.database_path.as_os_str().to_os_string();
+            path.push("-wal");
+            PathBuf::from(path)
+        };
+        let (wal_present, wal_bytes) = match fs::symlink_metadata(&wal_path) {
+            Ok(metadata) if metadata.file_type().is_file() => (true, metadata.len()),
+            Ok(_) => (false, 0),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (false, 0),
+            Err(error) => return Err(StoreError::InspectCatalogue(error)),
+        };
+        Ok(CatalogueInventory {
+            schema_version,
+            journal_mode,
+            page_size,
+            page_count,
+            freelist_count,
+            sqlite_page_bytes,
+            wal_present,
+            wal_bytes,
+            synchronous,
+            foreign_keys_enabled: foreign_keys != 0,
+            vehicles: read_only_count(&connection, "SELECT COUNT(*) FROM vehicles")?,
+            raw_observations: read_only_count(
+                &connection,
+                "SELECT COUNT(*) FROM raw_observations",
+            )?,
+            current_observations: read_only_count(
+                &connection,
+                "SELECT COUNT(*) FROM current_observations",
+            )?,
+            quarantined_sessions: read_only_count(
+                &connection,
+                "SELECT COUNT(*) FROM vehicle_lifecycle_state WHERE quarantined != 0",
+            )?,
+            open_lifecycle_rows: read_only_count(
+                &connection,
+                "SELECT COUNT(*) FROM lifecycle_open_rows",
+            )?,
+            referenced_packs,
+            referenced_pack_bytes,
+            physical_pack_files,
+            physical_pack_bytes,
+            teslamate_legacy_token_rows: read_only_count(
+                &connection,
+                "SELECT COUNT(*) FROM teslamate_legacy_tokens",
+            )?,
+            fleet_token_rows: read_only_count(&connection, "SELECT COUNT(*) FROM fleet_tokens")?,
+            paired_devices: read_only_count(&connection, "SELECT COUNT(*) FROM paired_devices")?,
+            installation_id: self.installation_id()?,
+        })
+    }
+
     fn verify_referenced_packs(&self) -> Result<(), StoreError> {
         self.verify_referenced_packs_at(retired_lineage_clock_ms()?)
     }
@@ -13717,6 +13820,7 @@ impl HubStore {
             catalog_shas.insert(sha);
         }
 
+        let sqlite_integrity = catalogue_quick_check_label(&connection)?;
         let (mut orphaned_packs_removed, mut freed_bytes) =
             cleanup_stale_pack_staging(self.packs_dir()).map_err(StoreError::PackStartupRepair)?;
         for packs_dir in [
@@ -13745,11 +13849,30 @@ impl HubStore {
 
         Ok(RepairReport {
             status: "ok".to_owned(),
-            sqlite_integrity: "ok".to_owned(),
+            sqlite_integrity,
             quarantined_sessions_preserved,
             orphaned_packs_removed,
             freed_bytes,
         })
+    }
+}
+
+fn catalogue_quick_check_label(connection: &Connection) -> Result<String, StoreError> {
+    let rows: Vec<String> = connection
+        .prepare("PRAGMA quick_check")
+        .map_err(StoreError::Query)?
+        .query_map([], |row| row.get(0))
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)?;
+    if rows.as_slice() == ["ok"] {
+        Ok("ok".to_owned())
+    } else {
+        Err(StoreError::Integrity(
+            rows.into_iter()
+                .next()
+                .unwrap_or_else(|| "failed".to_owned()),
+        ))
     }
 }
 
@@ -13784,6 +13907,80 @@ pub struct RepairReport {
     pub quarantined_sessions_preserved: usize,
     pub orphaned_packs_removed: usize,
     pub freed_bytes: u64,
+}
+
+/// Read-only catalogue facts used by `doctor`. Counts and PRAGMA values only;
+/// this never hashes packs and never mutates tokens or TeslaMate.
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogueInventory {
+    pub schema_version: i32,
+    pub journal_mode: String,
+    pub page_size: i64,
+    pub page_count: i64,
+    pub freelist_count: i64,
+    pub sqlite_page_bytes: u64,
+    pub wal_present: bool,
+    pub wal_bytes: u64,
+    pub synchronous: i64,
+    pub foreign_keys_enabled: bool,
+    pub vehicles: u64,
+    pub raw_observations: u64,
+    pub current_observations: u64,
+    pub quarantined_sessions: u64,
+    pub open_lifecycle_rows: u64,
+    pub referenced_packs: u64,
+    pub referenced_pack_bytes: u64,
+    pub physical_pack_files: u64,
+    pub physical_pack_bytes: u64,
+    pub teslamate_legacy_token_rows: u64,
+    pub fleet_token_rows: u64,
+    pub paired_devices: u64,
+    pub installation_id: Uuid,
+}
+
+fn physical_pack_inventory(packs_dir: &Path) -> Result<(u64, u64), StoreError> {
+    let mut identities = HashSet::new();
+    let mut files = 0_u64;
+    let mut bytes = 0_u64;
+    for directory in [
+        packs_dir.to_path_buf(),
+        packs_dir.join("sha256"),
+        packs_dir.join(".staging"),
+    ] {
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(source) => {
+                return Err(StoreError::InspectCatalogPack {
+                    path: directory,
+                    source,
+                });
+            }
+        };
+        for entry in entries {
+            let entry = entry.map_err(|source| StoreError::InspectCatalogPack {
+                path: directory.clone(),
+                source,
+            })?;
+            let path = entry.path();
+            let metadata =
+                fs::symlink_metadata(&path).map_err(|source| StoreError::InspectCatalogPack {
+                    path: path.clone(),
+                    source,
+                })?;
+            if !metadata.file_type().is_file()
+                || !identities.insert((metadata.dev(), metadata.ino()))
+            {
+                continue;
+            }
+            files = files.checked_add(1).ok_or(StoreError::InvalidStoredCount)?;
+            bytes = bytes
+                .checked_add(metadata.len())
+                .ok_or(StoreError::InvalidStoredCount)?;
+        }
+    }
+    Ok((files, bytes))
 }
 
 /// Reject a candidate import successor before it can participate in an
@@ -17140,6 +17337,13 @@ fn schema_version(connection: &Connection) -> Result<i32, StoreError> {
         .map_err(StoreError::Query)
 }
 
+fn read_only_count(connection: &Connection, sql: &'static str) -> Result<u64, StoreError> {
+    let count: i64 = connection
+        .query_row(sql, [], |row| row.get(0))
+        .map_err(StoreError::Query)?;
+    u64::try_from(count).map_err(|_| StoreError::InvalidStoredCount)
+}
+
 fn referenced_pack_rows_at(
     connection: &Connection,
     retired_expiry_cutoff_ms: i64,
@@ -18621,6 +18825,22 @@ fn immutable_catalogue_fingerprint(
     })
 }
 
+fn persistent_journal_mode(database_path: &Path) -> Result<String, StoreError> {
+    let mut file = File::open(database_path).map_err(StoreError::ReadCatalogue)?;
+    let mut header = [0_u8; 20];
+    file.read_exact(&mut header)
+        .map_err(StoreError::ReadCatalogue)?;
+    if &header[..16] != b"SQLite format 3\0" {
+        return Ok("invalid".to_owned());
+    }
+    Ok(match (header[18], header[19]) {
+        (2, 2) => "wal",
+        (1, 1) => "rollback",
+        _ => "invalid",
+    }
+    .to_owned())
+}
+
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("cannot create data directory: {0}")]
@@ -19227,6 +19447,69 @@ mod tests {
             BUNDLED_SQLITE_VERSION
         );
         assert!(!store.installation_id().expect("installation ID").is_nil());
+        let inventory = store
+            .catalogue_inventory()
+            .expect("fresh catalogue inventory");
+        assert_eq!(inventory.schema_version, SCHEMA_VERSION);
+        assert_eq!(inventory.journal_mode, "wal");
+        assert!(inventory.foreign_keys_enabled);
+        assert_eq!(inventory.synchronous, 2);
+        assert_eq!(inventory.vehicles, 0);
+        assert_eq!(inventory.raw_observations, 0);
+        assert_eq!(inventory.quarantined_sessions, 0);
+        assert_eq!(inventory.referenced_packs, 0);
+        assert_eq!(inventory.teslamate_legacy_token_rows, 0);
+        assert_eq!(inventory.fleet_token_rows, 0);
+        assert_eq!(
+            inventory.installation_id,
+            store.installation_id().expect("id")
+        );
+        let before = store
+            .load_teslamate_legacy_tokens()
+            .expect("legacy tokens")
+            .is_some();
+        let fleet_before = store.load_fleet_tokens().expect("Fleet tokens").is_some();
+        let _ = store
+            .catalogue_inventory()
+            .expect("inventory is repeatable");
+        assert_eq!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("legacy tokens after inventory")
+                .is_some(),
+            before
+        );
+        assert_eq!(
+            store
+                .load_fleet_tokens()
+                .expect("Fleet tokens after inventory")
+                .is_some(),
+            fleet_before
+        );
+    }
+
+    #[test]
+    fn inventory_counts_physical_pack_and_staging_bytes_once() {
+        let temp = crate::private_tempdir().expect("temp directory");
+        let store = HubStore::initialize(temp.path()).expect("store initializes");
+        let content = store.packs_dir().join("sha256");
+        let staging = store.packs_dir().join(".staging");
+        fs::create_dir_all(&content).expect("content directory");
+        fs::create_dir_all(&staging).expect("staging directory");
+        let orphan = content.join("orphan.sqlite.zst");
+        fs::write(&orphan, b"abc").expect("orphan pack");
+        fs::hard_link(
+            &orphan,
+            store.packs_dir().join("legacy-hardlink.sqlite.zst"),
+        )
+        .expect("hard link fixture");
+        fs::write(staging.join("projection.tmp"), b"12345").expect("staging file");
+
+        let inventory = store.catalogue_inventory().expect("inventory");
+        assert_eq!(inventory.referenced_packs, 0);
+        assert_eq!(inventory.referenced_pack_bytes, 0);
+        assert_eq!(inventory.physical_pack_files, 2);
+        assert_eq!(inventory.physical_pack_bytes, 8);
     }
 
     #[test]
@@ -20018,6 +20301,13 @@ mod tests {
         HubStore::initialize(temporary.path()).expect("store initializes");
         let before = tree_contents(temporary.path());
         let store = HubStore::open_immutable_read_only(temporary.path()).expect("immutable store");
+        assert_eq!(
+            store
+                .catalogue_inventory()
+                .expect("immutable inventory")
+                .journal_mode,
+            "wal"
+        );
         store.catalogue_check().expect("read-only catalogue check");
         assert_eq!(
             store.sqlite_version().expect("read-only SQLite version"),
@@ -27540,6 +27830,11 @@ mod tests {
 
         let report = store.repair().expect("repair");
         assert_eq!(report.status, "ok");
+        assert_eq!(
+            report.sqlite_integrity,
+            catalogue_quick_check_label(&store.open().expect("integrity connection"))
+                .expect("pragma")
+        );
         assert_eq!(report.sqlite_integrity, "ok");
         assert!(matches!(
             store.readiness_check(),
@@ -27559,6 +27854,30 @@ mod tests {
             )
             .expect("query quarantined");
         assert_eq!(quarantined, 1);
+    }
+
+    #[test]
+    fn repair_does_not_report_ok_integrity_for_a_corrupt_catalogue() {
+        let temp = crate::private_tempdir().expect("tempdir");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let healthy = store.repair().expect("healthy repair");
+        assert_eq!(
+            healthy.sqlite_integrity,
+            catalogue_quick_check_label(&store.open().expect("healthy connection"))
+                .expect("healthy pragma")
+        );
+
+        std::fs::write(store.database_path(), b"not a sqlite catalogue")
+            .expect("overwrite catalogue");
+        match store.repair() {
+            Err(StoreError::Integrity(label)) => assert_ne!(label, "ok"),
+            Err(StoreError::Open(_) | StoreError::Configure(_) | StoreError::Query(_)) => {}
+            Ok(report) => panic!(
+                "corrupt catalogue reported sqlite_integrity={}",
+                report.sqlite_integrity
+            ),
+            Err(other) => panic!("unexpected repair error: {other}"),
+        }
     }
 
     #[test]

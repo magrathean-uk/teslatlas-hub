@@ -1,21 +1,28 @@
 # Design QA — direction 2
 
-Status: **PASS** (2026-08-25)
+Status: **PASS** (2026-08-26)
 
-Reference images:
+Evidence:
 
-- Dashboard: `/Users/bolyki/.codex/generated_images/01a01d70-9a82-79f1-ad03-c5603cca8b2e/exec-bed3456e-7570-4711-8c2c-48cc382fc432.png`
-- Onboarding: `/Users/bolyki/.codex/generated_images/01a01d70-9a82-79f1-ad03-c5603cca8b2e/exec-1e04fc5c-7907-4369-9cb2-c8cc11d55401.png`
+- User dashboard reference: `/Users/bolyki/.codex/attachments/772e64c4-36d7-4576-9fce-425d97a2c79b/image-1.png`
+- Native dashboard render: `/Users/bolyki/dev/source/teslatlas-service/hub/target/design-qa/dashboard.png`
+- Native onboarding render: `/Users/bolyki/dev/source/teslatlas-service/hub/target/design-qa/onboarding-choice.png`
+- Same-scale combined comparison: `/Users/bolyki/dev/source/teslatlas-service/hub/target/design-qa/reference-dashboard-comparison.png`
 
-Compared native macOS renders against both references side by side at the same scale.
+The combined comparison was visually inspected after the final source change.
 
 Verified:
 
-- Connected dashboard hides **Connect Tesla**.
-- Climate, wake, lock, unlock, flash, and honk controls are visible; charging controls are absent.
-- Five-step onboarding covers new Fleet/legacy setup and exact TeslaMate 4.1.1 migration.
-- Verification, logs, safe handover, and the instruction to disable Tesla access in old TeslaMate are present.
-- The real Teslatlas app icon is used in the app bundle and onboarding.
-- Layout, hierarchy, spacing, cards, typography, and subdued Apple-like styling match direction 2.
+- Icon and action controls are borderless and flat; no pill or rounded card chrome remains.
+- The connected dashboard replaces **Connect Tesla** with **Manage Tesla**.
+- The Tesla account row identifies **Fleet API** or **Legacy token**.
+- Climate, wake, lock, unlock, flash, and honk controls are visible and grouped; charging controls are absent.
+- The stopped-state regression test verifies **Hub is stopped** and **Teslatlas Hub is stopped.**, with no setup-required copy.
+- Five-step onboarding covers a new Fleet/legacy setup and exact TeslaMate 4.1.1 migration.
+- Verification, logs, diagnostics, safe handover, and provider switching/sign-out are reachable.
+- The Teslatlas app icon is used in the app bundle and onboarding.
+- Layout, hierarchy, spacing, typography, and native macOS titlebar behaviour are coherent at 1800×1324.
 
-Open visual differences: native inactive-window tinting and standard macOS titlebar rendering only. No P0, P1, or P2 issue remains.
+Open visual differences from the supplied reference are intentional: flat actions, expanded vehicle controls, provider identity, useful activity rows, and native titlebar rendering.
+
+final result: passed

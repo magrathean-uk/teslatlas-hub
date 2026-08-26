@@ -199,6 +199,37 @@ pub fn load_key_for_tokens(
     }
 }
 
+/// Prove that one admitted local key generation decrypts the committed legacy
+/// token pair without settling or deleting an interrupted replacement.
+pub fn validate_stored_legacy_credentials_read_only(
+    data_dir: &Path,
+    tokens: &crate::db::TeslaMateLegacyTokenStore,
+) -> Result<(), TeslaMateCredentialError> {
+    let current_exists = path_exists(&key_path(data_dir))?;
+    let current = load_key(data_dir);
+    if current
+        .as_ref()
+        .is_ok_and(|key| key_matches_tokens(key, tokens))
+    {
+        return Ok(());
+    }
+    let previous = previous_key_path(data_dir);
+    if path_exists(&previous)? {
+        let previous = load_key_file(&previous)?;
+        if key_matches_tokens(&previous, tokens) {
+            if current_exists && current.is_err() {
+                return current.map(drop);
+            }
+            return Ok(());
+        }
+        return Err(TeslaMateCredentialError::NoMatchingKeyGeneration);
+    }
+    match current {
+        Ok(_) => Err(TeslaMateCredentialError::NoMatchingKeyGeneration),
+        Err(error) => Err(error),
+    }
+}
+
 fn recover_pending_key_replacement(
     data_dir: &Path,
     store: &crate::db::HubStore,
@@ -218,12 +249,16 @@ fn key_matches_tokens(
     key: &TeslaMateEncryptionKey,
     tokens: &crate::db::TeslaMateLegacyTokenStore,
 ) -> bool {
-    crate::teslamate_token::decrypt_legacy_owner_tokens(
+    let Ok(plaintext) = crate::teslamate_token::decrypt_legacy_owner_tokens(
         key.as_bytes(),
         tokens.access(),
         tokens.refresh(),
-    )
-    .is_ok()
+    ) else {
+        return false;
+    };
+    tokens.credential_generation().is_none_or(|expected| {
+        crate::teslamate_token::legacy_refresh_credential_generation(&plaintext) == expected
+    })
 }
 
 struct KeyReplacement {
@@ -788,6 +823,44 @@ mod tests {
         assert!(!previous_key_path(temporary.path()).exists());
         assert!(matches!(
             load_key_for_tokens(temporary.path(), &tokens),
+            Err(TeslaMateCredentialError::NoMatchingKeyGeneration)
+        ));
+    }
+
+    #[test]
+    fn read_only_legacy_validation_never_settles_key_generation() {
+        let temporary = crate::private_tempdir().expect("temporary directory");
+        let old_key = b"old exact TeslaMate key";
+        let tokens = encrypted_store(old_key, "access", "refresh");
+        replace_key(temporary.path(), old_key).expect("write old key");
+        drop(begin_key_replacement(temporary.path(), b"new wrong key").expect("stage key"));
+
+        validate_stored_legacy_credentials_read_only(temporary.path(), &tokens)
+            .expect("previous generation decrypts");
+        assert!(previous_key_path(temporary.path()).exists());
+        assert_eq!(
+            load_key(temporary.path()).expect("current key").as_bytes(),
+            b"new wrong key"
+        );
+
+        fs::remove_file(previous_key_path(temporary.path())).expect("remove previous fixture");
+        assert!(matches!(
+            validate_stored_legacy_credentials_read_only(temporary.path(), &tokens),
+            Err(TeslaMateCredentialError::NoMatchingKeyGeneration)
+        ));
+    }
+
+    #[test]
+    fn read_only_legacy_validation_rejects_mismatched_generation() {
+        let temporary = crate::private_tempdir().expect("temporary directory");
+        let key = b"exact TeslaMate key";
+        let tokens = encrypted_store(key, "access", "refresh")
+            .with_credential_generation(Uuid::new_v4())
+            .expect("mismatched generation fixture");
+        replace_key(temporary.path(), key).expect("write key");
+
+        assert!(matches!(
+            validate_stored_legacy_credentials_read_only(temporary.path(), &tokens),
             Err(TeslaMateCredentialError::NoMatchingKeyGeneration)
         ));
     }

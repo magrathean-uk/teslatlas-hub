@@ -160,6 +160,41 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
     }
 
+    func testOnlineMigrationWithoutCompletionReportKeepsHandoverGateAndHubStopped() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(
+            events: events,
+            migrationResult: .success("{\"status\":\"ok\"}")
+        )
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: OnboardingService(events: events),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let migration = expectation(description: "missing report rejected")
+
+        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         encryptionKeyFile: "/private/encryption") { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("expected missing report failure")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            migration.fulfill()
+        }
+
+        wait(for: [migration], timeout: 2)
+        XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        let config = home.appendingPathComponent(
+            "Library/Application Support/Teslatlas Hub/config.toml"
+        )
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+    }
+
     private func temporaryHome() throws -> URL {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("teslatlas-hub-onboarding-tests-\(UUID().uuidString)", isDirectory: true)
@@ -178,9 +213,14 @@ private final class OnboardingEvents {
 
 private final class OnboardingRunner: HubCommandRunning {
     private let events: OnboardingEvents?
+    private let migrationResult: Result<String, Error>
 
-    init(events: OnboardingEvents? = nil) {
+    init(events: OnboardingEvents? = nil,
+         migrationResult: Result<String, Error> = .success(
+             "{\"status\":\"imported\",\"captureMode\":\"online-snapshot\"}"
+         )) {
         self.events = events
+        self.migrationResult = migrationResult
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
@@ -191,9 +231,7 @@ private final class OnboardingRunner: HubCommandRunning {
             """))
         } else if arguments.contains("migrate") {
             events?.append("migrate")
-            completion(.success("""
-            {"status":"imported","captureMode":"online-snapshot"}
-            """))
+            completion(migrationResult)
         } else if arguments.contains("status") {
             events?.append("status")
             completion(.success("""

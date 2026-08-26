@@ -35,8 +35,8 @@ use crate::{
     teslamate_projection::{
         ChargeProjectionFacts, DriveRelations, ProjectionReport, TeslaMateAddress,
         TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateChargingProcess,
-        TeslaMateDrive, TeslaMateGeofence, TeslaMatePosition, TeslaMateProjectionError,
-        TeslaMateSettingsPhysicalV2_2, TeslaMateState, TeslaMateUpdate,
+        TeslaMateDrive, TeslaMateGeofence, TeslaMateOpenSession, TeslaMatePosition,
+        TeslaMateProjectionError, TeslaMateSettingsPhysicalV2_2, TeslaMateState, TeslaMateUpdate,
         TeslaMateUpdatePhysicalV2_2, project_car, project_charge, project_charge_sample,
         project_drive, project_position, project_state, project_update,
     },
@@ -51,7 +51,8 @@ use crate::{
         open_snapshot_session_with_schema, position_copy_types, read_addresses,
         read_car_and_car_settings_v2_2, read_cars, read_charging_processes, read_drives,
         read_geofences, read_legacy_token_ciphertexts_in_client, read_open_session,
-        read_settings_v2_2, read_updates_v2_2, related_positions_binary_copy_sql,
+        read_open_session_in_client, read_settings_v2_2, read_updates_v2_2,
+        related_positions_binary_copy_sql,
     },
     teslamate_schema::SourceTable,
 };
@@ -105,6 +106,7 @@ pub(crate) struct DirectUpdatesSourceV2_2 {
 pub(crate) struct DirectSnapshotCapture {
     pub packs: StagedProjectionPacks,
     pub updates_v2_2: DirectUpdatesSourceV2_2,
+    pub open_session: TeslaMateOpenSession,
     pub legacy_tokens: Option<TeslaMateLegacyTokenCiphertexts>,
 }
 
@@ -1154,6 +1156,8 @@ async fn write_from_session(
     postgres_snapshot_sha256: String,
     schema: TeslaMateSchemaInfo,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError> {
+    let open_session =
+        read_open_session_in_client(client, selected_car_id_i16, read_limits).await?;
     let mut schema_22_retained_rows = 0_usize;
     let global_settings =
         read_settings_v2_2(client, read_limits, &mut schema_22_retained_rows).await?;
@@ -1387,6 +1391,7 @@ async fn write_from_session(
             selected_car,
         ),
         updates_v2_2,
+        open_session,
         legacy_tokens: None,
     })
 }

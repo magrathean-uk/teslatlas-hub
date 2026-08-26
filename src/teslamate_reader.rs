@@ -156,34 +156,252 @@ pub struct TeslaMateSchemaInfo {
     pub fingerprint: String,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeslaMateConnectionDiagnostics {
+    pub current_user: String,
+    pub database: String,
+    pub server_address: String,
+    pub server_port: u16,
+    pub postmaster_start_epoch_seconds: i64,
+    pub transaction_read_only: bool,
+    pub private_schema_usage: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeslaMateSelectedCarDiagnostics {
+    pub id: i64,
+    pub name: Option<String>,
+    pub model: Option<String>,
+    pub vin_present: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeslaMateOpenSessionCounts {
+    pub drives: usize,
+    pub charging_processes: usize,
+    pub states: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeslaMateSelectedCarCounts {
+    pub drives: u64,
+    pub positions: u64,
+    pub charging_processes: u64,
+    pub charges: u64,
+    pub states: u64,
+    pub updates: u64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeslaMateLegacyTokenPairDiagnostics {
+    pub relation: String,
+    pub access_ciphertext_bytes: u64,
+    pub refresh_ciphertext_bytes: u64,
+}
+
+/// Read-only TeslaMate diagnosis used by `teslamate-check`. This never writes
+/// the source and never reads token ciphertext.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeslaMateCheckSnapshot {
+    pub schema: TeslaMateSchemaInfo,
+    pub connection: TeslaMateConnectionDiagnostics,
+    pub selected_car: TeslaMateSelectedCarDiagnostics,
+    pub open_sessions: TeslaMateOpenSessionCounts,
+    pub selected_car_counts: TeslaMateSelectedCarCounts,
+    pub source_totals: TeslaMateSourceTotals,
+    pub source_tokens_relation_present: bool,
+    pub legacy_token_pair: TeslaMateLegacyTokenPairDiagnostics,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeslaMateSourceTotals {
+    pub cars: u64,
+    pub drives: u64,
+    pub positions: u64,
+    pub charging_processes: u64,
+    pub charges: u64,
+    pub states: u64,
+    pub updates: u64,
+    pub schema_migrations: u64,
+}
+
+impl TeslaMateCheckSnapshot {
+    pub fn log(&self) {
+        tracing::info!(
+            user = %self.connection.current_user,
+            database = %self.connection.database,
+            server_address = %self.connection.server_address,
+            server_port = self.connection.server_port,
+            transaction_read_only = self.connection.transaction_read_only,
+            private_schema_usage = self.connection.private_schema_usage,
+            "TeslaMate PostgreSQL connection (read-only snapshot)"
+        );
+        tracing::info!(
+            observed_migration_version = self.schema.observed_migration_version,
+            observed_migration_count = self.schema.observed_migration_count,
+            pinned_source_revision = self.schema.pinned_source_revision,
+            "TeslaMate schema"
+        );
+        tracing::info!(
+            car_id = self.selected_car.id,
+            name = self.selected_car.name.as_deref(),
+            model = self.selected_car.model.as_deref(),
+            vin_present = self.selected_car.vin_present,
+            open_drives = self.open_sessions.drives,
+            open_charges = self.open_sessions.charging_processes,
+            open_states = self.open_sessions.states,
+            selected_drives = self.selected_car_counts.drives,
+            selected_positions = self.selected_car_counts.positions,
+            selected_charges = self.selected_car_counts.charges,
+            source_positions = self.source_totals.positions,
+            tokens_relation_present = self.source_tokens_relation_present,
+            token_relation = %self.legacy_token_pair.relation,
+            token_access_ciphertext_bytes = self.legacy_token_pair.access_ciphertext_bytes,
+            token_refresh_ciphertext_bytes = self.legacy_token_pair.refresh_ciphertext_bytes,
+            "TeslaMate selected car (source is not mutated; token pair shape is validated without reading ciphertext)"
+        );
+    }
+}
+
+const SELECTED_CAR_COUNT_SQL: &str = r#"
+SELECT
+  (SELECT COUNT(*)::bigint FROM "public"."drives" WHERE "car_id" = $1) AS "drives",
+  (SELECT COUNT(*)::bigint FROM "public"."positions" WHERE "car_id" = $1) AS "positions",
+  (SELECT COUNT(*)::bigint FROM "public"."charging_processes" WHERE "car_id" = $1)
+    AS "charging_processes",
+  (
+    SELECT COUNT(*)::bigint
+    FROM "public"."charges" AS "charge"
+    JOIN "public"."charging_processes" AS "process"
+      ON "process"."id" = "charge"."charging_process_id"
+    WHERE "process"."car_id" = $1
+  ) AS "charges",
+  (SELECT COUNT(*)::bigint FROM "public"."states" WHERE "car_id" = $1) AS "states",
+  (SELECT COUNT(*)::bigint FROM "public"."updates" WHERE "car_id" = $1) AS "updates"
+"#;
+
 /// Validate one selected TeslaMate car against the exact pinned source
-/// contract without creating or opening any Hub target state. The schema and
-/// selected-car probe run in one read-only, repeatable-read source transaction.
+/// contract without creating or opening any Hub target state. The schema,
+/// connection witness, selected-car probe, and table counts run in one
+/// read-only, repeatable-read source transaction. Token ciphertext is never
+/// read.
 pub async fn check_teslamate_compatibility(
     source: &ReadOnlySource,
     password: &TeslaMatePostgresPassword,
     selected_car_id: i64,
     limits: TeslaMateReadLimits,
-) -> Result<TeslaMateSchemaInfo, TeslaMateReaderError> {
+) -> Result<TeslaMateCheckSnapshot, TeslaMateReaderError> {
+    tracing::info!(
+        host = source.host(),
+        port = source.port(),
+        database = source.database_name(),
+        user = source.user(),
+        selected_car_id,
+        "connecting to TeslaMate PostgreSQL for a read-only compatibility check"
+    );
     let (session, selected_car_id_i16, schema) =
         open_snapshot_session_with_schema(source, password, selected_car_id, limits).await?;
     let mut retained_rows = 0_usize;
-    let result = read_cars(
-        session.client(),
-        selected_car_id_i16,
-        limits,
-        &mut retained_rows,
-    )
-    .await
-    .and_then(|cars| {
-        (!cars.is_empty())
-            .then_some(schema)
-            .ok_or(TeslaMateReaderError::SelectedCarMissing { selected_car_id })
-    });
+    let result = async {
+        let witness_row = session
+            .client()
+            .query_one(LIVE_SOURCE_WITNESS_SQL, &[])
+            .await?;
+        let connection = parse_live_source_connection(&witness_row)?;
+        if !connection.transaction_read_only {
+            return Err(TeslaMateReaderError::WitnessTransactionWritable);
+        }
+        let source_totals = TeslaMateSourceTotals {
+            cars: source_witness_count(&witness_row, "cars")?,
+            drives: source_witness_count(&witness_row, "drives")?,
+            positions: source_witness_count(&witness_row, "positions")?,
+            charging_processes: source_witness_count(&witness_row, "charging_processes")?,
+            charges: source_witness_count(&witness_row, "charges")?,
+            states: source_witness_count(&witness_row, "states")?,
+            updates: source_witness_count(&witness_row, "updates")?,
+            schema_migrations: source_witness_count(&witness_row, "schema_migrations")?,
+        };
+        let cars = read_cars(
+            session.client(),
+            selected_car_id_i16,
+            limits,
+            &mut retained_rows,
+        )
+        .await?;
+        if cars.is_empty() {
+            return Err(TeslaMateReaderError::SelectedCarMissing { selected_car_id });
+        }
+        let car = &cars[0];
+        let drives = read_open_drives(
+            session.client(),
+            selected_car_id_i16,
+            limits,
+            &mut retained_rows,
+        )
+        .await?;
+        let processes = read_open_charging_processes(
+            session.client(),
+            selected_car_id_i16,
+            limits,
+            &mut retained_rows,
+        )
+        .await?;
+        let states = read_open_states(
+            session.client(),
+            selected_car_id_i16,
+            limits,
+            &mut retained_rows,
+        )
+        .await?;
+        teslamate_check_open_session_parents(drives.len(), processes.len(), states.len())?;
+        let count_row = session
+            .client()
+            .query_one(SELECTED_CAR_COUNT_SQL, &[&selected_car_id_i16])
+            .await?;
+        let legacy_token_pair = inspect_legacy_token_pair_in_client(session.client()).await?;
+        let source_tokens_relation_present = true;
+        Ok(TeslaMateCheckSnapshot {
+            schema,
+            connection,
+            selected_car: TeslaMateSelectedCarDiagnostics {
+                id: car.id,
+                name: car.name.clone(),
+                model: car.model.clone(),
+                vin_present: car.vin.as_ref().is_some_and(|vin| !vin.trim().is_empty()),
+            },
+            open_sessions: TeslaMateOpenSessionCounts {
+                drives: drives.len(),
+                charging_processes: processes.len(),
+                states: states.len(),
+            },
+            selected_car_counts: TeslaMateSelectedCarCounts {
+                drives: source_witness_count(&count_row, "drives")?,
+                positions: source_witness_count(&count_row, "positions")?,
+                charging_processes: source_witness_count(&count_row, "charging_processes")?,
+                charges: source_witness_count(&count_row, "charges")?,
+                states: source_witness_count(&count_row, "states")?,
+                updates: source_witness_count(&count_row, "updates")?,
+            },
+            source_totals,
+            source_tokens_relation_present,
+            legacy_token_pair,
+        })
+    }
+    .await;
     let finish = session.finish().await;
     match (result, finish) {
         (Err(error), _) => Err(error),
-        (Ok(value), Ok(())) => Ok(value),
+        (Ok(value), Ok(())) => {
+            value.log();
+            Ok(value)
+        }
         (Ok(_), Err(error)) => Err(error),
     }
 }
@@ -247,39 +465,14 @@ pub async fn inspect_teslamate_live_source(
             .client()
             .query_one(LIVE_SOURCE_WITNESS_SQL, &[])
             .await?;
-        let private_schema_usage: bool = row.try_get("private_schema_usage")?;
-        if private_schema_usage {
+        let witness = parse_live_source_witness(&row)?;
+        if witness.private_schema_usage {
             return Err(TeslaMateReaderError::PrivateSchemaUsageGranted);
         }
-        let transaction_read_only: bool = row.try_get("transaction_read_only")?;
-        if !transaction_read_only {
+        if !witness.transaction_read_only {
             return Err(TeslaMateReaderError::WitnessTransactionWritable);
         }
-        let server_address: Option<String> = row.try_get("server_address")?;
-        let server_address = server_address.ok_or(TeslaMateReaderError::MissingServerAddress)?;
-        let server_port: i32 = row.try_get("server_port")?;
-        let server_port = u16::try_from(server_port)
-            .map_err(|_| TeslaMateReaderError::InvalidServerPort { port: server_port })?;
-        if server_port == 0 {
-            return Err(TeslaMateReaderError::InvalidServerPort { port: 0 });
-        }
-        Ok(TeslaMateLiveSourceWitness {
-            current_user: row.try_get("current_user")?,
-            database: row.try_get("database")?,
-            server_address,
-            server_port,
-            postmaster_start_epoch_seconds: row.try_get("postmaster_start_epoch_seconds")?,
-            transaction_read_only,
-            private_schema_usage,
-            cars: source_witness_count(&row, "cars")?,
-            drives: source_witness_count(&row, "drives")?,
-            positions: source_witness_count(&row, "positions")?,
-            charging_processes: source_witness_count(&row, "charging_processes")?,
-            charges: source_witness_count(&row, "charges")?,
-            states: source_witness_count(&row, "states")?,
-            updates: source_witness_count(&row, "updates")?,
-            schema_migrations: source_witness_count(&row, "schema_migrations")?,
-        })
+        Ok(witness)
     }
     .await;
     let finish = session.finish().await;
@@ -288,6 +481,54 @@ pub async fn inspect_teslamate_live_source(
         (Ok(value), Ok(())) => Ok(value),
         (Ok(_), Err(error)) => Err(error),
     }
+}
+
+fn parse_live_source_connection(
+    row: &Row,
+) -> Result<TeslaMateConnectionDiagnostics, TeslaMateReaderError> {
+    let server_address: Option<String> = row.try_get("server_address")?;
+    let server_port: Option<i32> = row.try_get("server_port")?;
+    let server_port =
+        server_port.and_then(|port| u16::try_from(port).ok().filter(|port| *port > 0));
+    Ok(TeslaMateConnectionDiagnostics {
+        current_user: row.try_get("current_user")?,
+        database: row.try_get("database")?,
+        server_address: server_address.unwrap_or_else(|| "local".to_owned()),
+        server_port: server_port.unwrap_or(0),
+        postmaster_start_epoch_seconds: row.try_get("postmaster_start_epoch_seconds")?,
+        transaction_read_only: row.try_get("transaction_read_only")?,
+        private_schema_usage: row.try_get("private_schema_usage")?,
+    })
+}
+
+fn parse_live_source_witness(
+    row: &Row,
+) -> Result<TeslaMateLiveSourceWitness, TeslaMateReaderError> {
+    let server_address: Option<String> = row.try_get("server_address")?;
+    let server_address = server_address.ok_or(TeslaMateReaderError::MissingServerAddress)?;
+    let server_port: i32 = row.try_get("server_port")?;
+    let server_port = u16::try_from(server_port)
+        .map_err(|_| TeslaMateReaderError::InvalidServerPort { port: server_port })?;
+    if server_port == 0 {
+        return Err(TeslaMateReaderError::InvalidServerPort { port: 0 });
+    }
+    Ok(TeslaMateLiveSourceWitness {
+        current_user: row.try_get("current_user")?,
+        database: row.try_get("database")?,
+        server_address,
+        server_port,
+        postmaster_start_epoch_seconds: row.try_get("postmaster_start_epoch_seconds")?,
+        transaction_read_only: row.try_get("transaction_read_only")?,
+        private_schema_usage: row.try_get("private_schema_usage")?,
+        cars: source_witness_count(row, "cars")?,
+        drives: source_witness_count(row, "drives")?,
+        positions: source_witness_count(row, "positions")?,
+        charging_processes: source_witness_count(row, "charging_processes")?,
+        charges: source_witness_count(row, "charges")?,
+        states: source_witness_count(row, "states")?,
+        updates: source_witness_count(row, "updates")?,
+        schema_migrations: source_witness_count(row, "schema_migrations")?,
+    })
 }
 
 fn source_witness_count(row: &Row, column: &'static str) -> Result<u64, TeslaMateReaderError> {
@@ -334,12 +575,9 @@ const MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64: i64 = MAX_LEGACY_TOKEN_CIPHERTEXT_B
 
 const PRIVATE_LEGACY_TOKENS_SQL: &str = "SELECT \"token\".\"access\" AS \"access\", \"token\".\"refresh\" AS \"refresh\" \
      FROM \"private\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
-const PUBLIC_LEGACY_TOKENS_SQL: &str = "SELECT \"token\".\"access\" AS \"access\", \"token\".\"refresh\" AS \"refresh\" \
-     FROM \"public\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
 const PRIVATE_LEGACY_TOKENS_EXISTS_SQL: &str =
     "SELECT pg_catalog.to_regclass('private.tokens') IS NOT NULL AS \"private_tokens_exists\"";
 const PRIVATE_LEGACY_TOKEN_LENGTHS_SQL: &str = "SELECT pg_catalog.octet_length(\"token\".\"access\")::bigint AS \"access_length\", pg_catalog.octet_length(\"token\".\"refresh\")::bigint AS \"refresh_length\" FROM \"private\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
-const PUBLIC_LEGACY_TOKEN_LENGTHS_SQL: &str = "SELECT pg_catalog.octet_length(\"token\".\"access\")::bigint AS \"access_length\", pg_catalog.octet_length(\"token\".\"refresh\")::bigint AS \"refresh_length\" FROM \"public\".\"tokens\" AS \"token\" ORDER BY \"token\".\"id\" ASC LIMIT 2";
 
 impl std::fmt::Debug for TeslaMateLegacyTokenCiphertexts {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -577,34 +815,13 @@ pub async fn read_legacy_token_ciphertexts(
     }
 }
 
-/// Read the opaque legacy pair without changing the caller's transaction.
-/// The private relation is authoritative; public is only an old-schema
-/// fallback when private.tokens does not exist.
+/// Read the opaque exact-4.1.1 legacy pair without changing the caller's
+/// transaction. `private.tokens` is part of the pinned source contract.
 pub(crate) async fn read_legacy_token_ciphertexts_in_client(
     client: &Client,
 ) -> Result<TeslaMateLegacyTokenCiphertexts, TeslaMateReaderError> {
-    let private_tokens_exists: bool = client
-        .query_one(PRIVATE_LEGACY_TOKENS_EXISTS_SQL, &[])
-        .await?
-        .try_get("private_tokens_exists")?;
-    let (length_query, query, relation) = legacy_token_queries(private_tokens_exists);
-    let length_rows = client.query(length_query, &[]).await?;
-    if length_rows.is_empty() {
-        return Err(TeslaMateReaderError::LegacyTokenPairMissing);
-    }
-    if length_rows.len() != 1 {
-        return Err(TeslaMateReaderError::LegacyTokenPairAmbiguous);
-    }
-    let lengths = &length_rows[0];
-    let access_length: i64 = lengths
-        .try_get("access_length")
-        .map_err(|source| cell(relation, "access", source))?;
-    let refresh_length: i64 = lengths
-        .try_get("refresh_length")
-        .map_err(|source| cell(relation, "refresh", source))?;
-    validate_legacy_ciphertext_length(relation, "access", access_length)?;
-    validate_legacy_ciphertext_length(relation, "refresh", refresh_length)?;
-
+    inspect_legacy_token_pair_in_client(client).await?;
+    let (_, query, relation) = exact_legacy_token_queries(true)?;
     let rows = client.query(query, &[]).await?;
     if rows.is_empty() {
         return Err(TeslaMateReaderError::LegacyTokenPairMissing);
@@ -625,20 +842,39 @@ pub(crate) async fn read_legacy_token_ciphertexts_in_client(
     Ok(TeslaMateLegacyTokenCiphertexts { access, refresh })
 }
 
-fn legacy_token_queries(private_tokens_exists: bool) -> (&'static str, &'static str, &'static str) {
-    if private_tokens_exists {
-        (
+async fn inspect_legacy_token_pair_in_client(
+    client: &Client,
+) -> Result<TeslaMateLegacyTokenPairDiagnostics, TeslaMateReaderError> {
+    let private_tokens_exists: bool = client
+        .query_one(PRIVATE_LEGACY_TOKENS_EXISTS_SQL, &[])
+        .await?
+        .try_get("private_tokens_exists")?;
+    let (length_query, _, relation) = exact_legacy_token_queries(private_tokens_exists)?;
+    let length_rows = client.query(length_query, &[]).await?;
+    let lengths = length_rows
+        .iter()
+        .map(|row| {
+            Ok((
+                row.try_get("access_length")
+                    .map_err(|source| cell(relation, "access", source))?,
+                row.try_get("refresh_length")
+                    .map_err(|source| cell(relation, "refresh", source))?,
+            ))
+        })
+        .collect::<Result<Vec<_>, TeslaMateReaderError>>()?;
+    validate_legacy_token_pair_lengths(relation, &lengths)
+}
+
+fn exact_legacy_token_queries(
+    private_tokens_exists: bool,
+) -> Result<(&'static str, &'static str, &'static str), TeslaMateReaderError> {
+    private_tokens_exists
+        .then_some((
             PRIVATE_LEGACY_TOKEN_LENGTHS_SQL,
             PRIVATE_LEGACY_TOKENS_SQL,
             "private.tokens",
-        )
-    } else {
-        (
-            PUBLIC_LEGACY_TOKEN_LENGTHS_SQL,
-            PUBLIC_LEGACY_TOKENS_SQL,
-            "public.tokens",
-        )
-    }
+        ))
+        .ok_or(TeslaMateReaderError::LegacyTokenPairMissing)
 }
 
 fn validate_legacy_ciphertext_length(
@@ -646,7 +882,10 @@ fn validate_legacy_ciphertext_length(
     column: &'static str,
     actual: i64,
 ) -> Result<(), TeslaMateReaderError> {
-    if !(0..=MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64).contains(&actual) {
+    if actual == 0 {
+        return Err(TeslaMateReaderError::LegacyTokenPairEmpty);
+    }
+    if !(1..=MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64).contains(&actual) {
         return Err(TeslaMateReaderError::LegacyTokenCiphertextTooLarge {
             relation,
             column,
@@ -655,6 +894,28 @@ fn validate_legacy_ciphertext_length(
         });
     }
     Ok(())
+}
+
+fn validate_legacy_token_pair_lengths(
+    relation: &'static str,
+    lengths: &[(i64, i64)],
+) -> Result<TeslaMateLegacyTokenPairDiagnostics, TeslaMateReaderError> {
+    let [(access_length, refresh_length)] = lengths else {
+        return if lengths.is_empty() {
+            Err(TeslaMateReaderError::LegacyTokenPairMissing)
+        } else {
+            Err(TeslaMateReaderError::LegacyTokenPairAmbiguous)
+        };
+    };
+    validate_legacy_ciphertext_length(relation, "access", *access_length)?;
+    validate_legacy_ciphertext_length(relation, "refresh", *refresh_length)?;
+    Ok(TeslaMateLegacyTokenPairDiagnostics {
+        relation: relation.to_owned(),
+        access_ciphertext_bytes: u64::try_from(*access_length)
+            .expect("validated token ciphertext length is positive"),
+        refresh_ciphertext_bytes: u64::try_from(*refresh_length)
+            .expect("validated token ciphertext length is positive"),
+    })
 }
 
 pub(crate) async fn open_snapshot_session(
@@ -968,16 +1229,7 @@ pub(crate) async fn read_open_session_in_client(
         read_open_charging_processes(client, selected_car_id, limits, &mut retained_rows).await?;
     let states = read_open_states(client, selected_car_id, limits, &mut retained_rows).await?;
     let watermarks = read_source_watermarks(client, selected_car_id).await?;
-    if has_ambiguous_open_rows([drives.len(), processes.len(), states.len()]) {
-        // The full snapshot already retains every source row. Do not invent a
-        // live parent from a TeslaMate database with dangling historical
-        // sessions; a later Owner API observation establishes the live tail.
-        return Ok(TeslaMateOpenSession {
-            car_id: i64::from(selected_car_id),
-            watermarks,
-            ..TeslaMateOpenSession::default()
-        });
-    }
+    admit_open_session_parents(drives.len(), processes.len(), states.len())?;
     let drive = drives.into_iter().next();
     let charge = processes.into_iter().next();
     let state = states.into_iter().next();
@@ -1015,6 +1267,32 @@ pub(crate) async fn read_open_session_in_client(
 
 fn has_ambiguous_open_rows(open_row_counts: [usize; 3]) -> bool {
     open_row_counts.into_iter().any(|count| count > 1)
+}
+
+pub(crate) fn admit_open_session_parents(
+    drives: usize,
+    charges: usize,
+    states: usize,
+) -> Result<(), TeslaMateReaderError> {
+    teslamate_check_open_session_parents(drives, charges, states)
+}
+
+/// Shared by `teslamate-check` / [`check_teslamate_compatibility`] and import
+/// open-session reads so both fail closed on more than one live parent.
+pub(crate) fn teslamate_check_open_session_parents(
+    drives: usize,
+    charges: usize,
+    states: usize,
+) -> Result<(), TeslaMateReaderError> {
+    if has_ambiguous_open_rows([drives, charges, states]) {
+        Err(TeslaMateReaderError::AmbiguousOpenSession {
+            drives,
+            charges,
+            states,
+        })
+    } else {
+        Ok(())
+    }
 }
 
 fn open_rows_sql(table: SourceTable, predicate: &str) -> String {
@@ -4130,6 +4408,14 @@ pub enum TeslaMateReaderError {
     SelectedCarIdOutOfRange,
     #[error("TeslaMate selected car {selected_car_id} does not exist in the source")]
     SelectedCarMissing { selected_car_id: i64 },
+    #[error(
+        "TeslaMate selected car has {drives} open drives, {charges} open charging processes, and {states} open states; import requires at most one of each"
+    )]
+    AmbiguousOpenSession {
+        drives: usize,
+        charges: usize,
+        states: usize,
+    },
     #[error("TeslaMate source settings singleton is missing")]
     SettingsSingletonMissing,
     #[error("TeslaMate source has more than one settings singleton row")]
@@ -4265,6 +4551,75 @@ mod tests {
     };
 
     #[test]
+    fn teslamate_check_snapshot_json_covers_connection_and_redacts_vin() {
+        let snapshot = TeslaMateCheckSnapshot {
+            schema: TeslaMateSchemaInfo {
+                observed_migration_version: 105,
+                observed_migration_count: 105,
+                minimum_supported_migration_version: 105,
+                maximum_validated_migration_version: 105,
+                pinned_source_revision: "d6c43bc8",
+                pinned_migration_set_sha256: "abc",
+                fingerprint: "fp".to_owned(),
+            },
+            connection: TeslaMateConnectionDiagnostics {
+                current_user: "reader".to_owned(),
+                database: "teslamate".to_owned(),
+                server_address: "127.0.0.1".to_owned(),
+                server_port: 5432,
+                postmaster_start_epoch_seconds: 1,
+                transaction_read_only: true,
+                private_schema_usage: false,
+            },
+            selected_car: TeslaMateSelectedCarDiagnostics {
+                id: 1,
+                name: Some("Athena".to_owned()),
+                model: Some("3".to_owned()),
+                vin_present: true,
+            },
+            open_sessions: TeslaMateOpenSessionCounts {
+                drives: 0,
+                charging_processes: 1,
+                states: 1,
+            },
+            selected_car_counts: TeslaMateSelectedCarCounts {
+                drives: 10,
+                positions: 1_000,
+                charging_processes: 4,
+                charges: 40,
+                states: 8,
+                updates: 2,
+            },
+            source_totals: TeslaMateSourceTotals {
+                cars: 1,
+                drives: 10,
+                positions: 1_000,
+                charging_processes: 4,
+                charges: 40,
+                states: 8,
+                updates: 2,
+                schema_migrations: 105,
+            },
+            source_tokens_relation_present: true,
+            legacy_token_pair: TeslaMateLegacyTokenPairDiagnostics {
+                relation: "private.tokens".to_owned(),
+                access_ciphertext_bytes: 128,
+                refresh_ciphertext_bytes: 160,
+            },
+        };
+        let value = serde_json::to_value(&snapshot).expect("JSON");
+        assert_eq!(value["connection"]["transactionReadOnly"], true);
+        assert_eq!(value["connection"]["database"], "teslamate");
+        assert_eq!(value["selectedCar"]["vinPresent"], true);
+        assert!(value["selectedCar"].get("vin").is_none());
+        assert_eq!(value["openSessions"]["chargingProcesses"], 1);
+        assert_eq!(value["selectedCarCounts"]["positions"], 1_000);
+        assert_eq!(value["sourceTotals"]["schemaMigrations"], 105);
+        assert_eq!(value["sourceTokensRelationPresent"], true);
+        assert_eq!(value["legacyTokenPair"]["relation"], "private.tokens");
+    }
+
+    #[test]
     fn postgres_transport_uses_plaintext_only_for_literal_loopback() {
         for source in [
             "postgresql://reader@127.0.0.1/db",
@@ -4313,49 +4668,35 @@ mod tests {
     }
 
     #[test]
-    fn token_reader_selects_public_only_when_private_relation_probe_is_false() {
+    fn exact_token_reader_requires_the_private_relation() {
         assert_eq!(
-            legacy_token_queries(true),
+            exact_legacy_token_queries(true).expect("private token relation"),
             (
                 PRIVATE_LEGACY_TOKEN_LENGTHS_SQL,
                 PRIVATE_LEGACY_TOKENS_SQL,
                 "private.tokens"
             )
         );
-        assert_eq!(
-            legacy_token_queries(false),
-            (
-                PUBLIC_LEGACY_TOKEN_LENGTHS_SQL,
-                PUBLIC_LEGACY_TOKENS_SQL,
-                "public.tokens"
-            )
-        );
+        assert!(matches!(
+            exact_legacy_token_queries(false),
+            Err(TeslaMateReaderError::LegacyTokenPairMissing)
+        ));
         assert!(PRIVATE_LEGACY_TOKENS_EXISTS_SQL.contains("pg_catalog.to_regclass"));
         assert!(PRIVATE_LEGACY_TOKENS_EXISTS_SQL.contains("'private.tokens'"));
         assert!(!PRIVATE_LEGACY_TOKENS_EXISTS_SQL.contains(';'));
     }
 
     #[test]
-    fn token_reader_queries_are_bounded_fixed_and_do_not_hide_null_rows() {
-        for (schema, sql) in [
-            ("private", PRIVATE_LEGACY_TOKENS_SQL),
-            ("public", PUBLIC_LEGACY_TOKENS_SQL),
-        ] {
-            assert!(sql.contains(&format!("FROM \"{schema}\".\"tokens\"")));
-            assert!(sql.contains("\"access\" AS \"access\""));
-            assert!(sql.contains("\"refresh\" AS \"refresh\""));
-            assert!(sql.ends_with("LIMIT 2"));
-            assert!(!sql.contains("WHERE"));
-            assert!(!sql.contains(';'));
-        }
-        for sql in [
-            PRIVATE_LEGACY_TOKEN_LENGTHS_SQL,
-            PUBLIC_LEGACY_TOKEN_LENGTHS_SQL,
-        ] {
-            assert!(sql.contains("pg_catalog.octet_length"));
-            assert!(sql.ends_with("LIMIT 2"));
-            assert!(!sql.contains(';'));
-        }
+    fn private_token_reader_query_is_bounded_and_fixed() {
+        assert!(PRIVATE_LEGACY_TOKENS_SQL.contains("FROM \"private\".\"tokens\""));
+        assert!(PRIVATE_LEGACY_TOKENS_SQL.contains("\"access\" AS \"access\""));
+        assert!(PRIVATE_LEGACY_TOKENS_SQL.contains("\"refresh\" AS \"refresh\""));
+        assert!(PRIVATE_LEGACY_TOKENS_SQL.ends_with("LIMIT 2"));
+        assert!(!PRIVATE_LEGACY_TOKENS_SQL.contains("WHERE"));
+        assert!(!PRIVATE_LEGACY_TOKENS_SQL.contains(';'));
+        assert!(PRIVATE_LEGACY_TOKEN_LENGTHS_SQL.contains("pg_catalog.octet_length"));
+        assert!(PRIVATE_LEGACY_TOKEN_LENGTHS_SQL.ends_with("LIMIT 2"));
+        assert!(!PRIVATE_LEGACY_TOKEN_LENGTHS_SQL.contains(';'));
     }
 
     #[test]
@@ -4386,6 +4727,31 @@ mod tests {
             }
             other => panic!("expected length error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn compatibility_requires_one_nonempty_bounded_token_pair() {
+        assert!(matches!(
+            validate_legacy_token_pair_lengths("private.tokens", &[]),
+            Err(TeslaMateReaderError::LegacyTokenPairMissing)
+        ));
+        assert!(matches!(
+            validate_legacy_token_pair_lengths("private.tokens", &[(1, 1), (2, 2)]),
+            Err(TeslaMateReaderError::LegacyTokenPairAmbiguous)
+        ));
+        assert!(matches!(
+            validate_legacy_token_pair_lengths("private.tokens", &[(0, 1)]),
+            Err(TeslaMateReaderError::LegacyTokenPairEmpty)
+        ));
+        let valid = validate_legacy_token_pair_lengths(
+            "private.tokens",
+            &[(MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64, 1)],
+        )
+        .expect("bounded pair");
+        assert_eq!(
+            valid.access_ciphertext_bytes,
+            u64::try_from(MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES_I64).unwrap()
+        );
     }
 
     #[test]
@@ -4425,16 +4791,20 @@ mod tests {
     }
 
     #[test]
-    fn same_snapshot_token_companion_keeps_private_first_fallback_contract() {
+    fn same_snapshot_token_companion_keeps_exact_private_contract() {
         assert!(
             snapshot_import_sql("000003A0-1")
                 .expect("validated snapshot")
                 .starts_with("SET TRANSACTION SNAPSHOT '")
         );
-        assert_eq!(legacy_token_queries(true).2, "private.tokens");
-        assert_eq!(legacy_token_queries(false).2, "public.tokens");
+        assert_eq!(
+            exact_legacy_token_queries(true)
+                .expect("exact private relation")
+                .2,
+            "private.tokens"
+        );
+        assert!(exact_legacy_token_queries(false).is_err());
         assert!(PRIVATE_LEGACY_TOKENS_SQL.ends_with("LIMIT 2"));
-        assert!(PUBLIC_LEGACY_TOKENS_SQL.ends_with("LIMIT 2"));
     }
 
     #[test]
@@ -4500,11 +4870,41 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_open_rows_discard_the_whole_live_tail() {
-        assert!(!has_ambiguous_open_rows([0, 1, 1]));
-        assert!(has_ambiguous_open_rows([2, 1, 1]));
-        assert!(has_ambiguous_open_rows([1, 2, 1]));
-        assert!(has_ambiguous_open_rows([1, 1, 2]));
+    fn ambiguous_open_rows_fail_closed_without_dropping_the_live_tail() {
+        assert!(admit_open_session_parents(0, 1, 1).is_ok());
+        assert!(admit_open_session_parents(1, 0, 0).is_ok());
+        assert!(matches!(
+            teslamate_check_open_session_parents(2, 1, 1),
+            Err(TeslaMateReaderError::AmbiguousOpenSession {
+                drives: 2,
+                charges: 1,
+                states: 1
+            })
+        ));
+        assert!(matches!(
+            admit_open_session_parents(2, 1, 1),
+            Err(TeslaMateReaderError::AmbiguousOpenSession {
+                drives: 2,
+                charges: 1,
+                states: 1
+            })
+        ));
+        assert!(matches!(
+            admit_open_session_parents(1, 2, 1),
+            Err(TeslaMateReaderError::AmbiguousOpenSession {
+                drives: 1,
+                charges: 2,
+                states: 1
+            })
+        ));
+        assert!(matches!(
+            admit_open_session_parents(1, 1, 2),
+            Err(TeslaMateReaderError::AmbiguousOpenSession {
+                drives: 1,
+                charges: 1,
+                states: 2
+            })
+        ));
     }
 
     #[test]

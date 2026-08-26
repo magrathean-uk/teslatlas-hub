@@ -10,10 +10,10 @@ The signed installer SHA-256 is
 The VPS TeslaMate collector is intentionally stopped while Hub owns the legacy
 refresh token; TeslaMateAPI, PostgreSQL, and Mosquitto remain healthy.
 
-Current verification on 2026-08-26: 815 Rust target tests plus 3 doc tests
-passed (818 total; 2 intentional fixture tests ignored); all-target Clippy with
-`-D warnings`, release build, dependency audit, release-evidence checks, and
-macOS/Linux package checks passed. The 48 AppKit tests passed under Xcode 27
+Current verification on 2026-08-26: 857 Rust target/integration tests plus 3
+doc tests passed (860 total; 2 intentional fixture tests ignored); all-target,
+all-feature Clippy with `-D warnings`, the optimized release build, and
+macOS/Linux package checks passed. The 75 AppKit tests passed under Xcode 27
 beta. Live EMEA
 Fleet authorization, vehicle
 discovery, vehicle-data polling, partner registration, and virtual-key pairing
@@ -159,6 +159,33 @@ passed for both exact artifacts with timestamps and hardened runtime, then was
 deleted. No matching notary profile, API key, or app-specific password was found
 locally. The local old-schema TeslaMate PostgreSQL copy remains an intentional
 read-only negative fixture.
+
+## Grok branch consolidation, 2026-08-26
+
+- The native dashboard now uses flat borderless actions and square groups,
+  reports an intentionally stopped Hub as stopped, hides Connect Tesla when an
+  account is present, and labels that account as Fleet API or Legacy token.
+  Manage Tesla exposes Fleet setup, legacy setup, exact-v4.1.1 migration and a
+  cancel-first disconnect. Service Details, Logs and Diagnostics reuse one
+  window each; diagnostics run bounded doctor, preflight and status checks and
+  redact copied or saved output.
+- The five-step onboarding handles new Fleet/legacy installations and
+  TeslaMate migration through verification and explicit handover. It never
+  stops or removes TeslaMate, blocks window closure during authentication or a
+  mutating operation, and leaves failed provider or migration setup stopped.
+- Rust parity repairs preserve TeslaMate current-state fields, resumed driving
+  after gained-range handling, imported open-session aggregates, complete
+  cutover watermarks and source content, and atomic settled publication. Doctor
+  validates the selected encrypted provider without mutating credentials.
+- Final local gates passed: 860 Rust checks, strict all-target/all-feature
+  Clippy, 75 AppKit tests, optimized macOS release build, macOS packaging and
+  Linux packaging. Independent Rust and macOS reviews found no remaining P0-P2
+  issue.
+  Final screenshot comparison passed at 1800x1324. No service, VPS, TeslaMate or
+  vehicle state changed.
+- Cleanup removed 24,285 disposable debug/test files reported as 14.9 GiB by
+  Cargo. The retained project target is 607 MB and the distribution app is
+  70 MB.
 
 ## Security remediation, 2026-08-26
 

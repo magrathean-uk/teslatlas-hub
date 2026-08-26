@@ -31,6 +31,32 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(installer.installCalls, 1)
     }
 
+    func testServiceDetailsRejectsMutationWhenOwnerGateIsClosed() throws {
+        let installer = RecordingInstaller()
+        let controller = HubController(commandRunner: CountingRunner(),
+                                       installedCommandRunner: CountingRunner(),
+                                       installer: installer,
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       serviceInstalledOverride: true)
+        let details = ServiceDetailsWindowController(
+            snapshot: .previewRunning,
+            controller: controller,
+            mutationAllowed: { false },
+            onChanged: { XCTFail("blocked mutation reported a change") }
+        )
+        let update = try XCTUnwrap(buttons(in: details.window?.contentView)
+            .first { $0.title == "Update Service…" })
+        update.performClick(nil)
+        XCTAssertEqual(installer.installCalls, 0)
+
+        details.setMutationsEnabled(false)
+        for title in ["Update Service…", "Uninstall Hub…"] {
+            let button = try XCTUnwrap(buttons(in: details.window?.contentView)
+                .first { $0.title == title })
+            XCTAssertFalse(button.isEnabled)
+        }
+    }
+
     func testPreviewIsReadOnly() {
         let runner = CountingRunner()
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"], commandRunner: runner)
@@ -41,7 +67,7 @@ final class HubControllerTests: XCTestCase {
         var failures = 0
         let done: (Result<Void, Error>) -> Void = { result in
             if case .failure = result { failures += 1 }
-            if failures == 7 { expectation.fulfill() }
+            if failures == 8 { expectation.fulfill() }
         }
         controller.installService(completion: done)
         controller.uninstallService(deleteData: false, completion: done)
@@ -50,6 +76,7 @@ final class HubControllerTests: XCTestCase {
         controller.performVehicleControl(.climateStart, completion: done)
         controller.stopHub(completion: done)
         controller.restartHub(completion: done)
+        controller.signOutTeslaAccount(completion: done)
         wait(for: [expectation], timeout: 1)
         XCTAssertEqual(runner.calls, 0)
     }
@@ -78,6 +105,109 @@ final class HubControllerTests: XCTestCase {
         ))
     }
 
+    func testRunFullDiagnosticsInvokesDoctorPreflightStatusAndKeepsPreviewReadOnly() {
+        let runner = CommandMapRunner(responses: [
+            "doctor": .success("{\"status\":\"ok\",\"catalogue\":{\"journalMode\":\"wal\"},\"credentials\":{\"legacy\":{\"present\":true},\"fleet\":{\"present\":true}}}"),
+            "preflight": .success("{\"status\":\"ready\",\"provider\":\"fleet\"}"),
+            "status": .success("{\"status\":\"ok\",\"provider\":\"fleet\",\"credentials\":{\"present\":true}}")
+        ])
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-diagnostics-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "full diagnostics finished")
+        controller.runFullDiagnostics { text in
+            XCTAssertTrue(text.contains("doctor — Hub database, tokens, TLS, collector"))
+            XCTAssertTrue(text.contains("\"journalMode\":\"wal\""))
+            XCTAssertTrue(text.contains("preflight — selected provider credentials"))
+            XCTAssertTrue(text.contains("\"provider\":\"fleet\""))
+            XCTAssertTrue(text.contains("status — vehicles and credential presence"))
+            XCTAssertTrue(text.contains("TeslaMate is not written"))
+            XCTAssertTrue(text.contains("tokens are not deleted") || text.contains("Tokens are not deleted") || text.contains("Owner and Fleet tokens"))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(runner.commands, ["doctor", "preflight", "status"])
+    }
+
+    func testPreviewDiagnosticsDoNotInvokeHubCommands() {
+        let runner = CountingRunner()
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"], commandRunner: runner)
+        let finished = expectation(description: "preview diagnostics")
+        controller.runFullDiagnostics { text in
+            XCTAssertTrue(text.contains("Preview mode"))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 1)
+        XCTAssertEqual(runner.calls, 0)
+    }
+
+    func testOpeningDiagnosticsDoesNotRunTheExpensiveChecks() {
+        let runner = CountingRunner()
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       serviceInstalledOverride: false)
+        let diagnostics = DiagnosticsWindowController(controller: controller)
+
+        XCTAssertNotNil(diagnostics.window)
+        XCTAssertEqual(runner.calls, 0)
+    }
+
+    func testSharedReportsRedactValuesWithoutDeletingUsefulErrors() {
+        let source = """
+        password authentication failed for user reader
+        status code: 500
+        Authorization: Bearer bearer-secret-value
+        {"accessToken":"access-secret-value","refresh_token":"refresh-secret-value"}
+        callback=https://fleet.example/callback?code=EU_secret_code&state=public-state
+        source=postgresql://reader:database-secret@127.0.0.1/teslamate
+        jwt=eyJheader.payload.signature
+        /Users/example/Library/Logs/Teslatlas Hub/hub.err.log
+        """
+
+        let redacted = HubShareRedactor.redact(source, homeDirectory: "/Users/example")
+
+        XCTAssertTrue(redacted.contains("password authentication failed"))
+        XCTAssertTrue(redacted.contains("status code: 500"))
+        XCTAssertTrue(redacted.contains("Authorization: Bearer [redacted]"))
+        XCTAssertTrue(redacted.contains("\"accessToken\":\"[redacted]"))
+        XCTAssertTrue(redacted.contains("code=[redacted]&state=public-state"))
+        XCTAssertTrue(redacted.contains("postgresql://reader:[redacted]@127.0.0.1"))
+        XCTAssertTrue(redacted.contains("[redacted-jwt]"))
+        XCTAssertTrue(redacted.contains("~/Library/Logs"))
+        for secret in ["bearer-secret-value", "access-secret-value", "refresh-secret-value",
+                       "EU_secret_code", "database-secret", "eyJheader.payload.signature"] {
+            XCTAssertFalse(redacted.contains(secret), "leaked \(secret)")
+        }
+    }
+
+    func testLogsNameStandardOutputAndErrorStreams() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let folder = home.appendingPathComponent("Library/Logs/Teslatlas Hub", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try "normal event\n".write(to: folder.appendingPathComponent("hub.out.log"),
+                                    atomically: true, encoding: .utf8)
+        try "error event\n".write(to: folder.appendingPathComponent("hub.err.log"),
+                                   atomically: true, encoding: .utf8)
+        let controller = HubController(homeDirectory: home, serviceInstalledOverride: false)
+        let finished = expectation(description: "logs loaded")
+
+        controller.logs { text in
+            XCTAssertTrue(text.contains("== hub.out.log ==\nnormal event"))
+            XCTAssertTrue(text.contains("== hub.err.log ==\nerror event"))
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+    }
+
     func testRefreshUsesInstalledBinaryAndReportsVersionMismatch() {
         let embedded = RecordingCommandRunner(result: .failure(HubActionError.commandFailed("unused")))
         let installed = RecordingCommandRunner(result: .success("""
@@ -85,7 +215,7 @@ final class HubControllerTests: XCTestCase {
         """))
         let controller = HubController(commandRunner: embedded,
                                        installedCommandRunner: installed,
-                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "installed status loaded")
 
@@ -102,6 +232,54 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(installed.arguments, [["--config", NSHomeDirectory() + "/Library/Application Support/Teslatlas Hub/config.toml", "status"]])
     }
 
+    func testRefreshPreservesStoppedStateAcrossVersionMismatch() {
+        let installed = RecordingCommandRunner(result: .success("""
+        {"status":"ok","version":"9.9.9","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        """))
+        let controller = HubController(installedCommandRunner: installed,
+                                       serviceRunner: ScriptedService(events: EventRecorder(), loadState: .unloaded),
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "stopped status loaded")
+
+        controller.refresh { snapshot in
+            XCTAssertEqual(snapshot.health, .stopped)
+            XCTAssertEqual(snapshot.service, "Installed but stopped")
+            XCTAssertEqual(snapshot.account, "Connected")
+            XCTAssertEqual(snapshot.provider, .legacy)
+            XCTAssertTrue(snapshot.diagnosticLines.first?.contains("Version mismatch") == true)
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+    }
+
+    func testStoppedDashboardSaysStoppedWithoutRequestingSetup() {
+        let installed = RecordingCommandRunner(result: .success("""
+        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        """))
+        let controller = HubController(installedCommandRunner: installed,
+                                       serviceRunner: ScriptedService(events: EventRecorder(), loadState: .unloaded),
+                                       serviceInstalledOverride: true)
+        let settled = expectation(description: "stopped dashboard settled")
+        var dashboard: MainWindowController?
+        dashboard = MainWindowController(controller: controller) { snapshot in
+            XCTAssertEqual(snapshot.health, .stopped)
+            let copy = self.labels(in: dashboard?.window?.contentView).map(\.stringValue)
+            XCTAssertTrue(copy.contains("Hub is stopped"))
+            XCTAssertTrue(copy.contains("Teslatlas Hub is stopped."))
+            XCTAssertFalse(copy.contains { $0.localizedCaseInsensitiveContains("setup required") })
+            XCTAssertFalse(copy.contains { $0.localizedCaseInsensitiveContains("needs attention") })
+            let start = self.buttons(in: dashboard?.window?.contentView)
+                .first { $0.title == "Start Hub" }
+            XCTAssertEqual(start?.keyEquivalent, "\r")
+            XCTAssertTrue(dashboard?.window?.defaultButtonCell === start?.cell)
+            settled.fulfill()
+        }
+
+        wait(for: [settled], timeout: 2)
+        withExtendedLifetime(dashboard) {}
+    }
+
     func testRefreshSummarizesMultipleInstalledVehicles() {
         let installed = RecordingCommandRunner(result: .success("""
         {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"displayName":"One"},{"displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
@@ -114,11 +292,123 @@ final class HubControllerTests: XCTestCase {
         controller.refresh { snapshot in
             XCTAssertEqual(snapshot.vehicleName, "2 vehicles")
             XCTAssertEqual(snapshot.account, "Connected")
+            XCTAssertEqual(snapshot.provider, .fleet)
+            XCTAssertEqual(snapshot.accountDisplay, "Connected · Fleet API")
             XCTAssertNil(snapshot.controlVehicleID)
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
+    }
+
+    func testAccountDisplayKeepsConnectionStateSeparateFromProviderLabel() {
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.provider = .legacy
+        XCTAssertEqual(snapshot.account, "Connected")
+        XCTAssertEqual(snapshot.accountDisplay, "Connected · Legacy token")
+
+        snapshot.account = "Not configured"
+        XCTAssertEqual(snapshot.accountDisplay, "Not configured")
+        snapshot.provider = nil
+        XCTAssertEqual(snapshot.accountDisplay, "Not configured")
+    }
+
+    func testSignOutUsesInstalledBinaryWithoutSecretsAndRefreshesStatus() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
+        let embedded = CountingRunner()
+        let installed = CommandMapRunner(responses: [
+            "sign-out": .success("{\"status\":\"signed_out\"}"),
+            "status": .success("""
+            {"status":"ok","version":"1.0.0-alpha.1","ready":false,"provider":"fleet","credentials":{"present":false}}
+            """)
+        ])
+        let controller = HubController(commandRunner: embedded,
+                                       installedCommandRunner: installed,
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
+        let finished = expectation(description: "signed out and refreshed")
+
+        controller.signOutTeslaAccount { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            XCTAssertEqual(controller.snapshot.account, "Not configured")
+            XCTAssertEqual(controller.snapshot.provider, .fleet)
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        let config = home.appendingPathComponent(
+            "Library/Application Support/Teslatlas Hub/config.toml"
+        ).path
+        XCTAssertEqual(installed.arguments, [
+            ["--config", config, "control", "sign-out"],
+            ["--config", config, "status"]
+        ])
+        XCTAssertEqual(embedded.calls, 0)
+    }
+
+    func testSignOutIsBlockedByPendingMigrationHandover() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let folder = home.appendingPathComponent(
+            "Library/Application Support/Teslatlas Hub",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("pending".utf8).write(
+            to: folder.appendingPathComponent(".teslamate-handover-pending")
+        )
+        let runner = CountingRunner()
+        let controller = HubController(installedCommandRunner: runner,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "sign out blocked")
+
+        controller.signOutTeslaAccount { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("expected sign-out failure")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("migration handover"))
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 1)
+        XCTAssertEqual(runner.calls, 0)
+    }
+
+    func testSignOutFailureRefreshesRemainingProviderBeforeReturningError() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
+        let installed = CommandMapRunner(responses: [
+            "sign-out": .failure(HubActionError.commandFailed("checkpoint failed")),
+            "status": .success("""
+            {"status":"ok","version":"1.0.0-alpha.1","ready":false,"provider":"fleet","credentials":{"present":false},"legacyCredentials":{"present":true},"fleetCredentials":{"present":false}}
+            """)
+        ])
+        let controller = HubController(installedCommandRunner: installed,
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
+        let finished = expectation(description: "failed sign-out refreshed")
+
+        controller.signOutTeslaAccount { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("expected sign-out failure")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("status was refreshed"))
+            XCTAssertEqual(controller.snapshot.account, "Connected")
+            XCTAssertEqual(controller.snapshot.provider, .legacy)
+            XCTAssertEqual(controller.snapshot.accountDisplay, "Connected · Legacy token")
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(installed.commands, ["sign-out", "status"])
     }
 
     func testSingleVehicleControlsUseInstalledBinaryExactlyOnce() {
@@ -160,7 +450,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(embedded.arguments, [])
     }
 
-    func testAthenaCardShowsVisibleNonChargingControlsAndHidesConnectedAccountButton() {
+    func testAthenaCardShowsControlsAndManageTeslaInsteadOfConnectTesla() {
         let alert = MainWindowController.vehicleControlConfirmation(.climateStart,
                                                                     vehicleName: "Model 3")
         XCTAssertEqual(alert.messageText, "Start Climate for Model 3?")
@@ -182,7 +472,16 @@ final class HubControllerTests: XCTestCase {
                 XCTAssertFalse(button?.isHidden ?? true, "hidden \(title)")
                 XCTAssertTrue(button?.isEnabled ?? false, "preview disabled \(title)")
             }
-            XCTAssertTrue(windowController.connectButton.isHidden)
+            XCTAssertFalse(windowController.connectButton.isHidden)
+            XCTAssertEqual(windowController.connectButton.title, "Manage Tesla")
+            XCTAssertFalse(windowController.connectButton.isBordered)
+            XCTAssertTrue(self.labels(in: windowController.window?.contentView)
+                .contains { $0.stringValue == "Connected · Fleet API" })
+            XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
+                .allSatisfy { !$0.isBordered })
+            XCTAssertNil(windowController.window?.defaultButtonCell)
+            XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
+                .contains { $0.keyEquivalent == "\r" })
             XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
                 .contains { $0.title.localizedCaseInsensitiveContains("charge") })
             XCTAssertEqual(HubVehicleControl.allCases.map(\.rawValue), [
@@ -191,6 +490,13 @@ final class HubControllerTests: XCTestCase {
             settled.fulfill()
         }
         wait(for: [settled], timeout: 1)
+    }
+
+    func testDisconnectConfirmationDefaultsToCancel() {
+        let alert = MainWindowController.disconnectConfirmation()
+        XCTAssertEqual(alert.buttons.map(\.title), ["Cancel", "Disconnect"])
+        XCTAssertEqual(alert.buttons.first?.keyEquivalent, "\r")
+        XCTAssertNotEqual(alert.buttons.last?.keyEquivalent, "\r")
     }
 
     func testAmbiguousClimateFailureWarnsAgainstRetry() {
@@ -206,6 +512,15 @@ final class HubControllerTests: XCTestCase {
         let alert = MainWindowController.unknownVehicleControlOutcomeAlert()
         XCTAssertEqual(alert.messageText, "Command outcome unknown")
         XCTAssertTrue(alert.informativeText.contains("Do not repeat"))
+    }
+
+    func testImportSheetDoesNotClaimHubStartsAutomatically() {
+        XCTAssertFalse(
+            ImportSheetController.teslaMateStoppedConfirmationDetail.contains("starts Hub automatically")
+        )
+        XCTAssertTrue(
+            ImportSheetController.teslaMateStoppedConfirmationDetail.contains("leaves Hub stopped")
+        )
     }
 
     func testInstalledMigrationStopsConfirmsFinalCopyAndRestarts() throws {
@@ -232,8 +547,45 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["service:stop", "install", "migrate", "service:start"])
+        XCTAssertEqual(events.values, ["service:stop", "migrate"])
         XCTAssertEqual(runner.stdin, "y\nn\n")
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertFalse(events.values.contains("install"))
+        XCTAssertFalse(events.values.contains("service:start"))
+    }
+
+    func testInstalledMigrationKeepsFleetProviderAndTokensConfig() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success("imported"))
+        let installer = ScriptedInstaller(events: events)
+        let service = ScriptedService(events: events)
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       installer: installer,
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "migration finished")
+
+        controller.importTeslaMate(source: "postgresql://reader@localhost/teslamate",
+                                   carID: "1",
+                                   passwordFile: "/tmp/password",
+                                   encryptionKeyFile: "/tmp/key") { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values, ["service:stop", "migrate"])
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertFalse(events.values.contains("service:start"))
+        let config = try configContents(in: home)
+        XCTAssertTrue(config.contains("provider = \"fleet\""))
+        XCTAssertTrue(config.contains("interval_seconds = 0"))
+        XCTAssertEqual(HubController.collectorProvider(in: config), "fleet")
     }
 
     func testFreshMigrationInstallsCurrentServicePackageAfterSuccessfulCopy() throws {
@@ -260,22 +612,26 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["migrate", "install"])
+        XCTAssertEqual(events.values, ["migrate"])
         XCTAssertEqual(runner.stdin, "y\nn\n")
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertFalse(events.values.contains("install"))
+        XCTAssertFalse(events.values.contains("service:start"))
         let config = try String(contentsOf: home
             .appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml"))
         XCTAssertTrue(config.contains("[geocoder]\nenabled = false"))
         XCTAssertTrue(config.contains("[terrain]\nenabled = false"))
     }
 
-    func testInstalledMigrationRestartsAfterMigrationFailure() throws {
+    func testStartedMigrationTimeoutKeepsHandoverGateAndHubStopped() throws {
         let events = EventRecorder()
         let runner = ScriptedRunner(events: events,
-                                    result: .failure(HubActionError.commandFailed("copy failed")))
+                                    result: .failure(HubActionError.commandTimedOut))
         let installer = ScriptedInstaller(events: events)
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
                                        installedCommandRunner: runner,
                                        installer: installer,
@@ -288,14 +644,91 @@ final class HubControllerTests: XCTestCase {
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key") { result in
-            guard case let .failure(error) = result else { return XCTFail("expected migration failure") }
-            XCTAssertTrue(error.localizedDescription.contains("copy failed"))
+            guard case let .failure(error) = result else { return XCTFail("expected migration timeout") }
+            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["service:stop", "install", "migrate", "service:start"])
+        XCTAssertEqual(events.values, ["service:stop", "migrate"])
         XCTAssertEqual(runner.stdin, "y\nn\n")
+        XCTAssertFalse(events.values.contains("service:start"))
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        let config = try configContents(in: home)
+        XCTAssertTrue(config.contains("provider = \"fleet\""))
+        XCTAssertTrue(config.contains("interval_seconds = 0"))
+    }
+
+    func testAmbiguousMigrationFailureKeepsHandoverGateAndHubStopped() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(
+            events: events,
+            result: .failure(HubActionError.commandFailed(
+                "TESLATLAS_MIGRATION_OUTCOME_AMBIGUOUS: checkpoint failed"
+            ))
+        )
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: events),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "ambiguous migration stopped")
+
+        controller.importTeslaMate(source: "postgres://reader@localhost/teslamate",
+                                   carID: "1",
+                                   passwordFile: "/tmp/password",
+                                   encryptionKeyFile: "/tmp/key") { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("expected ambiguous migration failure")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertTrue(try configContents(in: home).contains("interval_seconds = 0"))
+        XCTAssertEqual(events.values, ["service:stop", "migrate"])
+    }
+
+    func testStartedImportNeverRollsBackConfigurationAfterFailure() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
+        let config = home.appendingPathComponent(
+            "Library/Application Support/Teslatlas Hub/config.toml"
+        )
+        let runner = MutatingFailureRunner(
+            error: HubActionError.commandFailed("copy failed")
+        ) {
+            try FileManager.default.removeItem(at: config)
+            try FileManager.default.createDirectory(at: config, withIntermediateDirectories: false)
+        }
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: CountingRunner(),
+                                       installer: ScriptedInstaller(events: EventRecorder()),
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "started import failure surfaced")
+
+        controller.importTeslaMate(source: "postgres://reader@localhost/teslamate",
+                                   carID: "1",
+                                   passwordFile: "/tmp/password",
+                                   encryptionKeyFile: "/tmp/key") { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("expected import failure")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("copy failed"))
+            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
     }
 
     func testInstalledMigrationDoesNotMutateWithStaleBinaryWhenPackageUpdateFails() throws {
@@ -314,39 +747,43 @@ final class HubControllerTests: XCTestCase {
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
-        let finished = expectation(description: "package failure returned")
+        let finished = expectation(description: "dashboard import ignores package installer")
 
         controller.importTeslaMate(source: "postgres://reader@localhost/teslamate",
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key") { result in
-            guard case let .failure(error) = result else { return XCTFail("expected package failure") }
-            XCTAssertTrue(error.localizedDescription.contains("package failed"))
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["service:stop", "install", "service:start"])
-        XCTAssertNil(runner.stdin)
+        XCTAssertEqual(events.values, ["service:stop", "migrate"])
+        XCTAssertEqual(runner.stdin, "y\nn\n")
+        XCTAssertFalse(events.values.contains("install"))
+        XCTAssertFalse(events.values.contains("service:start"))
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
     }
 
-    func testInstalledAccountConfigureRunsSetupBeforeInstallerAndRestarts() throws {
+    func testInstalledAccountConfigureInstallsBeforeSingleSetupAndRestarts() throws {
         let events = EventRecorder()
         let embedded = CountingRunner()
-        let installed = ScriptedRunner(events: events,
-                                       result: .success("ok"),
-                                       unsupportedAllVehiclesAttempts: 1)
-        let installer = ScriptedInstaller(events: events)
+        let installed = ScriptedRunner(events: events, result: .success("ok"))
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
+        var configAtInstall = ""
+        let installer = ScriptedInstaller(events: events) {
+            configAtInstall = (try? self.configContents(in: home)) ?? ""
+        }
         let controller = HubController(commandRunner: embedded,
                                        installedCommandRunner: installed,
                                        installer: installer,
                                        serviceRunner: service,
                                        homeDirectory: home,
-                                       serviceInstalledOverride: true)
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
         let finished = expectation(description: "account configured")
 
         controller.configureTeslaAccount(
@@ -358,17 +795,17 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(events.values, [
-            "service:stop", "setup", "setup", "install", "service:stop", "setup", "service:start", "command"
+            "service:stop", "install", "setup", "service:start", "command"
         ])
         XCTAssertEqual(embedded.calls, 0)
         XCTAssertNotNil(installed.stdin)
         XCTAssertTrue(installed.arguments[0].contains("--all-vehicles"))
-        XCTAssertFalse(installed.arguments[1].contains("--all-vehicles"))
-        XCTAssertTrue(installed.arguments[2].contains("--all-vehicles"))
+        XCTAssertEqual(installed.arguments.count, 2)
+        XCTAssertTrue(configAtInstall.contains("provider = \"fleet\""))
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
-    func testInstalledAccountConfigureRestartsOldServiceAfterSetupFailure() throws {
+    func testInstalledAccountSetupFailureKeepsLegacySelectedAndHubStopped() throws {
         let events = EventRecorder()
         let runner = ScriptedRunner(
             events: events,
@@ -378,13 +815,14 @@ final class HubControllerTests: XCTestCase {
         let service = ScriptedService(events: events, loadState: .loaded)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
-        let original = try writeCollectorConfig(in: home, provider: "fleet")
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
                                        installedCommandRunner: runner,
                                        installer: installer,
                                        serviceRunner: service,
                                        homeDirectory: home,
-                                       serviceInstalledOverride: true)
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
         let finished = expectation(description: "setup failure returned")
 
         controller.configureTeslaAccount(
@@ -392,12 +830,13 @@ final class HubControllerTests: XCTestCase {
         ) { result in
             guard case let .failure(error) = result else { return XCTFail("expected setup failure") }
             XCTAssertTrue(error.localizedDescription.contains("setup failed"))
+            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["service:stop", "setup", "service:start"])
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
+        XCTAssertEqual(events.values, ["service:stop", "install", "setup"])
     }
 
     func testInstalledLegacyFailureKeepsPreviouslyStoppedHubStopped() throws {
@@ -408,13 +847,14 @@ final class HubControllerTests: XCTestCase {
         )
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
-        let original = try writeCollectorConfig(in: home, provider: "fleet")
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
                                        installedCommandRunner: runner,
                                        installer: ScriptedInstaller(events: events),
                                        serviceRunner: ScriptedService(events: events, loadState: .unloaded),
                                        homeDirectory: home,
-                                       serviceInstalledOverride: true)
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
         let finished = expectation(description: "stopped setup failure returned")
 
         controller.configureTeslaAccount(
@@ -425,8 +865,8 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["service:stop", "setup"])
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
+        XCTAssertEqual(events.values, ["service:stop", "install", "setup"])
     }
 
     func testInstalledLegacyStopFailureKeepsFleetConfigUnchanged() throws {
@@ -442,7 +882,8 @@ final class HubControllerTests: XCTestCase {
                                        installer: ScriptedInstaller(events: events),
                                        serviceRunner: service,
                                        homeDirectory: home,
-                                       serviceInstalledOverride: true)
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
         let finished = expectation(description: "stop failure returned")
 
         controller.configureTeslaAccount(
@@ -473,7 +914,8 @@ final class HubControllerTests: XCTestCase {
                                        installer: installer,
                                        serviceRunner: service,
                                        homeDirectory: home,
-                                       serviceInstalledOverride: true)
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
         let finished = expectation(description: "install failure returned")
 
         controller.configureTeslaAccount(
@@ -486,7 +928,7 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["service:stop", "setup", "install", "service:start"])
+        XCTAssertEqual(events.values, ["service:stop", "install", "service:start"])
     }
 
     func testForwardOnlyInstallFailureLeavesNewServiceStopped() throws {
@@ -506,7 +948,8 @@ final class HubControllerTests: XCTestCase {
                                        installer: installer,
                                        serviceRunner: ScriptedService(events: events),
                                        homeDirectory: home,
-                                       serviceInstalledOverride: true)
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
         let finished = expectation(description: "forward-only failure returned")
 
         controller.configureTeslaAccount(
@@ -519,7 +962,104 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertEqual(events.values, ["service:stop", "install"])
+    }
+
+    func testInstalledUnconfiguredLegacySetupRunsBeforePackagePreflight() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success("ok"))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       installer: ScriptedInstaller(events: events),
+                                       serviceRunner: ScriptedService(events: events),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "unconfigured legacy setup finished")
+
+        controller.configureTeslaAccount(
+            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        ) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values, [
+            "service:stop", "setup", "install", "service:start", "command"
+        ])
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
+    }
+
+    func testUnconfiguredLegacyInstallerFailureKeepsNewCredentialsStopped() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(events: events, result: .success("configured"))
+        let installer = ScriptedInstaller(
+            events: events,
+            result: .failure(HubActionError.commandFailed("package failed"))
+        )
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       installer: installer,
+                                       serviceRunner: ScriptedService(events: events),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "configured legacy remains stopped")
+
+        controller.configureTeslaAccount(
+            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        ) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("expected package failure")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("configured"))
+            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
         XCTAssertEqual(events.values, ["service:stop", "setup", "install"])
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
+    }
+
+    func testAmbiguousLegacySwitchDoesNotRestoreOrRestartOldProvider() throws {
+        let events = EventRecorder()
+        let runner = ScriptedRunner(
+            events: events,
+            result: .failure(HubActionError.commandFailed(
+                "TESLATLAS_PROVIDER_SWITCH_OUTCOME_AMBIGUOUS: old credentials could not be removed"
+            ))
+        )
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       installer: ScriptedInstaller(events: events),
+                                       serviceRunner: ScriptedService(events: events, loadState: .loaded),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
+        let finished = expectation(description: "ambiguous provider switch remains stopped")
+
+        controller.configureTeslaAccount(
+            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        ) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("expected ambiguous setup failure")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values, ["service:stop", "install", "setup"])
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
     func testMigrationSourceAllowsUsernameButRejectsPassword() throws {
@@ -781,6 +1321,23 @@ private final class CountingRunner: HubCommandRunning {
     }
 }
 
+private final class CommandMapRunner: HubCommandRunning {
+    private(set) var commands: [String] = []
+    private(set) var arguments: [[String]] = []
+    private let responses: [String: Result<String, Error>]
+
+    init(responses: [String: Result<String, Error>]) {
+        self.responses = responses
+    }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        self.arguments.append(arguments)
+        let command = arguments.last { $0 != "--config" && !$0.hasSuffix("config.toml") } ?? arguments.last ?? ""
+        commands.append(command)
+        completion(responses[command] ?? .failure(HubActionError.commandFailed("unexpected \(command)")))
+    }
+}
+
 private final class RecordingCommandRunner: HubCommandRunning {
     private let result: Result<String, Error>
     private(set) var arguments: [[String]] = []
@@ -790,6 +1347,25 @@ private final class RecordingCommandRunner: HubCommandRunning {
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         self.arguments.append(arguments)
         completion(result)
+    }
+}
+
+private final class MutatingFailureRunner: HubCommandRunning {
+    private let error: Error
+    private let mutation: () throws -> Void
+
+    init(error: Error, mutation: @escaping () throws -> Void) {
+        self.error = error
+        self.mutation = mutation
+    }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        do {
+            try mutation()
+            completion(.failure(error))
+        } catch {
+            completion(.failure(error))
+        }
     }
 }
 
@@ -849,14 +1425,19 @@ private final class ScriptedRunner: HubCommandRunning {
 private final class ScriptedInstaller: HubInstalling {
     private let events: EventRecorder
     private let result: Result<String, Error>
+    private let onInstall: (() -> Void)?
 
-    init(events: EventRecorder, result: Result<String, Error> = .success("")) {
+    init(events: EventRecorder,
+         result: Result<String, Error> = .success(""),
+         onInstall: (() -> Void)? = nil) {
         self.events = events
         self.result = result
+        self.onInstall = onInstall
     }
 
     func install(completion: @escaping (Result<String, Error>) -> Void) {
         events.append("install")
+        onInstall?()
         completion(result)
     }
 

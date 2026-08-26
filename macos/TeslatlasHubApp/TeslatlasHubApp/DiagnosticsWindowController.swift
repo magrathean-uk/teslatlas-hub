@@ -3,15 +3,26 @@ import AppKit
 final class DiagnosticsWindowController: NSWindowController {
     private let controller: HubController
     private let textView = NSTextView()
+    private let statusIcon = NSImageView()
+    private let statusTitle = NSTextField(labelWithString: "Ready")
+    private let statusDetail = NSTextField(wrappingLabelWithString:
+        "Run a local database, credential, TLS, collector, and recent-log check when you need it.")
+    private let runButton = NSButton(title: "Run Diagnostics", target: nil, action: nil)
+    private let copyButton = NSButton(title: "Copy Report", target: nil, action: nil)
+    private let saveButton = NSButton(title: "Save Report…", target: nil, action: nil)
+    private var latestReport: String?
 
     init(controller: HubController) {
         self.controller = controller
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 390), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "Run Diagnostics"
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 560),
+                              styleMask: [.titled, .closable, .resizable],
+                              backing: .buffered,
+                              defer: false)
+        window.title = "Hub Diagnostics"
         super.init(window: window)
         window.contentView = contentView()
         window.center()
-        refresh()
+        showInitialSummary()
     }
 
     @available(*, unavailable)
@@ -19,31 +30,154 @@ final class DiagnosticsWindowController: NSWindowController {
 
     private func contentView() -> NSView {
         let root = NSView()
+
+        statusIcon.image = NSImage(systemSymbolName: "stethoscope", accessibilityDescription: "Diagnostics ready")
+        statusIcon.contentTintColor = .secondaryLabelColor
+        statusIcon.imageScaling = .scaleProportionallyDown
+        statusIcon.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        statusIcon.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        statusTitle.font = .systemFont(ofSize: 17, weight: .semibold)
+        statusDetail.font = .systemFont(ofSize: 12)
+        statusDetail.textColor = .secondaryLabelColor
+        statusDetail.maximumNumberOfLines = 2
+        let statusText = NSStackView(views: [statusTitle, statusDetail])
+        statusText.orientation = .vertical
+        statusText.alignment = .leading
+        statusText.spacing = 2
+        let heading = NSStackView(views: [statusIcon, statusText])
+        heading.spacing = 12
+        heading.alignment = .centerY
+
         textView.isEditable = false
+        textView.isSelectable = true
         textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textContainerInset = NSSize(width: 10, height: 10)
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
         scroll.documentView = textView
-        let button = NSButton(title: "Run Diagnostics", target: self, action: #selector(refreshPressed))
-        button.bezelStyle = .rounded
-        let stack = NSStackView(views: [scroll, button])
+
+        configureFlatButton(runButton, symbol: "play.fill", tint: .controlAccentColor,
+                            action: #selector(runPressed))
+        configureFlatButton(copyButton, symbol: "doc.on.doc", action: #selector(copyPressed))
+        configureFlatButton(saveButton, symbol: "square.and.arrow.down", action: #selector(savePressed))
+        let actions = NSStackView(views: [runButton, copyButton, saveButton])
+        actions.spacing = 14
+        actions.alignment = .centerY
+
+        let privacy = NSTextField(labelWithString:
+            "Copy and Save redact credential values and shorten your home-folder path. Review the report before sharing it.")
+        privacy.font = .systemFont(ofSize: 11)
+        privacy.textColor = .secondaryLabelColor
+
+        let line = separator()
+        let stack = NSStackView(views: [heading, line, scroll, actions, privacy])
         stack.orientation = .vertical
-        stack.alignment = .trailing
+        stack.alignment = .leading
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(stack)
+        for view in [heading, line, scroll, privacy] {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
             stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20)
+            stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20),
+            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 360)
         ])
         return root
     }
 
-    private func refresh() {
-        textView.string = controller.diagnostics().joined(separator: "\n")
+    private func showInitialSummary() {
+        let summary = controller.diagnostics()
+        textView.string = summary.isEmpty
+            ? "No diagnostic report has been run."
+            : "Current Hub summary\n\n" + summary.joined(separator: "\n")
+        copyButton.isEnabled = false
+        saveButton.isEnabled = false
     }
 
-    @objc private func refreshPressed() { refresh() }
+    @objc private func runPressed() {
+        runButton.isEnabled = false
+        copyButton.isEnabled = false
+        saveButton.isEnabled = false
+        statusIcon.image = NSImage(systemSymbolName: "hourglass", accessibilityDescription: "Diagnostics running")
+        statusIcon.contentTintColor = .controlAccentColor
+        statusTitle.stringValue = "Running checks"
+        statusDetail.stringValue = "Hub stays installed. TeslaMate is not written and stored Tesla credentials are not deleted."
+        textView.string = "Running diagnostics…"
+        controller.runFullDiagnostics { [weak self] text in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                self.latestReport = text
+                self.textView.string = text
+                let hasFailure = text.localizedCaseInsensitiveContains("(failed)")
+                self.statusIcon.image = NSImage(
+                    systemSymbolName: hasFailure ? "exclamationmark.triangle" : "checkmark",
+                    accessibilityDescription: hasFailure ? "Diagnostics found issues" : "Diagnostics finished"
+                )
+                self.statusIcon.contentTintColor = hasFailure ? .systemOrange : .systemGreen
+                self.statusTitle.stringValue = hasFailure ? "Checks finished with issues" : "Checks finished"
+                self.statusDetail.stringValue = hasFailure
+                    ? "Review the failed section below."
+                    : "Database, credentials, collector, and logs were checked."
+                self.runButton.isEnabled = true
+                self.copyButton.isEnabled = true
+                self.saveButton.isEnabled = true
+            }
+        }
+    }
+
+    @objc private func copyPressed() {
+        guard let latestReport else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(Self.shareableReport(latestReport), forType: .string)
+        statusDetail.stringValue = "Redacted report copied."
+    }
+
+    @objc private func savePressed() {
+        guard let latestReport, let window else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "teslatlas-hub-diagnostics.txt"
+        panel.canCreateDirectories = true
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let destination = panel.url else { return }
+            do {
+                try Self.shareableReport(latestReport).write(to: destination,
+                                                             atomically: true,
+                                                             encoding: .utf8)
+                self?.statusDetail.stringValue = "Redacted report saved."
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+        }
+    }
+
+    private static func shareableReport(_ report: String) -> String {
+        HubShareRedactor.redact(report)
+    }
+
+    private func configureFlatButton(_ button: NSButton,
+                                     symbol: String,
+                                     tint: NSColor = .labelColor,
+                                     action: Selector) {
+        button.target = self
+        button.action = action
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
+        button.imagePosition = .imageLeading
+        button.contentTintColor = tint
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.focusRingType = .default
+    }
+
+    private func separator() -> NSBox {
+        let line = NSBox()
+        line.boxType = .separator
+        line.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return line
+    }
 }

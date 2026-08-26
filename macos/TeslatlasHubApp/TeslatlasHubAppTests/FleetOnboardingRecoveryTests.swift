@@ -11,7 +11,7 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         expiresInSeconds: 3600
     )
 
-    func testInstalledSetupFailureRestoresConfigAndRestartsLoadedService() throws {
+    func testInstalledSetupTimeoutKeepsFleetSelectedAndHubStopped() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let original = try writeOriginalConfig(in: home)
@@ -19,7 +19,7 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         let embedded = FleetRecoveryRunner(events: events, event: "embedded-setup", result: .success("unused"))
         let installed = FleetRecoveryRunner(events: events,
                                              event: "installed-setup",
-                                             result: .failure(HubActionError.commandFailed("setup failed")))
+                                             result: .failure(HubActionError.commandTimedOut))
         var configAtInstall = ""
         let controller = HubController(commandRunner: embedded,
                                        installedCommandRunner: installed,
@@ -31,18 +31,19 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
                                        serviceInstalledOverride: true,
                                        initialSnapshot: .previewRunning)
 
-        let finished = expectation(description: "setup failure returned")
+        let finished = expectation(description: "setup timeout returned")
         controller.configureFleetAccount(credentials: credentials) { result in
-            guard case let .failure(error) = result else { return XCTFail("expected setup failure") }
-            XCTAssertTrue(error.localizedDescription.contains("setup failed"))
+            guard case let .failure(error) = result else { return XCTFail("expected setup timeout") }
+            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
             finished.fulfill()
         }
         wait(for: [finished], timeout: 2)
 
-        XCTAssertEqual(try configContents(in: home), original)
+        XCTAssertNotEqual(try configContents(in: home), original)
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"fleet\""))
         XCTAssertTrue(configAtInstall.contains("provider = \"legacy\""))
         XCTAssertFalse(configAtInstall.contains("provider = \"fleet\""))
-        XCTAssertEqual(events.values, ["state", "service:stop", "install", "installed-setup", "service:start"])
+        XCTAssertEqual(events.values, ["state", "service:stop", "install", "installed-setup"])
     }
 
     func testInstalledInstallerFailureRestoresConfigAndRestartsLoadedService() throws {
@@ -162,6 +163,43 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
 
         XCTAssertTrue(configAtInstall.contains("provider = \"fleet\""))
         XCTAssertEqual(events.values, ["service:stop", "embedded-setup", "install", "service:start", "state", "command"])
+    }
+
+    func testInstalledUnconfiguredInstallerFailureKeepsFleetConfiguredAndStopped() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeOriginalConfig(in: home)
+        let events = FleetRecoveryEvents()
+        let embedded = FleetRecoveryRunner(events: events,
+                                            event: "embedded-setup",
+                                            result: .success("configured"))
+        let installed = FleetRecoveryRunner(events: events,
+                                             event: "installed-setup",
+                                             result: .success("unused"))
+        let installer = FleetRecoveryInstaller(
+            events: events,
+            result: .failure(HubActionError.commandFailed("package failed"))
+        )
+        let controller = HubController(commandRunner: embedded,
+                                       installedCommandRunner: installed,
+                                       installer: installer,
+                                       serviceRunner: FleetRecoveryService(events: events, state: .loaded),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "configured Fleet remains stopped")
+
+        controller.configureFleetAccount(credentials: credentials) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("expected installer failure")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("configured"))
+            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"fleet\""))
+        XCTAssertEqual(events.values, ["service:stop", "embedded-setup", "install"])
     }
 
     func testInstalledStopFailureDoesNotChangeConfig() throws {

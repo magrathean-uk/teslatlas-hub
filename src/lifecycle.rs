@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::hub_pack::{
@@ -76,6 +77,11 @@ pub struct OpenSessionState {
     pub last_stationary_position_at_ms: Option<i64>,
     pub phase: VehiclePhase,
     pub open_drive: Option<OpenDrive>,
+    /// Durable bookend retained when an offline drive times out before the
+    /// first authoritative online sample can prove a TeslaMate-style
+    /// gained-range charge.
+    #[serde(default)]
+    pub pending_gained_range_charge: Option<GainedRangeChargeSeed>,
     pub open_charge: Option<OpenCharge>,
     #[serde(default)]
     pub open_state: Option<OpenState>,
@@ -120,8 +126,14 @@ pub struct OpenSessionState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ImportedOpenSessionRefs {
     pub source_id: String,
+    #[serde(default)]
+    pub content_sha256: String,
     pub drive_source_row_id: Option<i64>,
+    #[serde(default)]
+    pub drive_position_count: u64,
     pub charge_source_row_id: Option<i64>,
+    #[serde(default)]
+    pub charge_sample_count: u64,
     pub state_source_row_id: Option<i64>,
     pub standalone_position_count: u64,
 }
@@ -193,8 +205,11 @@ pub fn seed_imported_open_session_state(
     let mut state = existing.cloned().unwrap_or_else(OpenSessionState::new);
     let refs = ImportedOpenSessionRefs {
         source_id: source_id.to_string(),
+        content_sha256: imported_open_content_sha256(session)?,
         drive_source_row_id: session.drive.as_ref().map(|row| row.id),
+        drive_position_count: session.drive_positions.len() as u64,
         charge_source_row_id: session.charge.as_ref().map(|row| row.id),
+        charge_sample_count: session.charge_samples.len() as u64,
         state_source_row_id: session.state.as_ref().map(|row| row.id),
         standalone_position_count: session.standalone_positions.len() as u64,
     };
@@ -293,6 +308,34 @@ pub fn seed_imported_open_session_state(
     Ok(state)
 }
 
+fn imported_open_content_sha256(session: &TeslaMateOpenSession) -> Result<String, LifecycleError> {
+    struct DigestWriter(Sha256);
+    impl std::io::Write for DigestWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.update(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut writer = DigestWriter(Sha256::new());
+    serde_json::to_writer(
+        &mut writer,
+        &(
+            &session.drive,
+            &session.drive_positions,
+            &session.charge,
+            &session.charge_samples,
+            &session.state,
+        ),
+    )
+    .map_err(|_| LifecycleError::InvalidImportedSession)?;
+    Ok(hex::encode(writer.0.finalize()))
+}
+
 fn session_max_timestamp(session: &TeslaMateOpenSession) -> Option<i64> {
     session
         .drive_positions
@@ -335,6 +378,9 @@ fn open_drive_from_source(row: &TeslaMateDrive, positions: &[TeslaMatePosition])
         elevation_ascent: 0,
         elevation_descent: 0,
         last_elevation: None,
+        saw_offline: false,
+        last_charge_energy_added: None,
+        last_ideal_range_km: row.end_ideal_range_km.or(row.start_ideal_range_km),
         positions: Vec::new(),
     };
 
@@ -561,6 +607,20 @@ pub struct OpenDrive {
     pub elevation_descent: i64,
     #[serde(default)]
     pub last_elevation: Option<i64>,
+    /// TeslaMate only synthesizes an offline charge after a drive has gone
+    /// through `{:driving, {:offline, last}, _}`. Persist that fact so an
+    /// online GPS gap cannot invent the same charge.
+    #[serde(default)]
+    pub saw_offline: bool,
+    /// Last Owner/Fleet `charge_energy_added` observed while this drive was
+    /// open. Stream frames omit the field. Used as TeslaMate's "last" bookend
+    /// for a gained-range synthetic charge.
+    #[serde(default)]
+    pub last_charge_energy_added: Option<f64>,
+    /// Last ideal range from any sample, including those without odometer.
+    /// TeslaMate compares `last_response.charge_state.ideal_battery_range`.
+    #[serde(default)]
+    pub last_ideal_range_km: Option<f64>,
     /// In-memory child buffer for pure unit tests and single-batch close. The
     /// durable db path clears this before encoding and never rehydrates the full
     /// history into active state on every observation.
@@ -905,13 +965,37 @@ mod stream_fixture_tests {
         }
     }
 
+    fn owner_park(id: i64, timestamp_ms: i64, odometer_miles: f64) -> LifecycleSample {
+        LifecycleSample {
+            observation_id: id,
+            observed_at_ms: timestamp_ms,
+            vehicle_state: "online".to_owned(),
+            payload: json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "vehicle_data": {
+                    "drive_state": {
+                        "shift_state": "P",
+                        "speed": 0,
+                        "latitude": 51.5,
+                        "longitude": -0.1,
+                        "timestamp": timestamp_ms
+                    },
+                    "vehicle_state": {
+                        "odometer": odometer_miles,
+                        "timestamp": timestamp_ms
+                    }
+                }
+            }),
+        }
+    }
+
     #[test]
     fn stream_drive_closes_before_owner_poll_and_duplicate_is_idempotent() {
         let state = OpenSessionState::new();
         let parked = sample(1, 1_700_000_000_000, 100.0, "P");
         let driving_one = sample(2, 1_700_000_001_000, 100.0, "D");
         let driving_two = sample(3, 1_700_000_002_000, 100.2, "D");
-        let parked_again = sample(4, 1_700_000_003_000, 100.3, "P");
+        let parked_again = owner_park(4, 1_700_000_003_000, 100.3);
 
         let first = apply_sample(state, 9, &parked).unwrap();
         let second = apply_sample(first.state, 9, &driving_one).unwrap();
@@ -955,8 +1039,68 @@ mod stream_fixture_tests {
         assert_eq!(position.speed, Some(16));
         assert_eq!(position.power, Some(120.0));
         assert_eq!(position.battery_level, Some(80));
+        assert_eq!(position.usable_battery_level, None);
         assert_eq!(position.elevation, Some(25));
         assert_eq!(position.odometer, Some(161.336736));
+        assert_eq!(position.ideal_battery_range_km, Some(321.87));
+    }
+
+    fn stream_sample(id: i64, timestamp_ms: i64, speed: i64, shift_state: &str) -> LifecycleSample {
+        let frame = format!(
+            r#"{{"msg_type":"data:update","tag":"9","timestamp":{timestamp_ms},"value":"{speed},100.0,80,25,180,51.5,-0.1,120,{shift_state},200,210,180"}}"#,
+        );
+        let update = parse_data_update(&frame).unwrap();
+        LifecycleSample {
+            observation_id: id,
+            observed_at_ms: timestamp_ms,
+            vehicle_state: "online".to_owned(),
+            payload: stream_observation_payload(&update),
+        }
+    }
+
+    #[test]
+    fn numeric_speed_without_drive_shift_does_not_open_a_drive() {
+        let parked_with_speed = stream_sample(1, 1_700_000_000_000, 25, "P");
+        let empty_shift_with_speed = stream_sample(2, 1_700_000_001_000, 25, "");
+        let driving = stream_sample(3, 1_700_000_002_000, 0, "D");
+        let reverse = stream_sample(4, 1_700_000_003_000, 0, "R");
+        let neutral = stream_sample(5, 1_700_000_004_000, 0, "N");
+
+        let parked = apply_sample(OpenSessionState::new(), 9, &parked_with_speed).unwrap();
+        assert!(parked.state.open_drive.is_none());
+        assert_eq!(parked.state.phase, VehiclePhase::Online);
+
+        let empty = apply_sample(parked.state, 9, &empty_shift_with_speed).unwrap();
+        assert!(empty.state.open_drive.is_none());
+        assert_eq!(empty.state.phase, VehiclePhase::Online);
+
+        let in_drive = apply_sample(empty.state, 9, &driving).unwrap();
+        assert!(in_drive.state.open_drive.is_some());
+        assert_eq!(in_drive.state.phase, VehiclePhase::Driving);
+
+        let in_reverse = apply_sample(OpenSessionState::new(), 9, &reverse).unwrap();
+        assert!(in_reverse.state.open_drive.is_some());
+        let in_neutral = apply_sample(OpenSessionState::new(), 9, &neutral).unwrap();
+        assert!(in_neutral.state.open_drive.is_some());
+    }
+
+    #[test]
+    fn empty_stream_shift_does_not_close_an_open_drive() {
+        let driving = stream_sample(1, 1_700_000_010_000, 20, "D");
+        let sparse = stream_sample(2, 1_700_000_011_000, 21, "");
+        let parked = owner_park(3, 1_700_000_012_000, 100.4);
+
+        let opened = apply_sample(OpenSessionState::new(), 9, &driving).unwrap();
+        assert!(opened.state.open_drive.is_some());
+        let continued = apply_sample(opened.state, 9, &sparse).unwrap();
+        assert!(
+            continued.state.open_drive.is_some(),
+            "TeslaMate keeps a drive open on a blank stream shift and fetches Owner/Fleet to confirm park"
+        );
+        assert!(continued.delta.drives.is_empty());
+        let closed = apply_sample(continued.state, 9, &parked).unwrap();
+        assert!(closed.state.open_drive.is_none());
+        assert_eq!(closed.delta.drives.len(), 1);
     }
 
     #[test]
@@ -1136,17 +1280,59 @@ pub(crate) fn apply_sample_with_offline_drive_timeout(
     if parsed.service_mode.is_some() {
         state.service_mode = parsed.service_mode;
     }
+    if parsed.phase == VehiclePhase::Offline
+        && let Some(open) = state.open_drive.as_mut()
+    {
+        open.saw_offline = true;
+    }
 
     // Charge and drive transitions are independent enough that either can
     // close while the other opens on successive samples, but one sample never
     // starts both simultaneously in a coherent Tesla response.
-    if let Some(closed) = maybe_close_drive(&mut state, car_id, &parsed, offline_drive_timeout)? {
+    let pending_gained_range_evaluated = state.pending_gained_range_charge.is_some()
+        && !parsed.stream_frame
+        && parsed.charge_data_present
+        && parsed.ideal_range_km.is_some()
+        && !matches!(
+            parsed.phase,
+            VehiclePhase::Offline
+                | VehiclePhase::Asleep
+                | VehiclePhase::Updating
+                | VehiclePhase::Unknown
+        );
+    let gained_range_charge = teslamate_gained_range_charge_seed(&state, &parsed);
+    if pending_gained_range_evaluated {
+        state.pending_gained_range_charge = None;
+    }
+    if let Some(closed) = maybe_close_drive(
+        &mut state,
+        car_id,
+        &parsed,
+        offline_drive_timeout,
+        gained_range_charge
+            .as_ref()
+            .is_some_and(|candidate| candidate.close_open_drive),
+    )? {
         if let Some(completed) = closed.completed {
             delta.positions.extend(completed.positions);
             delta.drives.push(completed.drive);
         } else {
             delta.discarded_drive_ids.push(closed.drive_id);
         }
+    }
+    if let Some(candidate) = gained_range_charge
+        && let Some(closed) =
+            materialize_gained_range_charge(&mut state, car_id, &parsed, candidate.seed)?
+    {
+        if let (Some(latitude), Some(longitude)) =
+            (closed.charge.start_latitude, closed.charge.start_longitude)
+        {
+            delta
+                .charge_start_coordinates
+                .push((closed.charge.id, latitude, longitude));
+        }
+        delta.charge_samples.extend(closed.samples);
+        delta.charges.push(closed.charge);
     }
     if let Some(closed) = maybe_close_charge(&mut state, car_id, &parsed)? {
         if let (Some(latitude), Some(longitude)) =
@@ -1160,6 +1346,14 @@ pub(crate) fn apply_sample_with_offline_drive_timeout(
         delta.charges.push(closed.charge);
     }
     maybe_open_or_extend_drive(&mut state, car_id, &parsed, &mut delta)?;
+    if let Some(open) = state.open_drive.as_mut() {
+        if let Some(energy) = parsed.charge_energy_added {
+            open.last_charge_energy_added = Some(energy);
+        }
+        if let Some(ideal) = parsed.ideal_range_km {
+            open.last_ideal_range_km = Some(ideal);
+        }
+    }
     maybe_open_or_extend_charge(&mut state, car_id, &parsed, &mut delta)?;
     maybe_emit_stationary_position(
         &mut state,
@@ -1323,6 +1517,7 @@ struct ParsedSample {
     car_metadata: Option<ProjectionCarPatch>,
     phase: VehiclePhase,
     shift_state: Option<String>,
+    stream_frame: bool,
     drive_data_present: bool,
     speed: Option<i64>,
     latitude: Option<f64>,
@@ -1371,6 +1566,10 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
         .payload
         .as_object()
         .ok_or(LifecycleError::InvalidPayload)?;
+    let stream_frame = matches!(
+        root.get("record_type").and_then(Value::as_str),
+        Some("tesla_stream_update_v1")
+    );
     let vehicle_data = match root.get("record_type").and_then(Value::as_str) {
         Some("owner_api_vehicle_data_v1" | "fleet_api_vehicle_data_v1") => Some(
             root.get("vehicle_data")
@@ -1473,7 +1672,7 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
         VehiclePhase::Updating
     } else if is_charging_state(charging_state.as_deref()) {
         VehiclePhase::Charging
-    } else if is_drive_shift(shift_state.as_deref()) || speed.unwrap_or(0) > 0 {
+    } else if is_drive_shift(shift_state.as_deref()) {
         VehiclePhase::Driving
     } else if sample.vehicle_state.eq_ignore_ascii_case("online") {
         VehiclePhase::Online
@@ -1497,6 +1696,7 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
         car_metadata,
         phase,
         shift_state,
+        stream_frame,
         drive_data_present: drive.is_some(),
         speed,
         latitude: drive.and_then(|fields| float_field(fields, "latitude")),
@@ -1628,6 +1828,7 @@ fn maybe_close_drive(
     car_id: i64,
     sample: &ParsedSample,
     offline_drive_timeout: Duration,
+    force: bool,
 ) -> Result<Option<DriveClose>, LifecycleError> {
     let Some(open) = state.open_drive.as_ref() else {
         return Ok(None);
@@ -1640,15 +1841,18 @@ fn maybe_close_drive(
         .unwrap_or(open.start_date_ms);
     let offline_timed_out = sample.phase == VehiclePhase::Offline
         && sample.drive_timestamp_ms.saturating_sub(last_position_at) >= offline_drive_timeout_ms;
-    let should_close = matches!(sample.phase, VehiclePhase::Asleep | VehiclePhase::Updating)
+    let should_close = force
+        || matches!(sample.phase, VehiclePhase::Asleep | VehiclePhase::Updating)
         || offline_timed_out
         || (matches!(sample.phase, VehiclePhase::Online | VehiclePhase::Charging)
             && sample.drive_data_present
-            && !is_drive_shift(sample.shift_state.as_deref())
-            && sample.speed.unwrap_or(0) <= 0);
+            && !sample.stream_frame
+            && !is_drive_shift(sample.shift_state.as_deref()));
     if !should_close {
         return Ok(None);
     }
+    let pending_gained_range_charge =
+        (offline_timed_out && open.saw_offline).then(|| gained_range_charge_seed_from_drive(open));
     let mut open = state
         .open_drive
         .take()
@@ -1657,7 +1861,6 @@ fn maybe_close_drive(
     let append_endpoint = sample.drive_data_present
         && matches!(sample.phase, VehiclePhase::Online | VehiclePhase::Charging)
         && !is_drive_shift(sample.shift_state.as_deref())
-        && sample.speed.unwrap_or(0) <= 0
         && sample.odometer.is_some();
     if append_endpoint {
         let position_id = state.next_position_id;
@@ -1669,6 +1872,9 @@ fn maybe_close_drive(
             observe_drive_position(&mut open, &position);
             open.positions.push(position);
         }
+    }
+    if let Some(seed) = pending_gained_range_charge {
+        state.pending_gained_range_charge.get_or_insert(seed);
     }
     Ok(Some(DriveClose {
         drive_id,
@@ -1698,10 +1904,7 @@ fn position_from_sample(
         speed: sample.speed,
         power: sample.power,
         battery_level: sample.battery_level,
-        // Prefer explicit usable; fall back to battery_level so pack/client
-        // integrity checks (usable BETWEEN 0 AND 100) accept live samples when
-        // Owner-API omits usable_battery_level.
-        usable_battery_level: sample.usable_battery_level.or(sample.battery_level),
+        usable_battery_level: sample.usable_battery_level,
         elevation: sample.elevation,
         odometer: sample.odometer,
         ideal_battery_range_km: sample.ideal_range_km,
@@ -1802,7 +2005,7 @@ fn maybe_open_or_extend_drive(
     sample: &ParsedSample,
     delta: &mut LifecycleDelta,
 ) -> Result<(), LifecycleError> {
-    let driving = is_drive_shift(sample.shift_state.as_deref()) || sample.speed.unwrap_or(0) > 0;
+    let driving = is_drive_shift(sample.shift_state.as_deref());
     if !driving {
         return Ok(());
     }
@@ -1845,6 +2048,9 @@ fn maybe_open_or_extend_drive(
             elevation_ascent: 0,
             elevation_descent: 0,
             last_elevation: None,
+            saw_offline: false,
+            last_charge_energy_added: sample.charge_energy_added,
+            last_ideal_range_km: sample.ideal_range_km,
             positions: Vec::new(),
         });
     }
@@ -2052,7 +2258,7 @@ fn maybe_emit_stationary_position(
     if !matches!(sample.phase, VehiclePhase::Online | VehiclePhase::Charging) {
         return Ok(());
     }
-    if is_drive_shift(sample.shift_state.as_deref()) || sample.speed.unwrap_or(0) > 0 {
+    if is_drive_shift(sample.shift_state.as_deref()) {
         return Ok(());
     }
     if prior_drive_timestamp_ms.is_some_and(|last| sample.drive_timestamp_ms <= last) {
@@ -2088,10 +2294,7 @@ fn maybe_emit_stationary_position(
         speed: sample.speed,
         power: sample.power,
         battery_level: sample.battery_level,
-        // Prefer explicit usable; fall back to battery_level so pack/client
-        // integrity checks (usable BETWEEN 0 AND 100) accept live samples when
-        // Owner-API omits usable_battery_level.
-        usable_battery_level: sample.usable_battery_level.or(sample.battery_level),
+        usable_battery_level: sample.usable_battery_level,
         elevation: sample.elevation,
         odometer: sample.odometer,
         ideal_battery_range_km: sample.ideal_range_km,
@@ -2468,6 +2671,150 @@ fn determine_phases(samples: &[ProjectionChargeSample]) -> Option<f64> {
 
 fn is_drive_shift(shift_state: Option<&str>) -> bool {
     matches!(shift_state, Some("D" | "R" | "N" | "d" | "r" | "n"))
+}
+
+pub(crate) const TESLAMATE_GAINED_RANGE_MIN_OFFLINE: Duration = Duration::from_secs(300);
+const TESLAMATE_GAINED_RANGE_MILES: f64 = 5.0;
+const KM_PER_MILE: f64 = 1.609_344;
+
+pub(crate) fn teslamate_gained_range_implies_charge(
+    last_position_at_ms: i64,
+    last_ideal_range_km: Option<f64>,
+    sample_at_ms: i64,
+    sample_ideal_range_km: Option<f64>,
+) -> bool {
+    if sample_at_ms.saturating_sub(last_position_at_ms)
+        < i64::try_from(TESLAMATE_GAINED_RANGE_MIN_OFFLINE.as_millis()).unwrap_or(i64::MAX)
+    {
+        return false;
+    }
+    match (last_ideal_range_km, sample_ideal_range_km) {
+        (Some(previous), Some(current)) if previous.is_finite() && current.is_finite() => {
+            (current - previous) / KM_PER_MILE > TESLAMATE_GAINED_RANGE_MILES
+        }
+        _ => false,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GainedRangeChargeSeed {
+    pub start_date_ms: i64,
+    pub start_battery_level: Option<i64>,
+    pub start_ideal_range_km: Option<f64>,
+    pub start_rated_range_km: Option<f64>,
+    pub start_latitude: Option<f64>,
+    pub start_longitude: Option<f64>,
+    pub first_energy_added: f64,
+}
+
+fn gained_range_charge_seed_from_drive(open: &OpenDrive) -> GainedRangeChargeSeed {
+    GainedRangeChargeSeed {
+        start_date_ms: open.last_position_date_ms.unwrap_or(open.start_date_ms),
+        start_battery_level: open.last_soc.or(open.start_soc),
+        start_ideal_range_km: open
+            .last_ideal_range_km
+            .or(open.end_ideal_range_km)
+            .or(open.start_ideal_range_km),
+        start_rated_range_km: open.last_rated_range_km.or(open.start_rated_range_km),
+        start_latitude: open.last_latitude.or(open.start_latitude),
+        start_longitude: open.last_longitude.or(open.start_longitude),
+        first_energy_added: open.last_charge_energy_added.unwrap_or(0.0),
+    }
+}
+
+struct GainedRangeChargeCandidate {
+    seed: GainedRangeChargeSeed,
+    close_open_drive: bool,
+}
+
+fn teslamate_gained_range_charge_seed(
+    state: &OpenSessionState,
+    sample: &ParsedSample,
+) -> Option<GainedRangeChargeCandidate> {
+    if sample.stream_frame
+        || state.open_charge.is_some()
+        || is_charging_state(sample.charging_state.as_deref())
+    {
+        return None;
+    }
+    if matches!(
+        sample.phase,
+        VehiclePhase::Offline
+            | VehiclePhase::Asleep
+            | VehiclePhase::Updating
+            | VehiclePhase::Unknown
+    ) {
+        return None;
+    }
+    let (seed, close_open_drive) = match state.pending_gained_range_charge.clone() {
+        Some(seed) => (seed, false),
+        None => (
+            state
+                .open_drive
+                .as_ref()
+                .filter(|open| open.saw_offline)
+                .map(gained_range_charge_seed_from_drive)?,
+            true,
+        ),
+    };
+    teslamate_gained_range_implies_charge(
+        seed.start_date_ms,
+        seed.start_ideal_range_km,
+        sample.drive_timestamp_ms.max(sample.charge_timestamp_ms),
+        sample.ideal_range_km,
+    )
+    .then_some(GainedRangeChargeCandidate {
+        seed,
+        close_open_drive,
+    })
+}
+
+fn materialize_gained_range_charge(
+    state: &mut OpenSessionState,
+    car_id: i64,
+    sample: &ParsedSample,
+    seed: GainedRangeChargeSeed,
+) -> Result<Option<ClosedCharge>, LifecycleError> {
+    if state.open_charge.is_some() {
+        return Ok(None);
+    }
+    let id = state.next_charge_id;
+    state.next_charge_id = state
+        .next_charge_id
+        .checked_add(1)
+        .ok_or(LifecycleError::IdentifierExhausted)?;
+    let last_energy_added = sample.charge_energy_added.unwrap_or(0.0);
+    let open = OpenCharge {
+        id,
+        car_id,
+        start_date_ms: seed.start_date_ms,
+        start_battery_level: seed.start_battery_level,
+        start_ideal_range_km: seed.start_ideal_range_km,
+        start_rated_range_km: seed.start_rated_range_km,
+        start_latitude: seed.start_latitude,
+        start_longitude: seed.start_longitude,
+        is_dc: sample.fast_charger_present,
+        fast_charger_type: sample.fast_charger_type.clone(),
+        max_charger_power_kw: sample.charger_power_kw,
+        outside_temp_sum: 0.0,
+        outside_temp_count: 0,
+        first_energy_added: Some(seed.first_energy_added),
+        max_energy_added: Some(seed.first_energy_added.max(last_energy_added)),
+        last_energy_added: Some(last_energy_added),
+        last_battery_level: sample.battery_level,
+        last_ideal_range_km: sample.ideal_range_km,
+        last_rated_range_km: sample.rated_range_km,
+        sample_count: 0,
+        energy_used_kwh: None,
+        last_sample_timestamp_ms: None,
+        last_sample_power_kw: None,
+        samples: Vec::new(),
+    };
+    finalize_charge(
+        open,
+        Some(sample.charge_timestamp_ms.max(sample.drive_timestamp_ms)),
+    )
+    .map(Some)
 }
 
 fn is_charging_state(state: Option<&str>) -> bool {
@@ -2978,7 +3325,7 @@ mod tests {
     }
 
     #[test]
-    fn imported_active_drive_survives_restart_and_immediate_terminal_sample() {
+    fn imported_active_drive_refreshes_and_survives_restart() {
         let start = 1_800_100_000_000_i64;
         let drive: TeslaMateDrive = serde_json::from_value(json!({
             "id": 70,
@@ -3022,6 +3369,60 @@ mod tests {
             .expect("seed imported drive");
         assert_eq!(seeded.open_drive.as_ref().unwrap().position_count, 2);
 
+        let mut continued = seeded.clone();
+        continued
+            .open_drive
+            .as_mut()
+            .expect("continued drive")
+            .saw_offline = true;
+        session.watermarks.updates.max_id = Some(44);
+        let watermark_only =
+            seed_imported_open_session_state(uuid::Uuid::nil(), &session, Some(&continued))
+                .expect("watermark-only refresh");
+        assert!(
+            watermark_only
+                .open_drive
+                .as_ref()
+                .expect("continued drive")
+                .saw_offline,
+            "watermark-only movement must not erase Hub continuation state"
+        );
+
+        session.drive_positions[1].speed = Some(65);
+        let same_count_refresh =
+            seed_imported_open_session_state(uuid::Uuid::nil(), &session, Some(&watermark_only))
+                .expect("refresh changed drive values with the same row counts");
+        assert_eq!(
+            same_count_refresh
+                .open_drive
+                .as_ref()
+                .expect("refreshed drive")
+                .speed_max,
+            Some(65)
+        );
+
+        session.drive_positions.push(imported_position_fixture(
+            702,
+            70,
+            start + 90_000,
+            47.515,
+            100.9,
+            77,
+            20.0,
+            22.0,
+        ));
+        session.watermarks.positions.max_id = Some(702);
+        session.watermarks.positions.max_timestamp_ms = Some(start + 90_000);
+        let refreshed = seed_imported_open_session_state(
+            uuid::Uuid::nil(),
+            &session,
+            Some(&same_count_refresh),
+        )
+        .expect("refresh same imported drive parent");
+        let refreshed_drive = refreshed.open_drive.as_ref().expect("refreshed drive");
+        assert_eq!(refreshed_drive.position_count, 3);
+        assert_eq!(refreshed_drive.last_position_date_ms, Some(start + 90_000));
+
         let restored = OpenSessionState::decode(&seeded.encode().expect("encode seeded drive"))
             .expect("restore seeded drive");
         let terminal = sample(
@@ -3054,7 +3455,7 @@ mod tests {
     }
 
     #[test]
-    fn imported_active_charge_survives_restart_and_immediate_terminal_sample() {
+    fn imported_active_charge_refreshes_and_survives_restart() {
         let start = 1_800_200_000_000_i64;
         let process: TeslaMateChargingProcess = serde_json::from_value(json!({
             "id": 80,
@@ -3090,6 +3491,43 @@ mod tests {
         let seeded = seed_imported_open_session_state(uuid::Uuid::nil(), &session, None)
             .expect("seed imported charge");
         assert_eq!(seeded.open_charge.as_ref().unwrap().sample_count, 2);
+
+        session.charge_samples[1].charge_energy_added_kwh = Some(6.0);
+        let same_count_refresh =
+            seed_imported_open_session_state(uuid::Uuid::nil(), &session, Some(&seeded))
+                .expect("refresh changed charge values with the same row counts");
+        assert_eq!(
+            same_count_refresh
+                .open_charge
+                .as_ref()
+                .expect("refreshed charge")
+                .last_energy_added,
+            Some(6.0)
+        );
+
+        session.charge_samples.push(imported_charge_fixture(
+            3,
+            80,
+            start + 450_000,
+            7.0,
+            65,
+            13.0,
+        ));
+        session.watermarks.charges.max_id = Some(3);
+        session.watermarks.charges.max_timestamp_ms = Some(start + 450_000);
+        let refreshed = seed_imported_open_session_state(
+            uuid::Uuid::nil(),
+            &session,
+            Some(&same_count_refresh),
+        )
+        .expect("refresh same imported charge parent");
+        let refreshed_charge = refreshed.open_charge.as_ref().expect("refreshed charge");
+        assert_eq!(refreshed_charge.sample_count, 3);
+        assert_eq!(
+            refreshed_charge.last_sample_timestamp_ms,
+            Some(start + 450_000)
+        );
+        assert_eq!(refreshed_charge.last_energy_added, Some(7.0));
 
         let restored = OpenSessionState::decode(&seeded.encode().expect("encode seeded charge"))
             .expect("restore seeded charge");
@@ -3454,6 +3892,286 @@ mod tests {
         assert!(timed_out.state.open_drive.is_none());
         assert_eq!(timed_out.delta.drives.len(), 1);
         assert_eq!(timed_out.delta.positions.len(), 2);
+    }
+
+    #[test]
+    fn teslamate_gained_range_threshold_matches_five_miles_after_five_minutes() {
+        let start = 1_800_000_000_000_i64;
+        let four_min = start + 4 * 60 * 1_000;
+        let five_min = start + 5 * 60 * 1_000;
+        assert!(!teslamate_gained_range_implies_charge(
+            start,
+            Some(100.0),
+            four_min,
+            Some(120.0)
+        ));
+        assert!(!teslamate_gained_range_implies_charge(
+            start,
+            Some(100.0),
+            five_min,
+            Some(100.0 + 5.0 * 1.609_344)
+        ));
+        assert!(teslamate_gained_range_implies_charge(
+            start,
+            Some(100.0),
+            five_min,
+            Some(100.0 + 5.0 * 1.609_344 + 0.01)
+        ));
+        assert!(!teslamate_gained_range_implies_charge(
+            start,
+            None,
+            five_min,
+            Some(200.0)
+        ));
+    }
+
+    fn gained_range_drive(start: i64) -> OpenSessionState {
+        apply_samples(
+            OpenSessionState::new(),
+            1,
+            &[
+                sample(
+                    1,
+                    start,
+                    json!({
+                        "drive_state":{"shift_state":"D","speed":20,"latitude":47.5,"longitude":19.0,"timestamp":start},
+                        "vehicle_state":{"odometer":1000.0},
+                        "charge_state":{"battery_level":40,"ideal_battery_range":150.0,"charge_energy_added":0.0}
+                    }),
+                ),
+                sample(
+                    2,
+                    start + 1_000,
+                    json!({
+                        "drive_state":{"shift_state":"D","speed":20,"latitude":47.51,"longitude":19.01,"timestamp":start + 1_000},
+                        "vehicle_state":{"odometer":1000.1},
+                        "charge_state":{"battery_level":39,"ideal_battery_range":149.0,"charge_energy_added":0.0}
+                    }),
+                ),
+            ],
+        )
+        .expect("drive")
+        .state
+    }
+
+    #[test]
+    fn offline_drive_with_gained_range_still_emits_a_charge() {
+        let start = 1_800_000_095_000_i64;
+        let five_min = start + 1_000 + 5 * 60 * 1_000;
+        let opened = gained_range_drive(start);
+        assert!(opened.open_drive.is_some());
+        assert_eq!(opened.next_charge_id, 1);
+
+        let offline = apply_sample(opened, 1, &discovery(3, start + 2_000, "offline"))
+            .expect("drive went offline");
+        assert!(
+            offline
+                .state
+                .open_drive
+                .as_ref()
+                .is_some_and(|open| open.saw_offline)
+        );
+
+        let recovered = sample(
+            4,
+            five_min,
+            json!({
+                "drive_state":{"shift_state":"P","speed":0,"latitude":47.52,"longitude":19.02,"timestamp":five_min},
+                "vehicle_state":{"odometer":1000.2},
+                "charge_state":{"battery_level":80,"ideal_battery_range":210.0,"charge_energy_added":12.0}
+            }),
+        );
+        let closed = apply_sample(offline.state, 1, &recovered).expect("gained range");
+        assert!(closed.state.open_drive.is_none());
+        assert!(closed.state.open_charge.is_none());
+        assert_eq!(closed.delta.drives.len(), 1);
+        assert_eq!(closed.delta.drives[0].id, 1);
+        assert_eq!(closed.delta.charges.len(), 1);
+        assert_eq!(closed.delta.charges[0].id, 1);
+        assert_eq!(closed.state.next_charge_id, 2);
+        assert_eq!(closed.delta.charges[0].start_date_ms, start + 1_000);
+        assert_eq!(closed.delta.charges[0].end_date_ms, Some(five_min));
+        assert_eq!(closed.delta.charges[0].charge_energy_added, Some(12.0));
+        assert!(closed.delta.charges[0].end_ideal_range_km.is_some());
+        assert!(
+            closed.delta.charges[0].end_ideal_range_km.unwrap()
+                > closed.delta.charges[0].start_ideal_range_km.unwrap_or(0.0)
+        );
+    }
+
+    #[test]
+    fn offline_timeout_preserves_gained_range_seed_across_restart() {
+        let start = 1_800_000_095_500_i64;
+        let timeout = start + 1_000 + 15 * 60 * 1_000;
+        let recovered_at = timeout + 60_000;
+        let opened = gained_range_drive(start);
+        let offline = apply_sample(opened, 1, &discovery(3, start + 2_000, "offline"))
+            .expect("drive went offline");
+        let timed_out = apply_sample(offline.state, 1, &discovery(4, timeout, "offline"))
+            .expect("offline timeout");
+        assert!(timed_out.state.open_drive.is_none());
+        assert!(timed_out.state.pending_gained_range_charge.is_some());
+
+        let encoded = timed_out.state.encode().expect("encode pending seed");
+        let restored = OpenSessionState::decode(&encoded).expect("decode pending seed");
+        assert!(restored.pending_gained_range_charge.is_some());
+        let recovered = sample(
+            5,
+            recovered_at,
+            json!({
+                "drive_state":{"shift_state":"P","speed":0,"latitude":47.52,"longitude":19.02,"timestamp":recovered_at},
+                "vehicle_state":{"odometer":1000.2},
+                "charge_state":{"battery_level":80,"ideal_battery_range":210.0,"charge_energy_added":12.0}
+            }),
+        );
+        let closed = apply_sample(restored, 1, &recovered).expect("gained range after timeout");
+        assert!(closed.state.pending_gained_range_charge.is_none());
+        assert_eq!(closed.delta.charges.len(), 1);
+        assert_eq!(closed.delta.charges[0].start_date_ms, start + 1_000);
+        assert_eq!(closed.delta.charges[0].end_date_ms, Some(recovered_at));
+        assert_eq!(closed.delta.charges[0].charge_energy_added, Some(12.0));
+    }
+
+    #[test]
+    fn pending_gained_range_ignores_stream_then_preserves_resumed_drive() {
+        let start = 1_800_000_095_625_i64;
+        let timeout = start + 1_000 + 15 * 60 * 1_000;
+        let opened = gained_range_drive(start);
+        let offline = apply_sample(opened, 1, &discovery(3, start + 2_000, "offline"))
+            .expect("drive went offline");
+        let timed_out = apply_sample(offline.state, 1, &discovery(4, timeout, "offline"))
+            .expect("offline timeout");
+        assert!(timed_out.state.pending_gained_range_charge.is_some());
+
+        let stream_at = timeout + 1_000;
+        let stream = LifecycleSample {
+            observation_id: 5,
+            observed_at_ms: stream_at,
+            vehicle_state: "online".to_owned(),
+            payload: stream_observation_payload(&crate::tesla_stream::StreamUpdate {
+                tag: "9".into(),
+                timestamp_ms: stream_at,
+                speed: Some(10),
+                odometer: Some(1_000.2),
+                soc: Some(80),
+                elevation: Some(100),
+                est_heading: Some(90),
+                est_lat: Some(47.52),
+                est_lng: Some(19.02),
+                power: Some(10),
+                shift_state: Some("D".into()),
+                range: Some(200),
+                est_range: Some(190),
+                heading: Some(90),
+            }),
+        };
+        let resumed = apply_sample(timed_out.state, 1, &stream).expect("stream resumes drive");
+        assert!(resumed.state.pending_gained_range_charge.is_some());
+        assert!(resumed.delta.charges.is_empty());
+        assert_eq!(
+            resumed.state.open_drive.as_ref().map(|drive| drive.id),
+            Some(2)
+        );
+
+        let authoritative_at = timeout + 60_000;
+        let authoritative = sample(
+            6,
+            authoritative_at,
+            json!({
+                "drive_state":{"shift_state":"D","speed":20,"latitude":47.53,"longitude":19.03,"timestamp":authoritative_at},
+                "vehicle_state":{"odometer":1000.3},
+                "charge_state":{"battery_level":80,"ideal_battery_range":210.0,"charge_energy_added":12.0}
+            }),
+        );
+        let materialized =
+            apply_sample(resumed.state, 1, &authoritative).expect("authoritative recovery");
+        assert!(materialized.state.pending_gained_range_charge.is_none());
+        assert!(materialized.delta.drives.is_empty());
+        assert_eq!(materialized.delta.charges.len(), 1);
+        let open = materialized
+            .state
+            .open_drive
+            .as_ref()
+            .expect("resumed drive stays open");
+        assert_eq!(open.id, 2);
+        assert_eq!(open.position_count, 2);
+    }
+
+    #[test]
+    fn gained_range_seed_waits_for_an_authoritative_ideal_range() {
+        let start = 1_800_000_095_750_i64;
+        let timeout = start + 1_000 + 15 * 60 * 1_000;
+        let opened = gained_range_drive(start);
+        let offline = apply_sample(opened, 1, &discovery(3, start + 2_000, "offline"))
+            .expect("drive went offline");
+        let timed_out = apply_sample(offline.state, 1, &discovery(4, timeout, "offline"))
+            .expect("offline timeout");
+
+        let incomplete = sample(
+            5,
+            timeout + 60_000,
+            json!({
+                "drive_state":{"shift_state":"P","speed":0,"timestamp":timeout + 60_000},
+                "vehicle_state":{"odometer":1000.2},
+                "charge_state":{"battery_level":80,"charge_energy_added":12.0}
+            }),
+        );
+        let waiting =
+            apply_sample(timed_out.state, 1, &incomplete).expect("incomplete recovery sample");
+        assert!(waiting.state.pending_gained_range_charge.is_some());
+        assert!(waiting.delta.charges.is_empty());
+
+        let complete = sample(
+            6,
+            timeout + 120_000,
+            json!({
+                "drive_state":{"shift_state":"P","speed":0,"timestamp":timeout + 120_000},
+                "vehicle_state":{"odometer":1000.2},
+                "charge_state":{"battery_level":80,"ideal_battery_range":210.0,"charge_energy_added":12.0}
+            }),
+        );
+        let closed = apply_sample(waiting.state, 1, &complete).expect("complete recovery sample");
+        assert!(closed.state.pending_gained_range_charge.is_none());
+        assert_eq!(closed.delta.charges.len(), 1);
+    }
+
+    #[test]
+    fn gained_range_does_not_fire_on_an_online_gps_gap() {
+        let start = 1_800_000_096_000_i64;
+        let five_min = start + 1_000 + 5 * 60 * 1_000;
+        let opened = gained_range_drive(start);
+        let recovered = sample(
+            3,
+            five_min,
+            json!({
+                "drive_state":{"shift_state":"P","speed":0,"latitude":47.52,"longitude":19.02,"timestamp":five_min},
+                "vehicle_state":{"odometer":1000.2},
+                "charge_state":{"battery_level":80,"ideal_battery_range":210.0,"charge_energy_added":12.0}
+            }),
+        );
+        let closed = apply_sample(opened, 1, &recovered).expect("online gap");
+        assert!(closed.delta.charges.is_empty());
+        assert_eq!(closed.delta.drives.len(), 1);
+    }
+
+    #[test]
+    fn gained_range_does_not_fire_before_five_offline_minutes() {
+        let start = 1_800_000_097_000_i64;
+        let four_min = start + 1_000 + 4 * 60 * 1_000;
+        let opened = gained_range_drive(start);
+        let offline = apply_sample(opened, 1, &discovery(3, start + 2_000, "offline"))
+            .expect("drive went offline");
+        let recovered = sample(
+            4,
+            four_min,
+            json!({
+                "drive_state":{"shift_state":"P","speed":0,"latitude":47.52,"longitude":19.02,"timestamp":four_min},
+                "vehicle_state":{"odometer":1000.2},
+                "charge_state":{"battery_level":80,"ideal_battery_range":210.0,"charge_energy_added":12.0}
+            }),
+        );
+        let closed = apply_sample(offline.state, 1, &recovered).expect("too soon");
+        assert!(closed.delta.charges.is_empty());
     }
 
     #[test]
@@ -4567,7 +5285,7 @@ mod tests {
             vehicle_state: "online".into(),
             payload: json!({
                 "record_type":"tesla_stream_update_v1",
-                "fields":{"drive_state":{"timestamp":t0 + 1_000,"speed":21,"latitude":51.001,"longitude":-0.101},"vehicle_state":{"odometer":1001.0}}
+                "fields":{"drive_state":{"timestamp":t0 + 1_000,"shift_state":"D","speed":21,"latitude":51.001,"longitude":-0.101},"vehicle_state":{"odometer":1001.0}}
             }),
         };
         let parked = sample(

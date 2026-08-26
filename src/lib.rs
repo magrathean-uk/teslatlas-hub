@@ -11,6 +11,7 @@ pub mod crypto;
 pub mod current_state;
 pub mod data_recovery;
 pub mod db;
+pub mod diagnostics;
 mod durability_fault;
 #[cfg(test)]
 pub mod fake_tesla;

@@ -69,9 +69,11 @@ struct HubOnboardingState: Equatable {
     }
 }
 
-final class OnboardingWindowController: NSWindowController {
+final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private let controller: HubController
+    private let onDismiss: () -> Void
     private let onComplete: () -> Void
+    private var didNotifyDismiss = false
     private var state: HubOnboardingState
     private var busy = false
     private var errorMessage: String?
@@ -99,9 +101,12 @@ final class OnboardingWindowController: NSWindowController {
 
     init(controller: HubController,
          resumeMigrationHandoverPhase: HubMigrationHandoverPhase? = nil,
+         initialRoute: HubOnboardingRoute? = nil,
          previewRoute: String? = nil,
+         onDismiss: @escaping () -> Void = {},
          onComplete: @escaping () -> Void) {
         self.controller = controller
+        self.onDismiss = onDismiss
         self.onComplete = onComplete
         let shouldAutoVerify: Bool
         let resumeMessage: String?
@@ -127,7 +132,9 @@ final class OnboardingWindowController: NSWindowController {
                 provider: .legacy
             )
         } else {
-            state = Self.previewState(route: previewRoute) ?? HubOnboardingState()
+            state = Self.previewState(route: previewRoute)
+                ?? initialRoute.map { Self.initialState(route: $0) }
+                ?? HubOnboardingState()
             shouldAutoVerify = false
             resumeMessage = nil
         }
@@ -139,6 +146,7 @@ final class OnboardingWindowController: NSWindowController {
         window.titlebarAppearsTransparent = false
         window.center()
         super.init(window: window)
+        window.delegate = self
         errorMessage = resumeMessage
         configureTitlebar(window)
         configureFields()
@@ -163,8 +171,61 @@ final class OnboardingWindowController: NSWindowController {
         }
     }
 
+    private static func initialState(route: HubOnboardingRoute) -> HubOnboardingState {
+        switch route {
+        case .migration:
+            return HubOnboardingState(route: .migration, path: .migration, provider: .legacy)
+        case .legacy:
+            return HubOnboardingState(route: .legacy, path: .newInstallation, provider: .legacy)
+        case .fleet:
+            return HubOnboardingState(route: .fleet, path: .newInstallation, provider: .fleet)
+        default:
+            return HubOnboardingState(route: route)
+        }
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    var currentRoute: HubOnboardingRoute { state.route }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !interactionBlocked else {
+            NSSound.beep()
+            return false
+        }
+        return true
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard !didNotifyDismiss else { return }
+        didNotifyDismiss = true
+        onDismiss()
+    }
+
+    static func routeChangeAllowed(busy: Bool,
+                                   authenticationActive: Bool,
+                                   migrationHandoverPending: Bool) -> Bool {
+        !busy && !authenticationActive && !migrationHandoverPending
+    }
+
+    func navigate(to route: HubOnboardingRoute) {
+        guard Self.routeChangeAllowed(
+            busy: busy,
+            authenticationActive: authWindow != nil,
+            migrationHandoverPending: controller.hasPendingMigrationHandover
+        ) else {
+            authWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        state = Self.initialState(route: route)
+        errorMessage = nil
+        compatibility = nil
+        checks = []
+        verificationFinished = false
+        handoverAcknowledged = false
+        render()
+    }
 
     private func configureTitlebar(_ window: NSWindow) {
         window.titleVisibility = .hidden
@@ -210,9 +271,6 @@ final class OnboardingWindowController: NSWindowController {
 
         let icon = NSImageView(image: appIcon())
         icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.wantsLayer = true
-        icon.layer?.cornerRadius = state.route == .welcome ? 18 : 11
-        icon.layer?.masksToBounds = true
         icon.widthAnchor.constraint(equalToConstant: state.route == .welcome ? 88 : 56).isActive = true
         icon.heightAnchor.constraint(equalTo: icon.widthAnchor).isActive = true
         page.addArrangedSubview(icon)
@@ -370,9 +428,7 @@ final class OnboardingWindowController: NSWindowController {
 
     private func fleetBody() -> NSView {
         let guide = NSButton(title: "Open Fleet Setup Guide", target: self, action: #selector(openFleetGuide))
-        guide.bezelStyle = .rounded
-        guide.image = NSImage(systemSymbolName: "book", accessibilityDescription: nil)
-        guide.imagePosition = .imageLeading
+        configureFlatButton(guide, symbol: "book")
         let fields = NSStackView(views: [
             guide,
             formRow("Region", fleetRegion),
@@ -403,9 +459,7 @@ final class OnboardingWindowController: NSWindowController {
         let choosePassword = NSButton(title: "Choose…", target: self, action: #selector(chooseMigrationPassword))
         let chooseKey = NSButton(title: "Choose…", target: self, action: #selector(chooseMigrationKey))
         let check = NSButton(title: "Check TeslaMate 4.1.1", target: self, action: #selector(checkMigrationCompatibility))
-        check.bezelStyle = .rounded
-        check.image = NSImage(systemSymbolName: "checkmark.shield", accessibilityDescription: nil)
-        check.imagePosition = .imageLeading
+        configureFlatButton(check, symbol: "checkmark.shield", tint: .controlAccentColor)
         let stack = NSStackView(views: [
             formRow("PostgreSQL source", migrationSource),
             formRow("Car ID", migrationCarID),
@@ -443,9 +497,7 @@ final class OnboardingWindowController: NSWindowController {
             }
         }
         let logs = NSButton(title: "View Logs", target: self, action: #selector(openLogs))
-        logs.bezelStyle = .rounded
-        logs.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
-        logs.imagePosition = .imageLeading
+        configureFlatButton(logs, symbol: "doc.text")
         stack.addArrangedSubview(logs)
         return withError(stack)
     }
@@ -517,15 +569,13 @@ final class OnboardingWindowController: NSWindowController {
 
         backButton.target = self
         backButton.action = #selector(backPressed)
-        backButton.bezelStyle = .rounded
+        configureFlatButton(backButton, symbol: "chevron.left")
         backButton.controlSize = .large
         backButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
         continueButton.target = self
         continueButton.action = #selector(continuePressed)
-        continueButton.bezelStyle = .rounded
+        configureFlatButton(continueButton, symbol: "chevron.right", tint: .controlAccentColor)
         continueButton.controlSize = .large
-        continueButton.bezelColor = .systemBlue
-        continueButton.contentTintColor = .white
         continueButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
 
         let footer = NSStackView(views: [privacyRow, spacer(), backButton, continueButton])
@@ -535,19 +585,21 @@ final class OnboardingWindowController: NSWindowController {
     }
 
     private func updateFooter() {
+        let blocked = interactionBlocked
         backButton.isHidden = state.route == .welcome
             || state.route == .finish
             || (state.route == .verify && state.path == .newInstallation)
+        backButton.isEnabled = !blocked
         continueButton.title = continueTitle
         switch state.route {
         case .migration:
-            continueButton.isEnabled = compatibility?.compatible == true && !busy
+            continueButton.isEnabled = compatibility?.compatible == true && !blocked
         case .verify:
-            continueButton.isEnabled = verificationFinished && !busy
+            continueButton.isEnabled = verificationFinished && !blocked
         case .finish where state.path == .migration:
-            continueButton.isEnabled = handoverAcknowledged && !busy
+            continueButton.isEnabled = handoverAcknowledged && !blocked
         default:
-            continueButton.isEnabled = !busy
+            continueButton.isEnabled = !blocked
         }
         if busy {
             spinner.style = .spinning
@@ -556,7 +608,7 @@ final class OnboardingWindowController: NSWindowController {
         } else {
             spinner.stopAnimation(nil)
         }
-        window?.defaultButtonCell = continueButton.cell as? NSButtonCell
+        window?.defaultButtonCell = blocked ? nil : continueButton.cell as? NSButtonCell
     }
 
     private var continueTitle: String {
@@ -593,12 +645,20 @@ final class OnboardingWindowController: NSWindowController {
     }
 
     @objc private func backPressed() {
+        guard !interactionBlocked else {
+            authWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
         errorMessage = nil
         state.back()
         render()
     }
 
     @objc private func continuePressed() {
+        guard !interactionBlocked else {
+            authWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
         switch state.route {
         case .welcome, .choose, .provider:
             state.advance()
@@ -655,6 +715,8 @@ final class OnboardingWindowController: NSWindowController {
             let auth = try TeslaAuthWindowController { [weak self] result in
                 guard let self else { return }
                 self.authWindow = nil
+                self.updateWindowCloseAvailability()
+                self.updateFooter()
                 switch result {
                 case let .success(tokens):
                     self.setBusy(true)
@@ -668,6 +730,8 @@ final class OnboardingWindowController: NSWindowController {
                 }
             }
             authWindow = auth
+            updateWindowCloseAvailability()
+            updateFooter()
             auth.showWindow(nil)
             auth.window?.makeKeyAndOrderFront(nil)
         } catch {
@@ -788,6 +852,11 @@ final class OnboardingWindowController: NSWindowController {
     }
 
     @objc private func openLogs() {
+        if let logsWindow {
+            logsWindow.showWindow(nil)
+            logsWindow.window?.makeKeyAndOrderFront(nil)
+            return
+        }
         logsWindow = LogsWindowController(controller: controller)
         logsWindow?.showWindow(nil)
         logsWindow?.window?.makeKeyAndOrderFront(nil)
@@ -811,13 +880,20 @@ final class OnboardingWindowController: NSWindowController {
         }
     }
 
-    private func setBusy(_ value: Bool) {
+    func setBusy(_ value: Bool) {
         busy = value
+        updateWindowCloseAvailability()
         updateFooter()
     }
 
+    private func updateWindowCloseAvailability() {
+        window?.standardWindowButton(.closeButton)?.isEnabled = !interactionBlocked
+    }
+
+    private var interactionBlocked: Bool { busy || authWindow != nil }
+
     private func showInlineError(_ message: String) {
-        busy = false
+        setBusy(false)
         errorMessage = message
         render()
     }
@@ -854,31 +930,18 @@ final class OnboardingWindowController: NSWindowController {
                               action: Selector) -> NSView {
         let card = NSView()
         card.wantsLayer = true
-        card.layer?.cornerRadius = 12
+        card.layer?.cornerRadius = 0
         card.layer?.borderWidth = selected ? 2 : 1
         card.layer?.borderColor = (selected ? NSColor.systemBlue : NSColor.separatorColor).cgColor
         card.layer?.backgroundColor = (selected
             ? NSColor.systemBlue.withAlphaComponent(0.045)
-            : NSColor.controlBackgroundColor).cgColor
-
-        let iconCircle = NSView()
-        iconCircle.wantsLayer = true
-        iconCircle.layer?.cornerRadius = 34
-        iconCircle.layer?.backgroundColor = accentColor.withAlphaComponent(selected ? 0.12 : 0.08).cgColor
-        iconCircle.widthAnchor.constraint(equalToConstant: 68).isActive = true
-        iconCircle.heightAnchor.constraint(equalToConstant: 68).isActive = true
+            : NSColor.clear).cgColor
 
         let icon = NSImageView(image: symbolImage(symbol, description: title))
         icon.contentTintColor = accentColor
         icon.imageScaling = .scaleProportionallyDown
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        iconCircle.addSubview(icon)
-        NSLayoutConstraint.activate([
-            icon.centerXAnchor.constraint(equalTo: iconCircle.centerXAnchor),
-            icon.centerYAnchor.constraint(equalTo: iconCircle.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 32),
-            icon.heightAnchor.constraint(equalToConstant: 32)
-        ])
+        icon.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 40).isActive = true
 
         let heading = NSTextField(labelWithString: title)
         heading.font = .systemFont(ofSize: 16, weight: .semibold)
@@ -890,34 +953,25 @@ final class OnboardingWindowController: NSWindowController {
         detail.maximumNumberOfLines = 2
         detail.widthAnchor.constraint(lessThanOrEqualToConstant: 270).isActive = true
 
-        let content = NSStackView(views: [iconCircle, heading, detail])
+        let content = NSStackView(views: [icon, heading, detail])
         content.orientation = .vertical
         content.alignment = .centerX
         content.spacing = 9
         content.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(content)
 
-        let indicator = NSImageView(image: symbolImage(selected ? "checkmark.circle.fill" : "circle",
-                                                       description: selected ? "Selected" : "Not selected"))
-        indicator.contentTintColor = selected ? .systemBlue : .tertiaryLabelColor
-        indicator.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(indicator)
-
         let button = NSButton(title: title, target: self, action: action)
         button.isBordered = false
         button.isTransparent = true
         button.toolTip = subtitle
         button.setAccessibilityLabel(title)
+        button.setAccessibilityValue(selected ? "Selected" : "Not selected")
         button.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(button)
 
         NSLayoutConstraint.activate([
             content.centerXAnchor.constraint(equalTo: card.centerXAnchor),
             content.centerYAnchor.constraint(equalTo: card.centerYAnchor, constant: 4),
-            indicator.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
-            indicator.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
-            indicator.widthAnchor.constraint(equalToConstant: 17),
-            indicator.heightAnchor.constraint(equalToConstant: 17),
             button.leadingAnchor.constraint(equalTo: card.leadingAnchor),
             button.trailingAnchor.constraint(equalTo: card.trailingAnchor),
             button.topAnchor.constraint(equalTo: card.topAnchor),
@@ -954,10 +1008,21 @@ final class OnboardingWindowController: NSWindowController {
     }
 
     private func fieldWithButton(_ field: NSTextField, _ button: NSButton) -> NSView {
-        button.bezelStyle = .rounded
+        configureFlatButton(button, symbol: "folder")
         let row = NSStackView(views: [field, button])
         row.spacing = 8
         return row
+    }
+
+    private func configureFlatButton(_ button: NSButton,
+                                     symbol: String,
+                                     tint: NSColor = .labelColor) {
+        button.isBordered = false
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
+        button.imagePosition = .imageLeading
+        button.contentTintColor = tint
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.focusRingType = .default
     }
 
     private func centered(_ view: NSView) -> NSView {

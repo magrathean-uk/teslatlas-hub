@@ -164,6 +164,31 @@ pub fn reconcile_open_session_cutover(
     })
 }
 
+fn reconcile_direct_snapshot_cutover(
+    captured: &TeslaMateOpenSession,
+    observed_later: &TeslaMateOpenSession,
+) -> Result<TeslaMateCutoverReconciliation, TeslaMateImportError> {
+    let source_moved = captured != observed_later;
+    let mut reconciliation = reconcile_open_session_cutover(captured, observed_later)?;
+    // Direct publication is allowed only after two source snapshots are
+    // identical. This covers completed-history watermarks, parent updates,
+    // child value changes, open states, and short sessions that began and
+    // ended between reads, not only newly appended child IDs.
+    reconciliation.cutover_unsettled |= source_moved;
+    reconciliation.session = captured.clone();
+    Ok(reconciliation)
+}
+
+fn require_settled_direct_cutover(
+    reconciliation: &TeslaMateCutoverReconciliation,
+) -> Result<(), TeslaMateImportError> {
+    if reconciliation.cutover_unsettled {
+        Err(TeslaMateImportError::CutoverUnsettled)
+    } else {
+        Ok(())
+    }
+}
+
 fn same_id<T>(first: Option<&T>, second: Option<&T>) -> bool
 where
     T: HasSourceId,
@@ -675,6 +700,14 @@ async fn import_from_postgres_with_updates_capture(
     capture_legacy_token: bool,
     prepare_schema_22: bool,
 ) -> Result<CapturedTeslaMateImport, TeslaMateImportError> {
+    tracing::info!(
+        host = source.host(),
+        port = source.port(),
+        database = source.database_name(),
+        capture_legacy_token,
+        prepare_schema_22,
+        "TeslaMate import opening a read-only PostgreSQL snapshot; source rows are never deleted"
+    );
     let publication_gate = store.acquire_publication_gate().await?;
     let selected_car_id = selected_car_id(request)?;
     let car = read_selected_car(source, password, selected_car_id, limits).await?;
@@ -753,20 +786,9 @@ async fn import_from_postgres_with_updates_capture(
         store,
         run_id: Some(run_id),
     };
-    let mut open_session = match read_open_session(source, password, selected_car_id, limits).await
-    {
-        Ok(value) => value,
-        Err(error) => {
-            store.abort_import_generation(run_id)?;
-            return Err(error.into());
-        }
-    };
-    open_session.watermarks = observed_open_watermarks(&open_session);
-    store.stage_import_generation_session(run_id, &open_session)?;
-    // Capture completed history only after the first bounded tail read. If an
-    // earlier active parent A already closed and B opened before this import
-    // reached the tail, this repeatable-read snapshot includes completed A
-    // rather than treating it as an open row to omit.
+    // Capture completed history and its open tail from one exported,
+    // repeatable-read source snapshot. A later bounded tail read detects
+    // movement but can never be mixed into these captured history packs.
     let first_capture = match capture_direct_import_snapshot(
         store,
         &publication_gate,
@@ -821,10 +843,12 @@ async fn import_from_postgres_with_updates_capture(
         .into());
     }
     identity_registration_guard.disarm();
+    let open_session = first_capture.open_session;
+    store.stage_import_generation_session(run_id, &open_session)?;
     let mut direct = first_capture.packs;
-    let mut updates_v2_2 = first_capture.updates_v2_2;
-    let mut legacy_tokens = first_capture.legacy_tokens;
-    let mut second_open_session =
+    let updates_v2_2 = first_capture.updates_v2_2;
+    let legacy_tokens = first_capture.legacy_tokens;
+    let second_open_session =
         match read_open_session(source, password, selected_car_id, limits).await {
             Ok(value) => value,
             Err(error) => {
@@ -832,65 +856,17 @@ async fn import_from_postgres_with_updates_capture(
                 return Err(error.into());
             }
         };
-    second_open_session.watermarks = observed_open_watermarks(&second_open_session);
-    let cutover = match reconcile_open_session_cutover(&open_session, &second_open_session) {
+    let cutover = match reconcile_direct_snapshot_cutover(&open_session, &second_open_session) {
         Ok(value) => value,
         Err(error) => {
             store.abort_import_generation(run_id)?;
             return Err(error);
         }
     };
-    let active_parent_changed = active_parent_changed(
-        open_session.drive.as_ref(),
-        second_open_session.drive.as_ref(),
-    ) || active_parent_changed(
-        open_session.charge.as_ref(),
-        second_open_session.charge.as_ref(),
-    );
-    if active_parent_changed
-        || open_session.drive.is_some() && second_open_session.drive.is_none()
-        || open_session.charge.is_some() && second_open_session.charge.is_none()
-    {
-        // A parent either completed or was replaced between the two bounded
-        // tail reads. Re-read completed history before committing the second
-        // tail so the first parent cannot be lost. The reconciliation remains
-        // unsettled, requiring the next bounded import to prove stability.
-        let replacement = match capture_direct_import_snapshot(
-            store,
-            &publication_gate,
-            run_id,
-            source,
-            password,
-            selected_car_id,
-            limits,
-            binding.clone(),
-            capture_snapshot_id,
-            capture_range,
-            registered_source.source_id,
-            vehicle.vehicle_id,
-            successor,
-            legacy_bridge,
-            capture_legacy_token,
-        )
-        .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                store.abort_import_generation(run_id)?;
-                return Err(error.into());
-            }
-        };
-        if let Err(error) = validate_exported_vehicle_identity(&car, &replacement.updates_v2_2) {
-            store.abort_import_generation(run_id)?;
-            return Err(error);
-        }
-        direct = replacement.packs;
-        updates_v2_2 = replacement.updates_v2_2;
-        legacy_tokens = replacement.legacy_tokens;
-    }
-    // Always commit the reconciled second tail. `cutover_unsettled` reports
-    // that the source kept changing during the bounded pass; it must not
-    // discard rows already observed in that pass.
+    // Publish only a tail captured atomically with the selected direct history.
+    // Any later movement aborts this unpublished generation so credentials and
+    // Hub startup cannot proceed until a bounded retry observes a settled tail.
+    require_settled_direct_cutover(&cutover)?;
     store.stage_import_generation_session(run_id, &cutover.session)?;
     direct.fingerprint = direct_snapshot_fingerprint(&direct.fingerprint, &direct.geofences)?;
     if legacy_bridge {
@@ -2471,6 +2447,10 @@ pub enum TeslaMateImportError {
     SourceVehicleIdentityChangedDuringCapture,
     #[error("TeslaMate cutover snapshots belong to different cars")]
     CutoverCarMismatch,
+    #[error(
+        "TeslaMate changed during the bounded cutover snapshot; retry before publishing credentials or starting Hub"
+    )]
+    CutoverUnsettled,
     #[error(
         "legacy TeslaMate import committed for vehicle {vehicle_id} snapshot {legacy_snapshot_id}, but schema-2.2 publication failed; retry the same selected-car import: {source}"
     )]
@@ -5641,5 +5621,91 @@ mod open_cutover_tests {
         assert!(!cutover.cutover_unsettled);
         assert!(cutover.session.drive.is_none());
         assert!(cutover.session.charge.is_none());
+    }
+
+    #[test]
+    fn unsettled_cutover_is_bounded_and_reported_for_retry() {
+        let first = open_session(&[1, 2], &[10, 11], &[30]);
+        let mut second = open_session(&[2, 3], &[11, 12], &[30, 31]);
+        second.watermarks.positions.max_id = Some(999);
+        let cutover = reconcile_open_session_cutover(&first, &second).expect("cutover");
+        assert!(cutover.cutover_unsettled);
+        assert_eq!(
+            cutover
+                .session
+                .drive_positions
+                .iter()
+                .map(|row| row.id)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            cutover
+                .session
+                .charge_samples
+                .iter()
+                .map(|row| row.id)
+                .collect::<Vec<_>>(),
+            vec![10, 11, 12]
+        );
+    }
+
+    #[test]
+    fn direct_cutover_keeps_the_tail_from_its_history_snapshot() {
+        let captured = open_session(&[1, 2], &[10, 11], &[30]);
+        let observed_later = open_session(&[1, 2, 3], &[10, 11, 12], &[30, 31]);
+        let cutover = reconcile_direct_snapshot_cutover(&captured, &observed_later)
+            .expect("direct cutover witness");
+
+        assert!(cutover.cutover_unsettled);
+        assert_eq!(cutover.session, captured);
+        assert_ne!(cutover.session, observed_later);
+        assert!(matches!(
+            require_settled_direct_cutover(&cutover),
+            Err(TeslaMateImportError::CutoverUnsettled)
+        ));
+
+        let settled = reconcile_direct_snapshot_cutover(&captured, &captured)
+            .expect("settled direct cutover");
+        require_settled_direct_cutover(&settled).expect("settled snapshot may publish");
+
+        let mut completed_history_moved = captured.clone();
+        completed_history_moved.watermarks.updates = TeslaMateSourceWatermark {
+            max_id: Some(90),
+            max_timestamp_ms: Some(4_000),
+        };
+        let changed_history =
+            reconcile_direct_snapshot_cutover(&captured, &completed_history_moved)
+                .expect("completed-history witness");
+        assert!(changed_history.cutover_unsettled);
+
+        let mut parent_updated = captured.clone();
+        parent_updated.drive.as_mut().expect("open drive").speed_max = Some(99);
+        let changed_parent = reconcile_direct_snapshot_cutover(&captured, &parent_updated)
+            .expect("open-parent witness");
+        assert!(changed_parent.cutover_unsettled);
+
+        let mut state_updated = captured.clone();
+        state_updated.state.as_mut().expect("open state").state = "asleep".to_owned();
+        assert!(
+            reconcile_direct_snapshot_cutover(&captured, &state_updated)
+                .expect("state-only witness")
+                .cutover_unsettled
+        );
+
+        let empty = TeslaMateOpenSession {
+            car_id: 1,
+            ..TeslaMateOpenSession::default()
+        };
+        let mut short_completed_session = empty.clone();
+        short_completed_session.watermarks.drives = TeslaMateSourceWatermark {
+            max_id: Some(91),
+            max_timestamp_ms: Some(5_000),
+        };
+        assert!(
+            reconcile_direct_snapshot_cutover(&empty, &short_completed_session)
+                .expect("short completed-session witness")
+                .cutover_unsettled
+        );
     }
 }

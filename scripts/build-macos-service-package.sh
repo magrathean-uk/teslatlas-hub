@@ -201,14 +201,40 @@ metadata=$(
 [ -z "$metadata" ] || die "staging contains AppleDouble metadata"
 
 tmp_package="$staging/TeslatlasHubService.pkg"
-/usr/bin/pkgbuild \
+pkgbuild_log="$staging/pkgbuild.log"
+if ! /usr/bin/pkgbuild --quiet \
     --root "$payload" \
     --scripts "$scripts" \
     --identifier com.teslatlas.hub.service \
     --version "$package_version" \
     --install-location / \
     --ownership recommended \
-    "$tmp_package"
+    "$tmp_package" >"$pkgbuild_log" 2>&1; then
+    /bin/cat "$pkgbuild_log" >&2
+    die "pkgbuild failed"
+fi
+# macOS 27's pkgbuild emits four harmless ownership-probe diagnostics when it
+# applies the required root:wheel recommendations from an unprivileged build.
+# Never switch to `preserve`: that would archive the developer's UID. Suppress
+# only this exact known diagnostic and fail closed for every other message.
+permission_warning_count=$(
+    /usr/bin/awk '$0 == "write: Permission denied" { count += 1 } END { print count + 0 }' \
+        "$pkgbuild_log"
+)
+case "$permission_warning_count" in
+    0|4) ;;
+    *)
+        /bin/cat "$pkgbuild_log" >&2
+        die "pkgbuild emitted an unexpected ownership diagnostic count"
+        ;;
+esac
+unexpected_pkgbuild_output=$(
+    /usr/bin/sed '/^write: Permission denied$/d; /^[[:space:]]*$/d' "$pkgbuild_log"
+)
+[ -z "$unexpected_pkgbuild_output" ] || {
+    /usr/bin/printf '%s\n' "$unexpected_pkgbuild_output" >&2
+    die "pkgbuild emitted unexpected diagnostics"
+}
 
 expanded="$staging/expanded"
 /usr/sbin/pkgutil --expand-full "$tmp_package" "$expanded" \
