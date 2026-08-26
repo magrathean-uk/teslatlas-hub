@@ -53,7 +53,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 55;
+pub const SCHEMA_VERSION: i32 = 56;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -73,6 +73,11 @@ pub const MAX_RAW_OBSERVATION_BYTES: usize = 256 * 1024;
 /// The read API is deliberately capped so callers cannot accidentally turn a
 /// history query into an all-memory transfer.
 pub const MAX_OBSERVATION_QUERY_LIMIT: u32 = 10_000;
+const OBSERVATIONS_AFTER_ID_SQL: &str = "SELECT observation_id, source_id, vehicle_id, observed_at_ms, received_at_ms, \
+            payload_sha256, payload_json \
+     FROM raw_observations \
+     WHERE vehicle_id = ?1 AND observation_id > ?2 \
+     ORDER BY observation_id ASC LIMIT ?3";
 /// Request-ledger reads are metadata-only and bounded independently from raw
 /// observation reads so proof commands cannot accidentally load an unbounded
 /// audit history into memory.
@@ -5089,7 +5094,10 @@ impl HubStore {
 
     pub fn v2_lineage_pack_count(&self, vehicle_id: Uuid) -> Result<usize, StoreError> {
         let lineage = self
-            .lineage_manifest_for_vehicle(vehicle_id)?
+            .lineage_manifest_for_vehicle_with_verification(
+                vehicle_id,
+                LineagePackVerification::MetadataOnly,
+            )?
             .ok_or(StoreError::LineageCatalogConflict)?;
         lineage
             .base
@@ -5670,8 +5678,15 @@ impl HubStore {
         {
             return Err(StoreError::LineageCatalogConflict);
         }
+        // Appending a locally verified pack needs the durable lineage shape and
+        // pack metadata, not a fresh hash of every immutable historical pack.
+        // Full digest verification remains mandatory at serving, backup and
+        // operator-facing integrity gates.
         let mut candidate_lineage = self
-            .lineage_manifest_for_vehicle(claim.vehicle_id)?
+            .lineage_manifest_for_vehicle_with_verification(
+                claim.vehicle_id,
+                LineagePackVerification::MetadataOnly,
+            )?
             .ok_or(StoreError::LineageCatalogConflict)?;
         let idempotent_replay = candidate_lineage.head_sequence == delta.to_sequence
             && candidate_lineage.head_digest == delta.chain_digest
@@ -11561,13 +11576,10 @@ impl HubStore {
         }
         let connection = self.open()?;
         let mut statement = connection
-            .prepare(
-                "SELECT observation_id, source_id, vehicle_id, observed_at_ms, received_at_ms, \
-                        payload_sha256, payload_json \
-                 FROM raw_observations \
-                 WHERE vehicle_id = ?1 AND observation_id > ?2 \
-                 ORDER BY observation_id ASC LIMIT ?3",
-            )
+            // The schema-56 covering cursor index keeps this incremental for
+            // each vehicle. A global rowid scan would repeatedly revisit rows
+            // belonging to other vehicles when one vehicle is idle.
+            .prepare(OBSERVATIONS_AFTER_ID_SQL)
             .map_err(StoreError::Query)?;
         let rows = statement
             .query_map(
@@ -17035,6 +17047,21 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 55;
     }
 
+    if version == 55 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                CREATE INDEX IF NOT EXISTS raw_observations_vehicle_cursor
+                    ON raw_observations(vehicle_id, observation_id);
+                PRAGMA user_version = 56;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 56;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {
@@ -17606,13 +17633,7 @@ fn observations_after_id_in_transaction(
         });
     }
     let mut statement = transaction
-        .prepare(
-            "SELECT observation_id, source_id, vehicle_id, observed_at_ms, received_at_ms,
-                    payload_sha256, payload_json
-             FROM raw_observations
-             WHERE vehicle_id = ?1 AND observation_id > ?2
-             ORDER BY observation_id ASC LIMIT ?3",
-        )
+        .prepare(OBSERVATIONS_AFTER_ID_SQL)
         .map_err(StoreError::Query)?;
     statement
         .query_map(
@@ -19091,6 +19112,32 @@ mod tests {
         PackCompression, PackFormat, ProtocolError, ProtocolVersion, SchemaVersion, SequenceRange,
         TransferMode,
     };
+
+    #[test]
+    fn lifecycle_cursor_query_uses_the_per_vehicle_id_index() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let connection = store.open().expect("connection");
+        let mut statement = connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {OBSERVATIONS_AFTER_ID_SQL}"))
+            .expect("query plan");
+        let details = statement
+            .query_map(params![Uuid::new_v4().to_string(), 0_i64, 10_i64], |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("plan rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("plan details");
+        let plan = details.join("\n");
+        assert!(
+            plan.contains("raw_observations_vehicle_cursor"),
+            "lifecycle cursor must use the per-vehicle cursor index: {plan}"
+        );
+        assert!(
+            !plan.contains("TEMP B-TREE") && !plan.contains("raw_observations_vehicle_observed"),
+            "lifecycle cursor must not sort or use the timestamp index: {plan}"
+        );
+    }
 
     fn tree_contents(root: &Path) -> Vec<(PathBuf, u32, Option<(u64, String)>)> {
         fn visit(
@@ -24119,6 +24166,49 @@ mod tests {
         (claim, delta)
     }
 
+    #[test]
+    fn live_delta_publication_does_not_rehash_every_historical_pack() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let (vehicle, binding, base) = imported_v2_base(&store);
+        let base_pack = &base.base.packs[0];
+        let base_path = store
+            .packs_dir()
+            .join("sha256")
+            .join(format!("{}.sqlite.zst", base_pack.sha256));
+        let original = fs::read(&base_path).expect("base pack bytes");
+        let mut same_size_corruption = original.clone();
+        same_size_corruption[0] ^= 0xff;
+        fs::write(&base_path, &same_size_corruption).expect("same-size corrupt base");
+
+        assert_eq!(
+            store
+                .v2_lineage_pack_count(vehicle.vehicle_id)
+                .expect("metadata-only capacity count"),
+            1
+        );
+        let (claim, delta) = claimed_collector_delta(&store, vehicle.vehicle_id, &binding);
+        store
+            .commit_v2_delta_claim(
+                &claim,
+                &delta,
+                &import_delta_test_cursor_key(),
+                &import_delta_test_cursor(&binding, delta.to_sequence),
+            )
+            .expect("append uses durable lineage metadata without rehashing history");
+
+        assert!(matches!(
+            store.lineage_manifest_for_vehicle(vehicle.vehicle_id),
+            Err(StoreError::LineagePackDigestMismatch)
+        ));
+        fs::write(&base_path, original).expect("restore immutable base");
+        let published = store
+            .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+            .expect("full serving verification after restore")
+            .expect("published lineage");
+        assert_eq!(published.deltas, vec![delta]);
+    }
+
     fn sync_claim_publication_state(
         store: &HubStore,
         claim: &SyncMutationClaim,
@@ -25720,6 +25810,14 @@ mod tests {
                 .expect("promoted load"),
             Some(promoted)
         );
+        let lifecycle = reopened
+            .load_lifecycle_state(vehicle.vehicle_id)
+            .expect("promoted lifecycle load")
+            .expect("promoted lifecycle state");
+        let lifecycle = crate::lifecycle::OpenSessionState::decode(&lifecycle.open_session_json)
+            .expect("promoted lifecycle decode");
+        assert_eq!(lifecycle.next_position_id, 13);
+        assert!(lifecycle.id_cursors_seeded);
     }
 
     #[test]

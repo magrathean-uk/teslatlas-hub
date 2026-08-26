@@ -2396,6 +2396,13 @@ mod tests {
 
     #[tokio::test]
     async fn health_requires_hello_then_recovers_after_timeout() {
+        // This test exercises a real TCP/WebSocket reconnect. A 20 ms receive
+        // deadline is below the scheduler noise of small or emulated x86
+        // builders and can expire after the second server has queued telemetry
+        // but before the client task is polled. Keep the production behavior
+        // under test while giving both runtimes a bounded scheduling margin.
+        let silence_timeout = Duration::from_millis(500);
+        let test_timeout = Duration::from_secs(5);
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -2412,7 +2419,7 @@ mod tests {
                 .await
                 .unwrap();
             assert!(matches!(
-                timeout(Duration::from_secs(1), first.next()).await.unwrap(),
+                timeout(test_timeout, first.next()).await.unwrap(),
                 Some(Ok(Message::Close(_))) | None
             ));
 
@@ -2445,7 +2452,7 @@ mod tests {
             .unwrap()
             .with_policy(SupervisorPolicy {
                 connect_timeout: Duration::from_millis(100),
-                silence_timeout: Duration::from_millis(20),
+                silence_timeout,
                 backoff_initial: Duration::from_millis(5),
                 remote_backoff_cap: Duration::from_millis(10),
                 connect_backoff_cap: Duration::from_millis(10),
@@ -2453,23 +2460,18 @@ mod tests {
         let (stop, shutdown) = oneshot::channel();
         let task = tokio::spawn(supervisor.run(shutdown));
         assert_eq!(
-            timeout(Duration::from_secs(1), received.recv())
-                .await
-                .unwrap(),
+            timeout(test_timeout, received.recv()).await.unwrap(),
             Some(StreamEvent::TransportUnavailable)
         );
-        assert!(matches!(
-            timeout(Duration::from_secs(1), received.recv())
-                .await
-                .unwrap(),
-            Some(StreamEvent::Telemetry(_))
-        ));
-        stop.send(()).unwrap();
-        timeout(Duration::from_secs(1), task)
+        let recovered = timeout(test_timeout, received.recv())
             .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
+            .expect("telemetry after timeout reconnect");
+        assert!(
+            matches!(recovered, Some(StreamEvent::Telemetry(_))),
+            "unexpected recovery event: {recovered:?}"
+        );
+        stop.send(()).unwrap();
+        timeout(test_timeout, task).await.unwrap().unwrap().unwrap();
         server.await.unwrap();
     }
 

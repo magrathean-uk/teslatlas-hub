@@ -1,6 +1,7 @@
 #[cfg(unix)]
 use std::future::Future;
 use std::{
+    collections::HashMap,
     fs,
     io::Read,
     os::unix::fs::MetadataExt,
@@ -11,18 +12,18 @@ use std::{
 
 use axum::{
     Json, Router,
-    body::Body,
+    body::{Body, Bytes},
     extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use futures_util::stream;
 use rustix::{
     fs::{FileType, Mode, OFlags, fstat, open},
     process::getuid,
 };
 use serde::{Deserialize, Serialize};
-use tokio_util::io::ReaderStream;
 use tower::limit::GlobalConcurrencyLimitLayer;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -49,6 +50,8 @@ pub const MAX_TLS_CERTIFICATE_CHAIN_BYTES: usize = 256 * 1024;
 pub const MAX_TLS_PRIVATE_KEY_BYTES: usize = 64 * 1024;
 const MAX_IN_FLIGHT_HTTP_REQUESTS: usize = 32;
 const MAX_ACTIVE_PACK_STREAMS: usize = 8;
+const MAX_ACTIVE_PACK_STREAMS_PER_DEVICE: usize = 2;
+const PACK_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_HANDLER_TIMEOUT: Duration = Duration::from_secs(15);
 const READINESS_CACHE_TTL: Duration = Duration::from_secs(1);
 
@@ -120,6 +123,8 @@ pub fn read_tls_identity_file_after_open(
         fstat(&file).map_err(|_| std::io::Error::other("TLS identity file cannot be inspected"))?;
     let current = fs::symlink_metadata(path)
         .map_err(|_| std::io::Error::other("TLS identity file changed"))?;
+    #[allow(clippy::useless_conversion)]
+    let held_nlink = u64::from(held.st_nlink);
     if after.st_dev != held.st_dev
         || after.st_ino != held.st_ino
         || after.st_mode != held.st_mode
@@ -136,7 +141,7 @@ pub fn read_tls_identity_file_after_open(
         || current.uid() != getuid().as_raw()
         || current.dev() != held.st_dev as u64
         || current.ino() != held.st_ino
-        || current.nlink() != u64::from(held.st_nlink)
+        || current.nlink() != held_nlink
         || current.uid() != held.st_uid
         || current.gid() != held.st_gid
         || current.mode() != held.st_mode as u32
@@ -325,6 +330,7 @@ pub struct AppState {
     readiness_cache: Arc<Mutex<Option<CachedReadiness>>>,
     readiness_singleflight: Arc<tokio::sync::Semaphore>,
     pack_stream_slots: Arc<tokio::sync::Semaphore>,
+    pack_streams_by_device: Arc<Mutex<HashMap<Uuid, usize>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -354,7 +360,21 @@ impl AppState {
             readiness_cache: Arc::new(Mutex::new(None)),
             readiness_singleflight: Arc::new(tokio::sync::Semaphore::new(1)),
             pack_stream_slots: Arc::new(tokio::sync::Semaphore::new(MAX_ACTIVE_PACK_STREAMS)),
+            pack_streams_by_device: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    fn try_acquire_pack_device_slot(&self, device_id: Uuid) -> Option<PackDeviceSlot> {
+        let mut counts = self.pack_streams_by_device.lock().ok()?;
+        let active = counts.entry(device_id).or_default();
+        if *active >= MAX_ACTIVE_PACK_STREAMS_PER_DEVICE {
+            return None;
+        }
+        *active += 1;
+        Some(PackDeviceSlot {
+            device_id,
+            counts: Arc::clone(&self.pack_streams_by_device),
+        })
     }
 
     fn cached_readiness(&self) -> Option<Result<(), ReadinessReasonCode>> {
@@ -410,7 +430,25 @@ impl AppState {
 /// Loopback/development router. It never accepts pairing claims: those carry a
 /// bearer credential and must be exposed only by the TLS listener.
 pub fn router(store: HubStore) -> Router {
-    router_with_access(store, false, false, false, None, None, None)
+    trusted_local_router(store, false, None, None)
+}
+
+fn trusted_local_router(
+    store: HubStore,
+    supervised_collector_required: bool,
+    cursor_key: Option<CursorKey>,
+    native_config_digest: Option<Sha256Digest>,
+) -> Router {
+    let manifest_signing = cursor_key.as_ref().map(ManifestSigning::from_cursor_key);
+    router_with_access(
+        store,
+        supervised_collector_required,
+        false,
+        false,
+        manifest_signing,
+        cursor_key,
+        native_config_digest,
+    )
 }
 
 /// TLS-facing router. Every mirror endpoint requires a paired-device bearer
@@ -509,7 +547,20 @@ where
                 },
             )?,
         ),
-        (None, false) => None,
+        (None, false) => {
+            crate::teslamate_credentials::load_existing_cursor_key_bytes(&config.data_dir)
+                .map_err(|error| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("cursor key is unavailable: {error}"),
+                    )
+                })?
+                .map(|bytes| {
+                    let mut key = [0_u8; 32];
+                    key.copy_from_slice(bytes.as_slice());
+                    CursorKey::from_bytes(key)
+                })
+        }
     };
     serve_with_cursor_key(
         store,
@@ -585,13 +636,10 @@ where
             handle,
             tokio::spawn(
                 server.serve(
-                    router_with_access(
+                    trusted_local_router(
                         store,
                         supervised_collector_required,
-                        false,
-                        false,
-                        None,
-                        None,
+                        cursor_key,
                         Some(native_config_digest),
                     )
                     .into_make_service(),
@@ -1022,9 +1070,9 @@ async fn pack(
     Path(object_name): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if authorize_device(&state, &headers).is_none() {
+    let Some(device) = authorize_device(&state, &headers) else {
         return unauthorized();
-    }
+    };
     let Some(digest) = object_name.strip_suffix(".sqlite.zst") else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -1042,6 +1090,13 @@ async fn pack(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
+    let Some(device_slot) = state.try_acquire_pack_device_slot(device.device_id) else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(header::RETRY_AFTER, HeaderValue::from_static("1"))],
+        )
+            .into_response();
+    };
     let permit = match state.pack_stream_slots.clone().try_acquire_owned() {
         Ok(permit) => permit,
         Err(_) => {
@@ -1058,6 +1113,7 @@ async fn pack(
             .get(header::RANGE)
             .and_then(|header| header.to_str().ok()),
         permit,
+        device_slot,
     )
     .await
 }
@@ -1158,18 +1214,22 @@ fn no_store_lineage_manifest(
         .expect("static lineage response headers are valid"))
 }
 
-struct PermittedPackReader<R> {
-    inner: R,
-    _permit: tokio::sync::OwnedSemaphorePermit,
+struct PackDeviceSlot {
+    device_id: Uuid,
+    counts: Arc<Mutex<HashMap<Uuid, usize>>>,
 }
 
-impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for PermittedPackReader<R> {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        context: &mut std::task::Context<'_>,
-        buffer: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::pin::Pin::new(&mut self.get_mut().inner).poll_read(context, buffer)
+impl Drop for PackDeviceSlot {
+    fn drop(&mut self) {
+        let Ok(mut counts) = self.counts.lock() else {
+            return;
+        };
+        if let Some(active) = counts.get_mut(&self.device_id) {
+            *active = active.saturating_sub(1);
+            if *active == 0 {
+                counts.remove(&self.device_id);
+            }
+        }
     }
 }
 
@@ -1177,6 +1237,7 @@ async fn stream_pack(
     stored: StoredPack,
     range_header: Option<&str>,
     permit: tokio::sync::OwnedSemaphorePermit,
+    device_slot: PackDeviceSlot,
 ) -> Response {
     let mut file = match tokio::fs::File::open(&stored.path).await {
         Ok(file) => file,
@@ -1243,14 +1304,59 @@ async fn stream_pack(
         response = response.header(header::CONTENT_RANGE, content_range);
     }
     response
-        .body(Body::from_stream(ReaderStream::with_capacity(
-            PermittedPackReader {
-                inner: tokio::io::AsyncReadExt::take(file, range.len()),
-                _permit: permit,
-            },
-            64 * 1024,
-        )))
+        .body(pack_stream_body(
+            tokio::io::AsyncReadExt::take(file, range.len()),
+            permit,
+            device_slot,
+            PACK_STREAM_IDLE_TIMEOUT,
+        ))
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+fn pack_stream_body<R>(
+    mut reader: R,
+    permit: tokio::sync::OwnedSemaphorePermit,
+    device_slot: PackDeviceSlot,
+    idle_timeout: Duration,
+) -> Body
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    // The producer, rather than the HTTP body, owns both permits. A client that
+    // stops reading fills this small channel; the bounded send then expires and
+    // releases the file, global slot, and per-device slot.
+    let (sender, receiver) = tokio::sync::mpsc::channel(2);
+    tokio::spawn(async move {
+        let _permit = permit;
+        let _device_slot = device_slot;
+        let mut buffer = vec![0_u8; 64 * 1024];
+        loop {
+            let read = match tokio::time::timeout(
+                idle_timeout,
+                tokio::io::AsyncReadExt::read(&mut reader, &mut buffer),
+            )
+            .await
+            {
+                Ok(Ok(0)) => break,
+                Ok(Ok(read)) => read,
+                Ok(Err(error)) => {
+                    let _ = tokio::time::timeout(idle_timeout, sender.send(Err(error))).await;
+                    break;
+                }
+                Err(_) => break,
+            };
+            let chunk = Bytes::copy_from_slice(&buffer[..read]);
+            if !matches!(
+                tokio::time::timeout(idle_timeout, sender.send(Ok(chunk))).await,
+                Ok(Ok(()))
+            ) {
+                break;
+            }
+        }
+    });
+    Body::from_stream(stream::unfold(receiver, |mut receiver| async move {
+        receiver.recv().await.map(|item| (item, receiver))
+    }))
 }
 
 fn range_not_satisfiable(complete_length: u64) -> Response {
@@ -1679,6 +1785,52 @@ mod tests {
         assert!(cancellation.is_cancelled());
         let rebound = wait_for_tcp_rebind(bind).await;
         drop(rebound);
+    }
+
+    #[tokio::test]
+    async fn admitted_plain_server_reuses_the_persisted_schema_22_cursor_key() {
+        let temporary = crate::private_tempdir().expect("temporary admitted plain server root");
+        let (admission, store_path) = admitted_server_fixture(&temporary);
+        let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve port");
+        let bind = reservation.local_addr().expect("reserved address");
+        drop(reservation);
+        let config = local_plain_server_config(store_path, bind);
+        let store = HubStore::initialize(&config.data_dir).expect("store");
+        let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+            .expect("persisted cursor key");
+        let (vehicle_id, _) = inject_schema_22_catalogue(&store, &cursor_key);
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let server_task = tokio::spawn(async move {
+            serve_for_admitted_user(
+                store,
+                &config,
+                Sha256Digest::of_bytes(b"plain persisted cursor test"),
+                admission,
+                None,
+                async move {
+                    let _ = shutdown_rx.await;
+                },
+            )
+            .await
+        });
+
+        wait_for_tcp_listener(bind).await;
+        let response = reqwest::Client::new()
+            .get(format!(
+                "http://{bind}/v1/vehicles/{vehicle_id}/sync/manifest"
+            ))
+            .header(SUPPORTED_SCHEMAS_HEADER, "2.2")
+            .send()
+            .await
+            .expect("manifest request");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().contains_key(MANIFEST_SIGNATURE_HEADER));
+
+        shutdown_tx.send(()).expect("signal server shutdown");
+        server_task
+            .await
+            .expect("server task")
+            .expect("plain server shutdown");
     }
 
     #[tokio::test]
@@ -2777,6 +2929,76 @@ mod tests {
         assert!(String::from_utf8_lossy(&encoded).contains("bearer-token-canary"));
     }
 
+    #[test]
+    fn one_device_cannot_consume_the_global_pack_stream_pool() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let state = AppState::new(
+            HubStore::initialize(temporary.path()).expect("store"),
+            false,
+            true,
+            true,
+            None,
+            None,
+            None,
+        );
+        let first_id = Uuid::new_v4();
+        let first = state
+            .try_acquire_pack_device_slot(first_id)
+            .expect("first device slot");
+        let second = state
+            .try_acquire_pack_device_slot(first_id)
+            .expect("second device slot");
+        assert!(state.try_acquire_pack_device_slot(first_id).is_none());
+        let other = state
+            .try_acquire_pack_device_slot(Uuid::new_v4())
+            .expect("other device remains admitted");
+        drop(first);
+        assert!(state.try_acquire_pack_device_slot(first_id).is_some());
+        drop(second);
+        drop(other);
+    }
+
+    #[tokio::test]
+    async fn stalled_pack_body_releases_global_and_device_slots() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let state = AppState::new(
+            HubStore::initialize(temporary.path()).expect("store"),
+            false,
+            true,
+            true,
+            None,
+            None,
+            None,
+        );
+        let device_id = Uuid::new_v4();
+        let device_slot = state
+            .try_acquire_pack_device_slot(device_id)
+            .expect("device slot");
+        let permit = state
+            .pack_stream_slots
+            .clone()
+            .try_acquire_owned()
+            .expect("global slot");
+        let (mut writer, reader) = tokio::io::duplex(512 * 1024);
+        let writer_task = tokio::spawn(async move {
+            tokio::io::AsyncWriteExt::write_all(&mut writer, &vec![7_u8; 512 * 1024])
+                .await
+                .expect("feed pack bytes");
+        });
+        let _unread_body = pack_stream_body(reader, permit, device_slot, Duration::from_millis(10));
+
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        assert_eq!(
+            state.pack_stream_slots.available_permits(),
+            MAX_ACTIVE_PACK_STREAMS
+        );
+        let recovered = state
+            .try_acquire_pack_device_slot(device_id)
+            .expect("stalled device slot released");
+        drop(recovered);
+        writer_task.abort();
+    }
+
     #[tokio::test]
     async fn serves_catalogued_manifest_and_immutable_pack_stream() {
         let temp = crate::private_tempdir().expect("temp directory");
@@ -3005,6 +3227,50 @@ mod tests {
             unsatisfiable.headers().get(header::CONTENT_RANGE).unwrap(),
             format!("bytes */{}", expected_pack.len()).as_str()
         );
+    }
+
+    #[tokio::test]
+    async fn trusted_local_schema_22_uses_the_active_cursor_key() {
+        let temp = crate::private_tempdir().expect("temp directory");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let cursor_key = CursorKey::from_bytes([72; 32]);
+        let (built, snapshot) =
+            write_updates_schema_22_pack(store.packs_dir(), Vec::new()).expect("schema 2.2 pack");
+        let request = updates_pack_request(&snapshot);
+        let manifest = sign_updates_schema_22_manifest(&request, &built, &cursor_key)
+            .expect("schema 2.2 manifest");
+        let noop = sign_updates_schema_22_noop(
+            &request.binding,
+            request.snapshot_id,
+            request.sequence.to_inclusive,
+            &built.metadata.sha256.to_string(),
+            &cursor_key,
+        )
+        .expect("schema 2.2 no-op");
+        publish_updates_schema_22(&store, &manifest, &noop).expect("publish pair");
+
+        let app = trusted_local_router(store, false, Some(cursor_key), None);
+        for endpoint in ["manifest", "noop"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!(
+                            "/v1/vehicles/{}/sync/{endpoint}",
+                            request.binding.vehicle_id
+                        ))
+                        .header(SUPPORTED_SCHEMAS_HEADER, "2.2")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .expect("trusted local schema 2.2 response");
+            assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
+            assert!(
+                response.headers().contains_key(MANIFEST_SIGNATURE_HEADER),
+                "{endpoint} is signed by the active cursor key"
+            );
+        }
     }
 
     #[tokio::test]

@@ -382,7 +382,7 @@ impl Default for GeocoderConfig {
 }
 
 const fn default_geocoder_enabled() -> bool {
-    true
+    false
 }
 
 impl GeocoderConfig {
@@ -1109,10 +1109,10 @@ mod tests {
     }
 
     #[test]
-    fn enrichment_defaults_on() {
+    fn enrichment_defaults_are_private() {
         assert!(TerrainConfig::default().enabled);
         assert_eq!(TerrainConfig::default().max_cache_bytes, 512 * 1024 * 1024);
-        assert!(GeocoderConfig::default().enabled);
+        assert!(!GeocoderConfig::default().enabled);
     }
 
     #[test]

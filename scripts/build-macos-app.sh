@@ -6,7 +6,7 @@ umask 022
 
 PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 export PATH
-MACOSX_DEPLOYMENT_TARGET=12.0
+MACOSX_DEPLOYMENT_TARGET=13.0
 export MACOSX_DEPLOYMENT_TARGET
 COPYFILE_DISABLE=1
 export COPYFILE_DISABLE
@@ -47,14 +47,14 @@ minimum_macos() {
     '
 }
 
-require_macos_12_or_earlier() {
+require_macos_13_or_earlier() {
     version=$(minimum_macos "$1")
     case "$version" in
         ''|*[!0-9.]*) die "cannot read macOS deployment target: $1" ;;
     esac
     major=${version%%.*}
-    [ "$major" -le 12 ] \
-        || die "requires macOS $version, not macOS 12: $1"
+    [ "$major" -le 13 ] \
+        || die "requires macOS $version, not macOS 13: $1"
 }
 
 is_executable_macho() {
@@ -167,7 +167,7 @@ xcodebuild \
     -derivedDataPath "$DERIVED" \
     ARCHS=arm64 \
     ONLY_ACTIVE_ARCH=YES \
-    MACOSX_DEPLOYMENT_TARGET=12.0 \
+    MACOSX_DEPLOYMENT_TARGET=13.0 \
     MARKETING_VERSION="$marketing_version" \
     CURRENT_PROJECT_VERSION="$bundle_version" \
     TESLATLAS_HUB_VERSION="$version" \
@@ -197,7 +197,7 @@ done
     || die "embedded Hub binary is not arm64-only"
 is_executable_macho "$resources/teslatlas-hub" \
     || die "embedded Hub binary is not a Mach-O executable"
-require_macos_12_or_earlier "$resources/teslatlas-hub"
+require_macos_13_or_earlier "$resources/teslatlas-hub"
 [ -f "$resources/TeslatlasHubService.pkg" ] \
     || die "service package resource is missing"
 [ "$(/usr/bin/lipo -archs "$resources/tesla-http-proxy")" = arm64 ] \
@@ -215,14 +215,14 @@ proxy_minimum_major=${proxy_minimum_macos%%.*}
 case "$proxy_minimum_macos" in
     ''|*[!0-9.]*) die "cannot read proxy macOS deployment target" ;;
 esac
-[ "$proxy_minimum_major" -le 12 ] \
+[ "$proxy_minimum_major" -le 13 ] \
     || die "embedded Tesla command proxy requires macOS $proxy_minimum_macos"
 reject_appledouble "$resources"
 app_binary="$PRODUCT/Contents/MacOS/Teslatlas Hub"
 [ "$(/usr/bin/lipo -archs "$app_binary")" = arm64 ] \
     || die "App binary is not arm64-only"
 is_executable_macho "$app_binary" || die "App binary is not a Mach-O executable"
-require_macos_12_or_earlier "$app_binary"
+require_macos_13_or_earlier "$app_binary"
 
 /usr/bin/codesign --force --sign - --timestamp=none "$resources/teslatlas-hub" >/dev/null
 /usr/bin/codesign --force --sign - --timestamp=none "$resources/tesla-http-proxy" >/dev/null
@@ -249,4 +249,6 @@ reject_appledouble "$DIST_APP"
     || die "distribution app icon Info.plist value is missing"
 /usr/bin/codesign --verify --deep --strict "$DIST_APP"
 
+printf '%s\n' \
+    'build-macos-app: local ad-hoc build; privileged install and update are disabled. Use a signed, notarized release for service installation.' >&2
 printf '%s\n' "$DIST_APP"

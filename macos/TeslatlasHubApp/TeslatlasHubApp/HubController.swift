@@ -168,6 +168,7 @@ enum HubActionError: LocalizedError {
     case missingResource(String)
     case untrustedInstaller(String)
     case commandFailed(String)
+    case commandExited(Int32, String)
     case commandTimedOut
 
     var errorDescription: String? {
@@ -179,6 +180,8 @@ enum HubActionError: LocalizedError {
         case let .untrustedInstaller(reason):
             return "Installer trust check failed: \(reason)"
         case let .commandFailed(message):
+            return message
+        case let .commandExited(_, message):
             return message
         case .commandTimedOut:
             return "Hub command timed out."
@@ -288,7 +291,10 @@ enum HubProcessExecutor {
                 if process.terminationStatus == 0 {
                     completion(.success(text))
                 } else {
-                    completion(.failure(HubActionError.commandFailed(text.isEmpty ? "Hub command failed." : text)))
+                    completion(.failure(HubActionError.commandExited(
+                        process.terminationStatus,
+                        text.isEmpty ? "Hub command failed." : text
+                    )))
                 }
             } catch {
                 completion(.failure(error))
@@ -371,7 +377,9 @@ final class EmbeddedInstaller: HubInstalling {
         guard let digest = Bundle.main.object(forInfoDictionaryKey: "TeslatlasServicePackageSHA256") as? String,
               let teamID = Bundle.main.object(forInfoDictionaryKey: "TeslatlasReleaseTeamIdentifier") as? String,
               Bundle.main.object(forInfoDictionaryKey: "TeslatlasOfficialRelease") as? Bool == true else {
-            completion(.failure(HubActionError.untrustedInstaller("signed release metadata is missing")))
+            completion(.failure(HubActionError.untrustedInstaller(
+                "signed release metadata is missing; local ad-hoc builds cannot install or update the service"
+            )))
             return
         }
         do {
@@ -547,13 +555,21 @@ final class LaunchctlServiceController: HubServiceControlling {
             switch result {
             case .success: completion(.success(true))
             case let .failure(error):
-                let text = error.localizedDescription.lowercased()
-                if text.contains("could not find service") || text.contains("no such process") || text.contains("not found") || text.contains("113") {
+                if case let HubActionError.commandExited(status, output) = error,
+                   Self.isKnownUnloadedPrintFailure(status: status, output: output, service: service) {
                     completion(.success(false))
                 } else {
                     completion(.failure(error))
                 }
             }
+        }
+    }
+
+    static func isKnownUnloadedPrintFailure(status: Int32, output: String, service: String) -> Bool {
+        guard status == 113, let label = service.split(separator: "/").last else { return false }
+        let expected = "Could not find service \"\(label)\" in domain for user gui: \(getuid())"
+        return output.split(whereSeparator: \Character.isNewline).contains {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines) == expected
         }
     }
 

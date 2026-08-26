@@ -177,9 +177,11 @@ fn checked_data_dir(path: &Path) -> Result<(PathBuf, NodeIdentity), UserLifetime
 }
 
 fn safe_data_directory_stat(stat: &rustix::fs::Stat) -> bool {
+    #[allow(clippy::unnecessary_cast)]
+    let mode = stat.st_mode as u32;
     FileType::from_raw_mode(stat.st_mode).is_dir()
         && stat.st_uid == getuid().as_raw()
-        && (stat.st_mode as u32 & 0o777) == DATA_DIRECTORY_MODE
+        && (mode & 0o777) == DATA_DIRECTORY_MODE
 }
 
 fn open_data_dir(path: &Path) -> Result<OwnedFd, UserLifetimeLockError> {

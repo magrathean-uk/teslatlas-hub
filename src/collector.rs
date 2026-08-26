@@ -2363,6 +2363,8 @@ fn read_fleet_proxy_root_certificate_after_open(
     let after = fstat(&file).map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
     let current =
         std::fs::symlink_metadata(path).map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
+    #[allow(clippy::useless_conversion)]
+    let held_nlink = u64::from(held.st_nlink);
     if after.st_dev != held.st_dev
         || after.st_ino != held.st_ino
         || after.st_mode != held.st_mode
@@ -2379,7 +2381,7 @@ fn read_fleet_proxy_root_certificate_after_open(
         || current.dev() != held.st_dev as u64
         || current.ino() != held.st_ino
         || current.mode() != held.st_mode as u32
-        || current.nlink() != u64::from(held.st_nlink)
+        || current.nlink() != held_nlink
         || current.uid() != held.st_uid
         || current.gid() != held.st_gid
         || current.len() != u64::try_from(held.st_size).unwrap_or(u64::MAX)
@@ -6048,11 +6050,21 @@ fn projection_car_id_for_vehicle(
 /// collection must not reuse those ids or the client V2 integrity check fails
 /// when a delta upserts drive id=1 over an imported drive with different times
 /// (positions fall outside the drive interval).
+const LEGACY_IMPORT_MAX_ID_SQL: &str = "SELECT COALESCE(MAX(entity_id), 0)
+       FROM teslamate_import_projection_rows
+      WHERE vehicle_id = ?1 AND entity = ?2";
+const CURRENT_IMPORT_MAX_ID_SQL: &str = "SELECT COALESCE(MAX(entity_id), 0)
+       FROM teslamate_import_projection_state_rows
+      WHERE vehicle_id = ?1 AND entity_ordinal = ?2";
+
 fn seed_lifecycle_ids_from_materialised(
     store: &HubStore,
     vehicle_id: Uuid,
     state: &mut OpenSessionState,
 ) -> Result<(), CollectorError> {
+    if state.id_cursors_seeded {
+        return Ok(());
+    }
     let connection = store.open().map_err(CollectorError::from)?;
     let max_i64 = |table: &str, column: &str| -> Result<i64, CollectorError> {
         let sql = format!("SELECT COALESCE(MAX({column}), 0) FROM {table} WHERE vehicle_id = ?1");
@@ -6071,54 +6083,35 @@ fn seed_lifecycle_ids_from_materialised(
     let max_state = max_i64("materialised_states", "state_id")?;
     let max_update = max_i64("materialised_updates", "update_id")?;
 
-    // Import projection catalogue (entity primary keys published into V2 packs).
-    // New direct imports retain only digest state; older catalogues have the
-    // legacy inventory copy. The union keeps collector ID allocation correct
-    // across both formats without making direct imports store rows twice.
-    let mut import_drive = 0_i64;
-    let mut import_position = 0_i64;
-    let mut import_charge = 0_i64;
-    let mut import_sample = 0_i64;
-    let mut import_state = 0_i64;
-    let mut import_update = 0_i64;
-    {
-        let mut statement = connection
-            .prepare(
-                "SELECT entity, COALESCE(MAX(entity_id), 0)
-                   FROM (
-                       SELECT entity, entity_id
-                         FROM teslamate_import_projection_rows
-                        WHERE vehicle_id = ?1
-                       UNION ALL
-                       SELECT entity, entity_id
-                         FROM teslamate_import_projection_state_rows
-                        WHERE vehicle_id = ?1 AND entity_ordinal BETWEEN 1 AND 6
-                   )
-                  GROUP BY entity",
+    // Both import catalogues have covering primary keys beginning with
+    // (vehicle_id, entity/ordinal, entity_id). Point-range MAX queries can seek
+    // directly to the final row. The former UNION/GROUP BY scanned and sorted
+    // millions of imported keys on every live telemetry sample.
+    let import_max = |entity: &str, ordinal: i64| -> Result<i64, CollectorError> {
+        let legacy = connection
+            .query_row(
+                LEGACY_IMPORT_MAX_ID_SQL,
+                rusqlite::params![vehicle_id.to_string(), entity],
+                |row| row.get::<_, i64>(0),
             )
             .map_err(StoreError::Query)
             .map_err(CollectorError::Store)?;
-        let rows = statement
-            .query_map(rusqlite::params![vehicle_id.to_string()], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-            })
+        let current = connection
+            .query_row(
+                CURRENT_IMPORT_MAX_ID_SQL,
+                rusqlite::params![vehicle_id.to_string(), ordinal],
+                |row| row.get::<_, i64>(0),
+            )
             .map_err(StoreError::Query)
             .map_err(CollectorError::Store)?;
-        for row in rows {
-            let (entity, max_id) = row
-                .map_err(StoreError::Query)
-                .map_err(CollectorError::Store)?;
-            match entity.as_str() {
-                "drive" => import_drive = max_id,
-                "position" => import_position = max_id,
-                "charge" => import_charge = max_id,
-                "charge_sample" => import_sample = max_id,
-                "state" => import_state = max_id,
-                "update" => import_update = max_id,
-                _ => {}
-            }
-        }
-    }
+        Ok(legacy.max(current))
+    };
+    let import_drive = import_max("drive", 1)?;
+    let import_position = import_max("position", 2)?;
+    let import_charge = import_max("charge", 3)?;
+    let import_sample = import_max("charge_sample", 4)?;
+    let import_state = import_max("state", 5)?;
+    let import_update = import_max("update", 6)?;
 
     let max_drive = max_drive.max(import_drive);
     let max_position = max_position.max(import_position);
@@ -6141,6 +6134,7 @@ fn seed_lifecycle_ids_from_materialised(
     state.next_update_id = state
         .next_update_id
         .max(max_update.saturating_add(1).max(1));
+    state.id_cursors_seeded = true;
     Ok(())
 }
 
@@ -6388,6 +6382,53 @@ mod tests {
         lifecycle::OpenSessionState,
         owner_api::{Vehicle, VehicleData},
     };
+
+    #[test]
+    fn lifecycle_id_seed_uses_covering_import_indexes_once() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let connection = store.open().expect("connection");
+        for (sql, second) in [
+            (
+                LEGACY_IMPORT_MAX_ID_SQL,
+                rusqlite::types::Value::Text("position".to_owned()),
+            ),
+            (
+                CURRENT_IMPORT_MAX_ID_SQL,
+                rusqlite::types::Value::Integer(2),
+            ),
+        ] {
+            let mut statement = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .expect("query plan");
+            let details = statement
+                .query_map(
+                    rusqlite::params![Uuid::new_v4().to_string(), second],
+                    |row| row.get::<_, String>(3),
+                )
+                .expect("plan rows")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("plan details")
+                .join("\n");
+            assert!(
+                details.contains("SEARCH")
+                    && !details.contains("SCAN")
+                    && !details.contains("TEMP B-TREE"),
+                "ID seed must seek the covering import key: {details}"
+            );
+        }
+
+        let mut state = OpenSessionState::new();
+        assert!(!state.id_cursors_seeded);
+        seed_lifecycle_ids_from_materialised(&store, Uuid::new_v4(), &mut state)
+            .expect("indexed seed");
+        assert!(state.id_cursors_seeded);
+        assert!(
+            OpenSessionState::decode(&state.encode().expect("state encode"))
+                .expect("state decode")
+                .id_cursors_seeded
+        );
+    }
 
     #[test]
     fn fleet_proxy_root_certificate_is_descriptor_pinned_and_private() {

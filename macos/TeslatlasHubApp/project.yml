@@ -2,14 +2,14 @@ name: TeslatlasHubApp
 
 options:
   deploymentTarget:
-    macOS: "12.0"
+    macOS: "13.0"
   createIntermediateGroups: true
   groupSortPosition: top
 
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MACOSX_DEPLOYMENT_TARGET: "12.0"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
     ARCHS: arm64
     ONLY_ACTIVE_ARCH: NO
     CODE_SIGNING_ALLOWED: NO
@@ -19,7 +19,7 @@ targets:
   TeslatlasHubApp:
     type: application
     platform: macOS
-    deploymentTarget: "12.0"
+    deploymentTarget: "13.0"
     sources:
       - path: TeslatlasHubApp
     info:
@@ -35,11 +35,11 @@ targets:
         PRODUCT_NAME: Teslatlas Hub
         INFOPLIST_KEY_CFBundleIconFile: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Teslatlas Hub
-        INFOPLIST_KEY_LSMinimumSystemVersion: "12.0"
+        INFOPLIST_KEY_LSMinimumSystemVersion: "13.0"
   TeslatlasHubAppTests:
     type: bundle.unit-test
     platform: macOS
-    deploymentTarget: "12.0"
+    deploymentTarget: "13.0"
     sources:
       - path: TeslatlasHubAppTests
     dependencies:

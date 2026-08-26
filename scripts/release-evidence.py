@@ -9,18 +9,31 @@ import gzip
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import plistlib
 import re
 import shutil
+import stat
+import struct
 import subprocess
 import sys
 import tempfile
+import zipfile
 from datetime import datetime, timezone
 
 
 SCHEMA = "teslatlas.release-evidence/v1"
 TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 FINGERPRINT_RE = re.compile(r"^(?:[0-9A-Fa-f]{40}|[0-9A-Fa-f]{64})$")
+GO_EVIDENCE_NAMES = (
+    "GO_THIRD_PARTY_NOTICES.generated.md",
+    "go-build-receipt.json",
+    "go-component-manifest.json",
+    "go-dependency-inventory.json",
+    "go-sbom.spdx.json",
+    "tesla-http-proxy.unsigned",
+    "tesla-http-proxy-go-sources.tar.gz",
+)
 
 
 class GateError(RuntimeError):
@@ -33,6 +46,9 @@ class ArtifactWitness:
     relative_path: str
     size: int
     digest: str
+    device: int
+    inode: int
+    mtime_ns: int
 
 
 def run(args: list[str], cwd: Path, *, env: dict[str, str] | None = None,
@@ -57,13 +73,55 @@ def sha256(path: Path) -> str:
 
 
 def capture_artifact(repo: Path, path: Path) -> ArtifactWitness:
-    regular_file(path, "artifact")
-    size = path.stat().st_size
-    digest = sha256(path)
-    regular_file(path, "artifact")
-    if path.stat().st_size != size:
-        raise GateError(f"artifact changed during evidence generation: {path}")
-    return ArtifactWitness(path, relative(repo, path), size, digest)
+    try:
+        before = os.lstat(path)
+    except OSError as exc:
+        raise GateError(f"artifact is unavailable: {path}") from exc
+    if not stat.S_ISREG(before.st_mode):
+        raise GateError(f"artifact must be a regular, non-symlink file: {path}")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise GateError(f"artifact cannot be safely opened: {path}") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            raise GateError(f"artifact changed while opening: {path}")
+        digest = hashlib.sha256()
+        while True:
+            block = os.read(descriptor, 1024 * 1024)
+            if not block:
+                break
+            digest.update(block)
+        after = os.fstat(descriptor)
+        if (
+            after.st_size != opened.st_size
+            or after.st_mtime_ns != opened.st_mtime_ns
+            or after.st_ctime_ns != opened.st_ctime_ns
+        ):
+            raise GateError(f"artifact changed while reading: {path}")
+    finally:
+        os.close(descriptor)
+    try:
+        current = os.lstat(path)
+    except OSError as exc:
+        raise GateError(f"artifact changed after reading: {path}") from exc
+    if (
+        (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino)
+        or current.st_size != opened.st_size
+        or current.st_mtime_ns != opened.st_mtime_ns
+    ):
+        raise GateError(f"artifact changed after reading: {path}")
+    return ArtifactWitness(
+        path,
+        relative(repo, path),
+        opened.st_size,
+        digest.hexdigest(),
+        opened.st_dev,
+        opened.st_ino,
+        opened.st_mtime_ns,
+    )
 
 
 def verify_artifact_unchanged(repo: Path, expected: ArtifactWitness) -> None:
@@ -75,6 +133,95 @@ def verify_artifact_unchanged(repo: Path, expected: ArtifactWitness) -> None:
         ) from exc
     if current != expected:
         raise GateError(f"artifact changed during evidence generation: {expected.path}")
+
+
+def verify_go_evidence_unchanged(repo: Path, expected: ArtifactWitness) -> None:
+    try:
+        current = capture_artifact(repo, expected.path)
+    except GateError as exc:
+        raise GateError(
+            f"Go proxy evidence changed during evidence generation: {expected.path}"
+        ) from exc
+    if current != expected:
+        raise GateError(
+            f"Go proxy evidence changed during evidence generation: {expected.path}"
+        )
+
+
+def copy_witness_to(repo: Path, expected: ArtifactWitness, destination: Path) -> None:
+    """Copy exactly the descriptor-pinned bytes represented by a witness."""
+    source_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    destination_flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        source = os.open(expected.path, source_flags)
+    except OSError as exc:
+        raise GateError(
+            f"artifact cannot be safely reopened: {expected.path}"
+        ) from exc
+    try:
+        opened = os.fstat(source)
+        if (
+            opened.st_dev != expected.device
+            or opened.st_ino != expected.inode
+            or opened.st_size != expected.size
+            or opened.st_mtime_ns != expected.mtime_ns
+        ):
+            raise GateError(
+                f"artifact changed before staging: {expected.path}"
+            )
+        try:
+            target = os.open(destination, destination_flags, 0o644)
+        except OSError as exc:
+            raise GateError(
+                f"cannot create staged artifact: {destination}"
+            ) from exc
+        digest = hashlib.sha256()
+        copied = 0
+        try:
+            while True:
+                block = os.read(source, 1024 * 1024)
+                if not block:
+                    break
+                digest.update(block)
+                copied += len(block)
+                remaining = memoryview(block)
+                while remaining:
+                    written = os.write(target, remaining)
+                    if written <= 0:
+                        raise GateError(
+                            f"short write while staging artifact: {destination}"
+                        )
+                    remaining = remaining[written:]
+            os.fchmod(target, 0o644)
+            os.fsync(target)
+        finally:
+            os.close(target)
+        closed_over = os.fstat(source)
+        if (
+            closed_over.st_size != opened.st_size
+            or closed_over.st_mtime_ns != opened.st_mtime_ns
+            or closed_over.st_ctime_ns != opened.st_ctime_ns
+        ):
+            raise GateError(
+                f"artifact changed while staging: {expected.path}"
+            )
+        if copied != expected.size or digest.hexdigest() != expected.digest:
+            raise GateError(
+                f"artifact no longer matches its witness: {expected.path}"
+            )
+    finally:
+        os.close(source)
+
+    staged = capture_artifact(destination.parent, destination)
+    if staged.size != expected.size or staged.digest != expected.digest:
+        raise GateError(
+            f"staged artifact does not match its witness: {destination}"
+        )
 
 
 def write_json(path: Path, value: object) -> None:
@@ -102,10 +249,449 @@ def requires_external_proxy_notice(path: Path) -> bool:
     return path.suffix.lower() in {".pkg", ".zip"} or "macos" in name
 
 
+def capture_go_evidence(repo: Path, directory: Path) -> list[ArtifactWitness]:
+    if not directory.is_dir() or directory.is_symlink():
+        raise GateError("Go proxy evidence must be a real directory")
+    helper = repo / "scripts" / "go-proxy-evidence.py"
+    regular_file(helper, "Go proxy evidence verifier")
+    run(
+        [sys.executable, str(helper), "--repo", str(repo), "--verify-dir", str(directory)],
+        repo,
+    )
+    actual = {path.name for path in directory.iterdir()}
+    if actual != set(GO_EVIDENCE_NAMES):
+        raise GateError("Go proxy evidence file set changed after validation")
+    witnesses = [capture_artifact(repo, directory / name) for name in GO_EVIDENCE_NAMES]
+    run(
+        [sys.executable, str(helper), "--repo", str(repo), "--verify-dir", str(directory)],
+        repo,
+    )
+    for witness in witnesses:
+        verify_go_evidence_unchanged(repo, witness)
+    return witnesses
+
+
+def capture_macos_release_bundle(
+    repo: Path,
+    artifacts: list[ArtifactWitness],
+    go_evidence: Path,
+    go_witnesses: list[ArtifactWitness],
+) -> tuple[Path, list[ArtifactWitness]] | None:
+    try:
+        go_evidence.relative_to(repo)
+    except ValueError:
+        return None
+    zip_artifacts = [item for item in artifacts if item.path.suffix.lower() == ".zip"]
+    package_artifacts = [item for item in artifacts if item.path.suffix.lower() == ".pkg"]
+    if len(zip_artifacts) != 1 or len(package_artifacts) != 1:
+        return None
+    bundle = zip_artifacts[0].path.parent
+    if package_artifacts[0].path.parent != bundle or go_evidence.parent != bundle:
+        return None
+    logs = bundle / "notary-logs"
+    checksums = bundle / "SHA256SUMS"
+    expected_top_level = {
+        zip_artifacts[0].path.name,
+        package_artifacts[0].path.name,
+        go_evidence.name,
+        logs.name,
+        checksums.name,
+    }
+    if {path.name for path in bundle.iterdir()} != expected_top_level:
+        raise GateError("macOS release bundle contains unexpected or missing sidecars")
+    for directory, label in (
+        (bundle, "macOS release bundle"),
+        (go_evidence, "Go proxy evidence"),
+        (logs, "macOS notary logs"),
+    ):
+        if not directory.is_dir() or directory.is_symlink():
+            raise GateError(f"{label} must be a real directory")
+    regular_file(checksums, "macOS release checksums")
+    expected_log_names = {
+        "app-log.json",
+        "app-submit.json",
+        "service-package-log.json",
+        "service-package-submit.json",
+    }
+    if {path.name for path in logs.iterdir()} != expected_log_names:
+        raise GateError("macOS notary log set is incomplete")
+    checksum_witness = capture_artifact(repo, checksums)
+    log_witnesses = [capture_artifact(repo, logs / name) for name in sorted(expected_log_names)]
+    if checksum_witness.size > 64 * 1024 or any(
+        witness.size > 8 * 1024 * 1024 for witness in log_witnesses
+    ):
+        raise GateError("macOS release receipt is unexpectedly large")
+    expected_checksum_paths = {
+        zip_artifacts[0].path.name,
+        package_artifacts[0].path.name,
+        *(f"{go_evidence.name}/{name}" for name in GO_EVIDENCE_NAMES),
+    }
+    expected_digests = {
+        zip_artifacts[0].path.name: zip_artifacts[0].digest,
+        package_artifacts[0].path.name: package_artifacts[0].digest,
+        **{
+            f"{go_evidence.name}/{witness.path.name}": witness.digest
+            for witness in go_witnesses
+        },
+    }
+    checksum_records: dict[str, str] = {}
+    receipts = [checksum_witness, *log_witnesses]
+    with tempfile.TemporaryDirectory(prefix="teslatlas-release-receipts-") as raw_stage:
+        receipt_stage = Path(raw_stage)
+        for witness in receipts:
+            destination = receipt_stage / witness.path.name
+            copy_witness_to(repo, witness, destination)
+            if witness in log_witnesses:
+                try:
+                    json.loads(destination.read_text())
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise GateError("macOS notary log is invalid JSON") from exc
+        try:
+            checksum_lines = (receipt_stage / checksums.name).read_text().splitlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            raise GateError("macOS release checksums are unreadable") from exc
+        for line in checksum_lines:
+            match = re.fullmatch(r"([0-9a-f]{64})  ([^\r\n]+)", line)
+            if match is None or match.group(2) in checksum_records:
+                raise GateError("macOS release checksums are invalid")
+            checksum_records[match.group(2)] = match.group(1)
+    if set(checksum_records) != expected_checksum_paths:
+        raise GateError("macOS release checksums do not cover the exact bundle")
+    if checksum_records != expected_digests:
+        raise GateError("macOS release checksum mismatch")
+    for witness in receipts:
+        verify_artifact_unchanged(repo, witness)
+    return bundle, receipts
+
+
+def verify_macos_release_bundle_structure(
+    bundle: Path,
+    artifacts: list[ArtifactWitness],
+    go_evidence: Path,
+    receipts: list[ArtifactWitness],
+) -> None:
+    zip_artifact = next(item for item in artifacts if item.path.suffix.lower() == ".zip")
+    package_artifact = next(
+        item for item in artifacts if item.path.suffix.lower() == ".pkg"
+    )
+    logs = bundle / "notary-logs"
+    expected_top_level = {
+        zip_artifact.path.name,
+        package_artifact.path.name,
+        go_evidence.name,
+        logs.name,
+        "SHA256SUMS",
+    }
+    for directory, label in (
+        (bundle, "macOS release bundle"),
+        (go_evidence, "Go proxy evidence"),
+        (logs, "macOS notary logs"),
+    ):
+        if not directory.is_dir() or directory.is_symlink():
+            raise GateError(f"{label} changed during evidence generation")
+    if {path.name for path in bundle.iterdir()} != expected_top_level:
+        raise GateError("macOS release bundle changed during evidence generation")
+    if {path.name for path in go_evidence.iterdir()} != set(GO_EVIDENCE_NAMES):
+        raise GateError("Go proxy evidence file set changed during evidence generation")
+    expected_logs = {
+        witness.path.name
+        for witness in receipts
+        if witness.path.parent.name == "notary-logs"
+    }
+    if {path.name for path in logs.iterdir()} != expected_logs:
+        raise GateError("macOS notary log set changed during evidence generation")
+
+
+def extract_checked_macos_app(archive_path: Path, destination: Path) -> Path:
+    member_limit = 20_000
+    expanded_limit = 2 * 1024 * 1024 * 1024
+    seen: set[str] = set()
+    payload_members: list[PurePosixPath] = []
+    expanded = 0
+    try:
+        archive = zipfile.ZipFile(archive_path)
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise GateError("macOS release artifact is not a valid ZIP archive") from exc
+    with archive:
+        members = archive.infolist()
+        if not members or len(members) > member_limit:
+            raise GateError("macOS release ZIP member count is invalid")
+        for member in members:
+            name = member.filename
+            if not name or "\\" in name or member.flag_bits & 0x1:
+                raise GateError("macOS release ZIP contains an unsafe member")
+            relative_path = PurePosixPath(name)
+            if relative_path.is_absolute() or any(
+                part in {"", ".", ".."} for part in relative_path.parts
+            ):
+                raise GateError("macOS release ZIP contains an unsafe path")
+            normalized = relative_path.as_posix().rstrip("/")
+            if normalized in seen:
+                raise GateError("macOS release ZIP contains duplicate members")
+            seen.add(normalized)
+            expanded += member.file_size
+            if expanded > expanded_limit:
+                raise GateError("macOS release ZIP expands beyond the safety limit")
+            if relative_path.parts[0] == "__MACOSX":
+                continue
+            payload_members.append(relative_path)
+            mode = (member.external_attr >> 16) & 0xFFFF
+            file_kind = stat.S_IFMT(mode)
+            is_directory = member.is_dir()
+            if is_directory:
+                if file_kind not in {0, stat.S_IFDIR}:
+                    raise GateError("macOS release ZIP contains an unsafe directory")
+            elif file_kind not in {0, stat.S_IFREG}:
+                raise GateError("macOS release ZIP contains a non-regular member")
+            target = destination.joinpath(*relative_path.parts)
+            target.resolve().relative_to(destination.resolve())
+            if is_directory:
+                target.mkdir(parents=True, exist_ok=True)
+                target.chmod((mode & 0o777) or 0o755)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                source = archive.open(member)
+                with source, target.open("xb") as output:
+                    shutil.copyfileobj(source, output, 1024 * 1024)
+            except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+                raise GateError("macOS release ZIP member cannot be extracted safely") from exc
+            if target.stat().st_size != member.file_size:
+                raise GateError("macOS release ZIP member has a short read")
+            target.chmod((mode & 0o777) or 0o644)
+
+    app_roots = sorted(
+        {
+            path.parents[1]
+            for path in destination.glob("*.app/Contents/Info.plist")
+            if path.is_file() and not path.is_symlink()
+        }
+    )
+    if len(app_roots) != 1:
+        raise GateError("macOS release ZIP must contain exactly one app")
+    app_name = app_roots[0].name
+    if any(member.parts[0] != app_name for member in payload_members):
+        raise GateError("macOS release ZIP contains content outside the signed app")
+    return app_roots[0]
+
+
+def signed_team(
+    details: str,
+    authority: str,
+    label: str,
+) -> str:
+    if f"Authority={authority}:" not in details:
+        raise GateError(f"{label} is not signed by {authority}")
+    match = re.search(r"^TeamIdentifier=([A-Z0-9]{10})$", details, re.MULTILINE)
+    if match is None:
+        raise GateError(f"{label} has no valid Team ID")
+    return match.group(1)
+
+
+def checked_package_payload_file(root: Path, relative_path: PurePosixPath) -> Path:
+    current = root
+    for part in relative_path.parts[:-1]:
+        current /= part
+        try:
+            metadata = os.lstat(current)
+        except OSError as exc:
+            raise GateError("macOS package payload path is missing") from exc
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise GateError("macOS package payload path is unsafe")
+    target = current / relative_path.parts[-1]
+    regular_file(target, "macOS package Tesla proxy")
+    return target
+
+
+def canonical_macho_digest(path: Path) -> str:
+    try:
+        data = bytearray(path.read_bytes())
+    except OSError as exc:
+        raise GateError("signed Tesla proxy cannot be read") from exc
+    if len(data) < 32 or len(data) > 128 * 1024 * 1024:
+        raise GateError("signed Tesla proxy size is invalid")
+    try:
+        header = struct.unpack_from("<8I", data, 0)
+    except struct.error as exc:
+        raise GateError("signed Tesla proxy is not a thin 64-bit Mach-O") from exc
+    if header[0] != 0xFEEDFACF:
+        raise GateError("signed Tesla proxy is not a thin 64-bit Mach-O")
+    command_count = header[4]
+    command_bytes = header[5]
+    if command_count > 4_096 or command_bytes > len(data) - 32:
+        raise GateError("signed Tesla proxy Mach-O commands are invalid")
+    offset = 32
+    command_end = offset + command_bytes
+    linkedit_count = 0
+    for _ in range(command_count):
+        if offset + 8 > command_end:
+            raise GateError("signed Tesla proxy Mach-O commands are truncated")
+        command, command_size = struct.unpack_from("<II", data, offset)
+        if command_size < 8 or offset + command_size > command_end:
+            raise GateError("signed Tesla proxy Mach-O command size is invalid")
+        if command == 0x19:
+            if command_size < 72:
+                raise GateError("signed Tesla proxy segment command is invalid")
+            segment = bytes(data[offset + 8 : offset + 24]).split(b"\0", 1)[0]
+            if segment == b"__LINKEDIT":
+                linkedit_count += 1
+                # codesign changes only this rounded virtual size after its
+                # embedded signature is removed. Normalize that one field;
+                # every executable byte and remaining load-command byte stays
+                # bound to the reviewed linker-signed proxy.
+                struct.pack_into("<Q", data, offset + 32, 0)
+        offset += command_size
+    if offset != command_end or linkedit_count != 1:
+        raise GateError("signed Tesla proxy Mach-O layout is invalid")
+    return hashlib.sha256(data).hexdigest()
+
+
+def unsigned_code_digest(repo: Path, source: Path, destination: Path) -> str:
+    witness = capture_artifact(source.parent, source)
+    copy_witness_to(repo, witness, destination)
+    run(["codesign", "--remove-signature", str(destination)], repo)
+    regular_file(destination, "signature-stripped Tesla proxy")
+    return canonical_macho_digest(destination)
+
+
+def validate_macos_artifacts(
+    repo: Path,
+    artifacts: list[ArtifactWitness],
+    go_manifest: dict,
+    go_manifest_digest: str,
+    stage: Path,
+) -> None:
+    macos = [item for item in artifacts if requires_external_proxy_notice(item.path)]
+    zip_artifacts = [item for item in macos if item.path.suffix.lower() == ".zip"]
+    package_artifacts = [item for item in macos if item.path.suffix.lower() == ".pkg"]
+    if len(zip_artifacts) != 1 or len(package_artifacts) > 1:
+        raise GateError("macOS evidence requires one app ZIP and at most one matching package")
+    if len(zip_artifacts) + len(package_artifacts) != len(macos):
+        raise GateError("unsupported macOS release artifact type")
+
+    check_root = stage / ".macos-artifact-check"
+    check_root.mkdir(mode=0o700)
+    try:
+        checked_zip = check_root / "release.zip"
+        copy_witness_to(repo, zip_artifacts[0], checked_zip)
+        extracted = check_root / "extracted"
+        extracted.mkdir(mode=0o700)
+        app = extract_checked_macos_app(checked_zip, extracted)
+        run(["codesign", "--verify", "--deep", "--strict", str(app)], repo)
+        run(["spctl", "--assess", "--type", "execute", "--verbose=4", str(app)], repo)
+        run(["xcrun", "stapler", "validate", str(app)], repo)
+        description = run(["codesign", "-d", "--verbose=4", str(app)], repo)
+        signing_details = f"{description.stdout}\n{description.stderr}"
+        team = signed_team(
+            signing_details,
+            "Developer ID Application",
+            "macOS release app",
+        )
+
+        info_path = app / "Contents" / "Info.plist"
+        proxy_path = app / "Contents" / "Resources" / "tesla-http-proxy"
+        package_path = app / "Contents" / "Resources" / "TeslatlasHubService.pkg"
+        for path, label in (
+            (info_path, "Info.plist"),
+            (proxy_path, "Tesla proxy"),
+            (package_path, "service package"),
+        ):
+            regular_file(path, f"macOS release {label}")
+        try:
+            info = plistlib.loads(info_path.read_bytes())
+        except (OSError, plistlib.InvalidFileException) as exc:
+            raise GateError("macOS release Info.plist is invalid") from exc
+        subject = go_manifest.get("subject")
+        if not isinstance(subject, dict) or not isinstance(subject.get("sha256"), str):
+            raise GateError("Go component manifest subject is invalid")
+        if info.get("TeslatlasOfficialRelease") is not True:
+            raise GateError("macOS artifact is not marked as an official release")
+        if info.get("TeslatlasReleaseTeamIdentifier") != team:
+            raise GateError("macOS release Team ID metadata does not match its signature")
+        if info.get("TeslatlasUnsignedProxySHA256") != subject["sha256"]:
+            raise GateError("macOS artifact does not bind the locked unsigned proxy")
+        if info.get("TeslatlasGoEvidenceManifestSHA256") != go_manifest_digest:
+            raise GateError("macOS artifact does not bind the supplied Go evidence")
+        embedded_package_digest = sha256(package_path)
+        if info.get("TeslatlasServicePackageSHA256") != embedded_package_digest:
+            raise GateError("macOS app does not bind its embedded service package")
+        if package_artifacts and package_artifacts[0].digest != embedded_package_digest:
+            raise GateError("external service package does not match the signed app")
+
+        run(["codesign", "--verify", "--strict", str(proxy_path)], repo)
+        proxy_description = run(["codesign", "-d", "--verbose=4", str(proxy_path)], repo)
+        proxy_team = signed_team(
+            f"{proxy_description.stdout}\n{proxy_description.stderr}",
+            "Developer ID Application",
+            "macOS app Tesla proxy",
+        )
+        if proxy_team != team:
+            raise GateError("macOS app Tesla proxy Team ID does not match the app")
+
+        unsigned_proxy = stage / "go-proxy-evidence" / "tesla-http-proxy.unsigned"
+        regular_file(unsigned_proxy, "Go evidence unsigned Tesla proxy")
+        reviewed_code_digest = unsigned_code_digest(
+            repo,
+            unsigned_proxy,
+            check_root / "reviewed-proxy.stripped",
+        )
+        app_code_digest = unsigned_code_digest(
+            repo,
+            proxy_path,
+            check_root / "app-proxy.stripped",
+        )
+        if app_code_digest != reviewed_code_digest:
+            raise GateError("macOS app Tesla proxy does not match the reviewed unsigned proxy")
+
+        package_signature = run(["pkgutil", "--check-signature", str(package_path)], repo)
+        package_details = f"{package_signature.stdout}\n{package_signature.stderr}"
+        package_team_match = re.search(
+            r"Developer ID Installer:.*\(([A-Z0-9]{10})\)",
+            package_details,
+        )
+        if package_team_match is None or package_team_match.group(1) != team:
+            raise GateError("macOS service package signature does not match the app Team ID")
+        run(["spctl", "--assess", "--type", "install", "--verbose=4", str(package_path)], repo)
+        run(["xcrun", "stapler", "validate", str(package_path)], repo)
+        expanded_package = check_root / "service-package"
+        run(
+            ["pkgutil", "--expand-full", str(package_path), str(expanded_package)],
+            repo,
+        )
+        package_proxy = checked_package_payload_file(
+            expanded_package,
+            PurePosixPath(
+                "Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
+            ),
+        )
+        run(["codesign", "--verify", "--strict", str(package_proxy)], repo)
+        package_proxy_description = run(
+            ["codesign", "-d", "--verbose=4", str(package_proxy)],
+            repo,
+        )
+        package_proxy_team = signed_team(
+            f"{package_proxy_description.stdout}\n{package_proxy_description.stderr}",
+            "Developer ID Application",
+            "macOS package Tesla proxy",
+        )
+        if package_proxy_team != team:
+            raise GateError("macOS package Tesla proxy Team ID does not match the app")
+        package_code_digest = unsigned_code_digest(
+            repo,
+            package_proxy,
+            check_root / "package-proxy.stripped",
+        )
+        if package_code_digest != reviewed_code_digest:
+            raise GateError("macOS package Tesla proxy does not match the reviewed unsigned proxy")
+    finally:
+        shutil.rmtree(check_root, ignore_errors=True)
+
+
 def clean_and_tag(
     repo: Path,
     tag: str,
     artifacts: list[Path],
+    ignored_paths: list[Path],
     expected_signer: str,
 ) -> tuple[str, str, str]:
     exclusions = []
@@ -118,6 +704,19 @@ def clean_and_tag(
         )
         if tracked.returncode == 0:
             raise GateError(f"artifact must not be a tracked source file: {artifact}")
+    for ignored in ignored_paths:
+        try:
+            ignored_relative = ignored.relative_to(repo).as_posix()
+        except ValueError as exc:
+            raise GateError(f"ignored release path must be inside repo: {ignored}") from exc
+        if not ignored_relative:
+            raise GateError("repository root cannot be an ignored release path")
+        tracked = run(
+            ["git", "ls-files", "--", f":(top,literal){ignored_relative}"], repo
+        ).stdout
+        if tracked:
+            raise GateError(f"ignored release path contains tracked source files: {ignored}")
+        exclusions.append(f":(top,exclude,literal){ignored_relative}")
     status_args = ["git", "status", "--porcelain=v1", "--untracked-files=all", "--", "."] + exclusions
     status = run(status_args, repo).stdout
     if status:
@@ -157,9 +756,14 @@ def assert_candidate_unchanged(
     tag: str,
     commit: str,
     artifacts: list[Path],
+    ignored_paths: list[Path],
     stage: Path,
 ) -> None:
     exclusions = [f":(top,exclude,literal){relative(repo, path)}" for path in artifacts]
+    exclusions.extend(
+        f":(top,exclude,literal){path.relative_to(repo).as_posix()}"
+        for path in ignored_paths
+    )
     try:
         stage.relative_to(repo)
     except ValueError:
@@ -382,6 +986,8 @@ def main() -> int:
                         help="independently recorded SHA-256 of the PEM public-key trust anchor")
     parser.add_argument("--artifact", action="append", type=Path, required=True,
                         help="final artifact path; repeat for each pkg/zip/deb")
+    parser.add_argument("--go-proxy-evidence", type=Path,
+                        help="evidence generated for the unsigned Tesla proxy in macOS artifacts")
     args = parser.parse_args()
     if not TAG_RE.fullmatch(args.tag):
         raise GateError("tag contains unsafe filename characters")
@@ -412,18 +1018,100 @@ def main() -> int:
         artifacts.append(path)
     if len({path for path in artifacts}) != len(artifacts):
         raise GateError("duplicate artifact path")
-    if any(requires_external_proxy_notice(path) for path in artifacts):
+    has_macos_artifact = any(requires_external_proxy_notice(path) for path in artifacts)
+    if has_macos_artifact and any(
+        shutil.which(command) is None
+        for command in ("codesign", "pkgutil", "spctl", "xcrun")
+    ):
         raise GateError(
-            "macOS artifact includes Tesla's external vehicle-command proxy; "
-            "complete Go dependency notices/source capture are not implemented"
+            "codesign, pkgutil, spctl, and xcrun are required for macOS release evidence"
         )
+    if has_macos_artifact and args.go_proxy_evidence is None:
+        raise GateError("macOS artifacts require --go-proxy-evidence")
+    go_evidence_dir: Path | None = None
+    go_evidence_witnesses: list[ArtifactWitness] = []
+    if args.go_proxy_evidence is not None:
+        go_evidence_dir = args.go_proxy_evidence.resolve()
+        go_evidence_witnesses = capture_go_evidence(repo, go_evidence_dir)
+    artifact_witnesses = [capture_artifact(repo, path) for path in artifacts]
+    ignored_paths: list[Path] = []
+    release_bundle_path: Path | None = None
+    release_receipt_witnesses: list[ArtifactWitness] = []
+    if has_macos_artifact:
+        assert go_evidence_dir is not None
+        release_bundle = capture_macos_release_bundle(
+            repo,
+            artifact_witnesses,
+            go_evidence_dir,
+            go_evidence_witnesses,
+        )
+        if release_bundle is not None:
+            release_bundle_path, release_receipt_witnesses = release_bundle
+            ignored_paths.extend(
+                witness.path
+                for witness in [
+                    *go_evidence_witnesses,
+                    *release_receipt_witnesses,
+                ]
+            )
+    if go_evidence_dir is not None and release_bundle_path is None:
+        try:
+            go_evidence_dir.relative_to(repo)
+        except ValueError:
+            pass
+        else:
+            ignored_paths.extend(witness.path for witness in go_evidence_witnesses)
     commit, created, tag_signer = clean_and_tag(
-        repo, args.tag, artifacts, args.tag_signer_fingerprint
+        repo, args.tag, artifacts, ignored_paths, args.tag_signer_fingerprint
     )
 
     stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
     try:
-        artifact_witnesses = [capture_artifact(repo, path) for path in artifacts]
+        go_manifest: dict | None = None
+        if go_evidence_witnesses:
+            go_output = stage / "go-proxy-evidence"
+            go_output.mkdir(mode=0o700)
+            by_name = {witness.path.name: witness for witness in go_evidence_witnesses}
+            for name in GO_EVIDENCE_NAMES:
+                copy_witness_to(repo, by_name[name], go_output / name)
+            helper = repo / "scripts" / "go-proxy-evidence.py"
+            run(
+                [
+                    sys.executable,
+                    str(helper),
+                    "--repo",
+                    str(repo),
+                    "--verify-dir",
+                    str(go_output),
+                ],
+                repo,
+            )
+            try:
+                go_manifest = json.loads(
+                    (go_output / "go-component-manifest.json").read_text()
+                )
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise GateError("staged Go component manifest is unreadable") from exc
+        if release_receipt_witnesses:
+            receipt_output = stage / "macos-release-receipts"
+            log_output = receipt_output / "notary-logs"
+            log_output.mkdir(parents=True, mode=0o700)
+            for witness in release_receipt_witnesses:
+                destination = (
+                    log_output / witness.path.name
+                    if witness.path.parent.name == "notary-logs"
+                    else receipt_output / witness.path.name
+                )
+                copy_witness_to(repo, witness, destination)
+        if has_macos_artifact:
+            assert go_manifest is not None
+            validate_macos_artifacts(
+                repo,
+                artifact_witnesses,
+                go_manifest,
+                sha256(stage / "go-proxy-evidence/go-component-manifest.json"),
+                stage,
+            )
         source_name = f"teslatlas-hub-{args.tag}-source.tar.gz"
         source_path = stage / source_name
         archive(repo, commit, args.tag, source_path)
@@ -442,10 +1130,25 @@ def main() -> int:
         ]
         generated_names = [source_name, "cargo-metadata.json", "sbom.spdx.json",
                            "dependency-inventory.json", "THIRD_PARTY_NOTICES.generated.md"]
+        if go_evidence_witnesses:
+            for name in GO_EVIDENCE_NAMES:
+                generated_names.append(f"go-proxy-evidence/{name}")
+        if release_receipt_witnesses:
+            generated_names.append("macos-release-receipts/SHA256SUMS")
+            generated_names.extend(
+                f"macos-release-receipts/notary-logs/{witness.path.name}"
+                for witness in release_receipt_witnesses
+                if witness.path.parent.name == "notary-logs"
+            )
         manifest = {"schema": SCHEMA, "tag": args.tag, "commit": commit,
                     "artifacts": artifact_records,
                     "generated": [{"path": f"{relative(repo, output)}/{name}", "sha256": sha256(stage / name)}
                                    for name in generated_names]}
+        if go_manifest is not None:
+            manifest["go_proxy_evidence"] = {
+                "subject": go_manifest["subject"],
+                "manifest_sha256": sha256(stage / "go-proxy-evidence/go-component-manifest.json"),
+            }
         write_json(stage / "artifact-manifest.json", manifest)
 
         public_key = stage / "provenance-public-key.pem"
@@ -463,6 +1166,11 @@ def main() -> int:
                       "dependency_inventory_sha256": sha256(stage / "dependency-inventory.json"),
                       "notices_sha256": sha256(stage / "THIRD_PARTY_NOTICES.generated.md"),
                       "signing": {"algorithm": "openssl-sha256", "public_key_sha256": public_key_digest}}
+        if go_manifest is not None:
+            provenance["go_proxy_evidence"] = {
+                "subject": go_manifest["subject"],
+                "manifest_sha256": sha256(stage / "go-proxy-evidence/go-component-manifest.json"),
+            }
         provenance_path = stage / "provenance.json"
         write_json(provenance_path, provenance)
         signature = stage / "provenance.sig"
@@ -473,7 +1181,7 @@ def main() -> int:
 
         checksum_records = [(witness.relative_path, witness.digest) for witness in artifact_witnesses]
         checksum_records.extend(
-            (relative(repo, output / path.name), sha256(path))
+            (relative(repo, output / path.relative_to(stage)), sha256(path))
             for path in [
                 stage / name
                 for name in generated_names
@@ -489,9 +1197,23 @@ def main() -> int:
             f"{digest}  {path}" for path, digest in sorted(checksum_records)
         ]
         (stage / "SHA256SUMS").write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
-        assert_candidate_unchanged(repo, args.tag, commit, artifacts, stage)
+        assert_candidate_unchanged(
+            repo, args.tag, commit, artifacts, ignored_paths, stage
+        )
         for witness in artifact_witnesses:
             verify_artifact_unchanged(repo, witness)
+        for witness in go_evidence_witnesses:
+            verify_go_evidence_unchanged(repo, witness)
+        for witness in release_receipt_witnesses:
+            verify_artifact_unchanged(repo, witness)
+        if release_bundle_path is not None:
+            assert go_evidence_dir is not None
+            verify_macos_release_bundle_structure(
+                release_bundle_path,
+                artifact_witnesses,
+                go_evidence_dir,
+                release_receipt_witnesses,
+            )
         publish_evidence_directory(stage, output)
     except Exception:
         shutil.rmtree(stage, ignore_errors=True)

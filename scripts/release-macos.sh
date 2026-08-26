@@ -9,6 +9,7 @@ usage() {
 Usage: scripts/release-macos.sh \
   --app PATH \
   --service-package PATH \
+  --go-proxy-evidence PATH \
   --app-identity "Developer ID Application: Name (TEAMID)" \
   --installer-identity "Developer ID Installer: Name (TEAMID)" \
   --notary-profile PROFILE-TEAMID \
@@ -26,6 +27,7 @@ die() {
 
 app=
 service_package=
+go_proxy_evidence=
 app_identity=
 installer_identity=
 notary_profile=
@@ -41,6 +43,11 @@ while [ "$#" -gt 0 ]; do
         --service-package)
             [ "$#" -ge 2 ] || die "--service-package requires a path"
             service_package=$2
+            shift 2
+            ;;
+        --go-proxy-evidence)
+            [ "$#" -ge 2 ] || die "--go-proxy-evidence requires a path"
+            go_proxy_evidence=$2
             shift 2
             ;;
         --app-identity)
@@ -77,19 +84,22 @@ done
 [ "$(uname -s)" = Darwin ] || die "macOS is required"
 [ -n "$app" ] || die "--app is required"
 [ -n "$service_package" ] || die "--service-package is required"
+[ -n "$go_proxy_evidence" ] || die "--go-proxy-evidence is required"
 [ -n "$app_identity" ] || die "--app-identity is required"
 [ -n "$installer_identity" ] || die "--installer-identity is required"
 [ -n "$notary_profile" ] || die "--notary-profile is required"
 [ -n "$output_arg" ] || die "--output-dir is required"
 
 for tool in awk basename codesign dirname ditto find grep install mkdir mktemp mv \
-    pkgbuild pkgutil plutil productsign security sed shasum xcrun; do
+    pkgbuild pkgutil plutil productsign python3 security sed shasum sort xcrun; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 
 [ -d "$app" ] && [ ! -L "$app" ] || die "app must be a real directory"
 [ -f "$service_package" ] && [ ! -L "$service_package" ] \
     || die "service package must be a regular file"
+[ -d "$go_proxy_evidence" ] && [ ! -L "$go_proxy_evidence" ] \
+    || die "Go proxy evidence must be a real directory"
 case "$(basename "$app")" in
     *.app) ;;
     *) die "app path must end in .app" ;;
@@ -100,10 +110,29 @@ embedded_package="$app/Contents/Resources/TeslatlasHubService.pkg"
 embedded_hub="$app/Contents/Resources/teslatlas-hub"
 [ -f "$embedded_hub" ] && [ ! -L "$embedded_hub" ] \
     || die "app is missing Contents/Resources/teslatlas-hub"
+embedded_proxy="$app/Contents/Resources/tesla-http-proxy"
+[ -f "$embedded_proxy" ] && [ ! -L "$embedded_proxy" ] \
+    || die "app is missing Contents/Resources/tesla-http-proxy"
 app_info="$app/Contents/Info.plist"
 [ -f "$app_info" ] && [ ! -L "$app_info" ] \
     || die "app is missing Contents/Info.plist"
 plutil -lint "$app_info" >/dev/null || die "app Info.plist is invalid"
+
+script_root=$(CDPATH='' cd "$(dirname "$0")/.." && pwd) \
+    || die "cannot resolve repository root"
+go_evidence_helper="$script_root/scripts/go-proxy-evidence.py"
+[ -f "$go_evidence_helper" ] && [ ! -L "$go_evidence_helper" ] \
+    || die "Go proxy evidence verifier is missing"
+python3 "$go_evidence_helper" --repo "$script_root" \
+    --verify-dir "$go_proxy_evidence" >/dev/null \
+    || die "Go proxy evidence is invalid"
+evidence_proxy_sha256=$(python3 -c \
+    'import json,sys; print(json.load(open(sys.argv[1]))["subject"]["sha256"])' \
+    "$go_proxy_evidence/go-component-manifest.json") \
+    || die "cannot read Go proxy evidence subject"
+embedded_proxy_sha256=$(shasum -a 256 "$embedded_proxy" | awk '{ print $1 }')
+[ "$evidence_proxy_sha256" = "$embedded_proxy_sha256" ] \
+    || die "Go proxy evidence does not match the unsigned app proxy"
 
 identity_team() {
     value=$1
@@ -161,9 +190,37 @@ mkdir -p "$release" "$work" "$logs"
 app_name=$(basename "$app")
 release_app="$release/$app_name"
 ditto --noextattr --norsrc "$app" "$release_app"
+release_app_proxy="$release_app/Contents/Resources/tesla-http-proxy"
+[ -f "$release_app_proxy" ] && [ ! -L "$release_app_proxy" ] \
+    || die "copied release app is missing tesla-http-proxy"
+release_app_proxy_sha256=$(shasum -a 256 "$release_app_proxy" | awk '{ print $1 }')
+[ "$release_app_proxy_sha256" = "$embedded_proxy_sha256" ] \
+    || die "app proxy changed while staging the release"
+[ "$release_app_proxy_sha256" = "$evidence_proxy_sha256" ] \
+    || die "copied app proxy does not match Go evidence"
+release_go_evidence="$release/go-proxy-evidence"
+ditto --noextattr --norsrc "$go_proxy_evidence" "$release_go_evidence"
+python3 "$go_evidence_helper" --repo "$script_root" \
+    --verify-dir "$release_go_evidence" >/dev/null \
+    || die "copied Go proxy evidence is invalid"
+copied_evidence_proxy_sha256=$(python3 -c \
+    'import json,sys; print(json.load(open(sys.argv[1]))["subject"]["sha256"])' \
+    "$release_go_evidence/go-component-manifest.json") \
+    || die "cannot read copied Go proxy evidence subject"
+[ "$copied_evidence_proxy_sha256" = "$embedded_proxy_sha256" ] \
+    || die "copied Go proxy evidence does not match the unsigned app proxy"
+evidence_proxy_sha256=$copied_evidence_proxy_sha256
+go_component_manifest_sha256=$(shasum -a 256 \
+    "$release_go_evidence/go-component-manifest.json" | awk '{ print $1 }')
 
 expanded="$work/service-expanded"
 pkgutil --expand-full "$service_package" "$expanded"
+expanded_proxy="$expanded/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
+[ -f "$expanded_proxy" ] && [ ! -L "$expanded_proxy" ] \
+    || die "expanded package is missing tesla-http-proxy"
+expanded_proxy_sha256=$(shasum -a 256 "$expanded_proxy" | awk '{ print $1 }')
+[ "$expanded_proxy_sha256" = "$evidence_proxy_sha256" ] \
+    || die "Go proxy evidence does not match the unsigned package proxy"
 
 sign_named_binaries() {
     root=$1
@@ -247,9 +304,13 @@ release_info="$release_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Delete :TeslatlasServicePackageSHA256' "$release_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c 'Delete :TeslatlasReleaseTeamIdentifier' "$release_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c 'Delete :TeslatlasOfficialRelease' "$release_info" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c 'Delete :TeslatlasUnsignedProxySHA256' "$release_info" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c 'Delete :TeslatlasGoEvidenceManifestSHA256' "$release_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c "Add :TeslatlasServicePackageSHA256 string $service_package_sha256" "$release_info"
 /usr/libexec/PlistBuddy -c "Add :TeslatlasReleaseTeamIdentifier string $app_team" "$release_info"
 /usr/libexec/PlistBuddy -c 'Add :TeslatlasOfficialRelease bool true' "$release_info"
+/usr/libexec/PlistBuddy -c "Add :TeslatlasUnsignedProxySHA256 string $evidence_proxy_sha256" "$release_info"
+/usr/libexec/PlistBuddy -c "Add :TeslatlasGoEvidenceManifestSHA256 string $go_component_manifest_sha256" "$release_info"
 plutil -lint "$release_info" >/dev/null || die "release trust metadata is invalid"
 sign_named_binaries "$release_resources" 1
 codesign --force --sign "$app_identity" \
@@ -265,10 +326,19 @@ codesign --verify --deep --strict --verbose=2 "$release_app"
 
 final_zip="$release/${app_name%.app}.zip"
 ditto -c -k --sequesterRsrc --keepParent "$release_app" "$final_zip"
+find "$release_app" -depth -delete \
+    || die "cannot remove redundant unpacked release app"
+[ ! -e "$release_app" ] && [ ! -L "$release_app" ] \
+    || die "redundant unpacked release app remains"
 (
     cd "$release"
-    shasum -a 256 "$(basename "$signed_package")" \
-        "$(basename "$final_zip")" >SHA256SUMS
+    {
+        shasum -a 256 "$(basename "$signed_package")" \
+            "$(basename "$final_zip")"
+        find go-proxy-evidence -type f -print | LC_ALL=C sort | while IFS= read -r evidence_file; do
+            shasum -a 256 "$evidence_file"
+        done
+    } >SHA256SUMS
 )
 
 mv "$release" "$output"

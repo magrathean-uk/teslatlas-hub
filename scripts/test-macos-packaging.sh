@@ -160,8 +160,8 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "proxy build does not validate the Tesla module"
 /usr/bin/grep -Fq 'GOARCH=arm64' "$PROXY_BUILD" \
     || fail "proxy build is not arm64-only"
-/usr/bin/grep -Fq 'MACOSX_DEPLOYMENT_TARGET=12.0' "$PROXY_BUILD" \
-    || fail "proxy build has no macOS 12 deployment target"
+/usr/bin/grep -Fq 'MACOSX_DEPLOYMENT_TARGET=13.0' "$PROXY_BUILD" \
+    || fail "proxy build has no macOS 13 deployment target"
 
 /usr/bin/grep -q 'delete_data=0' "$UNINSTALL" \
     || fail "uninstall must preserve data by default"
@@ -257,11 +257,11 @@ macho_helper="$TEST_ROOT/macho-helper.sh"
 # shellcheck source=/dev/null
 . "$macho_helper"
 /usr/bin/printf '%s\n' 'int main(void) { return 0; }' \
-    | /usr/bin/clang -arch arm64 -mmacosx-version-min=12.0 -x c - -o "$TEST_ROOT/executable"
+    | /usr/bin/clang -arch arm64 -mmacosx-version-min=13.0 -x c - -o "$TEST_ROOT/executable"
 /usr/bin/printf '%s\n' 'int sample(void) { return 0; }' \
-    | /usr/bin/clang -arch arm64 -mmacosx-version-min=12.0 -dynamiclib -x c - -o "$TEST_ROOT/library.dylib"
+    | /usr/bin/clang -arch arm64 -mmacosx-version-min=13.0 -dynamiclib -x c - -o "$TEST_ROOT/library.dylib"
 /usr/bin/printf '%s\n' 'int sample(void) { return 0; }' \
-    | /usr/bin/clang -arch arm64 -mmacosx-version-min=12.0 -c -x c - -o "$TEST_ROOT/member.o"
+    | /usr/bin/clang -arch arm64 -mmacosx-version-min=13.0 -c -x c - -o "$TEST_ROOT/member.o"
 /usr/bin/ar rcs "$TEST_ROOT/library.a" "$TEST_ROOT/member.o"
 /bin/chmod +x "$TEST_ROOT/library.dylib" "$TEST_ROOT/library.a"
 is_executable_macho "$TEST_ROOT/executable" || fail "Mach-O executable was rejected"

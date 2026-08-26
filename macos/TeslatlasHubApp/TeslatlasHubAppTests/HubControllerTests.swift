@@ -63,6 +63,21 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(LaunchctlServiceController.commandPlan(action: .stop, loaded: false, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist"), [])
     }
 
+    func testLaunchctlOnlyClassifiesTheExactMissingServiceFailureAsUnloaded() {
+        let uid = getuid()
+        let service = "gui/\(uid)/com.teslatlas.hub"
+        let expected = "Bad request.\nCould not find service \"com.teslatlas.hub\" in domain for user gui: \(uid)\n"
+        XCTAssertTrue(LaunchctlServiceController.isKnownUnloadedPrintFailure(
+            status: 113, output: expected, service: service
+        ))
+        XCTAssertFalse(LaunchctlServiceController.isKnownUnloadedPrintFailure(
+            status: 1, output: expected, service: service
+        ))
+        XCTAssertFalse(LaunchctlServiceController.isKnownUnloadedPrintFailure(
+            status: 113, output: "database not found: error 113", service: service
+        ))
+    }
+
     func testRefreshUsesInstalledBinaryAndReportsVersionMismatch() {
         let embedded = RecordingCommandRunner(result: .failure(HubActionError.commandFailed("unused")))
         let installed = RecordingCommandRunner(result: .success("""

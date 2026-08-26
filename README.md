@@ -23,7 +23,7 @@ The paid Teslatlas application is a separate product and is not part of this rep
 
 The current `v1.0.0-alpha.1` implementation includes:
 
-- macOS 12 or later on Apple silicon, and Debian 13 amd64 or ARM64;
+- macOS 13 or later on Apple silicon, and Debian 13 amd64 or ARM64;
 - independent collection for every configured vehicle on an account;
 - legacy Owner API authentication with native Tesla OAuth onboarding, polling,
   and Tesla streaming;
@@ -68,20 +68,28 @@ Tesla, vehicle model names, TeslaMate and all third-party marks belong to their 
 
 ## Build the current macOS alpha
 
-Requirements for the current tagged alpha are Rust 1.98, Xcode 27 and XcodeGen.
+Requirements for the current tagged alpha are Rust 1.98, Go 1.27.0 exactly,
+Xcode 27 and XcodeGen.
 
 ```sh
 cargo build --locked --release
 scripts/build-macos-app.sh
 ```
 
-The app is written to `dist/Teslatlas Hub.app`. Current alpha builds are ad-hoc signed and are not notarised.
-Open it and follow the five-step setup. A new installation can use Fleet API
-(recommended; see [Fleet API setup](docs/FLEET_SETUP.md)) or the legacy
-TeslaMate-style login. Fleet credentials and legacy tokens enter the Hub over
-stdin, never process arguments or temporary files. Once connected, the
-dashboard hides **Connect Tesla** and exposes climate, wake, lock, unlock,
-flash, and honk controls; charging controls are deliberately absent.
+The app is written to `dist/Teslatlas Hub.app`. This local build is ad-hoc
+signed and is not notarised. It can be used for UI and command-line development,
+but its privileged embedded installer and updater are deliberately disabled.
+They require the package digest, Team ID, Developer ID signatures and
+notarisation metadata injected only by `scripts/release-macos.sh`. Use a signed,
+notarised release for app-driven setup or service installation; the local app
+will show an explicit trust error instead of elevating its unsigned package.
+
+A signed release can use Fleet API (recommended; see
+[Fleet API setup](docs/FLEET_SETUP.md)) or the legacy TeslaMate-style login.
+Fleet credentials and legacy tokens enter the Hub over stdin, never process
+arguments or temporary files. Once connected, the dashboard hides **Connect
+Tesla** and exposes climate, wake, lock, unlock, flash, and honk controls;
+charging controls are deliberately absent.
 
 The migration route accepts exact TeslaMate 4.1.1 only. It checks compatibility
 before copying one read-only PostgreSQL snapshot, installs Hub stopped, runs
@@ -281,9 +289,10 @@ unbounded provider-response archive.
 ## Backup and credential recovery
 
 The normal backup is data-only. It contains the catalogue, encrypted token row,
-pairing state, and immutable packs. It deliberately excludes the TeslaMate
-decryption key, Hub cursor-signing key, TLS identity, configuration, and service
-state:
+and immutable packs. Pairing invitations and device bearer authority are
+removed, so restored devices must pair again. The backup deliberately excludes
+the TeslaMate decryption key, Hub cursor-signing key, TLS identity,
+configuration, and service state:
 
 ```sh
 teslatlas-hub --config /absolute/path/config.toml backup \

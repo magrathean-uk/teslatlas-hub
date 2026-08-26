@@ -1319,9 +1319,11 @@ fn validate_private_descriptor(
         };
     }
     if expected_type == FileType::RegularFile && stat.st_nlink != 1 {
+        #[allow(clippy::useless_conversion)]
+        let actual = u64::from(stat.st_nlink);
         return Err(TeslaMateStageError::UnexpectedLinkCount {
             path: path.to_path_buf(),
-            actual: u64::from(stat.st_nlink),
+            actual,
         });
     }
     let expected_uid = geteuid().as_raw();

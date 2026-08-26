@@ -2598,8 +2598,8 @@ mod tests {
     }
 
     #[test]
-    fn historical_restore_rejects_schema_outside_52_through_55() {
-        for schema in [51, 56] {
+    fn historical_restore_rejects_schema_outside_the_current_range() {
+        for schema in [MIN_RESTORABLE_SCHEMA_VERSION - 1, SCHEMA_VERSION + 1] {
             let (temporary, store) = create_fixture();
             let backup = temporary.path().join(format!("schema-{schema}-backup"));
             create_data_backup(&store, &backup).expect("create backup fixture");

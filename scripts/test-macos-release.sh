@@ -23,10 +23,26 @@ mkdir -p "$BIN" "$INPUT/Teslatlas Hub.app/Contents/MacOS" \
 /usr/bin/plutil -create xml1 "$INPUT/Teslatlas Hub.app/Contents/Info.plist"
 : >"$INPUT/Teslatlas Hub.app/Contents/MacOS/Teslatlas Hub"
 : >"$INPUT/Teslatlas Hub.app/Contents/Resources/teslatlas-hub"
-: >"$INPUT/Teslatlas Hub.app/Contents/Resources/tesla-http-proxy"
 : >"$INPUT/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg"
 : >"$INPUT/service.pkg"
 : >"$LOG"
+
+GO_EVIDENCE="$INPUT/go-proxy-evidence"
+TEST_PROXY="$INPUT/Teslatlas Hub.app/Contents/Resources/tesla-http-proxy"
+if [ -n "${TESLATLAS_TEST_GO_PROXY:-}" ] || [ -n "${TESLATLAS_TEST_GO_EVIDENCE:-}" ]; then
+    [ -n "${TESLATLAS_TEST_GO_PROXY:-}" ] \
+        && [ -n "${TESLATLAS_TEST_GO_EVIDENCE:-}" ] \
+        || fail "both TESLATLAS_TEST_GO_PROXY and TESLATLAS_TEST_GO_EVIDENCE are required"
+    cp "$TESLATLAS_TEST_GO_PROXY" "$TEST_PROXY"
+    cp -R "$TESLATLAS_TEST_GO_EVIDENCE" "$GO_EVIDENCE"
+else
+    "$ROOT/scripts/build-tesla-command-proxy.sh" --output "$TEST_PROXY" >/dev/null
+    python3 "$ROOT/scripts/go-proxy-evidence.py" --repo "$ROOT" \
+        --proxy-binary "$TEST_PROXY" --output-dir "$GO_EVIDENCE" >/dev/null
+fi
+python3 "$ROOT/scripts/go-proxy-evidence.py" --repo "$ROOT" \
+    --verify-dir "$GO_EVIDENCE" >/dev/null
+export RELEASE_TEST_PROXY="$TEST_PROXY"
 
 cat >"$BIN/uname" <<'EOF'
 #!/bin/sh
@@ -57,8 +73,13 @@ for arg in "$@"; do
 done
 destination=$previous
 case " $* " in
-    *' -c '*) : >"$destination" ;;
-    *) cp -R "$source" "$destination" ;;
+    *' -c '*) exec /usr/bin/ditto "$@" ;;
+    *)
+        cp -R "$source" "$destination"
+        if [ "${RELEASE_MUTATE_COPIED_PROXY:-0}" = 1 ]; then
+            printf '%s\n' changed >>"$destination/Contents/Resources/tesla-http-proxy"
+        fi
+        ;;
 esac
 EOF
 
@@ -70,7 +91,8 @@ case "$1" in
         mkdir -p "$3/Payload/Library/Application Support/Teslatlas Hub/bin"
         mkdir -p "$3/Scripts"
         : >"$3/Payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub"
-        : >"$3/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
+        cp "$RELEASE_TEST_PROXY" \
+            "$3/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
         cat >"$3/PackageInfo" <<'PACKAGE_INFO'
 <pkg-info identifier="com.teslatlas.hub.service" version="1.0.0a1" install-location="/"/>
 PACKAGE_INFO
@@ -135,6 +157,7 @@ run_release() {
     "$SCRIPT" \
         --app "$INPUT/Teslatlas Hub.app" \
         --service-package "$INPUT/service.pkg" \
+        --go-proxy-evidence "$GO_EVIDENCE" \
         --app-identity "$APP_ID" \
         --installer-identity "$1" \
         --notary-profile "$2" \
@@ -157,14 +180,53 @@ fi
 [ ! -e "$bad_profile_output" ] || fail "profile mismatch created output"
 [ ! -s "$LOG" ] || fail "profile mismatch invoked external tools"
 
+WRONG_GO_EVIDENCE="$INPUT/wrong-go-proxy-evidence"
+cp -R "$GO_EVIDENCE" "$WRONG_GO_EVIDENCE"
+python3 - "$WRONG_GO_EVIDENCE/go-component-manifest.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+manifest = json.loads(path.read_text())
+manifest["subject"]["sha256"] = "0" * 64
+path.write_text(json.dumps(manifest, sort_keys=True) + "\n")
+PY
+original_go_evidence=$GO_EVIDENCE
+GO_EVIDENCE=$WRONG_GO_EVIDENCE
+wrong_go_output="$TMP/wrong-go-evidence"
+if run_release "$PKG_ID" teslatlas-hub-notary-4AA2EMZ2HA \
+    "$wrong_go_output" >"$TMP/wrong-go.out" 2>&1; then
+    fail "Go evidence for a different proxy was accepted"
+fi
+GO_EVIDENCE=$original_go_evidence
+grep -Fq 'subject does not match the locked proxy' "$TMP/wrong-go.out" \
+    || fail "wrong Go evidence did not fail for the expected reason"
+[ ! -e "$wrong_go_output" ] || fail "wrong Go evidence created output"
+[ ! -s "$LOG" ] || fail "wrong Go evidence invoked signing or notary tools"
+
+staged_swap_output="$TMP/staged-proxy-swap"
+if RELEASE_MUTATE_COPIED_PROXY=1 run_release "$PKG_ID" \
+    teslatlas-hub-notary-4AA2EMZ2HA "$staged_swap_output" \
+    >"$TMP/staged-proxy-swap.out" 2>&1; then
+    fail "proxy changed while copying the release app was accepted"
+fi
+unset RELEASE_MUTATE_COPIED_PROXY
+grep -Fq 'app proxy changed while staging the release' "$TMP/staged-proxy-swap.out" \
+    || fail "staged proxy replacement did not fail for the expected reason"
+[ ! -e "$staged_swap_output" ] || fail "staged proxy replacement created output"
+: >"$LOG"
+
 good_output="$TMP/release"
 run_release "$PKG_ID" teslatlas-hub-notary-4AA2EMZ2HA "$good_output" >/dev/null
 [ -z "$(find "$TMP" -maxdepth 1 -name '.teslatlas-macos-release.*' -print -quit)" ] \
     || fail "successful release retained staging data"
-[ -d "$good_output/Teslatlas Hub.app" ] || fail "release app is missing"
+[ ! -e "$good_output/Teslatlas Hub.app" ] || fail "redundant release app was retained"
 [ -f "$good_output/TeslatlasHubService.pkg" ] || fail "release pkg is missing"
 [ -f "$good_output/Teslatlas Hub.zip" ] || fail "final zip is missing"
 [ -f "$good_output/SHA256SUMS" ] || fail "checksums are missing"
+[ -f "$good_output/go-proxy-evidence/go-component-manifest.json" ] \
+    || fail "Go proxy evidence is missing"
 [ -f "$good_output/notary-logs/service-package-submit.json" ] \
     || fail "package submit log is missing"
 [ -f "$good_output/notary-logs/service-package-log.json" ] \
@@ -173,8 +235,11 @@ run_release "$PKG_ID" teslatlas-hub-notary-4AA2EMZ2HA "$good_output" >/dev/null
     || fail "app submit log is missing"
 [ -f "$good_output/notary-logs/app-log.json" ] \
     || fail "app detail log is missing"
-release_info="$good_output/Teslatlas Hub.app/Contents/Info.plist"
-embedded_package="$good_output/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg"
+extracted_release="$TMP/extracted-release"
+mkdir "$extracted_release"
+/usr/bin/ditto -x -k "$good_output/Teslatlas Hub.zip" "$extracted_release"
+release_info="$extracted_release/Teslatlas Hub.app/Contents/Info.plist"
+embedded_package="$extracted_release/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg"
 embedded_digest=$(shasum -a 256 "$embedded_package" | awk '{ print $1 }')
 [ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasServicePackageSHA256' "$release_info")" = "$embedded_digest" ] \
     || fail "signed package digest was not bound into the app"
@@ -182,6 +247,12 @@ embedded_digest=$(shasum -a 256 "$embedded_package" | awk '{ print $1 }')
     || fail "release Team ID was not bound into the app"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasOfficialRelease' "$release_info")" = true ] \
     || fail "official release marker is missing"
+expected_proxy_sha=$(shasum -a 256 "$INPUT/Teslatlas Hub.app/Contents/Resources/tesla-http-proxy" | awk '{ print $1 }')
+[ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasUnsignedProxySHA256' "$release_info")" = "$expected_proxy_sha" ] \
+    || fail "unsigned proxy digest is not bound into the app"
+expected_evidence_sha=$(shasum -a 256 "$good_output/go-proxy-evidence/go-component-manifest.json" | awk '{ print $1 }')
+[ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasGoEvidenceManifestSHA256' "$release_info")" = "$expected_evidence_sha" ] \
+    || fail "Go evidence manifest is not bound into the app"
 
 line_number() {
     grep -n "$1" "$LOG" | head -1 | cut -d: -f1

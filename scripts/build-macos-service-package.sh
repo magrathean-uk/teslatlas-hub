@@ -13,7 +13,7 @@ usage() {
     cat <<'EOF'
 Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --version VERSION [--output PATH]
 
-Builds an unsigned local macOS 12+ arm64 installer package. The package never
+Builds an unsigned local macOS 13+ arm64 installer package. The package never
 installs or starts the Hub during its build.
 EOF
 }
@@ -99,7 +99,7 @@ PACKAGE_SCRIPTS="$ROOT/packaging/macos-service/scripts"
 /usr/bin/plutil -lint "$TEMPLATE" >/dev/null || die "LaunchAgent template is invalid"
 
 if [ -z "$output" ]; then
-    output="$(pwd)/teslatlas-hub-${version}-macos12-arm64.pkg"
+    output="$(pwd)/teslatlas-hub-${version}-macos13-arm64.pkg"
 fi
 output_directory=$(CDPATH='' cd "$(dirname "$output")" && pwd)
 output="$output_directory/$(basename "$output")"
@@ -171,8 +171,8 @@ case "$minimum_macos" in
     ''|*[!0-9.]*) die "cannot read binary macOS deployment target" ;;
 esac
 minimum_major=${minimum_macos%%.*}
-[ "$minimum_major" -le 12 ] \
-    || die "binary requires macOS $minimum_macos; macOS 12 compatibility is required"
+[ "$minimum_major" -le 13 ] \
+    || die "binary requires macOS $minimum_macos; macOS 13 compatibility is required"
 proxy_minimum_macos=$(
     /usr/bin/otool -l "$payload_proxy_binary" \
         | /usr/bin/awk '
@@ -185,8 +185,8 @@ case "$proxy_minimum_macos" in
     ''|*[!0-9.]*) die "cannot read proxy macOS deployment target" ;;
 esac
 proxy_minimum_major=${proxy_minimum_macos%%.*}
-[ "$proxy_minimum_major" -le 12 ] \
-    || die "proxy requires macOS $proxy_minimum_macos; macOS 12 compatibility is required"
+[ "$proxy_minimum_major" -le 13 ] \
+    || die "proxy requires macOS $proxy_minimum_macos; macOS 13 compatibility is required"
 
 /usr/bin/install -m 0644 "$TEMPLATE" "$scripts/com.teslatlas.hub.plist.in"
 /usr/bin/install -m 0644 "$PACKAGE_SCRIPTS/common.sh" "$scripts/common.sh"

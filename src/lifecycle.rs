@@ -45,6 +45,11 @@ pub struct LifecycleSample {
 pub struct OpenSessionState {
     pub version: u32,
     pub last_observation_id: i64,
+    /// Durable proof that imported/materialised entity maxima have already
+    /// seeded the live ID cursors. Older state blobs decode as `false` and do
+    /// one indexed seed pass on their next collection.
+    #[serde(default)]
+    pub id_cursors_seeded: bool,
     #[serde(default)]
     pub last_observed_at_ms: Option<i64>,
     #[serde(default)]
@@ -193,39 +198,24 @@ pub fn seed_imported_open_session_state(
         state_source_row_id: session.state.as_ref().map(|row| row.id),
         standalone_position_count: session.standalone_positions.len() as u64,
     };
-    if state.imported_open.as_ref() == Some(&refs) {
-        return Ok(state);
-    }
-    state.imported_open = Some(refs);
-    state.imported_drive_watermark_ms = session
-        .watermarks
-        .drives
-        .max_timestamp_ms
-        .max(session.watermarks.positions.max_timestamp_ms);
-    state.imported_charge_watermark_ms = session
-        .watermarks
-        .charging_processes
-        .max_timestamp_ms
-        .max(session.watermarks.charges.max_timestamp_ms);
-    state.imported_state_watermark_ms = session.watermarks.states.max_timestamp_ms;
-    state.open_drive = session
-        .drive
-        .as_ref()
-        .map(|row| open_drive_from_source(row, &session.drive_positions));
-    state.open_charge = session
-        .charge
-        .as_ref()
-        .map(|row| open_charge_from_source(row, &session.charge_samples));
-    state.open_state = session.state.as_ref().map(open_state_from_source);
-    state.phase = if state.open_drive.is_some() {
-        VehiclePhase::Driving
-    } else if state.open_charge.is_some() {
-        VehiclePhase::Charging
-    } else if let Some(open_state) = state.open_state.as_ref() {
-        phase_from_vehicle_state(&open_state.state)
-    } else {
-        VehiclePhase::Online
-    };
+    let same_open_refs = state.imported_open.as_ref() == Some(&refs);
+    state.imported_drive_watermark_ms = state.imported_drive_watermark_ms.max(
+        session
+            .watermarks
+            .drives
+            .max_timestamp_ms
+            .max(session.watermarks.positions.max_timestamp_ms),
+    );
+    state.imported_charge_watermark_ms = state.imported_charge_watermark_ms.max(
+        session
+            .watermarks
+            .charging_processes
+            .max_timestamp_ms
+            .max(session.watermarks.charges.max_timestamp_ms),
+    );
+    state.imported_state_watermark_ms = state
+        .imported_state_watermark_ms
+        .max(session.watermarks.states.max_timestamp_ms);
     let max_drive = session
         .watermarks
         .drives
@@ -274,7 +264,32 @@ pub fn seed_imported_open_session_state(
             .unwrap_or(0)
             .saturating_add(1),
     );
-    state.last_observed_at_ms = session_max_timestamp(session);
+    state.id_cursors_seeded = true;
+    state.last_observed_at_ms = state
+        .last_observed_at_ms
+        .max(session_max_timestamp(session));
+    if same_open_refs {
+        return Ok(state);
+    }
+    state.imported_open = Some(refs);
+    state.open_drive = session
+        .drive
+        .as_ref()
+        .map(|row| open_drive_from_source(row, &session.drive_positions));
+    state.open_charge = session
+        .charge
+        .as_ref()
+        .map(|row| open_charge_from_source(row, &session.charge_samples));
+    state.open_state = session.state.as_ref().map(open_state_from_source);
+    state.phase = if state.open_drive.is_some() {
+        VehiclePhase::Driving
+    } else if state.open_charge.is_some() {
+        VehiclePhase::Charging
+    } else if let Some(open_state) = state.open_state.as_ref() {
+        phase_from_vehicle_state(&open_state.state)
+    } else {
+        VehiclePhase::Online
+    };
     Ok(state)
 }
 

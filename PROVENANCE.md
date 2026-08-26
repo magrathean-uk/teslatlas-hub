@@ -32,10 +32,18 @@ WebKit, CryptoKit, Security, and URLSession.
 The macOS service separately bundles Tesla's official `tesla-http-proxy` from
 `https://github.com/teslamotors/vehicle-command`, release `v0.4.1`, revision
 `49977a18fd68567501d59e16a6c9e4a8b9348544`. It is Apache-2.0 licensed and is
-built from the pinned upstream `go.mod`/`go.sum` with Go 1.23 or newer,
+built from the pinned upstream `go.mod`/`go.sum` with Go 1.27.0 exactly,
 `CGO_ENABLED=1`, `GOOS=darwin`, `GOARCH=arm64`, and
-`MACOSX_DEPLOYMENT_TARGET=12.0`. No upstream source is linked into the Rust
-Hub; the proxy remains a separately executed program.
+`MACOSX_DEPLOYMENT_TARGET=13.0`. A private build copy adds only
+`godebug default=go1.27`, preventing the older upstream module directive from
+re-enabling legacy cryptographic compatibility defaults. No upstream source is
+linked into the Rust Hub; the proxy remains a separately executed program.
+
+Each macOS candidate includes deterministic Go source, dependency inventory,
+SPDX SBOM, notices and a clean-rebuild receipt. The receipt records the proxy,
+Go and compiler hashes plus GOROOT, Xcode and SDK identities. The signed app
+binds both the unsigned proxy digest and evidence-manifest digest; release
+checksums and signed candidate provenance bind every evidence component.
 
 The package contains only the proxy executable and applicable notices. Its
 command-authentication private key, TLS private key, certificate, OAuth
