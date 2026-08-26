@@ -5,7 +5,7 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(unix)]
@@ -15,6 +15,11 @@ const LABEL: &str = "com.teslatlas.hub";
 const PLIST_NAME: &str = "com.teslatlas.hub.plist";
 const BINARY_NAME: &str = "teslatlas-hub";
 const PLIST_TEMPLATE: &str = include_str!("../packaging/com.teslatlas.hub.plist.in");
+const SERVICE_UNLOAD_ATTEMPTS: usize = 100;
+#[cfg(not(test))]
+const SERVICE_UNLOAD_DELAY: Duration = Duration::from_millis(100);
+#[cfg(test)]
+const SERVICE_UNLOAD_DELAY: Duration = Duration::ZERO;
 
 pub struct InstallPaths {
     pub binary: PathBuf,
@@ -305,12 +310,25 @@ fn stop_installed_with_runner(
         std::ffi::OsStr::new(service),
     ];
     let _ = runner(&bootout)?;
-    if service_is_loaded_with_runner(service, runner)? {
-        return Err(io::Error::other(
-            "Hub LaunchAgent is still loaded after stop",
-        ));
+    wait_for_service_unloaded_with_runner(service, runner)
+}
+
+fn wait_for_service_unloaded_with_runner(
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<()> {
+    for attempt in 0..SERVICE_UNLOAD_ATTEMPTS {
+        if !service_is_loaded_with_runner(service, runner)? {
+            return Ok(());
+        }
+        if attempt + 1 < SERVICE_UNLOAD_ATTEMPTS {
+            std::thread::sleep(SERVICE_UNLOAD_DELAY);
+        }
     }
-    Ok(())
+    Err(io::Error::new(
+        io::ErrorKind::TimedOut,
+        "Hub LaunchAgent is still loaded after stop",
+    ))
 }
 
 fn service_is_loaded_with_runner(
@@ -355,6 +373,7 @@ fn launch_with_runner(
         std::ffi::OsStr::new(service),
     ];
     let _ = runner(&bootout)?;
+    wait_for_service_unloaded_with_runner(service, runner)?;
     let bootstrap = [
         std::ffi::OsStr::new("bootstrap"),
         std::ffi::OsStr::new(domain),
@@ -430,6 +449,7 @@ fn restore_previous_service(
         std::ffi::OsStr::new(service),
     ];
     let _ = runner(&bootout)?;
+    wait_for_service_unloaded_with_runner(service, runner)?;
     if let Some(previous_binary) = previous_binary {
         restore_file_from_backup(previous_binary, binary)?;
         set_mode(binary, 0o700)?;
@@ -864,7 +884,7 @@ mod tests {
             ["print", "bootstrap", "kickstart", "print"]
         );
 
-        let (mut stop_runner, stop_calls) = runner(vec![true, false]);
+        let (mut stop_runner, stop_calls) = runner(vec![true, true, false]);
         stop_installed_with_runner(service, &mut stop_runner).expect("stop service");
         assert_eq!(
             stop_calls
@@ -873,11 +893,11 @@ mod tests {
                 .iter()
                 .map(|call| call[0].as_str())
                 .collect::<Vec<_>>(),
-            ["bootout", "print"]
+            ["bootout", "print", "print"]
         );
 
         let (mut restart_runner, restart_calls) =
-            runner(vec![true, false, false, true, true, true]);
+            runner(vec![true, true, false, false, true, true, true]);
         restart_installed_with_runner(plist, domain, service, &mut restart_runner)
             .expect("restart service");
         assert_eq!(
@@ -891,11 +911,29 @@ mod tests {
                 "bootout",
                 "print",
                 "print",
+                "print",
                 "bootstrap",
                 "kickstart",
                 "print"
             ]
         );
+    }
+
+    #[test]
+    fn service_stop_fails_after_bounded_unload_poll() {
+        let mut responses =
+            std::iter::once(true).chain(std::iter::repeat_n(true, SERVICE_UNLOAD_ATTEMPTS));
+        let mut runner = |_: &[&std::ffi::OsStr]| {
+            responses
+                .next()
+                .ok_or_else(|| io::Error::other("unexpected launchctl call"))
+        };
+
+        let error = stop_installed_with_runner("gui/501/com.teslatlas.hub", &mut runner)
+            .expect_err("persistently loaded service must fail");
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(error.to_string().contains("still loaded after stop"));
+        assert!(responses.next().is_none());
     }
 
     #[test]
@@ -942,8 +980,10 @@ mod tests {
         let mut outcomes = std::collections::VecDeque::from([
             true,  // print: old service loaded
             true,  // bootout: old service
+            false, // print: old service unloaded
             false, // bootstrap: replacement fails
             true,  // rollback bootout
+            false, // print: replacement service unloaded
             true,  // rollback bootstrap
             true,  // rollback kickstart
         ]);
@@ -974,12 +1014,12 @@ mod tests {
         assert!(!previous_plist.exists());
         assert_eq!(calls[0][0], "print");
         assert_eq!(calls[0][1], "gui/501/com.teslatlas.hub");
-        assert_eq!(calls[2][0], "bootstrap");
-        assert_eq!(calls[2][1], "gui/501");
-        assert_eq!(calls[2][2], plist.display().to_string());
-        assert_eq!(calls[4][0], "bootstrap");
-        assert_eq!(calls[4][1], "gui/501");
-        assert_eq!(calls[4][2], plist.display().to_string());
+        assert_eq!(calls[3][0], "bootstrap");
+        assert_eq!(calls[3][1], "gui/501");
+        assert_eq!(calls[3][2], plist.display().to_string());
+        assert_eq!(calls[6][0], "bootstrap");
+        assert_eq!(calls[6][1], "gui/501");
+        assert_eq!(calls[6][2], plist.display().to_string());
     }
 
     #[test]
@@ -1000,9 +1040,11 @@ mod tests {
         let mut outcomes = std::collections::VecDeque::from([
             true,  // print: old service loaded
             true,  // bootout: old service
+            false, // print: old service unloaded
             true,  // bootstrap: replacement
             false, // kickstart: replacement fails
             true,  // rollback bootout
+            false, // print: replacement service unloaded
             true,  // rollback bootstrap
             true,  // rollback kickstart
         ]);

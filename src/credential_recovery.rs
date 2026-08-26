@@ -26,7 +26,10 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{
     db::{HubStore, StoreError},
     fleet_credentials::load_existing_fleet_key_bytes,
-    protocol::CursorKey,
+    protocol::{
+        CursorKey, LineageDelta, LineageManifestV2, OpaqueCursor, PROTOCOL_V1, ProtocolLimits,
+        SyncManifest, canonical_delta_chain_digest,
+    },
     teslamate_credentials::{
         TeslaMateCredentialError, load_existing_cursor_key_bytes, load_key, load_key_for_tokens,
     },
@@ -126,6 +129,7 @@ pub fn export_credentials(
         None => None,
     };
     let cursor_key = load_existing_cursor_key_bytes(data_dir)?;
+    validate_cursor_key_catalogue(store, cursor_key.as_deref().map(Vec::as_slice))?;
     let fleet_tokens = store.load_fleet_tokens()?;
     let fleet_key = if let Some(tokens) = fleet_tokens.as_ref() {
         match load_existing_fleet_key_bytes(data_dir)
@@ -210,6 +214,7 @@ pub fn restore_credentials(
     if payload.installation_id != store.installation_id()? {
         return Err(CredentialRecoveryError::InstallationMismatch);
     }
+    validate_cursor_key_catalogue(store, payload.cursor_key.as_deref().map(Vec::as_slice))?;
 
     let stored_tokens = store.load_teslamate_legacy_tokens()?;
     let fleet_tokens = store.load_fleet_tokens()?;
@@ -243,13 +248,6 @@ pub fn restore_credentials(
             }
             (None, None) => return Err(CredentialRecoveryError::CatalogueMismatch),
         }
-    }
-    let manifest_count: i64 = store
-        .open()?
-        .query_row("SELECT COUNT(*) FROM sync_manifests", [], |row| row.get(0))
-        .map_err(StoreError::Query)?;
-    if manifest_count > 0 && payload.cursor_key.is_none() {
-        return Err(CredentialRecoveryError::CatalogueMismatch);
     }
     if payload.teslamate_key.is_none()
         && payload.cursor_key.is_none()
@@ -335,6 +333,174 @@ fn fleet_encryption_key(cursor_key: &[u8]) -> Result<Zeroizing<[u8; 32]>, Creden
     Ok(Zeroizing::new(
         CursorKey::from_bytes(cursor_key).fleet_credential_encryption_key(),
     ))
+}
+
+fn validate_cursor_key_catalogue(
+    store: &HubStore,
+    candidate: Option<&[u8]>,
+) -> Result<(), CredentialRecoveryError> {
+    let connection = store.open()?;
+    let mut manifest_statement = connection
+        .prepare("SELECT manifest_json FROM sync_manifests ORDER BY snapshot_id")
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+    let mut manifest_rows = manifest_statement
+        .query([])
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+    let mut manifests = Vec::new();
+    while let Some(row) = manifest_rows
+        .next()
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?
+    {
+        let encoded: Vec<u8> = row
+            .get(0)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        manifests.push(encoded);
+    }
+    drop(manifest_rows);
+    drop(manifest_statement);
+
+    let head_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM sync_heads", [], |row| row.get(0))
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+    if manifests.is_empty() && head_count == 0 {
+        return Ok(());
+    }
+    let candidate: [u8; 32] = candidate
+        .ok_or(CredentialRecoveryError::CatalogueMismatch)?
+        .try_into()
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+    let cursor_key = CursorKey::from_bytes(candidate);
+    let installation_id = store.installation_id()?;
+    for manifest in &manifests {
+        validate_catalogued_cursor_record(manifest, &cursor_key, installation_id)?;
+    }
+
+    let mut head_statement = connection
+        .prepare(
+            "SELECT heads.vehicle_id, heads.base_snapshot_id, heads.head_sequence,
+                    heads.terminal_cursor, manifests.manifest_json
+               FROM sync_heads AS heads
+               LEFT JOIN sync_manifests AS manifests
+                 ON manifests.snapshot_id = heads.base_snapshot_id
+              ORDER BY heads.vehicle_id",
+        )
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+    let mut head_rows = head_statement
+        .query([])
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+    while let Some(row) = head_rows
+        .next()
+        .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?
+    {
+        let vehicle_id: String = row
+            .get(0)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        let base_snapshot_id: String = row
+            .get(1)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        let head_sequence: i64 = row
+            .get(2)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        let terminal_cursor: String = row
+            .get(3)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        let base_manifest: Vec<u8> = row
+            .get(4)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        let vehicle_id = vehicle_id
+            .parse::<Uuid>()
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        let base_snapshot_id = base_snapshot_id
+            .parse::<Uuid>()
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        let head_sequence =
+            u64::try_from(head_sequence).map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        let terminal_cursor: OpaqueCursor = serde_json::from_str(&terminal_cursor)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        let claims = terminal_cursor
+            .verify(&cursor_key)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        if let Ok(base_manifest) = serde_json::from_slice::<SyncManifest>(&base_manifest) {
+            if base_manifest.snapshot_id != base_snapshot_id
+                || base_manifest.vehicle_id != vehicle_id
+                || base_manifest.installation_id != installation_id
+                || claims.protocol != base_manifest.protocol
+                || claims.schema != base_manifest.schema
+                || claims.installation_id != base_manifest.installation_id
+                || claims.account_id != base_manifest.account_id
+                || claims.vehicle_id != vehicle_id
+                || claims.generation != base_manifest.generation
+                || claims.sequence != head_sequence
+            {
+                return Err(CredentialRecoveryError::CatalogueMismatch);
+            }
+        } else if let Ok(lineage) = serde_json::from_slice::<LineageManifestV2>(&base_manifest) {
+            if lineage.base.snapshot_id != base_snapshot_id
+                || lineage.vehicle_id != vehicle_id
+                || lineage.installation_id != installation_id
+                || claims.protocol != PROTOCOL_V1
+                || claims.schema != lineage.schema
+                || claims.installation_id != lineage.installation_id
+                || claims.account_id != lineage.account_id
+                || claims.vehicle_id != vehicle_id
+                || claims.generation != lineage.generation
+                || claims.sequence != head_sequence
+            {
+                return Err(CredentialRecoveryError::CatalogueMismatch);
+            }
+        } else {
+            return Err(CredentialRecoveryError::CatalogueMismatch);
+        }
+    }
+    Ok(())
+}
+
+fn validate_catalogued_cursor_record(
+    encoded: &[u8],
+    cursor_key: &CursorKey,
+    installation_id: Uuid,
+) -> Result<(), CredentialRecoveryError> {
+    if let Ok(manifest) = serde_json::from_slice::<SyncManifest>(encoded) {
+        if manifest.installation_id != installation_id
+            || manifest.validate().is_err()
+            || manifest.validate_terminal_cursor(cursor_key).is_err()
+        {
+            return Err(CredentialRecoveryError::CatalogueMismatch);
+        }
+        return Ok(());
+    }
+    if let Ok(lineage) = serde_json::from_slice::<LineageManifestV2>(encoded) {
+        let claims = lineage
+            .terminal_cursor
+            .verify(cursor_key)
+            .map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+        if lineage.installation_id != installation_id
+            || lineage.validate().is_err()
+            || claims.protocol != PROTOCOL_V1
+            || claims.schema != lineage.schema
+            || claims.installation_id != lineage.installation_id
+            || claims.account_id != lineage.account_id
+            || claims.vehicle_id != lineage.vehicle_id
+            || claims.generation != lineage.generation
+            || claims.sequence != lineage.head_sequence
+        {
+            return Err(CredentialRecoveryError::CatalogueMismatch);
+        }
+        return Ok(());
+    }
+    let delta: LineageDelta =
+        serde_json::from_slice(encoded).map_err(|_| CredentialRecoveryError::CatalogueMismatch)?;
+    if delta.pack.validate(ProtocolLimits::default()).is_err()
+        || delta.from_sequence >= delta.to_sequence
+        || delta.pack_digest != delta.pack.sha256
+        || delta.chain_digest
+            != canonical_delta_chain_digest(delta.parent_chain_digest, delta.pack_digest)
+        || delta.pack.sequence.from_exclusive != delta.from_sequence
+        || delta.pack.sequence.to_inclusive != delta.to_sequence
+    {
+        return Err(CredentialRecoveryError::CatalogueMismatch);
+    }
+    Ok(())
 }
 
 fn encode_payload(
@@ -646,6 +812,7 @@ mod tests {
         credentials::OwnerTokens,
         data_recovery::{create_data_backup, restore_data_backup},
         db::TeslaMateLegacyTokenStore,
+        protocol::{CursorClaims, PROTOCOL_V1, SyncManifest, TRANSPORT_SCHEMA_V1, TransferMode},
         teslamate_credentials::{
             load_or_create_cursor_key, random_encryption_key, replace_key_and_tokens,
         },
@@ -813,5 +980,181 @@ mod tests {
         .expect("Fleet row decrypts");
         assert_eq!(decrypted.access_token(), "fleet-recovery-access");
         assert_eq!(decrypted.refresh_token(), "fleet-recovery-refresh");
+    }
+
+    #[test]
+    fn wrong_cursor_key_is_rejected_against_manifests_before_secrets_publication() {
+        let temporary = tempfile::tempdir().expect("temporary root");
+        let data = temporary.path().join("data");
+        let store = HubStore::initialize(&data).expect("store");
+        let catalogue_key = CursorKey::from_bytes([21; 32]);
+        let manifest = empty_manifest(&store, &catalogue_key);
+        store
+            .publish_manifest(&manifest)
+            .expect("manifest catalogue");
+        assert!(
+            store
+                .load_teslamate_legacy_tokens()
+                .expect("token query")
+                .is_none()
+        );
+        assert!(
+            store
+                .load_fleet_tokens()
+                .expect("Fleet token query")
+                .is_none()
+        );
+
+        let recovery_key = [22; RECOVERY_ENCRYPTION_KEY_BYTES];
+        let export = temporary.path().join("wrong-cursor.tthcr");
+        write_cursor_only_export(
+            &export,
+            store.installation_id().expect("installation ID"),
+            [23; 32],
+            &recovery_key,
+        );
+
+        assert!(matches!(
+            restore_credentials(&store, &data, &export, &recovery_key),
+            Err(CredentialRecoveryError::CatalogueMismatch)
+        ));
+        assert!(!data.join("secrets").exists());
+    }
+
+    #[test]
+    fn export_rejects_a_cursor_key_that_does_not_match_the_manifest_catalogue() {
+        let temporary = tempfile::tempdir().expect("temporary root");
+        let data = temporary.path().join("data");
+        let store = HubStore::initialize(&data).expect("store");
+        let catalogue_key = load_or_create_cursor_key(&data).expect("catalogue cursor key");
+        let manifest = empty_manifest(&store, &catalogue_key);
+        store
+            .publish_manifest(&manifest)
+            .expect("manifest catalogue");
+        fs::write(data.join("secrets/hub-cursor.key"), [29; 32]).expect("replace fixture key");
+        let export = temporary.path().join("wrong-source-cursor.tthcr");
+
+        assert!(matches!(
+            export_credentials(&store, &data, &export, &[30; RECOVERY_ENCRYPTION_KEY_BYTES]),
+            Err(CredentialRecoveryError::CatalogueMismatch)
+        ));
+        assert!(!export.exists());
+    }
+
+    #[test]
+    fn malformed_manifest_catalogue_is_rejected_before_secrets_publication() {
+        let temporary = tempfile::tempdir().expect("temporary root");
+        let data = temporary.path().join("data");
+        let store = HubStore::initialize(&data).expect("store");
+        store
+            .open()
+            .expect("catalogue")
+            .execute(
+                "INSERT INTO sync_manifests(snapshot_id, vehicle_id, head_sequence, manifest_json)
+                 VALUES (?1, ?2, 0, ?3)",
+                (
+                    Uuid::new_v4().to_string(),
+                    Uuid::new_v4().to_string(),
+                    b"not-json".as_slice(),
+                ),
+            )
+            .expect("malformed manifest row");
+        let recovery_key = [24; RECOVERY_ENCRYPTION_KEY_BYTES];
+        let export = temporary.path().join("malformed-catalogue.tthcr");
+        write_cursor_only_export(
+            &export,
+            store.installation_id().expect("installation ID"),
+            [25; 32],
+            &recovery_key,
+        );
+
+        assert!(matches!(
+            restore_credentials(&store, &data, &export, &recovery_key),
+            Err(CredentialRecoveryError::CatalogueMismatch)
+        ));
+        assert!(!data.join("secrets").exists());
+    }
+
+    #[test]
+    fn cursor_key_restore_allows_an_empty_catalogue() {
+        let temporary = tempfile::tempdir().expect("temporary root");
+        let data = temporary.path().join("data");
+        let store = HubStore::initialize(&data).expect("store");
+        let recovery_key = [26; RECOVERY_ENCRYPTION_KEY_BYTES];
+        let export = temporary.path().join("empty-catalogue.tthcr");
+        write_cursor_only_export(
+            &export,
+            store.installation_id().expect("installation ID"),
+            [27; 32],
+            &recovery_key,
+        );
+
+        restore_credentials(&store, &data, &export, &recovery_key)
+            .expect("empty catalogue restore");
+        assert!(data.join("secrets/hub-cursor.key").is_file());
+    }
+
+    fn empty_manifest(store: &HubStore, cursor_key: &CursorKey) -> SyncManifest {
+        let installation_id = store.installation_id().expect("installation ID");
+        let account_id = Uuid::new_v4();
+        let vehicle_id = Uuid::new_v4();
+        let terminal_cursor = OpaqueCursor::issue(
+            cursor_key,
+            CursorClaims {
+                protocol: PROTOCOL_V1,
+                schema: TRANSPORT_SCHEMA_V1,
+                installation_id,
+                account_id,
+                vehicle_id,
+                generation: 1,
+                sequence: 0,
+            },
+        )
+        .expect("terminal cursor");
+        SyncManifest {
+            protocol: PROTOCOL_V1,
+            schema: TRANSPORT_SCHEMA_V1,
+            installation_id,
+            account_id,
+            vehicle_id,
+            generation: 1,
+            snapshot_id: Uuid::new_v4(),
+            mode: TransferMode::FullSnapshot,
+            base_sequence: 0,
+            head_sequence: 0,
+            chunk_count: 0,
+            total_compressed_bytes: 0,
+            total_uncompressed_bytes: 0,
+            total_rows: 0,
+            chunks: Vec::new(),
+            terminal_cursor,
+        }
+    }
+
+    fn write_cursor_only_export(
+        destination: &Path,
+        installation_id: Uuid,
+        cursor_key: [u8; 32],
+        recovery_key: &[u8],
+    ) {
+        let cipher = recovery_cipher(recovery_key).expect("recovery cipher");
+        let mut plaintext =
+            encode_payload(installation_id, None, Some(&cursor_key), None).expect("payload");
+        let nonce_bytes = [31; NONCE_BYTES];
+        let ciphertext = cipher
+            .encrypt(
+                &Nonce::from(nonce_bytes),
+                Payload {
+                    msg: plaintext.as_slice(),
+                    aad: FILE_MAGIC,
+                },
+            )
+            .expect("encrypt payload");
+        plaintext.zeroize();
+        let mut envelope = Zeroizing::new(Vec::new());
+        envelope.extend_from_slice(FILE_MAGIC);
+        envelope.extend_from_slice(&nonce_bytes);
+        envelope.extend_from_slice(&ciphertext);
+        publish_private_file(destination, &envelope).expect("publish recovery export");
     }
 }

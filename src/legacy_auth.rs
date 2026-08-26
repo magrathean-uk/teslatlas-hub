@@ -7,6 +7,7 @@ use std::{
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -161,6 +162,31 @@ pub struct LegacyAuth {
     /// durably committed. While this is set, refresh calls retry persistence
     /// only; they must never submit the now-consumed previous refresh token.
     persistence_pending: bool,
+}
+
+async fn read_bounded_token_response(
+    response: reqwest::Response,
+) -> Result<Vec<u8>, LegacyAuthError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_TOKEN_RESPONSE_BYTES as u64)
+    {
+        return Err(LegacyAuthError::ResponseTooLarge);
+    }
+
+    let mut bytes = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| LegacyAuthError::Transport)?;
+        let remaining = MAX_TOKEN_RESPONSE_BYTES
+            .checked_sub(bytes.len())
+            .ok_or(LegacyAuthError::ResponseTooLarge)?;
+        if chunk.len() > remaining {
+            return Err(LegacyAuthError::ResponseTooLarge);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
 }
 
 impl fmt::Debug for LegacyAuth {
@@ -409,19 +435,10 @@ impl LegacyAuth {
                 LegacyAuthError::HttpStatus(response.status().as_u16()),
             );
         }
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_TOKEN_RESPONSE_BYTES as u64)
-        {
-            return self.failed_refresh(receipt_epoch, LegacyAuthError::ResponseTooLarge);
-        }
-        let bytes = match response.bytes().await {
+        let bytes = match read_bounded_token_response(response).await {
             Ok(bytes) => bytes,
-            Err(_) => return self.failed_refresh(receipt_epoch, LegacyAuthError::Transport),
+            Err(error) => return self.failed_refresh(receipt_epoch, error),
         };
-        if bytes.len() > MAX_TOKEN_RESPONSE_BYTES {
-            return self.failed_refresh(receipt_epoch, LegacyAuthError::ResponseTooLarge);
-        }
         let response: TokenResponse = match serde_json::from_slice(&bytes) {
             Ok(response) => response,
             Err(_) => return self.failed_refresh(receipt_epoch, LegacyAuthError::InvalidResponse),
@@ -717,7 +734,12 @@ mod tests {
         routing::{get, post},
     };
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use tokio::{net::TcpListener, sync::Notify};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        sync::Notify,
+        time::timeout,
+    };
 
     use super::*;
     use crate::owner_api::{OwnerApi, OwnerApiAuthError, OwnerApiError};
@@ -923,6 +945,49 @@ mod tests {
             )
             .await
             .unwrap();
+        });
+        (
+            Url::parse(&format!("http://{address}/oauth2/v3/")).unwrap(),
+            task,
+        )
+    }
+
+    async fn raw_chunked_token_server(
+        chunks: Vec<Vec<u8>>,
+        complete: bool,
+    ) -> (Url, tokio::task::JoinHandle<()>) {
+        crate::crypto::install_default_provider();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut request = [0_u8; 1024];
+            let _ = socket.read(&mut request).await;
+            if socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n",
+                )
+                .await
+                .is_err()
+            {
+                return;
+            }
+            for chunk in chunks {
+                let header = format!("{:X}\r\n", chunk.len());
+                if socket.write_all(header.as_bytes()).await.is_err()
+                    || socket.write_all(&chunk).await.is_err()
+                    || socket.write_all(b"\r\n").await.is_err()
+                {
+                    return;
+                }
+            }
+            if complete {
+                let _ = socket.write_all(b"0\r\n\r\n").await;
+            } else {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
         });
         (
             Url::parse(&format!("http://{address}/oauth2/v3/")).unwrap(),
@@ -1419,6 +1484,55 @@ mod tests {
             );
             assert_eq!(state.bodies.lock().unwrap().len(), 1);
         }
+    }
+
+    #[tokio::test]
+    async fn accepts_valid_split_chunked_token_response() {
+        let body = valid_response("new-access", "new-refresh");
+        let split_at = body.len() / 2;
+        let (issuer, _task) = raw_chunked_token_server(
+            vec![
+                body.as_bytes()[..split_at].to_vec(),
+                body.as_bytes()[split_at..].to_vec(),
+            ],
+            true,
+        )
+        .await;
+        let mut auth = LegacyAuth::for_test(issuer, "old-access", "old-refresh");
+
+        auth.refresh_now(
+            &Client::new(),
+            UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(auth.access_token(), "new-access");
+        assert_eq!(auth.refresh_token(), "new-refresh");
+    }
+
+    #[tokio::test]
+    async fn chunked_token_response_over_cap_fails_before_eof_and_preserves_pair() {
+        let (issuer, _task) = raw_chunked_token_server(
+            vec![vec![b'x'; MAX_TOKEN_RESPONSE_BYTES], vec![b'y']],
+            false,
+        )
+        .await;
+        let mut auth = LegacyAuth::for_test(issuer, "old-access", "old-refresh");
+        let receipt = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+
+        let error = timeout(
+            Duration::from_secs(1),
+            auth.refresh_now(&Client::new(), receipt),
+        )
+        .await
+        .expect("response cap must finish before the chunked response EOF")
+        .unwrap_err();
+
+        assert_eq!(error, LegacyAuthError::ResponseTooLarge);
+        assert_eq!(auth.access_token(), "old-access");
+        assert_eq!(auth.refresh_token(), "old-refresh");
+        assert_eq!(auth.retry_at(), Some(1_700_000_300));
     }
 
     #[tokio::test]

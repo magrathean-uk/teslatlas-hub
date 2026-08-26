@@ -19,6 +19,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use rustix::{
+    fs::{FileType, Mode, OFlags, fstat, open},
+    process::getuid,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -128,9 +132,9 @@ const GENERIC_OTHER_RETRY: Duration = Duration::from_secs(30);
 const RETRY_OVERFLOW_FALLBACK: Duration = Duration::from_secs(100 * 365 * 24 * 60 * 60);
 const STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 // Keep a continuously noisy stream from monopolising the collection loop.
-// The bounded stream channel has capacity 32; processing half of that per
-// turn guarantees owner-api scheduling, lease heartbeats, and shutdown get a
-// chance to run even while telemetry is arriving continuously.
+// The channel absorbs bounded network/address work while the 100 ms active
+// drain cadence keeps normal Tesla telemetry well below capacity.
+const STREAM_EVENT_CHANNEL_CAPACITY: usize = 256;
 const MAX_STREAM_EVENTS_PER_DRAIN: usize = 16;
 
 // The production collector deliberately uses conservative retry timing and
@@ -265,12 +269,11 @@ async fn stop_manual_probe_streams(streams: &mut [VehicleStreamRuntime]) {
         }
     }
     for stream in streams.iter_mut() {
-        if timeout(STREAM_SHUTDOWN_TIMEOUT, &mut stream.task)
-            .await
-            .is_err()
+        if let Some(mut task) = stream.task.take()
+            && timeout(STREAM_SHUTDOWN_TIMEOUT, &mut task).await.is_err()
         {
-            stream.task.abort();
-            let _ = (&mut stream.task).await;
+            task.abort();
+            let _ = task.await;
         }
     }
 }
@@ -288,10 +291,14 @@ async fn abort_and_clear_manual_probe_streams_without_egress(
     streams: &mut Vec<VehicleStreamRuntime>,
 ) {
     for stream in streams.iter_mut() {
-        stream.task.abort();
+        if let Some(task) = stream.task.as_ref() {
+            task.abort();
+        }
     }
     for stream in streams.iter_mut() {
-        let _ = (&mut stream.task).await;
+        if let Some(task) = stream.task.take() {
+            let _ = task.await;
+        }
         let _ = stream._shutdown.take();
     }
     streams.clear();
@@ -2292,18 +2299,7 @@ fn fleet_command_proxy(config: &HubConfig) -> Result<Option<FleetCommandProxy>, 
         .collector
         .fleet_command_proxy_root_certificate_path
         .as_deref()
-        .map(|path| {
-            let file = std::fs::File::open(path)
-                .map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
-            let mut bytes = Vec::new();
-            file.take(MAX_CERTIFICATE_BYTES + 1)
-                .read_to_end(&mut bytes)
-                .map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
-            if bytes.len() as u64 > MAX_CERTIFICATE_BYTES {
-                return Err(FleetApiConfigError::InvalidRootCertificate);
-            }
-            Ok(bytes)
-        })
+        .map(|path| read_fleet_proxy_root_certificate(path, MAX_CERTIFICATE_BYTES))
         .transpose()?;
     FleetCommandProxy::new(
         base,
@@ -2312,6 +2308,89 @@ fn fleet_command_proxy(config: &HubConfig) -> Result<Option<FleetCommandProxy>, 
     )
     .map(Some)
     .map_err(Into::into)
+}
+
+#[cfg(unix)]
+fn read_fleet_proxy_root_certificate(
+    path: &Path,
+    maximum: u64,
+) -> Result<Vec<u8>, FleetApiConfigError> {
+    read_fleet_proxy_root_certificate_after_open(path, maximum, || {})
+}
+
+#[cfg(unix)]
+fn read_fleet_proxy_root_certificate_after_open(
+    path: &Path,
+    maximum: u64,
+    after_open: impl FnOnce(),
+) -> Result<Vec<u8>, FleetApiConfigError> {
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::empty(),
+    )
+    .map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
+    let held = fstat(&descriptor).map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
+    let current_uid = getuid().as_raw();
+    if !FileType::from_raw_mode(held.st_mode).is_file()
+        || (held.st_uid != current_uid && held.st_uid != 0)
+        || (held.st_mode as u32 & 0o022) != 0
+        || held.st_nlink != 1
+        || held.st_size < 0
+        || u64::try_from(held.st_size)
+            .ok()
+            .is_none_or(|size| size > maximum)
+    {
+        return Err(FleetApiConfigError::InvalidRootCertificate);
+    }
+
+    after_open();
+
+    let file: std::fs::File = descriptor.into();
+    let mut bytes = Vec::with_capacity(
+        usize::try_from(held.st_size)
+            .unwrap_or_default()
+            .min(8 * 1024),
+    );
+    (&file)
+        .take(maximum.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > maximum {
+        return Err(FleetApiConfigError::InvalidRootCertificate);
+    }
+
+    let after = fstat(&file).map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
+    let current =
+        std::fs::symlink_metadata(path).map_err(|_| FleetApiConfigError::InvalidRootCertificate)?;
+    if after.st_dev != held.st_dev
+        || after.st_ino != held.st_ino
+        || after.st_mode != held.st_mode
+        || after.st_nlink != held.st_nlink
+        || after.st_uid != held.st_uid
+        || after.st_gid != held.st_gid
+        || after.st_size != held.st_size
+        || after.st_mtime != held.st_mtime
+        || after.st_mtime_nsec != held.st_mtime_nsec
+        || after.st_ctime != held.st_ctime
+        || after.st_ctime_nsec != held.st_ctime_nsec
+        || current.file_type().is_symlink()
+        || !current.file_type().is_file()
+        || current.dev() != held.st_dev as u64
+        || current.ino() != held.st_ino
+        || current.mode() != held.st_mode as u32
+        || current.nlink() != u64::from(held.st_nlink)
+        || current.uid() != held.st_uid
+        || current.gid() != held.st_gid
+        || current.len() != u64::try_from(held.st_size).unwrap_or(u64::MAX)
+        || current.mtime() != held.st_mtime
+        || current.mtime_nsec() != held.st_mtime_nsec as i64
+        || current.ctime() != held.st_ctime
+        || current.ctime_nsec() != held.st_ctime_nsec as i64
+    {
+        return Err(FleetApiConfigError::InvalidRootCertificate);
+    }
+    Ok(bytes)
 }
 
 async fn fleet_list_vehicles_with_auth(
@@ -2959,6 +3038,16 @@ where
                     stream_drain.transition,
                 )
                 .await?;
+                if let Some(error) = stream_drain.terminal_error {
+                    return Err(error);
+                }
+                if stream_drain.backlog {
+                    // Drain a noisy stream to below the bounded queue before
+                    // beginning Owner API, projection, or enrichment work.
+                    // This keeps collection work from starving the receiver.
+                    tokio::task::yield_now().await;
+                    continue;
+                }
                 let now = Instant::now();
                 if scheduler.discovery_due(now) {
                     match list_vehicles_for_auth(&client, &auth).await {
@@ -3294,11 +3383,8 @@ where
                 replay_export_outbox(store, &cursor_key, &vehicles, current_epoch_millis()?)
                     .await?;
                 if !delay.is_zero() {
-                    if stream_drain.backlog {
-                        tokio::task::yield_now().await;
-                        continue;
-                    }
-                    sleep(delay.min(CONTROL_SETTINGS_REFRESH)).await;
+                    let cap = collection_sleep_cap(!streams.is_empty());
+                    sleep(delay.min(cap)).await;
                 }
             }
             #[allow(unreachable_code)]
@@ -3850,7 +3936,7 @@ struct VehicleStreamRuntime {
     sensitive_access_failure: Arc<AtomicBool>,
     events: mpsc::Receiver<StreamEvent>,
     _shutdown: Option<oneshot::Sender<()>>,
-    task: JoinHandle<Result<(), crate::tesla_stream::StreamSupervisorError>>,
+    task: Option<JoinHandle<Result<(), crate::tesla_stream::StreamSupervisorError>>>,
 }
 
 impl Drop for VehicleStreamRuntime {
@@ -3861,7 +3947,9 @@ impl Drop for VehicleStreamRuntime {
         if let Some(shutdown) = self._shutdown.take() {
             let _ = shutdown.send(());
         }
-        self.task.abort();
+        if let Some(task) = self.task.as_ref() {
+            task.abort();
+        }
     }
 }
 
@@ -3897,7 +3985,7 @@ fn ensure_vehicle_stream(
     if streams.iter().any(|stream| stream.vehicle_id == vehicle_id) {
         return true;
     }
-    let (events, receiver) = mpsc::channel(32);
+    let (events, receiver) = mpsc::channel(STREAM_EVENT_CHANNEL_CAPACITY);
     let power_gate = Arc::new(StreamPowerGate::default());
     let (shutdown, stop) = oneshot::channel();
     let endpoint = stream_endpoint
@@ -3965,7 +4053,7 @@ fn ensure_vehicle_stream(
         sensitive_access_failure,
         events: receiver,
         _shutdown: Some(shutdown),
-        task,
+        task: Some(task),
     });
     true
 }
@@ -3983,12 +4071,11 @@ async fn disconnect_vehicle_stream(streams: &mut Vec<VehicleStreamRuntime>, vehi
         .iter_mut()
         .filter(|stream| stream.vehicle_id == vehicle_id)
     {
-        if timeout(STREAM_SHUTDOWN_TIMEOUT, &mut stream.task)
-            .await
-            .is_err()
+        if let Some(mut task) = stream.task.take()
+            && timeout(STREAM_SHUTDOWN_TIMEOUT, &mut task).await.is_err()
         {
-            stream.task.abort();
-            let _ = (&mut stream.task).await;
+            task.abort();
+            let _ = task.await;
         }
     }
     streams.retain(|stream| stream.vehicle_id != vehicle_id);
@@ -4045,15 +4132,64 @@ async fn drain_stream_events(
     streams: &mut [VehicleStreamRuntime],
 ) -> Result<StreamAuthenticationTransition, CollectorError> {
     let mut projection_car_ids = HashMap::new();
-    drain_stream_events_with_cache(store, scheduler, streams, &mut projection_car_ids)
-        .await
-        .map(|result| result.transition)
+    let result =
+        drain_stream_events_with_cache(store, scheduler, streams, &mut projection_car_ids).await?;
+    if let Some(error) = result.terminal_error {
+        Err(error)
+    } else {
+        Ok(result.transition)
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct StreamDrainResult {
     transition: StreamAuthenticationTransition,
     backlog: bool,
+    terminal_error: Option<CollectorError>,
+}
+
+fn process_stream_event(
+    store: &HubStore,
+    scheduler: &mut VehicleScheduler,
+    stream: &VehicleStreamRuntime,
+    event: StreamEvent,
+    projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
+    authentication_rejected: &mut bool,
+    authenticated: &mut bool,
+) -> Result<(), CollectorError> {
+    match event {
+        StreamEvent::Healthy => {
+            *authenticated = true;
+            scheduler.stream_healthy(stream.vehicle_id, Instant::now());
+        }
+        StreamEvent::Telemetry(update) => {
+            *authenticated = true;
+            scheduler.stream_healthy(stream.vehicle_id, Instant::now());
+            process_stream_telemetry_with_cache(
+                store,
+                scheduler,
+                stream.vehicle_id,
+                &update,
+                projection_car_ids,
+            )?;
+        }
+        StreamEvent::VehicleOffline => {
+            let now = Instant::now();
+            scheduler.stream_unhealthy(stream.vehicle_id, now);
+            scheduler.schedule_offline_state_fetch(stream.vehicle_id, now);
+        }
+        StreamEvent::AuthRejected => {
+            *authentication_rejected = true;
+            scheduler.stream_unhealthy(stream.vehicle_id, Instant::now());
+            tracing::warn!(
+                vehicle_id = stream.vehicle_id.get(),
+                "vehicle stream authentication rejected"
+            );
+        }
+        StreamEvent::TransportUnavailable | StreamEvent::ProtocolViolation => {
+            scheduler.stream_unhealthy(stream.vehicle_id, Instant::now());
+        }
+    }
+    Ok(())
 }
 
 async fn drain_stream_events_with_cache(
@@ -4064,53 +4200,48 @@ async fn drain_stream_events_with_cache(
 ) -> Result<StreamDrainResult, CollectorError> {
     let mut authentication_rejected = false;
     let mut authenticated = false;
+    let mut terminal_error = None;
     for stream in streams.iter_mut() {
-        if stream.sensitive_access_failure.load(Ordering::Acquire) {
-            return Err(CollectorError::SensitiveAccessUnavailable);
-        }
-        if stream.task.is_finished() {
-            // Do not discard a completed stream task. An empty event queue
-            // must never hide a dead supervisor.
-            return Err(classify_stream_task_result((&mut stream.task).await));
-        }
         for _ in 0..MAX_STREAM_EVENTS_PER_DRAIN {
             let Ok(event) = stream.events.try_recv() else {
                 break;
             };
-            match event {
-                StreamEvent::Healthy => {
-                    authenticated = true;
-                    scheduler.stream_healthy(stream.vehicle_id, Instant::now());
-                }
-                StreamEvent::Telemetry(update) => {
-                    process_stream_telemetry_with_cache(
-                        store,
-                        scheduler,
-                        stream.vehicle_id,
-                        &update,
-                        projection_car_ids,
-                    )?;
-                }
-                StreamEvent::VehicleOffline => {
-                    let now = Instant::now();
-                    scheduler.stream_unhealthy(stream.vehicle_id, now);
-                    scheduler.schedule_offline_state_fetch(stream.vehicle_id, now);
-                }
-                StreamEvent::AuthRejected => {
-                    authentication_rejected = true;
-                    scheduler.stream_unhealthy(stream.vehicle_id, Instant::now());
-                    tracing::warn!(
-                        vehicle_id = stream.vehicle_id.get(),
-                        "vehicle stream authentication rejected"
-                    );
-                }
-                StreamEvent::TransportUnavailable => {
-                    scheduler.stream_unhealthy(stream.vehicle_id, Instant::now());
-                }
-                StreamEvent::ProtocolViolation => {
-                    scheduler.stream_unhealthy(stream.vehicle_id, Instant::now());
-                }
+            process_stream_event(
+                store,
+                scheduler,
+                stream,
+                event,
+                projection_car_ids,
+                &mut authentication_rejected,
+                &mut authenticated,
+            )?;
+        }
+        if stream.task.as_ref().is_some_and(JoinHandle::is_finished) {
+            // Once the producer has finished, its bounded queue is stable.
+            // Drain every final event before consuming the JoinHandle so the
+            // last telemetry and authentication transition reach the caller.
+            while let Ok(event) = stream.events.try_recv() {
+                process_stream_event(
+                    store,
+                    scheduler,
+                    stream,
+                    event,
+                    projection_car_ids,
+                    &mut authentication_rejected,
+                    &mut authenticated,
+                )?;
             }
+            let task = stream
+                .task
+                .take()
+                .expect("finished stream task remains owned until consumed");
+            let task_error = classify_stream_task_result(task.await);
+            if terminal_error.is_none() {
+                terminal_error = Some(task_error);
+            }
+        }
+        if stream.sensitive_access_failure.load(Ordering::Acquire) {
+            terminal_error = Some(CollectorError::SensitiveAccessUnavailable);
         }
     }
     let transition = if authentication_rejected {
@@ -4125,6 +4256,7 @@ async fn drain_stream_events_with_cache(
     Ok(StreamDrainResult {
         transition,
         backlog: streams.iter().any(|stream| !stream.events.is_empty()),
+        terminal_error,
     })
 }
 
@@ -4333,6 +4465,15 @@ enum PreOnlineCheck {
 
 const PRE_ONLINE_TIMEOUT: Duration = Duration::from_secs(30);
 const CONTROL_SETTINGS_REFRESH: Duration = Duration::from_secs(30);
+const STREAM_EVENT_DRAIN_INTERVAL: Duration = Duration::from_millis(100);
+
+const fn collection_sleep_cap(has_active_streams: bool) -> Duration {
+    if has_active_streams {
+        STREAM_EVENT_DRAIN_INTERVAL
+    } else {
+        CONTROL_SETTINGS_REFRESH
+    }
+}
 
 struct VehicleScheduler {
     cadence: CollectorCadence,
@@ -4998,12 +5139,15 @@ impl VehicleScheduler {
         if let Some(scheduled) = self.vehicles.get_mut(&id)
             && scheduled.settings.use_streaming_api
         {
+            let recovered = !scheduled.stream_healthy;
             scheduled.stream_healthy = true;
             scheduled.suspended = false;
-            if !matches!(
-                scheduled.pre_online,
-                PreOnlineCheck::Probing { .. } | PreOnlineCheck::ConfirmedFake { .. }
-            ) {
+            if recovered
+                && !matches!(
+                    scheduled.pre_online,
+                    PreOnlineCheck::Probing { .. } | PreOnlineCheck::ConfirmedFake { .. }
+                )
+            {
                 scheduled.next_poll = scheduled.next_poll.min(now);
             }
         }
@@ -6214,9 +6358,13 @@ pub enum CollectorError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+    use std::{
+        fs,
+        os::unix::fs::{PermissionsExt, symlink},
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
     };
 
     use axum::{
@@ -6240,6 +6388,51 @@ mod tests {
         lifecycle::OpenSessionState,
         owner_api::{Vehicle, VehicleData},
     };
+
+    #[test]
+    fn fleet_proxy_root_certificate_is_descriptor_pinned_and_private() {
+        let temporary = tempfile::tempdir().expect("temporary certificate root");
+        let certificate = temporary.path().join("proxy-ca.pem");
+        fs::write(&certificate, b"trusted-ca").expect("write certificate");
+        fs::set_permissions(&certificate, fs::Permissions::from_mode(0o600))
+            .expect("protect certificate");
+        assert_eq!(
+            read_fleet_proxy_root_certificate(&certificate, 128).expect("read safe certificate"),
+            b"trusted-ca"
+        );
+
+        let link = temporary.path().join("proxy-ca-link.pem");
+        symlink(&certificate, &link).expect("certificate symlink");
+        assert!(matches!(
+            read_fleet_proxy_root_certificate(&link, 128),
+            Err(FleetApiConfigError::InvalidRootCertificate)
+        ));
+
+        fs::set_permissions(&certificate, fs::Permissions::from_mode(0o622))
+            .expect("make certificate writable");
+        assert!(matches!(
+            read_fleet_proxy_root_certificate(&certificate, 128),
+            Err(FleetApiConfigError::InvalidRootCertificate)
+        ));
+        fs::set_permissions(&certificate, fs::Permissions::from_mode(0o600))
+            .expect("restore certificate mode");
+
+        assert!(matches!(
+            read_fleet_proxy_root_certificate(&certificate, 4),
+            Err(FleetApiConfigError::InvalidRootCertificate)
+        ));
+
+        let replacement = temporary.path().join("replacement.pem");
+        fs::write(&replacement, b"other-ca").expect("write replacement");
+        fs::set_permissions(&replacement, fs::Permissions::from_mode(0o600))
+            .expect("protect replacement");
+        assert!(matches!(
+            read_fleet_proxy_root_certificate_after_open(&certificate, 128, || {
+                fs::rename(&replacement, &certificate).expect("replace admitted certificate");
+            }),
+            Err(FleetApiConfigError::InvalidRootCertificate)
+        ));
+    }
 
     #[tokio::test]
     async fn stream_task_completion_outcomes_are_typed_and_secret_safe() {
@@ -6298,6 +6491,93 @@ mod tests {
             assert!(!rendered.contains("access-secret"));
             assert!(!rendered.contains("refresh-secret"));
         }
+    }
+
+    #[tokio::test]
+    async fn completed_stream_task_drains_final_events_and_is_reaped_once() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let vehicle = Vehicle::for_test(29, "5YJ3E1EA7KF000029", "online");
+        let vehicle_id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), Instant::now());
+        scheduler.accept_discovery(vec![vehicle], Instant::now());
+        let (events, receiver) = mpsc::channel(2);
+        events
+            .send(StreamEvent::Telemetry(Box::new(
+                crate::tesla_stream::StreamUpdate {
+                    tag: vehicle_id.to_string(),
+                    timestamp_ms: current_epoch_millis().expect("clock") - 1_000,
+                    speed: Some(20),
+                    odometer: Some(100.0),
+                    soc: Some(80),
+                    elevation: Some(25),
+                    est_heading: Some(180),
+                    est_lat: Some(51.5),
+                    est_lng: Some(-0.1),
+                    power: Some(12),
+                    shift_state: Some("D".to_owned()),
+                    range: Some(200),
+                    est_range: Some(210),
+                    heading: Some(180),
+                },
+            )))
+            .await
+            .expect("final telemetry");
+        events
+            .send(StreamEvent::AuthRejected)
+            .await
+            .expect("final auth transition");
+        drop(events);
+        let (shutdown, _stop) = oneshot::channel();
+        let task = tokio::spawn(async {
+            Err::<(), _>(crate::tesla_stream::StreamSupervisorError::EventQueueFull)
+        });
+        let mut streams = vec![VehicleStreamRuntime {
+            vehicle_id,
+            power_gate: Arc::new(StreamPowerGate::default()),
+            sensitive_access_failure: Arc::new(AtomicBool::new(false)),
+            events: receiver,
+            _shutdown: Some(shutdown),
+            task: Some(task),
+        }];
+        while !streams[0]
+            .task
+            .as_ref()
+            .is_some_and(JoinHandle::is_finished)
+        {
+            tokio::task::yield_now().await;
+        }
+
+        let mut projection_car_ids = HashMap::new();
+        let result = drain_stream_events_with_cache(
+            &store,
+            &mut scheduler,
+            &mut streams,
+            &mut projection_car_ids,
+        )
+        .await
+        .expect("final events must drain before task failure");
+        assert_eq!(result.transition, StreamAuthenticationTransition::Rejected);
+        assert!(matches!(
+            result.terminal_error,
+            Some(CollectorError::StreamTask(StreamTaskOutcome::Supervisor(
+                crate::tesla_stream::StreamSupervisorError::EventQueueFull
+            )))
+        ));
+        assert!(streams[0].task.is_none(), "completed task was not consumed");
+        assert!(!scheduler.vehicles[&vehicle_id].stream_healthy);
+        let registered = projection_car_ids[&vehicle_id].registered_vehicle_id;
+        let observations = store
+            .current_observations_for_vehicle(registered)
+            .expect("final telemetry observation");
+        assert!(
+            observations.iter().any(|observation| {
+                observation.payload["record_type"] == "tesla_stream_update_v1"
+            })
+        );
+
+        stop_and_clear_manual_probe_streams(&mut streams).await;
+        assert!(streams.is_empty());
     }
 
     #[tokio::test]
@@ -7129,7 +7409,7 @@ mod tests {
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: Some(shutdown),
-            task,
+            task: Some(task),
         }];
         let (state, receiver) = watch::channel(SupervisedCollectorState::Active);
         let mut stream_authentication_rejected = false;
@@ -7156,10 +7436,14 @@ mod tests {
             SupervisedCollectorState::AuthenticationTerminal
         );
 
+        let telemetry = crate::tesla_stream::parse_data_update(
+            r#"{"msg_type":"data:update","tag":"9","value":"1,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#,
+        )
+        .expect("valid authenticated stream frame");
         events
-            .send(StreamEvent::Healthy)
+            .send(StreamEvent::Telemetry(Box::new(telemetry)))
             .await
-            .expect("healthy stream event");
+            .expect("authenticated telemetry event");
         let transition = drain_stream_events(&store, &mut scheduler, &mut streams)
             .await
             .expect("drain healthy stream");
@@ -7177,7 +7461,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stream_drain_budget_leaves_backlog_for_next_collection_turn() {
+    async fn production_stream_queue_backpressures_and_drains_without_event_loss() {
         let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
         let vehicle_id = VehicleId::from_test(19);
@@ -7186,7 +7470,7 @@ mod tests {
             vec![Vehicle::for_test(19, "5YJ3E1EA7KF000019", "online")],
             Instant::now(),
         );
-        let (sender, receiver) = mpsc::channel(MAX_STREAM_EVENTS_PER_DRAIN + 1);
+        let (sender, receiver) = mpsc::channel(STREAM_EVENT_CHANNEL_CAPACITY);
         let (shutdown, stop) = oneshot::channel();
         let task = tokio::spawn(async move {
             let _ = stop.await;
@@ -7198,24 +7482,104 @@ mod tests {
             sensitive_access_failure: Arc::new(AtomicBool::new(false)),
             events: receiver,
             _shutdown: Some(shutdown),
-            task,
+            task: Some(task),
         }];
-        for _ in 0..=MAX_STREAM_EVENTS_PER_DRAIN {
+        let first_timestamp = current_epoch_millis().expect("clock")
+            - i64::try_from((STREAM_EVENT_CHANNEL_CAPACITY + 2) * 200)
+                .expect("production queue duration fits i64");
+        let telemetry = |offset: usize| {
+            StreamEvent::Telemetry(Box::new(crate::tesla_stream::StreamUpdate {
+                tag: vehicle_id.to_string(),
+                timestamp_ms: first_timestamp
+                    + i64::try_from(offset * 200).expect("telemetry offset fits i64"),
+                speed: Some(20),
+                odometer: Some(100.0 + offset as f64 / 1_000.0),
+                soc: Some(80),
+                elevation: Some(25),
+                est_heading: Some(180),
+                est_lat: Some(51.5),
+                est_lng: Some(-0.1),
+                power: Some(12),
+                shift_state: Some("D".to_owned()),
+                range: Some(200),
+                est_range: Some(210),
+                heading: Some(180),
+            }))
+        };
+        for offset in 0..STREAM_EVENT_CHANNEL_CAPACITY {
             sender
-                .send(StreamEvent::TransportUnavailable)
-                .await
-                .expect("queued stream event");
+                .try_send(telemetry(offset))
+                .expect("fill production stream queue");
         }
+        let final_sender = sender.clone();
+        let final_event = telemetry(STREAM_EVENT_CHANNEL_CAPACITY);
+        let mut blocked_sender = tokio::spawn(async move { final_sender.send(final_event).await });
+        assert!(
+            timeout(Duration::from_millis(20), &mut blocked_sender)
+                .await
+                .is_err(),
+            "the bounded producer must backpressure while the queue is full"
+        );
 
-        drain_stream_events(&store, &mut scheduler, &mut streams)
+        let mut projection_car_ids = HashMap::new();
+        let mut result = drain_stream_events_with_cache(
+            &store,
+            &mut scheduler,
+            &mut streams,
+            &mut projection_car_ids,
+        )
+        .await
+        .expect("first bounded stream drain");
+        assert!(result.backlog);
+        timeout(Duration::from_secs(1), blocked_sender)
             .await
-            .expect("bounded stream drain");
-        assert!(matches!(
-            streams[0].events.try_recv(),
-            Ok(StreamEvent::TransportUnavailable)
-        ));
+            .expect("backpressured sender resumes after drain")
+            .expect("sender task")
+            .expect("final event delivery");
+        drop(sender);
+
+        let mut drain_turns = 1;
+        while result.backlog {
+            tokio::task::yield_now().await;
+            result = drain_stream_events_with_cache(
+                &store,
+                &mut scheduler,
+                &mut streams,
+                &mut projection_car_ids,
+            )
+            .await
+            .expect("prioritized backlog drain");
+            assert!(result.terminal_error.is_none());
+            drain_turns += 1;
+        }
+        assert_eq!(
+            drain_turns,
+            (STREAM_EVENT_CHANNEL_CAPACITY + 1).div_ceil(MAX_STREAM_EVENTS_PER_DRAIN)
+        );
+        let registered = projection_car_ids[&vehicle_id].registered_vehicle_id;
+        let positions: i64 = store
+            .open()
+            .expect("database")
+            .query_row(
+                "SELECT COUNT(*) FROM lifecycle_open_rows
+                 WHERE vehicle_id = ?1 AND domain = 'position'",
+                [registered.to_string()],
+                |row| row.get(0),
+            )
+            .expect("stream positions");
+        assert_eq!(positions, (STREAM_EVENT_CHANNEL_CAPACITY + 1) as i64);
 
         stop_and_clear_manual_probe_streams(&mut streams).await;
+    }
+
+    #[test]
+    fn active_streams_bound_collection_sleep_below_queue_capacity() {
+        assert_eq!(collection_sleep_cap(false), CONTROL_SETTINGS_REFRESH);
+        assert_eq!(collection_sleep_cap(true), STREAM_EVENT_DRAIN_INTERVAL);
+        assert!(STREAM_EVENT_DRAIN_INTERVAL < Duration::from_secs(1));
+        const {
+            assert!(STREAM_EVENT_CHANNEL_CAPACITY > MAX_STREAM_EVENTS_PER_DRAIN);
+        }
     }
 
     #[derive(Clone)]
@@ -8094,7 +8458,19 @@ mod tests {
         let raw = json!({
             "response": {
                 "drive_state": {"shift_state": "P", "timestamp": 1_800_000_000_000_i64},
-                "charge_state": {"battery_level": 80}
+                "charge_state": {
+                    "battery_level": 80,
+                    "charge_limit_soc": 90,
+                    "future_secret_name": "secret"
+                },
+                "vehicle_state": {
+                    "software_update": {
+                        "status": "available",
+                        "version": "2026.20",
+                        "expected_duration_sec": 900
+                    }
+                },
+                "unknown_group": {"battery_level": 1}
             },
             "provider_trace": "fleet-trace"
         });
@@ -8130,7 +8506,35 @@ mod tests {
             .iter()
             .find(|observation| observation.payload["record_type"] == "fleet_api_vehicle_data_v1")
             .expect("Fleet current observation");
-        assert_eq!(fleet.payload["provider_raw_json"], raw);
+        assert_eq!(
+            fleet.payload["provider_raw_json"],
+            json!({
+                "response": {
+                    "drive_state": {
+                        "shift_state": "P",
+                        "timestamp": 1_800_000_000_000_i64
+                    },
+                    "charge_state": {"battery_level": 80, "charge_limit_soc": 90},
+                    "vehicle_state": {
+                        "software_update": {
+                            "status": "available",
+                            "version": "2026.20"
+                        }
+                    }
+                }
+            })
+        );
+        let rendered = fleet.payload["provider_raw_json"].to_string();
+        for rejected in [
+            "provider_trace",
+            "unknown_group",
+            "future_secret_name",
+            "expected_duration_sec",
+            "fleet-trace",
+            "secret",
+        ] {
+            assert!(!rendered.contains(rejected), "field survived: {rejected}");
+        }
         assert!(fleet.payload.get("vehicle_data").is_none());
     }
 
@@ -10456,6 +10860,28 @@ mod tests {
             scheduler.vehicles[&vehicle_id].next_poll,
             recovered_at + Duration::from_secs(15)
         );
+    }
+
+    #[test]
+    fn repeated_stream_telemetry_preserves_owner_api_retry_deadline() {
+        let now = Instant::now();
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let vehicle_id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+        scheduler.stream_healthy(vehicle_id, now);
+
+        let failed_at = now + Duration::from_secs(1);
+        scheduler.vehicle_failed_for_error(
+            vehicle_id,
+            &CollectorError::OwnerApiAuth(OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(401))),
+            failed_at,
+        );
+        let retry_at = scheduler.vehicles[&vehicle_id].next_poll;
+
+        scheduler.stream_healthy(vehicle_id, failed_at + Duration::from_millis(100));
+        assert_eq!(scheduler.vehicles[&vehicle_id].next_poll, retry_at);
+        assert!(retry_at > failed_at);
     }
 
     #[test]

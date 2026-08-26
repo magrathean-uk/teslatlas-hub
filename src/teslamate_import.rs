@@ -63,7 +63,9 @@ use crate::{
     },
     teslamate_stage::{TeslaMateStage, TeslaMateStageTable},
     updates_delivery::{
-        ProductionUpdatesPublication, UpdatesDeliveryError, production_updates_head,
+        ProductionUpdatesPublication, UpdatesDeliveryError,
+        discard_prepared_initial_production_updates_schema_22,
+        prepare_initial_production_updates_schema_22_with_gate, production_updates_head,
         publish_production_updates_schema_22_with_gate,
     },
 };
@@ -542,7 +544,7 @@ pub async fn import_from_postgres(
     limits: TeslaMateReadLimits,
 ) -> Result<TeslaMateImportReport, TeslaMateImportError> {
     Ok(import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits, false,
+        store, source, password, cursor_key, request, limits, false, false,
     )
     .await?
     .report)
@@ -561,7 +563,7 @@ pub async fn import_selected_from_postgres_with_schema_22(
     limits: TeslaMateReadLimits,
 ) -> Result<TeslaMateSelectedImportReport, TeslaMateImportError> {
     let captured = import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits, false,
+        store, source, password, cursor_key, request, limits, false, true,
     )
     .await?;
     finish_selected_schema_22_publication(store, cursor_key, captured)
@@ -585,7 +587,7 @@ pub async fn import_selected_from_postgres_with_schema_22_and_legacy_token(
     TeslaMateImportError,
 > {
     let mut captured = import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits, true,
+        store, source, password, cursor_key, request, limits, true, true,
     )
     .await?;
     let legacy_tokens = captured
@@ -602,6 +604,7 @@ struct CapturedTeslaMateImport {
     binding: ProjectionBinding,
     updates_v2_2: DirectUpdatesSourceV2_2,
     legacy_tokens: Option<TeslaMateLegacyTokenCiphertexts>,
+    atomic_schema_22: Option<ProductionUpdatesPublication>,
     publication_gate: PublicationGate,
 }
 
@@ -621,8 +624,15 @@ fn finish_selected_schema_22_publication(
         binding,
         updates_v2_2,
         legacy_tokens: _,
+        atomic_schema_22,
         publication_gate,
     } = captured;
+    if let Some(updates_schema_22) = atomic_schema_22 {
+        return Ok(TeslaMateSelectedImportReport {
+            import: report,
+            updates_schema_22,
+        });
+    }
     let vehicle_id = report.vehicle_id;
     let legacy_snapshot_id = report.snapshot_id;
     // Observe the schema-2.2 head only after this command's legacy transaction
@@ -663,6 +673,7 @@ async fn import_from_postgres_with_updates_capture(
     request: &TeslaMateImportRequest,
     limits: TeslaMateReadLimits,
     capture_legacy_token: bool,
+    prepare_schema_22: bool,
 ) -> Result<CapturedTeslaMateImport, TeslaMateImportError> {
     let publication_gate = store.acquire_publication_gate().await?;
     let selected_car_id = selected_car_id(request)?;
@@ -920,6 +931,7 @@ async fn import_from_postgres_with_updates_capture(
             binding: binding.clone(),
             updates_v2_2,
             legacy_tokens,
+            atomic_schema_22: None,
             publication_gate,
         });
     }
@@ -952,6 +964,7 @@ async fn import_from_postgres_with_updates_capture(
                 binding: binding.clone(),
                 updates_v2_2,
                 legacy_tokens,
+                atomic_schema_22: None,
                 publication_gate,
             });
         }
@@ -972,6 +985,7 @@ async fn import_from_postgres_with_updates_capture(
                 binding: binding.clone(),
                 updates_v2_2,
                 legacy_tokens,
+                atomic_schema_22: None,
                 publication_gate,
             });
         }
@@ -1114,6 +1128,7 @@ async fn import_from_postgres_with_updates_capture(
             binding: binding.clone(),
             updates_v2_2,
             legacy_tokens,
+            atomic_schema_22: None,
             publication_gate,
         });
     }
@@ -1137,21 +1152,70 @@ async fn import_from_postgres_with_updates_capture(
             return Err(error.into());
         }
     };
+    let prepared_schema_22 = if prepare_schema_22 {
+        match prepare_initial_production_updates_schema_22_with_gate(
+            store,
+            cursor_key,
+            &binding,
+            updates_v2_2.clone(),
+            &publication_gate,
+            capture_sequence,
+        ) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                store.abort_import_generation(run_id)?;
+                return Err(TeslaMateImportError::Schema22Preparation(error));
+            }
+        }
+    } else {
+        None
+    };
     // A pre-commit failure can leave only unreferenced candidate packs; repair
     // may remove those safely. After the transaction commits they are catalogued.
-    if let Err(error) = store.finalize_import_generation_with_projection_state(
-        run_id,
-        registered_source.source_id,
-        vehicle.vehicle_id,
-        selected_car_id,
-        request.imported_at_ms,
-        &manifest,
-        direct.fingerprint,
-        &direct.geofences,
-        &binding,
-        &projection_state,
-        false,
-    ) {
+    let finalization = if let Some(prepared) = prepared_schema_22.as_ref() {
+        store.finalize_import_generation_with_projection_state_and_schema_22(
+            &publication_gate,
+            run_id,
+            registered_source.source_id,
+            vehicle.vehicle_id,
+            selected_car_id,
+            request.imported_at_ms,
+            &manifest,
+            direct.fingerprint,
+            &direct.geofences,
+            &binding,
+            &projection_state,
+            &prepared.manifest,
+            &prepared.noop,
+        )
+    } else {
+        store.finalize_import_generation_with_projection_state(
+            run_id,
+            registered_source.source_id,
+            vehicle.vehicle_id,
+            selected_car_id,
+            request.imported_at_ms,
+            &manifest,
+            direct.fingerprint,
+            &direct.geofences,
+            &binding,
+            &projection_state,
+            false,
+        )
+    };
+    if let Err(error) = finalization {
+        if let Some(prepared) = prepared_schema_22.as_ref()
+            && !matches!(
+                error,
+                crate::db::StoreError::AmbiguousCatalogueCommit { .. }
+            )
+        {
+            discard_prepared_initial_production_updates_schema_22(
+                store,
+                &publication_gate,
+                prepared,
+            );
+        }
         reconcile_failed_full_snapshot_candidate(store, &publication_gate, &mut direct, &error)?;
         return Err(error.into());
     }
@@ -1171,6 +1235,7 @@ async fn import_from_postgres_with_updates_capture(
         binding,
         updates_v2_2,
         legacy_tokens,
+        atomic_schema_22: prepared_schema_22.map(|prepared| prepared.publication),
         publication_gate,
     })
 }
@@ -2415,6 +2480,8 @@ pub enum TeslaMateImportError {
         #[source]
         source: UpdatesDeliveryError,
     },
+    #[error("schema-2.2 publication candidate could not be prepared: {0}")]
+    Schema22Preparation(#[source] UpdatesDeliveryError),
     #[error(transparent)]
     Reader(#[from] crate::teslamate_reader::TeslaMateReaderError),
     #[error(transparent)]
@@ -3764,6 +3831,7 @@ mod tests {
                 binding: wrong_binding,
                 updates_v2_2: source.clone(),
                 legacy_tokens: None,
+                atomic_schema_22: None,
                 publication_gate,
             },
         )
@@ -3795,6 +3863,7 @@ mod tests {
                 binding: binding.clone(),
                 updates_v2_2: source.clone(),
                 legacy_tokens: None,
+                atomic_schema_22: None,
                 publication_gate,
             },
         )
@@ -3880,6 +3949,7 @@ mod tests {
                 binding: delta_binding.clone(),
                 updates_v2_2: delta_updates,
                 legacy_tokens: None,
+                atomic_schema_22: None,
                 publication_gate,
             },
         )

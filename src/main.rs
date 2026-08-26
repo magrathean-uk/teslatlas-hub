@@ -27,7 +27,7 @@ use teslatlas_hub::{
     credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials, restore_credentials},
     credentials::{OwnerTokens, TeslaMatePostgresPassword},
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
-    db::{HubStore, ObservationVerificationError, TeslaMateLegacyTokenStore},
+    db::{HubStore, ObservationVerificationError, StoreError, TeslaMateLegacyTokenStore},
     fleet_api::FleetRegion,
     fleet_credentials::{
         FleetCredentialError, FleetSetupCredentials, migrate_legacy_fleet_credentials,
@@ -65,6 +65,82 @@ use tracing_subscriber::EnvFilter;
 
 #[cfg(unix)]
 use rustix::io::Errno;
+
+const IMMUTABLE_DIAGNOSTIC_ATTEMPTS: usize = 2;
+const IMMUTABLE_DIAGNOSTIC_OPEN_ATTEMPTS: usize = 21;
+#[cfg(not(test))]
+const IMMUTABLE_DIAGNOSTIC_OPEN_DELAY: Duration = Duration::from_millis(100);
+#[cfg(test)]
+const IMMUTABLE_DIAGNOSTIC_OPEN_DELAY: Duration = Duration::ZERO;
+
+fn retryable_immutable_diagnostic_error(error: &(dyn std::error::Error + 'static)) -> bool {
+    error.downcast_ref::<StoreError>().is_some_and(|error| {
+        matches!(
+            error,
+            StoreError::PendingCatalogueWal | StoreError::CatalogueChangedDuringImmutableCheck
+        )
+    })
+}
+
+fn run_immutable_diagnostic<T>(
+    data_dir: &Path,
+    operation: impl FnMut(&HubStore) -> Result<T, Box<dyn std::error::Error>>,
+) -> Result<T, Box<dyn std::error::Error>> {
+    run_immutable_diagnostic_with(data_dir, operation, || {
+        std::thread::sleep(IMMUTABLE_DIAGNOSTIC_OPEN_DELAY);
+    })
+}
+
+fn run_immutable_diagnostic_with<T>(
+    data_dir: &Path,
+    mut operation: impl FnMut(&HubStore) -> Result<T, Box<dyn std::error::Error>>,
+    mut wait: impl FnMut(),
+) -> Result<T, Box<dyn std::error::Error>> {
+    for diagnostic_attempt in 0..IMMUTABLE_DIAGNOSTIC_ATTEMPTS {
+        let mut open_result = None;
+        for open_attempt in 0..IMMUTABLE_DIAGNOSTIC_OPEN_ATTEMPTS {
+            match HubStore::open_immutable_read_only(data_dir) {
+                Err(StoreError::PendingCatalogueWal)
+                    if open_attempt + 1 < IMMUTABLE_DIAGNOSTIC_OPEN_ATTEMPTS =>
+                {
+                    wait();
+                }
+                result => {
+                    open_result = Some(result);
+                    break;
+                }
+            }
+        }
+        let store = match open_result.expect("bounded immutable catalogue open loop completes") {
+            Ok(store) => store,
+            Err(error)
+                if matches!(
+                    error,
+                    StoreError::PendingCatalogueWal
+                        | StoreError::CatalogueChangedDuringImmutableCheck
+                ) && diagnostic_attempt + 1 < IMMUTABLE_DIAGNOSTIC_ATTEMPTS =>
+            {
+                wait();
+                continue;
+            }
+            Err(error) => return Err(Box::new(error)),
+        };
+        let result = operation(&store).and_then(|output| {
+            store.verify_immutable_snapshot_unchanged()?;
+            Ok(output)
+        });
+        match result {
+            Err(error)
+                if retryable_immutable_diagnostic_error(error.as_ref())
+                    && diagnostic_attempt + 1 < IMMUTABLE_DIAGNOSTIC_ATTEMPTS =>
+            {
+                wait();
+            }
+            result => return result,
+        }
+    }
+    unreachable!("bounded immutable diagnostic loop always returns")
+}
 
 /// A worker owned by the Unix Serve supervisor. Normal exits request
 /// shutdown and await the task; cancellation of the supervisor aborts the
@@ -1736,15 +1812,16 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Doctor => {
             let config = HubConfig::load(&config_path)?;
-            let store = HubStore::open_immutable_read_only(&config.data_dir)?;
-            store.catalogue_check()?;
-            let sqlite_version = store.sqlite_version()?;
-            store.verify_immutable_snapshot_unchanged()?;
+            let (sqlite_version, database_path) =
+                run_immutable_diagnostic(&config.data_dir, |store| {
+                    store.catalogue_check()?;
+                    Ok((store.sqlite_version()?, store.database_path().to_path_buf()))
+                })?;
             println!(
                 "{{\"status\":\"ok\",\"version\":\"{}\",\"sqlite\":\"{}\",\"database\":\"{}\"}}",
                 teslatlas_hub::BUILD_VERSION,
                 sqlite_version,
-                store.database_path().display()
+                database_path.display()
             );
             return Ok(());
         }
@@ -1839,27 +1916,28 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         Command::Preflight => {
             let config = HubConfig::load(&config_path)?;
-            let store = HubStore::open_immutable_read_only(&config.data_dir)?;
-            store.catalogue_check()?;
-            store.verify_immutable_snapshot_unchanged()?;
-            let configured = store.configured_tesla_vehicles()?;
-            if configured.is_empty() {
-                return Err("at least one configured vehicle is required".into());
-            }
-            match config.collector.provider {
-                CollectorProvider::Legacy => {
-                    let tokens = store
-                        .load_teslamate_legacy_tokens()?
-                        .ok_or("legacy Owner API credentials are required")?;
-                    teslatlas_hub::teslamate_credentials::load_key_for_tokens(
-                        &config.data_dir,
-                        &tokens,
-                    )?;
+            run_immutable_diagnostic(&config.data_dir, |store| {
+                store.catalogue_check()?;
+                let configured = store.configured_tesla_vehicles()?;
+                if configured.is_empty() {
+                    return Err("at least one configured vehicle is required".into());
                 }
-                CollectorProvider::Fleet => {
-                    validate_stored_fleet_credentials(&store, &config.data_dir)?;
+                match config.collector.provider {
+                    CollectorProvider::Legacy => {
+                        let tokens = store
+                            .load_teslamate_legacy_tokens()?
+                            .ok_or("legacy Owner API credentials are required")?;
+                        teslatlas_hub::teslamate_credentials::load_key_for_tokens(
+                            &config.data_dir,
+                            &tokens,
+                        )?;
+                    }
+                    CollectorProvider::Fleet => {
+                        validate_stored_fleet_credentials(store, &config.data_dir)?;
+                    }
                 }
-            }
+                Ok(())
+            })?;
             println!(
                 "{}",
                 serde_json::json!({
@@ -3154,7 +3232,7 @@ mod tests {
         Cli, Command, ControlCommand, MAX_TLS_CERTIFICATE_CHAIN_BYTES, MAX_TLS_PRIVATE_KEY_BYTES,
         PairingCommandError, PairingCommandInput, execute_pairing_at, leaf_certificate_sha256,
         leaf_certificate_sha256_after_open, pairing_uri, persist_and_present_pairing,
-        read_tls_identity_file, render_pairing_qr, run,
+        read_tls_identity_file, render_pairing_qr, run, run_immutable_diagnostic_with,
     };
     #[cfg(target_os = "macos")]
     use super::{
@@ -4359,6 +4437,73 @@ mod tests {
 
         assert!(error.to_string().contains("cannot inspect hub catalogue"));
         assert!(!data_dir.exists());
+    }
+
+    #[test]
+    fn immutable_diagnostic_waits_for_a_transient_wal() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
+            .expect("protect temporary directory");
+        HubStore::initialize(temporary.path()).expect("store initializes");
+        let wal = temporary.path().join("hub.sqlite-wal");
+        fs::write(&wal, b"pending").expect("create pending WAL witness");
+        let mut waits = 0;
+
+        run_immutable_diagnostic_with(
+            temporary.path(),
+            |store| {
+                store.catalogue_check()?;
+                Ok(())
+            },
+            || {
+                waits += 1;
+                if wal.exists() {
+                    fs::remove_file(&wal).expect("settle WAL");
+                }
+            },
+        )
+        .expect("diagnostic opens after WAL settles");
+
+        assert_eq!(waits, 1);
+    }
+
+    #[test]
+    fn immutable_diagnostic_retries_a_snapshot_changed_during_checks() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
+            .expect("protect temporary directory");
+        HubStore::initialize(temporary.path()).expect("store initializes");
+        let database = temporary.path().join("hub.sqlite");
+        let original_bytes = fs::metadata(&database).expect("catalogue metadata").len();
+        let mut runs = 0;
+        let mut waits = 0;
+
+        run_immutable_diagnostic_with(
+            temporary.path(),
+            |store| {
+                runs += 1;
+                store.catalogue_check()?;
+                if runs == 1 {
+                    let mut catalogue = fs::OpenOptions::new().append(true).open(&database)?;
+                    catalogue.write_all(b"changed")?;
+                    catalogue.sync_all()?;
+                }
+                Ok(())
+            },
+            || {
+                waits += 1;
+                fs::OpenOptions::new()
+                    .write(true)
+                    .open(&database)
+                    .expect("open changed catalogue")
+                    .set_len(original_bytes)
+                    .expect("restore catalogue size");
+            },
+        )
+        .expect("diagnostic retries a changed snapshot");
+
+        assert_eq!(runs, 2);
+        assert_eq!(waits, 1);
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]

@@ -594,26 +594,60 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(installer.deleteDataChoices, [false, true])
     }
 
-    func testUninstallExtractsEmbeddedUninstallerWithoutInstallingPackage() throws {
+    func testInstallStagesAndVerifiesSignedPackageBeforeInstallerRuns() throws {
         let package = "/Applications/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg"
-        let command = try EmbeddedInstaller.uninstallCommand(
+        let app = "/Applications/Teslatlas Hub.app"
+        let digest = String(repeating: "a", count: 64)
+        let command = try EmbeddedInstaller.installCommand(
             packagePath: package,
-            deleteData: true
+            appPath: app,
+            expectedSHA256: digest,
+            expectedTeamID: "4AA2EMZ2HA"
         )
-        XCTAssertTrue(command.contains("/usr/sbin/pkgutil --expand-full '\(package)'"))
-        XCTAssertTrue(command.contains("Payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"))
-        XCTAssertTrue(command.hasSuffix("/bin/sh \"$uninstaller\" --delete-data"))
-        XCTAssertFalse(command.contains("/usr/sbin/installer "))
+        XCTAssertTrue(command.contains("/private/var/tmp/teslatlas-hub-install.XXXXXX"))
+        XCTAssertTrue(command.contains("/usr/bin/codesign --verify --deep --strict"))
+        XCTAssertTrue(command.contains("/usr/sbin/spctl --assess --type execute"))
+        XCTAssertTrue(command.contains("/usr/bin/install -o root -g wheel -m 0600"))
+        XCTAssertTrue(command.contains("/usr/bin/shasum -a 256 \"$staged\""))
+        XCTAssertTrue(command.contains("/usr/sbin/pkgutil --check-signature \"$staged\""))
+        XCTAssertTrue(command.contains("/usr/sbin/spctl --assess --type install"))
+        XCTAssertTrue(command.hasSuffix("/usr/sbin/installer -pkg \"$staged\" -target /"))
+        XCTAssertFalse(command.contains("/usr/sbin/installer -pkg '\(package)'"))
         let syntaxCheck = Process()
         syntaxCheck.executableURL = URL(fileURLWithPath: "/bin/sh")
         syntaxCheck.arguments = ["-n", "-c", command]
         try syntaxCheck.run()
         syntaxCheck.waitUntilExit()
         XCTAssertEqual(syntaxCheck.terminationStatus, 0)
-        XCTAssertThrowsError(try EmbeddedInstaller.uninstallCommand(
-            packagePath: nil,
-            deleteData: false
+        XCTAssertThrowsError(try EmbeddedInstaller.installCommand(
+            packagePath: package,
+            appPath: app,
+            expectedSHA256: "bad",
+            expectedTeamID: "4AA2EMZ2HA"
         ))
+        XCTAssertThrowsError(try EmbeddedInstaller.installCommand(
+            packagePath: package,
+            appPath: app,
+            expectedSHA256: digest,
+            expectedTeamID: "bad"
+        ))
+    }
+
+    func testUninstallUsesOnlyTheInstalledRootOwnedUninstaller() throws {
+        let command = EmbeddedInstaller.uninstallCommand(deleteData: true)
+        XCTAssertTrue(command.contains("/Library/Application Support/Teslatlas Hub"))
+        XCTAssertTrue(command.contains("$libexec/uninstall-macos-service.sh"))
+        XCTAssertTrue(command.contains("/usr/bin/stat -f '%u:%g'"))
+        XCTAssertTrue(command.contains("-perm +022"))
+        XCTAssertTrue(command.hasSuffix("/bin/sh \"$uninstaller\" --delete-data"))
+        XCTAssertFalse(command.contains("pkgutil --expand"))
+        XCTAssertFalse(command.contains("TeslatlasHubService.pkg"))
+        let syntaxCheck = Process()
+        syntaxCheck.executableURL = URL(fileURLWithPath: "/bin/sh")
+        syntaxCheck.arguments = ["-n", "-c", command]
+        try syntaxCheck.run()
+        syntaxCheck.waitUntilExit()
+        XCTAssertEqual(syntaxCheck.terminationStatus, 0)
     }
 
     func testSetupInvocationKeepsTokensOutOfArguments() throws {

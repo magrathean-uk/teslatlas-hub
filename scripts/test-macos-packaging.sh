@@ -123,6 +123,8 @@ assert_before_fixed '"$BINARY" --config "$CONFIG" preflight' '"$BINARY" --config
     || fail "postinstall status has no wall-clock deadline"
 /usr/bin/grep -Fq 'run_with_deadline "$service_timeout_seconds"' "$POSTINSTALL" \
     || fail "postinstall service actions have no wall-clock deadline"
+/usr/bin/grep -Fq 'wait_for_service_unloaded 100 0.1' "$POSTINSTALL" \
+    || fail "postinstall does not settle asynchronous launchd removal"
 /usr/bin/grep -Fq 'rendered_plist="$STATE_DIRECTORY/launch-agent.rendered"' "$POSTINSTALL" \
     || fail "LaunchAgent is not rendered in root-owned upgrade state"
 /usr/bin/grep -Fq '/bin/mv -fh "$temporary_plist" "$PLIST"' "$POSTINSTALL" \
@@ -202,6 +204,23 @@ migration_helper="$TEST_ROOT/migration-install-helper.sh"
 . "$COMMON"
 # shellcheck source=/dev/null
 . "$migration_helper"
+
+unload_checks=0
+service_is_loaded() {
+    unload_checks=$((unload_checks + 1))
+    [ "$unload_checks" -lt 3 ]
+}
+wait_for_service_unloaded 3 0 \
+    || fail "launchd unload settling rejected a transitional loaded state"
+[ "$unload_checks" -eq 3 ] \
+    || fail "launchd unload settling did not poll until absence"
+service_is_loaded() {
+    return 0
+}
+if wait_for_service_unloaded 3 0; then
+    fail "launchd unload settling accepted a persistently loaded service"
+fi
+
 migration_home="$TEST_ROOT/migration-home"
 migration_config="$migration_home/config.toml"
 migration_marker="$migration_home/.teslamate-handover-pending"

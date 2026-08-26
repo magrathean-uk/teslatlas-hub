@@ -97,14 +97,31 @@ bootout_if_loaded() {
     if /bin/launchctl print "$target" >/dev/null 2>&1; then
         /bin/launchctl bootout "$target" \
             || installer_error "cannot stop existing Hub service"
-        if /bin/launchctl print "$target" >/dev/null 2>&1; then
-            installer_error "existing Hub service is still loaded"
-        fi
+        wait_for_service_unloaded 100 0.1 \
+            || installer_error "existing Hub service is still loaded"
     fi
 }
 
 service_is_loaded() {
     /bin/launchctl print "$(service_target)" >/dev/null 2>&1
+}
+
+# launchctl bootout returns before launchd has necessarily removed the job.
+# Polling avoids racing a replacement bootstrap or reporting a false failure.
+wait_for_service_unloaded() {
+    max_attempts=$1
+    delay_seconds=$2
+    attempt=1
+    while [ "$attempt" -le "$max_attempts" ]; do
+        if ! service_is_loaded; then
+            return 0
+        fi
+        if [ "$attempt" -lt "$max_attempts" ]; then
+            /bin/sleep "$delay_seconds"
+        fi
+        attempt=$((attempt + 1))
+    done
+    return 1
 }
 
 upgrade_state_directory() {

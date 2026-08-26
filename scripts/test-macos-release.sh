@@ -20,6 +20,7 @@ INPUT="$TMP/input"
 LOG="$TMP/tool.log"
 mkdir -p "$BIN" "$INPUT/Teslatlas Hub.app/Contents/MacOS" \
     "$INPUT/Teslatlas Hub.app/Contents/Resources"
+/usr/bin/plutil -create xml1 "$INPUT/Teslatlas Hub.app/Contents/Info.plist"
 : >"$INPUT/Teslatlas Hub.app/Contents/MacOS/Teslatlas Hub"
 : >"$INPUT/Teslatlas Hub.app/Contents/Resources/teslatlas-hub"
 : >"$INPUT/Teslatlas Hub.app/Contents/Resources/tesla-http-proxy"
@@ -67,13 +68,24 @@ printf 'pkgutil %s\n' "$*" >>"$RELEASE_TEST_LOG"
 case "$1" in
     --expand-full)
         mkdir -p "$3/Payload/Library/Application Support/Teslatlas Hub/bin"
+        mkdir -p "$3/Scripts"
         : >"$3/Payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub"
         : >"$3/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
+        cat >"$3/PackageInfo" <<'PACKAGE_INFO'
+<pkg-info identifier="com.teslatlas.hub.service" version="1.0.0a1" install-location="/"/>
+PACKAGE_INFO
         ;;
-    --flatten-full) : >"$3" ;;
     --check-signature) ;;
     *) exit 2 ;;
 esac
+EOF
+
+cat >"$BIN/pkgbuild" <<'EOF'
+#!/bin/sh
+printf 'pkgbuild %s\n' "$*" >>"$RELEASE_TEST_LOG"
+previous=
+for arg in "$@"; do previous=$arg; done
+: >"$previous"
 EOF
 
 cat >"$BIN/productsign" <<'EOF'
@@ -161,12 +173,22 @@ run_release "$PKG_ID" teslatlas-hub-notary-4AA2EMZ2HA "$good_output" >/dev/null
     || fail "app submit log is missing"
 [ -f "$good_output/notary-logs/app-log.json" ] \
     || fail "app detail log is missing"
+release_info="$good_output/Teslatlas Hub.app/Contents/Info.plist"
+embedded_package="$good_output/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg"
+embedded_digest=$(shasum -a 256 "$embedded_package" | awk '{ print $1 }')
+[ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasServicePackageSHA256' "$release_info")" = "$embedded_digest" ] \
+    || fail "signed package digest was not bound into the app"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasReleaseTeamIdentifier' "$release_info")" = 4AA2EMZ2HA ] \
+    || fail "release Team ID was not bound into the app"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasOfficialRelease' "$release_info")" = true ] \
+    || fail "official release marker is missing"
 
 line_number() {
     grep -n "$1" "$LOG" | head -1 | cut -d: -f1
 }
 
 payload_sign=$(line_number 'codesign .*service-expanded/Payload.*teslatlas-hub')
+package_rebuild=$(line_number '^pkgbuild ')
 product_sign=$(line_number '^productsign ')
 package_submit=$(line_number 'xcrun notarytool submit .*TeslatlasHubService.pkg')
 package_staple=$(line_number 'xcrun stapler staple .*TeslatlasHubService.pkg')
@@ -175,7 +197,8 @@ app_sign=$(line_number 'codesign --force --sign .*release/Teslatlas Hub.app$')
 app_submit=$(line_number 'xcrun notarytool submit .*submission.zip')
 app_staple=$(line_number 'xcrun stapler staple .*Teslatlas Hub.app')
 
-[ "$payload_sign" -lt "$product_sign" ] || fail "package payload was signed too late"
+[ "$payload_sign" -lt "$package_rebuild" ] || fail "package rebuilt before payload signing"
+[ "$package_rebuild" -lt "$product_sign" ] || fail "package was signed before ownership rebuild"
 [ "$product_sign" -lt "$package_submit" ] || fail "package was notarized before signing"
 [ "$package_submit" -lt "$package_staple" ] || fail "package staple order is wrong"
 [ "$package_staple" -lt "$app_nested_sign" ] || fail "unstapled package entered app"
@@ -185,6 +208,10 @@ app_staple=$(line_number 'xcrun stapler staple .*Teslatlas Hub.app')
 
 grep -Fq -- '--timestamp --options runtime' "$LOG" \
     || fail "hardened runtime or secure timestamp is missing"
+grep -Fq -- 'pkgbuild --root ' "$LOG" \
+    || fail "signed payload was not rebuilt as a component package"
+grep -Fq -- '--ownership recommended' "$LOG" \
+    || fail "signed package does not restore root-recommended ownership"
 [ "$(grep -c 'codesign --force .*tesla-http-proxy' "$LOG")" -eq 2 ] \
     || fail "package and app proxy copies were not both signed"
 (

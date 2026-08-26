@@ -166,6 +166,7 @@ struct HubSnapshot {
 enum HubActionError: LocalizedError {
     case preview
     case missingResource(String)
+    case untrustedInstaller(String)
     case commandFailed(String)
     case commandTimedOut
 
@@ -175,6 +176,8 @@ enum HubActionError: LocalizedError {
             return "Preview mode is read-only. No process, installer, or launchctl action was run."
         case let .missingResource(name):
             return "Embedded resource is missing: \(name)"
+        case let .untrustedInstaller(reason):
+            return "Installer trust check failed: \(reason)"
         case let .commandFailed(message):
             return message
         case .commandTimedOut:
@@ -365,40 +368,92 @@ final class EmbeddedInstaller: HubInstalling {
             completion(.failure(HubActionError.missingResource("TeslatlasHubService.pkg")))
             return
         }
-        runAdministratorCommand("/usr/sbin/installer -pkg \(Self.shellQuote(package.path)) -target /",
-                                completion: completion)
-    }
-
-    func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
-        let package = Bundle.main.url(forResource: "TeslatlasHubService", withExtension: "pkg")
+        guard let digest = Bundle.main.object(forInfoDictionaryKey: "TeslatlasServicePackageSHA256") as? String,
+              let teamID = Bundle.main.object(forInfoDictionaryKey: "TeslatlasReleaseTeamIdentifier") as? String,
+              Bundle.main.object(forInfoDictionaryKey: "TeslatlasOfficialRelease") as? Bool == true else {
+            completion(.failure(HubActionError.untrustedInstaller("signed release metadata is missing")))
+            return
+        }
         do {
-            let command = try Self.uninstallCommand(packagePath: package?.path,
-                                                    deleteData: deleteData)
+            let command = try Self.installCommand(packagePath: package.path,
+                                                  appPath: Bundle.main.bundleURL.path,
+                                                  expectedSHA256: digest,
+                                                  expectedTeamID: teamID)
             runAdministratorCommand(command, completion: completion)
         } catch {
             completion(.failure(error))
         }
     }
 
-    static func uninstallCommand(packagePath: String?,
-                                 deleteData: Bool) throws -> String {
-        guard let packagePath else {
-            throw HubActionError.missingResource("TeslatlasHubService.pkg")
+    func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
+        runAdministratorCommand(Self.uninstallCommand(deleteData: deleteData),
+                                completion: completion)
+    }
+
+    static func installCommand(packagePath: String,
+                               appPath: String,
+                               expectedSHA256: String,
+                               expectedTeamID: String) throws -> String {
+        guard expectedSHA256.count == 64,
+              expectedSHA256.unicodeScalars.allSatisfy({
+                  (48 ... 57).contains($0.value) || (97 ... 102).contains($0.value)
+              }) else {
+            throw HubActionError.untrustedInstaller("package digest metadata is invalid")
         }
-        let option = deleteData ? " --delete-data" : ""
-        let payload = "$staging/expanded/Payload/Library/Application Support/Teslatlas Hub/libexec"
-        return "staging=$(/usr/bin/mktemp -d /private/var/tmp/teslatlas-hub-uninstall.XXXXXX)" +
+        guard expectedTeamID.count == 10,
+              expectedTeamID.unicodeScalars.allSatisfy({
+                  (48 ... 57).contains($0.value) || (65 ... 90).contains($0.value)
+              }) else {
+            throw HubActionError.untrustedInstaller("Team ID metadata is invalid")
+        }
+        return "staging=$(/usr/bin/mktemp -d /private/var/tmp/teslatlas-hub-install.XXXXXX)" +
             " || exit 1; " +
-            "trap '/usr/bin/find \"$staging\" -depth -delete' EXIT HUP INT TERM; " +
-            "/usr/bin/test \"$(/usr/bin/stat -f '%u:%Lp' \"$staging\")\" = 0:700" +
-            " && /usr/bin/test -f \(shellQuote(packagePath))" +
-            " && /usr/bin/test ! -L \(shellQuote(packagePath))" +
-            " && /usr/sbin/pkgutil --expand-full \(shellQuote(packagePath)) \"$staging/expanded\"" +
-            " && uninstaller=\"\(payload)/uninstall-macos-service.sh\"" +
-            " && common=\"\(payload)/common.sh\"" +
+            "trap '/usr/bin/find -x \"$staging\" -depth -delete' EXIT HUP INT TERM; " +
+            "app=\(shellQuote(appPath)); package=\(shellQuote(packagePath)); " +
+            "expected_sha=\(shellQuote(expectedSHA256)); expected_team=\(shellQuote(expectedTeamID)); " +
+            "staged=\"$staging/TeslatlasHubService.pkg\"; " +
+            "/usr/bin/test \"$(/usr/bin/stat -f '%u:%g:%Lp' \"$staging\")\" = 0:0:700" +
+            " && /usr/bin/test -d \"$app\" && /usr/bin/test ! -L \"$app\"" +
+            " && /usr/bin/test \"$package\" = \"$app/Contents/Resources/TeslatlasHubService.pkg\"" +
+            " && /usr/bin/test -f \"$package\" && /usr/bin/test ! -L \"$package\"" +
+            " && /usr/bin/codesign --verify --deep --strict --verbose=2 \"$app\" >/dev/null 2>&1" +
+            " && /usr/sbin/spctl --assess --type execute --verbose=4 \"$app\" >/dev/null 2>&1" +
+            " && app_team=$(/usr/bin/codesign -dv --verbose=4 \"$app\" 2>&1" +
+            " | /usr/bin/awk -F= '$1 == \"TeamIdentifier\" { print $2; exit }')" +
+            " && /usr/bin/test \"$app_team\" = \"$expected_team\"" +
+            " && /usr/bin/test \"$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasServicePackageSHA256' \"$app/Contents/Info.plist\")\" = \"$expected_sha\"" +
+            " && /usr/bin/test \"$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasReleaseTeamIdentifier' \"$app/Contents/Info.plist\")\" = \"$expected_team\"" +
+            " && /usr/bin/test \"$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasOfficialRelease' \"$app/Contents/Info.plist\")\" = true" +
+            " && /usr/bin/install -o root -g wheel -m 0600 \"$package\" \"$staged\"" +
+            " && /usr/bin/test -f \"$staged\" && /usr/bin/test ! -L \"$staged\"" +
+            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g:%Lp' \"$staged\")\" = 0:0:600" +
+            " && actual_sha=$(/usr/bin/shasum -a 256 \"$staged\" | /usr/bin/awk '{ print $1 }')" +
+            " && /usr/bin/test \"$actual_sha\" = \"$expected_sha\"" +
+            " && /usr/sbin/pkgutil --check-signature \"$staged\" >/dev/null 2>&1" +
+            " && /usr/sbin/spctl --assess --type install \"$staged\" >/dev/null 2>&1" +
+            " && package_team=$(/usr/sbin/spctl --assess --type install --verbose=4 \"$staged\" 2>&1" +
+            " | /usr/bin/sed -nE 's/^origin=.*\\(([A-Z0-9]{10})\\)$/\\1/p')" +
+            " && /usr/bin/test \"$package_team\" = \"$expected_team\"" +
+            " && /usr/sbin/installer -pkg \"$staged\" -target /"
+    }
+
+    static func uninstallCommand(deleteData: Bool) -> String {
+        let option = deleteData ? " --delete-data" : ""
+        let root = "/Library/Application Support/Teslatlas Hub"
+        return "root=\(shellQuote(root)); libexec=\"$root/libexec\"; " +
+            "uninstaller=\"$libexec/uninstall-macos-service.sh\"; common=\"$libexec/common.sh\"; " +
+            "/usr/bin/test -d \"$root\" && /usr/bin/test ! -L \"$root\"" +
+            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g' \"$root\")\" = 0:0" +
+            " && /usr/bin/test -z \"$(/usr/bin/find \"$root\" -prune -perm +022 -print)\"" +
+            " && /usr/bin/test -d \"$libexec\" && /usr/bin/test ! -L \"$libexec\"" +
+            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g' \"$libexec\")\" = 0:0" +
+            " && /usr/bin/test -z \"$(/usr/bin/find \"$libexec\" -prune -perm +022 -print)\"" +
             " && /usr/bin/test -f \"$uninstaller\" && /usr/bin/test ! -L \"$uninstaller\"" +
             " && /usr/bin/test -x \"$uninstaller\"" +
             " && /usr/bin/test -f \"$common\" && /usr/bin/test ! -L \"$common\"" +
+            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g' \"$uninstaller\")\" = 0:0" +
+            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g' \"$common\")\" = 0:0" +
+            " && /usr/bin/test -z \"$(/usr/bin/find \"$uninstaller\" \"$common\" -prune -perm +022 -print)\"" +
             " && /bin/sh \"$uninstaller\"\(option)"
     }
 

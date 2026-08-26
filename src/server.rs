@@ -5,8 +5,8 @@ use std::{
     io::Read,
     os::unix::fs::MetadataExt,
     path::Path as FsPath,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -23,8 +23,10 @@ use rustix::{
 };
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
+use tower::limit::GlobalConcurrencyLimitLayer;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    timeout::TimeoutLayer,
     trace::TraceLayer,
 };
 use uuid::Uuid;
@@ -45,6 +47,10 @@ use crate::{
 
 pub const MAX_TLS_CERTIFICATE_CHAIN_BYTES: usize = 256 * 1024;
 pub const MAX_TLS_PRIVATE_KEY_BYTES: usize = 64 * 1024;
+const MAX_IN_FLIGHT_HTTP_REQUESTS: usize = 32;
+const MAX_ACTIVE_PACK_STREAMS: usize = 8;
+const HTTP_HANDLER_TIMEOUT: Duration = Duration::from_secs(15);
+const READINESS_CACHE_TTL: Duration = Duration::from_secs(1);
 
 pub async fn rustls_config_from_identity(
     tls: &TlsListenerConfig,
@@ -316,6 +322,15 @@ pub struct AppState {
     manifest_signing: Option<Arc<ManifestSigning>>,
     cursor_key: Option<Arc<CursorKey>>,
     native_config_digest: Option<Sha256Digest>,
+    readiness_cache: Arc<Mutex<Option<CachedReadiness>>>,
+    readiness_singleflight: Arc<tokio::sync::Semaphore>,
+    pack_stream_slots: Arc<tokio::sync::Semaphore>,
+}
+
+#[derive(Clone, Copy)]
+struct CachedReadiness {
+    checked_at: Instant,
+    result: Result<(), ReadinessReasonCode>,
 }
 
 impl AppState {
@@ -336,7 +351,59 @@ impl AppState {
             manifest_signing: manifest_signing.map(Arc::new),
             cursor_key: cursor_key.map(Arc::new),
             native_config_digest,
+            readiness_cache: Arc::new(Mutex::new(None)),
+            readiness_singleflight: Arc::new(tokio::sync::Semaphore::new(1)),
+            pack_stream_slots: Arc::new(tokio::sync::Semaphore::new(MAX_ACTIVE_PACK_STREAMS)),
         }
+    }
+
+    fn cached_readiness(&self) -> Option<Result<(), ReadinessReasonCode>> {
+        let cache = match self.readiness_cache.lock() {
+            Ok(cache) => cache,
+            Err(_) => return Some(Err(ReadinessReasonCode::CatalogueUnavailable)),
+        };
+        cache.as_ref().and_then(|cached| {
+            (cached.checked_at.elapsed() <= READINESS_CACHE_TTL).then_some(cached.result)
+        })
+    }
+
+    async fn service_readiness(&self) -> Result<(), ReadinessReasonCode> {
+        if let Some(result) = self.cached_readiness() {
+            return result;
+        }
+
+        let permit = self
+            .readiness_singleflight
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| ReadinessReasonCode::CatalogueUnavailable)?;
+        if let Some(result) = self.cached_readiness() {
+            return result;
+        }
+
+        let store = Arc::clone(&self.store);
+        let cache = Arc::clone(&self.readiness_cache);
+        let supervised_collector_required = self.supervised_collector_required;
+        tokio::task::spawn_blocking(move || {
+            let result = current_epoch_ms()
+                .map_err(|_| ReadinessReasonCode::CatalogueUnavailable)
+                .and_then(|now_ms| {
+                    store
+                        .service_readiness_at(supervised_collector_required, now_ms)
+                        .map_err(|failure| failure.code)
+                });
+            if let Ok(mut slot) = cache.lock() {
+                *slot = Some(CachedReadiness {
+                    checked_at: Instant::now(),
+                    result,
+                });
+            }
+            drop(permit);
+            result
+        })
+        .await
+        .unwrap_or(Err(ReadinessReasonCode::CatalogueUnavailable))
     }
 }
 
@@ -370,7 +437,7 @@ fn router_with_access(
     cursor_key: Option<CursorKey>,
     native_config_digest: Option<Sha256Digest>,
 ) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/healthz", get(health))
         .route("/readyz", get(ready))
         .route("/.well-known/teslatlas-hub", get(capabilities))
@@ -393,6 +460,19 @@ fn router_with_access(
             manifest_signing,
             cursor_key,
             native_config_digest,
+        ));
+    apply_http_resource_limits(router, MAX_IN_FLIGHT_HTTP_REQUESTS, HTTP_HANDLER_TIMEOUT)
+}
+
+fn apply_http_resource_limits(router: Router, maximum: usize, timeout: Duration) -> Router {
+    router
+        .layer(GlobalConcurrencyLimitLayer::new(maximum))
+        // This is outermost, so time spent waiting for a handler slot is also
+        // bounded. Streaming response bodies are deliberately not timed out;
+        // their file descriptors are bounded separately by pack_stream_slots.
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::SERVICE_UNAVAILABLE,
+            timeout,
         ))
 }
 
@@ -563,14 +643,7 @@ async fn health() -> impl IntoResponse {
 }
 
 async fn ready(State(state): State<AppState>) -> impl IntoResponse {
-    let readiness = current_epoch_ms()
-        .map_err(|_| ReadinessReasonCode::CatalogueUnavailable)
-        .and_then(|now_ms| {
-            state
-                .store
-                .service_readiness_at(state.supervised_collector_required, now_ms)
-                .map_err(|failure| failure.code)
-        });
+    let readiness = state.service_readiness().await;
     let mut response = match readiness {
         Ok(()) => (
             StatusCode::OK,
@@ -969,11 +1042,22 @@ async fn pack(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
+    let permit = match state.pack_stream_slots.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                [(header::RETRY_AFTER, HeaderValue::from_static("1"))],
+            )
+                .into_response();
+        }
+    };
     stream_pack(
         stored,
         headers
             .get(header::RANGE)
             .and_then(|header| header.to_str().ok()),
+        permit,
     )
     .await
 }
@@ -1074,7 +1158,26 @@ fn no_store_lineage_manifest(
         .expect("static lineage response headers are valid"))
 }
 
-async fn stream_pack(stored: StoredPack, range_header: Option<&str>) -> Response {
+struct PermittedPackReader<R> {
+    inner: R,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+
+impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for PermittedPackReader<R> {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+        buffer: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.get_mut().inner).poll_read(context, buffer)
+    }
+}
+
+async fn stream_pack(
+    stored: StoredPack,
+    range_header: Option<&str>,
+    permit: tokio::sync::OwnedSemaphorePermit,
+) -> Response {
     let mut file = match tokio::fs::File::open(&stored.path).await {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -1141,7 +1244,10 @@ async fn stream_pack(stored: StoredPack, range_header: Option<&str>) -> Response
     }
     response
         .body(Body::from_stream(ReaderStream::with_capacity(
-            tokio::io::AsyncReadExt::take(file, range.len()),
+            PermittedPackReader {
+                inner: tokio::io::AsyncReadExt::take(file, range.len()),
+                _permit: permit,
+            },
             64 * 1024,
         )))
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
@@ -1261,6 +1367,10 @@ mod tests {
         fs,
         net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
         os::unix::fs::{PermissionsExt, symlink},
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
         time::Duration,
     };
 
@@ -1297,6 +1407,68 @@ mod tests {
             sign_updates_schema_22_noop, updates_pack_request, write_updates_schema_22_pack,
         },
     };
+
+    #[tokio::test]
+    async fn http_resource_limits_bound_handlers_and_wait_time() {
+        #[derive(Clone)]
+        struct Probe {
+            active: Arc<AtomicUsize>,
+            maximum: Arc<AtomicUsize>,
+        }
+
+        async fn observed(State(probe): State<Probe>) -> StatusCode {
+            let active = probe.active.fetch_add(1, Ordering::SeqCst) + 1;
+            probe.maximum.fetch_max(active, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            probe.active.fetch_sub(1, Ordering::SeqCst);
+            StatusCode::OK
+        }
+
+        let probe = Probe {
+            active: Arc::new(AtomicUsize::new(0)),
+            maximum: Arc::new(AtomicUsize::new(0)),
+        };
+        let app = apply_http_resource_limits(
+            Router::new()
+                .route("/bounded", get(observed))
+                .with_state(probe.clone()),
+            2,
+            Duration::from_secs(1),
+        );
+        let requests = (0..8).map(|_| {
+            app.clone().oneshot(
+                Request::builder()
+                    .uri("/bounded")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+        });
+        for response in futures_util::future::join_all(requests).await {
+            assert_eq!(response.expect("bounded response").status(), StatusCode::OK);
+        }
+        assert!(probe.maximum.load(Ordering::SeqCst) <= 2);
+
+        let timed = apply_http_resource_limits(
+            Router::new().route(
+                "/slow",
+                get(|| async {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    StatusCode::OK
+                }),
+            ),
+            1,
+            Duration::from_millis(10),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/slow")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("timeout response");
+        assert_eq!(timed.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
 
     fn private_test_directory(path: &std::path::Path) {
         fs::create_dir(path).expect("create private test directory");
@@ -2166,6 +2338,7 @@ mod tests {
         let stale = store
             .acquire_supervised_collector_lease(now_ms - SUPERVISED_COLLECTOR_LEASE_MS - 1)
             .expect("stale crash lease");
+        tokio::time::sleep(READINESS_CACHE_TTL + Duration::from_millis(10)).await;
         let stale_response = app
             .clone()
             .oneshot(
@@ -2194,6 +2367,7 @@ mod tests {
         store
             .release_supervised_collector_lease(stale)
             .expect("stale owner cannot clear replacement");
+        tokio::time::sleep(READINESS_CACHE_TTL + Duration::from_millis(10)).await;
         let recovered = app
             .clone()
             .oneshot(
@@ -2213,6 +2387,7 @@ mod tests {
                 now_ms + 1,
             )
             .expect("terminal auth heartbeat");
+        tokio::time::sleep(READINESS_CACHE_TTL + Duration::from_millis(10)).await;
         let terminal = app
             .clone()
             .oneshot(
@@ -2251,6 +2426,7 @@ mod tests {
                 now_ms + 2,
             )
             .expect("authenticated recovery");
+        tokio::time::sleep(READINESS_CACHE_TTL + Duration::from_millis(10)).await;
         let recovered = app
             .oneshot(
                 Request::builder()
@@ -2292,6 +2468,7 @@ mod tests {
         assert_eq!(ready.status(), StatusCode::OK);
 
         fs::write(&pack_path, b"truncated").expect("truncate published pack");
+        tokio::time::sleep(READINESS_CACHE_TTL + Duration::from_millis(10)).await;
         let unavailable = app
             .clone()
             .oneshot(

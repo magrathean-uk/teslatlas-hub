@@ -44,7 +44,6 @@ pub const GLOBAL_STREAM_ENDPOINT: &str = "wss://streaming.vn.teslamotors.com/str
 pub const CHINA_STREAM_ENDPOINT: &str = "wss://streaming.vn.cloud.tesla.cn/streaming/";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(30);
-const EVENT_SEND_TIMEOUT: Duration = Duration::from_millis(250);
 const STREAM_READ_BUFFER_BYTES: usize = 64 * 1024;
 const STREAM_WRITE_BUFFER_BYTES: usize = 64 * 1024;
 const STREAM_MAX_WRITE_BUFFER_BYTES: usize = 256 * 1024;
@@ -668,9 +667,21 @@ impl TeslaStreamSupervisor {
                     }
                     frame = socket.next() => match frame {
                         Some(Ok(message)) => {
+                            let control_hello = is_control_hello_message(&message);
+                            let data_error = data_error_category_for_message(&self.tag, &message);
                             let Some(event) = decode_message(&self.tag, message) else {
                                 continue;
                             };
+                            // Tesla's normal legacy hello carries
+                            // `connection_timeout: 0`. It proves only that the
+                            // socket is alive; subscription/authentication is
+                            // proven by matching telemetry.
+                            if control_hello && matches!(event, StreamEvent::Healthy) {
+                                silence
+                                    .as_mut()
+                                    .reset(tokio::time::Instant::now() + self.policy.silence_timeout);
+                                continue;
+                            }
                             if apply_health_backoff_reset(
                                 Some(&event),
                                 &mut remote_backoff,
@@ -690,7 +701,7 @@ impl TeslaStreamSupervisor {
                                 }
                             }
                             let valid_after_handshake = subscribed
-                                && matches!(event, StreamEvent::Healthy | StreamEvent::Telemetry(_));
+                                && matches!(event, StreamEvent::Telemetry(_));
                             let terminal = matches!(event, StreamEvent::AuthRejected | StreamEvent::ProtocolViolation);
                             let should_reconnect = matches!(event, StreamEvent::TransportUnavailable);
                             if let Some(receipt) = subscribe_receipt.take() {
@@ -698,6 +709,10 @@ impl TeslaStreamSupervisor {
                                     OutboundRequestOutcome::AuthenticationRejected
                                 } else if matches!(event, StreamEvent::ProtocolViolation) {
                                     OutboundRequestOutcome::ProtocolError
+                                } else if data_error.is_some()
+                                    || matches!(event, StreamEvent::TransportUnavailable)
+                                {
+                                    OutboundRequestOutcome::TransportError
                                 } else {
                                     OutboundRequestOutcome::Success
                                 };
@@ -707,6 +722,70 @@ impl TeslaStreamSupervisor {
                                 return Ok(disconnected_termination(ever_subscribed));
                             }
                             if terminal { break false; }
+                            if matches!(data_error, Some(DataErrorCategory::VehicleDisconnected)) {
+                                if wait_or_shutdown(remote_backoff.next(), shutdown).await {
+                                    return Ok(disconnected_termination(ever_subscribed));
+                                }
+                                if let Err(error) = self.assert_sensitive_access().await {
+                                    let _ = socket.close(None).await;
+                                    return Err(error);
+                                }
+                                let access_token = match self.access_token().await {
+                                    Ok(token) => token,
+                                    Err(AccessTokenError::AuthorityUnavailable) => {
+                                        let _ = socket.close(None).await;
+                                        return Err(
+                                            StreamSupervisorError::CredentialAuthorityUnavailable,
+                                        );
+                                    }
+                                    Err(AccessTokenError::Unavailable) => {
+                                        let _ = socket.close(None).await;
+                                        break false;
+                                    }
+                                };
+                                let subscribe = subscribe_frame(&self.tag, &access_token)
+                                    .map_err(StreamSupervisorError::InvalidEndpoint)?;
+                                let receipt = self.begin_stream_attempt(
+                                    audit,
+                                    OutboundRequestOperation::StreamSubscribe,
+                                )?;
+                                if let Err(error) = self.assert_sensitive_access().await {
+                                    self.complete_stream_attempt(
+                                        audit,
+                                        receipt,
+                                        OutboundRequestOutcome::AuthenticationRejected,
+                                    )?;
+                                    let _ = socket.close(None).await;
+                                    return Err(error);
+                                }
+                                if socket.send(Message::Text(subscribe.into())).await.is_err() {
+                                    self.complete_stream_attempt(
+                                        audit,
+                                        receipt,
+                                        OutboundRequestOutcome::TransportError,
+                                    )?;
+                                    let _ = socket.close(None).await;
+                                    break false;
+                                }
+                                subscribe_receipt = Some(receipt);
+                                subscribed = false;
+                                silence
+                                    .as_mut()
+                                    .reset(tokio::time::Instant::now() + self.policy.silence_timeout);
+                                continue;
+                            }
+                            if matches!(
+                                data_error,
+                                Some(DataErrorCategory::VehicleOffline | DataErrorCategory::Other)
+                            ) {
+                                // TeslaMate keeps the socket after ordinary
+                                // vehicle/unknown errors. Any valid peer frame
+                                // also renews its receive timeout.
+                                silence
+                                    .as_mut()
+                                    .reset(tokio::time::Instant::now() + self.policy.silence_timeout);
+                                continue;
+                            }
                             if should_reconnect { break false; }
                             if !valid_after_handshake {
                                 continue;
@@ -820,7 +899,6 @@ impl TeslaStreamSupervisor {
             biased;
             _ = &mut *shutdown => Ok(EventDelivery::Shutdown),
             result = self.events.send(event) => result.map(|_| EventDelivery::Delivered).map_err(|_| StreamSupervisorError::EventReceiverClosed),
-            _ = sleep(EVENT_SEND_TIMEOUT) => Err(StreamSupervisorError::EventQueueFull),
         }
     }
 
@@ -937,7 +1015,7 @@ fn equal_jitter(delay: Duration) -> Duration {
 }
 
 fn resets_backoff(event: &StreamEvent) -> bool {
-    matches!(event, StreamEvent::Healthy | StreamEvent::Telemetry(_))
+    matches!(event, StreamEvent::Telemetry(_))
 }
 
 fn apply_health_backoff_reset(
@@ -1013,31 +1091,136 @@ fn decode_message(tag: &str, message: Message) -> Option<StreamEvent> {
     }
 }
 
+fn stream_wire(message: &Message) -> Option<StreamWire<'_>> {
+    let text = match message {
+        Message::Text(text) => text.as_ref(),
+        Message::Binary(bytes) => match std::str::from_utf8(bytes) {
+            Ok(text) => text,
+            Err(_) => return None,
+        },
+        _ => return None,
+    };
+    serde_json::from_str(text).ok()
+}
+
+fn is_control_hello_message(message: &Message) -> bool {
+    stream_wire(message).is_some_and(|wire| wire.msg_type == "control:hello")
+}
+
+fn data_error_category_for_message(tag: &str, message: &Message) -> Option<DataErrorCategory> {
+    stream_wire(message).and_then(|wire| {
+        (wire.msg_type == "data:error" && wire.tag.is_none_or(|frame_tag| frame_tag == tag))
+            .then(|| classify_data_error(wire.error_type, wire.value))
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DataErrorCategory {
+    VehicleDisconnected,
+    VehicleOffline,
+    TokenRejected,
+    OwnerApiError,
+    ClientError,
+    Other,
+}
+
+impl DataErrorCategory {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::VehicleDisconnected => "vehicle_disconnected",
+            Self::VehicleOffline => "vehicle_offline",
+            Self::TokenRejected => "token_rejected",
+            Self::OwnerApiError => "owner_api_error",
+            Self::ClientError => "client_error",
+            Self::Other => "other",
+        }
+    }
+}
+
+fn classify_data_error(error_type: Option<&str>, value: Option<&str>) -> DataErrorCategory {
+    let error_type_is =
+        |expected: &str| error_type.is_some_and(|kind| kind.eq_ignore_ascii_case(expected));
+    let value_has =
+        |needle: &str| value.is_some_and(|detail| ascii_contains_ignore_case(detail, needle));
+    if error_type_is("client_error") && value_has("validate token") {
+        DataErrorCategory::TokenRejected
+    } else if error_type_is("client_error")
+        && value.is_some_and(|detail| {
+            detail
+                .get(.."owner_api error:".len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("owner_api error:"))
+        })
+    {
+        DataErrorCategory::OwnerApiError
+    } else if error_type_is("client_error") {
+        DataErrorCategory::ClientError
+    } else if error_type_is("vehicle_disconnected") {
+        DataErrorCategory::VehicleDisconnected
+    } else if error_type_is("vehicle_error")
+        && (value_has("vehicle offline")
+            || value_has("vehicle is offline")
+            || value_has("vehicle_offline"))
+    {
+        DataErrorCategory::VehicleOffline
+    } else {
+        DataErrorCategory::Other
+    }
+}
+
+fn ascii_contains_ignore_case(haystack: &str, needle: &str) -> bool {
+    let needle = needle.as_bytes();
+    !needle.is_empty()
+        && haystack.as_bytes().windows(needle.len()).any(|window| {
+            window
+                .iter()
+                .zip(needle)
+                .all(|(left, right)| left.eq_ignore_ascii_case(right))
+        })
+}
+
+fn redacted_error_type(error_type: Option<&str>) -> String {
+    let Some(error_type) = error_type else {
+        return "<missing>".into();
+    };
+    let mut redacted = String::new();
+    for character in error_type.chars().take(64) {
+        if character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.') {
+            redacted.push(character);
+        } else {
+            redacted.push('_');
+        }
+    }
+    if redacted.is_empty() {
+        "<empty>".into()
+    } else {
+        redacted
+    }
+}
+
 fn decode_wire(tag: &str, wire: StreamWire<'_>) -> Option<StreamEvent> {
     match wire.msg_type {
         "control:hello" => Some(decode_control_hello(wire.code, wire.connection_timeout)),
-        "data:update" if wire.tag.is_some_and(|frame_tag| frame_tag != tag) => None,
+        "data:update" if wire.tag != Some(tag) => None,
         "data:update" => parse_data_update_parts(tag, wire.timestamp, wire.value?)
             .ok()
             .map(|update| StreamEvent::Telemetry(Box::new(update))),
         "data:error" if wire.tag.is_some_and(|frame_tag| frame_tag != tag) => None,
-        "data:error" => match (wire.error_type, wire.value) {
-            (Some("vehicle_error"), Some("Vehicle is offline"))
-            | (_, Some("vehicle_offline"))
-            | (_, Some("Vehicle is offline")) => Some(StreamEvent::VehicleOffline),
-            (Some("client_error"), Some(value)) if value.contains("Can't validate token") => {
-                Some(StreamEvent::AuthRejected)
+        "data:error" => {
+            let category = classify_data_error(wire.error_type, wire.value);
+            tracing::warn!(
+                error_type = %redacted_error_type(wire.error_type),
+                category = category.as_str(),
+                "Tesla stream data:error"
+            );
+            match category {
+                DataErrorCategory::VehicleOffline => Some(StreamEvent::VehicleOffline),
+                DataErrorCategory::TokenRejected => Some(StreamEvent::AuthRejected),
+                DataErrorCategory::VehicleDisconnected
+                | DataErrorCategory::OwnerApiError
+                | DataErrorCategory::ClientError
+                | DataErrorCategory::Other => Some(StreamEvent::TransportUnavailable),
             }
-            (_, Some(value)) if value.contains("Can't validate token") => {
-                Some(StreamEvent::AuthRejected)
-            }
-            // TeslaMate v4.1.1 retries this result after a bounded delay. End
-            // this socket promptly so the supervisor's backoff owns that retry.
-            (Some("vehicle_disconnected"), _) | (Some("client_error"), _) => {
-                Some(StreamEvent::TransportUnavailable)
-            }
-            _ => Some(StreamEvent::TransportUnavailable),
-        },
+        }
         _ => None,
     }
 }
@@ -1067,7 +1250,7 @@ fn decode_control_hello(code: Option<i64>, connection_timeout: Option<i64>) -> S
             401 | 403 => StreamEvent::AuthRejected,
             _ => StreamEvent::TransportUnavailable,
         },
-        None if connection_timeout.is_some_and(|timeout| timeout > 0) => StreamEvent::Healthy,
+        None if connection_timeout.is_some_and(|timeout| timeout >= 0) => StreamEvent::Healthy,
         None => StreamEvent::TransportUnavailable,
     }
 }
@@ -1294,18 +1477,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn saturated_event_queue_times_out_or_stops_on_shutdown() {
-        let (events, _receiver) = mpsc::channel(1);
+    async fn saturated_event_queue_backpressures_until_drained_or_shutdown() {
+        let (events, mut receiver) = mpsc::channel(1);
         events.try_send(StreamEvent::Healthy).expect("fill queue");
         let supervisor =
             legacy_supervisor(9, 9, "ws://127.0.0.1:9/".to_owned(), events).expect("supervisor");
 
         let (_stop, mut shutdown) = oneshot::channel();
+        let delivery = supervisor.emit_event(StreamEvent::TransportUnavailable, &mut shutdown);
+        tokio::pin!(delivery);
+        assert!(
+            timeout(Duration::from_millis(20), &mut delivery)
+                .await
+                .is_err(),
+            "a full bounded queue must backpressure instead of failing"
+        );
+        assert!(matches!(receiver.recv().await, Some(StreamEvent::Healthy)));
         assert!(matches!(
-            supervisor
-                .emit_event(StreamEvent::TransportUnavailable, &mut shutdown)
-                .await,
-            Err(StreamSupervisorError::EventQueueFull)
+            timeout(Duration::from_secs(1), &mut delivery)
+                .await
+                .expect("delivery after receiver drain"),
+            Ok(EventDelivery::Delivered)
+        ));
+        assert!(matches!(
+            receiver.recv().await,
+            Some(StreamEvent::TransportUnavailable)
         ));
 
         let (events, _receiver) = mpsc::channel(1);
@@ -1422,6 +1618,7 @@ mod tests {
                 .unwrap(),
         ));
         for event in [
+            StreamEvent::Healthy,
             StreamEvent::VehicleOffline,
             StreamEvent::AuthRejected,
             StreamEvent::TransportUnavailable,
@@ -1437,16 +1634,6 @@ mod tests {
         assert_eq!(connect.current, Duration::from_millis(10));
         assert!(apply_health_backoff_reset(
             Some(&telemetry),
-            &mut remote,
-            &mut connect
-        ));
-        assert_eq!(remote.current, initial);
-        assert_eq!(connect.current, initial);
-
-        let _ = remote.next();
-        let _ = connect.next();
-        assert!(apply_health_backoff_reset(
-            Some(&StreamEvent::Healthy),
             &mut remote,
             &mut connect
         ));
@@ -1508,12 +1695,6 @@ mod tests {
             .with_audit_store(store.clone());
         let (_stop, shutdown) = oneshot::channel();
         let task = tokio::spawn(supervisor.run(shutdown));
-        assert_eq!(
-            timeout(Duration::from_secs(1), received.recv())
-                .await
-                .unwrap(),
-            Some(StreamEvent::Healthy)
-        );
         assert_eq!(
             timeout(Duration::from_secs(1), received.recv())
                 .await
@@ -1629,12 +1810,6 @@ mod tests {
             timeout(Duration::from_secs(1), received.recv())
                 .await
                 .unwrap(),
-            Some(StreamEvent::Healthy)
-        );
-        assert_eq!(
-            timeout(Duration::from_secs(1), received.recv())
-                .await
-                .unwrap(),
             Some(StreamEvent::ProtocolViolation)
         );
         assert!(matches!(
@@ -1671,11 +1846,22 @@ mod tests {
             assert_eq!(subscribe["tag"], "42");
             let _ = ws
                 .send(Message::Text(
-                    r#"{"msg_type":"control:hello","code":200}"#.into(),
+                    r#"{"msg_type":"control:hello","connection_timeout":0}"#.into(),
                 ))
                 .await;
+            ws.send(Message::Text(
+                r#"{"msg_type":"data:update","tag":"42","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#.into(),
+            ))
+            .await
+            .unwrap();
             let second = ws.next().await.unwrap().unwrap();
             assert!(matches!(second,Message::Text(ref text) if text.contains("data:unsubscribe")));
+            assert!(
+                timeout(Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err(),
+                "normal zero-timeout hello must not reconnect"
+            );
         });
         let (events, mut received) = mpsc::channel(4);
         let supervisor = legacy_supervisor(9, 42, endpoint, events)
@@ -1683,12 +1869,12 @@ mod tests {
             .with_audit_store(store.clone());
         let (stop, shutdown) = oneshot::channel();
         let task = tokio::spawn(supervisor.run(shutdown));
-        assert_eq!(
+        assert!(matches!(
             timeout(Duration::from_secs(1), received.recv())
                 .await
                 .unwrap(),
-            Some(StreamEvent::Healthy)
-        );
+            Some(StreamEvent::Telemetry(_))
+        ));
         stop.send(()).unwrap();
         timeout(Duration::from_secs(2), task)
             .await
@@ -1784,7 +1970,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tagless_binary_telemetry_marks_subscription_live() {
+    async fn tagged_binary_telemetry_marks_subscription_live() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -1793,7 +1979,7 @@ mod tests {
             let subscribe = ws.next().await.unwrap().unwrap();
             assert!(matches!(subscribe, Message::Text(ref text) if text.contains(r#""tag":"42""#)));
             ws.send(Message::Binary(
-                r#"{"msg_type":"data:update","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#
+                r#"{"msg_type":"data:update","tag":"42","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#
                     .as_bytes()
                     .to_vec()
                     .into(),
@@ -1987,6 +2173,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn vehicle_disconnected_resubscribes_on_same_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (tcp, _) = timeout(Duration::from_secs(1), listener.accept())
+                .await
+                .unwrap()
+                .unwrap();
+            let mut socket = accept_async(tcp).await.unwrap();
+            assert!(matches!(
+                socket.next().await.unwrap().unwrap(),
+                Message::Text(ref text) if text.contains("data:subscribe_oauth")
+            ));
+            socket
+                .send(Message::Text(
+                    r#"{"msg_type":"control:hello","code":200}"#.into(),
+                ))
+                .await
+                .unwrap();
+            socket
+                .send(Message::Text(
+                    r#"{"msg_type":"data:error","tag":"9","error_type":"vehicle_error","value":"temporary vehicle error"}"#.into(),
+                ))
+                .await
+                .unwrap();
+            socket
+                .send(Message::Text(
+                    r#"{"msg_type":"data:error","tag":"9","error_type":"vehicle_disconnected"}"#
+                        .into(),
+                ))
+                .await
+                .unwrap();
+            assert!(matches!(
+                timeout(Duration::from_secs(1), socket.next())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap(),
+                Message::Text(ref text) if text.contains("data:subscribe_oauth")
+            ));
+            socket
+                .send(Message::Text(
+                    r#"{"msg_type":"control:hello","code":200}"#.into(),
+                ))
+                .await
+                .unwrap();
+            socket
+                .send(Message::Text(
+                    r#"{"msg_type":"data:update","tag":"9","timestamp":1700000000123,"value":"42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#.into(),
+                ))
+                .await
+                .unwrap();
+            assert!(matches!(
+                timeout(Duration::from_secs(1), socket.next())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap(),
+                Message::Text(ref text) if text.contains("data:unsubscribe")
+            ));
+            assert!(
+                timeout(Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err(),
+                "vehicle_disconnected must not open a second socket"
+            );
+        });
+        let (events, mut received) = mpsc::channel(8);
+        let supervisor = legacy_supervisor(9, 9, endpoint, events)
+            .unwrap()
+            .with_policy(SupervisorPolicy {
+                connect_timeout: Duration::from_millis(100),
+                silence_timeout: Duration::from_secs(1),
+                backoff_initial: Duration::from_millis(5),
+                remote_backoff_cap: Duration::from_millis(10),
+                connect_backoff_cap: Duration::from_millis(10),
+            });
+        let (stop, shutdown) = oneshot::channel();
+        let task = tokio::spawn(supervisor.run(shutdown));
+        assert_eq!(
+            timeout(Duration::from_secs(1), received.recv())
+                .await
+                .unwrap(),
+            Some(StreamEvent::TransportUnavailable)
+        );
+        assert_eq!(
+            timeout(Duration::from_secs(1), received.recv())
+                .await
+                .unwrap(),
+            Some(StreamEvent::TransportUnavailable)
+        );
+        assert!(matches!(
+            timeout(Duration::from_secs(1), received.recv())
+                .await
+                .unwrap(),
+            Some(StreamEvent::Telemetry(_))
+        ));
+        stop.send(()).unwrap();
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn full_event_queue_applies_backpressure_without_reconnect_failure() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
@@ -2022,13 +2315,6 @@ mod tests {
         let (stop, shutdown) = oneshot::channel();
         let task = tokio::spawn(supervisor.run(shutdown));
 
-        assert!(matches!(
-            timeout(Duration::from_secs(1), receiver.recv())
-                .await
-                .expect("healthy event")
-                .expect("healthy event present"),
-            StreamEvent::Healthy
-        ));
         // Capacity one is intentionally filled by the first telemetry frame.
         // The second frame must wait, not terminate the stream or reconnect.
         assert!(
@@ -2121,7 +2407,7 @@ mod tests {
             ));
             first
                 .send(Message::Text(
-                    r#"{"msg_type":"control:hello","code":200}"#.into(),
+                    r#"{"msg_type":"control:hello","connection_timeout":0}"#.into(),
                 ))
                 .await
                 .unwrap();
@@ -2138,7 +2424,13 @@ mod tests {
             ));
             second
                 .send(Message::Text(
-                    r#"{"msg_type":"control:hello","code":200}"#.into(),
+                    r#"{"msg_type":"control:hello","connection_timeout":0}"#.into(),
+                ))
+                .await
+                .unwrap();
+            second
+                .send(Message::Text(
+                    r#"{"msg_type":"data:update","tag":"9","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#.into(),
                 ))
                 .await
                 .unwrap();
@@ -2164,20 +2456,14 @@ mod tests {
             timeout(Duration::from_secs(1), received.recv())
                 .await
                 .unwrap(),
-            Some(StreamEvent::Healthy)
-        );
-        assert_eq!(
-            timeout(Duration::from_secs(1), received.recv())
-                .await
-                .unwrap(),
             Some(StreamEvent::TransportUnavailable)
         );
-        assert_eq!(
+        assert!(matches!(
             timeout(Duration::from_secs(1), received.recv())
                 .await
                 .unwrap(),
-            Some(StreamEvent::Healthy)
-        );
+            Some(StreamEvent::Telemetry(_))
+        ));
         stop.send(()).unwrap();
         timeout(Duration::from_secs(1), task)
             .await
@@ -2232,7 +2518,7 @@ mod tests {
     }
 
     #[test]
-    fn binary_and_tagless_tesla_stream_frames_are_decoded() {
+    fn binary_tesla_stream_frames_are_decoded() {
         let hello = r#"{"msg_type":"control:hello","connection_timeout":15}"#;
         assert_eq!(
             decode_message("42", Message::Text(hello.into())),
@@ -2243,7 +2529,7 @@ mod tests {
             Some(StreamEvent::Healthy)
         );
 
-        let update = r#"{"msg_type":"data:update","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#;
+        let update = r#"{"msg_type":"data:update","tag":"42","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#;
         for message in [
             Message::Text(update.into()),
             Message::Binary(update.as_bytes().to_vec().into()),
@@ -2254,6 +2540,9 @@ mod tests {
             assert_eq!(update.tag, "42");
             assert_eq!(update.timestamp_ms, 1_700_000_000_123);
         }
+
+        let tagless = r#"{"msg_type":"data:update","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#;
+        assert_eq!(decode_message("42", Message::Text(tagless.into())), None);
 
         let other_tag = r#"{"msg_type":"data:update","tag":"9","value":"1700000000123,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#;
         assert_eq!(decode_message("42", Message::Text(other_tag.into())), None);
@@ -2282,6 +2571,18 @@ mod tests {
 
     #[test]
     fn teslamate_v4_tagless_data_errors_are_classified() {
+        assert_eq!(
+            classify_data_error(Some("client_error"), Some("owner_api error: unavailable")),
+            DataErrorCategory::OwnerApiError
+        );
+        assert_eq!(
+            classify_data_error(Some("client_error"), None),
+            DataErrorCategory::ClientError
+        );
+        assert_eq!(
+            classify_data_error(Some("vehicle_error"), Some("temporary vehicle error")),
+            DataErrorCategory::Other
+        );
         let disconnected = decode_message(
             "9",
             Message::Text(
@@ -2319,6 +2620,21 @@ mod tests {
         );
         assert_eq!(rejected, Some(StreamEvent::AuthRejected));
 
+        // TeslaMate v4.1.1 also receives client_error without a value.
+        // It is a reconnectable transport result, not an auth rejection.
+        let client_error_without_value = decode_message(
+            "9",
+            Message::Binary(
+                br#"{"msg_type":"data:error","tag":"9","error_type":"client_error"}"#
+                    .to_vec()
+                    .into(),
+            ),
+        );
+        assert_eq!(
+            client_error_without_value,
+            Some(StreamEvent::TransportUnavailable)
+        );
+
         let other_vehicle = decode_message(
             "9",
             Message::Text(
@@ -2344,7 +2660,7 @@ mod tests {
                 "9",
                 Message::Text(r#"{"msg_type":"control:hello","connection_timeout":0}"#.into(),),
             ),
-            Some(StreamEvent::TransportUnavailable)
+            Some(StreamEvent::Healthy)
         );
     }
 

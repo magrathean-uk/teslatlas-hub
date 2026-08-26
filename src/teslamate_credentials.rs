@@ -194,7 +194,7 @@ pub fn load_key_for_tokens(
             restore_previous_key(data_dir)?;
             load_key(data_dir)
         }
-        Ok(current) => Ok(current),
+        Ok(_) => Err(TeslaMateCredentialError::NoMatchingKeyGeneration),
         Err(error) => Err(error),
     }
 }
@@ -777,6 +777,19 @@ mod tests {
         let recovered = load_key_for_tokens(temporary.path(), &new_store).expect("keep new key");
         assert_eq!(recovered.as_bytes(), new_key);
         assert!(!previous_key_path(temporary.path()).exists());
+    }
+
+    #[test]
+    fn rejects_wrong_current_key_without_a_previous_generation() {
+        let temporary = crate::private_tempdir().expect("temporary directory");
+        let tokens = encrypted_store(b"original TeslaMate key", "access", "refresh");
+        replace_key(temporary.path(), b"wrong TeslaMate key").expect("write wrong key");
+
+        assert!(!previous_key_path(temporary.path()).exists());
+        assert!(matches!(
+            load_key_for_tokens(temporary.path(), &tokens),
+            Err(TeslaMateCredentialError::NoMatchingKeyGeneration)
+        ));
     }
 
     #[test]

@@ -1,17 +1,20 @@
 # Hub progress
 
-Status: current Rust 1.98 source implements legacy Owner API and official Fleet
-API setup, discovery, polling, regional refresh, multi-car collection, wake/control,
-bounded provider-response retention, and opt-in TeslaMate write-back. The final
-review fixed configured offline timeout use, durable stream audit receipts,
-post-send Fleet refresh fencing, one-to-one VIN/EID rotation, recursive raw JSON
-credential redaction, Fleet-only status, short-lived writer WAL cleanup, and the
-China token endpoint. The Fleet drive-capture defect exposed by one live drive
-is fixed and installed; one new physical drive remains the final live proof.
+Status: the current Rust 1.98 Hub is installed on macOS and is working in legacy
+TeslaMate-compatible mode. It is ready, bound only to `127.0.0.1:8080`, and
+collecting both Owner API and Tesla WebSocket observations. The final installed
+Hub SHA-256 is
+`d477627284c2cd20c4ef5519b29f2b9871e9d061520519df2d2290fc833d3c0e`.
+The signed installer SHA-256 is
+`d9e6bfb2f41d1876a10637231fe45dd9ed5c552d47cc5fe5d9de6402d7058db0`.
+The VPS TeslaMate collector is intentionally stopped while Hub owns the legacy
+refresh token; TeslaMateAPI, PostgreSQL, and Mosquitto remain healthy.
 
-Current verification on 2026-08-25: 757 library + 42 CLI + 1 TLS tests passed
-(800 total; 2 intentional fixture tests ignored); all-target Clippy with
-`-D warnings`, release build, and macOS app/package checks passed. Live EMEA
+Current verification on 2026-08-26: 815 Rust target tests plus 3 doc tests
+passed (818 total; 2 intentional fixture tests ignored); all-target Clippy with
+`-D warnings`, release build, dependency audit, release-evidence checks, and
+macOS/Linux package checks passed. The 48 AppKit tests passed under Xcode 27
+beta. Live EMEA
 Fleet authorization, vehicle
 discovery, vehicle-data polling, partner registration, and virtual-key pairing
 passed on macOS. The root package upgraded the running legacy per-user service,
@@ -23,7 +26,45 @@ immutable preflight, and doctor passed
 with a zero-byte WAL. The local TeslaMate PostgreSQL write-back dry-run reported
 zero affected rows and left charge cost `0.10` unchanged.
 
-Current artifact:
+Live legacy handovers on 2026-08-26: the first test exposed 355 reconnects
+because Hub rejected Tesla's normal `control:hello` with
+`connection_timeout: 0` and falsely completed subscribe receipts before any
+telemetry. The repaired Mac build accepted the real hello, required matching-tag
+telemetry as authentication proof, and completed one physical drive through one
+WebSocket connection: 1,413 positions, three subscribe receipts including two
+same-socket `vehicle_disconnected` resubscriptions, one advancing stream
+watermark, and one orderly unsubscribe. Repeated telemetry was also found to
+cancel Owner API retry deadlines; stream-health scheduling is now transition-
+only and its regression passes. A completed WebSocket task was then found to be
+awaited twice during cleanup, panicking Tokio and leaving the collector lease
+behind. Stream tasks are now single-consumer `Option<JoinHandle>` values. The
+installed fixed process remained at one PID while its stream observation ID
+advanced from 661 through 901 and durable CLI verification advanced from 775
+to 838. No new panic, worker-failure, or lease-conflict log appeared.
+
+The next live drive exposed one further backpressure defect: after 707
+positions the bounded stream channel filled while the collector was doing other
+work, and a 250 ms send timeout incorrectly killed the stream supervisor. The
+LaunchAgent restarted Hub once; the persisted open lifecycle recovered and the
+same drive closed durably with 1,255 positions. The final source removes that
+fatal timeout: the still-bounded 256-event channel now waits for capacity or
+shutdown, and collector backlog drains before Owner API, projection, or
+enrichment work. A production-shaped 257-event regression persists every event
+without reconnect or loss. The final installed build is ready on one new PID,
+its stream advanced immediately after upgrade, SQLite integrity is `ok`, its
+WAL settled to zero, and no post-upgrade panic, lease, worker, or queue error
+appeared.
+
+The fresh v4.1.1 migration projected 11,361,997 rows into 457 immutable packs
+using 1.9 GB, without a second raw PostgreSQL copy. SQLite integrity is `ok` and
+the WAL settles to zero bytes. The previous 26 MB Fleet store is preserved as
+`data-fleet-preserved-20260826`; the active legacy store is `data`. The migration
+also exposed that durable verification queried only prunable raw observations;
+it now reads the union of raw and current observation metadata. No vehicle
+command ran.
+
+Retained 2026-08-25 artifacts (pre-security-remediation; not current release
+candidates):
 
 - macOS ARM64 app, embedded Hub SHA-256
   `d67fe6265c0647b0f723c0bff899ccd4ac94d3c8d83afd7c373eafde2db72736`;
@@ -56,7 +97,9 @@ Current work plan:
 - Completed 2026-08-25: bundle and manage Tesla's official command proxy on
   macOS, expose confirmed non-charging controls in the Hub app, and test the
   installed app climate start/stop against the paired car.
-- 2026-08-25: prepare a short physical driving-stream handover window.
+- Completed 2026-08-26: repaired and live-proved legacy WebSocket streaming on
+  a closed 1,413-position physical drive, then atomically handed the rotated
+  token back and restored TeslaMate plus Fleet Hub.
 - Completed 2026-08-25: rebuilt and installed source-identical Debian amd64 and
   ARM64 packages, ran package/service smoke checks, and deleted disposable data.
 - 2026-08-25 through 2026-08-31: the active `Teslatlas Fleet endurance` daily
@@ -116,6 +159,54 @@ passed for both exact artifacts with timestamps and hardened runtime, then was
 deleted. No matching notary profile, API key, or app-specific password was found
 locally. The local old-schema TeslaMate PostgreSQL copy remains an intentional
 read-only negative fixture.
+
+## Security remediation, 2026-08-26
+
+- Closed the direct security findings: privileged macOS install now binds the
+  signed app, Team ID, signed package and packaged SHA-256 before root execution;
+  uninstall runs only the installed root-owned helper. Remote TLS serving has
+  bounded concurrency, handler time and pack streams; readiness is cached and
+  bogus pairing/rotation proofs are rejected before SQLite writer admission.
+- Data restore now removes invitations, device bearers and collector leases,
+  including accepted legacy-v3 backups. Fleet proxy CA reads are no-follow,
+  private, bounded and descriptor-pinned. Credential recovery proves the cursor
+  key against the retained catalogue before publishing secrets. Provider JSON
+  persistence is a typed allowlist shared by Owner and Fleet responses.
+- Fixed the two remaining non-security defects from the audit: a wrong TeslaMate
+  key cannot pass preflight without a previous generation, and the first selected
+  import atomically publishes schema 2.1 and 2.2 catalogue heads. A pre-commit
+  fault exposes neither head; successor retry behavior remains unchanged.
+- Added a local dependency gate. It scans 355 locked crates and ignores
+  `RUSTSEC-2026-0235` only after `cargo tree --target all` proves `rkyv 0.7.46`
+  unreachable from normal/build edges. Added a fail-closed, clean signed-tag
+  release-evidence generator for Linux artifacts: deterministic exact source,
+  Cargo metadata, SPDX 2.3 SBOM, dependency inventory/license texts, checksums,
+  and provenance bound to an exact maintainer tag fingerprint and signed by an
+  independently pinned public-key digest.
+- Release evidence now additionally requires `HEAD` to equal the signed tag
+  commit at both ends, reuses one stable artifact witness for the manifest and
+  checksums, revalidates artifacts before publication, and publishes the whole
+  evidence directory with one atomic sibling rename. Mutation, wrong-HEAD,
+  partial-output, retry, and destination-collision regressions pass.
+- Immutable Doctor/Preflight now wait briefly for a transient WAL, rerun the
+  complete check once if the catalogue changes, and verify the snapshot only
+  after every command read. A continuously active collector still returns an
+  explicit bounded "retry when idle or stop Hub" result instead of mutating or
+  copying the live 1.9 GB catalogue.
+- Final local gates: 813 Rust tests passed, 2 fixture tests ignored; format,
+  all-target Clippy `-D warnings`, optimized release build, 48 AppKit tests,
+  macOS package/release checks, Linux package checks, dependency audit and the
+  signed-evidence fixture passed. A final independent security diff review was
+  clean after its tag-signer trust finding was fixed. No live service,
+  TeslaMate, VPS or vehicle state changed during this remediation.
+- Honest remaining release/architecture gates: the current per-user LaunchAgent
+  is private and non-root but not a dedicated service account. Moving to a fixed
+  LaunchDaemon requires authenticated app-to-service IPC and an ownership/data
+  migration, so it is deliberately deferred rather than represented by cosmetic
+  launchd settings. Real notarization still needs a matching 4AA notary
+  credential. macOS evidence remains blocked until the pinned Tesla command
+  proxy's complete Go source/notices are captured; the evidence tool refuses
+  `.pkg`/`.zip` candidates until then.
 
 ## Three-platform review, 2026-08-22
 
@@ -199,14 +290,13 @@ read-only negative fixture.
   private process umask. Eleven focused AppKit tests and lightweight package
   checks passed without rebuilding the Rust binary or release artifact.
 
-- Tesla stream wire compatibility — live VPS evidence showed Tesla returning a
-  binary WebSocket JSON frame and no top-level `tag`, both accepted by
-  TeslaMate v4.1.1 but rejected by Hub. Hub now decodes UTF-8 binary JSON,
-  binds a missing tag to the active subscription, preserves rejection of an
-  explicit foreign tag, and treats valid telemetry as stream health when no
-  `control:hello` arrives. A local WebSocket regression test covers the exact
-  binary/tagless/no-hello sequence and orderly unsubscribe; 25 native Debian
-  stream tests passed. The amd64 package was rebuilt, ELF/package-verified,
+- Tesla stream wire compatibility — Hub decodes UTF-8 binary JSON and requires
+  the exact active subscription tag for telemetry, matching TeslaMate v4.1.1.
+  Follow-up live proof established that Tesla's normal hello uses
+  `connection_timeout: 0`; the hello proves socket liveness while the first
+  matching telemetry frame proves authentication. An explicit foreign or
+  missing telemetry tag remains rejected. The amd64 package was rebuilt,
+  ELF/package-verified,
   installed, and Hub restarted cleanly. It established a Tesla TLS stream
   connection. No raw or current stream row arrived while the parked vehicle
   was quiet. The one 5.6 GiB remote source/build directory was deleted

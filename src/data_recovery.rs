@@ -1,11 +1,11 @@
 //! Bounded Hub data-backup generation, immutable verification, and restore.
 //!
 //! A backup generation contains the Hub catalogue (including encrypted token
-//! rows and pairing rows), every immutable pack referenced by that catalogue,
-//! and each current schema-2.2 manifest's signed no-op body. Decryption and
-//! signing keys are deliberately excluded. TLS/configuration/service state is
-//! also omitted, so restore leaves the service stopped and collector authority
-//! absent.
+//! rows, but excluding pairing challenges and paired-device bearer authority),
+//! every immutable pack referenced by that catalogue, and each current
+//! schema-2.2 manifest's signed no-op body. Decryption and signing keys are
+//! deliberately excluded. TLS/configuration/service state is also omitted, so
+//! restore leaves the service stopped and collector authority absent.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -27,16 +27,20 @@ use crate::{
     BUILD_VERSION,
     db::{APPLICATION_ID, HubStore, SCHEMA_VERSION, StoreError},
     protocol::{
-        HUB_PROJECTION_SCHEMA_V3, LINEAGE_PROTOCOL_V2, PROTOCOL_NAME, PROTOCOL_V1, ProtocolVersion,
-        SyncManifest, TransferMode,
+        HUB_PROJECTION_SCHEMA_V3, LINEAGE_PROTOCOL_V2, LineageDelta, LineageManifestV2,
+        PROTOCOL_NAME, PROTOCOL_V1, ProtocolVersion, SyncManifest, TransferMode,
     },
     updates_delivery::{SignedNoOpState, validate_schema_22_pair},
 };
 
-const BACKUP_KIND: &str = "teslatlas-hub-data-backup-v3";
-const COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v3";
-const BACKUP_SCOPE: &str = "hub_data_and_pairing_without_keys";
-const MANIFEST_NAME: &str = "backup-v3.json";
+const BACKUP_KIND: &str = "teslatlas-hub-data-backup-v4";
+const COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v4";
+const BACKUP_SCOPE: &str = "hub_data_without_pairing_or_keys";
+const MANIFEST_NAME: &str = "backup-v4.json";
+const LEGACY_BACKUP_KIND: &str = "teslatlas-hub-data-backup-v3";
+const LEGACY_COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v3";
+const LEGACY_BACKUP_SCOPE: &str = "hub_data_and_pairing_without_keys";
+const LEGACY_MANIFEST_NAME: &str = "backup-v3.json";
 const COMPLETION_NAME: &str = "BACKUP_COMPLETE";
 const DATA_DIRECTORY: &str = "data";
 const CATALOGUE_MEMBER: &str = "data/hub.sqlite";
@@ -139,6 +143,35 @@ struct CompletionMarker {
     kind: String,
     generation: Uuid,
     manifest_sha256: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BackupFormat {
+    Current,
+    LegacyV3,
+}
+
+impl BackupFormat {
+    fn manifest_name(self) -> &'static str {
+        match self {
+            Self::Current => MANIFEST_NAME,
+            Self::LegacyV3 => LEGACY_MANIFEST_NAME,
+        }
+    }
+
+    fn completion_kind(self) -> &'static str {
+        match self {
+            Self::Current => COMPLETION_KIND,
+            Self::LegacyV3 => LEGACY_COMPLETION_KIND,
+        }
+    }
+
+    fn scope(self) -> &'static str {
+        match self {
+            Self::Current => BACKUP_SCOPE,
+            Self::LegacyV3 => LEGACY_BACKUP_SCOPE,
+        }
+    }
 }
 
 /// Machine-readable receipt whose limitations are part of every successful
@@ -277,7 +310,7 @@ pub fn create_data_backup(
     let manifest_bytes = canonical_json(&manifest)?;
     write_private_file(&staging.path.join(MANIFEST_NAME), &manifest_bytes)?;
     let marker = CompletionMarker {
-        kind: COMPLETION_KIND.to_owned(),
+        kind: BackupFormat::Current.completion_kind().to_owned(),
         generation: manifest.generation,
         manifest_sha256: sha256_bytes_hex(&manifest_bytes),
     };
@@ -400,9 +433,13 @@ pub fn restore_data_backup(
             ));
         }
         drop(migrated_store);
-        seal_staged_catalogue(&staging.path)?;
         remove_migration_host_state(&staging.path, &manifest.members)?;
     }
+    // Legacy v3 generations can contain live pairing challenges and bearer
+    // digests. Sanitize every restored catalogue after its exact source copy
+    // has been verified and before the staging directory can be published.
+    seal_staged_catalogue(&staging.path)?;
+    validate_pairing_authority_absent(&staging.path)?;
 
     let restored_store = HubStore::open_immutable_read_only(&staging.path)?;
     restored_store.catalogue_check()?;
@@ -412,7 +449,7 @@ pub fn restore_data_backup(
         ));
     }
     restored_store.verify_immutable_snapshot_unchanged()?;
-    validate_restored_data_tree(&staging.path, &manifest.members, migrated)?;
+    validate_restored_data_tree(&staging.path, &manifest.members, true)?;
     sync_restored_data(&staging.path, &manifest.members)?;
 
     let report = report("data_restored", &destination, &manifest)?;
@@ -452,7 +489,7 @@ fn report(
         installation_id: manifest.installation_id,
         member_count: manifest.members.len(),
         total_bytes,
-        scope: BACKUP_SCOPE,
+        scope: backup_format(manifest)?.scope(),
         clean_host_ready: false,
         collector_authority: "absent",
         excluded_host_state: EXCLUDED_HOST_STATE.to_vec(),
@@ -649,12 +686,18 @@ fn seal_staged_catalogue(payload: &Path) -> Result<(), DataRecoveryError> {
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(DataRecoveryError::CatalogueIdentity)?;
-    // A collector lease is process-local authority, never recoverable data.
-    // Remove it from the copied catalogue before it is inventoried and sealed:
-    // restoring a backup must not make a fresh host look like an active
-    // collector or retain a stale fencing instance.
+    // Collector leases and pairing credentials are host-local authority, never
+    // recoverable data. Remove them before a copied catalogue is inventoried or
+    // a restored catalogue is published. Installation/account/vehicle identity
+    // and immutable sync lineage remain untouched.
     connection
-        .execute("DELETE FROM supervised_collector_lease", [])
+        .execute_batch(
+            "BEGIN IMMEDIATE;
+             DELETE FROM pairing_challenges;
+             DELETE FROM paired_devices;
+             DELETE FROM supervised_collector_lease;
+             COMMIT;",
+        )
         .map_err(DataRecoveryError::CatalogueIdentity)?;
     let journal_mode: String = connection
         .query_row("PRAGMA journal_mode = DELETE", [], |row| row.get(0))
@@ -738,10 +781,16 @@ fn inventory_file(path: &Path, member_path: String) -> Result<BackupMember, Data
     })
 }
 
-fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError> {
-    if manifest.kind != BACKUP_KIND {
-        return Err(invalid("unsupported data-backup kind"));
+fn backup_format(manifest: &BackupManifest) -> Result<BackupFormat, DataRecoveryError> {
+    match (manifest.kind.as_str(), manifest.scope.as_str()) {
+        (BACKUP_KIND, BACKUP_SCOPE) => Ok(BackupFormat::Current),
+        (LEGACY_BACKUP_KIND, LEGACY_BACKUP_SCOPE) => Ok(BackupFormat::LegacyV3),
+        _ => Err(invalid("unsupported data-backup kind or scope")),
     }
+}
+
+fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError> {
+    let _ = backup_format(manifest)?;
     if manifest.generation.is_nil() {
         return Err(invalid("data-backup generation is nil"));
     }
@@ -768,9 +817,6 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError>
     }
     if manifest.installation_id.is_nil() {
         return Err(invalid("data-backup installation ID is nil"));
-    }
-    if manifest.scope != BACKUP_SCOPE {
-        return Err(invalid("data-backup scope is not the bounded data scope"));
     }
     if manifest.excluded_host_state != excluded_host_state_strings() {
         return Err(invalid(
@@ -850,20 +896,37 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), DataRecoveryError>
 fn read_backup_envelope(
     source: &Path,
 ) -> Result<(BackupManifest, Vec<u8>, CompletionMarker), DataRecoveryError> {
+    let manifest_name = match fs::symlink_metadata(source.join(MANIFEST_NAME)) {
+        Ok(_) => MANIFEST_NAME,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => LEGACY_MANIFEST_NAME,
+        Err(error) => {
+            return Err(io_error(
+                "inspecting data-backup manifest",
+                source.join(MANIFEST_NAME),
+                error,
+            ));
+        }
+    };
     require_directory_entries(
         source,
-        [MANIFEST_NAME, COMPLETION_NAME, DATA_DIRECTORY],
+        [manifest_name, COMPLETION_NAME, DATA_DIRECTORY],
         "data-backup root",
     )?;
-    let manifest_path = source.join(MANIFEST_NAME);
+    let manifest_path = source.join(manifest_name);
     let manifest_bytes = read_bounded_private_file(&manifest_path, MAX_MANIFEST_BYTES)?;
     let manifest: BackupManifest = parse_canonical_json(&manifest_bytes)?;
     validate_manifest(&manifest)?;
+    let format = backup_format(&manifest)?;
+    if manifest_name != format.manifest_name() {
+        return Err(invalid(
+            "data-backup manifest filename does not match its format",
+        ));
+    }
 
     let marker_path = source.join(COMPLETION_NAME);
     let marker_bytes = read_bounded_private_file(&marker_path, MAX_COMPLETION_BYTES)?;
     let marker: CompletionMarker = parse_canonical_json(&marker_bytes)?;
-    if marker.kind != COMPLETION_KIND
+    if marker.kind != format.completion_kind()
         || marker.generation != manifest.generation
         || marker.manifest_sha256 != sha256_bytes_hex(&manifest_bytes)
     {
@@ -882,7 +945,8 @@ fn validate_backup_tree(
     marker: &CompletionMarker,
 ) -> Result<(), DataRecoveryError> {
     validate_manifest(manifest)?;
-    if marker.kind != COMPLETION_KIND
+    let format = backup_format(manifest)?;
+    if marker.kind != format.completion_kind()
         || marker.generation != manifest.generation
         || marker.manifest_sha256 != sha256_bytes_hex(manifest_bytes)
     {
@@ -892,11 +956,14 @@ fn validate_backup_tree(
     }
     require_directory_entries(
         root,
-        [MANIFEST_NAME, COMPLETION_NAME, DATA_DIRECTORY],
+        [format.manifest_name(), COMPLETION_NAME, DATA_DIRECTORY],
         "data-backup root",
     )?;
     let data = root.join(DATA_DIRECTORY);
     require_directory_entries(&data, ["hub.sqlite", "packs"], "data-backup payload")?;
+    if format == BackupFormat::Current {
+        validate_pairing_authority_absent(&data)?;
+    }
     let expected_noops = current_schema_22_noop_pairs(&data)?;
     if expected_noops.is_empty() {
         require_directory_entries(
@@ -1235,6 +1302,25 @@ fn open_immutable_catalogue(data: &Path) -> Result<Connection, DataRecoveryError
     .map_err(DataRecoveryError::CatalogueIdentity)
 }
 
+fn validate_pairing_authority_absent(data: &Path) -> Result<(), DataRecoveryError> {
+    let connection = open_immutable_catalogue(data)?;
+    let (challenge_count, device_count): (i64, i64) = connection
+        .query_row(
+            "SELECT
+                (SELECT COUNT(*) FROM pairing_challenges),
+                (SELECT COUNT(*) FROM paired_devices)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    if challenge_count != 0 || device_count != 0 {
+        return Err(invalid(
+            "current data-backup catalogue retains pairing authority",
+        ));
+    }
+    Ok(())
+}
+
 fn current_epoch_ms() -> Result<i64, DataRecoveryError> {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1406,8 +1492,16 @@ fn current_schema_22_noop_pairs(
         .map_err(DataRecoveryError::CatalogueIdentity)?;
     let mut current = BTreeMap::<Uuid, SyncManifest>::new();
     for (snapshot_id, vehicle_id, head_sequence, payload) in rows {
-        let manifest: SyncManifest =
-            serde_json::from_slice(&payload).map_err(DataRecoveryError::Decode)?;
+        let manifest: SyncManifest = match serde_json::from_slice(&payload) {
+            Ok(manifest) => manifest,
+            Err(_)
+                if serde_json::from_slice::<LineageManifestV2>(&payload).is_ok()
+                    || serde_json::from_slice::<LineageDelta>(&payload).is_ok() =>
+            {
+                continue;
+            }
+            Err(error) => return Err(DataRecoveryError::Decode(error)),
+        };
         manifest
             .validate()
             .map_err(|error| invalid(format!("invalid manifest in backup catalogue: {error}")))?;
@@ -1660,6 +1754,15 @@ fn io_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        db::{SourceDescriptor, VehicleDescriptor},
+        protocol::{
+            CursorClaims, CursorKey, LineageBase, LineageCapability, LineageDelta,
+            LineageManifestV2, MirrorTable, OpaqueCursor, PackCompression, PackFormat,
+            SchemaVersion, SequenceRange, Sha256Digest, TransportPack,
+            canonical_delta_chain_digest,
+        },
+    };
 
     #[derive(Debug, PartialEq, Eq)]
     struct SnapshotEntry {
@@ -1722,6 +1825,214 @@ mod tests {
             .create_pairing("Recovery fixture", 1_000, 10_000)
             .expect("pairing database row");
         (temporary, store)
+    }
+
+    fn publish_lineage_fixture(store: &HubStore, cursor_key: &CursorKey) -> LineageManifestV2 {
+        let source = store
+            .register_source(
+                &SourceDescriptor::new("tesla_owner_api", "recovery-account"),
+                1_000,
+            )
+            .expect("recovery account source");
+        let vehicle = store
+            .register_vehicle(
+                &VehicleDescriptor::new(source.source_id, "recovery-vehicle"),
+                1_001,
+            )
+            .expect("recovery vehicle");
+        let installation_id = store.installation_id().expect("installation identity");
+        let base_snapshot_id = Uuid::new_v4();
+        let make_pack = |ordinal: u32, sequence: SequenceRange, bytes: &[u8]| -> TransportPack {
+            let digest = Sha256Digest::of_bytes(bytes);
+            TransportPack {
+                pack_id: Uuid::new_v4(),
+                snapshot_id: base_snapshot_id,
+                ordinal,
+                schema: SchemaVersion { major: 1, minor: 0 },
+                format: PackFormat::SqliteTransport,
+                compression: PackCompression::Zstd,
+                relative_path: TransportPack::canonical_relative_path(digest),
+                sha256: digest,
+                compressed_bytes: u64::try_from(bytes.len()).expect("pack size"),
+                uncompressed_bytes: 100,
+                row_count: 1,
+                sequence,
+                tables: vec![MirrorTable::Vehicle],
+            }
+        };
+        let base_bytes = b"recovery-base-pack";
+        let delta_bytes = b"recovery-delta-pack";
+        let base_pack = make_pack(
+            0,
+            SequenceRange {
+                from_exclusive: 10,
+                to_inclusive: 10,
+            },
+            base_bytes,
+        );
+        let delta_pack = make_pack(
+            1,
+            SequenceRange {
+                from_exclusive: 10,
+                to_inclusive: 11,
+            },
+            delta_bytes,
+        );
+        let base_digest = Sha256Digest::of_bytes(b"recovery-base-chain");
+        let head_digest = canonical_delta_chain_digest(base_digest, delta_pack.sha256);
+        let terminal_cursor = OpaqueCursor::issue(
+            cursor_key,
+            CursorClaims {
+                protocol: PROTOCOL_V1,
+                schema: SchemaVersion { major: 1, minor: 0 },
+                installation_id,
+                account_id: source.source_id,
+                vehicle_id: vehicle.vehicle_id,
+                generation: 1,
+                sequence: 11,
+            },
+        )
+        .expect("lineage cursor");
+        let lineage = LineageManifestV2 {
+            protocol: LINEAGE_PROTOCOL_V2,
+            capability: LineageCapability::ImmutableBaseOrderedDeltas,
+            schema: SchemaVersion { major: 1, minor: 0 },
+            installation_id,
+            account_id: source.source_id,
+            vehicle_id: vehicle.vehicle_id,
+            generation: 1,
+            base: LineageBase {
+                snapshot_id: base_snapshot_id,
+                sequence: 10,
+                digest: base_digest,
+                packs: vec![base_pack.clone()],
+            },
+            deltas: vec![LineageDelta {
+                from_sequence: 10,
+                to_sequence: 11,
+                parent_chain_digest: base_digest,
+                chain_digest: head_digest,
+                pack_digest: delta_pack.sha256,
+                pack: delta_pack.clone(),
+            }],
+            head_sequence: 11,
+            head_digest,
+            terminal_cursor,
+        };
+        let pack_directory = store.packs_dir().join("sha256");
+        fs::create_dir_all(&pack_directory).expect("lineage pack directory");
+        for (pack, bytes) in [
+            (&base_pack, base_bytes.as_slice()),
+            (&delta_pack, delta_bytes),
+        ] {
+            fs::write(
+                pack_directory.join(format!("{}.sqlite.zst", pack.sha256)),
+                bytes,
+            )
+            .expect("lineage pack");
+        }
+        store
+            .commit_lineage_catalog(&lineage)
+            .expect("lineage catalogue");
+        store
+            .open()
+            .expect("lineage binding catalogue")
+            .execute(
+                "INSERT INTO v2_base_bindings(
+                    vehicle_id, snapshot_id, installation_id, account_id,
+                    generation, selected_car_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    vehicle.vehicle_id.to_string(),
+                    base_snapshot_id.to_string(),
+                    installation_id.to_string(),
+                    source.source_id.to_string(),
+                    1_i64,
+                    1_i64,
+                ],
+            )
+            .expect("immutable lineage binding");
+        lineage
+    }
+
+    fn pairing_authority_counts(data: &Path) -> (i64, i64) {
+        let connection = open_immutable_catalogue(data).expect("pairing authority catalogue");
+        let challenges = connection
+            .query_row("SELECT COUNT(*) FROM pairing_challenges", [], |row| {
+                row.get(0)
+            })
+            .expect("pairing challenge count");
+        let devices = connection
+            .query_row("SELECT COUNT(*) FROM paired_devices", [], |row| row.get(0))
+            .expect("paired device count");
+        (challenges, devices)
+    }
+
+    fn reseal_backup_as_legacy_v3_with_pairing(backup: &Path, bearer: &str) {
+        let catalogue = backup.join(CATALOGUE_MEMBER);
+        let connection = Connection::open_with_flags(
+            &catalogue,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .expect("legacy catalogue fixture");
+        connection
+            .execute(
+                "INSERT INTO pairing_challenges
+                 (pairing_id, label, secret_sha256, created_at_ms, expires_at_ms)
+                 VALUES (?1, 'legacy invitation', ?2, 1000, 10000)",
+                rusqlite::params![Uuid::new_v4().to_string(), vec![17_u8; 32]],
+            )
+            .expect("legacy pairing challenge");
+        connection
+            .execute(
+                "INSERT INTO paired_devices
+                 (device_id, display_name, token_sha256, created_at_ms, expires_at_ms,
+                  revoked_at_ms, last_authenticated_at_ms)
+                 VALUES (?1, 'legacy device', ?2, 2000, 20000, NULL, 2001)",
+                rusqlite::params![
+                    Uuid::new_v4().to_string(),
+                    Sha256::digest(bearer.as_bytes()).to_vec()
+                ],
+            )
+            .expect("legacy paired device");
+        drop(connection);
+
+        let current_manifest_path = backup.join(MANIFEST_NAME);
+        let legacy_manifest_path = backup.join(LEGACY_MANIFEST_NAME);
+        let mut manifest: BackupManifest = parse_canonical_json(
+            &fs::read(&current_manifest_path).expect("current manifest bytes"),
+        )
+        .expect("current manifest");
+        manifest.kind = LEGACY_BACKUP_KIND.to_owned();
+        manifest.scope = LEGACY_BACKUP_SCOPE.to_owned();
+        let catalogue_member = manifest
+            .members
+            .iter_mut()
+            .find(|member| member.path == CATALOGUE_MEMBER)
+            .expect("legacy catalogue member");
+        catalogue_member.size = fs::metadata(&catalogue)
+            .expect("legacy catalogue metadata")
+            .len();
+        catalogue_member.sha256 = sha256_file_hex(&catalogue).expect("legacy catalogue digest");
+        fs::rename(&current_manifest_path, &legacy_manifest_path)
+            .expect("legacy manifest filename");
+        let manifest_bytes = canonical_json(&manifest).expect("legacy manifest bytes");
+        fs::write(&legacy_manifest_path, &manifest_bytes).expect("legacy manifest");
+        set_mode(
+            &legacy_manifest_path,
+            PRIVATE_FILE_MODE,
+            "legacy manifest mode",
+        )
+        .unwrap();
+
+        let marker = CompletionMarker {
+            kind: LEGACY_COMPLETION_KIND.to_owned(),
+            generation: manifest.generation,
+            manifest_sha256: sha256_bytes_hex(&manifest_bytes),
+        };
+        let marker_path = backup.join(COMPLETION_NAME);
+        fs::write(&marker_path, canonical_json(&marker).unwrap()).expect("legacy marker");
+        set_mode(&marker_path, PRIVATE_FILE_MODE, "legacy marker mode").unwrap();
     }
 
     fn reseal_backup_as_schema(backup: &Path, schema: i32) -> BackupManifest {
@@ -2034,11 +2345,31 @@ mod tests {
     }
 
     #[test]
-    fn data_backup_verifies_and_restores_without_mutating_source() {
+    fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
         let (temporary, store) = create_fixture();
         let source_data = store.database_path().parent().expect("source data root");
-        crate::teslamate_credentials::load_or_create_cursor_key(source_data)
+        let device_pairing = store
+            .create_pairing("Recovery paired device", 2_000, 20_000)
+            .expect("device pairing");
+        let paired_access = store
+            .claim_pairing(
+                device_pairing.pairing_id,
+                device_pairing.secret(),
+                "Recovery device",
+                3_000,
+            )
+            .expect("active paired device");
+        let paired_bearer = paired_access.access_token.as_bearer().to_owned();
+        assert!(
+            store
+                .authenticate_device_at(&paired_bearer, 3_001)
+                .expect("source bearer authentication")
+                .is_some()
+        );
+        assert_eq!(pairing_authority_counts(source_data), (1, 1));
+        let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(source_data)
             .expect("source cursor key");
+        let source_lineage = publish_lineage_fixture(&store, &cursor_key);
         let source_cursor = fs::read(crate::teslamate_credentials::cursor_key_path(source_data))
             .expect("source cursor bytes");
         let owner_tokens = crate::credentials::OwnerTokens::from_secret_parts(
@@ -2080,6 +2411,27 @@ mod tests {
         assert_eq!(created.collector_authority, "absent");
         assert_eq!(permission_mode(&fs::metadata(&backup).unwrap()), 0o700);
         assert!(!backup.join("data/secrets").exists());
+        assert_eq!(
+            pairing_authority_counts(&backup.join(DATA_DIRECTORY)),
+            (0, 0),
+            "new backups must exclude invitations and paired-device bearers"
+        );
+        let backup_store =
+            HubStore::open_immutable_read_only(backup.join(DATA_DIRECTORY)).expect("backup store");
+        assert_eq!(backup_store.installation_id().unwrap(), installation_id);
+        assert_eq!(
+            backup_store
+                .source_vehicle_key(source_lineage.vehicle_id)
+                .expect("backup vehicle identity"),
+            Some("recovery-vehicle".to_owned())
+        );
+        assert_eq!(
+            backup_store
+                .lineage_manifest_for_vehicle(source_lineage.vehicle_id)
+                .expect("backup lineage"),
+            Some(source_lineage.clone()),
+            "backup sanitation must preserve account-bound vehicle sync lineage"
+        );
 
         let before = tree_snapshot(&backup);
         let verified = verify_data_backup(&backup).expect("verify data backup");
@@ -2112,13 +2464,28 @@ mod tests {
             immutable_database_identity(&restored).unwrap(),
             installation_id
         );
-        let connection = open_immutable_catalogue(&restored).expect("immutable pairing query");
-        let pairing_count: i64 = connection
-            .query_row("SELECT COUNT(*) FROM pairing_challenges", [], |row| {
-                row.get(0)
-            })
-            .expect("pairing count");
-        assert_eq!(pairing_count, 1);
+        assert_eq!(pairing_authority_counts(&restored), (0, 0));
+        assert!(
+            restored_store
+                .authenticate_device_at(&paired_bearer, 3_001)
+                .expect("restored bearer authentication")
+                .is_none(),
+            "a pre-backup paired-device bearer must not authenticate after restore"
+        );
+        assert_eq!(
+            restored_store
+                .source_vehicle_key(source_lineage.vehicle_id)
+                .expect("restored vehicle identity"),
+            Some("recovery-vehicle".to_owned())
+        );
+        assert_eq!(
+            restored_store
+                .lineage_manifest_for_vehicle(source_lineage.vehicle_id)
+                .expect("restored lineage"),
+            Some(source_lineage),
+            "restore sanitation must preserve account-bound vehicle sync lineage"
+        );
+        let connection = open_immutable_catalogue(&restored).expect("immutable authority query");
         let restored_authority_rows: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM supervised_collector_lease",
@@ -2140,6 +2507,49 @@ mod tests {
                 .expect("source cursor key after backup"),
             source_cursor,
             "backup must not mutate source key material"
+        );
+    }
+
+    #[test]
+    fn legacy_v3_backup_is_accepted_but_pairing_authority_is_revoked_before_publication() {
+        let (temporary, store) = create_fixture();
+        let device_pairing = store
+            .create_pairing("Legacy paired device", 2_000, 20_000)
+            .expect("legacy device pairing");
+        let paired_access = store
+            .claim_pairing(
+                device_pairing.pairing_id,
+                device_pairing.secret(),
+                "Legacy device",
+                3_000,
+            )
+            .expect("legacy paired device");
+        let paired_bearer = paired_access.access_token.as_bearer().to_owned();
+        let backup = temporary.path().join("legacy-v3-backup");
+        create_data_backup(&store, &backup).expect("create sanitized fixture base");
+        reseal_backup_as_legacy_v3_with_pairing(&backup, &paired_bearer);
+        assert_eq!(
+            pairing_authority_counts(&backup.join(DATA_DIRECTORY)),
+            (1, 1)
+        );
+        let source_before = tree_snapshot(&backup);
+
+        let verified = verify_data_backup(&backup).expect("accept legacy v3 backup");
+        assert_eq!(verified.scope, LEGACY_BACKUP_SCOPE);
+        assert_eq!(tree_snapshot(&backup), source_before);
+
+        let restored = temporary.path().join("legacy-v3-restored");
+        restore_data_backup(&backup, &restored).expect("restore legacy v3 backup");
+        assert_eq!(tree_snapshot(&backup), source_before);
+        assert_eq!(pairing_authority_counts(&restored), (0, 0));
+        let restored_store =
+            HubStore::open_immutable_read_only(&restored).expect("legacy restored immutable store");
+        assert!(
+            restored_store
+                .authenticate_device_at(&paired_bearer, 3_001)
+                .expect("legacy restored bearer authentication")
+                .is_none(),
+            "legacy bearer authority must not survive restore publication"
         );
     }
 

@@ -3790,8 +3790,15 @@ impl HubStore {
     /// Stable random identity of this Hub installation. It never comes from a
     /// remote source and survives package upgrades and restarts.
     pub fn installation_id(&self) -> Result<Uuid, StoreError> {
-        let connection = self.open()?;
-        ensure_installation_id(&connection)
+        let connection = self.open_read_only_connection()?;
+        let value: String = connection
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = ?1",
+                params![INSTALLATION_ID_KEY],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::InstallationIdentity)?;
+        parse_stored_uuid("installation_id", &value)
     }
 
     pub fn publish_manifest(&self, manifest: &SyncManifest) -> Result<(), StoreError> {
@@ -7755,6 +7762,138 @@ impl HubStore {
         )
     }
 
+    /// Atomically publish a first schema-2.1 import and its prepared
+    /// schema-2.2 successor. The immutable schema-2.2 no-op must be durable
+    /// before this catalogue transaction; neither manifest is visible alone.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finalize_import_generation_with_projection_state_and_schema_22(
+        &self,
+        publication_gate: &PublicationGate,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        manifest: &SyncManifest,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        binding: &ProjectionBinding,
+        projection_state: &TeslaMateProjectionState,
+        schema_22_manifest: &SyncManifest,
+        schema_22_noop: &crate::updates_delivery::SignedNoOpState,
+    ) -> Result<(), StoreError> {
+        if run_id.is_nil()
+            || source_id.is_nil()
+            || vehicle_id.is_nil()
+            || car_id <= 0
+            || manifest.vehicle_id != vehicle_id
+        {
+            return Err(StoreError::InvalidImportGeneration);
+        }
+        validate_immutable_v2_base_binding(manifest, binding)?;
+        if source_id != binding.account_id || car_id != binding.selected_car_id {
+            return Err(StoreError::LineageCatalogConflict);
+        }
+        if schema_22_manifest.vehicle_id != vehicle_id
+            || schema_22_manifest.installation_id != binding.installation_id
+            || schema_22_manifest.account_id != binding.account_id
+            || schema_22_manifest.generation != binding.generation
+            || schema_22_manifest.head_sequence <= manifest.head_sequence
+        {
+            return Err(StoreError::LineageCatalogConflict);
+        }
+        crate::updates_delivery::validate_schema_22_pair(schema_22_manifest, schema_22_noop)
+            .map_err(|error| StoreError::InvalidSchema22Pair(error.message))?;
+        let noop_bytes = serde_json::to_vec(schema_22_noop)
+            .map_err(|error| StoreError::InvalidSchema22Pair(error.to_string()))?;
+        self.prepare_schema_22_noop_publication(publication_gate, vehicle_id, None)?;
+        self.publish_schema_22_noop(publication_gate, schema_22_noop)?;
+        let stored_noop = self
+            .schema_22_noop_for_snapshot(vehicle_id, schema_22_manifest.snapshot_id)?
+            .ok_or(StoreError::Schema22NoOpNotFound)?;
+        if stored_noop != noop_bytes {
+            return Err(StoreError::InvalidSchema22Pair(
+                "schema 2.2 no-op changed before catalogue publication".into(),
+            ));
+        }
+        let transfer = projection_state
+            .sealed_transfer_for_import_generation(run_id, binding.selected_car_id)?;
+        let mut connection = self.open()?;
+        attach_teslamate_projection_state_transfer(&connection, &transfer)?;
+        let result = (|| -> Result<(), StoreError> {
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(StoreError::Begin)?;
+            let (encoded, base_last_observation_id, base_updated_at_ms): (String, i64, i64) =
+                transaction
+                    .query_row(
+                        "SELECT sessions.session_json, generations.base_last_observation_id,
+                            generations.base_updated_at_ms
+                         FROM import_generation_sessions AS sessions
+                         JOIN import_generations AS generations USING(run_id)
+                         WHERE generations.run_id = ?1 AND generations.source_id = ?2
+                           AND generations.vehicle_id = ?3 AND generations.car_id = ?4
+                           AND generations.status = 'staging'",
+                        params![
+                            run_id.to_string(),
+                            source_id.to_string(),
+                            vehicle_id.to_string(),
+                            car_id
+                        ],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    )
+                    .optional()
+                    .map_err(StoreError::ImportGeneration)?
+                    .ok_or(StoreError::ImportGenerationNotFound)?;
+            let session =
+                serde_json::from_str(&encoded).map_err(|_| StoreError::InvalidLifecycleSession)?;
+            publish_manifest_in_transaction(&transaction, manifest, Some(binding))?;
+            publish_manifest_in_transaction(&transaction, schema_22_manifest, None)?;
+            promote_imported_open_session_in_transaction(
+                &transaction,
+                source_id,
+                vehicle_id,
+                car_id,
+                &session,
+                updated_at_ms,
+                Some((base_last_observation_id, base_updated_at_ms)),
+            )?;
+            replace_teslamate_import_projection_state_from_attached_in_transaction(
+                &transaction,
+                vehicle_id,
+                binding.account_id,
+                manifest.snapshot_id,
+                manifest.head_sequence,
+                binding.selected_car_id,
+                &transfer,
+                true,
+            )?;
+            upsert_geofences_in_transaction(&transaction, vehicle_id, geofences)?;
+            record_snapshot_fingerprint_in_transaction(&transaction, manifest, fingerprint)?;
+            if transaction
+                .execute(
+                    "DELETE FROM import_generations WHERE run_id = ?1 AND status = 'staging'",
+                    params![run_id.to_string()],
+                )
+                .map_err(StoreError::ImportGeneration)?
+                != 1
+            {
+                return Err(StoreError::ImportGenerationNotFound);
+            }
+            self.commit_catalogue_receipted_transaction(
+                transaction,
+                "import_generation_projection_state_schema_22",
+                vehicle_id,
+                schema_22_manifest.snapshot_id,
+                StoreError::ImportGeneration,
+            )
+        })();
+        finish_teslamate_projection_state_transfer(
+            result,
+            detach_teslamate_projection_state_transfer(self, &connection),
+        )
+    }
+
     fn finalize_import_generation_with_metadata(
         &self,
         run_id: Uuid,
@@ -9549,6 +9688,28 @@ impl HubStore {
             return Err(StoreError::PairingRejected);
         };
 
+        // Reject random network proofs without ever joining the SQLite writer
+        // queue. The immediate transaction below repeats this check before it
+        // consumes the challenge, so a concurrent claim remains single-use.
+        let read_only = self.open_read_only_connection()?;
+        let challenge: Option<(Vec<u8>, i64)> = read_only
+            .query_row(
+                "SELECT secret_sha256, expires_at_ms FROM pairing_challenges WHERE pairing_id = ?1",
+                params![pairing_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(StoreError::ClaimPairing)?;
+        let Some((stored_digest, expires_at_ms)) = challenge else {
+            return Err(StoreError::PairingRejected);
+        };
+        let valid_digest: [u8; PAIRING_SECRET_BYTES] = stored_digest
+            .try_into()
+            .map_err(|_| StoreError::PairingRejected)?;
+        if claimed_at_ms >= expires_at_ms || !constant_time_equal(&valid_digest, &secret_digest) {
+            return Err(StoreError::PairingRejected);
+        }
+
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -9644,6 +9805,22 @@ impl HubStore {
         let Some(token_digest) = DeviceAccessToken::digest_from_wire(access_token) else {
             return Err(StoreError::PairingRejected);
         };
+        // As with pairing claims, an invalid bearer must not acquire a write
+        // lock. The mutation transaction repeats the lookup atomically.
+        let read_only = self.open_read_only_connection()?;
+        let plausible: bool = read_only
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM paired_devices
+                     WHERE token_sha256 = ?1 AND revoked_at_ms IS NULL AND expires_at_ms > ?2
+                 )",
+                params![token_digest.as_slice(), now_ms],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::RotateDevice)?;
+        if !plausible {
+            return Err(StoreError::PairingRejected);
+        }
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -10219,7 +10396,7 @@ impl HubStore {
     }
 
     pub fn source_vehicle_key(&self, vehicle_id: Uuid) -> Result<Option<String>, StoreError> {
-        let connection = self.open()?;
+        let connection = self.open_read_only_connection()?;
         connection
             .query_row(
                 "SELECT COALESCE(
@@ -15011,7 +15188,13 @@ fn latest_observation_metadata(
     connection
         .query_row(
             "SELECT observation_id, observed_at_ms, received_at_ms
-             FROM raw_observations
+             FROM (
+                 SELECT observation_id, vehicle_id, observed_at_ms, received_at_ms
+                   FROM raw_observations
+                 UNION ALL
+                 SELECT observation_id, vehicle_id, observed_at_ms, received_at_ms
+                   FROM current_observations
+             )
              WHERE vehicle_id = ?1
                AND (?2 IS NULL OR observation_id > ?2)
              ORDER BY observation_id DESC LIMIT 1",
@@ -18455,7 +18638,9 @@ pub enum StoreError {
     ResolveCataloguePath(std::io::Error),
     #[error("hub catalogue path cannot be represented as a SQLite file URI")]
     InvalidCataloguePath,
-    #[error("hub catalogue has a pending WAL and is not an immutable snapshot")]
+    #[error(
+        "hub catalogue is actively changing; retry when idle or stop Hub for immutable diagnostics"
+    )]
     PendingCatalogueWal,
     #[error("cannot checkpoint Hub catalogue: {0}")]
     CatalogueCheckpoint(rusqlite::Error),
@@ -20390,6 +20575,35 @@ mod tests {
                 .expect("malformed token lookup")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn bogus_pairing_proofs_never_wait_for_the_sqlite_writer() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let invitation = store
+            .create_pairing("real invitation", 1_000, 61_000)
+            .expect("pairing creates");
+        let unrelated = store
+            .prepare_pairing("unrelated invitation", 1_000, 61_000)
+            .expect("pairing prepares");
+        let unrelated_bearer = DeviceAccessToken::generate();
+
+        let mut writer = store.open().expect("open writer");
+        let transaction = writer
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("hold writer lock");
+
+        assert!(matches!(
+            store.claim_pairing(invitation.pairing_id, unrelated.secret(), "attacker", 2_000,),
+            Err(StoreError::PairingRejected)
+        ));
+        assert!(matches!(
+            store.rotate_device(unrelated_bearer.as_bearer(), 2_000),
+            Err(StoreError::PairingRejected)
+        ));
+
+        transaction.rollback().expect("release writer lock");
     }
 
     #[test]
@@ -26509,6 +26723,215 @@ mod tests {
         manifest
     }
 
+    fn schema_22_successor_for_binding(
+        binding: &ProjectionBinding,
+    ) -> (SyncManifest, crate::updates_delivery::SignedNoOpState) {
+        let mut manifest = schema_22_test_manifest();
+        manifest.installation_id = binding.installation_id;
+        manifest.account_id = binding.account_id;
+        manifest.vehicle_id = binding.vehicle_id;
+        manifest.generation = binding.generation;
+        manifest.snapshot_id = Uuid::new_v4();
+        manifest.base_sequence = 2;
+        manifest.head_sequence = 2;
+        manifest.chunks[0].snapshot_id = manifest.snapshot_id;
+        manifest.chunks[0].sequence = SequenceRange {
+            from_exclusive: 2,
+            to_inclusive: 2,
+        };
+        manifest.terminal_cursor = OpaqueCursor::issue(
+            &CursorKey::from_bytes([7; 32]),
+            CursorClaims {
+                protocol: ProtocolVersion { major: 1, minor: 0 },
+                schema: HUB_PROJECTION_SCHEMA_V3,
+                installation_id: binding.installation_id,
+                account_id: binding.account_id,
+                vehicle_id: binding.vehicle_id,
+                generation: binding.generation,
+                sequence: 2,
+            },
+        )
+        .expect("schema 2.2 cursor");
+        let noop = crate::updates_delivery::SignedNoOpState {
+            schema: "teslatlas-hub-schema-22-noop-v1".into(),
+            projection_schema: "2.2".into(),
+            installation_id: binding.installation_id,
+            account_id: binding.account_id,
+            vehicle_id: binding.vehicle_id,
+            generation: binding.generation,
+            snapshot_id: manifest.snapshot_id,
+            head_sequence: 2,
+            pack_sha256: manifest.chunks[0].sha256.to_string(),
+            terminal_cursor: manifest.terminal_cursor.clone(),
+            source_witness: None,
+        };
+        (manifest, noop)
+    }
+
+    #[test]
+    fn initial_schema_22_finalizer_never_exposes_only_schema_21() {
+        use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+        for inject_commit_fault in [true, false] {
+            let temporary = crate::private_tempdir().expect("temporary store");
+            let store = HubStore::initialize(temporary.path()).expect("store");
+            let (vehicle, binding, legacy_manifest) = v2_base_manifest(&store);
+            let run_id = store
+                .begin_import_generation(
+                    binding.account_id,
+                    vehicle.vehicle_id,
+                    binding.selected_car_id,
+                    2_000,
+                )
+                .expect("staging generation");
+            store
+                .stage_import_generation_session(
+                    run_id,
+                    &crate::teslamate_projection::TeslaMateOpenSession {
+                        car_id: binding.selected_car_id,
+                        ..Default::default()
+                    },
+                )
+                .expect("staging session");
+            let state = direct_test_projection_state(
+                &store,
+                run_id,
+                &import_delta_test_car(binding.selected_car_id),
+            );
+            let (schema_22, noop) = schema_22_successor_for_binding(&binding);
+            let gate = store.try_acquire_publication_gate().expect("gate");
+            let result = if inject_commit_fault {
+                let _fault = inject(DurabilityFaultPoint::CatalogueBeforeCommit);
+                store.finalize_import_generation_with_projection_state_and_schema_22(
+                    &gate,
+                    run_id,
+                    binding.account_id,
+                    vehicle.vehicle_id,
+                    binding.selected_car_id,
+                    2_000,
+                    &legacy_manifest,
+                    Sha256Digest::of_bytes(b"atomic-schema-22"),
+                    &[],
+                    &binding,
+                    &state,
+                    &schema_22,
+                    &noop,
+                )
+            } else {
+                store.finalize_import_generation_with_projection_state_and_schema_22(
+                    &gate,
+                    run_id,
+                    binding.account_id,
+                    vehicle.vehicle_id,
+                    binding.selected_car_id,
+                    2_000,
+                    &legacy_manifest,
+                    Sha256Digest::of_bytes(b"atomic-schema-22"),
+                    &[],
+                    &binding,
+                    &state,
+                    &schema_22,
+                    &noop,
+                )
+            };
+            if inject_commit_fault {
+                assert!(result.is_err(), "fault must abort both catalogue rows");
+                assert!(
+                    store
+                        .manifest_for_vehicle(vehicle.vehicle_id)
+                        .expect("manifest lookup")
+                        .is_none()
+                );
+            } else {
+                result.expect("atomic first import");
+                assert_eq!(
+                    store
+                        .manifest_for_vehicle(vehicle.vehicle_id)
+                        .expect("manifest lookup")
+                        .expect("schema 2.2 head")
+                        .schema,
+                    HUB_PROJECTION_SCHEMA_V3
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn initial_schema_22_finalizer_rejects_source_and_car_binding_mismatch() {
+        for mismatch_source in [true, false] {
+            let temporary = crate::private_tempdir().expect("temporary store");
+            let store = HubStore::initialize(temporary.path()).expect("store");
+            let (vehicle, binding, legacy_manifest) = v2_base_manifest(&store);
+            let source_id = if mismatch_source {
+                store
+                    .register_source(
+                        &SourceDescriptor::new("teslamate_import", "mismatched-source"),
+                        1_500,
+                    )
+                    .expect("mismatched source")
+                    .source_id
+            } else {
+                binding.account_id
+            };
+            let car_id = if mismatch_source {
+                binding.selected_car_id
+            } else {
+                binding.selected_car_id + 1
+            };
+            let run_id = store
+                .begin_import_generation(source_id, vehicle.vehicle_id, car_id, 2_000)
+                .expect("mismatched staging generation");
+            store
+                .stage_import_generation_session(
+                    run_id,
+                    &crate::teslamate_projection::TeslaMateOpenSession {
+                        car_id,
+                        ..Default::default()
+                    },
+                )
+                .expect("mismatched staging session");
+            let state = direct_test_projection_state(
+                &store,
+                run_id,
+                &import_delta_test_car(binding.selected_car_id),
+            );
+            let (schema_22, noop) = schema_22_successor_for_binding(&binding);
+            let gate = store.try_acquire_publication_gate().expect("gate");
+
+            let error = store
+                .finalize_import_generation_with_projection_state_and_schema_22(
+                    &gate,
+                    run_id,
+                    source_id,
+                    vehicle.vehicle_id,
+                    car_id,
+                    2_000,
+                    &legacy_manifest,
+                    Sha256Digest::of_bytes(b"mismatched-schema-22"),
+                    &[],
+                    &binding,
+                    &state,
+                    &schema_22,
+                    &noop,
+                )
+                .expect_err("source/car mismatch must fail closed");
+            assert!(matches!(error, StoreError::LineageCatalogConflict));
+            assert!(
+                store
+                    .manifest_for_vehicle(vehicle.vehicle_id)
+                    .expect("manifest lookup")
+                    .is_none()
+            );
+            assert!(
+                store
+                    .schema_22_noop_for_snapshot(vehicle.vehicle_id, schema_22.snapshot_id)
+                    .expect("no-op lookup")
+                    .is_none(),
+                "binding mismatch must fail before immutable no-op publication"
+            );
+        }
+    }
+
     #[test]
     fn imported_home_work_geofences_match_live_endpoints_after_restart() {
         let temp = crate::private_tempdir().expect("tempdir");
@@ -28045,17 +28468,29 @@ mod observation_verification_tests {
         };
         map_car(&store, vehicle.vehicle_id, 17);
 
-        store
+        let first = store
             .append_observation(
                 &ObservationInput {
                     source_id: source.source_id,
                     vehicle_id: vehicle.vehicle_id,
                     observed_at_ms: 2_000,
-                    payload: serde_json::json!({"secret_like": "payload must not be read"}),
+                    payload: serde_json::json!({
+                        "record_type": "owner_api_vehicle_data_v1",
+                        "secret_like": "payload must not be read"
+                    }),
                 },
                 2_001,
             )
             .expect("first observation");
+        let mut connection = store.open().expect("prune connection");
+        let transaction = connection.transaction().expect("prune transaction");
+        prune_processed_observations(
+            &transaction,
+            vehicle.vehicle_id,
+            first.observation.observation_id,
+        )
+        .expect("prune first raw observation");
+        transaction.commit().expect("commit first prune");
 
         let read_only = HubStore::open_read_only(temporary.path()).expect("read-only store");
         let watermark = read_only.observation_watermark(17).expect("watermark");
@@ -28069,17 +28504,29 @@ mod observation_verification_tests {
                 .verified()
         );
 
-        store
+        let second = store
             .append_observation(
                 &ObservationInput {
                     source_id: source.source_id,
                     vehicle_id: vehicle.vehicle_id,
                     observed_at_ms: 3_000,
-                    payload: serde_json::json!({"next": true}),
+                    payload: serde_json::json!({
+                        "record_type": "owner_api_vehicle_data_v1",
+                        "next": true
+                    }),
                 },
                 3_001,
             )
             .expect("new observation");
+        let mut connection = store.open().expect("second prune connection");
+        let transaction = connection.transaction().expect("second prune transaction");
+        prune_processed_observations(
+            &transaction,
+            vehicle.vehicle_id,
+            second.observation.observation_id,
+        )
+        .expect("prune second raw observation");
+        transaction.commit().expect("commit second prune");
         let verification = read_only
             .verify_observation_after(17, watermark.observation_id)
             .expect("verification");

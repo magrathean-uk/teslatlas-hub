@@ -1705,7 +1705,7 @@ async fn serve_stream_session(
     );
     session.accept_subscription(tag.clone());
     let hello_sent = tokio::select! {
-        result = socket.send(Message::Text(r#"{"msg_type":"control:hello","code":200}"#.into())) => result.is_ok(),
+        result = socket.send(Message::Text(r#"{"msg_type":"control:hello","connection_timeout":0}"#.into())) => result.is_ok(),
         changed = stream_interrupt.changed() => {
             let _ = changed;
             session.set_disconnect_reason("stream_unavailable");

@@ -256,6 +256,16 @@ pub struct ProductionUpdatesPublication {
     pub source_witness: ProductionUpdatesSourceWitness,
 }
 
+/// A verified first-import schema-2.2 candidate. The pack and no-op are
+/// durable before the caller's single SQLite catalogue transaction.
+#[derive(Debug)]
+pub(crate) struct PreparedProductionUpdatesSchema22 {
+    pub built: BuiltProjectionPack,
+    pub manifest: SyncManifest,
+    pub noop: SignedNoOpState,
+    pub publication: ProductionUpdatesPublication,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProductionUpdatesHead {
     snapshot_id: Uuid,
@@ -1421,6 +1431,124 @@ fn production_publication_report(
         noop_sha256: hex_sha256(noop_bytes),
         source_witness,
     })
+}
+
+/// Prepare the first schema-2.2 snapshot without changing the catalogue.
+/// The caller commits this candidate together with the legacy schema-2.1
+/// import, closing the only mixed-schema crash window.
+pub(crate) fn prepare_initial_production_updates_schema_22_with_gate(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    binding: &ProjectionBinding,
+    source_capture: DirectUpdatesSourceV2_2,
+    publication_gate: &PublicationGate,
+    legacy_sequence: u64,
+) -> Result<PreparedProductionUpdatesSchema22, UpdatesDeliveryError> {
+    if source_capture.schema.pinned_source_revision != TESLAMATE_V4_SOURCE_REVISION
+        || source_capture.schema.pinned_migration_set_sha256 != TESLAMATE_V4_MIGRATION_SET_SHA256
+        || source_capture.schema.observed_migration_count != TESLAMATE_V4_MIGRATION_COUNT
+        || source_capture.schema.observed_migration_version != MAX_VALIDATED_MIGRATION
+    {
+        return Err(reject(
+            "production schema-2.2 source capture contradicts its pinned TeslaMate v4 schema facts",
+        ));
+    }
+    if !is_canonical_sha256(&source_capture.postgres_snapshot_sha256)
+        || !is_canonical_sha256(&source_capture.schema.fingerprint)
+        || binding.selected_car_id <= 0
+        || i64::from(source_capture.car.id) != binding.selected_car_id
+        || source_capture
+            .updates
+            .iter()
+            .any(|row| i64::from(row.car_id) != binding.selected_car_id)
+    {
+        return Err(reject(
+            "production schema-2.2 source capture does not match its pinned selected-car binding",
+        ));
+    }
+    if store.manifest_for_vehicle(binding.vehicle_id)?.is_some() {
+        return Err(reject(
+            "initial schema-2.2 publication found an existing catalogue head",
+        ));
+    }
+    let source = encode_updates_logical_stream(&source_capture.updates)?;
+    let source_proof = production_updates_capture_proof(&source_capture);
+    let source_capture_sha256 = production_source_capture_sha256(&source_proof)?;
+    let snapshot = production_updates_snapshot(&source_capture);
+    let sequence =
+        store.reserve_next_full_snapshot_sequence(publication_gate, binding.vehicle_id)?;
+    if sequence <= legacy_sequence {
+        return Err(reject(
+            "initial schema-2.2 candidate did not advance the legacy sequence",
+        ));
+    }
+    let request = ProjectionPackRequestV2_2 {
+        pack_id: Uuid::new_v4(),
+        snapshot_id: Uuid::new_v4(),
+        ordinal: 0,
+        binding: binding.clone(),
+        sequence: SequenceRange {
+            from_exclusive: sequence,
+            to_inclusive: sequence,
+        },
+        snapshot: &snapshot,
+    };
+    let (built, hub) =
+        write_verified_production_pack(store, publication_gate, &request, &source, &source_proof)?;
+    let manifest = match sign_updates_schema_22_manifest(&request, &built, cursor_key) {
+        Ok(value) => value,
+        Err(error) => {
+            discard_unpublished_production_pack(store, publication_gate, &built);
+            return Err(error);
+        }
+    };
+    let noop = match sign_production_updates_schema_22_noop(
+        binding,
+        request.snapshot_id,
+        sequence,
+        &built.metadata.sha256.to_string(),
+        cursor_key,
+        &source_capture,
+        &source_proof,
+        source_capture_sha256.clone(),
+        &source,
+        &hub,
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            discard_unpublished_production_pack(store, publication_gate, &built);
+            return Err(error);
+        }
+    };
+    let noop_bytes = serde_json::to_vec(&noop).map_err(|error| {
+        discard_unpublished_production_pack(store, publication_gate, &built);
+        reject(error.to_string())
+    })?;
+    let mut publication = production_publication_report(
+        &source_capture,
+        source_capture_sha256.clone(),
+        &source,
+        &hub,
+        &manifest,
+        &noop,
+        &noop_bytes,
+        false,
+    )?;
+    publication.state = "schema_2_2_published_atomically".into();
+    Ok(PreparedProductionUpdatesSchema22 {
+        built,
+        manifest,
+        noop,
+        publication,
+    })
+}
+
+pub(crate) fn discard_prepared_initial_production_updates_schema_22(
+    store: &HubStore,
+    publication_gate: &PublicationGate,
+    prepared: &PreparedProductionUpdatesSchema22,
+) {
+    discard_unpublished_production_pack(store, publication_gate, &prepared.built);
 }
 
 /// Publish the exact physical updates captured by the production direct

@@ -36,6 +36,7 @@ use crate::{
 /// a bad upstream response from turning a manual collection into an unbounded
 /// allocation.
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_PROVIDER_TELEMETRY_TEXT_BYTES: usize = 512;
 const LEGACY_AUTH_TIMEOUT: Duration = Duration::from_secs(60);
 const ACCEPT_JSON: HeaderValue = HeaderValue::from_static("application/json");
 const VEHICLE_DATA_ENDPOINTS: &str = "charge_state;climate_state;closures_state;drive_state;gui_settings;location_data;vehicle_config;vehicle_state;vehicle_data_combo";
@@ -777,7 +778,7 @@ impl VehicleData {
 
     pub(crate) fn from_provider_raw_json(
         vehicle_id: VehicleId,
-        mut raw_json: Value,
+        raw_json: Value,
     ) -> Result<Self, OwnerApiError> {
         let count_is_invalid = raw_json
             .as_object()
@@ -786,11 +787,12 @@ impl VehicleData {
         if count_is_invalid {
             return Err(OwnerApiError::InvalidVehicleDataEnvelope);
         }
-        scrub_sensitive_value(&mut raw_json);
-        let fields = raw_json
+
+        let fields = allowlisted_provider_response_v1(&raw_json)?;
+        let mut provider_raw_json = json!({"response": fields});
+        scrub_sensitive_value(&mut provider_raw_json);
+        let fields = provider_raw_json["response"]
             .as_object()
-            .and_then(|root| root.get("response"))
-            .and_then(Value::as_object)
             .cloned()
             .ok_or(OwnerApiError::InvalidVehicleDataEnvelope)?;
         if fields.is_empty() {
@@ -799,7 +801,7 @@ impl VehicleData {
         Ok(Self {
             vehicle_id,
             fields,
-            provider_raw_json: raw_json,
+            provider_raw_json,
         })
     }
 
@@ -1066,6 +1068,308 @@ fn parse_vehicle_state(fields: Map<String, Value>) -> Result<String, OwnerApiErr
         .filter(|state| valid_state(state))
         .map(str::to_owned)
         .ok_or(OwnerApiError::InvalidVehicleRecord)
+}
+
+fn allowlisted_provider_response_v1(raw_json: &Value) -> Result<Map<String, Value>, OwnerApiError> {
+    const ROOT_FIELDS: &[&str] = &["id", "vehicle_id", "vin", "display_name", "state"];
+    const DRIVE_STATE_FIELDS: &[&str] = &[
+        "active_route_destination",
+        "active_route_energy_at_arrival",
+        "active_route_latitude",
+        "active_route_longitude",
+        "active_route_miles_to_arrival",
+        "active_route_minutes_to_arrival",
+        "active_route_traffic_minutes_delay",
+        "elevation",
+        "est_heading",
+        "est_lat",
+        "est_lng",
+        "gps_as_of",
+        "heading",
+        "latitude",
+        "longitude",
+        "native_latitude",
+        "native_location_elevation",
+        "native_location_supported",
+        "native_longitude",
+        "native_type",
+        "power",
+        "shift_state",
+        "speed",
+        "timestamp",
+    ];
+    const CHARGE_STATE_FIELDS: &[&str] = &[
+        "battery_heater_on",
+        "battery_level",
+        "battery_range",
+        "charge_amps",
+        "charge_current_request",
+        "charge_current_request_max",
+        "charge_enable_request",
+        "charge_energy_added",
+        "charge_limit_soc",
+        "charge_miles_added_ideal",
+        "charge_miles_added_rated",
+        "charge_port_cold_weather_mode",
+        "charge_port_color",
+        "charge_port_door_open",
+        "charge_port_latch",
+        "charge_rate",
+        "charger_actual_current",
+        "charger_phases",
+        "charger_pilot_current",
+        "charger_power",
+        "charger_voltage",
+        "charging_state",
+        "conn_charge_cable",
+        "est_battery_range",
+        "fast_charger_brand",
+        "fast_charger_present",
+        "fast_charger_type",
+        "ideal_battery_range",
+        "managed_charging_active",
+        "managed_charging_start_time",
+        "managed_charging_user_canceled",
+        "max_range_charge_counter",
+        "minutes_to_full_charge",
+        "not_enough_power_to_heat",
+        "off_peak_charging_enabled",
+        "off_peak_charging_times",
+        "off_peak_hours_end_time",
+        "preconditioning_enabled",
+        "preconditioning_times",
+        "scheduled_charging_mode",
+        "scheduled_charging_pending",
+        "scheduled_charging_start_time",
+        "scheduled_departure_time",
+        "scheduled_departure_time_minutes",
+        "supercharger_session_trip_planner",
+        "time_to_full_charge",
+        "timestamp",
+        "trip_charging",
+        "usable_battery_level",
+        "user_charge_enable_request",
+    ];
+    const CLIMATE_STATE_FIELDS: &[&str] = &[
+        "auto_seat_climate_left",
+        "auto_seat_climate_right",
+        "battery_heater",
+        "battery_heater_no_power",
+        "cabin_overheat_protection",
+        "cabin_overheat_protection_actively_cooling",
+        "climate_keeper_mode",
+        "defrost_mode",
+        "driver_temp_setting",
+        "fan_status",
+        "inside_temp",
+        "is_auto_conditioning_on",
+        "is_climate_on",
+        "is_front_defroster_on",
+        "is_preconditioning",
+        "is_rear_defroster_on",
+        "left_temp_direction",
+        "max_avail_temp",
+        "min_avail_temp",
+        "outside_temp",
+        "passenger_temp_setting",
+        "remote_heater_control_enabled",
+        "right_temp_direction",
+        "seat_heater_left",
+        "seat_heater_rear_center",
+        "seat_heater_rear_left",
+        "seat_heater_rear_right",
+        "seat_heater_right",
+        "side_mirror_heaters",
+        "steering_wheel_heater",
+        "supports_fan_only_cabin_overheat_protection",
+        "timestamp",
+        "wiper_blade_heater",
+    ];
+    const VEHICLE_STATE_FIELDS: &[&str] = &[
+        "api_version",
+        "autopark_state_v2",
+        "autopark_style",
+        "calendar_supported",
+        "car_version",
+        "center_display_state",
+        "dashcam_clip_save_available",
+        "dashcam_state",
+        "df",
+        "dr",
+        "fd_window",
+        "fp_window",
+        "ft",
+        "homelink_device_count",
+        "homelink_nearby",
+        "is_user_present",
+        "last_autopark_error",
+        "locked",
+        "notifications_supported",
+        "odometer",
+        "parsed_calendar_supported",
+        "pf",
+        "pr",
+        "rd_window",
+        "remote_start",
+        "remote_start_enabled",
+        "remote_start_supported",
+        "rp_window",
+        "rt",
+        "sentry_mode",
+        "sentry_mode_available",
+        "service_mode",
+        "smart_summon_available",
+        "summon_standby_mode_enabled",
+        "sun_roof_percent_open",
+        "sun_roof_state",
+        "timestamp",
+        "tpms_hard_warning_fl",
+        "tpms_hard_warning_fr",
+        "tpms_hard_warning_rl",
+        "tpms_hard_warning_rr",
+        "tpms_last_seen_pressure_time_fl",
+        "tpms_last_seen_pressure_time_fr",
+        "tpms_last_seen_pressure_time_rl",
+        "tpms_last_seen_pressure_time_rr",
+        "tpms_pressure_fl",
+        "tpms_pressure_fr",
+        "tpms_pressure_rl",
+        "tpms_pressure_rr",
+        "tpms_rcp_front_value",
+        "tpms_rcp_rear_value",
+        "tpms_soft_warning_fl",
+        "tpms_soft_warning_fr",
+        "tpms_soft_warning_rl",
+        "tpms_soft_warning_rr",
+        "valet_mode",
+        "valet_pin_needed",
+        "vehicle_name",
+    ];
+    const SOFTWARE_UPDATE_FIELDS: &[&str] = &["status", "version", "download_perc", "install_perc"];
+    const VEHICLE_CONFIG_FIELDS: &[&str] = &[
+        "aux_park_lamps",
+        "badge_version",
+        "can_accept_navigation_requests",
+        "can_actuate_trunks",
+        "car_special_type",
+        "car_type",
+        "charge_port_type",
+        "cop_user_set_temp_supported",
+        "dashcam_clip_save_supported",
+        "default_charge_to_max",
+        "driver_assist",
+        "ece_restrictions",
+        "efficiency_package",
+        "eu_vehicle",
+        "exterior_color",
+        "exterior_trim",
+        "has_air_suspension",
+        "has_ludicrous_mode",
+        "has_seat_cooling",
+        "headlamp_type",
+        "interior_trim_type",
+        "key_version",
+        "motorized_charge_port",
+        "plg",
+        "pws",
+        "rear_drive_unit",
+        "rear_seat_heaters",
+        "rear_seat_type",
+        "rhd",
+        "roof_color",
+        "seat_type",
+        "spoiler_type",
+        "sun_roof_installed",
+        "supports_qr_pairing",
+        "third_row_seats",
+        "timestamp",
+        "trim_badging",
+        "use_range_badging",
+        "utc_offset",
+        "webcam_selfie_supported",
+        "webcam_supported",
+        "wheel_type",
+    ];
+    const GUI_SETTINGS_FIELDS: &[&str] = &[
+        "gui_24_hour_time",
+        "gui_charge_rate_units",
+        "gui_distance_units",
+        "gui_range_display",
+        "gui_temperature_units",
+        "show_range_units",
+        "timestamp",
+    ];
+
+    let response = raw_json
+        .as_object()
+        .and_then(|root| root.get("response"))
+        .and_then(Value::as_object)
+        .ok_or(OwnerApiError::InvalidVehicleDataEnvelope)?;
+    let mut filtered = allowlisted_provider_scalars(response, ROOT_FIELDS);
+
+    for (group_name, allowed_fields) in [
+        ("drive_state", DRIVE_STATE_FIELDS),
+        ("charge_state", CHARGE_STATE_FIELDS),
+        ("climate_state", CLIMATE_STATE_FIELDS),
+        ("vehicle_config", VEHICLE_CONFIG_FIELDS),
+        ("gui_settings", GUI_SETTINGS_FIELDS),
+    ] {
+        let Some(group) = response.get(group_name).and_then(Value::as_object) else {
+            continue;
+        };
+        let group = allowlisted_provider_scalars(group, allowed_fields);
+        if !group.is_empty() {
+            filtered.insert(group_name.to_owned(), Value::Object(group));
+        }
+    }
+
+    if let Some(vehicle_state) = response.get("vehicle_state").and_then(Value::as_object) {
+        let mut vehicle_state = allowlisted_provider_scalars(vehicle_state, VEHICLE_STATE_FIELDS);
+        if let Some(update) = response
+            .get("vehicle_state")
+            .and_then(Value::as_object)
+            .and_then(|state| state.get("software_update"))
+            .and_then(Value::as_object)
+        {
+            let update = allowlisted_provider_scalars(update, SOFTWARE_UPDATE_FIELDS);
+            if !update.is_empty() {
+                vehicle_state.insert("software_update".to_owned(), Value::Object(update));
+            }
+        }
+        if !vehicle_state.is_empty() {
+            filtered.insert("vehicle_state".to_owned(), Value::Object(vehicle_state));
+        }
+    }
+
+    if filtered.is_empty() {
+        return Err(OwnerApiError::SensitiveDataInResponse);
+    }
+    Ok(filtered)
+}
+
+fn allowlisted_provider_scalars(
+    source: &Map<String, Value>,
+    allowed_fields: &[&str],
+) -> Map<String, Value> {
+    allowed_fields
+        .iter()
+        .filter_map(|field| {
+            source
+                .get(*field)
+                .and_then(allowlisted_provider_scalar)
+                .map(|value| ((*field).to_owned(), value))
+        })
+        .collect()
+}
+
+fn allowlisted_provider_scalar(value: &Value) -> Option<Value> {
+    match value {
+        Value::Null | Value::Bool(_) | Value::Number(_) => Some(value.clone()),
+        Value::String(text) if text.len() <= MAX_PROVIDER_TELEMETRY_TEXT_BYTES => {
+            Some(value.clone())
+        }
+        Value::String(_) | Value::Array(_) | Value::Object(_) => None,
+    }
 }
 
 fn scrub_sensitive_fields(fields: &mut Map<String, Value>) {
@@ -1417,27 +1721,95 @@ mod tests {
     }
 
     #[test]
-    fn vehicle_data_retains_the_sanitized_provider_json_envelope() {
+    fn vehicle_data_retains_only_allowlisted_provider_json_v1_telemetry() {
         let data = parse_vehicle_data(
             VehicleId(7),
             serde_json::json!({
                 "response": {
+                    "vehicle_id": 7,
+                    "vin": "5YJ3E1EA7KF000001",
+                    "state": "online",
+                    "drive_state": {"shift_state": "P", "timestamp": 1_800_000_000_000_i64},
                     "charge_state": {"battery_level": 80},
-                    "nested": {"accessToken": "secret"}
+                    "climate_state": {"inside_temp": 21.5},
+                    "vehicle_state": {
+                        "odometer": 1234.5,
+                        "future_session_credential": "future-secret",
+                        "software_update": {
+                            "status": "downloading",
+                            "version": "2026.20",
+                            "download_perc": 42,
+                            "install_perc": 0,
+                            "expected_duration_sec": 900
+                        }
+                    },
+                    "vehicle_config": {
+                        "car_type": "model3",
+                        "future_blob": {"credential": "nested-secret"}
+                    },
+                    "gui_settings": {"gui_distance_units": "mi/hr"},
+                    "unknown_group": {"battery_level": 1},
+                    "display_name": ["not", "scalar"],
+                    "car_type": "x".repeat(MAX_PROVIDER_TELEMETRY_TEXT_BYTES + 1)
                 },
-                "provider_trace": "trace-1"
+                "provider_trace": "trace-1",
+                "provider_future_secret": "root-secret"
             }),
         )
         .expect("provider response parses");
 
         assert_eq!(data.fields()["charge_state"]["battery_level"], 80);
-        assert_eq!(data.provider_raw_json()["provider_trace"], "trace-1");
-        assert!(
-            data.provider_raw_json()["response"]["nested"]
-                .as_object()
-                .is_some_and(Map::is_empty)
+        assert_eq!(
+            data.provider_raw_json(),
+            &serde_json::json!({
+                "response": {
+                    "vehicle_id": 7,
+                    "vin": "5YJ3E1EA7KF000001",
+                    "state": "online",
+                    "drive_state": {"shift_state": "P", "timestamp": 1_800_000_000_000_i64},
+                    "charge_state": {"battery_level": 80},
+                    "climate_state": {"inside_temp": 21.5},
+                    "vehicle_state": {
+                        "odometer": 1234.5,
+                        "software_update": {
+                            "status": "downloading",
+                            "version": "2026.20",
+                            "download_perc": 42,
+                            "install_perc": 0
+                        }
+                    },
+                    "vehicle_config": {"car_type": "model3"},
+                    "gui_settings": {"gui_distance_units": "mi/hr"}
+                }
+            })
         );
-        assert!(!data.provider_raw_json().to_string().contains("secret"));
+        let rendered = data.provider_raw_json().to_string();
+        for rejected in [
+            "provider_trace",
+            "unknown_group",
+            "future_session_credential",
+            "expected_duration_sec",
+            "future-secret",
+            "root-secret",
+            "nested-secret",
+        ] {
+            assert!(!rendered.contains(rejected), "field survived: {rejected}");
+        }
+
+        assert!(matches!(
+            VehicleData::from_provider_raw_json(
+                VehicleId(7),
+                serde_json::json!({"response": {"unknown_group": {"future_secret": "x"}}}),
+            ),
+            Err(OwnerApiError::SensitiveDataInResponse)
+        ));
+        assert!(matches!(
+            VehicleData::from_provider_raw_json(
+                VehicleId(7),
+                serde_json::json!({"count": 1, "response": {"state": "online"}}),
+            ),
+            Err(OwnerApiError::InvalidVehicleDataEnvelope)
+        ));
     }
 
     struct FakeServer {

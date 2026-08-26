@@ -82,8 +82,8 @@ done
 [ -n "$notary_profile" ] || die "--notary-profile is required"
 [ -n "$output_arg" ] || die "--output-dir is required"
 
-for tool in basename codesign dirname ditto find grep install mkdir mktemp mv \
-    pkgutil plutil productsign security sed shasum xcrun; do
+for tool in awk basename codesign dirname ditto find grep install mkdir mktemp mv \
+    pkgbuild pkgutil plutil productsign security sed shasum xcrun; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 
@@ -100,6 +100,10 @@ embedded_package="$app/Contents/Resources/TeslatlasHubService.pkg"
 embedded_hub="$app/Contents/Resources/teslatlas-hub"
 [ -f "$embedded_hub" ] && [ ! -L "$embedded_hub" ] \
     || die "app is missing Contents/Resources/teslatlas-hub"
+app_info="$app/Contents/Info.plist"
+[ -f "$app_info" ] && [ ! -L "$app_info" ] \
+    || die "app is missing Contents/Info.plist"
+plutil -lint "$app_info" >/dev/null || die "app Info.plist is invalid"
 
 identity_team() {
     value=$1
@@ -183,7 +187,30 @@ sign_named_binaries() {
 sign_named_binaries "$expanded/Payload" 1
 unsigned_package="$work/TeslatlasHubService-unsigned.pkg"
 signed_package="$release/TeslatlasHubService.pkg"
-pkgutil --flatten-full "$expanded" "$unsigned_package"
+package_info="$expanded/PackageInfo"
+[ -f "$package_info" ] && [ ! -L "$package_info" ] \
+    || die "expanded package is missing PackageInfo"
+package_identifier=$(sed -nE 's/.* identifier="([^"]+)".*/\1/p' "$package_info")
+package_version=$(sed -nE 's/.* version="([^"]+)".*/\1/p' "$package_info")
+install_location=$(sed -nE 's/.* install-location="([^"]+)".*/\1/p' "$package_info")
+[ "$package_identifier" = com.teslatlas.hub.service ] \
+    || die "expanded package identifier is unexpected"
+printf '%s\n' "$package_version" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.-]{0,63}$' \
+    || die "expanded package version is invalid"
+[ "$install_location" = / ] || die "expanded package install location is unexpected"
+[ -d "$expanded/Scripts" ] && [ ! -L "$expanded/Scripts" ] \
+    || die "expanded package is missing Scripts"
+# `pkgutil --flatten-full` records the build user's ownership after signing the
+# expanded payload. Rebuild the component package instead so Installer applies
+# root-recommended ownership before the postinstall trust checks run.
+pkgbuild \
+    --root "$expanded/Payload" \
+    --scripts "$expanded/Scripts" \
+    --identifier "$package_identifier" \
+    --version "$package_version" \
+    --install-location "$install_location" \
+    --ownership recommended \
+    "$unsigned_package"
 productsign --sign "$installer_identity" "$unsigned_package" "$signed_package"
 pkgutil --check-signature "$signed_package" >/dev/null
 
@@ -215,6 +242,15 @@ xcrun stapler validate "$signed_package"
 
 release_resources="$release_app/Contents/Resources"
 install -m 0644 "$signed_package" "$release_resources/TeslatlasHubService.pkg"
+service_package_sha256=$(shasum -a 256 "$signed_package" | awk '{ print $1 }')
+release_info="$release_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Delete :TeslatlasServicePackageSHA256' "$release_info" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c 'Delete :TeslatlasReleaseTeamIdentifier' "$release_info" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c 'Delete :TeslatlasOfficialRelease' "$release_info" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :TeslatlasServicePackageSHA256 string $service_package_sha256" "$release_info"
+/usr/libexec/PlistBuddy -c "Add :TeslatlasReleaseTeamIdentifier string $app_team" "$release_info"
+/usr/libexec/PlistBuddy -c 'Add :TeslatlasOfficialRelease bool true' "$release_info"
+plutil -lint "$release_info" >/dev/null || die "release trust metadata is invalid"
 sign_named_binaries "$release_resources" 1
 codesign --force --sign "$app_identity" \
     --timestamp --options runtime "$release_app"
