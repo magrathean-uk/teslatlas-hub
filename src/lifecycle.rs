@@ -942,6 +942,24 @@ mod stream_fixture_tests {
     }
 
     #[test]
+    fn stream_sample_materializes_all_teslamate_position_fields() {
+        let stream = sample(1, 1_700_000_000_000, 100.25, "D");
+        let parsed = parse_sample(&stream).unwrap();
+        let position = position_from_sample(1, Some(1), 9, &parsed)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(position.date_ms, stream.observed_at_ms);
+        assert_eq!(position.latitude, 51.5);
+        assert_eq!(position.longitude, -0.1);
+        assert_eq!(position.speed, Some(16));
+        assert_eq!(position.power, Some(120.0));
+        assert_eq!(position.battery_level, Some(80));
+        assert_eq!(position.elevation, Some(25));
+        assert_eq!(position.odometer, Some(161.336736));
+    }
+
+    #[test]
     fn newer_local_id_with_older_provider_time_only_advances_cursor() {
         let current = sample(1, 1_700_000_002_000, 100.2, "P");
         let projected = apply_sample(OpenSessionState::new(), 9, &current).unwrap();
@@ -1498,7 +1516,10 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
         odometer: vehicle_state
             .and_then(|fields| float_field(fields, "odometer"))
             .map(|miles| miles_to_km_rounded(miles, 6)),
-        elevation: drive.and_then(|fields| int_field(fields, "native_location_elevation")),
+        elevation: drive.and_then(|fields| {
+            int_field(fields, "native_location_elevation")
+                .or_else(|| int_field(fields, "elevation"))
+        }),
         is_climate_on: climate.and_then(|fields| bool_field(fields, "is_climate_on")),
         inside_temp: climate.and_then(|fields| float_field(fields, "inside_temp")),
         outside_temp: climate.and_then(|fields| float_field(fields, "outside_temp")),

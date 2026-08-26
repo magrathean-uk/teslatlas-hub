@@ -4272,6 +4272,12 @@ fn process_stream_telemetry(
     if !scheduler.should_persist_stream_telemetry(vehicle_id, update.power, Instant::now()) {
         return Ok(false);
     }
+    scheduler.schedule_stream_charging_poll(
+        vehicle_id,
+        update.shift_state.as_deref(),
+        update.power,
+        Instant::now(),
+    );
     persist_stream_update(store, vehicle_id, update)
 }
 
@@ -4285,6 +4291,12 @@ fn process_stream_telemetry_with_cache(
     if !scheduler.should_persist_stream_telemetry(vehicle_id, update.power, Instant::now()) {
         return Ok(false);
     }
+    scheduler.schedule_stream_charging_poll(
+        vehicle_id,
+        update.shift_state.as_deref(),
+        update.power,
+        Instant::now(),
+    );
     let context = if let Some(context) = projection_car_ids.get(&vehicle_id) {
         *context
     } else {
@@ -5221,6 +5233,29 @@ impl VehicleScheduler {
             scheduled.next_poll = now;
         }
         power.is_some()
+    }
+
+    fn schedule_stream_charging_poll(
+        &mut self,
+        id: VehicleId,
+        shift_state: Option<&str>,
+        power: Option<i64>,
+        now: Instant,
+    ) {
+        let Some(scheduled) = self.vehicles.get_mut(&id) else {
+            return;
+        };
+        let charging_hint = power.is_some_and(|power| power < 0)
+            && (shift_state.is_none() || (scheduled.suspended && shift_state == Some("P")));
+        if charging_hint
+            && scheduled.vehicle.is_online()
+            && scheduled.last_phase != PollPhase::Charging
+        {
+            scheduled.last_phase = PollPhase::Charging;
+            scheduled.suspended = false;
+            scheduled.last_used = now;
+            scheduled.next_poll = now;
+        }
     }
 
     fn should_start_stream(&self, id: VehicleId) -> bool {
@@ -10923,6 +10958,69 @@ mod tests {
         scheduler.stream_healthy(vehicle_id, failed_at + Duration::from_millis(100));
         assert_eq!(scheduler.vehicles[&vehicle_id].next_poll, retry_at);
         assert!(retry_at > failed_at);
+    }
+
+    #[test]
+    fn negative_stream_power_schedules_one_charging_refresh() {
+        let now = Instant::now();
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let vehicle_id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+        scheduler.pre_online_power(vehicle_id, Some(0), now);
+        scheduler.vehicle_succeeded(vehicle_id, PollPhase::Online, true, now);
+
+        let ordinary_poll = scheduler.vehicles[&vehicle_id].next_poll;
+        scheduler.schedule_stream_charging_poll(
+            vehicle_id,
+            Some("P"),
+            Some(-3),
+            now + Duration::from_millis(500),
+        );
+        assert_eq!(scheduler.vehicles[&vehicle_id].next_poll, ordinary_poll);
+
+        let charging_at = now + Duration::from_secs(1);
+        scheduler.schedule_stream_charging_poll(vehicle_id, None, Some(-3), charging_at);
+        assert_eq!(scheduler.due_vehicles(charging_at), vec![vehicle_id]);
+        assert_eq!(
+            scheduler.vehicles[&vehicle_id].last_phase,
+            PollPhase::Charging
+        );
+
+        scheduler.vehicle_failed(vehicle_id, charging_at);
+        let retry_at = scheduler.vehicles[&vehicle_id].next_poll;
+        scheduler.schedule_stream_charging_poll(
+            vehicle_id,
+            None,
+            Some(-3),
+            charging_at + Duration::from_millis(100),
+        );
+        assert_eq!(scheduler.vehicles[&vehicle_id].next_poll, retry_at);
+        assert!(retry_at > charging_at);
+    }
+
+    #[test]
+    fn suspended_parked_negative_power_schedules_charging_refresh() {
+        let now = Instant::now();
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let vehicle_id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+        scheduler.pre_online_power(vehicle_id, Some(0), now);
+        scheduler.stream_healthy(vehicle_id, now);
+        scheduler.vehicle_succeeded(vehicle_id, PollPhase::Online, true, now);
+        let suspended_at = now + Duration::from_secs(3 * 60);
+        scheduler.vehicle_succeeded(vehicle_id, PollPhase::Online, true, suspended_at);
+        assert!(scheduler.vehicles[&vehicle_id].suspended);
+
+        let charging_at = suspended_at + Duration::from_secs(1);
+        scheduler.schedule_stream_charging_poll(vehicle_id, Some("P"), Some(-3), charging_at);
+        assert_eq!(scheduler.due_vehicles(charging_at), vec![vehicle_id]);
+        assert!(!scheduler.vehicles[&vehicle_id].suspended);
+        assert_eq!(
+            scheduler.vehicles[&vehicle_id].last_phase,
+            PollPhase::Charging
+        );
     }
 
     #[test]
