@@ -45,6 +45,15 @@ grep -Fqx 'StateDirectoryMode=0700' "$root/packaging/linux/teslatlas-hub.service
     echo 'test-linux-packaging: systemd state directory is not private' >&2
     exit 1
 }
+for unit in \
+    "$root/packaging/linux/teslatlas-hub.service" \
+    "$root/packaging/linux/teslatlas-command-proxy.service" \
+    "$root/packaging/linux/teslatlas-fleet-telemetry.service"; do
+    grep -Fqx 'StartLimitIntervalSec=300' "$unit" \
+        || { echo "test-linux-packaging: missing service restart interval limit: $unit" >&2; exit 1; }
+    grep -Fqx 'StartLimitBurst=5' "$unit" \
+        || { echo "test-linux-packaging: missing service restart burst limit: $unit" >&2; exit 1; }
+done
 for setting in \
     'UMask=0077' \
     'CapabilityBoundingSet=' \
