@@ -135,6 +135,9 @@ assert_before_fixed 'if [ -f "$STATE_DIRECTORY/was-loaded" ]; then' '    stop_lo
     || fail "Hub log directory is not normalized to mode 0700"
 /usr/bin/grep -Fq '/bin/chmod 0600 "$log"' "$POSTINSTALL" \
     || fail "existing Hub logs are not normalized to mode 0600"
+/usr/bin/grep -A1 '<key>ThrottleInterval</key>' "$PLIST" \
+    | /usr/bin/grep -Fq '<integer>30</integer>' \
+    || fail "LaunchAgent restart failures are not throttled"
 /usr/bin/grep -q 'completed.*-ne 1' "$POSTINSTALL" \
     || fail "postinstall has no failure rollback"
 /usr/bin/grep -q 'launchctl bootstrap' "$POSTINSTALL" \
