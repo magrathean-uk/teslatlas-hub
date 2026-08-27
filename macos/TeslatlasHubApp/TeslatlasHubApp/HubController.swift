@@ -2041,7 +2041,8 @@ final class HubController {
     }
 
     private func readConfigIfPresent() throws -> String? {
-        let descriptor = Darwin.open(configPath.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        let descriptor = Darwin.open(configPath.path,
+                                     O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
         guard descriptor >= 0 else {
             if errno == ENOENT { return nil }
             throw HubActionError.commandFailed("Hub configuration is not a regular file.")

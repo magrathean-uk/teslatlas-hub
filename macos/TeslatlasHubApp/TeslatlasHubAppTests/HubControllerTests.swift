@@ -1146,6 +1146,38 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(runner.calls, 0)
     }
 
+    func testInstalledAccountSetupRejectsFIFOConfigWithoutBlocking() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = home.appendingPathComponent(
+            "Library/Application Support/Teslatlas Hub/config.toml"
+        )
+        try FileManager.default.createDirectory(at: config.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        XCTAssertEqual(mkfifo(config.path, 0o600), 0)
+        let runner = CountingRunner()
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       installer: RecordingInstaller(),
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "FIFO config rejected")
+
+        controller.configureTeslaAccount(
+            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        ) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("FIFO config was accepted")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub configuration is not a regular file.")
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 1)
+        XCTAssertEqual(runner.calls, 0)
+    }
+
     func testInstalledUnconfiguredLegacyReusesExactPackagedService() throws {
         let events = EventRecorder()
         let embedded = VersionAwareRunner(

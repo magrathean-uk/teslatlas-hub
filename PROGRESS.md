@@ -15,7 +15,7 @@ It is a 66,616,614-byte ad-hoc development package, not a notarized release.
 Current verification on 2026-08-27: full locked Rust tests passed (832 library,
 49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-95 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source,
+96 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source,
 macOS release, release-evidence, and dependency-audit gates passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
@@ -72,9 +72,10 @@ native-syscall, and 0077-umask restrictions. Linux packaging regressions passed.
 
 All macOS config reads used by account setup, rollback snapshots, and status
 now open the exact inode with `O_NOFOLLOW`, require a regular file, cap it at
-one MiB during both metadata validation and reading, and require UTF-8. Unsafe
-symlink and oversized configs fail before any account command or service
-mutation.
+one MiB during both metadata validation and reading, and require UTF-8. The
+descriptor is opened nonblocking so a substituted FIFO is rejected instead of
+hanging setup. Unsafe FIFO, symlink, and oversized configs fail before any
+account command or service mutation.
 
 Unlocked native UI acceptance passed. Cmd-L opened the bounded redacted app,
 SSH/import and service logs; Run Diagnostics completed doctor, preflight,
