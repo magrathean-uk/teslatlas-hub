@@ -122,6 +122,20 @@ configuration by default. Permanent data deletion is a separate choice with a
 second confirmation. The uninstaller refuses to remove the shared service
 payload while another local user still has a Hub LaunchAgent.
 
+### macOS logs and diagnostics
+
+Press **Command-L** from onboarding or the dashboard to open the combined app,
+SSH-import, and Hub service logs. **Run Diagnostics** adds bounded `doctor`,
+`preflight`, `status`, database, credential, connection, and recent-log checks.
+SSH failures are recorded as safe reason codes such as authentication, host-key,
+DNS, routing, forwarding, timeout, or local-port failure; credentials, server
+addresses, usernames, and key paths are not recorded.
+
+App and service log reads are bounded and reject symlinks and non-regular files.
+App logs rotate at 1 MiB; service logs are compacted before every service launch.
+Copy and Save additionally redact credentials, VINs, private-network addresses,
+and the current user's home path. Review a report before sharing it.
+
 ## Debian package (amd64 and ARM64)
 
 Build on the target Debian host. The package script defaults to the host Debian

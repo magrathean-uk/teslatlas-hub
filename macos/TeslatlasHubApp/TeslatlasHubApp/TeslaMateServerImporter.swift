@@ -399,15 +399,22 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
 
             let deadline = Date().addingTimeInterval(5)
             while Date() < deadline {
+                if !tunnel.isRunning { break }
                 if localPortAcceptsConnections(localPort) {
+                    // A pre-existing listener can win the random-port race
+                    // just before OpenSSH reports its bind failure. Require
+                    // the SSH process and listener to remain live once more.
+                    Thread.sleep(forTimeInterval: 0.1)
+                    guard tunnel.isRunning, localPortAcceptsConnections(localPort) else {
+                        break
+                    }
                     HubAppLog.shared.record("ssh.tunnel.ready", category: "teslamate_import",
                                             fields: [
                                                 "attempt": String(attempt + 1),
                                                 "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000))
-                                            ])
+                    ])
                     return (tunnel, localPort)
                 }
-                if !tunnel.isRunning { break }
                 Thread.sleep(forTimeInterval: 0.1)
             }
 

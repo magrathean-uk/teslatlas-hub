@@ -15,7 +15,7 @@ It is a 66,680,213-byte ad-hoc development package, not a notarized release.
 Current verification on 2026-08-27: full locked Rust tests passed (837 library,
 49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-98 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux packaging source,
+99 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux packaging source,
 macOS release, release-evidence, and dependency-audit gates passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
@@ -75,6 +75,12 @@ unbounded diagnostic memory use. Discovery rejects multiple running TeslaMate
 or database containers instead of selecting an arbitrary stack. Common SSH
 authentication, host-key, DNS, route, refusal, timeout, and reset failures now
 produce safe actionable reason codes without exposing the server address.
+Tunnel admission now requires both OpenSSH and its local listener to remain
+live across a second check, so an unrelated process winning the local-port race
+cannot be mistaken for a ready database tunnel. App launch removes only prior
+current-user-owned, UUID-named Hub SSH secret directories and refuses symlinked
+or unrelated paths. Hub serve and bounded-observation logs now distinguish a
+clean stop from an unexpected worker failure.
 Debian's Hub unit now matches the proxy/telemetry units' no-capability,
 private-device, kernel/control-group protection, address-family, SUID/SGID,
 native-syscall, and 0077-umask restrictions. Linux packaging regressions passed.
@@ -92,7 +98,7 @@ closes the remaining path where replacing a log with a FIFO could freeze log
 opening or event recording. The shared tail reader remains capped at one MiB;
 the FIFO regression completes in milliseconds. Migration handover state uses
 the same bounded descriptor admission, so a substituted marker FIFO fails
-closed at verification rather than freezing app launch. All 98 AppKit tests
+closed at verification rather than freezing app launch. All 99 AppKit tests
 pass.
 
 Data recovery now opens every copied, hashed, metadata, and synced backup member

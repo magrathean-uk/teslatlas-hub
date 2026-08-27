@@ -2357,7 +2357,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let command_proxy = mac_command_proxy_spec(&server_config)?;
                 #[cfg(not(target_os = "macos"))]
                 let command_proxy = None;
-                run_macos_serve_with_optional_proxy(
+                let serve_result = run_macos_serve_with_optional_proxy(
                     command_proxy,
                     collector_enabled,
                     move |ready, shutdown| async move {
@@ -2396,7 +2396,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         }
                     },
                 )
-                .await?;
+                .await;
+                match &serve_result {
+                    Ok(()) => tracing::info!("Hub serve stopped cleanly"),
+                    Err(error) => tracing::error!(%error, "Hub serve stopped unexpectedly"),
+                }
+                serve_result?;
             }
         }
         #[cfg(unix)]
@@ -2413,7 +2418,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let server_config = config;
             let server_admission = std::sync::Arc::clone(&admission);
             let control_admission = std::sync::Arc::clone(&admission);
-            run_macos_serve_supervisor(
+            tracing::info!(
+                duration_seconds,
+                provider = ?collector_config.collector.provider,
+                "Hub bounded observation starting"
+            );
+            let observe_result = run_macos_serve_supervisor(
                 true,
                 move |ready, shutdown| async move {
                     collector::run_observer_for_admitted_user(
@@ -2452,7 +2462,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 },
             )
-            .await?;
+            .await;
+            match &observe_result {
+                Ok(()) => tracing::info!("Hub bounded observation stopped cleanly"),
+                Err(error) => {
+                    tracing::error!(%error, "Hub bounded observation stopped unexpectedly")
+                }
+            }
+            observe_result?;
         }
         #[cfg(target_os = "macos")]
         Command::Install => unreachable!("install returns before opening Hub state"),
