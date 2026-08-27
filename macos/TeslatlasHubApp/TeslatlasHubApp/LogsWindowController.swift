@@ -80,6 +80,7 @@ final class LogsWindowController: NSWindowController {
     }
 
     func refresh() {
+        let started = Date()
         HubAppLog.shared.record("refresh.requested", category: "logs")
         refreshButton.isEnabled = false
         diagnosticsButton.isEnabled = false
@@ -99,6 +100,11 @@ final class LogsWindowController: NSWindowController {
             self.diagnosticsButton.isEnabled = true
             self.copyButton.isEnabled = !combined.isEmpty
             self.saveButton.isEnabled = !combined.isEmpty
+            HubAppLog.shared.record("refresh.completed", category: "logs", fields: [
+                "app_bytes": String(HubAppLog.shared.recentText().utf8.count),
+                "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
+                "service_bytes": String(text.utf8.count)
+            ])
         }
     }
 
@@ -135,6 +141,9 @@ final class LogsWindowController: NSWindowController {
         pasteboard.clearContents()
         pasteboard.setString(Self.shareableText(latestText), forType: .string)
         statusLabel.stringValue = "Redacted logs copied"
+        HubAppLog.shared.record("copy.completed", category: "logs", fields: [
+            "bytes": String(latestText.utf8.count)
+        ])
     }
 
     @objc private func savePressed() {
@@ -148,7 +157,13 @@ final class LogsWindowController: NSWindowController {
             do {
                 try report.write(to: destination, atomically: true, encoding: .utf8)
                 self?.statusLabel.stringValue = "Redacted logs saved"
+                HubAppLog.shared.record("save.completed", category: "logs", fields: [
+                    "bytes": String(report.utf8.count)
+                ])
             } catch {
+                HubAppLog.shared.record("save.failed", category: "logs", level: "ERROR", fields: [
+                    "error_code": String(describing: type(of: error))
+                ])
                 NSAlert(error: error).runModal()
             }
         }

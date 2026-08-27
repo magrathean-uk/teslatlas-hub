@@ -481,6 +481,13 @@ final class OnboardingWindowControllerTests: XCTestCase {
             $0.string.contains("== full Hub diagnostics ==")
                 && $0.string.contains("Preview mode")
         })
+
+        let copy = try XCTUnwrap(buttons(in: logs.window?.contentView)
+            .first { $0.title == "Copy" })
+        copy.performClick(nil)
+        let copied = try XCTUnwrap(NSPasteboard.general.string(forType: .string))
+        XCTAssertTrue(copied.contains("== full Hub diagnostics =="))
+        XCTAssertTrue(copied.contains("== support metadata =="))
     }
 
     func testSelectedDesignsRenderAtNativeSize() throws {

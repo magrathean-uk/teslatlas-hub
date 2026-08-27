@@ -30,11 +30,18 @@ final class HubAppLog {
             }
             .joined(separator: " ")
         let suffix = safeFields.isEmpty ? "" : " \(safeFields)"
+        let normalizedLevel = singleLine(level).uppercased()
         let line = Self.boundedLine(
-            "\(Self.timestamp()) [\(singleLine(level))] \(singleLine(category)) \(singleLine(name))\(suffix)\n"
+            "\(Self.timestamp()) [\(normalizedLevel)] \(singleLine(category)) \(singleLine(name))\(suffix)\n"
         )
         let unifiedLine = Self.boundedLine(line, maximumBytes: Self.maximumUnifiedLogBytes)
-        logger.info("\(unifiedLine.trimmingCharacters(in: .newlines), privacy: .public)")
+        let unifiedMessage = unifiedLine.trimmingCharacters(in: .newlines)
+        switch normalizedLevel {
+        case "ERROR": logger.error("\(unifiedMessage, privacy: .public)")
+        case "WARN", "WARNING": logger.warning("\(unifiedMessage, privacy: .public)")
+        case "DEBUG": logger.debug("\(unifiedMessage, privacy: .public)")
+        default: logger.info("\(unifiedMessage, privacy: .public)")
+        }
 
         lock.lock()
         defer { lock.unlock() }
