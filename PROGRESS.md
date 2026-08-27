@@ -9,18 +9,18 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`fa57a43c11d0507cc86290fc9362a574ca62b59cea238def82cf183297dd7ad9`.
-It is a 66,616,614-byte ad-hoc development package, not a notarized release.
+`68da6477ef60ee5367a1e6fc77927f46dd129dcb513a466c4ee5043d9f27f364`.
+It is a 66,615,136-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-27: full locked Rust tests passed (833 library,
 49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-96 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source,
+97 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source,
 macOS release, release-evidence, and dependency-audit gates passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`32d308de1dd2a51a742158fd2345e339c7ef579c14043ceeec933f54a670519e`.
+`c7f120848425b302b2aa27f5cee406f3d424d031831d10df43cc96a8e85aa140`.
 An earlier package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, and preserved the safely
 stopped Hub and migration data; the new package has not been installed live.
@@ -76,6 +76,12 @@ one MiB during both metadata validation and reading, and require UTF-8. The
 descriptor is opened nonblocking so a substituted FIFO is rejected instead of
 hanging setup. Unsafe FIFO, symlink, and oversized configs fail before any
 account command or service mutation.
+
+Cmd-L app and service log reads, plus app-log writes, now use nonblocking,
+no-follow descriptors and validate the opened inode as a regular file. This
+closes the remaining path where replacing a log with a FIFO could freeze log
+opening or event recording. The shared tail reader remains capped at one MiB;
+the FIFO regression completes in milliseconds and all 97 AppKit tests pass.
 
 Rust-side bounded readers now also open TLS identity files, update packs,
 schema-finalizer files, import ownership markers, and TeslaMate staging files

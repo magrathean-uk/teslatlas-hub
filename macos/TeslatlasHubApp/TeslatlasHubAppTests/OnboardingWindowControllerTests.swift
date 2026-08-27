@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import XCTest
 @testable import Teslatlas_Hub
 
@@ -96,6 +97,22 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
         XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "unchanged")
         XCTAssertEqual(log.recentText(), "No app diagnostics are available yet.\n")
+    }
+
+    func testAppAndServiceDiagnosticsRejectAFIFOWithoutBlocking() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-log-fifo-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let file = directory.appendingPathComponent("app.log")
+        XCTAssertEqual(Darwin.mkfifo(file.path, S_IRUSR | S_IWUSR), 0)
+
+        let log = HubAppLog(fileURL: file)
+        let started = Date()
+        log.record("must.not.block", category: "test")
+        XCTAssertEqual(log.recentText(), "No app diagnostics are available yet.\n")
+        XCTAssertNil(HubController.logTail(of: file, maximumBytes: 4096))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
     }
 
     func testStateBranchesByPathAndProviderAndBackTracks() {

@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import Darwin
 
 final class HubAppLog {
     static let shared = HubAppLog()
@@ -43,23 +44,10 @@ final class HubAppLog {
     func recentText(maximumBytes: Int = 256 * 1024) -> String {
         lock.lock()
         defer { lock.unlock() }
-        guard maximumBytes > 0,
-              let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
-              values.isRegularFile == true,
-              values.isSymbolicLink != true,
-              let handle = try? FileHandle(forReadingFrom: fileURL) else {
-            return "No app diagnostics are available yet.\n"
-        }
-        defer { try? handle.close() }
-        do {
-            let size = try handle.seekToEnd()
-            let boundedMaximum = UInt64(min(maximumBytes, Self.maximumFileBytes))
-            try handle.seek(toOffset: size > boundedMaximum ? size - boundedMaximum : 0)
-            let data = try handle.read(upToCount: Int(boundedMaximum)) ?? Data()
-            return String(decoding: data, as: UTF8.self)
-        } catch {
-            return "App diagnostics could not be read.\n"
-        }
+        return Self.regularFileTail(of: fileURL,
+                                    maximumBytes: maximumBytes,
+                                    hardLimit: Self.maximumFileBytes)
+            ?? "No app diagnostics are available yet.\n"
     }
 
     static func errorCode(_ error: Error) -> String {
@@ -84,25 +72,27 @@ final class HubAppLog {
                                         withIntermediateDirectories: true,
                                         attributes: [.posixPermissions: 0o700])
             try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-            if manager.fileExists(atPath: fileURL.path) {
-                let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                guard values.isRegularFile == true, values.isSymbolicLink != true else { return }
+            let descriptor = Darwin.open(fileURL.path,
+                                         O_RDWR | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK,
+                                         S_IRUSR | S_IWUSR)
+            guard descriptor >= 0 else { return }
+            defer { Darwin.close(descriptor) }
+            var information = stat()
+            guard fstat(descriptor, &information) == 0,
+                  information.st_mode & S_IFMT == S_IFREG,
+                  information.st_uid == getuid(),
+                  information.st_size >= 0 else { return }
+            guard fchmod(descriptor, S_IRUSR | S_IWUSR) == 0 else { return }
+
+            if information.st_size + off_t(line.utf8.count) > off_t(Self.maximumFileBytes) {
+                let retainedBytes = min(Int(information.st_size), Self.retainedFileBytes)
+                let retained = try Self.read(descriptor: descriptor,
+                                             offset: information.st_size - off_t(retainedBytes),
+                                             maximumBytes: retainedBytes)
+                guard ftruncate(descriptor, 0) == 0 else { return }
+                try Self.write(retained, to: descriptor)
             }
-            if let size = (try? manager.attributesOfItem(atPath: fileURL.path)[.size]) as? NSNumber,
-               size.intValue + line.utf8.count > Self.maximumFileBytes {
-                let data = try Self.tailData(of: fileURL, maximumBytes: Self.retainedFileBytes)
-                try data.write(to: fileURL, options: .atomic)
-            }
-            if !manager.fileExists(atPath: fileURL.path) {
-                guard manager.createFile(atPath: fileURL.path,
-                                         contents: nil,
-                                         attributes: [.posixPermissions: 0o600]) else { return }
-            }
-            let handle = try FileHandle(forWritingTo: fileURL)
-            try handle.seekToEnd()
-            try handle.write(contentsOf: Data(line.utf8))
-            try handle.close()
-            try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            try Self.write(Data(line.utf8), to: descriptor)
         } catch {
             logger.error("Could not persist Hub app diagnostics: \(String(describing: type(of: error)), privacy: .public)")
         }
@@ -127,12 +117,62 @@ final class HubAppLog {
         return String(decoding: bounded, as: UTF8.self)
     }
 
-    private static func tailData(of url: URL, maximumBytes: Int) throws -> Data {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        let size = try handle.seekToEnd()
-        let boundedMaximum = UInt64(max(0, maximumBytes))
-        try handle.seek(toOffset: size > boundedMaximum ? size - boundedMaximum : 0)
-        return try handle.read(upToCount: Int(boundedMaximum)) ?? Data()
+    static func regularFileTail(of url: URL,
+                                maximumBytes: Int,
+                                hardLimit: Int = maximumFileBytes) -> String? {
+        let boundedMaximum = min(maximumBytes, hardLimit)
+        guard boundedMaximum > 0 else { return nil }
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard descriptor >= 0 else { return nil }
+        defer { Darwin.close(descriptor) }
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFREG,
+              information.st_size >= 0 else { return nil }
+        let offset = max(off_t(0), information.st_size - off_t(boundedMaximum))
+        guard let data = try? read(descriptor: descriptor,
+                                  offset: offset,
+                                  maximumBytes: boundedMaximum) else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func read(descriptor: Int32,
+                             offset: off_t,
+                             maximumBytes: Int) throws -> Data {
+        guard Darwin.lseek(descriptor, offset, SEEK_SET) >= 0 else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: min(16 * 1024, max(1, maximumBytes)))
+        while data.count < maximumBytes {
+            let requested = min(buffer.count, maximumBytes - data.count)
+            let count = buffer.withUnsafeMutableBytes { bytes in
+                Darwin.read(descriptor, bytes.baseAddress, requested)
+            }
+            if count == 0 { break }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw CocoaError(.fileReadUnknown)
+            }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        return data
+    }
+
+    private static func write(_ data: Data, to descriptor: Int32) throws {
+        try data.withUnsafeBytes { bytes in
+            var written = 0
+            while written < bytes.count {
+                let count = Darwin.write(descriptor,
+                                         bytes.baseAddress?.advanced(by: written),
+                                         bytes.count - written)
+                if count < 0 {
+                    if errno == EINTR { continue }
+                    throw CocoaError(.fileWriteUnknown)
+                }
+                guard count > 0 else { throw CocoaError(.fileWriteUnknown) }
+                written += count
+            }
+        }
     }
 }

@@ -2351,22 +2351,7 @@ final class HubController {
     }
 
     static func logTail(of url: URL, maximumBytes: Int) -> String? {
-        guard maximumBytes > 0,
-              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
-              values.isRegularFile == true,
-              values.isSymbolicLink != true,
-              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        do {
-            let boundedMaximum = min(maximumBytes, 1024 * 1024)
-            let size = try handle.seekToEnd()
-            let offset = size > UInt64(boundedMaximum) ? size - UInt64(boundedMaximum) : 0
-            try handle.seek(toOffset: offset)
-            let data = try handle.read(upToCount: boundedMaximum) ?? Data()
-            return String(decoding: data, as: UTF8.self)
-        } catch {
-            return nil
-        }
+        HubAppLog.regularFileTail(of: url, maximumBytes: maximumBytes)
     }
 
     private func parseStatus(_ output: String) -> HubSnapshot? {
