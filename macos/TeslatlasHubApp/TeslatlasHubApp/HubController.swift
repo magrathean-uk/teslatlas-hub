@@ -1955,18 +1955,30 @@ final class HubController {
         HubAppLog.shared.record("checks.started", category: "diagnostics")
         let runner = isServiceInstalled ? installedCommandRunner : commandRunner
         let config = ["--config", configPath.path]
-        func section(_ title: String, _ result: Result<String, Error>) -> String {
+        func section(_ title: String,
+                     _ result: Result<String, Error>,
+                     durationMilliseconds: Int) -> String {
             switch result {
             case let .success(output):
-                return "== \(title) ==\n\(output.trimmingCharacters(in: .whitespacesAndNewlines))\n"
+                return "== \(title) ==\nDuration: \(durationMilliseconds) ms\n"
+                    + "\(output.trimmingCharacters(in: .whitespacesAndNewlines))\n"
             case let .failure(error):
-                return "== \(title) (failed) ==\n\(error.localizedDescription)\n"
+                return "== \(title) (failed) ==\nDuration: \(durationMilliseconds) ms\n"
+                    + "\(error.localizedDescription)\n"
             }
         }
+        let doctorStarted = Date()
         runner.run(arguments: config + ["doctor"]) { doctor in
+            let doctorMilliseconds = Int(Date().timeIntervalSince(doctorStarted) * 1000)
+            let preflightStarted = Date()
             runner.run(arguments: config + ["preflight"]) { preflight in
+                let preflightMilliseconds = Int(Date().timeIntervalSince(preflightStarted) * 1000)
+                let statusStarted = Date()
                 runner.run(arguments: config + ["status"]) { status in
+                    let statusMilliseconds = Int(Date().timeIntervalSince(statusStarted) * 1000)
+                    let logsStarted = Date()
                     self.logs(maximumBytes: 512 * 1024) { logText in
+                        let logsMilliseconds = Int(Date().timeIntervalSince(logsStarted) * 1000)
                         let failedSections = [doctor, preflight, status].reduce(into: 0) { count, result in
                             if case .failure = result { count += 1 }
                         }
@@ -1977,10 +1989,14 @@ final class HubController {
                             "",
                             self.supportMetadata(),
                             "",
-                            section("doctor — Hub database, tokens, TLS, collector", doctor),
-                            section("preflight — selected provider credentials", preflight),
-                            section("status — vehicles and credential presence", status),
+                            section("doctor — Hub database, tokens, TLS, collector", doctor,
+                                    durationMilliseconds: doctorMilliseconds),
+                            section("preflight — selected provider credentials", preflight,
+                                    durationMilliseconds: preflightMilliseconds),
+                            section("status — vehicles and credential presence", status,
+                                    durationMilliseconds: statusMilliseconds),
                             "== recent logs ==",
+                            "Read duration: \(logsMilliseconds) ms",
                             logText.trimmingCharacters(in: .whitespacesAndNewlines)
                         ].joined(separator: "\n")
                         HubAppLog.shared.record(
@@ -1989,7 +2005,11 @@ final class HubController {
                             level: failedSections == 0 ? "INFO" : "WARN",
                             fields: [
                                 "duration_ms": String(Int(Date().timeIntervalSince(diagnosticsStarted) * 1000)),
-                                "failed_sections": String(failedSections)
+                                "failed_sections": String(failedSections),
+                                "doctor_ms": String(doctorMilliseconds),
+                                "logs_ms": String(logsMilliseconds),
+                                "preflight_ms": String(preflightMilliseconds),
+                                "status_ms": String(statusMilliseconds)
                             ]
                         )
                         completion(report)

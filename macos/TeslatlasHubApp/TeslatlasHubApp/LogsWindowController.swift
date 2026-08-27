@@ -9,6 +9,7 @@ final class LogsWindowController: NSWindowController {
     private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
     private let saveButton = NSButton(title: "Save…", target: nil, action: nil)
     private var latestText = ""
+    private var operationInProgress = false
 
     init(controller: HubController) {
         self.controller = controller
@@ -80,6 +81,8 @@ final class LogsWindowController: NSWindowController {
     }
 
     func refresh() {
+        guard !operationInProgress else { return }
+        operationInProgress = true
         let started = Date()
         HubAppLog.shared.record("refresh.requested", category: "logs")
         refreshButton.isEnabled = false
@@ -89,10 +92,10 @@ final class LogsWindowController: NSWindowController {
         statusLabel.stringValue = "Loading logs…"
         controller.logs { [weak self] text in
             guard let self else { return }
-            let combined = [
+            let combined = Self.shareableText([
                 "== app and import diagnostics ==\n\(HubAppLog.shared.recentText())",
                 "== Hub service logs ==\n\(text)"
-            ].joined(separator: "\n")
+            ].joined(separator: "\n"))
             self.latestText = combined
             self.textView.string = combined
             self.statusLabel.stringValue = "Updated just now"
@@ -100,6 +103,7 @@ final class LogsWindowController: NSWindowController {
             self.diagnosticsButton.isEnabled = true
             self.copyButton.isEnabled = !combined.isEmpty
             self.saveButton.isEnabled = !combined.isEmpty
+            self.operationInProgress = false
             HubAppLog.shared.record("refresh.completed", category: "logs", fields: [
                 "app_bytes": String(HubAppLog.shared.recentText().utf8.count),
                 "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
@@ -111,6 +115,8 @@ final class LogsWindowController: NSWindowController {
     @objc private func refreshPressed() { refresh() }
 
     @objc private func diagnosticsPressed() {
+        guard !operationInProgress else { return }
+        operationInProgress = true
         HubAppLog.shared.record("full_diagnostics.requested", category: "logs")
         refreshButton.isEnabled = false
         diagnosticsButton.isEnabled = false
@@ -120,10 +126,10 @@ final class LogsWindowController: NSWindowController {
         textView.string = "Running database, credential, connection, and service checks…"
         controller.runFullDiagnostics { [weak self] report in
             guard let self else { return }
-            let combined = [
+            let combined = Self.shareableText([
                 "== app and import diagnostics ==\n\(HubAppLog.shared.recentText())",
                 "== full Hub diagnostics ==\n\(report)"
-            ].joined(separator: "\n")
+            ].joined(separator: "\n"))
             self.latestText = combined
             self.textView.string = combined
             self.statusLabel.stringValue = "Diagnostics complete"
@@ -131,6 +137,7 @@ final class LogsWindowController: NSWindowController {
             self.diagnosticsButton.isEnabled = true
             self.copyButton.isEnabled = true
             self.saveButton.isEnabled = true
+            self.operationInProgress = false
             HubAppLog.shared.record("full_diagnostics.completed", category: "logs")
         }
     }

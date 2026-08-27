@@ -514,6 +514,31 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(copied.contains("== support metadata =="))
     }
 
+    func testCommandLRedactsServiceSecretsBeforeDisplay() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-visible-log-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let folder = home.appendingPathComponent("Library/Logs/Teslatlas Hub", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try "Authorization: Bearer visible-secret\nvehicle=5YJ3E1EA7KF317000\n"
+            .write(to: folder.appendingPathComponent("hub.err.log"), atomically: true, encoding: .utf8)
+        let controller = HubController(homeDirectory: home, serviceInstalledOverride: false)
+        let logs = LogsWindowController(controller: controller)
+
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline,
+              !textViews(in: logs.window?.contentView).contains(where: {
+                  $0.string.contains("== Hub service logs ==")
+              }) {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        let visible = try XCTUnwrap(textViews(in: logs.window?.contentView).first?.string)
+        XCTAssertTrue(visible.contains("Authorization: Bearer [redacted]"))
+        XCTAssertTrue(visible.contains("vehicle=[redacted-vin]"))
+        XCTAssertFalse(visible.contains("visible-secret"))
+        XCTAssertFalse(visible.contains("5YJ3E1EA7KF317000"))
+    }
+
     func testSelectedDesignsRenderAtNativeSize() throws {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let dashboard = MainWindowController(controller: controller)

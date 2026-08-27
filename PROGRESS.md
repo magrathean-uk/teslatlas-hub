@@ -76,6 +76,12 @@ logs now record safe account, service, and vehicle-command lifecycle/error
 codes without vehicle ids or credentials. The persistent file keeps up to
 16 KiB per event, while the duplicate macOS unified-log copy is capped at
 512 bytes to avoid excessive system-log and test output.
+Cmd-L now redacts credentials and vehicle identifiers before service output is
+shown, not only when it is copied or saved. Repeated Cmd-L or Refresh requests
+cannot replace an active diagnostic run. Full diagnostics include bounded
+doctor, preflight, status, and log-read durations in both the report and safe
+app event, making a slow phase visible without extra probes. Focused display
+redaction and report-timing AppKit tests pass.
 
 Guided SSH migration now binds a successful tunnel to the exact non-secret
 server/authentication settings used to open it, locks those fields while work

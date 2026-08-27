@@ -160,6 +160,8 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(text.contains("preflight — selected provider credentials"))
             XCTAssertTrue(text.contains("\"provider\":\"fleet\""))
             XCTAssertTrue(text.contains("status — vehicles and credential presence"))
+            XCTAssertTrue(text.contains("Duration:"))
+            XCTAssertTrue(text.contains("Read duration:"))
             XCTAssertTrue(text.contains("TeslaMate is not written"))
             XCTAssertTrue(text.contains("tokens are not deleted") || text.contains("Tokens are not deleted") || text.contains("Owner and Fleet tokens"))
             XCTAssertTrue(text.contains("== support metadata =="))

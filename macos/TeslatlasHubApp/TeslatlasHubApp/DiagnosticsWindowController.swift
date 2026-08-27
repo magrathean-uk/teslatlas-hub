@@ -111,8 +111,9 @@ final class DiagnosticsWindowController: NSWindowController {
         controller.runFullDiagnostics { [weak self] text in
             guard let self else { return }
             DispatchQueue.main.async {
-                self.latestReport = text
-                self.textView.string = text
+                let safeText = Self.shareableReport(text)
+                self.latestReport = safeText
+                self.textView.string = safeText
                 let hasFailure = text.localizedCaseInsensitiveContains("(failed)")
                 self.statusIcon.image = NSImage(
                     systemSymbolName: hasFailure ? "exclamationmark.triangle" : "checkmark",
