@@ -204,6 +204,7 @@ final class HubControllerTests: XCTestCase {
         status code: 500
         Authorization: Bearer bearer-secret-value
         {"accessToken":"access-secret-value","refresh_token":"refresh-secret-value"}
+        {"ingestToken":"ingest-secret-value","private_key":"private-secret-value"}
         callback=https://fleet.example/callback?code=EU_secret_code&state=public-state
         source=postgresql://reader:database-secret@127.0.0.1/teslamate
         jwt=eyJheader.payload.signature
@@ -221,6 +222,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(redacted.contains("[redacted-jwt]"))
         XCTAssertTrue(redacted.contains("~/Library/Logs"))
         for secret in ["bearer-secret-value", "access-secret-value", "refresh-secret-value",
+                       "ingest-secret-value", "private-secret-value",
                        "EU_secret_code", "database-secret", "eyJheader.payload.signature"] {
             XCTAssertFalse(redacted.contains(secret), "leaked \(secret)")
         }

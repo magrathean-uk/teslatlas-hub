@@ -15,7 +15,7 @@ private enum HubRelease {
 enum HubShareRedactor {
     private static let replacements: [(pattern: String, template: String)] = [
         (#"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,;]+"#, "$1[redacted]"),
-        (#"(?i)(\b(?:access_?token|refresh_?token|client_?secret|encryption_?key|password|authorization_?code|oauth_?code)\b\s*[\"']?\s*[:=]\s*[\"']?)[^\"'\s,&;}]+"#, "$1[redacted]"),
+        (#"(?i)(\b(?:access_?token|refresh_?token|ingest_?token|pairing_?token|device_?token|token|client_?secret|api_?key|private_?key|encryption_?key|password|authorization_?code|oauth_?code)\b\s*[\"']?\s*[:=]\s*[\"']?)[^\"'\s,&;}]+"#, "$1[redacted]"),
         (#"(?i)([?&](?:access_token|refresh_token|client_secret|code)=)[^&#\s]+"#, "$1[redacted]"),
         (#"(?i)((?:postgres(?:ql)?|https?)://[^/\s:@]+:)[^@/\s]+(@)"#, "$1[redacted]$2"),
         (#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[redacted-jwt]")
@@ -763,12 +763,23 @@ final class HubController {
 
     func installService(completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        let started = Date()
+        HubAppLog.shared.record("install.requested", category: "service")
         let finish: (Result<String, Error>) -> Void = { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
                 case .success:
+                    HubAppLog.shared.record("install.completed", category: "service", fields: [
+                        "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000))
+                    ])
                     self?.refresh { _ in completion(.success(())) }
-                case let .failure(error): completion(.failure(error))
+                case let .failure(error):
+                    HubAppLog.shared.record("install.failed", category: "service", level: "ERROR",
+                                            fields: [
+                                                "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
+                                                "error_code": HubAppLog.errorCode(error)
+                                            ])
+                    completion(.failure(error))
                 }
             }
         }
@@ -777,12 +788,26 @@ final class HubController {
 
     func uninstallService(deleteData: Bool, completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        let started = Date()
+        HubAppLog.shared.record("uninstall.requested", category: "service", fields: [
+            "delete_data": deleteData ? "true" : "false"
+        ])
         installer.uninstall(deleteData: deleteData) { result in
             DispatchQueue.main.async {
                 switch result {
                 case .success:
+                    HubAppLog.shared.record("uninstall.completed", category: "service", fields: [
+                        "delete_data": deleteData ? "true" : "false",
+                        "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000))
+                    ])
                     self.refresh { _ in completion(.success(())) }
                 case let .failure(error):
+                    HubAppLog.shared.record("uninstall.failed", category: "service", level: "ERROR",
+                                            fields: [
+                                                "delete_data": deleteData ? "true" : "false",
+                                                "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
+                                                "error_code": HubAppLog.errorCode(error)
+                                            ])
                     completion(.failure(error))
                 }
             }
@@ -1126,6 +1151,11 @@ final class HubController {
                                completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         let installed = isServiceInstalled
+        let setupStarted = Date()
+        HubAppLog.shared.record("setup.requested", category: "account", fields: [
+            "provider": "fleet",
+            "service_installed": installed ? "true" : "false"
+        ])
         let invocation: HubSetupInvocation
         let originalConfig: String?
         do {
@@ -1133,6 +1163,11 @@ final class HubController {
                                                        credentials: credentials)
             originalConfig = try readConfigIfPresent()
         } catch {
+            HubAppLog.shared.record("setup.rejected", category: "account", level: "WARN",
+                                    fields: [
+                                        "provider": "fleet",
+                                        "error_code": HubAppLog.errorCode(error)
+                                    ])
             completion(.failure(error))
             return
         }
@@ -1141,8 +1176,18 @@ final class HubController {
                 guard let self else { completion(result); return }
                 switch result {
                 case .success:
+                    HubAppLog.shared.record("setup.completed", category: "account", fields: [
+                        "provider": "fleet",
+                        "duration_ms": String(Int(Date().timeIntervalSince(setupStarted) * 1000))
+                    ])
                     self.refresh { _ in completion(.success(())) }
-                case .failure:
+                case let .failure(error):
+                    HubAppLog.shared.record("setup.failed", category: "account", level: "ERROR",
+                                            fields: [
+                                                "provider": "fleet",
+                                                "duration_ms": String(Int(Date().timeIntervalSince(setupStarted) * 1000)),
+                                                "error_code": HubAppLog.errorCode(error)
+                                            ])
                     completion(result)
                 }
             }
@@ -1350,6 +1395,11 @@ final class HubController {
                                completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         let installed = isServiceInstalled
+        let setupStarted = Date()
+        HubAppLog.shared.record("setup.requested", category: "account", fields: [
+            "provider": "legacy",
+            "service_installed": installed ? "true" : "false"
+        ])
         let invocation: HubSetupInvocation
         let installedInvocation: HubSetupInvocation
         let originalConfig: String?
@@ -1360,6 +1410,11 @@ final class HubController {
             installedInvocation = Self.oldCompatibleSetupInvocation(invocation)
             originalConfig = installed ? try readConfigIfPresent() : nil
         } catch {
+            HubAppLog.shared.record("setup.rejected", category: "account", level: "WARN",
+                                    fields: [
+                                        "provider": "legacy",
+                                        "error_code": HubAppLog.errorCode(error)
+                                    ])
             completion(.failure(error))
             return
         }
@@ -1368,8 +1423,18 @@ final class HubController {
                 guard let self else { completion(result); return }
                 switch result {
                 case .success:
+                    HubAppLog.shared.record("setup.completed", category: "account", fields: [
+                        "provider": "legacy",
+                        "duration_ms": String(Int(Date().timeIntervalSince(setupStarted) * 1000))
+                    ])
                     self.refresh { _ in completion(.success(())) }
-                case .failure:
+                case let .failure(error):
+                    HubAppLog.shared.record("setup.failed", category: "account", level: "ERROR",
+                                            fields: [
+                                                "provider": "legacy",
+                                                "duration_ms": String(Int(Date().timeIntervalSince(setupStarted) * 1000)),
+                                                "error_code": HubAppLog.errorCode(error)
+                                            ])
                     completion(result)
                 }
             }
@@ -1884,6 +1949,8 @@ final class HubController {
                 + snapshot.diagnosticLines.joined(separator: "\n"))
             return
         }
+        let diagnosticsStarted = Date()
+        HubAppLog.shared.record("checks.started", category: "diagnostics")
         let runner = isServiceInstalled ? installedCommandRunner : commandRunner
         let config = ["--config", configPath.path]
         func section(_ title: String, _ result: Result<String, Error>) -> String {
@@ -1898,6 +1965,9 @@ final class HubController {
             runner.run(arguments: config + ["preflight"]) { preflight in
                 runner.run(arguments: config + ["status"]) { status in
                     self.logs(maximumBytes: 512 * 1024) { logText in
+                        let failedSections = [doctor, preflight, status].reduce(into: 0) { count, result in
+                            if case .failure = result { count += 1 }
+                        }
                         let report = [
                             "Teslatlas Hub diagnostics",
                             "Full database, credential, connection, and log check.",
@@ -1911,6 +1981,15 @@ final class HubController {
                             "== recent logs ==",
                             logText.trimmingCharacters(in: .whitespacesAndNewlines)
                         ].joined(separator: "\n")
+                        HubAppLog.shared.record(
+                            "checks.completed",
+                            category: "diagnostics",
+                            level: failedSections == 0 ? "INFO" : "WARN",
+                            fields: [
+                                "duration_ms": String(Int(Date().timeIntervalSince(diagnosticsStarted) * 1000)),
+                                "failed_sections": String(failedSections)
+                            ]
+                        )
                         completion(report)
                     }
                 }
@@ -1941,6 +2020,7 @@ final class HubController {
 #endif
         return [
             "== support metadata ==",
+            "Generated: \(ISO8601DateFormatter().string(from: Date()))",
             "App: \(appVersion) (\(appBuild))",
             "Expected Hub: \(HubRelease.bundledVersion)",
             "Observed Hub: \(snapshot.version)",
