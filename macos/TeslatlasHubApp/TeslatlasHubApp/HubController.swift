@@ -20,6 +20,8 @@ enum HubShareRedactor {
         (#"(?i)(\b(?:access_?token|refresh_?token|ingest_?token|pairing_?token|device_?token|token|client_?secret|api_?key|private_?key|encryption_?key|password|authorization_?code|oauth_?code)\b\s*[\"']?\s*[:=]\s*[\"']?)[^\"'\s,&;}]+"#, "$1[redacted]"),
         (#"(?i)([?&](?:access_token|refresh_token|client_secret|code)=)[^&#\s]+"#, "$1[redacted]"),
         (#"(?i)((?:postgres(?:ql)?|https?)://[^/\s:@]+:)[^@/\s]+(@)"#, "$1[redacted]$2"),
+        (#"(?i)(\"(?:display_?name|vehicle_?name)\"\s*:\s*)\"[^\"]*\""#, "$1\"[redacted-name]\""),
+        (#"(?i)(\b(?:display_?name|vehicle_?name)\b\s*=\s*)(?:\"[^\"]*\"|[^\s,;]+)"#, "$1[redacted-name]"),
         (#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[redacted-jwt]"),
         (#"(?i)\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b"#, "[redacted-id]"),
         (#"(?i)\b[0-9A-HJ-NPR-Z]{17}\b"#, "[redacted-vin]"),

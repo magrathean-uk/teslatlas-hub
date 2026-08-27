@@ -211,6 +211,8 @@ final class HubControllerTests: XCTestCase {
         source=postgresql://reader:database-secret@127.0.0.1/teslamate
         jwt=eyJheader.payload.signature
         vehicle=5YJ3E1EA7KF317000
+        display_name="Athena Road Trip"
+        {"vehicleName":"Athena JSON"}
         vehicle_id=477a04f6-b726-50e3-86e0-a5a9143b3239
         installationId=9ca970df-0616-43d5-8493-e1faf00e97f1
         server=10.8.0.1
@@ -229,6 +231,8 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(redacted.contains("postgresql://reader:[redacted]@127.0.0.1"))
         XCTAssertTrue(redacted.contains("[redacted-jwt]"))
         XCTAssertTrue(redacted.contains("vehicle=[redacted-vin]"))
+        XCTAssertTrue(redacted.contains("display_name=[redacted-name]"))
+        XCTAssertTrue(redacted.contains("\"vehicleName\":\"[redacted-name]\""))
         XCTAssertTrue(redacted.contains("vehicle_id=[redacted-id]"))
         XCTAssertTrue(redacted.contains("installationId=[redacted-id]"))
         XCTAssertTrue(redacted.contains("server=[redacted-private-ip]"))
@@ -238,7 +242,8 @@ final class HubControllerTests: XCTestCase {
         for secret in ["bearer-secret-value", "access-secret-value", "refresh-secret-value",
                        "ingest-secret-value", "private-secret-value",
                        "EU_secret_code", "database-secret", "eyJheader.payload.signature",
-                       "5YJ3E1EA7KF317000", "477a04f6-b726-50e3-86e0-a5a9143b3239",
+                       "5YJ3E1EA7KF317000", "Athena Road Trip", "Athena JSON",
+                       "477a04f6-b726-50e3-86e0-a5a9143b3239",
                        "9ca970df-0616-43d5-8493-e1faf00e97f1", "10.8.0.1", "fd12:3456:789a::1",
                        "fe80::42%en0", "\u{001B}"] {
             XCTAssertFalse(redacted.contains(secret), "leaked \(secret)")
