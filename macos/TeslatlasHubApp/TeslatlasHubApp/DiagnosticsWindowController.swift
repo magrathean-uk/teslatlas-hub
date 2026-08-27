@@ -66,7 +66,7 @@ final class DiagnosticsWindowController: NSWindowController {
         actions.alignment = .centerY
 
         let privacy = NSTextField(labelWithString:
-            "Copy and Save redact credentials, VINs, private-network addresses, and your home path. Review before sharing.")
+            "Displayed, copied, and saved reports redact credentials and private identifiers. Review before sharing.")
         privacy.font = .systemFont(ofSize: 11)
         privacy.textColor = .secondaryLabelColor
 
@@ -92,9 +92,10 @@ final class DiagnosticsWindowController: NSWindowController {
 
     private func showInitialSummary() {
         let summary = controller.diagnostics()
-        textView.string = summary.isEmpty
+        let text = summary.isEmpty
             ? "No diagnostic report has been run."
             : "Current Hub summary\n\n" + summary.joined(separator: "\n")
+        textView.string = Self.shareableReport(text)
         copyButton.isEnabled = false
         saveButton.isEnabled = false
     }
@@ -114,7 +115,7 @@ final class DiagnosticsWindowController: NSWindowController {
                 let safeText = Self.shareableReport(text)
                 self.latestReport = safeText
                 self.textView.string = safeText
-                let hasFailure = text.localizedCaseInsensitiveContains("(failed)")
+                let hasFailure = text.contains(" (failed) ==")
                 self.statusIcon.image = NSImage(
                     systemSymbolName: hasFailure ? "exclamationmark.triangle" : "checkmark",
                     accessibilityDescription: hasFailure ? "Diagnostics found issues" : "Diagnostics finished"
