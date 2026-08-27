@@ -144,6 +144,12 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(text.contains("status — vehicles and credential presence"))
             XCTAssertTrue(text.contains("TeslaMate is not written"))
             XCTAssertTrue(text.contains("tokens are not deleted") || text.contains("Tokens are not deleted") || text.contains("Owner and Fleet tokens"))
+            XCTAssertTrue(text.contains("== support metadata =="))
+            XCTAssertTrue(text.contains("Expected Hub: 1.0.0-alpha.1"))
+            XCTAssertTrue(text.contains("Service: not installed"))
+            XCTAssertTrue(text.contains("Provider: Not configured"))
+            XCTAssertTrue(text.contains("macOS:"))
+            XCTAssertTrue(text.contains("Architecture: arm64"))
             finished.fulfill()
         }
         wait(for: [finished], timeout: 2)

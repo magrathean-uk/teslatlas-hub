@@ -1880,7 +1880,8 @@ final class HubController {
 
     func runFullDiagnostics(completion: @escaping (String) -> Void) {
         if previewMode {
-            completion("Preview mode\n\n" + snapshot.diagnosticLines.joined(separator: "\n"))
+            completion("Preview mode\n\n" + supportMetadata() + "\n\n"
+                + snapshot.diagnosticLines.joined(separator: "\n"))
             return
         }
         let runner = isServiceInstalled ? installedCommandRunner : commandRunner
@@ -1902,6 +1903,8 @@ final class HubController {
                             "Full database, credential, connection, and log check.",
                             "TeslaMate is not written. Stored Owner and Fleet tokens are not deleted.",
                             "",
+                            self.supportMetadata(),
+                            "",
                             section("doctor — Hub database, tokens, TLS, collector", doctor),
                             section("preflight — selected provider credentials", preflight),
                             section("status — vehicles and credential presence", status),
@@ -1913,6 +1916,39 @@ final class HubController {
                 }
             }
         }
+    }
+
+    private func supportMetadata() -> String {
+        let bundle = Bundle.main
+        let appVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "development"
+        let appBuild = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+            ?? "development"
+        let provider = snapshot.provider?.displayName ?? "Not configured"
+        let serviceState: String
+        switch snapshot.health {
+        case .running: serviceState = "running"
+        case .stopped: serviceState = "stopped"
+        case .needsInstall: serviceState = "not installed"
+        case .degraded: serviceState = "needs attention"
+        }
+#if arch(arm64)
+        let architecture = "arm64"
+#elseif arch(x86_64)
+        let architecture = "x86_64"
+#else
+        let architecture = "unknown"
+#endif
+        return [
+            "== support metadata ==",
+            "App: \(appVersion) (\(appBuild))",
+            "Expected Hub: \(HubRelease.bundledVersion)",
+            "Observed Hub: \(snapshot.version)",
+            "Service: \(serviceState)",
+            "Provider: \(provider)",
+            "macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)",
+            "Architecture: \(architecture)"
+        ].joined(separator: "\n")
     }
 
     func showDataFolder() {

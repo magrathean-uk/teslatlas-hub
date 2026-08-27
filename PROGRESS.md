@@ -72,7 +72,10 @@ mutation.
 
 Unlocked native UI acceptance passed. Cmd-L opened the bounded redacted app,
 SSH/import and service logs; Run Diagnostics completed doctor, preflight,
-status and recent-log checks. The explicit one-owner handover stopped
+status and recent-log checks. Its support header now includes only safe app,
+expected/observed Hub, service, provider, macOS, and architecture metadata so a
+saved report identifies the failing build without vehicle or account identity.
+The explicit one-owner handover stopped
 TeslaMate, started Hub, and advanced the durable legacy observation id. No
 vehicle command ran. Hub was then stopped and TeslaMate plus TeslaMateAPI were
 restored healthy. A five-second dashboard refresh now changes stale starting,
