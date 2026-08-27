@@ -2680,14 +2680,18 @@ impl HubStore {
         }
 
         let mut created = false;
-        let gate_fd = loop {
+        let mut gate_fd = None;
+        for _ in 0..32 {
             match openat(
                 &parent,
                 name,
                 OFlags::RDWR | OFlags::NOFOLLOW | OFlags::CLOEXEC,
                 Mode::empty(),
             ) {
-                Ok(fd) => break fd,
+                Ok(fd) => {
+                    gate_fd = Some(fd);
+                    break;
+                }
                 Err(Errno::NOENT) => match openat(
                     &parent,
                     name,
@@ -2700,14 +2704,21 @@ impl HubStore {
                 ) {
                     Ok(fd) => {
                         created = true;
-                        break fd;
+                        gate_fd = Some(fd);
+                        break;
                     }
                     Err(Errno::EXIST) => continue,
                     Err(error) => return Err(StoreError::OpenPublicationGate(error.into())),
                 },
                 Err(error) => return Err(StoreError::OpenPublicationGate(error.into())),
             }
-        };
+        }
+        let gate_fd = gate_fd.ok_or_else(|| {
+            StoreError::OpenPublicationGate(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "publication gate path did not settle",
+            ))
+        })?;
         let file = File::from(gate_fd);
         if created {
             fchmod(&file, Mode::from_raw_mode(SHARED_DATA_FILE_MODE as _))

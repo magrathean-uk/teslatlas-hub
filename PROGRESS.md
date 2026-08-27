@@ -113,6 +113,11 @@ descriptor is opened nonblocking so a substituted FIFO is rejected instead of
 hanging setup. Unsafe FIFO, symlink, and oversized configs fail before any
 account command or service mutation.
 
+The per-user lifetime lock and shared publication gate now stop after 32
+create/open identity races instead of allowing a same-user path replacement
+loop to consume CPU forever during startup. Existing lock identity,
+replacement, permission, and publication-gate regressions pass.
+
 Cmd-L app and service log reads, plus app-log writes, now use nonblocking,
 no-follow descriptors and validate the opened inode as a regular file. This
 closes the remaining path where replacing a log with a FIFO could freeze log

@@ -194,7 +194,7 @@ fn open_data_dir(path: &Path) -> Result<OwnedFd, UserLifetimeLockError> {
 }
 
 fn open_lock_file(data_dir_fd: &impl AsFd) -> Result<OwnedFd, UserLifetimeLockError> {
-    loop {
+    for _ in 0..32 {
         match openat(
             data_dir_fd,
             LOCK_FILE_NAME,
@@ -215,6 +215,7 @@ fn open_lock_file(data_dir_fd: &impl AsFd) -> Result<OwnedFd, UserLifetimeLockEr
             Err(_) => return Err(UserLifetimeLockError::Filesystem),
         }
     }
+    Err(UserLifetimeLockError::Filesystem)
 }
 
 fn validate_lock_file(fd: &impl AsFd) -> Result<rustix::fs::Stat, UserLifetimeLockError> {
