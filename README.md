@@ -150,6 +150,12 @@ the ELF architecture check). Building the Fleet sidecars additionally requires
 Go 1.27.0 exactly. Installing a finished package needs only its declared
 runtime dependencies.
 
+Linux service logs stay in journald instead of a second unbounded file. For a
+support check, use `sudo journalctl -u teslatlas-hub -n 200 --no-pager` and
+`sudo systemctl status teslatlas-hub --no-pager`. Run the same read-only Hub
+checks as the Mac app with
+`sudo -u teslatlas /usr/bin/teslatlas-hub --config /etc/teslatlas-hub/config.toml doctor`.
+
 ```sh
 cargo build --locked --release
 scripts/build-tesla-command-proxy.sh \
