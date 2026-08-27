@@ -92,8 +92,9 @@ final class LogsWindowController: NSWindowController {
         statusLabel.stringValue = "Loading logs…"
         controller.logs { [weak self] text in
             guard let self else { return }
+            let appText = HubAppLog.shared.recentText()
             let combined = Self.shareableText([
-                "== app and import diagnostics ==\n\(HubAppLog.shared.recentText())",
+                "== app and import diagnostics ==\n\(appText)",
                 "== Hub service logs ==\n\(text)"
             ].joined(separator: "\n"))
             self.latestText = combined
@@ -105,7 +106,7 @@ final class LogsWindowController: NSWindowController {
             self.saveButton.isEnabled = !combined.isEmpty
             self.operationInProgress = false
             HubAppLog.shared.record("refresh.completed", category: "logs", fields: [
-                "app_bytes": String(HubAppLog.shared.recentText().utf8.count),
+                "app_bytes": String(appText.utf8.count),
                 "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
                 "service_bytes": String(text.utf8.count)
             ])
