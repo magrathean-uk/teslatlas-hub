@@ -49,6 +49,10 @@ CPU, and log-churn loop. Before each launch, its root-owned supervisor validates
 both user-owned service logs and compacts any file over 1 MiB in place to the
 newest 512 KiB. Cmd-L therefore keeps useful recent output without retaining an
 unbounded launchd log history; packaging and real-file compaction checks pass.
+Fleet command-proxy readiness now waits 25 ms after an immediate loopback
+refusal instead of busy-spinning for up to ten seconds while the proxy starts
+or fails. A focused regression keeps that retry delay inside its bounded
+10–250 ms range.
 Debian's Hub, command-proxy, and Fleet Telemetry units now stop after five
 failed starts within five minutes instead of producing an indefinite crash,
 CPU, and journal loop. Normal provider/network retries remain inside Hub.

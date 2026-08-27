@@ -277,6 +277,9 @@ struct MacCommandProxy {
 }
 
 #[cfg(unix)]
+const MAC_COMMAND_PROXY_RETRY_DELAY: Duration = Duration::from_millis(25);
+
+#[cfg(unix)]
 impl MacCommandProxy {
     async fn start(spec: MacCommandProxySpec) -> std::io::Result<Self> {
         let mut command = tokio::process::Command::new(&spec.executable);
@@ -324,6 +327,9 @@ impl MacCommandProxy {
                 drop(stream);
                 return Ok(());
             }
+            // Loopback refusal is normally immediate. Yield between attempts
+            // instead of burning one CPU while the proxy starts or fails.
+            tokio::time::sleep(MAC_COMMAND_PROXY_RETRY_DELAY).await;
         }
     }
 
@@ -3452,10 +3458,10 @@ mod tests {
     };
     #[cfg(target_os = "macos")]
     use super::{
-        MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
-        MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
-        MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec, MacServeControl,
-        MacServeWorkerStopTimeout, MigrationSecretReadError, ServiceCommand,
+        MAC_COMMAND_PROXY_RETRY_DELAY, MAX_MIGRATION_ENCRYPTION_KEY_BYTES,
+        MAX_MIGRATION_POSTGRES_PASSWORD_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES,
+        MAX_MIGRATION_TOKEN_BYTES, MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec,
+        MacServeControl, MacServeWorkerStopTimeout, MigrationSecretReadError, ServiceCommand,
         clear_provider_credentials, command_requires_user_hub_admission, decode_setup_fleet_stdin,
         migration_start_requested, migration_stop_confirmed, persist_fleet_setup_and_drop_legacy,
         persist_legacy_setup_and_drop_fleet, persist_migrated_legacy_tokens,
@@ -3525,6 +3531,13 @@ mod tests {
                 "/private/data/fleet-command-session-cache.json",
             ]
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_command_proxy_readiness_retry_is_cpu_bounded() {
+        assert!(MAC_COMMAND_PROXY_RETRY_DELAY >= Duration::from_millis(10));
+        assert!(MAC_COMMAND_PROXY_RETRY_DELAY <= Duration::from_millis(250));
     }
 
     #[cfg(target_os = "macos")]
