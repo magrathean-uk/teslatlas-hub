@@ -105,6 +105,21 @@ final class HubControllerTests: XCTestCase {
         ))
     }
 
+    func testPreviewIgnoresARealMigrationHandoverMarker() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-preview-marker-\(UUID().uuidString)", isDirectory: true)
+        let state = home.appendingPathComponent("Library/Application Support/Teslatlas Hub", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: state.appendingPathComponent(".teslamate-handover-pending"))
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                                       homeDirectory: home)
+
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertNil(controller.pendingMigrationHandoverPhase)
+    }
+
     func testRunFullDiagnosticsInvokesDoctorPreflightStatusAndKeepsPreviewReadOnly() {
         let runner = CommandMapRunner(responses: [
             "doctor": .success("{\"status\":\"ok\",\"catalogue\":{\"journalMode\":\"wal\"},\"credentials\":{\"legacy\":{\"present\":true},\"fleet\":{\"present\":true}}}"),

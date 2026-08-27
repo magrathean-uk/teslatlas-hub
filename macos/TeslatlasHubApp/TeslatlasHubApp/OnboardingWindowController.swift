@@ -76,6 +76,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private var didNotifyDismiss = false
     private var state: HubOnboardingState
     private var busy = false
+    private var busyMessage: String?
     private var errorMessage: String?
     private var compatibility: HubTeslaMateCompatibility?
     private var checks: [HubOnboardingCheck] = []
@@ -87,17 +88,37 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private let continueButton = NSButton(title: "Continue", target: nil, action: nil)
     private let backButton = NSButton(title: "Back", target: nil, action: nil)
     private let spinner = NSProgressIndicator()
+    private let migrationSpinner = NSProgressIndicator()
+    private let footerSpinner = NSProgressIndicator()
+    private var continueWidthConstraint: NSLayoutConstraint?
+    private var backWidthConstraint: NSLayoutConstraint?
 
     private let fleetClientID = NSTextField(string: "")
     private let fleetAccessToken = NSSecureTextField(string: "")
     private let fleetRefreshToken = NSSecureTextField(string: "")
     private let fleetExpiry = NSTextField(string: "3600")
     private let fleetRegion = NSPopUpButton()
+    private let legacyAccessToken = NSSecureTextField(string: "")
+    private let legacyRefreshToken = NSSecureTextField(string: "")
 
-    private let migrationSource = NSTextField(string: "postgresql://reader@127.0.0.1/teslamate")
-    private let migrationCarID = NSTextField(string: "1")
+    private let migrationServer = NSTextField(string: "")
+    private let migrationUser = NSTextField(string: "user")
+    private let migrationPort = NSTextField(string: "22")
+    private let migrationAuthentication = NSPopUpButton()
+    private let migrationIdentityFile = NSTextField(string: "")
+    private let migrationSSHPassword = NSSecureTextField(string: "")
+    private let migrationUseSudo = NSButton(
+        checkboxWithTitle: "Use passwordless sudo for Docker access",
+        target: nil,
+        action: nil
+    )
+    private var migrationConnectButton: NSButton?
+    private var migrationKeyViews: [NSView] = []
+    private let migrationSource = NSTextField(string: "")
+    private let migrationCarID = NSTextField(string: "")
     private let migrationPasswordFile = NSTextField(string: "")
     private let migrationKeyFile = NSTextField(string: "")
+    private var migrationSession: TeslaMateServerImportSession?
 
     init(controller: HubController,
          resumeMigrationHandoverPhase: HubMigrationHandoverPhase? = nil,
@@ -198,6 +219,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        migrationSession?.close()
         guard !didNotifyDismiss else { return }
         didNotifyDismiss = true
         onDismiss()
@@ -246,19 +268,31 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             "North America and Asia Pacific",
             "China"
         ])
+        migrationAuthentication.addItems(withTitles: ["SSH key or agent", "Password"])
+        migrationAuthentication.target = self
+        migrationAuthentication.action = #selector(migrationAuthenticationChanged)
+        migrationAuthentication.controlSize = .large
+        migrationUseSudo.state = .on
         for field in [fleetClientID, fleetAccessToken, fleetRefreshToken, fleetExpiry,
-                      migrationSource, migrationCarID, migrationPasswordFile, migrationKeyFile] {
+                      legacyAccessToken, legacyRefreshToken,
+                      migrationServer, migrationUser, migrationPort,
+                      migrationIdentityFile, migrationSSHPassword] {
             field.controlSize = .large
         }
         fleetAccessToken.placeholderString = "Access token"
         fleetRefreshToken.placeholderString = "Refresh token"
         fleetClientID.placeholderString = "Tesla application client ID"
-        migrationPasswordFile.placeholderString = "Choose a protected password file"
-        migrationKeyFile.placeholderString = "Choose the TeslaMate ENCRYPTION_KEY file"
+        legacyAccessToken.placeholderString = "Access token"
+        legacyRefreshToken.placeholderString = "Refresh token"
+        migrationServer.placeholderString = "Server name or IP address"
+        migrationIdentityFile.placeholderString = "Optional — uses SSH agent or default keys"
+        migrationSSHPassword.placeholderString = "SSH password"
     }
 
     private func render() {
         guard let window else { return }
+        let previousField = (window.firstResponder as? NSTextView)?.delegate as? NSView
+        migrationKeyViews = []
         let root = NSView()
         root.wantsLayer = true
         root.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
@@ -271,16 +305,21 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
         let icon = NSImageView(image: appIcon())
         icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.widthAnchor.constraint(equalToConstant: state.route == .welcome ? 88 : 56).isActive = true
+        let iconSize: CGFloat = state.route == .welcome ? 104 : 68
+        icon.widthAnchor.constraint(equalToConstant: iconSize).isActive = true
         icon.heightAnchor.constraint(equalTo: icon.widthAnchor).isActive = true
+        icon.wantsLayer = true
+        icon.layer?.cornerRadius = iconSize * 0.22
+        icon.layer?.cornerCurve = .continuous
+        icon.layer?.masksToBounds = true
         page.addArrangedSubview(icon)
 
+        page.addArrangedSubview(progressView())
         let stepLabel = NSTextField(labelWithString: "Step \(state.step) of 5")
         stepLabel.font = .systemFont(ofSize: 12, weight: .medium)
         stepLabel.textColor = .secondaryLabelColor
         page.addArrangedSubview(stepLabel)
-        page.addArrangedSubview(progressView())
-        page.setCustomSpacing(36, after: page.arrangedSubviews.last!)
+        page.setCustomSpacing(24, after: page.arrangedSubviews.last!)
 
         let title = NSTextField(labelWithString: pageTitle)
         title.font = .systemFont(ofSize: 26, weight: .semibold)
@@ -299,7 +338,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         let body = pageBody()
         page.addArrangedSubview(body)
         body.widthAnchor.constraint(equalToConstant: 650).isActive = true
-        body.heightAnchor.constraint(greaterThanOrEqualToConstant: 270).isActive = true
+        body.heightAnchor.constraint(greaterThanOrEqualToConstant: 250).isActive = true
 
         let footerLine = separator()
         footerLine.translatesAutoresizingMaskIntoConstraints = false
@@ -320,17 +359,25 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             footer.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
             footer.heightAnchor.constraint(equalToConstant: 34)
         ])
+        root.alphaValue = 0
         window.contentView = root
         updateFooter()
+        window.recalculateKeyViewLoop()
+        configureMigrationKeyViewLoop(previousField: previousField)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            root.animator().alphaValue = 1
+        }
     }
 
     private var pageTitle: String {
         switch state.route {
-        case .welcome: return "Your Tesla history, privately collected."
+        case .welcome: return "Teslatlas Hub"
         case .choose: return "How would you like to begin?"
         case .provider: return "Choose how Hub connects to Tesla"
-        case .fleet: return "Set up Fleet API"
-        case .legacy: return "Connect with a legacy Tesla login"
+        case .fleet: return "Set up Fleet Telemetry"
+        case .legacy: return "Connect with a Legacy Token"
         case .migration: return "Import from TeslaMate"
         case .verify: return "Checking your Hub"
         case .finish: return state.path == .migration ? "Migration complete" : "Teslatlas Hub is ready"
@@ -340,17 +387,17 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private var pageSubtitle: String {
         switch state.route {
         case .welcome:
-            return "Teslatlas Hub collects your vehicle data locally and makes it available to Teslatlas."
+            return "Teslatlas Hub is the backend service replacing TeslaMate. It records the same data as TeslaMate without:"
         case .choose:
             return "Choose how you would like to set up Teslatlas Hub."
         case .provider:
-            return "Fleet API is recommended. Legacy login remains available for TeslaMate-compatible tokens."
+            return "Choose official Fleet Telemetry or a free Legacy Token."
         case .fleet:
-            return "Follow the setup guide, then enter the returned Fleet credentials. Secrets are passed to Hub through stdin."
+            return "Sign in with Tesla and create your Fleet application, then enter its credentials."
         case .legacy:
-            return "Sign in to Tesla in a private window. Hub stores the returned token pair encrypted on this Mac."
+            return "Sign in with Tesla, or paste an existing token pair. Hub encrypts it on this Mac."
         case .migration:
-            return "Hub accepts the exact TeslaMate 4.1.1 schema and reads it without changing the source."
+            return "Enter your TeslaMate server. Hub finds and copies the required data automatically."
         case .verify:
             return "Service, account, vehicle, database, diagnostics, and logs are checked before handover."
         case .finish:
@@ -375,9 +422,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     private func welcomeBody() -> NSView {
         let rows = NSStackView(views: [
-            featureRow("Collect drives, charging, locations, and vehicle state", "car.fill"),
-            featureRow("Keep your history in storage you control", "externaldrive.fill"),
-            featureRow("Connect the Teslatlas app without a cloud account", "lock.shield.fill")
+            rustFeatureRow("Written purely in Rust."),
+            featureRow("No Docker.", "shippingbox.fill", color: .systemBlue),
+            featureRow("Open source and developed natively for macOS and Debian.",
+                       "desktopcomputer", color: .systemGreen),
+            featureRow("Uses SQLite.", "cylinder.fill", color: .systemPurple)
         ])
         rows.orientation = .vertical
         rows.alignment = .leading
@@ -387,38 +436,29 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     private func chooseBody() -> NSView {
         let fresh = choiceButton(title: "New installation",
-                                 subtitle: "Connect Tesla and start a new history.",
+                                 subtitle: "Connect Tesla Fleet Telemetry or Legacy Token.",
                                  symbol: "car.fill",
                                  accentColor: .systemGreen,
                                  selected: state.path == .newInstallation,
                                  action: #selector(selectNewInstallation))
         let migration = choiceButton(title: "Migrate from TeslaMate",
-                                     subtitle: "Import TeslaMate 4.1.1. Your source stays unchanged.",
+                                     subtitle: "Bring your existing drives and charging history.",
                                      symbol: "cylinder.split.1x2",
                                      accentColor: .systemBlue,
                                      selected: state.path == .migration,
                                      action: #selector(selectMigration))
-        let choices = horizontalChoices([fresh, migration])
-        let note = featureRow("Exact TeslaMate 4.1.1 compatibility is checked before any data is copied.",
-                              "info.circle",
-                              color: .secondaryLabelColor)
-        let stack = NSStackView(views: [choices, note])
-        stack.orientation = .vertical
-        stack.alignment = .centerX
-        stack.spacing = 14
-        choices.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        return stack
+        return horizontalChoices([fresh, migration])
     }
 
     private func providerBody() -> NSView {
-        let fleet = choiceButton(title: "Fleet API",
-                                 subtitle: "Recommended · official Tesla API",
+        let fleet = choiceButton(title: "Fleet Telemetry",
+                                 subtitle: "Official Tesla setup · low-cost streaming",
                                  symbol: "checkmark.shield.fill",
                                  accentColor: .systemBlue,
                                  selected: state.provider == .fleet,
                                  action: #selector(selectFleet))
-        let legacy = choiceButton(title: "Legacy Tesla login",
-                                  subtitle: "Compatible with TeslaMate-style tokens",
+        let legacy = choiceButton(title: "Legacy Token",
+                                  subtitle: "Free token login or use an existing token",
                                   symbol: "key.fill",
                                   accentColor: .systemPurple,
                                   selected: state.provider == .legacy,
@@ -427,7 +467,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func fleetBody() -> NSView {
-        let guide = NSButton(title: "Open Fleet Setup Guide", target: self, action: #selector(openFleetGuide))
+        let guide = NSButton(title: "Create Tesla Fleet App", target: self, action: #selector(openFleetGuide))
         configureFlatButton(guide, symbol: "book")
         let fields = NSStackView(views: [
             guide,
@@ -444,32 +484,81 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func legacyBody() -> NSView {
+        let signIn = NSButton(title: "Sign in with Tesla", target: self, action: #selector(startLegacySignIn))
+        configurePrimaryButton(signIn, symbol: "person.crop.circle.badge.checkmark")
+        let or = NSTextField(labelWithString: "or use an existing token pair")
+        or.textColor = .secondaryLabelColor
+        or.alignment = .center
         let stack = NSStackView(views: [
-            featureRow("Private WebKit sign-in", "person.crop.circle.badge.checkmark"),
-            featureRow("PKCE and exact callback validation", "checkmark.shield"),
-            featureRow("Encrypted token storage", "lock.fill")
+            signIn,
+            or,
+            formRow("Access token", legacyAccessToken),
+            formRow("Refresh token", legacyRefreshToken),
+            featureRow("Tokens are encrypted on this Mac", "lock.fill")
         ])
         stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 20
-        return withError(centered(stack))
+        stack.alignment = .centerX
+        stack.spacing = 14
+        return withError(stack)
     }
 
     private func migrationBody() -> NSView {
-        let choosePassword = NSButton(title: "Choose…", target: self, action: #selector(chooseMigrationPassword))
-        let chooseKey = NSButton(title: "Choose…", target: self, action: #selector(chooseMigrationKey))
-        let check = NSButton(title: "Check TeslaMate 4.1.1", target: self, action: #selector(checkMigrationCompatibility))
-        configureFlatButton(check, symbol: "checkmark.shield", tint: .controlAccentColor)
-        let stack = NSStackView(views: [
-            formRow("PostgreSQL source", migrationSource),
-            formRow("Car ID", migrationCarID),
-            formRow("Password file", fieldWithButton(migrationPasswordFile, choosePassword)),
-            formRow("TeslaMate ENCRYPTION_KEY", fieldWithButton(migrationKeyFile, chooseKey)),
-            check
+        let check = NSButton(title: "Connect to Server", target: self, action: #selector(checkMigrationCompatibility))
+        migrationConnectButton = check
+        configurePrimaryButton(check)
+        check.controlSize = .large
+        check.widthAnchor.constraint(equalToConstant: 230).isActive = true
+        check.heightAnchor.constraint(equalToConstant: 38).isActive = true
+
+        migrationSpinner.style = .spinning
+        migrationSpinner.controlSize = .small
+        migrationSpinner.isDisplayedWhenStopped = false
+        migrationSpinner.toolTip = "Connecting securely to TeslaMate"
+
+        let guidance = NSTextField(wrappingLabelWithString:
+            "Use a normal server account. It must access the TeslaMate containers directly or through passwordless sudo.")
+        guidance.textColor = .secondaryLabelColor
+        guidance.maximumNumberOfLines = 2
+        guidance.widthAnchor.constraint(equalToConstant: 650).isActive = true
+
+        var views: [NSView] = [
+            guidance,
+            formRow("Server", migrationServer),
+            formRow("SSH user", migrationUser),
+            formRow("SSH port", migrationPort),
+            formRow("Authentication", migrationAuthentication)
+        ]
+        migrationKeyViews = [migrationServer, migrationUser, migrationPort, migrationAuthentication]
+        if migrationAuthentication.indexOfSelectedItem == 0 {
+            let choose = NSButton(title: "Choose Key…", target: self, action: #selector(chooseMigrationIdentity))
+            views.append(formRow("SSH key", fieldWithButton(migrationIdentityFile, choose, symbol: "key.fill")))
+            migrationKeyViews += [migrationIdentityFile, choose]
+        } else {
+            views.append(formRow("Password", migrationSSHPassword))
+            migrationKeyViews.append(migrationSSHPassword)
+        }
+        views.append(migrationUseSudo)
+        migrationKeyViews += [migrationUseSudo, check]
+        let connectRow = NSView()
+        check.translatesAutoresizingMaskIntoConstraints = false
+        let connectControls = NSStackView(views: [check, migrationSpinner])
+        connectControls.spacing = 10
+        connectControls.alignment = .centerY
+        connectControls.translatesAutoresizingMaskIntoConstraints = false
+        connectRow.addSubview(connectControls)
+        connectRow.widthAnchor.constraint(equalToConstant: 650).isActive = true
+        connectRow.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        NSLayoutConstraint.activate([
+            connectControls.centerXAnchor.constraint(equalTo: connectRow.centerXAnchor),
+            connectControls.topAnchor.constraint(equalTo: connectRow.topAnchor),
+            connectControls.bottomAnchor.constraint(equalTo: connectRow.bottomAnchor)
         ])
+        views.append(connectRow)
+
+        let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 9
+        stack.spacing = 8
         if let compatibility {
             let status = featureRow(compatibility.message,
                                     compatibility.compatible ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
@@ -556,29 +645,27 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func footerView() -> NSView {
-        let lock = NSImageView(image: symbolImage("lock.fill", description: "Private"))
-        lock.contentTintColor = .secondaryLabelColor
-        lock.widthAnchor.constraint(equalToConstant: 14).isActive = true
-        lock.heightAnchor.constraint(equalToConstant: 14).isActive = true
-        let privacy = NSTextField(labelWithString: "Your vehicle data stays on this Mac.")
-        privacy.font = .systemFont(ofSize: 12)
-        privacy.textColor = .secondaryLabelColor
-        let privacyRow = NSStackView(views: [lock, privacy])
-        privacyRow.spacing = 7
-        privacyRow.alignment = .centerY
-
         backButton.target = self
         backButton.action = #selector(backPressed)
-        configureFlatButton(backButton, symbol: "chevron.left")
+        configureFlatButton(backButton)
         backButton.controlSize = .large
-        backButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
+        backWidthConstraint?.isActive = false
+        backWidthConstraint = backButton.widthAnchor.constraint(equalToConstant: 96)
+        backWidthConstraint?.isActive = true
         continueButton.target = self
         continueButton.action = #selector(continuePressed)
-        configureFlatButton(continueButton, symbol: "chevron.right", tint: .controlAccentColor)
+        configurePrimaryButton(continueButton)
         continueButton.controlSize = .large
-        continueButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
+        continueWidthConstraint?.isActive = false
+        continueWidthConstraint = continueButton.widthAnchor.constraint(equalToConstant: 140)
+        continueWidthConstraint?.isActive = true
+        continueButton.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
-        let footer = NSStackView(views: [privacyRow, spacer(), backButton, continueButton])
+        footerSpinner.style = .spinning
+        footerSpinner.controlSize = .small
+        footerSpinner.isDisplayedWhenStopped = false
+        footerSpinner.toolTip = "Hub setup is working"
+        let footer = NSStackView(views: [spacer(), footerSpinner, backButton, continueButton])
         footer.spacing = 10
         footer.alignment = .centerY
         return footer
@@ -590,7 +677,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             || state.route == .finish
             || (state.route == .verify && state.path == .newInstallation)
         backButton.isEnabled = !blocked
-        continueButton.title = continueTitle
+        continueButton.isHidden = state.route == .migration && compatibility?.compatible != true
+        continueButton.title = busy ? (busyMessage ?? continueTitle) : continueTitle
+        continueButton.image = nil
         switch state.route {
         case .migration:
             continueButton.isEnabled = compatibility?.compatible == true && !blocked
@@ -605,17 +694,38 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             spinner.style = .spinning
             spinner.controlSize = .small
             spinner.startAnimation(nil)
+            footerSpinner.toolTip = busyMessage ?? "Hub setup is working"
+            footerSpinner.startAnimation(nil)
+            if busyMessage == "Connecting…" {
+                migrationSpinner.toolTip = "Connecting securely to TeslaMate"
+                migrationSpinner.startAnimation(nil)
+            } else {
+                migrationSpinner.stopAnimation(nil)
+            }
         } else {
             spinner.stopAnimation(nil)
+            migrationSpinner.stopAnimation(nil)
+            footerSpinner.stopAnimation(nil)
         }
-        window?.defaultButtonCell = blocked ? nil : continueButton.cell as? NSButtonCell
+        migrationConnectButton?.isEnabled = !blocked
+        if let migrationConnectButton {
+            migrationConnectButton.title = busyMessage == "Connecting…"
+                ? "Connecting…" : "Connect to Server"
+            updatePrimaryAppearance(migrationConnectButton)
+        }
+        updatePrimaryAppearance(continueButton)
+        backWidthConstraint?.constant = max(96, ceil(backButton.intrinsicContentSize.width) + 24)
+        continueWidthConstraint?.constant = max(140, ceil(continueButton.intrinsicContentSize.width) + 32)
+        window?.defaultButtonCell = blocked || continueButton.isHidden
+            ? nil
+            : continueButton.cell as? NSButtonCell
     }
 
     private var continueTitle: String {
         switch state.route {
         case .fleet: return "Set Up Fleet"
         case .legacy: return "Connect Tesla"
-        case .migration: return "Import"
+        case .migration: return compatibility?.compatible == true ? "Import Data" : "Continue"
         case .verify:
             return verificationFinished && !checks.isEmpty && checks.allSatisfy(\.passed)
                 ? "Continue" : "Run Again"
@@ -700,13 +810,31 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                                                    clientID: fleetClientID.stringValue,
                                                    region: regions[fleetRegion.indexOfSelectedItem],
                                                    expiresInSeconds: expires)
-        setBusy(true)
+        setBusy(true, message: "Saving Fleet credentials…")
         controller.configureFleetAccount(credentials: credentials) { [weak self] result in
             self?.setupFinished(result)
         }
     }
 
     private func configureLegacy() {
+        let access = legacyAccessToken.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let refresh = legacyRefreshToken.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !access.isEmpty || !refresh.isEmpty {
+            guard !access.isEmpty, !refresh.isEmpty else {
+                showInlineError("Enter both the access token and refresh token.")
+                return
+            }
+            setBusy(true, message: "Saving Tesla credentials…")
+            controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: access,
+                                                                      refreshToken: refresh)) { [weak self] result in
+                self?.setupFinished(result)
+            }
+            return
+        }
+        startLegacySignIn()
+    }
+
+    @objc private func startLegacySignIn() {
         guard authWindow == nil else {
             authWindow?.window?.makeKeyAndOrderFront(nil)
             return
@@ -719,7 +847,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                 self.updateFooter()
                 switch result {
                 case let .success(tokens):
-                    self.setBusy(true)
+                    self.setBusy(true, message: "Saving Tesla credentials…")
                     self.controller.configureTeslaAccount(tokens: tokens) { [weak self] setup in
                         self?.setupFinished(setup)
                     }
@@ -754,23 +882,74 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func checkMigrationCompatibility() {
-        guard migrationInputsComplete else {
-            showInlineError("Source, car ID, password file, and ENCRYPTION_KEY file are required.")
+        let host = migrationServer.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let user = migrationUser.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let port = Int(migrationPort.stringValue), (1...65535).contains(port),
+              !host.isEmpty, !user.isEmpty else {
+            HubAppLog.shared.record("compatibility.rejected", category: "teslamate_import",
+                                    level: "WARN", fields: ["reason": "missing_server_input"])
+            showInlineError("Enter the TeslaMate server, SSH user, and port.")
             return
         }
-        setBusy(true)
+        HubAppLog.shared.record("compatibility.started", category: "teslamate_import")
+        setBusy(true, message: "Connecting…")
         compatibility = nil
-        controller.checkTeslaMateCompatibility(source: migrationSource.stringValue,
-                                               carID: migrationCarID.stringValue,
-                                               passwordFile: migrationPasswordFile.stringValue) { [weak self] result in
+        migrationSession?.close()
+        migrationSession = nil
+        let authentication: TeslaMateSSHAuthentication
+        if migrationAuthentication.indexOfSelectedItem == 0 {
+            let path = migrationIdentityFile.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            authentication = .key(identityFile: path.isEmpty ? nil : URL(fileURLWithPath: path))
+        } else {
+            authentication = .password(migrationSSHPassword.stringValue)
+        }
+        TeslaMateServerImporter.connect(host: host,
+                                        user: user,
+                                        port: port,
+                                        authentication: authentication,
+                                        usePasswordlessSudo: migrationUseSudo.state == .on) { [weak self] result in
             guard let self else { return }
-            self.setBusy(false)
             switch result {
-            case let .success(report):
-                self.compatibility = report
-                self.errorMessage = nil
-                self.render()
+            case let .success(session):
+                self.migrationSSHPassword.stringValue = ""
+                self.migrationSession = session
+                self.migrationSource.stringValue = session.source
+                self.migrationCarID.stringValue = session.carID
+                self.migrationPasswordFile.stringValue = session.passwordFile.path
+                self.migrationKeyFile.stringValue = session.encryptionKeyFile.path
+                self.controller.checkTeslaMateCompatibility(source: session.source,
+                                                             carID: session.carID,
+                                                             passwordFile: session.passwordFile.path) { [weak self] check in
+                    guard let self else { return }
+                    self.setBusy(false)
+                    switch check {
+                    case let .success(report):
+                        HubAppLog.shared.record("compatibility.completed",
+                                                category: "teslamate_import",
+                                                fields: [
+                                                    "compatible": report.compatible ? "true" : "false",
+                                                    "reason": report.reasonCode
+                                                ])
+                        self.compatibility = report
+                        self.errorMessage = nil
+                    case let .failure(error):
+                        HubAppLog.shared.record("compatibility.failed", category: "teslamate_import",
+                                                level: "ERROR",
+                                                fields: ["error_code": HubAppLog.errorCode(error)])
+                        session.close()
+                        self.migrationSession = nil
+                        self.compatibility = HubTeslaMateCompatibility(compatible: false,
+                                                                       message: error.localizedDescription,
+                                                                       reasonCode: "unavailable",
+                                                                       requiredVersion: "4.1.1")
+                    }
+                    self.render()
+                }
             case let .failure(error):
+                HubAppLog.shared.record("connection.failed", category: "teslamate_import",
+                                        level: "ERROR",
+                                        fields: ["error_code": HubAppLog.errorCode(error)])
+                self.setBusy(false)
                 self.compatibility = HubTeslaMateCompatibility(compatible: false,
                                                                message: error.localizedDescription,
                                                                reasonCode: "unavailable",
@@ -781,15 +960,18 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func importMigration() {
-        guard migrationInputsComplete, compatibility?.compatible == true else {
-            showInlineError("Check the TeslaMate 4.1.1 database before importing.")
+        guard let session = migrationSession,
+              migrationInputsComplete, compatibility?.compatible == true else {
+            showInlineError("Connect to the TeslaMate server before importing.")
             return
         }
-        setBusy(true)
-        controller.importTeslaMateOnline(source: migrationSource.stringValue,
-                                         carID: migrationCarID.stringValue,
-                                         passwordFile: migrationPasswordFile.stringValue,
-                                         encryptionKeyFile: migrationKeyFile.stringValue) { [weak self] result in
+        setBusy(true, message: "Importing data…")
+        controller.importTeslaMateOnline(source: session.source,
+                                         carID: session.carID,
+                                         passwordFile: session.passwordFile.path,
+                                         encryptionKeyFile: session.encryptionKeyFile.path) { [weak self] result in
+            session.close()
+            self?.migrationSession = nil
             self?.setupFinished(result)
         }
     }
@@ -805,6 +987,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         checks = []
         verificationFinished = false
         busy = true
+        busyMessage = "Running checks…"
         errorMessage = nil
         render()
         controller.runOnboardingChecks(expectRunning: state.path == .newInstallation) { [weak self] result in
@@ -829,7 +1012,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         guard handoverAcknowledged else { return }
-        setBusy(true)
+        setBusy(true, message: "Starting Hub…")
         controller.acknowledgeMigrationHandoverAndStart { [weak self] result in
             guard let self else { return }
             self.setBusy(false)
@@ -853,6 +1036,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func openLogs() {
         if let logsWindow {
+            logsWindow.refresh()
             logsWindow.showWindow(nil)
             logsWindow.window?.makeKeyAndOrderFront(nil)
             return
@@ -870,6 +1054,18 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         chooseFile(for: migrationKeyFile)
     }
 
+    @objc private func chooseMigrationIdentity() {
+        chooseFile(for: migrationIdentityFile)
+    }
+
+    @objc private func migrationAuthenticationChanged() {
+        compatibility = nil
+        errorMessage = nil
+        migrationSession?.close()
+        migrationSession = nil
+        render()
+    }
+
     private func chooseFile(for field: NSTextField) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -880,8 +1076,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    func setBusy(_ value: Bool) {
+    func setBusy(_ value: Bool, message: String? = nil) {
         busy = value
+        busyMessage = value ? message : nil
         updateWindowCloseAvailability()
         updateFooter()
     }
@@ -938,10 +1135,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             : NSColor.clear).cgColor
 
         let icon = NSImageView(image: symbolImage(symbol, description: title))
+        icon.image = icon.image?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 48, weight: .medium)
+        )
         icon.contentTintColor = accentColor
-        icon.imageScaling = .scaleProportionallyDown
-        icon.widthAnchor.constraint(equalToConstant: 40).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 72).isActive = true
 
         let heading = NSTextField(labelWithString: title)
         heading.font = .systemFont(ofSize: 16, weight: .semibold)
@@ -984,9 +1184,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                             _ symbol: String,
                             color: NSColor = .secondaryLabelColor) -> NSView {
         let image = NSImageView(image: symbolImage(symbol, description: title))
+        image.image = image.image?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 24, weight: .medium)
+        )
         image.contentTintColor = color
-        image.widthAnchor.constraint(equalToConstant: 22).isActive = true
-        image.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        image.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        image.heightAnchor.constraint(equalToConstant: 30).isActive = true
         let label = NSTextField(wrappingLabelWithString: title)
         label.font = .systemFont(ofSize: 14)
         label.maximumNumberOfLines = 2
@@ -994,6 +1197,36 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         row.spacing = 12
         row.alignment = .centerY
         return row
+    }
+
+    private func rustFeatureRow(_ title: String) -> NSView {
+        let logo = Bundle.main.image(forResource: "RustLogo") ?? NSImage()
+        let image = NSImageView(image: logo)
+        image.imageScaling = .scaleProportionallyUpOrDown
+        image.setAccessibilityLabel("Rust language logo")
+        image.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        image.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        let label = NSTextField(wrappingLabelWithString: title)
+        label.font = .systemFont(ofSize: 14)
+        label.maximumNumberOfLines = 2
+        let row = NSStackView(views: [image, label])
+        row.spacing = 12
+        row.alignment = .centerY
+        return row
+    }
+
+    private func configureMigrationKeyViewLoop(previousField: NSView?) {
+        guard state.route == .migration, let window else { return }
+        var keyViews = migrationKeyViews + [backButton]
+        if !continueButton.isHidden { keyViews.append(continueButton) }
+        guard !keyViews.isEmpty else { return }
+        for index in keyViews.indices {
+            keyViews[index].nextKeyView = keyViews[(index + 1) % keyViews.count]
+        }
+        let responder = previousField.flatMap { previous in
+            keyViews.first { $0 === previous }
+        } ?? migrationServer
+        window.makeFirstResponder(responder)
     }
 
     private func formRow(_ title: String, _ field: NSView) -> NSView {
@@ -1007,22 +1240,57 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         return row
     }
 
-    private func fieldWithButton(_ field: NSTextField, _ button: NSButton) -> NSView {
-        configureFlatButton(button, symbol: "folder")
+    private func fieldWithButton(_ field: NSTextField,
+                                 _ button: NSButton,
+                                 symbol: String = "folder") -> NSView {
+        configureFlatButton(button, symbol: symbol)
         let row = NSStackView(views: [field, button])
         row.spacing = 8
         return row
     }
 
     private func configureFlatButton(_ button: NSButton,
-                                     symbol: String,
+                                     symbol: String? = nil,
                                      tint: NSColor = .labelColor) {
         button.isBordered = false
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
+        button.image = symbol.flatMap {
+            NSImage(systemSymbolName: $0, accessibilityDescription: button.title)
+        }
         button.imagePosition = .imageLeading
         button.contentTintColor = tint
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.focusRingType = .default
+    }
+
+    private func configurePrimaryButton(_ button: NSButton, symbol: String? = nil) {
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 8
+        button.layer?.cornerCurve = .continuous
+        button.image = symbol.flatMap {
+            NSImage(systemSymbolName: $0, accessibilityDescription: button.title)
+        }
+        button.imagePosition = .imageTrailing
+        button.contentTintColor = .white
+        button.font = .systemFont(ofSize: 13, weight: .semibold)
+        button.keyEquivalent = "\r"
+        updatePrimaryAppearance(button)
+    }
+
+    private func updatePrimaryAppearance(_ button: NSButton) {
+        let foreground = button.isEnabled ? NSColor.white : NSColor.secondaryLabelColor
+        let background = button.isEnabled
+            ? NSColor.systemBlue
+            : NSColor.unemphasizedSelectedContentBackgroundColor
+        button.layer?.backgroundColor = background.cgColor
+        button.contentTintColor = foreground
+        button.attributedTitle = NSAttributedString(
+            string: button.title,
+            attributes: [
+                .foregroundColor: foreground,
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
+            ]
+        )
     }
 
     private func centered(_ view: NSView) -> NSView {

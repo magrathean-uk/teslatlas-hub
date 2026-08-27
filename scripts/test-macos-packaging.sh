@@ -122,8 +122,10 @@ assert_before_fixed 'if [ -f "$STATE_DIRECTORY/was-loaded" ]; then' '    stop_lo
 assert_before_fixed '"$BINARY" --config "$CONFIG" preflight' '"$BINARY" --config "$CONFIG" bootstrap' "$POSTINSTALL"
 /usr/bin/grep -Fq '"ready":[[:space:]]*true' "$POSTINSTALL" \
     || fail "postinstall has no bounded readiness check"
-/usr/bin/grep -Fq 'new Hub did not become ready' "$POSTINSTALL" \
-    || fail "postinstall does not fail an unhealthy update"
+/usr/bin/grep -Fq 'update installed, but Hub needs attention and was left stopped' "$POSTINSTALL" \
+    || fail "postinstall does not preserve an installed-but-stopped unhealthy update"
+/usr/bin/grep -Fq 'if [ -e "$CONFIG" ] || [ -L "$CONFIG" ]' "$POSTINSTALL" \
+    || fail "postinstall cannot distinguish missing setup from a failed migration"
 /usr/bin/grep -Fq 'migration_handover_install_is_paused' "$POSTINSTALL" \
     || fail "postinstall has no install-stopped TeslaMate migration path"
 /usr/bin/grep -Fq 'run_with_deadline "$preflight_timeout_seconds"' "$POSTINSTALL" \
@@ -159,6 +161,14 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "app build does not package Tesla command proxy"
 /usr/bin/grep -Fq -- '--fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY"' "$APP_BUILD" \
     || fail "app build does not package the Fleet Telemetry receiver"
+/usr/bin/grep -Fq 'DIST_PACKAGE="$DIST/TeslatlasHub.pkg"' "$APP_BUILD" \
+    || fail "app build does not produce the requested final package name"
+/usr/bin/grep -Fq -- '--app "$DIST_APP"' "$APP_BUILD" \
+    || fail "final package does not include the app"
+/usr/bin/grep -Fq '"$payload/Applications/Teslatlas Hub.app"' "$SERVICE_BUILD" \
+    || fail "package does not install the app into Applications"
+/usr/bin/grep -Fq '/usr/bin/open "$APP"' "$POSTINSTALL" \
+    || fail "successful package install does not open the app"
 /usr/bin/grep -Fq -- 'build-tesla-command-proxy.sh' "$APP_BUILD" \
     || fail "app build does not build pinned Tesla command proxy"
 /usr/bin/grep -Fq -- 'build-fleet-telemetry-bridge.sh' "$APP_BUILD" \
@@ -305,6 +315,14 @@ hub_should_start_after_install 1 0 0 1 \
     && fail "fresh TeslaMate migration would start Hub before Swift handover"
 hub_should_start_after_install 1 0 0 0 \
     || fail "normal fresh installation no longer starts Hub"
+if hub_should_attempt_bootstrap 0 0; then
+    fail "missing setup would be mistaken for a schema migration"
+fi
+if hub_should_attempt_bootstrap 1 1; then
+    fail "ready setup would be migrated unnecessarily"
+fi
+hub_should_attempt_bootstrap 1 0 \
+    || fail "configured setup needing migration would not be bootstrapped"
 /usr/bin/printf '%s\n' \
     'data_dir = "/tmp/hub"' \
     '' \

@@ -128,6 +128,16 @@ hub_preflight() {
         "$hub_binary" --config "$config_file" preflight >/dev/null 2>&1
 }
 
+hub_is_unconfigured() {
+    status=$(
+        "$timeout_binary" "$health_timeout" "$runuser_binary" -u teslatlas -- \
+            "$hub_binary" --config "$config_file" status 2>/dev/null
+    ) || return 1
+    printf '%s' "$status" | grep -Fq '"vehicles":[]' || return 1
+    "$timeout_binary" "$preflight_timeout" "$runuser_binary" -u teslatlas -- \
+        "$hub_binary" --config "$config_file" doctor >/dev/null 2>&1
+}
+
 hub_bootstrap() {
     "$timeout_binary" "$bootstrap_timeout" "$runuser_binary" -u teslatlas -- \
         "$hub_binary" --config "$config_file" bootstrap >/dev/null 2>&1
@@ -344,7 +354,8 @@ fi
 if [ "${1:-}" = configure ] && [ -n "${2:-}" ] && ! hub_preflight; then
     begin_forward_only
     hub_bootstrap || fail_upgrade "schema migration failed"
-    hub_preflight || fail_upgrade "migrated Hub failed read-only admission"
+    hub_preflight || hub_is_unconfigured \
+        || fail_upgrade "migrated Hub failed read-only admission"
 fi
 
 if [ -d /run/systemd/system ]; then
@@ -387,7 +398,7 @@ if [ -d /run/systemd/system ]; then
                 systemctl is-active --quiet "$service" || {
                     fail_upgrade "New Hub failed to remain active"
                 }
-                if hub_is_ready; then
+                if hub_is_ready || hub_is_unconfigured; then
                     ready=1
                     break
                 fi

@@ -5,6 +5,7 @@ final class LogsWindowController: NSWindowController {
     private let textView = NSTextView()
     private let statusLabel = NSTextField(labelWithString: "Loading logs…")
     private let refreshButton = NSButton(title: "Refresh", target: nil, action: nil)
+    private let diagnosticsButton = NSButton(title: "Run Diagnostics", target: nil, action: nil)
     private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
     private let saveButton = NSButton(title: "Save…", target: nil, action: nil)
     private var latestText = ""
@@ -45,9 +46,11 @@ final class LogsWindowController: NSWindowController {
 
         configureFlatButton(refreshButton, symbol: "arrow.clockwise", tint: .controlAccentColor,
                             action: #selector(refreshPressed))
+        configureFlatButton(diagnosticsButton, symbol: "waveform.path.ecg",
+                            tint: .controlAccentColor, action: #selector(diagnosticsPressed))
         configureFlatButton(copyButton, symbol: "doc.on.doc", action: #selector(copyPressed))
         configureFlatButton(saveButton, symbol: "square.and.arrow.down", action: #selector(savePressed))
-        let actions = NSStackView(views: [refreshButton, copyButton, saveButton])
+        let actions = NSStackView(views: [refreshButton, diagnosticsButton, copyButton, saveButton])
         actions.spacing = 14
         actions.alignment = .centerY
 
@@ -76,23 +79,55 @@ final class LogsWindowController: NSWindowController {
         return root
     }
 
-    private func refresh() {
+    func refresh() {
+        HubAppLog.shared.record("refresh.requested", category: "logs")
         refreshButton.isEnabled = false
+        diagnosticsButton.isEnabled = false
         copyButton.isEnabled = false
         saveButton.isEnabled = false
         statusLabel.stringValue = "Loading logs…"
         controller.logs { [weak self] text in
             guard let self else { return }
-            self.latestText = text
-            self.textView.string = text
+            let combined = [
+                "== app and import diagnostics ==\n\(HubAppLog.shared.recentText())",
+                "== Hub service logs ==\n\(text)"
+            ].joined(separator: "\n")
+            self.latestText = combined
+            self.textView.string = combined
             self.statusLabel.stringValue = "Updated just now"
             self.refreshButton.isEnabled = true
-            self.copyButton.isEnabled = !text.isEmpty
-            self.saveButton.isEnabled = !text.isEmpty
+            self.diagnosticsButton.isEnabled = true
+            self.copyButton.isEnabled = !combined.isEmpty
+            self.saveButton.isEnabled = !combined.isEmpty
         }
     }
 
     @objc private func refreshPressed() { refresh() }
+
+    @objc private func diagnosticsPressed() {
+        HubAppLog.shared.record("full_diagnostics.requested", category: "logs")
+        refreshButton.isEnabled = false
+        diagnosticsButton.isEnabled = false
+        copyButton.isEnabled = false
+        saveButton.isEnabled = false
+        statusLabel.stringValue = "Running diagnostics…"
+        textView.string = "Running database, credential, connection, and service checks…"
+        controller.runFullDiagnostics { [weak self] report in
+            guard let self else { return }
+            let combined = [
+                "== app and import diagnostics ==\n\(HubAppLog.shared.recentText())",
+                "== full Hub diagnostics ==\n\(report)"
+            ].joined(separator: "\n")
+            self.latestText = combined
+            self.textView.string = combined
+            self.statusLabel.stringValue = "Diagnostics complete"
+            self.refreshButton.isEnabled = true
+            self.diagnosticsButton.isEnabled = true
+            self.copyButton.isEnabled = true
+            self.saveButton.isEnabled = true
+            HubAppLog.shared.record("full_diagnostics.completed", category: "logs")
+        }
+    }
 
     @objc private func copyPressed() {
         guard !latestText.isEmpty else { return }

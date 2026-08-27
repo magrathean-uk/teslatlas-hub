@@ -297,6 +297,7 @@ enum HubProcessExecutor {
     static func run(executable: URL,
                     arguments: [String],
                     stdin: String? = nil,
+                    environment: [String: String]? = nil,
                     maximumOutputBytes: Int = defaultMaximumOutputBytes,
                     timeout: TimeInterval = defaultTimeout,
                     terminationGrace: TimeInterval = defaultTerminationGrace,
@@ -310,6 +311,9 @@ enum HubProcessExecutor {
             let terminated = DispatchSemaphore(value: 0)
             process.executableURL = executable
             process.arguments = arguments
+            if let environment {
+                process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+            }
             process.standardOutput = output
             process.standardError = output
             if stdin != nil { process.standardInput = Pipe() }
@@ -685,11 +689,11 @@ final class HubController {
     }
 
     var hasPendingMigrationHandover: Bool {
-        FileManager.default.fileExists(atPath: migrationHandoverMarker.path)
+        !previewMode && FileManager.default.fileExists(atPath: migrationHandoverMarker.path)
     }
 
     var pendingMigrationHandoverPhase: HubMigrationHandoverPhase? {
-        migrationHandoverState?.phase
+        previewMode ? nil : migrationHandoverState?.phase
     }
 
     func shouldShowOnboarding(for snapshot: HubSnapshot) -> Bool {
@@ -822,6 +826,8 @@ final class HubController {
                                passwordFile: String,
                                encryptionKeyFile: String,
                                completion: @escaping (Result<Void, Error>) -> Void) {
+        HubAppLog.shared.record("import.requested", category: "teslamate_import",
+                                fields: ["capture_mode": "online_snapshot"])
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard !encryptionKeyFile.isEmpty else {
             completion(.failure(HubActionError.commandFailed(
@@ -835,12 +841,18 @@ final class HubController {
             guard let self else { return }
             switch checkResult {
             case let .failure(error):
+                HubAppLog.shared.record("import.preflight.failed", category: "teslamate_import",
+                                        level: "ERROR",
+                                        fields: ["error_code": HubAppLog.errorCode(error)])
                 completion(.failure(error))
             case let .success(report):
                 guard report.compatible else {
+                    HubAppLog.shared.record("import.preflight.rejected", category: "teslamate_import",
+                                            level: "WARN", fields: ["reason": report.reasonCode])
                     completion(.failure(HubActionError.commandFailed(report.message)))
                     return
                 }
+                HubAppLog.shared.record("import.preflight.completed", category: "teslamate_import")
                 self.prepareOnlineMigration(source: source,
                                             carID: carID,
                                             passwordFile: passwordFile,
@@ -896,10 +908,14 @@ final class HubController {
         }
         let runImport = { [weak self] in
             guard let self else { return }
+            HubAppLog.shared.record("import.process.started", category: "teslamate_import",
+                                    fields: ["capture_mode": "online_snapshot"])
             self.commandRunner.run(arguments: arguments) { result in
                 switch result {
                 case let .success(output):
                     guard Self.containsOnlineMigrationReport(output) else {
+                        HubAppLog.shared.record("import.process.invalid_report",
+                                                category: "teslamate_import", level: "ERROR")
                         failStartedImport(HubActionError.commandFailed(
                             "TeslaMate import returned no valid completion report. Hub remains stopped."
                         ))
@@ -911,13 +927,21 @@ final class HubController {
                                                       previousIntervalSeconds: previousInterval,
                                                       previousProvider: previousProvider)
                         )
+                        HubAppLog.shared.record("import.completed", category: "teslamate_import",
+                                                fields: ["handover": "awaiting_verification"])
                         finish(.success(()))
                     } catch {
+                        HubAppLog.shared.record("import.handover.failed", category: "teslamate_import",
+                                                level: "ERROR",
+                                                fields: ["error_code": HubAppLog.errorCode(error)])
                         finish(.failure(HubActionError.commandFailed(
                             "Import completed, but Hub could not record the safe handover gate: \(error.localizedDescription). Hub remains stopped."
                         )))
                     }
                 case let .failure(error):
+                    HubAppLog.shared.record("import.process.failed", category: "teslamate_import",
+                                            level: "ERROR",
+                                            fields: ["error_code": HubAppLog.errorCode(error)])
                     failStartedImport(error)
                 }
             }
@@ -925,8 +949,14 @@ final class HubController {
         // This controls Teslatlas Hub only. TeslaMate is never stopped or changed.
         serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
             switch stopResult {
-            case .success: runImport()
-            case let .failure(error): abortBeforeImport(error)
+            case .success:
+                HubAppLog.shared.record("local_hub.stopped", category: "teslamate_import")
+                runImport()
+            case let .failure(error):
+                HubAppLog.shared.record("local_hub.stop_failed", category: "teslamate_import",
+                                        level: "ERROR",
+                                        fields: ["error_code": HubAppLog.errorCode(error)])
+                abortBeforeImport(error)
             }
         }
     }
@@ -1606,6 +1636,8 @@ final class HubController {
 
     func runOnboardingChecks(expectRunning: Bool,
                              completion: @escaping (Result<[HubOnboardingCheck], Error>) -> Void) {
+        HubAppLog.shared.record("verification.started", category: "onboarding",
+                                fields: ["expect_running": expectRunning ? "true" : "false"])
         if previewMode {
             let checks = [
                 HubOnboardingCheck(title: "Service", detail: "Installed and running", passed: true),
@@ -1619,19 +1651,25 @@ final class HubController {
             return
         }
         if !expectRunning, migrationHandoverState != nil {
-            installer.install { [weak self] installResult in
+            let stopAndCheck = { [weak self] in
                 guard let self else { return }
-                switch installResult {
-                case .success:
-                    self.serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
-                        switch stopResult {
-                        case .success:
-                            self.performOnboardingChecks(expectRunning: false,
-                                                         completion: completion)
-                        case let .failure(error):
-                            DispatchQueue.main.async { completion(.failure(error)) }
-                        }
+                self.serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
+                    switch stopResult {
+                    case .success:
+                        self.performOnboardingChecks(expectRunning: false,
+                                                     completion: completion)
+                    case let .failure(error):
+                        DispatchQueue.main.async { completion(.failure(error)) }
                     }
+                }
+            }
+            guard !isServiceInstalled else {
+                stopAndCheck()
+                return
+            }
+            installer.install { installResult in
+                switch installResult {
+                case .success: stopAndCheck()
                 case let .failure(error):
                     DispatchQueue.main.async { completion(.failure(error)) }
                 }
@@ -1690,14 +1728,27 @@ final class HubController {
                     guard !expectRunning,
                           checks.allSatisfy(\.passed),
                           var handover = self.migrationHandoverState else {
+                        HubAppLog.shared.record(
+                            "verification.completed",
+                            category: "onboarding",
+                            fields: [
+                                "passed": checks.allSatisfy(\.passed) ? "true" : "false",
+                                "failed_checks": checks.filter { !$0.passed }.map(\.title).joined(separator: ",")
+                            ]
+                        )
                         completion(.success(checks))
                         return
                     }
                     handover.phase = .awaitingHandover
                     do {
                         try self.writeMigrationHandoverMarker(handover)
+                        HubAppLog.shared.record("verification.completed", category: "onboarding",
+                                                fields: ["handover": "awaiting_user", "passed": "true"])
                         completion(.success(checks))
                     } catch {
+                        HubAppLog.shared.record("verification.failed", category: "onboarding",
+                                                level: "ERROR",
+                                                fields: ["error_code": HubAppLog.errorCode(error)])
                         completion(.failure(error))
                     }
                 }

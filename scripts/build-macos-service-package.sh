@@ -11,7 +11,7 @@ export COPYFILE_DISABLE
 
 usage() {
     cat <<'EOF'
-Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --fleet-telemetry-binary PATH --version VERSION [--output PATH]
+Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --fleet-telemetry-binary PATH --version VERSION [--app PATH] [--output PATH]
 
 Builds an unsigned local macOS 13+ arm64 installer package. The package never
 installs or starts the Hub during its build.
@@ -43,6 +43,7 @@ minimum_macos() {
 binary=
 proxy_binary=
 fleet_telemetry_binary=
+app=
 version=
 output=
 while [ "$#" -gt 0 ]; do
@@ -60,6 +61,11 @@ while [ "$#" -gt 0 ]; do
         --fleet-telemetry-binary)
             [ "$#" -ge 2 ] || die "--fleet-telemetry-binary requires a path"
             fleet_telemetry_binary=$2
+            shift 2
+            ;;
+        --app)
+            [ "$#" -ge 2 ] || die "--app requires a path"
+            app=$2
             shift 2
             ;;
         --version)
@@ -103,6 +109,13 @@ esac
     || die "proxy binary must be an executable regular file"
 [ -f "$fleet_telemetry_binary" ] && [ ! -L "$fleet_telemetry_binary" ] && [ -x "$fleet_telemetry_binary" ] \
     || die "Fleet Telemetry binary must be an executable regular file"
+if [ -n "$app" ]; then
+    [ -d "$app" ] && [ ! -L "$app" ] || die "app must be a real application bundle"
+    [ "$(basename "$app")" = "Teslatlas Hub.app" ] || die "unexpected app bundle name"
+    [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = "eu.teslatlas.hub.app" ] \
+        || die "unexpected app bundle identifier"
+    /usr/bin/codesign --verify --deep --strict "$app" || die "app signature verification failed"
+fi
 
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 TEMPLATE="$ROOT/packaging/macos-service/com.teslatlas.hub.plist.in"
@@ -140,6 +153,15 @@ scripts="$staging/scripts"
 /bin/mkdir -p "$payload/Library/Application Support/Teslatlas Hub/bin" \
     "$payload/Library/Application Support/Teslatlas Hub/libexec" \
     "$payload/Library/Application Support/Teslatlas Hub/share" "$scripts"
+if [ -n "$app" ]; then
+    /bin/mkdir -p "$payload/Applications"
+    /usr/bin/ditto --noextattr --norsrc "$app" "$payload/Applications/Teslatlas Hub.app" \
+        || die "cannot copy app into package payload"
+    /usr/bin/xattr -cr "$payload/Applications/Teslatlas Hub.app" >/dev/null 2>&1 \
+        || die "cannot clear packaged app metadata"
+    /usr/bin/codesign --verify --deep --strict "$payload/Applications/Teslatlas Hub.app" \
+        || die "packaged app signature verification failed"
+fi
 /usr/bin/lipo -verify_arch arm64 "$binary" \
     || die "binary has no arm64 slice"
 /usr/bin/lipo -verify_arch arm64 "$proxy_binary" \
@@ -302,6 +324,15 @@ expanded_fleet_telemetry_example="$expanded/Payload/Library/Application Support/
 expanded_uninstaller="$expanded/Payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
 [ -f "$expanded_uninstaller" ] && [ ! -L "$expanded_uninstaller" ] && [ -x "$expanded_uninstaller" ] \
     || die "generated package is missing the privileged uninstaller"
+if [ -n "$app" ]; then
+    expanded_app="$expanded/Payload/Applications/Teslatlas Hub.app"
+    [ -d "$expanded_app" ] && [ ! -L "$expanded_app" ] \
+        || die "generated package is missing the app"
+    [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$expanded_app/Contents/Info.plist")" = "eu.teslatlas.hub.app" ] \
+        || die "generated package app has the wrong bundle identifier"
+    /usr/bin/codesign --verify --deep --strict "$expanded_app" \
+        || die "generated package app signature verification failed"
+fi
 metadata=$(
     /usr/bin/find "$expanded/Payload" "$expanded/Scripts" \
         \( -name '._*' -o -name '.DS_Store' \) -print -quit

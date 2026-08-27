@@ -21,6 +21,46 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(AppDelegate().applicationShouldTerminateAfterLastWindowClosed(NSApp))
     }
 
+    func testApplicationMenuProvidesStandardTextEditingCommands() throws {
+        let delegate = AppDelegate()
+        let menu = AppDelegate.makeMainMenu(actionTarget: delegate)
+        let edit = try XCTUnwrap(menu.items.compactMap(\.submenu).first { $0.title == "Edit" })
+        for title in ["Undo", "Redo", "Cut", "Copy", "Paste", "Delete", "Select All"] {
+            XCTAssertNotNil(edit.item(withTitle: title), "Missing \(title)")
+        }
+        let selectAll = try XCTUnwrap(edit.item(withTitle: "Select All"))
+        XCTAssertEqual(selectAll.keyEquivalent, "a")
+        XCTAssertEqual(selectAll.keyEquivalentModifierMask, .command)
+        let view = try XCTUnwrap(menu.items.compactMap(\.submenu).first { $0.title == "View" })
+        let logs = try XCTUnwrap(view.item(withTitle: "Hub Logs"))
+        XCTAssertEqual(logs.keyEquivalent, "l")
+        XCTAssertEqual(logs.keyEquivalentModifierMask, .command)
+        XCTAssertTrue(logs.target === delegate)
+    }
+
+    func testAppDiagnosticsPersistBoundedShareSafeEvents() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-log-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("app.log")
+        let log = HubAppLog(fileURL: file)
+        log.record("ssh.failed", category: "teslamate_import", level: "ERROR", fields: [
+            "password": "secret-value",
+            "path": NSHomeDirectory() + "/.ssh/id_rsa"
+        ])
+
+        let text = log.recentText()
+        XCTAssertTrue(text.contains("teslamate_import ssh.failed"))
+        XCTAssertTrue(text.contains("password=[redacted]"))
+        XCTAssertTrue(text.contains("path=~/.ssh/id_rsa"))
+        XCTAssertFalse(text.contains("secret-value"))
+        XCTAssertEqual(HubAppLog.errorCode(HubActionError.missingResource("secret")),
+                       "missing_resource")
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue
+        XCTAssertEqual(permissions & 0o777, 0o600)
+    }
+
     func testStateBranchesByPathAndProviderAndBackTracks() {
         var state = HubOnboardingState()
         XCTAssertEqual(state.route, .welcome)
@@ -66,7 +106,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
                                                      onComplete: {})
 
         XCTAssertTrue(buttons(in: onboarding.window?.contentView)
-            .contains { $0.title == "Check TeslaMate 4.1.1" })
+            .contains { $0.title == "Connect to Server" })
         XCTAssertTrue(labels(in: onboarding.window?.contentView)
             .contains { $0.stringValue.contains("previous import did not finish") })
         XCTAssertFalse(labels(in: onboarding.window?.contentView)
@@ -83,12 +123,12 @@ final class OnboardingWindowControllerTests: XCTestCase {
         onboarding.navigate(to: .legacy)
         XCTAssertEqual(onboarding.currentRoute, .legacy)
         XCTAssertTrue(labels(in: onboarding.window?.contentView)
-            .contains { $0.stringValue == "Connect with a legacy Tesla login" })
+            .contains { $0.stringValue == "Connect with a Legacy Token" })
 
         onboarding.navigate(to: .migration)
         XCTAssertEqual(onboarding.currentRoute, .migration)
         XCTAssertTrue(buttons(in: onboarding.window?.contentView)
-            .contains { $0.title == "Check TeslaMate 4.1.1" })
+            .contains { $0.title == "Connect to Server" })
     }
 
     func testBusyOnboardingCannotCloseOrChangeAccountRoute() throws {
@@ -179,20 +219,160 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let continueButton = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "Continue" })
         continueButton.performClick(nil)
+        XCTAssertNil(continueButton.image)
+        XCTAssertNil(try XCTUnwrap(buttons(in: onboarding.window?.contentView)
+            .first { $0.title == "Back" }).image)
 
         let migration = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "Migrate from TeslaMate" })
         XCTAssertFalse(migration.isHidden)
-        XCTAssertEqual(migration.toolTip, "Import TeslaMate 4.1.1. Your source stays unchanged.")
-        XCTAssertTrue(labels(in: onboarding.window?.contentView)
-            .contains { $0.stringValue == "Exact TeslaMate 4.1.1 compatibility is checked before any data is copied." })
+        XCTAssertEqual(migration.toolTip, "Bring your existing drives and charging history.")
+        XCTAssertFalse(labels(in: onboarding.window?.contentView)
+            .contains { $0.stringValue.contains("Exact TeslaMate") })
+        let fresh = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
+            .first { $0.title == "New installation" })
+        XCTAssertEqual(fresh.toolTip, "Connect Tesla Fleet Telemetry or Legacy Token.")
 
         migration.performClick(nil)
         let back = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "Back" })
         back.performClick(nil)
         XCTAssertTrue(labels(in: onboarding.window?.contentView)
-            .contains { $0.stringValue == "Your Tesla history, privately collected." })
+            .contains { $0.stringValue == "Teslatlas Hub" })
+    }
+
+    func testWelcomeUsesSelectedCenteredDesignCopy() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller,
+                                                     previewRoute: "welcome",
+                                                     onComplete: {})
+        let text = labels(in: onboarding.window?.contentView).map(\.stringValue)
+        XCTAssertTrue(text.contains("Teslatlas Hub"))
+        XCTAssertTrue(text.contains(
+            "Teslatlas Hub is the backend service replacing TeslaMate. It records the same data as TeslaMate without:"
+        ))
+        XCTAssertTrue(text.contains("Written purely in Rust."))
+        XCTAssertTrue(text.contains("No Docker."))
+        XCTAssertTrue(text.contains("Open source and developed natively for macOS and Debian."))
+        XCTAssertTrue(text.contains("Uses SQLite."))
+        XCTAssertFalse(text.contains("Private by default"))
+        XCTAssertFalse(text.contains("Your data stays on this Mac"))
+        XCTAssertFalse(text.contains("Made for Teslatlas"))
+        XCTAssertFalse(text.contains("Your vehicle data stays on this Mac."))
+        XCTAssertNotNil(Bundle.main.image(forResource: "RustLogo"))
+        let continueButton = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
+            .first { $0.title == "Continue" })
+        XCTAssertNil(continueButton.image)
+    }
+
+    func testMigrationOffersNormalUserKeyPasswordAndPasswordlessSudo() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller,
+                                                     previewRoute: "migration",
+                                                     onComplete: {})
+        let view = onboarding.window?.contentView
+        let text = labels(in: view).map(\.stringValue)
+        XCTAssertTrue(text.contains("user"))
+        XCTAssertTrue(text.contains(
+            "Use a normal server account. It must access the TeslaMate containers directly or through passwordless sudo."
+        ))
+        XCTAssertTrue(buttons(in: view).contains { $0.title == "Choose Key…" })
+        let sudo = try XCTUnwrap(buttons(in: view)
+            .first { $0.title == "Use passwordless sudo for Docker access" })
+        XCTAssertEqual(sudo.state, .on)
+        let connect = try XCTUnwrap(buttons(in: view).first { $0.title == "Connect to Server" })
+        XCTAssertEqual(connect.contentTintColor, .white)
+        XCTAssertNil(connect.image)
+        XCTAssertTrue(try XCTUnwrap(buttons(in: view).first { $0.title == "Continue" }).isHidden)
+
+        let authentication = try XCTUnwrap(popups(in: view).first {
+            $0.itemTitles == ["SSH key or agent", "Password"]
+        })
+        authentication.selectItem(withTitle: "Password")
+        _ = NSApp.sendAction(authentication.action!, to: authentication.target, from: authentication)
+
+        let updatedView = onboarding.window?.contentView
+        XCTAssertTrue(labels(in: updatedView).contains { $0.stringValue == "Password" })
+        XCTAssertTrue(secureFields(in: updatedView).contains { $0.placeholderString == "SSH password" })
+        XCTAssertFalse(buttons(in: updatedView).contains { $0.title == "Choose Key…" })
+    }
+
+    func testMigrationUsesExplicitKeyboardNavigationOrder() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller,
+                                                     previewRoute: "migration",
+                                                     onComplete: {})
+        let view = onboarding.window?.contentView
+        let server = try XCTUnwrap(labels(in: view).first {
+            $0.placeholderString == "Server name or IP address"
+        })
+        let user = try XCTUnwrap(labels(in: view).first { $0.stringValue == "user" })
+        let port = try XCTUnwrap(labels(in: view).first { $0.stringValue == "22" })
+        let authentication = try XCTUnwrap(popups(in: view).first {
+            $0.itemTitles == ["SSH key or agent", "Password"]
+        })
+        XCTAssertTrue(server.nextKeyView === user)
+        XCTAssertTrue(user.nextKeyView === port)
+        XCTAssertTrue(port.nextKeyView === authentication)
+        XCTAssertTrue(onboarding.window?.firstResponder === server.currentEditor())
+
+        authentication.selectItem(withTitle: "Password")
+        _ = NSApp.sendAction(authentication.action!, to: authentication.target, from: authentication)
+        let password = try XCTUnwrap(secureFields(in: onboarding.window?.contentView)
+            .first { $0.placeholderString == "SSH password" })
+        XCTAssertTrue(authentication.nextKeyView === password)
+    }
+
+    func testTunnelFailuresAreSafeAndActionable() {
+        XCTAssertEqual(
+            TeslaMateServerImporter.tunnelFailureMessage("open failed: administratively prohibited"),
+            "The SSH server does not permit database forwarding. Enable TCP forwarding for this account."
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.tunnelFailureMessage("Permission denied for secret-host"),
+            "SSH authentication failed while opening the database tunnel."
+        )
+        XCTAssertFalse(
+            TeslaMateServerImporter.tunnelFailureMessage("unexpected secret-host diagnostic")
+                .contains("secret-host")
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.discoveryFailureReason(
+                HubActionError.commandExited(255, "ssh: connect to private-host failed")
+            ),
+            "ssh_authentication_or_connection"
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.discoveryFailureMessage(
+                HubActionError.commandExited(22, "private container diagnostic")
+            ),
+            "The TeslaMate database container is not running or could not be found."
+        )
+        XCTAssertFalse(
+            TeslaMateServerImporter.discoveryFailureMessage(
+                HubActionError.commandExited(27, "unexpected secret-host diagnostic")
+            ).contains("secret-host")
+        )
+    }
+
+    func testCommandLLogWindowOffersFullDiagnosticsAndSharing() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let logs = LogsWindowController(controller: controller)
+        let titles = buttons(in: logs.window?.contentView).map(\.title)
+
+        XCTAssertTrue(titles.contains("Refresh"))
+        XCTAssertTrue(titles.contains("Run Diagnostics"))
+        XCTAssertTrue(titles.contains("Copy"))
+        XCTAssertTrue(titles.contains("Save…"))
+
+        let diagnostics = try XCTUnwrap(buttons(in: logs.window?.contentView)
+            .first { $0.title == "Run Diagnostics" })
+        diagnostics.performClick(nil)
+        XCTAssertTrue(diagnostics.isEnabled)
+        XCTAssertTrue(textViews(in: logs.window?.contentView).contains {
+            $0.string.contains("== full Hub diagnostics ==")
+                && $0.string.contains("Preview mode")
+        })
     }
 
     func testSelectedDesignsRenderAtNativeSize() throws {
@@ -201,6 +381,12 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let onboarding = OnboardingWindowController(controller: controller,
                                                      previewRoute: "choose-migration",
                                                      onComplete: {})
+        let welcome = OnboardingWindowController(controller: controller,
+                                                 previewRoute: "welcome",
+                                                 onComplete: {})
+        let migration = OnboardingWindowController(controller: controller,
+                                                    previewRoute: "migration",
+                                                    onComplete: {})
         XCTAssertEqual(dashboard.window?.contentView?.bounds.size, NSSize(width: 900, height: 630))
         XCTAssertEqual(onboarding.window?.contentView?.bounds.size, NSSize(width: 900, height: 630))
 
@@ -213,6 +399,14 @@ final class OnboardingWindowControllerTests: XCTestCase {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         try render(dashboard.window, to: destination.appendingPathComponent("dashboard.png"))
         try render(onboarding.window, to: destination.appendingPathComponent("onboarding-choice.png"))
+        try render(welcome.window, to: destination.appendingPathComponent("onboarding-welcome.png"))
+        try render(migration.window, to: destination.appendingPathComponent("onboarding-migration-key.png"))
+        let authentication = try XCTUnwrap(popups(in: migration.window?.contentView).first {
+            $0.itemTitles == ["SSH key or agent", "Password"]
+        })
+        authentication.selectItem(withTitle: "Password")
+        _ = NSApp.sendAction(authentication.action!, to: authentication.target, from: authentication)
+        try render(migration.window, to: destination.appendingPathComponent("onboarding-migration-password.png"))
     }
 
     private func defaultSnapshotDirectory() throws -> URL {
@@ -246,5 +440,22 @@ final class OnboardingWindowControllerTests: XCTestCase {
     private func labels(in view: NSView?) -> [NSTextField] {
         guard let view else { return [] }
         return (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap { labels(in: $0) }
+    }
+
+    private func popups(in view: NSView?) -> [NSPopUpButton] {
+        guard let view else { return [] }
+        return (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap { popups(in: $0) }
+    }
+
+    private func secureFields(in view: NSView?) -> [NSSecureTextField] {
+        guard let view else { return [] }
+        return (view as? NSSecureTextField).map { [$0] }
+            ?? view.subviews.flatMap { secureFields(in: $0) }
+    }
+
+    private func textViews(in view: NSView?) -> [NSTextView] {
+        guard let view else { return [] }
+        return (view as? NSTextView).map { [$0] }
+            ?? view.subviews.flatMap { textViews(in: $0) }
     }
 }

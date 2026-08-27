@@ -360,7 +360,6 @@ pub async fn check_teslamate_compatibility(
             &mut retained_rows,
         )
         .await?;
-        teslamate_check_open_session_parents(drives.len(), processes.len(), states.len())?;
         let count_row = session
             .client()
             .query_one(SELECTED_CAR_COUNT_SQL, &[&selected_car_id_i16])
@@ -1229,10 +1228,13 @@ pub(crate) async fn read_open_session_in_client(
         read_open_charging_processes(client, selected_car_id, limits, &mut retained_rows).await?;
     let states = read_open_states(client, selected_car_id, limits, &mut retained_rows).await?;
     let watermarks = read_source_watermarks(client, selected_car_id).await?;
-    admit_open_session_parents(drives.len(), processes.len(), states.len())?;
-    let drive = drives.into_iter().next();
-    let charge = processes.into_iter().next();
-    let state = states.into_iter().next();
+    // TeslaMate can leave stale open rows behind after interrupted sessions.
+    // Keep those rows in the immutable history capture, but do not guess which
+    // of several drives or charges is live. State rows are different: the
+    // newest row is the current state, even if predecessors were not closed.
+    let drive = unique_open_parent(drives);
+    let charge = unique_open_parent(processes);
+    let state = states.into_iter().max_by_key(|state| state.id);
     let positions = read_open_positions(
         client,
         selected_car_id,
@@ -1265,34 +1267,8 @@ pub(crate) async fn read_open_session_in_client(
     Ok(result)
 }
 
-fn has_ambiguous_open_rows(open_row_counts: [usize; 3]) -> bool {
-    open_row_counts.into_iter().any(|count| count > 1)
-}
-
-pub(crate) fn admit_open_session_parents(
-    drives: usize,
-    charges: usize,
-    states: usize,
-) -> Result<(), TeslaMateReaderError> {
-    teslamate_check_open_session_parents(drives, charges, states)
-}
-
-/// Shared by `teslamate-check` / [`check_teslamate_compatibility`] and import
-/// open-session reads so both fail closed on more than one live parent.
-pub(crate) fn teslamate_check_open_session_parents(
-    drives: usize,
-    charges: usize,
-    states: usize,
-) -> Result<(), TeslaMateReaderError> {
-    if has_ambiguous_open_rows([drives, charges, states]) {
-        Err(TeslaMateReaderError::AmbiguousOpenSession {
-            drives,
-            charges,
-            states,
-        })
-    } else {
-        Ok(())
-    }
+fn unique_open_parent<T>(mut rows: Vec<T>) -> Option<T> {
+    if rows.len() == 1 { rows.pop() } else { None }
 }
 
 fn open_rows_sql(table: SourceTable, predicate: &str) -> String {
@@ -4870,41 +4846,10 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_open_rows_fail_closed_without_dropping_the_live_tail() {
-        assert!(admit_open_session_parents(0, 1, 1).is_ok());
-        assert!(admit_open_session_parents(1, 0, 0).is_ok());
-        assert!(matches!(
-            teslamate_check_open_session_parents(2, 1, 1),
-            Err(TeslaMateReaderError::AmbiguousOpenSession {
-                drives: 2,
-                charges: 1,
-                states: 1
-            })
-        ));
-        assert!(matches!(
-            admit_open_session_parents(2, 1, 1),
-            Err(TeslaMateReaderError::AmbiguousOpenSession {
-                drives: 2,
-                charges: 1,
-                states: 1
-            })
-        ));
-        assert!(matches!(
-            admit_open_session_parents(1, 2, 1),
-            Err(TeslaMateReaderError::AmbiguousOpenSession {
-                drives: 1,
-                charges: 2,
-                states: 1
-            })
-        ));
-        assert!(matches!(
-            admit_open_session_parents(1, 1, 2),
-            Err(TeslaMateReaderError::AmbiguousOpenSession {
-                drives: 1,
-                charges: 1,
-                states: 2
-            })
-        ));
+    fn stale_open_parents_are_not_guessed_as_live() {
+        assert_eq!(unique_open_parent::<u8>(vec![]), None);
+        assert_eq!(unique_open_parent(vec![7]), Some(7));
+        assert_eq!(unique_open_parent(vec![7, 8]), None);
     }
 
     #[test]

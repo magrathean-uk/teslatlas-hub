@@ -109,3 +109,15 @@ TLS private key, vehicle credential, Fleet token, or loopback bearer is bundled.
 Map, elevation, geocoding, weather, timezone, certificate and API providers may impose attribution, caching, database-right and rate conditions independent of software copyright.
 
 Record the actual provider and terms for each release/deployment.
+
+## Rust language logo
+
+Source: https://rustfoundation.org/wp-content/uploads/2024/07/cropped-rust-lang-logo-black-150x150.png
+
+Trademark policy: https://rustfoundation.org/policy/rust-trademark-policy/
+
+Licence: Creative Commons Attribution (CC BY)
+
+The unmodified Rust language logo is used in the macOS onboarding screen to
+state accurately that Teslatlas Hub is written in Rust. This use does not imply
+affiliation with or endorsement by the Rust Foundation or Rust Project.

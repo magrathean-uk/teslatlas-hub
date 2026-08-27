@@ -35,6 +35,8 @@ final class MainWindowController: NSWindowController {
     private var diagnosticsWindow: DiagnosticsWindowController?
     private var onboardingWindow: OnboardingWindowController?
     private var onInitialRefresh: ((HubSnapshot) -> Void)?
+    private var refreshTimer: Timer?
+    private var refreshInFlight = false
 
     init(controller: HubController, onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
         self.controller = controller
@@ -49,7 +51,18 @@ final class MainWindowController: NSWindowController {
         window.contentView = makeContentView()
         window.center()
         update()
+        let refreshTimer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            guard let self,
+                  self.window?.isVisible == true,
+                  !self.accountWorkflowActive,
+                  !self.serviceDetailsMutationPending else { return }
+            self.update()
+        }
+        RunLoop.main.add(refreshTimer, forMode: .common)
+        self.refreshTimer = refreshTimer
     }
+
+    deinit { refreshTimer?.invalidate() }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -361,8 +374,11 @@ final class MainWindowController: NSWindowController {
     }
 
     private func update() {
+        guard !refreshInFlight else { return }
+        refreshInFlight = true
         controller.refresh { [weak self] snapshot in
             guard let self else { return }
+            defer { self.refreshInFlight = false }
             self.heroDot.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Hub status")
             self.heroDot.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 24, weight: .regular)
             self.heroDot.contentTintColor = snapshot.health.color
@@ -614,6 +630,7 @@ final class MainWindowController: NSWindowController {
 
     @objc private func logsPressed() {
         if let logsWindow {
+            logsWindow.refresh()
             logsWindow.showWindow(nil)
             logsWindow.window?.makeKeyAndOrderFront(nil)
             return

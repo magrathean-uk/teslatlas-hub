@@ -29,6 +29,7 @@ SERVICE_PACKAGE="$GENERATED/TeslatlasHubService.pkg"
 PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
 DIST="$ROOT/dist"
 DIST_APP="$DIST/Teslatlas Hub.app"
+DIST_PACKAGE="$DIST/TeslatlasHub.pkg"
 
 ensure_real_directory() {
     directory=$1
@@ -49,13 +50,13 @@ minimum_macos() {
 }
 
 require_macos_13_or_earlier() {
-    version=$(minimum_macos "$1")
-    case "$version" in
+    required_macos=$(minimum_macos "$1")
+    case "$required_macos" in
         ''|*[!0-9.]*) die "cannot read macOS deployment target: $1" ;;
     esac
-    major=${version%%.*}
-    [ "$major" -le 13 ] \
-        || die "requires macOS $version, not macOS 13: $1"
+    required_macos_major=${required_macos%%.*}
+    [ "$required_macos_major" -le 13 ] \
+        || die "requires macOS $required_macos, not macOS 13: $1"
 }
 
 is_executable_macho() {
@@ -262,6 +263,21 @@ reject_appledouble "$DIST_APP"
     || die "distribution app icon Info.plist value is missing"
 /usr/bin/codesign --verify --deep --strict "$DIST_APP"
 
+"$ROOT/scripts/build-macos-service-package.sh" \
+    --binary "$RUST_BINARY" \
+    --proxy-binary "$PROXY_BINARY" \
+    --fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY" \
+    --version "$version" \
+    --app "$DIST_APP" \
+    --output "$DIST_PACKAGE" >/dev/null
+[ -f "$DIST_PACKAGE" ] && [ ! -L "$DIST_PACKAGE" ] \
+    || die "final installer package is missing"
+
+case "$DIST_APP" in
+    "$ROOT/dist/Teslatlas Hub.app") /bin/rm -rf "$DIST_APP" ;;
+    *) die "refusing unsafe distribution cleanup" ;;
+esac
+
 printf '%s\n' \
     'build-macos-app: local ad-hoc build; privileged install and update are disabled. Use a signed, notarized release for service installation.' >&2
-printf '%s\n' "$DIST_APP"
+printf '%s\n' "$DIST_PACKAGE"

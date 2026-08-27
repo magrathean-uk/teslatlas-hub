@@ -116,7 +116,12 @@ printf '%s\n' \
     '    if [ "${HUB_SCHEMA_UPGRADE:-0}" = 1 ] && [ ! -f "$HUB_SCHEMA_UPGRADED_FILE" ]; then exit 1; fi' \
     '    exit 0' \
     '    ;;' \
+    '  *" doctor "*) [ "${HUB_DOCTOR_READY:-1}" = 1 ]; exit ;;' \
     'esac' \
+    'if [ "${HUB_UNCONFIGURED:-0}" = 1 ]; then' \
+    '  printf "%s\n" "{\"ready\":false,\"vehicles\":[]}"' \
+    '  exit 0' \
+    'fi' \
     'if [ "${HUB_READY:-1}" = 1 ]; then' \
     '  printf "%s\\n" "{\"ready\":true}"' \
     'else' \
@@ -339,6 +344,46 @@ grep -Fqx -- "-u teslatlas -- $installed_binary --config $config_file bootstrap"
     "$hub_status_log" || fail 'custom data_dir upgrade did not cross the bootstrap boundary'
 grep -Fqx migrated-binary "$installed_binary" || fail 'successful schema upgrade restored old binary'
 [ ! -e "$upgrade_backup" ] || fail 'successful schema upgrade retained old payload'
+
+: > "$systemctl_log"
+: > "$hub_status_log"
+printf '%s\n' old-binary > "$installed_binary"
+printf '%s\n' old-unit > "$installed_unit"
+PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
+    SYSTEMCTL_ACTIVE=0 SYSTEMCTL_ENABLED=0 \
+    sh "$test_root/preinst" upgrade 1.0.0
+printf '%s\n' unconfigured-binary > "$installed_binary"
+printf '%s\n' unconfigured-unit > "$installed_unit"
+PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub_status_log" \
+    SYSTEMCTL_ACTIVE=0 SYSTEMCTL_ENABLED=0 HUB_PREFLIGHT_READY=0 \
+    HUB_UNCONFIGURED=1 HUB_DOCTOR_READY=1 \
+    sh "$test_root/postinst" configure 1.0.0
+grep -Fq ' bootstrap' "$hub_status_log" \
+    || fail 'unconfigured upgrade did not run bounded bootstrap'
+grep -Fq ' doctor' "$hub_status_log" \
+    || fail 'unconfigured upgrade did not validate the catalogue'
+grep -Fqx unconfigured-binary "$installed_binary" \
+    || fail 'unconfigured upgrade restored the old binary'
+[ ! -e "$upgrade_backup" ] || fail 'unconfigured upgrade retained old payload'
+require_log 'stop teslatlas-hub.service'
+
+: > "$systemctl_log"
+: > "$hub_status_log"
+printf '%s\n' old-binary > "$installed_binary"
+printf '%s\n' old-unit > "$installed_unit"
+PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
+    SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=1 \
+    sh "$test_root/preinst" upgrade 1.0.0
+printf '%s\n' unconfigured-active-binary > "$installed_binary"
+printf '%s\n' unconfigured-active-unit > "$installed_unit"
+PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub_status_log" \
+    SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=1 HUB_PREFLIGHT_READY=0 \
+    HUB_UNCONFIGURED=1 HUB_DOCTOR_READY=1 \
+    sh "$test_root/postinst" configure 1.0.0
+require_log 'start teslatlas-hub.service'
+grep -Fqx unconfigured-active-binary "$installed_binary" \
+    || fail 'active unconfigured upgrade restored the old binary'
+[ ! -e "$upgrade_backup" ] || fail 'active unconfigured upgrade retained old payload'
 
 : > "$systemctl_log"
 : > "$hub_status_log"

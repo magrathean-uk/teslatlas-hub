@@ -65,6 +65,12 @@ hub_should_start_after_install() {
     [ "$ready" -eq 1 ] && [ "$migration_install_stopped" -eq 0 ] \
         && { [ "$was_loaded" -eq 1 ] || [ "$previously_installed" -eq 0 ]; }
 }
+
+hub_should_attempt_bootstrap() {
+    configured=$1
+    ready=$2
+    [ "$configured" -eq 1 ] && [ "$ready" -eq 0 ]
+}
 # END TESTABLE MIGRATION INSTALL HELPER
 
 # BEGIN TESTABLE DEADLINE HELPER
@@ -280,28 +286,45 @@ else
         || installer_error "timed out checking existing Hub service"
 fi
 
+# A package may be installed before onboarding creates config.toml. That is a
+# valid installed-but-stopped state, including repeat installs. Only inspect or
+# migrate the database when a safe user-owned configuration actually exists.
+configured=0
+if [ -e "$CONFIG" ] || [ -L "$CONFIG" ]; then
+    require_safe_regular_file "$CONFIG" "$CONSOLE_UID" "Hub configuration"
+    configured=1
+fi
+
 # The read-only preflight uses an immutable SQLite view. A schema-changing
 # upgrade is forward-only once bootstrap begins: SQLite migrations are
 # transactional, but the old binary must never be restored onto a newer schema.
 ready=0
-if run_with_deadline "$preflight_timeout_seconds" "$termination_grace_seconds" \
-    /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
-        "$BINARY" --config "$CONFIG" preflight >/dev/null 2>&1; then
-    ready=1
+if [ "$configured" -eq 1 ]; then
+    if run_with_deadline "$preflight_timeout_seconds" "$termination_grace_seconds" \
+        /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
+            "$BINARY" --config "$CONFIG" preflight >/dev/null 2>&1; then
+        ready=1
+    fi
 fi
-if [ "$previously_installed" -eq 1 ] && [ "$ready" -ne 1 ]; then
+if hub_should_attempt_bootstrap "$configured" "$ready"; then
     forward_only=1
     /usr/bin/install -o root -g wheel -m 0600 /dev/null "$STATE_DIRECTORY/forward-only" \
         || installer_error "TESLATLAS_FORWARD_ONLY_UPGRADE: cannot record schema migration boundary"
-    run_with_deadline "$bootstrap_timeout_seconds" "$termination_grace_seconds" \
+    if run_with_deadline "$bootstrap_timeout_seconds" "$termination_grace_seconds" \
         /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
-            "$BINARY" --config "$CONFIG" bootstrap >/dev/null 2>&1 \
-        || installer_error "TESLATLAS_FORWARD_ONLY_UPGRADE: schema migration failed; new Hub retained stopped"
-    run_with_deadline "$preflight_timeout_seconds" "$termination_grace_seconds" \
-        /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
-            "$BINARY" --config "$CONFIG" preflight >/dev/null 2>&1 \
-        || installer_error "TESLATLAS_FORWARD_ONLY_UPGRADE: migrated Hub failed admission; new Hub retained stopped"
-    ready=1
+            "$BINARY" --config "$CONFIG" bootstrap >/dev/null 2>&1; then
+        if run_with_deadline "$preflight_timeout_seconds" "$termination_grace_seconds" \
+            /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
+                "$BINARY" --config "$CONFIG" preflight >/dev/null 2>&1; then
+            ready=1
+        else
+            printf '%s\n' \
+                'TESLATLAS_FORWARD_ONLY_UPGRADE: migrated Hub needs attention; installed stopped' >&2
+        fi
+    else
+        printf '%s\n' \
+            'TESLATLAS_FORWARD_ONLY_UPGRADE: migration needs attention; installed stopped' >&2
+    fi
 fi
 
 should_start=0
@@ -324,29 +347,39 @@ install_launch_agent_atomically "$rendered_plist" \
 
 if [ "$should_start" -eq 1 ]; then
     service_stopped=1
-    run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
-        /bin/launchctl bootstrap "$(service_domain)" "$PLIST" \
-        || installer_error "cannot bootstrap Hub service"
-    run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
-        /bin/launchctl kickstart -k "$(service_target)" \
-        || installer_error "cannot start Hub service"
-
     healthy=0
-    attempt=1
-    while [ "$attempt" -le "$health_attempts" ]; do
-        if service_is_loaded_bounded && status=$(
-            run_with_deadline "$status_timeout_seconds" "$termination_grace_seconds" \
-                /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
-                "$BINARY" --config "$CONFIG" status 2>/dev/null
-        ) && printf '%s\n' "$status" | /usr/bin/grep -Eq '"ready":[[:space:]]*true'; then
-            healthy=1
-            break
+    if run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
+        /bin/launchctl bootstrap "$(service_domain)" "$PLIST"; then
+        if run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
+            /bin/launchctl kickstart -k "$(service_target)"; then
+            attempt=1
+            while [ "$attempt" -le "$health_attempts" ]; do
+                if service_is_loaded_bounded && status=$(
+                    run_with_deadline "$status_timeout_seconds" "$termination_grace_seconds" \
+                        /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
+                        "$BINARY" --config "$CONFIG" status 2>/dev/null
+                ) && printf '%s\n' "$status" | /usr/bin/grep -Eq '"ready":[[:space:]]*true'; then
+                    healthy=1
+                    break
+                fi
+                /bin/sleep 1
+                attempt=$((attempt + 1))
+            done
         fi
-        /bin/sleep 1
-        attempt=$((attempt + 1))
-    done
-    [ "$healthy" -eq 1 ] \
-        || installer_error "new Hub did not become ready; restoring the installed version"
+    fi
+    if [ "$healthy" -ne 1 ]; then
+        run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
+            /bin/launchctl bootout "$(service_target)" >/dev/null 2>&1 || true
+        printf '%s\n' \
+            'Teslatlas Hub installer: update installed, but Hub needs attention and was left stopped.' >&2
+    fi
 fi
 
 completed=1
+
+APP='/Applications/Teslatlas Hub.app'
+if [ -d "$APP" ] && [ ! -L "$APP" ]; then
+    /bin/launchctl asuser "$CONSOLE_UID" /usr/bin/sudo -u "$CONSOLE_USER" \
+        /usr/bin/open "$APP" >/dev/null 2>&1 \
+        || printf '%s\n' 'Teslatlas Hub installer: installed successfully, but the app could not be opened automatically.' >&2
+fi

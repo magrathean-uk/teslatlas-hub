@@ -1,20 +1,60 @@
 # Hub progress
 
-Status: the current Rust 1.98 Hub is installed on macOS and is working in legacy
-TeslaMate-compatible mode. It is ready, bound only to `127.0.0.1:8080`, and
-collecting both Owner API and Tesla WebSocket observations. The final installed
-Hub SHA-256 is
-`d477627284c2cd20c4ef5519b29f2b9871e9d061520519df2d2290fc833d3c0e`.
-The signed installer SHA-256 is
-`d9e6bfb2f41d1876a10637231fe45dd9ed5c552d47cc5fe5d9de6402d7058db0`.
-The VPS TeslaMate collector is intentionally stopped while Hub owns the legacy
-refresh token; TeslaMateAPI, PostgreSQL, and Mosquitto remain healthy.
+Status on 2026-08-27: the current Rust 1.98 Hub and native macOS app are
+installed, but the Hub LaunchAgent is deliberately stopped. The imported
+TeslaMate v4.1.1 store is ready in legacy mode with one vehicle, encrypted
+legacy credentials, a 2,065,952,768-byte SQLite catalogue, and the normal
+60-second collector interval. The explicit handover gate completed. VPS
+TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
+active legacy-token owner. The installed Hub SHA-256 is
+`893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
+The current local installer SHA-256 is
+`b9643a8baca60b2accb73b4c40c6740707f283de0fbe1eeea9337aa91a45f631`.
+It is a 66,598,668-byte ad-hoc development package, not a notarized release.
 
-Current verification on 2026-08-26: 857 Rust target/integration tests plus 3
-doc tests passed (860 total; 2 intentional fixture tests ignored); all-target,
-all-feature Clippy with `-D warnings`, the optimized release build, and
-macOS/Linux package checks passed. The 75 AppKit tests passed under Xcode 27
-beta. Live EMEA
+Current verification on 2026-08-27: full locked Rust tests passed (832 library,
+49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
+Clippy passed with `-D warnings`, and the optimized release build passed. All
+83 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source
+checks passed. `TeslatlasHub.pkg` upgraded the existing installation without
+error, installed the exact rebuilt app under `/Applications`, auto-opened it,
+and preserved the safely stopped Hub and migration data. The app binary hash
+matches the rebuilt package at
+`362c5abcb22d517f6140bfeff1193d67e9780c69f4ce0d4d70d339376da3be10`.
+
+Unlocked native UI acceptance passed. Cmd-L opened the bounded redacted app,
+SSH/import and service logs; Run Diagnostics completed doctor, preflight,
+status and recent-log checks. The explicit one-owner handover stopped
+TeslaMate, started Hub, and advanced the durable legacy observation id. No
+vehicle command ran. Hub was then stopped and TeslaMate plus TeslaMateAPI were
+restored healthy. A five-second dashboard refresh now changes stale starting,
+running and stopped presentation without reopening the app; the live retest
+showed the new observation and enabled controls only while Hub was running.
+
+Debian 13 ARM64 acceptance used one disposable 5.5 GiB native guest. The
+current 15,186,340-byte package, SHA-256
+`89b4336105f2d5173b639abcba78de2ce4bb57809043e6a91b644004e2321364`,
+installed and bootstrapped, passed status, seven doctor checks, loopback health,
+service start/restart/stop, and both stopped and running overinstall. That live
+test exposed and fixed an upgrade failure for valid unconfigured stores; the
+postinst now accepts that state only after a successful doctor catalogue check
+and an exact empty-vehicle status. The guest and native build root were deleted.
+
+The guided v4.1.1 migration was exercised live over key-authenticated SSH while
+TeslaMate stayed running. It copied 3,303 drives, 11,039,715 positions, 800
+charging processes, and 309,147 charge samples through one protected loopback
+tunnel, passed compatibility and doctor checks, retained the migrated legacy
+token encrypted, and left TeslaMate unchanged. Stale multiple open drive,
+charge, and state rows are now retained as history without being guessed as the
+single live lifecycle. App import diagnostics are mode-0600, bounded and
+redacted; Cmd-L exposes them with service logs and an explicit full-diagnostics
+action. SSH discovery failures now have safe phase/reason codes and actionable
+messages without logging host, user, key path, database password, encryption
+key, or token values. Standard Edit commands and the explicit migration Tab
+order have AppKit coverage; the live key-auth import previously proved Cmd+A
+replacement and Tab movement through the first fields.
+
+Earlier verification and product history: live EMEA
 Fleet authorization, vehicle
 discovery, vehicle-data polling, partner registration, and virtual-key pairing
 passed on macOS. The root package upgraded the running legacy per-user service,
