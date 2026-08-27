@@ -9,18 +9,18 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`68da6477ef60ee5367a1e6fc77927f46dd129dcb513a466c4ee5043d9f27f364`.
-It is a 66,615,136-byte ad-hoc development package, not a notarized release.
+`bad020aff3d400a18f9d5913cdedf396364daeb04b490ab8a74814d9076a24ae`.
+It is a 66,680,213-byte ad-hoc development package, not a notarized release.
 
-Current verification on 2026-08-27: full locked Rust tests passed (833 library,
+Current verification on 2026-08-27: full locked Rust tests passed (837 library,
 49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-97 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source,
+98 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux packaging source,
 macOS release, release-evidence, and dependency-audit gates passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`c7f120848425b302b2aa27f5cee406f3d424d031831d10df43cc96a8e85aa140`.
+`54faa2347531b02fa04d3a2e82dc6934a675b27c69dc69f5e671fa72659d7c41`.
 An earlier package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, and preserved the safely
 stopped Hub and migration data; the new package has not been installed live.
@@ -39,6 +39,15 @@ process before replacing `/Applications/Teslatlas Hub.app`, wait five seconds
 for a normal exit, and use a bounded kill fallback for an unresponsive old
 process. Postinstall then opens the newly installed app. The helper is exercised
 with a real named process, and the packaging gate verifies its scope and order.
+The installed LaunchAgent now uses launchd's native 30-second failure throttle,
+preventing an invalid configuration or binary from creating a tight restart,
+CPU, and log-churn loop. Before each launch, its root-owned supervisor validates
+both user-owned service logs and compacts any file over 1 MiB in place to the
+newest 512 KiB. Cmd-L therefore keeps useful recent output without retaining an
+unbounded launchd log history; packaging and real-file compaction checks pass.
+Debian's Hub, command-proxy, and Fleet Telemetry units now stop after five
+failed starts within five minutes instead of producing an indefinite crash,
+CPU, and journal loop. Normal provider/network retries remain inside Hub.
 
 The pinned Fleet Telemetry source archive is now retained only as one verified
 836 KiB file under the normal `hub/target/upstream-cache`. Every build rechecks
@@ -81,7 +90,22 @@ Cmd-L app and service log reads, plus app-log writes, now use nonblocking,
 no-follow descriptors and validate the opened inode as a regular file. This
 closes the remaining path where replacing a log with a FIFO could freeze log
 opening or event recording. The shared tail reader remains capped at one MiB;
-the FIFO regression completes in milliseconds and all 97 AppKit tests pass.
+the FIFO regression completes in milliseconds. Migration handover state uses
+the same bounded descriptor admission, so a substituted marker FIFO fails
+closed at verification rather than freezing app launch. All 98 AppKit tests
+pass.
+
+Data recovery now opens every copied, hashed, metadata, and synced backup member
+through a nonblocking no-follow descriptor, validates that opened inode as a
+regular file, and aborts immediately if a source grows beyond its signed
+manifest size. Terrain tiles are likewise admitted once and retained by their
+validated descriptor; elevation reads no longer reopen a mutable path for every
+sample. The provenance SHA now hashes that same pinned descriptor, and a
+substituted source-marker FIFO is ignored without blocking. FIFO and
+path-replacement regressions pass on both paths. Validated tile SHA-256 values
+are cached by bounded file identity, eliminating a repeated multi-megabyte hash
+on every nearby observation while still invalidating an atomically replaced
+tile.
 
 Rust-side bounded readers now also open TLS identity files, update packs,
 schema-finalizer files, import ownership markers, and TeslaMate staging files
@@ -95,6 +119,18 @@ SSH/import and service logs; Run Diagnostics completed doctor, preflight,
 status and recent-log checks. Its support header now includes only safe app,
 expected/observed Hub, service, provider, macOS, and architecture metadata so a
 saved report identifies the failing build without vehicle or account identity.
+The header also carries its generation timestamp. Fleet and legacy account
+setup, service installation/removal, and diagnostic checks now record bounded
+start/success/failure timing with typed error codes, never credential values or
+vehicle identity. Share redaction additionally covers generic, ingest, pairing,
+device, API-key, and private-key fields. App events now retain their correct
+info/warning/error severity in macOS unified logging, and Cmd-L records safe
+refresh, copy, save, byte-count, duration, and export-failure events without
+paths. Its redacted copy path is exercised in the 98-test AppKit suite.
+The dashboard now polls Hub status every 15 seconds only while the GUI is active
+and visible; account and service actions still refresh immediately. This removes
+the previous five-second background process/SQLite wakeup while the app sits
+behind other work.
 The explicit one-owner handover stopped
 TeslaMate, started Hub, and advanced the durable legacy observation id. No
 vehicle command ran. Hub was then stopped and TeslaMate plus TeslaMateAPI were
