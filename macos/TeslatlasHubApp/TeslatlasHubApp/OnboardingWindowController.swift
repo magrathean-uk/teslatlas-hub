@@ -843,6 +843,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             authWindow?.window?.makeKeyAndOrderFront(nil)
             return
         }
+        HubAppLog.shared.record("authentication.started", category: "account",
+                                fields: ["provider": "legacy"])
         do {
             let auth = try TeslaAuthWindowController { [weak self] result in
                 guard let self else { return }
@@ -851,12 +853,22 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                 self.updateFooter()
                 switch result {
                 case let .success(tokens):
+                    HubAppLog.shared.record("authentication.completed", category: "account",
+                                            fields: ["provider": "legacy"])
                     self.setBusy(true, message: "Saving Tesla credentials…")
                     self.controller.configureTeslaAccount(tokens: tokens) { [weak self] setup in
                         self?.setupFinished(setup)
                     }
                 case let .failure(error):
-                    if error as? TeslaAuthError != .cancelled {
+                    if error as? TeslaAuthError == .cancelled {
+                        HubAppLog.shared.record("authentication.cancelled", category: "account",
+                                                fields: ["provider": "legacy"])
+                    } else {
+                        HubAppLog.shared.record("authentication.failed", category: "account",
+                                                level: "ERROR", fields: [
+                                                    "provider": "legacy",
+                                                    "error_code": HubAppLog.errorCode(error)
+                                                ])
                         self.showInlineError(error.localizedDescription)
                     }
                 }
@@ -867,6 +879,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             auth.showWindow(nil)
             auth.window?.makeKeyAndOrderFront(nil)
         } catch {
+            HubAppLog.shared.record("authentication.failed", category: "account", level: "ERROR",
+                                    fields: [
+                                        "provider": "legacy",
+                                        "error_code": HubAppLog.errorCode(error)
+                                    ])
             showInlineError(error.localizedDescription)
         }
     }

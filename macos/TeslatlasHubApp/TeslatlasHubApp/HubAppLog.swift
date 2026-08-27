@@ -77,6 +77,18 @@ final class HubAppLog {
     }
 
     static func errorCode(_ error: Error) -> String {
+        if let error = error as? TeslaAuthError {
+            switch error {
+            case .cancelled: return "cancelled"
+            case .randomGeneration: return "random_generation"
+            case .invalidAuthorizationURL: return "invalid_authorization_url"
+            case .invalidCallback: return "invalid_callback"
+            case .stateMismatch: return "state_mismatch"
+            case .invalidIssuer: return "invalid_issuer"
+            case .invalidResponse: return "invalid_response"
+            case .exchangeFailed: return "exchange_failed"
+            }
+        }
         guard let error = error as? HubActionError else {
             return String(describing: type(of: error))
         }

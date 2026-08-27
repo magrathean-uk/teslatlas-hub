@@ -81,6 +81,8 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(text.contains("secret-value"))
         XCTAssertEqual(HubAppLog.errorCode(HubActionError.missingResource("secret")),
                        "missing_resource")
+        XCTAssertEqual(HubAppLog.errorCode(TeslaAuthError.stateMismatch), "state_mismatch")
+        XCTAssertEqual(HubAppLog.errorCode(TeslaAuthError.exchangeFailed), "exchange_failed")
         let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
         let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue
         XCTAssertEqual(permissions & 0o777, 0o600)
