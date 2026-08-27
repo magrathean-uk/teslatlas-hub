@@ -202,6 +202,11 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "app build does not package the Fleet Telemetry receiver"
 /usr/bin/grep -Fq 'DIST_PACKAGE="$DIST/TeslatlasHub.pkg"' "$APP_BUILD" \
     || fail "app build does not produce the requested final package name"
+/usr/bin/grep -Fq '"$ROOT/target/macos-app") ;;' "$APP_BUILD" \
+    || fail "app build does not scope Xcode staging cleanup"
+/usr/bin/grep -Fq '/usr/bin/find "$DERIVED" -depth -delete' "$APP_BUILD" \
+    || fail "app build does not clean successful Xcode staging"
+assert_before_fixed 'final installer package is missing' '/usr/bin/find "$DERIVED" -depth -delete' "$APP_BUILD"
 /usr/bin/grep -Fq -- '--app "$DIST_APP"' "$APP_BUILD" \
     || fail "final package does not include the app"
 /usr/bin/grep -Fq '"$payload/Applications/Teslatlas Hub.app"' "$SERVICE_BUILD" \
@@ -266,6 +271,7 @@ fi
 SUPERVISOR_FUNCTIONS="$TEST_ROOT/supervisor-functions.sh"
 /usr/bin/awk 'index($0, "if [ \"$#\" -ne 6 ]") == 1 { exit } { print }' \
     "$SUPERVISOR" >"$SUPERVISOR_FUNCTIONS"
+# shellcheck source=/dev/null
 . "$SUPERVISOR_FUNCTIONS"
 single_token="$TEST_ROOT/fleet bearer # literal"
 printf '%s\n' '[collector.fleet_telemetry]' \

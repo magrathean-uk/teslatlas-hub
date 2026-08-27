@@ -9,8 +9,8 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`bad020aff3d400a18f9d5913cdedf396364daeb04b490ab8a74814d9076a24ae`.
-It is a 66,680,213-byte ad-hoc development package, not a notarized release.
+`75a2029667a28f3e23bc348ef7dff30c5011fed7fc1c3c57a532eac692f2b45c`.
+It is a 66,689,959-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-27: full locked Rust tests passed (837 library,
 49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
@@ -20,7 +20,11 @@ macOS release, release-evidence, and dependency-audit gates passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`54faa2347531b02fa04d3a2e82dc6934a675b27c69dc69f5e671fa72659d7c41`.
+`878421d0607b8ac0f3b8aab260ff98c690ef71595c88c8a7f74b0277cfe34992`.
+Its embedded Hub SHA-256 is
+`15ade924cdea3284e8b966db45558ab73aae79bcb21770764d495b0ac74a269f`;
+the root service payload Hub SHA-256 is
+`83490b49aa20e52a94f852cfa3352c97efb623ca75ff87cbc9bcc7f916206ffe`.
 An earlier package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, and preserved the safely
 stopped Hub and migration data; the new package has not been installed live.
@@ -48,6 +52,13 @@ unbounded launchd log history; packaging and real-file compaction checks pass.
 Debian's Hub, command-proxy, and Fleet Telemetry units now stop after five
 failed starts within five minutes instead of producing an indefinite crash,
 CPU, and journal loop. Normal provider/network retries remain inside Hub.
+
+Successful all-in-one macOS builds now remove only the exact
+`hub/target/macos-app` Xcode staging tree after the final package is verified.
+Failed builds retain staging for diagnosis. The current build left the package
+as the sole distribution artifact, removed the standalone app copy, and left no
+Xcode staging directory; package expansion, exact app/root payload paths,
+AppleDouble absence, and the app's deep strict ad-hoc signature passed.
 
 The pinned Fleet Telemetry source archive is now retained only as one verified
 836 KiB file under the normal `hub/target/upstream-cache`. Every build rechecks

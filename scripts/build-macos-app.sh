@@ -278,6 +278,19 @@ case "$DIST_APP" in
     *) die "refusing unsafe distribution cleanup" ;;
 esac
 
+# A successful all-in-one package is the only deliverable from this script.
+# Drop the exact Xcode staging tree so repeated builds do not retain hundreds
+# of megabytes. Failed builds intentionally keep it for diagnosis.
+case "$DERIVED" in
+    "$ROOT/target/macos-app") ;;
+    *) die "refusing unsafe Xcode staging cleanup" ;;
+esac
+[ -d "$DERIVED" ] && [ ! -L "$DERIVED" ] \
+    || die "unsafe Xcode staging cleanup target"
+/usr/bin/find "$DERIVED" -depth -delete
+[ ! -e "$DERIVED" ] && [ ! -L "$DERIVED" ] \
+    || die "cannot clean Xcode staging"
+
 printf '%s\n' \
     'build-macos-app: local ad-hoc build; privileged install and update are disabled. Use a signed, notarized release for service installation.' >&2
 printf '%s\n' "$DIST_PACKAGE"
