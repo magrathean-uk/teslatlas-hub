@@ -12,11 +12,20 @@ StateDirectoryMode=0700
 ExecStart=/usr/bin/teslatlas-hub --config /etc/teslatlas-hub/config.toml serve
 Restart=on-failure
 RestartSec=5
+UMask=0077
+CapabilityBoundingSet=
 NoNewPrivileges=true
+PrivateDevices=true
 PrivateTmp=true
+ProtectControlGroups=true
 ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/teslatlas-hub
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

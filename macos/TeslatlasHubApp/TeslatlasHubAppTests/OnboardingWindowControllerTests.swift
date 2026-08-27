@@ -61,6 +61,43 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(permissions & 0o777, 0o600)
     }
 
+    func testAppDiagnosticsBoundLargeEventsAndRotateWithoutReadingAnUnboundedFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-log-bound-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("app.log")
+        let log = HubAppLog(fileURL: file)
+        let payload = String(repeating: "x", count: 64 * 1024)
+
+        for index in 0..<80 {
+            log.record("large.event", category: "test", fields: ["index": String(index), "value": payload])
+        }
+
+        let size = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber
+        ).intValue
+        XCTAssertLessThanOrEqual(size, 1024 * 1024)
+        XCTAssertLessThanOrEqual(Data(log.recentText(maximumBytes: 4096).utf8).count, 4096)
+        XCTAssertTrue(log.recentText().contains("[truncated]"))
+    }
+
+    func testAppDiagnosticsRefuseAReplacedSymlink() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-log-link-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let target = directory.appendingPathComponent("target")
+        let file = directory.appendingPathComponent("app.log")
+        try Data("unchanged".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: file, withDestinationURL: target)
+
+        let log = HubAppLog(fileURL: file)
+        log.record("must.not.follow", category: "test")
+
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "unchanged")
+        XCTAssertEqual(log.recentText(), "No app diagnostics are available yet.\n")
+    }
+
     func testStateBranchesByPathAndProviderAndBackTracks() {
         var state = HubOnboardingState()
         XCTAssertEqual(state.route, .welcome)
@@ -323,6 +360,31 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(authentication.nextKeyView === password)
     }
 
+    func testMigrationFormLocksWhileConnecting() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller,
+                                                     previewRoute: "migration",
+                                                     onComplete: {})
+        let view = onboarding.window?.contentView
+        let server = try XCTUnwrap(labels(in: view).first {
+            $0.placeholderString == "Server name or IP address"
+        })
+        let authentication = try XCTUnwrap(popups(in: view).first {
+            $0.itemTitles == ["SSH key or agent", "Password"]
+        })
+
+        onboarding.setBusy(true, message: "Connecting…")
+        let connect = try XCTUnwrap(buttons(in: view).first { $0.title == "Connecting…" })
+        XCTAssertFalse(server.isEnabled)
+        XCTAssertFalse(authentication.isEnabled)
+        XCTAssertFalse(connect.isEnabled)
+
+        onboarding.setBusy(false)
+        XCTAssertTrue(server.isEnabled)
+        XCTAssertTrue(authentication.isEnabled)
+        XCTAssertEqual(connect.title, "Connect to Server")
+    }
+
     func testTunnelFailuresAreSafeAndActionable() {
         XCTAssertEqual(
             TeslaMateServerImporter.tunnelFailureMessage("open failed: administratively prohibited"),
@@ -352,6 +414,18 @@ final class OnboardingWindowControllerTests: XCTestCase {
             TeslaMateServerImporter.discoveryFailureMessage(
                 HubActionError.commandExited(27, "unexpected secret-host diagnostic")
             ).contains("secret-host")
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.discoveryFailureReason(
+                HubActionError.commandExited(27, "multiple instances")
+            ),
+            "multiple_teslamate_instances"
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.discoveryFailureReason(
+                HubActionError.commandExited(28, "multiple databases")
+            ),
+            "multiple_database_instances"
         )
     }
 

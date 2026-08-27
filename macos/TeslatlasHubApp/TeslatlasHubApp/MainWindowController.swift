@@ -11,6 +11,7 @@ final class MainWindowController: NSWindowController {
     private let databaseValue = NSTextField(labelWithString: "")
     private let vehicleControlName = NSTextField(labelWithString: "Vehicle")
     private let vehicleControlStatus = NSTextField(labelWithString: "")
+    private let vehicleSelector = NSPopUpButton()
     private let serviceDot = NSImageView()
     private let accountDot = NSImageView()
     private let databaseDot = NSImageView()
@@ -25,6 +26,8 @@ final class MainWindowController: NSWindowController {
     let importButton = NSButton(title: "Import", target: nil, action: nil)
     let detailsButton = NSButton(title: "Service Details", target: nil, action: nil)
     private var vehicleActionButtons: [NSButton] = []
+    private var controlVehicles: [HubControlVehicle] = []
+    private var selectedControlVehicleID: UUID?
     private var vehicleControlPending = false
     private var vehicleControlOutcomeUnknown = false
     private(set) var accountWorkflowActive = false
@@ -223,7 +226,13 @@ final class MainWindowController: NSWindowController {
         vehicleControlName.font = .systemFont(ofSize: 16, weight: .semibold)
         vehicleControlStatus.textColor = .secondaryLabelColor
         vehicleControlStatus.font = .systemFont(ofSize: 12)
-        let identity = NSStackView(views: [vehicleControlName, vehicleControlStatus])
+        vehicleSelector.target = self
+        vehicleSelector.action = #selector(vehicleSelectionChanged)
+        vehicleSelector.controlSize = .regular
+        vehicleSelector.isBordered = false
+        vehicleSelector.isHidden = true
+        vehicleSelector.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+        let identity = NSStackView(views: [vehicleControlName, vehicleSelector, vehicleControlStatus])
         identity.orientation = .vertical
         identity.alignment = .leading
         identity.spacing = 1
@@ -403,16 +412,17 @@ final class MainWindowController: NSWindowController {
             }
             self.serviceValue.stringValue = snapshot.service
             self.accountValue.stringValue = snapshot.accountDisplay
-            self.vehicleControlName.stringValue = snapshot.vehicleName
-            self.vehicleControlStatus.stringValue = snapshot.vehicle
+            self.updateVehicleSelection(snapshot)
             self.databaseValue.stringValue = snapshot.database
             self.versionLabel.stringValue = snapshot.version
             self.serviceDot.contentTintColor = snapshot.health.color
             self.accountDot.contentTintColor = snapshot.account == "Connected" ? .systemGreen : .systemGray
-            let vehicleUnavailable = snapshot.vehicle.localizedCaseInsensitiveContains("offline")
-                || snapshot.vehicle.localizedCaseInsensitiveContains("no imported")
-                || snapshot.vehicle.localizedCaseInsensitiveContains("no configured")
-                || snapshot.vehicle == "Unknown"
+            let selectedVehicleStatus = self.selectedControlVehicle?.status ?? snapshot.vehicle
+            let vehicleUnavailable = selectedVehicleStatus.localizedCaseInsensitiveContains("offline")
+                || selectedVehicleStatus.localizedCaseInsensitiveContains("no observations")
+                || selectedVehicleStatus.localizedCaseInsensitiveContains("no imported")
+                || selectedVehicleStatus.localizedCaseInsensitiveContains("no configured")
+                || selectedVehicleStatus == "Unknown"
             self.vehicleControlDot.contentTintColor = vehicleUnavailable ? .systemGray : .systemGreen
             self.databaseDot.contentTintColor = snapshot.database.hasPrefix("Healthy") ? .systemGreen : .systemGray
 
@@ -444,7 +454,7 @@ final class MainWindowController: NSWindowController {
             let controlsAvailable = !self.controller.previewMode
                 && snapshot.health == .running
                 && snapshot.account == "Connected"
-                && snapshot.controlVehicleID != nil
+                && self.selectedControlVehicleID != nil
                 && !self.vehicleControlPending
                 && !self.vehicleControlOutcomeUnknown
                 && !self.accountWorkflowActive
@@ -544,6 +554,60 @@ final class MainWindowController: NSWindowController {
         return view
     }
 
+    private func updateVehicleSelection(_ snapshot: HubSnapshot) {
+        let menuChanged = controlVehicles.map { $0.id.uuidString + "\u{0}" + $0.displayName }
+            != snapshot.controlVehicles.map { $0.id.uuidString + "\u{0}" + $0.displayName }
+        controlVehicles = snapshot.controlVehicles
+        let availableIDs = Set(controlVehicles.map(\.id))
+        if let selectedControlVehicleID,
+           !availableIDs.isEmpty,
+           !availableIDs.contains(selectedControlVehicleID) {
+            self.selectedControlVehicleID = nil
+        }
+        if selectedControlVehicleID == nil {
+            selectedControlVehicleID = snapshot.controlVehicleID ?? controlVehicles.first?.id
+        }
+
+        if menuChanged {
+            vehicleSelector.removeAllItems()
+            for vehicle in controlVehicles {
+                let item = NSMenuItem(title: vehicle.displayName, action: nil, keyEquivalent: "")
+                item.representedObject = vehicle.id.uuidString
+                vehicleSelector.menu?.addItem(item)
+            }
+        }
+        if let selectedControlVehicleID,
+           let index = controlVehicles.firstIndex(where: { $0.id == selectedControlVehicleID }) {
+            vehicleSelector.selectItem(at: index)
+        }
+
+        let hasMultipleChoices = controlVehicles.count > 1
+        vehicleSelector.isHidden = !hasMultipleChoices
+        vehicleControlName.isHidden = hasMultipleChoices
+        if let selected = selectedControlVehicle {
+            vehicleControlName.stringValue = selected.displayName
+            vehicleControlStatus.stringValue = selected.status
+        } else {
+            vehicleControlName.stringValue = snapshot.vehicleName
+            vehicleControlStatus.stringValue = snapshot.vehicle
+        }
+    }
+
+    private var selectedControlVehicle: HubControlVehicle? {
+        guard let selectedControlVehicleID else { return nil }
+        return controlVehicles.first { $0.id == selectedControlVehicleID }
+    }
+
+    @objc private func vehicleSelectionChanged() {
+        guard vehicleSelector.indexOfSelectedItem >= 0,
+              let value = vehicleSelector.selectedItem?.representedObject as? String,
+              let vehicleID = UUID(uuidString: value),
+              let selected = controlVehicles.first(where: { $0.id == vehicleID }) else { return }
+        selectedControlVehicleID = vehicleID
+        vehicleControlName.stringValue = selected.displayName
+        vehicleControlStatus.stringValue = selected.status
+    }
+
     private func separator() -> NSBox {
         let line = NSBox()
         line.boxType = .separator
@@ -588,8 +652,8 @@ final class MainWindowController: NSWindowController {
     }
 
     private func confirmVehicleControl(_ action: HubVehicleControl) {
-        guard let window, !vehicleControlPending else { return }
-        let alert = Self.vehicleControlConfirmation(action, vehicleName: controller.snapshot.vehicleName)
+        guard let window, !vehicleControlPending, let vehicle = selectedControlVehicle else { return }
+        let alert = Self.vehicleControlConfirmation(action, vehicleName: vehicle.displayName)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertSecondButtonReturn else { return }
             self?.runVehicleControl(action)
@@ -597,11 +661,12 @@ final class MainWindowController: NSWindowController {
     }
 
     private func runVehicleControl(_ action: HubVehicleControl) {
+        guard let vehicleID = selectedControlVehicleID else { return }
         vehicleControlPending = true
         connectButton.isEnabled = false
         importButton.isEnabled = false
         vehicleActionButtons.forEach { $0.isEnabled = false }
-        controller.performVehicleControl(action) { [weak self] result in
+        controller.performVehicleControl(action, vehicleID: vehicleID) { [weak self] result in
             guard let self else { return }
             self.vehicleControlPending = false
             switch result {

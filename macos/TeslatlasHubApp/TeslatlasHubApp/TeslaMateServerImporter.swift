@@ -38,7 +38,14 @@ final class TeslaMateServerImportSession {
         guard !closed else { lock.unlock(); return }
         closed = true
         lock.unlock()
-        if tunnel.isRunning { tunnel.terminate() }
+        if tunnel.isRunning {
+            let process = tunnel
+            let pid = process.processIdentifier
+            process.terminate()
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1) {
+                if process.isRunning { Darwin.kill(pid, SIGKILL) }
+            }
+        }
         try? FileManager.default.removeItem(at: temporaryDirectory)
         HubAppLog.shared.record("tunnel.closed", category: "teslamate_import")
     }
@@ -66,12 +73,18 @@ docker_run() {
     fi
 }
 
-tm_id=$(docker_run ps --filter label=com.docker.compose.service=teslamate --format '{{.ID}}' | head -n 1)
-[ -n "$tm_id" ] || { printf '%s\n' 'TeslaMate container not found.' >&2; exit 20; }
+tm_ids=$(docker_run ps --filter label=com.docker.compose.service=teslamate --format '{{.ID}}' | head -n 2)
+tm_count=$(printf '%s\n' "$tm_ids" | awk 'NF {count += 1} END {print count + 0}')
+[ "$tm_count" -gt 0 ] || { printf '%s\n' 'TeslaMate container not found.' >&2; exit 20; }
+[ "$tm_count" -eq 1 ] || { printf '%s\n' 'Multiple TeslaMate containers are running.' >&2; exit 27; }
+tm_id=$(printf '%s\n' "$tm_ids" | head -n 1)
 project=$(docker_run inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$tm_id")
 [ -n "$project" ] || { printf '%s\n' 'TeslaMate Compose project not found.' >&2; exit 21; }
-db_id=$(docker_run ps --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=database --format '{{.ID}}' | head -n 1)
-[ -n "$db_id" ] || { printf '%s\n' 'TeslaMate database container not found.' >&2; exit 22; }
+db_ids=$(docker_run ps --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=database --format '{{.ID}}' | head -n 2)
+db_count=$(printf '%s\n' "$db_ids" | awk 'NF {count += 1} END {print count + 0}')
+[ "$db_count" -gt 0 ] || { printf '%s\n' 'TeslaMate database container not found.' >&2; exit 22; }
+[ "$db_count" -eq 1 ] || { printf '%s\n' 'Multiple TeslaMate database containers are running.' >&2; exit 28; }
+db_id=$(printf '%s\n' "$db_ids" | head -n 1)
 
 env_value() {
     docker_run inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$tm_id" | awk -F= -v key="$1" '$1 == key {sub(/^[^=]*=/, ""); print; exit}'
@@ -352,8 +365,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             }
 
             if tunnel.isRunning {
-                tunnel.terminate()
-                tunnel.waitUntilExit()
+                stopTunnel(tunnel)
                 HubAppLog.shared.record("ssh.tunnel.timeout", category: "teslamate_import",
                                         level: "ERROR")
                 throw HubActionError.commandFailed(
@@ -404,6 +416,10 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             return "Guided import currently requires a TeslaMate database with one vehicle."
         case "vehicle_missing":
             return "TeslaMate has no vehicle available to import."
+        case "multiple_teslamate_instances":
+            return "More than one TeslaMate instance is running. Stop the instance you do not want to import, then try again."
+        case "multiple_database_instances":
+            return "The selected TeslaMate project has more than one database container. Stop the duplicate, then try again."
         case "ssh_authentication_or_connection":
             return "SSH could not connect or authenticate. Check the server, port, account, and selected authentication method."
         case "timed_out":
@@ -425,6 +441,8 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             case 24: return "database_network_invalid"
             case 25: return "multiple_vehicles"
             case 26: return "vehicle_missing"
+            case 27: return "multiple_teslamate_instances"
+            case 28: return "multiple_database_instances"
             case 255: return "ssh_authentication_or_connection"
             default: return "remote_command_failed_\(status)"
             }
@@ -463,6 +481,18 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
                 Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
             }
         }
+    }
+
+    private static func stopTunnel(_ process: Process) {
+        guard process.isRunning else { return }
+        let pid = process.processIdentifier
+        process.terminate()
+        let deadline = Date().addingTimeInterval(1)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if process.isRunning { Darwin.kill(pid, SIGKILL) }
+        process.waitUntilExit()
     }
 
     private static func percentEncode(_ value: String) -> String {

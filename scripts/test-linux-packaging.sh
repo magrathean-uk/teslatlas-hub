@@ -45,6 +45,23 @@ grep -Fqx 'StateDirectoryMode=0700' "$root/packaging/linux/teslatlas-hub.service
     echo 'test-linux-packaging: systemd state directory is not private' >&2
     exit 1
 }
+for setting in \
+    'UMask=0077' \
+    'CapabilityBoundingSet=' \
+    'NoNewPrivileges=true' \
+    'PrivateDevices=true' \
+    'PrivateTmp=true' \
+    'ProtectControlGroups=true' \
+    'ProtectHome=true' \
+    'ProtectKernelModules=true' \
+    'ProtectKernelTunables=true' \
+    'ProtectSystem=strict' \
+    'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
+    'RestrictSUIDSGID=true' \
+    'SystemCallArchitectures=native'; do
+    grep -Fqx "$setting" "$root/packaging/linux/teslatlas-hub.service" \
+        || { echo "test-linux-packaging: missing Hub hardening: $setting" >&2; exit 1; }
+done
 fail() {
     echo "test-linux-packaging: $*" >&2
     if [ -f "$test_root/package-output" ]; then

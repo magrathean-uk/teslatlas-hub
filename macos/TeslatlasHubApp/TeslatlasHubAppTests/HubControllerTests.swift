@@ -296,8 +296,10 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testRefreshSummarizesMultipleInstalledVehicles() {
+        let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
+        let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let installed = RecordingCommandRunner(result: .success("""
-        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"displayName":"One"},{"displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
+        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
         """))
         let controller = HubController(installedCommandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
@@ -310,10 +312,66 @@ final class HubControllerTests: XCTestCase {
             XCTAssertEqual(snapshot.provider, .fleet)
             XCTAssertEqual(snapshot.accountDisplay, "Connected · Fleet API")
             XCTAssertNil(snapshot.controlVehicleID)
+            XCTAssertEqual(snapshot.controlVehicles.map(\.id), [firstID, secondID])
+            XCTAssertEqual(snapshot.controlVehicles.map(\.displayName), ["One", "Two"])
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
+    }
+
+    func testMultipleVehicleControlUsesExplicitSelectedVehicle() {
+        let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
+        let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
+        let status = """
+        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        """
+        let installed = RecordingCommandRunner(result: .success(status))
+        let controller = HubController(installedCommandRunner: installed,
+                                       serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "selected multi-vehicle control sent")
+
+        controller.refresh { snapshot in
+            XCTAssertNil(snapshot.controlVehicleID)
+            controller.performVehicleControl(.wake, vehicleID: secondID) { result in
+                if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+                finished.fulfill()
+            }
+        }
+
+        wait(for: [finished], timeout: 2)
+        let config = NSHomeDirectory() + "/Library/Application Support/Teslatlas Hub/config.toml"
+        XCTAssertEqual(installed.arguments, [
+            ["--config", config, "status"],
+            ["--config", config, "control", "--vehicle-id",
+             secondID.uuidString.lowercased(), "wake", "--confirm"]
+        ])
+    }
+
+    func testMultipleVehicleDashboardShowsNativeSelector() throws {
+        let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
+        let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
+        let status = """
+        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        """
+        let installed = RecordingCommandRunner(result: .success(status))
+        let controller = HubController(installedCommandRunner: installed,
+                                       serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+                                       serviceInstalledOverride: true)
+        let settled = expectation(description: "multi-vehicle selector rendered")
+        var dashboard: MainWindowController?
+        dashboard = MainWindowController(controller: controller) { _ in
+            let selector = self.popups(in: dashboard?.window?.contentView)
+                .first { $0.itemTitles == ["One", "Two"] }
+            XCTAssertNotNil(selector)
+            XCTAssertFalse(selector?.isHidden ?? true)
+            XCTAssertFalse(selector?.isBordered ?? true)
+            settled.fulfill()
+        }
+
+        wait(for: [settled], timeout: 2)
+        withExtendedLifetime(dashboard) {}
     }
 
     func testAccountDisplayKeepsConnectionStateSeparateFromProviderLabel() {
@@ -1289,6 +1347,20 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(buffer.data.count, TeslaTokenResponseBuffer.maximumBytes)
     }
 
+    func testServiceLogTailIsBoundedAndRefusesSymlinks() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let log = home.appendingPathComponent("hub.out.log")
+        let link = home.appendingPathComponent("linked.log")
+        try Data(String(repeating: "a", count: 8192).utf8).write(to: log)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: log)
+
+        let tail = try XCTUnwrap(HubController.logTail(of: log, maximumBytes: 1024))
+        XCTAssertEqual(Data(tail.utf8).count, 1024)
+        XCTAssertNil(HubController.logTail(of: link, maximumBytes: 1024))
+        XCTAssertNil(HubController.logTail(of: log, maximumBytes: 0))
+    }
+
     private func temporaryHome() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("teslatlas-hub-tests-\(UUID().uuidString)", isDirectory: true)
@@ -1318,6 +1390,11 @@ final class HubControllerTests: XCTestCase {
     private func labels(in view: NSView?) -> [NSTextField] {
         guard let view else { return [] }
         return (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap { labels(in: $0) }
+    }
+
+    private func popups(in view: NSView?) -> [NSPopUpButton] {
+        guard let view else { return [] }
+        return (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap { popups(in: $0) }
     }
 }
 

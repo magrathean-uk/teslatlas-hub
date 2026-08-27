@@ -9,18 +9,40 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`b9643a8baca60b2accb73b4c40c6740707f283de0fbe1eeea9337aa91a45f631`.
-It is a 66,598,668-byte ad-hoc development package, not a notarized release.
+`12bc026d578acc9a879a0b2d9862da4d1060ef8e2bedbf9de1ade8b01fde7684`.
+It is a 66,614,702-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-27: full locked Rust tests passed (832 library,
 49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-83 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source
-checks passed. `TeslatlasHub.pkg` upgraded the existing installation without
-error, installed the exact rebuilt app under `/Applications`, auto-opened it,
-and preserved the safely stopped Hub and migration data. The app binary hash
-matches the rebuilt package at
-`362c5abcb22d517f6140bfeff1193d67e9780c69f4ce0d4d70d339376da3be10`.
+89 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source,
+macOS release, release-evidence, and dependency-audit gates passed. The current
+package expands with the app and root service payload in their exact paths,
+contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
+deep strict verification. The current built app binary SHA-256 is
+`9f1b10beaf25db2bee882e68ab0ef3fdb41acfd28fd6362ef4bcce211348b684`.
+An earlier package upgraded the existing installation without error,
+auto-opened the exact app under `/Applications`, and preserved the safely
+stopped Hub and migration data; the new package has not been installed live.
+
+Current macOS reliability pass: the dashboard now exposes a native selector
+for every configured vehicle and sends each confirmed command to the explicit
+selected UUID. Single-vehicle presentation is unchanged. Cmd-L was exercised
+against the fresh built app and opened the real combined app/import/service log
+window. App and service log reads are bounded to one MiB, refuse symlinks and
+non-regular files, and large app events rotate without whole-file reads. App
+logs now record safe account, service, and vehicle-command lifecycle/error
+codes without vehicle ids or credentials.
+
+Guided SSH migration now binds a successful tunnel to the exact non-secret
+server/authentication settings used to open it, locks those fields while work
+is active, and refuses import if they changed. Session close terminates and
+then kills an uncooperative SSH tunnel after one second. Discovery rejects
+multiple running TeslaMate or database containers instead of selecting an
+arbitrary stack and records only safe actionable reason codes. Debian's Hub
+unit now matches the proxy/telemetry units' no-capability, private-device,
+kernel/control-group protection, address-family, SUID/SGID, native-syscall, and
+0077-umask restrictions. Linux packaging regressions passed.
 
 Unlocked native UI acceptance passed. Cmd-L opened the bounded redacted app,
 SSH/import and service logs; Run Diagnostics completed doctor, preflight,

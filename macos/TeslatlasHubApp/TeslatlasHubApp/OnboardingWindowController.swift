@@ -119,6 +119,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private let migrationPasswordFile = NSTextField(string: "")
     private let migrationKeyFile = NSTextField(string: "")
     private var migrationSession: TeslaMateServerImportSession?
+    private var connectedMigrationIdentity: String?
 
     init(controller: HubController,
          resumeMigrationHandoverPhase: HubMigrationHandoverPhase? = nil,
@@ -708,6 +709,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             footerSpinner.stopAnimation(nil)
         }
         migrationConnectButton?.isEnabled = !blocked
+        for case let control as NSControl in migrationKeyViews {
+            control.isEnabled = !blocked
+        }
         if let migrationConnectButton {
             migrationConnectButton.title = busyMessage == "Connecting…"
                 ? "Connecting…" : "Connect to Server"
@@ -893,9 +897,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         }
         HubAppLog.shared.record("compatibility.started", category: "teslamate_import")
         setBusy(true, message: "Connecting…")
+        let requestedMigrationIdentity = currentMigrationIdentity
         compatibility = nil
         migrationSession?.close()
         migrationSession = nil
+        connectedMigrationIdentity = nil
         let authentication: TeslaMateSSHAuthentication
         if migrationAuthentication.indexOfSelectedItem == 0 {
             let path = migrationIdentityFile.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -913,6 +919,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             case let .success(session):
                 self.migrationSSHPassword.stringValue = ""
                 self.migrationSession = session
+                self.connectedMigrationIdentity = requestedMigrationIdentity
                 self.migrationSource.stringValue = session.source
                 self.migrationCarID.stringValue = session.carID
                 self.migrationPasswordFile.stringValue = session.passwordFile.path
@@ -938,6 +945,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                                                 fields: ["error_code": HubAppLog.errorCode(error)])
                         session.close()
                         self.migrationSession = nil
+                        self.connectedMigrationIdentity = nil
                         self.compatibility = HubTeslaMateCompatibility(compatible: false,
                                                                        message: error.localizedDescription,
                                                                        reasonCode: "unavailable",
@@ -965,6 +973,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             showInlineError("Connect to the TeslaMate server before importing.")
             return
         }
+        guard connectedMigrationIdentity == currentMigrationIdentity else {
+            session.close()
+            migrationSession = nil
+            connectedMigrationIdentity = nil
+            compatibility = nil
+            showInlineError("Server settings changed. Connect to the TeslaMate server again before importing.")
+            return
+        }
         setBusy(true, message: "Importing data…")
         controller.importTeslaMateOnline(source: session.source,
                                          carID: session.carID,
@@ -972,6 +988,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                                          encryptionKeyFile: session.encryptionKeyFile.path) { [weak self] result in
             session.close()
             self?.migrationSession = nil
+            self?.connectedMigrationIdentity = nil
             self?.setupFinished(result)
         }
     }
@@ -981,6 +998,18 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             && Int64(migrationCarID.stringValue).map { $0 > 0 } == true
             && !migrationPasswordFile.stringValue.isEmpty
             && !migrationKeyFile.stringValue.isEmpty
+    }
+
+    private var currentMigrationIdentity: String {
+        let values = [
+            migrationServer.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+            migrationUser.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+            migrationPort.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+            String(migrationAuthentication.indexOfSelectedItem),
+            migrationIdentityFile.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+            migrationUseSudo.state == .on ? "sudo" : "direct"
+        ]
+        return values.joined(separator: "\u{0}")
     }
 
     private func runVerification() {
@@ -1063,6 +1092,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         errorMessage = nil
         migrationSession?.close()
         migrationSession = nil
+        connectedMigrationIdentity = nil
         render()
     }
 

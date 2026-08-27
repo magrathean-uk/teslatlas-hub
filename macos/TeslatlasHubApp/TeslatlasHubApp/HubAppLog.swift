@@ -6,6 +6,7 @@ final class HubAppLog {
 
     private static let maximumFileBytes = 1024 * 1024
     private static let retainedFileBytes = 512 * 1024
+    private static let maximumLineBytes = 16 * 1024
     private let lock = NSLock()
     private let fileURL: URL
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "eu.teslatlas.hub.app",
@@ -27,7 +28,9 @@ final class HubAppLog {
             }
             .joined(separator: " ")
         let suffix = safeFields.isEmpty ? "" : " \(safeFields)"
-        let line = "\(Self.timestamp()) [\(singleLine(level))] \(singleLine(category)) \(singleLine(name))\(suffix)\n"
+        let line = Self.boundedLine(
+            "\(Self.timestamp()) [\(singleLine(level))] \(singleLine(category)) \(singleLine(name))\(suffix)\n"
+        )
         logger.info("\(line.trimmingCharacters(in: .newlines), privacy: .public)")
 
         lock.lock()
@@ -38,9 +41,23 @@ final class HubAppLog {
     func recentText(maximumBytes: Int = 256 * 1024) -> String {
         lock.lock()
         defer { lock.unlock() }
-        guard let data = try? Data(contentsOf: fileURL) else { return "No app diagnostics are available yet.\n" }
-        let bounded = data.suffix(max(0, maximumBytes))
-        return String(decoding: bounded, as: UTF8.self)
+        guard maximumBytes > 0,
+              let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+              values.isRegularFile == true,
+              values.isSymbolicLink != true,
+              let handle = try? FileHandle(forReadingFrom: fileURL) else {
+            return "No app diagnostics are available yet.\n"
+        }
+        defer { try? handle.close() }
+        do {
+            let size = try handle.seekToEnd()
+            let boundedMaximum = UInt64(min(maximumBytes, Self.maximumFileBytes))
+            try handle.seek(toOffset: size > boundedMaximum ? size - boundedMaximum : 0)
+            let data = try handle.read(upToCount: Int(boundedMaximum)) ?? Data()
+            return String(decoding: data, as: UTF8.self)
+        } catch {
+            return "App diagnostics could not be read.\n"
+        }
     }
 
     static func errorCode(_ error: Error) -> String {
@@ -64,10 +81,15 @@ final class HubAppLog {
             try manager.createDirectory(at: directory,
                                         withIntermediateDirectories: true,
                                         attributes: [.posixPermissions: 0o700])
+            try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            if manager.fileExists(atPath: fileURL.path) {
+                let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { return }
+            }
             if let size = (try? manager.attributesOfItem(atPath: fileURL.path)[.size]) as? NSNumber,
-               size.intValue > Self.maximumFileBytes,
-               let data = try? Data(contentsOf: fileURL) {
-                try Data(data.suffix(Self.retainedFileBytes)).write(to: fileURL, options: .atomic)
+               size.intValue + line.utf8.count > Self.maximumFileBytes {
+                let data = try Self.tailData(of: fileURL, maximumBytes: Self.retainedFileBytes)
+                try data.write(to: fileURL, options: .atomic)
             }
             if !manager.fileExists(atPath: fileURL.path) {
                 guard manager.createFile(atPath: fileURL.path,
@@ -91,5 +113,23 @@ final class HubAppLog {
 
     private static func timestamp() -> String {
         ISO8601DateFormatter().string(from: Date())
+    }
+
+    private static func boundedLine(_ line: String) -> String {
+        let data = Data(line.utf8)
+        guard data.count > maximumLineBytes else { return line }
+        let marker = Data(" [truncated]\n".utf8)
+        var bounded = Data(data.prefix(maximumLineBytes - marker.count))
+        bounded.append(marker)
+        return String(decoding: bounded, as: UTF8.self)
+    }
+
+    private static func tailData(of url: URL, maximumBytes: Int) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let size = try handle.seekToEnd()
+        let boundedMaximum = UInt64(max(0, maximumBytes))
+        try handle.seek(toOffset: size > boundedMaximum ? size - boundedMaximum : 0)
+        return try handle.read(upToCount: Int(boundedMaximum)) ?? Data()
     }
 }

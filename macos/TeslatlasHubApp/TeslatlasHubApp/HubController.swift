@@ -161,6 +161,12 @@ enum HubVehicleControl: String, CaseIterable, Equatable {
     }
 }
 
+struct HubControlVehicle: Equatable {
+    let id: UUID
+    let displayName: String
+    let status: String
+}
+
 struct HubSnapshot {
     var health: HubHealth
     var service: String
@@ -169,6 +175,7 @@ struct HubSnapshot {
     var vehicleName: String
     var vehicle: String
     var controlVehicleID: UUID?
+    var controlVehicles: [HubControlVehicle]
     var database: String
     var activity: [HubActivity]
     var version: String
@@ -188,6 +195,7 @@ struct HubSnapshot {
         vehicleName: "Athena",
         vehicle: "Online · seen just now",
         controlVehicleID: nil,
+        controlVehicles: [],
         database: "Healthy · 18,426 records",
         activity: [
             HubActivity(message: "Vehicle online", age: "just now", color: .systemGreen),
@@ -212,6 +220,7 @@ struct HubSnapshot {
         vehicleName: "Vehicle",
         vehicle: "No configured vehicle",
         controlVehicleID: nil,
+        controlVehicles: [],
         database: "Waiting for setup or import",
         activity: [],
         version: HubRelease.fallbackVersion,
@@ -762,14 +771,18 @@ final class HubController {
             )))
             return
         }
+        HubAppLog.shared.record("sign_out.requested", category: "account")
         let runner = isServiceInstalled ? installedCommandRunner : commandRunner
         runner.run(arguments: ["--config", configPath.path, "control", "sign-out"]) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { completion(result.map { _ in () }); return }
                 switch result {
                 case .success:
+                    HubAppLog.shared.record("sign_out.completed", category: "account")
                     self.refresh { _ in completion(.success(())) }
                 case let .failure(error):
+                    HubAppLog.shared.record("sign_out.failed", category: "account", level: "ERROR",
+                                            fields: ["error_code": HubAppLog.errorCode(error)])
                     self.refresh { _ in
                         completion(.failure(HubActionError.commandFailed(
                             "Disconnect did not finish cleanly. Hub status was refreshed; check whether the account is still connected. \(error.localizedDescription)"
@@ -1763,6 +1776,7 @@ final class HubController {
     }
 
     func performVehicleControl(_ action: HubVehicleControl,
+                               vehicleID requestedVehicleID: UUID? = nil,
                                completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard snapshot.health == .running else {
@@ -1773,18 +1787,33 @@ final class HubController {
             completion(.failure(HubActionError.commandFailed("Connect Tesla before sending a vehicle command.")))
             return
         }
-        guard let vehicleID = snapshot.controlVehicleID else {
-            completion(.failure(HubActionError.commandFailed("Vehicle controls require exactly one configured vehicle.")))
+        guard let vehicleID = requestedVehicleID ?? snapshot.controlVehicleID else {
+            completion(.failure(HubActionError.commandFailed("Choose a vehicle before sending a command.")))
             return
         }
+        guard snapshot.controlVehicles.contains(where: { $0.id == vehicleID }) else {
+            completion(.failure(HubActionError.commandFailed("The selected vehicle is no longer configured.")))
+            return
+        }
+        HubAppLog.shared.record("command.requested", category: "vehicle_control",
+                                fields: ["action": action.rawValue])
         let runner = isServiceInstalled ? installedCommandRunner : commandRunner
         let arguments = ["--config", configPath.path, "control", "--vehicle-id",
                          vehicleID.uuidString.lowercased(), action.rawValue, "--confirm"]
         runner.run(arguments: arguments) { result in
             DispatchQueue.main.async {
                 switch result {
-                case .success: completion(.success(()))
-                case let .failure(error): completion(.failure(error))
+                case .success:
+                    HubAppLog.shared.record("command.accepted", category: "vehicle_control",
+                                            fields: ["action": action.rawValue])
+                    completion(.success(()))
+                case let .failure(error):
+                    HubAppLog.shared.record("command.failed", category: "vehicle_control", level: "ERROR",
+                                            fields: [
+                                                "action": action.rawValue,
+                                                "error_code": HubAppLog.errorCode(error)
+                                            ])
+                    completion(.failure(error))
                 }
             }
         }
@@ -1802,7 +1831,7 @@ final class HubController {
                 ("hub.err.log", folder.appendingPathComponent("hub.err.log"))
             ]
             let contents = files.compactMap { name, url in
-                Self.tail(of: url, maximumBytes: maximumBytes).map { "== \(name) ==\n\($0)" }
+                Self.logTail(of: url, maximumBytes: maximumBytes).map { "== \(name) ==\n\($0)" }
             }
             let text = contents.isEmpty ? "No Hub logs are available yet.\n" : contents.joined(separator: "\n")
             DispatchQueue.main.async { completion(text) }
@@ -1857,11 +1886,23 @@ final class HubController {
 
     private func runServiceCommand(_ arguments: [String], completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        let action = arguments.last ?? "unknown"
+        HubAppLog.shared.record("service.requested", category: "service",
+                                fields: ["action": action])
         serviceRunner.run(arguments: arguments) { result in
             DispatchQueue.main.async {
                 switch result {
-                case .success: completion(.success(()))
-                case let .failure(error): completion(.failure(error))
+                case .success:
+                    HubAppLog.shared.record("service.completed", category: "service",
+                                            fields: ["action": action])
+                    completion(.success(()))
+                case let .failure(error):
+                    HubAppLog.shared.record("service.failed", category: "service", level: "ERROR",
+                                            fields: [
+                                                "action": action,
+                                                "error_code": HubAppLog.errorCode(error)
+                                            ])
+                    completion(.failure(error))
                 }
             }
         }
@@ -2205,12 +2246,23 @@ final class HubController {
         return encoded
     }
 
-    private static func tail(of url: URL, maximumBytes: Int) -> String? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    static func logTail(of url: URL, maximumBytes: Int) -> String? {
+        guard maximumBytes > 0,
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+              values.isRegularFile == true,
+              values.isSymbolicLink != true,
+              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-        let size = (try? handle.seekToEnd()) ?? 0
-        try? handle.seek(toOffset: size > UInt64(maximumBytes) ? size - UInt64(maximumBytes) : 0)
-        return String(decoding: handle.readDataToEndOfFile(), as: UTF8.self)
+        do {
+            let boundedMaximum = min(maximumBytes, 1024 * 1024)
+            let size = try handle.seekToEnd()
+            let offset = size > UInt64(boundedMaximum) ? size - UInt64(boundedMaximum) : 0
+            try handle.seek(toOffset: offset)
+            let data = try handle.read(upToCount: boundedMaximum) ?? Data()
+            return String(decoding: data, as: UTF8.self)
+        } catch {
+            return nil
+        }
     }
 
     private func parseStatus(_ output: String) -> HubSnapshot? {
@@ -2233,6 +2285,19 @@ final class HubController {
         let controlVehicleID = vehicles.count == 1
             ? (vehicles[0]["vehicleId"] as? String).flatMap(UUID.init(uuidString:))
             : nil
+        let controlVehicles = vehicles.compactMap { vehicle -> HubControlVehicle? in
+            guard let idValue = vehicle["vehicleId"] as? String,
+                  let id = UUID(uuidString: idValue) else { return nil }
+            let name = (vehicle["displayName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayName = name.flatMap { $0.isEmpty ? nil : $0 } ?? "Vehicle"
+            let status: String
+            if let observed = vehicle["latestObservedAtMs"] as? NSNumber {
+                status = "Last seen \(relativeAge(milliseconds: observed.int64Value))"
+            } else {
+                status = "No observations yet"
+            }
+            return HubControlVehicle(id: id, displayName: displayName, status: status)
+        }
         let dbBytes = database?["bytes"] as? NSNumber
         let dbText = dbBytes.map { "Healthy · \($0.int64Value / 1_048_576) MB" } ?? "Waiting for setup or import"
         let dataDirectory = (database?["path"] as? String).map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
@@ -2276,6 +2341,7 @@ final class HubController {
                            vehicleName: vehicleName,
                            vehicle: vehicleSummary,
                            controlVehicleID: controlVehicleID,
+                           controlVehicles: controlVehicles,
                            database: dbText,
                            activity: [],
                            version: root["version"] as? String ?? HubRelease.fallbackVersion,
@@ -2284,7 +2350,7 @@ final class HubController {
     }
 
     private func statusSnapshot(_ status: HubSnapshot, installed: Bool, loaded: HubServiceLoadState) -> HubSnapshot {
-        guard installed else { return HubSnapshot(health: .needsInstall, service: "Not installed", account: status.account, provider: status.provider, vehicleName: status.vehicleName, vehicle: status.vehicle, controlVehicleID: nil, database: status.database, activity: status.activity, version: status.version, dataDirectory: status.dataDirectory ?? dataDirectory, diagnosticLines: status.diagnosticLines) }
+        guard installed else { return HubSnapshot(health: .needsInstall, service: "Not installed", account: status.account, provider: status.provider, vehicleName: status.vehicleName, vehicle: status.vehicle, controlVehicleID: nil, controlVehicles: status.controlVehicles, database: status.database, activity: status.activity, version: status.version, dataDirectory: status.dataDirectory ?? dataDirectory, diagnosticLines: status.diagnosticLines) }
         var result = status
         switch loaded {
         case .loaded:
@@ -2319,7 +2385,7 @@ final class HubController {
         case .unloaded: health = .stopped; service = "Installed but stopped"
         case .unknown: health = .degraded; service = "Installed · service state unavailable"
         }
-        return HubSnapshot(health: health, service: service, account: "Unknown", provider: nil, vehicleName: "Vehicle", vehicle: "Unknown", controlVehicleID: nil, database: "Unknown", activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [service, "Hub status command did not return a valid report."])
+        return HubSnapshot(health: health, service: service, account: "Unknown", provider: nil, vehicleName: "Vehicle", vehicle: "Unknown", controlVehicleID: nil, controlVehicles: [], database: "Unknown", activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [service, "Hub status command did not return a valid report."])
     }
 
     private func relativeAge(milliseconds: Int64) -> String {
