@@ -7,6 +7,7 @@ final class HubAppLog {
     private static let maximumFileBytes = 1024 * 1024
     private static let retainedFileBytes = 512 * 1024
     private static let maximumLineBytes = 16 * 1024
+    private static let maximumUnifiedLogBytes = 512
     private let lock = NSLock()
     private let fileURL: URL
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "eu.teslatlas.hub.app",
@@ -31,7 +32,8 @@ final class HubAppLog {
         let line = Self.boundedLine(
             "\(Self.timestamp()) [\(singleLine(level))] \(singleLine(category)) \(singleLine(name))\(suffix)\n"
         )
-        logger.info("\(line.trimmingCharacters(in: .newlines), privacy: .public)")
+        let unifiedLine = Self.boundedLine(line, maximumBytes: Self.maximumUnifiedLogBytes)
+        logger.info("\(unifiedLine.trimmingCharacters(in: .newlines), privacy: .public)")
 
         lock.lock()
         defer { lock.unlock() }
@@ -115,11 +117,12 @@ final class HubAppLog {
         ISO8601DateFormatter().string(from: Date())
     }
 
-    private static func boundedLine(_ line: String) -> String {
+    private static func boundedLine(_ line: String,
+                                    maximumBytes: Int = maximumLineBytes) -> String {
         let data = Data(line.utf8)
-        guard data.count > maximumLineBytes else { return line }
+        guard data.count > maximumBytes else { return line }
         let marker = Data(" [truncated]\n".utf8)
-        var bounded = Data(data.prefix(maximumLineBytes - marker.count))
+        var bounded = Data(data.prefix(maximumBytes - marker.count))
         bounded.append(marker)
         return String(decoding: bounded, as: UTF8.self)
     }

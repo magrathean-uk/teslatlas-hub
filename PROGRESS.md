@@ -41,7 +41,9 @@ against the fresh built app and opened the real combined app/import/service log
 window. App and service log reads are bounded to one MiB, refuse symlinks and
 non-regular files, and large app events rotate without whole-file reads. App
 logs now record safe account, service, and vehicle-command lifecycle/error
-codes without vehicle ids or credentials.
+codes without vehicle ids or credentials. The persistent file keeps up to
+16 KiB per event, while the duplicate macOS unified-log copy is capped at
+512 bytes to avoid excessive system-log and test output.
 
 Guided SSH migration now binds a successful tunnel to the exact non-secret
 server/authentication settings used to open it, locks those fields while work
