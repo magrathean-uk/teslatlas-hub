@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import XCTest
 @testable import Teslatlas_Hub
 
@@ -118,6 +119,23 @@ final class HubControllerTests: XCTestCase {
 
         XCTAssertFalse(controller.hasPendingMigrationHandover)
         XCTAssertNil(controller.pendingMigrationHandoverPhase)
+    }
+
+    func testMigrationHandoverFIFOIsFailClosedWithoutBlocking() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-marker-fifo-\(UUID().uuidString)", isDirectory: true)
+        let state = home.appendingPathComponent("Library/Application Support/Teslatlas Hub", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let marker = state.appendingPathComponent(".teslamate-handover-pending")
+        XCTAssertEqual(Darwin.mkfifo(marker.path, S_IRUSR | S_IWUSR), 0)
+        let controller = HubController(homeDirectory: home,
+                                       serviceInstalledOverride: false)
+
+        let started = Date()
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(controller.pendingMigrationHandoverPhase, .awaitingVerification)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
     }
 
     func testRunFullDiagnosticsInvokesDoctorPreflightStatusAndKeepsPreviewReadOnly() {

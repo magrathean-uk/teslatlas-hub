@@ -2007,7 +2007,8 @@ final class HubController {
             forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
         ), values.isRegularFile == true, values.isSymbolicLink != true,
               let size = values.fileSize, size <= 4_096,
-              let data = try? Data(contentsOf: migrationHandoverMarker),
+              let data = HubAppLog.regularFileData(of: migrationHandoverMarker,
+                                                   maximumBytes: 4_096),
               let state = try? JSONDecoder().decode(HubMigrationHandoverState.self, from: data) else {
             // An unreadable marker remains a safe gate and resumes at verification.
             return HubMigrationHandoverState(phase: .awaitingVerification,

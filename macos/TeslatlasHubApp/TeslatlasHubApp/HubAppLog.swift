@@ -136,6 +136,21 @@ final class HubAppLog {
         return String(decoding: data, as: UTF8.self)
     }
 
+    static func regularFileData(of url: URL, maximumBytes: Int) -> Data? {
+        guard maximumBytes > 0 else { return nil }
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard descriptor >= 0 else { return nil }
+        defer { Darwin.close(descriptor) }
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFREG,
+              information.st_size >= 0,
+              information.st_size <= off_t(maximumBytes) else { return nil }
+        return try? read(descriptor: descriptor,
+                         offset: 0,
+                         maximumBytes: Int(information.st_size))
+    }
+
     private static func read(descriptor: Int32,
                              offset: off_t,
                              maximumBytes: Int) throws -> Data {
