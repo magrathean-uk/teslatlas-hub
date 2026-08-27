@@ -4,13 +4,9 @@
 //! 0.8.0 dependency. It deliberately does not download, cache, or schedule
 //! terrain work.
 
-use std::{
-    fs::{self, File},
-    io::{Read, Seek, SeekFrom},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{fs::File, os::unix::fs::FileExt, path::Path, sync::Arc};
 
+use rustix::fs::{Mode, OFlags, open};
 use thiserror::Error;
 
 pub const SRTM3_SIDE: usize = 1_201;
@@ -133,7 +129,7 @@ pub fn tile_name(latitude: f64, longitude: f64) -> Result<String, TerrainError> 
 
 enum HgtStorage {
     Bytes(Arc<[u8]>),
-    File(PathBuf),
+    File(Arc<File>),
 }
 
 pub struct HgtTile {
@@ -154,11 +150,22 @@ impl HgtTile {
 
     pub fn open(name: &str, path: impl AsRef<Path>) -> Result<Self, TerrainError> {
         let path = path.as_ref();
-        let side = HgtSide::from_byte_len(fs::metadata(path)?.len())?;
+        let descriptor = open(
+            path,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+            Mode::empty(),
+        )
+        .map_err(std::io::Error::from)?;
+        let file = File::from(descriptor);
+        let metadata = file.metadata()?;
+        if !metadata.file_type().is_file() {
+            return Err(TerrainError::InvalidHgtLength);
+        }
+        let side = HgtSide::from_byte_len(metadata.len())?;
         Ok(Self {
             id: TileId::parse(name)?,
             side,
-            storage: HgtStorage::File(path.to_owned()),
+            storage: HgtStorage::File(Arc::new(file)),
         })
     }
 
@@ -194,10 +201,8 @@ impl HgtTile {
                 let start = offset as usize;
                 raw.copy_from_slice(&bytes[start..start + 2]);
             }
-            HgtStorage::File(path) => {
-                let mut file = File::open(path)?;
-                file.seek(SeekFrom::Start(offset))?;
-                file.read_exact(&mut raw)?;
+            HgtStorage::File(file) => {
+                file.read_exact_at(&mut raw, offset)?;
             }
         }
 
@@ -335,6 +340,28 @@ mod tests {
         let second = coordinate_for_cell(0.0, 0.0, SRTM3_SIDE, 600, 601);
         assert_eq!(tile.elevation_at(first.0, first.1).unwrap(), Some(123));
         assert_eq!(tile.elevation_at(second.0, second.1).unwrap(), Some(456));
+    }
+
+    #[test]
+    fn opened_tile_pins_the_validated_file_across_path_replacement() {
+        let (_directory, path) = sparse_tile("N00E000", SRTM3_SIDE);
+        write_cell(&path, SRTM3_SIDE, 600, 600, 321);
+        let tile = HgtTile::open("N00E000", &path).expect("valid HGT");
+        let retained = path.with_extension("retained");
+        fs::rename(&path, &retained).expect("retain original tile inode");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&path)
+                .status()
+                .expect("run mkfifo")
+                .success()
+        );
+
+        let coordinate = coordinate_for_cell(0.0, 0.0, SRTM3_SIDE, 600, 600);
+        assert_eq!(
+            tile.elevation_at(coordinate.0, coordinate.1).unwrap(),
+            Some(321)
+        );
     }
 
     #[test]
