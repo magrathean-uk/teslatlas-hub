@@ -86,6 +86,26 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(permissions & 0o777, 0o600)
     }
 
+    func testHostedXCTestLogsStayOutOfTheUserLogDirectory() {
+        let home = URL(fileURLWithPath: "/Users/example", isDirectory: true)
+        let temporary = URL(fileURLWithPath: "/private/var/tmp", isDirectory: true)
+        let testURL = HubAppLog.defaultLogURL(
+            environment: ["XCTestConfigurationFilePath": "/tmp/tests.xctestconfiguration"],
+            homeDirectory: home,
+            temporaryDirectory: temporary,
+            processIdentifier: 42
+        )
+        let productionURL = HubAppLog.defaultLogURL(
+            environment: [:],
+            homeDirectory: home,
+            temporaryDirectory: temporary,
+            processIdentifier: 42
+        )
+
+        XCTAssertEqual(testURL.path, "/private/var/tmp/TeslatlasHubTests-42/app.log")
+        XCTAssertEqual(productionURL.path, "/Users/example/Library/Logs/Teslatlas Hub/app.log")
+    }
+
     func testAppDiagnosticsBoundLargeEventsAndRotateWithoutReadingAnUnboundedFile() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("teslatlas-hub-log-bound-test-\(UUID().uuidString)", isDirectory: true)

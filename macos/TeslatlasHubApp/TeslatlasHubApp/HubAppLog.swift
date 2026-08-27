@@ -15,8 +15,27 @@ final class HubAppLog {
                                 category: "diagnostics")
 
     init(fileURL: URL? = nil) {
-        self.fileURL = fileURL ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/Teslatlas Hub/app.log")
+        self.fileURL = fileURL ?? Self.defaultLogURL(
+            environment: ProcessInfo.processInfo.environment,
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+            temporaryDirectory: FileManager.default.temporaryDirectory,
+            processIdentifier: getpid()
+        )
+    }
+
+    static func defaultLogURL(environment: [String: String],
+                              homeDirectory: URL,
+                              temporaryDirectory: URL,
+                              processIdentifier: Int32) -> URL {
+        let isTesting = environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+            || environment["XCInjectBundleInto"] != nil
+        if isTesting {
+            return temporaryDirectory
+                .appendingPathComponent("TeslatlasHubTests-\(processIdentifier)", isDirectory: true)
+                .appendingPathComponent("app.log")
+        }
+        return homeDirectory.appendingPathComponent("Library/Logs/Teslatlas Hub/app.log")
     }
 
     func record(_ name: String,
