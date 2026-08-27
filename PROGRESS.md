@@ -34,6 +34,12 @@ A missing, stale, or mismatched embedded/installed version still enters the
 fail-closed signed update path. Exact-match and mismatch paths are covered for
 both Fleet and legacy setup.
 
+Package updates now stop only the console user's exact `Teslatlas Hub` GUI
+process before replacing `/Applications/Teslatlas Hub.app`, wait five seconds
+for a normal exit, and use a bounded kill fallback for an unresponsive old
+process. Postinstall then opens the newly installed app. The helper is exercised
+with a real named process, and the packaging gate verifies its scope and order.
+
 Current macOS reliability pass: the dashboard now exposes a native selector
 for every configured vehicle and sends each confirmed command to the explicit
 selected UUID. Single-vehicle presentation is unchanged. Cmd-L was exercised

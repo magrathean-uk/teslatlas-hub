@@ -99,6 +99,32 @@ fi
     || fail "preinstall does not refuse unsafe multi-user shared-binary upgrades"
 /usr/bin/grep -Fq 'another user has a Hub LaunchAgent' "$COMMON" \
     || fail "multi-user upgrade refusal has no clear diagnostic"
+/usr/bin/grep -Fq '/usr/bin/pgrep -u "$expected_uid" -x "$process_name"' "$PREINSTALL" \
+    || fail "preinstall does not scope the running app check to the console user and exact name"
+/usr/bin/grep -Fq '/usr/bin/pkill -TERM -u "$expected_uid" -x "$process_name"' "$PREINSTALL" \
+    || fail "preinstall does not request a bounded clean app exit before replacement"
+/usr/bin/grep -Fq '/usr/bin/pkill -KILL -u "$expected_uid" -x "$process_name"' "$PREINSTALL" \
+    || fail "preinstall cannot finish replacing an unresponsive old app"
+assert_before_fixed "stop_running_app_for_update 'Teslatlas Hub' \"\$CONSOLE_UID\"" \
+    'STATE_DIRECTORY=$(upgrade_state_directory)' "$PREINSTALL"
+
+gui_update_helper="$TEST_ROOT/gui-update-helper.sh"
+/usr/bin/sed -n '/^# BEGIN TESTABLE GUI UPDATE HELPER$/,/^# END TESTABLE GUI UPDATE HELPER$/p' \
+    "$PREINSTALL" > "$gui_update_helper"
+# shellcheck source=/dev/null
+. "$gui_update_helper"
+test_process_name="tlhup$$"
+/usr/bin/perl -e '$0 = shift; sleep 30' "$test_process_name" &
+test_process_pid=$!
+/bin/sleep 0.1
+/usr/bin/pgrep -u "$(/usr/bin/id -u)" -x "$test_process_name" >/dev/null \
+    || fail "GUI update helper fixture did not start"
+stop_running_app_for_update "$test_process_name" "$(/usr/bin/id -u)" \
+    || fail "GUI update helper did not stop the old app process"
+if /bin/kill -0 "$test_process_pid" >/dev/null 2>&1; then
+    fail "GUI update helper left the old app process running"
+fi
+wait "$test_process_pid" >/dev/null 2>&1 || true
 
 assert_before_fixed '/usr/bin/plutil -lint "$rendered_plist"' '    stop_loaded_service_bounded' "$POSTINSTALL"
 assert_before_fixed '    stop_loaded_service_bounded' '"$BINARY" --config "$CONFIG" preflight' "$POSTINSTALL"
