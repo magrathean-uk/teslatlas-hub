@@ -17,7 +17,7 @@ use std::{
 };
 
 use rusqlite::{Connection, OpenFlags};
-use rustix::fs::statvfs;
+use rustix::fs::{Mode, OFlags, open, statvfs};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -1129,8 +1129,7 @@ fn copy_verified_member(
     member: &BackupMember,
 ) -> Result<(), DataRecoveryError> {
     let source_link_metadata = require_regular_file(source, "source backup member")?;
-    let mut input = File::open(source)
-        .map_err(|source_error| io_error("opening source backup member", source, source_error))?;
+    let mut input = open_regular_nonblocking(source, "opening source backup member")?;
     let source_file_metadata = input.metadata().map_err(|source_error| {
         io_error("inspecting opened source member", source, source_error)
     })?;
@@ -1167,6 +1166,12 @@ fn copy_verified_member(
         copied = copied
             .checked_add(u64::try_from(read).map_err(|_| invalid("copy byte count overflowed"))?)
             .ok_or_else(|| invalid("copy byte count overflowed"))?;
+        if copied > member.size {
+            return Err(invalid(format!(
+                "source backup member grew beyond its manifest size: {}",
+                member.path
+            )));
+        }
         digest.update(&buffer[..read]);
         output.write_all(&buffer[..read]).map_err(|source_error| {
             io_error("writing restored data member", destination, source_error)
@@ -1363,8 +1368,7 @@ fn read_bounded_private_file(path: &Path, maximum: u64) -> Result<Vec<u8>, DataR
     let capacity = usize::try_from(metadata.len())
         .map_err(|_| invalid("data-backup metadata size does not fit memory"))?;
     let mut bytes = Vec::with_capacity(capacity);
-    let file = File::open(path)
-        .map_err(|source| io_error("opening data-backup metadata", path, source))?;
+    let file = open_regular_nonblocking(path, "opening data-backup metadata")?;
     let opened_metadata = file
         .metadata()
         .map_err(|source| io_error("inspecting opened data-backup metadata", path, source))?;
@@ -1400,8 +1404,7 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), DataRecoveryError
 
 fn sha256_file_hex(path: &Path) -> Result<String, DataRecoveryError> {
     let before = require_regular_file(path, "data-backup member being hashed")?;
-    let file = File::open(path)
-        .map_err(|source| io_error("opening data-backup member for hashing", path, source))?;
+    let file = open_regular_nonblocking(path, "opening data-backup member for hashing")?;
     let opened = file
         .metadata()
         .map_err(|source| io_error("inspecting opened data-backup member", path, source))?;
@@ -1709,9 +1712,31 @@ fn same_regular_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
         && left.mtime_nsec() == right.mtime_nsec()
 }
 
+fn open_regular_nonblocking(
+    path: &Path,
+    operation: &'static str,
+) -> Result<File, DataRecoveryError> {
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::empty(),
+    )
+    .map_err(|source| io_error(operation, path, source.into()))?;
+    let file = File::from(descriptor);
+    let metadata = file
+        .metadata()
+        .map_err(|source| io_error("inspecting opened data-backup file", path, source))?;
+    if !metadata.file_type().is_file() {
+        return Err(invalid(format!(
+            "opened data-backup path is not a regular file: {}",
+            path.display()
+        )));
+    }
+    Ok(file)
+}
+
 fn sync_file(path: &Path) -> Result<(), DataRecoveryError> {
-    File::open(path)
-        .map_err(|source| io_error("opening data-backup member for sync", path, source))?
+    open_regular_nonblocking(path, "opening data-backup member for sync")?
         .sync_all()
         .map_err(|source| io_error("syncing data-backup member", path, source))
 }
@@ -1763,6 +1788,33 @@ mod tests {
             canonical_delta_chain_digest,
         },
     };
+
+    #[test]
+    fn private_backup_reader_rejects_a_fifo_without_waiting_for_a_writer() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let path = temporary.path().join("backup-v4.json");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&path)
+                .status()
+                .expect("run mkfifo")
+                .success()
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(PRIVATE_FILE_MODE))
+            .expect("FIFO permissions");
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            sender
+                .send(read_bounded_private_file(&path, MAX_MANIFEST_BYTES).is_err())
+                .expect("send FIFO result");
+        });
+        assert!(
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .expect("backup FIFO admission must not block")
+        );
+    }
 
     #[derive(Debug, PartialEq, Eq)]
     struct SnapshotEntry {
