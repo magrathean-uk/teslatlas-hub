@@ -139,10 +139,12 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         let events = FleetRecoveryEvents()
         let embedded = FleetRecoveryRunner(events: events,
                                             event: "embedded-setup",
-                                            result: .success("configured"))
+                                            result: .success("configured"),
+                                            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n"))
         let installed = FleetRecoveryRunner(events: events,
                                              event: "installed-setup",
-                                             result: .success("unused"))
+                                             result: .success("unused"),
+                                             versionResult: .success("teslatlas-hub 1.0.0-alpha.0\n"))
         var configAtInstall = ""
         let installer = FleetRecoveryInstaller(events: events) {
             configAtInstall = (try? self.configContents(in: home)) ?? ""
@@ -162,7 +164,9 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         wait(for: [finished], timeout: 2)
 
         XCTAssertTrue(configAtInstall.contains("provider = \"fleet\""))
-        XCTAssertEqual(events.values, ["service:stop", "embedded-setup", "command", "install", "service:start", "state", "command"])
+        XCTAssertEqual(events.values, [
+            "service:stop", "embedded-setup", "command", "command", "install", "service:start", "state", "command"
+        ])
     }
 
     func testInstalledUnconfiguredSetupReusesExactPackagedService() throws {
@@ -172,11 +176,13 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         let events = FleetRecoveryEvents()
         let embedded = FleetRecoveryRunner(events: events,
                                             event: "embedded-setup",
-                                            result: .success("configured"))
+                                            result: .success("configured"),
+                                            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n"))
         let installed = FleetRecoveryRunner(
             events: events,
             event: "installed-setup",
-            result: .success("teslatlas-hub 1.0.0-alpha.1\n")
+            result: .success("unused"),
+            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n")
         )
         let controller = HubController(commandRunner: embedded,
                                        installedCommandRunner: installed,
@@ -195,7 +201,7 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         XCTAssertTrue(try configContents(in: home).contains("provider = \"fleet\""))
         XCTAssertFalse(events.values.contains("install"))
         XCTAssertEqual(events.values, [
-            "service:stop", "embedded-setup", "command", "service:start", "state", "command"
+            "service:stop", "embedded-setup", "command", "command", "service:start", "state", "command"
         ])
     }
 
@@ -302,16 +308,24 @@ private final class FleetRecoveryRunner: HubCommandRunning {
     private let events: FleetRecoveryEvents
     private let event: String
     private let result: Result<String, Error>
+    private let versionResult: Result<String, Error>?
 
     init(events: FleetRecoveryEvents,
          event: String = "setup",
-         result: Result<String, Error>) {
+         result: Result<String, Error>,
+         versionResult: Result<String, Error>? = nil) {
         self.events = events
         self.event = event
         self.result = result
+        self.versionResult = versionResult
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        if arguments == ["--version"] {
+            events.append("command")
+            completion(versionResult ?? result)
+            return
+        }
         events.append(arguments.contains("setup-fleet") ? event : "command")
         completion(result)
     }

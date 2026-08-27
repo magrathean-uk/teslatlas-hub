@@ -52,6 +52,7 @@ final class TeslaMateServerImportSession {
 }
 
 enum TeslaMateServerImporter {
+    private static let maximumTunnelDiagnosticBytes = 64 * 1024
     private static let ssh = URL(fileURLWithPath: "/usr/bin/ssh")
 
     private struct SSHConnectionResources {
@@ -334,6 +335,8 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             let localPort = Int.random(in: 49152...65000)
             let tunnel = Process()
             let errorPipe = Pipe()
+            let diagnosticOutput = BoundedProcessOutput(maximumBytes: maximumTunnelDiagnosticBytes)
+            let diagnosticDrain = DispatchGroup()
             tunnel.executableURL = ssh
             tunnel.arguments = [
                 "-N", "-o", "ConnectTimeout=12",
@@ -349,6 +352,15 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             tunnel.standardOutput = FileHandle.nullDevice
             tunnel.standardError = errorPipe
             try tunnel.run()
+            diagnosticDrain.enter()
+            DispatchQueue.global(qos: .utility).async {
+                while true {
+                    let chunk = errorPipe.fileHandleForReading.readData(ofLength: 16 * 1024)
+                    if chunk.isEmpty { break }
+                    diagnosticOutput.append(chunk)
+                }
+                diagnosticDrain.leave()
+            }
 
             let deadline = Date().addingTimeInterval(5)
             while Date() < deadline {
@@ -366,14 +378,15 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
 
             if tunnel.isRunning {
                 stopTunnel(tunnel)
+                _ = diagnosticDrain.wait(timeout: .now() + 1)
                 HubAppLog.shared.record("ssh.tunnel.timeout", category: "teslamate_import",
                                         level: "ERROR")
                 throw HubActionError.commandFailed(
                     "The protected TeslaMate database tunnel did not become ready. Try again."
                 )
             }
-            let diagnostic = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-                                    encoding: .utf8) ?? ""
+            _ = diagnosticDrain.wait(timeout: .now() + 1)
+            let diagnostic = String(decoding: diagnosticOutput.snapshot(), as: UTF8.self)
             if diagnostic.localizedCaseInsensitiveContains("address already in use"), attempt < 2 {
                 HubAppLog.shared.record("ssh.tunnel.port_collision", category: "teslamate_import",
                                         level: "WARN")
@@ -388,16 +401,28 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
     }
 
     static func tunnelFailureMessage(_ diagnostic: String) -> String {
-        if diagnostic.localizedCaseInsensitiveContains("administratively prohibited") {
+        switch sshFailureReason(diagnostic) {
+        case "forwarding_disabled":
             return "The SSH server does not permit database forwarding. Enable TCP forwarding for this account."
-        }
-        if diagnostic.localizedCaseInsensitiveContains("permission denied") {
+        case "authentication_failed":
             return "SSH authentication failed while opening the database tunnel."
-        }
-        if diagnostic.localizedCaseInsensitiveContains("address already in use") {
+        case "host_key_failed":
+            return "SSH host identity verification failed. Verify or update this server in your SSH known-hosts file."
+        case "connection_refused":
+            return "The SSH server refused the connection. Check that SSH is running and the port is correct."
+        case "name_resolution_failed":
+            return "The SSH server name could not be resolved. Check the server address and network."
+        case "route_unavailable":
+            return "The SSH server is unreachable from this Mac. Check the network, VPN, and firewall."
+        case "connection_timed_out":
+            return "The SSH connection timed out. Check the server address, port, network, and firewall."
+        case "connection_closed":
+            return "The SSH server closed the connection while opening the database tunnel."
+        case "local_port_unavailable":
             return "A local database tunnel port was unavailable. Try again."
+        default:
+            return "Could not open the protected TeslaMate database tunnel."
         }
-        return "Could not open the protected TeslaMate database tunnel."
     }
 
     static func discoveryFailureMessage(_ error: Error) -> String {
@@ -422,6 +447,20 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             return "The selected TeslaMate project has more than one database container. Stop the duplicate, then try again."
         case "ssh_authentication_or_connection":
             return "SSH could not connect or authenticate. Check the server, port, account, and selected authentication method."
+        case "authentication_failed":
+            return "SSH authentication failed. Check the account and selected authentication method."
+        case "host_key_failed":
+            return "SSH host identity verification failed. Verify or update this server in your SSH known-hosts file."
+        case "connection_refused":
+            return "The SSH server refused the connection. Check that SSH is running and the port is correct."
+        case "name_resolution_failed":
+            return "The SSH server name could not be resolved. Check the server address and network."
+        case "route_unavailable":
+            return "The SSH server is unreachable from this Mac. Check the network, VPN, and firewall."
+        case "connection_timed_out":
+            return "The SSH connection timed out. Check the server address, port, network, and firewall."
+        case "connection_closed":
+            return "The SSH server closed the connection. Check the server logs and SSH policy."
         case "timed_out":
             return "The SSH connection timed out. Check the server address, port, and network."
         default:
@@ -432,7 +471,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
     static func discoveryFailureReason(_ error: Error) -> String {
         guard let actionError = error as? HubActionError else { return "process_start_failed" }
         switch actionError {
-        case let .commandExited(status, _):
+        case let .commandExited(status, message):
             switch status {
             case 20: return "teslamate_not_found"
             case 21: return "compose_project_missing"
@@ -443,7 +482,9 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             case 26: return "vehicle_missing"
             case 27: return "multiple_teslamate_instances"
             case 28: return "multiple_database_instances"
-            case 255: return "ssh_authentication_or_connection"
+            case 255:
+                let reason = sshFailureReason(message)
+                return reason == "unclassified" ? "ssh_authentication_or_connection" : reason
             default: return "remote_command_failed_\(status)"
             }
         case .commandTimedOut:
@@ -460,8 +501,36 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
     }
 
     private static func tunnelFailureReason(_ diagnostic: String) -> String {
+        sshFailureReason(diagnostic)
+    }
+
+    private static func sshFailureReason(_ diagnostic: String) -> String {
         if diagnostic.localizedCaseInsensitiveContains("administratively prohibited") { return "forwarding_disabled" }
-        if diagnostic.localizedCaseInsensitiveContains("permission denied") { return "authentication_failed" }
+        if diagnostic.localizedCaseInsensitiveContains("permission denied")
+            || diagnostic.localizedCaseInsensitiveContains("too many authentication failures") {
+            return "authentication_failed"
+        }
+        if diagnostic.localizedCaseInsensitiveContains("host key verification failed")
+            || diagnostic.localizedCaseInsensitiveContains("remote host identification has changed") {
+            return "host_key_failed"
+        }
+        if diagnostic.localizedCaseInsensitiveContains("connection refused") { return "connection_refused" }
+        if diagnostic.localizedCaseInsensitiveContains("could not resolve hostname")
+            || diagnostic.localizedCaseInsensitiveContains("name or service not known") {
+            return "name_resolution_failed"
+        }
+        if diagnostic.localizedCaseInsensitiveContains("no route to host")
+            || diagnostic.localizedCaseInsensitiveContains("network is unreachable") {
+            return "route_unavailable"
+        }
+        if diagnostic.localizedCaseInsensitiveContains("connection timed out")
+            || diagnostic.localizedCaseInsensitiveContains("operation timed out") {
+            return "connection_timed_out"
+        }
+        if diagnostic.localizedCaseInsensitiveContains("connection closed")
+            || diagnostic.localizedCaseInsensitiveContains("connection reset") {
+            return "connection_closed"
+        }
         if diagnostic.localizedCaseInsensitiveContains("address already in use") { return "local_port_unavailable" }
         return "unclassified"
     }

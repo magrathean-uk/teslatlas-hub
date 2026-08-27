@@ -1040,12 +1040,20 @@ final class HubControllerTests: XCTestCase {
 
     func testInstalledUnconfiguredLegacySetupRunsBeforePackagePreflight() throws {
         let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success("ok"))
+        let embedded = VersionAwareRunner(
+            events: events,
+            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n"),
+            commandResult: .success("ok")
+        )
+        let installed = VersionAwareRunner(
+            events: events,
+            versionResult: .success("teslatlas-hub 1.0.0-alpha.0\n")
+        )
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
-        let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
+        let controller = HubController(commandRunner: embedded,
+                                       installedCommandRunner: installed,
                                        installer: ScriptedInstaller(events: events),
                                        serviceRunner: ScriptedService(events: events),
                                        homeDirectory: home,
@@ -1061,14 +1069,84 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(events.values, [
-            "service:stop", "setup", "command", "install", "service:start", "command"
+            "service:stop", "setup", "version", "version", "install", "service:start", "command"
         ])
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
+    func testInstalledAccountSetupRejectsOversizedConfigBeforeCommands() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = home.appendingPathComponent(
+            "Library/Application Support/Teslatlas Hub/config.toml"
+        )
+        try FileManager.default.createDirectory(at: config.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data(repeating: 0x61, count: 1024 * 1024 + 1).write(to: config)
+        let runner = CountingRunner()
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       installer: RecordingInstaller(),
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "unsafe config rejected")
+
+        controller.configureTeslaAccount(
+            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        ) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("oversized config was accepted")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub configuration is too large.")
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 1)
+        XCTAssertEqual(runner.calls, 0)
+    }
+
+    func testInstalledAccountSetupRejectsSymlinkedConfigBeforeCommands() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = home.appendingPathComponent(
+            "Library/Application Support/Teslatlas Hub/config.toml"
+        )
+        let target = home.appendingPathComponent("replacement-config.toml")
+        try "data_dir = \"/tmp/replaced\"\n".write(to: target, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: config.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: config, withDestinationURL: target)
+        let runner = CountingRunner()
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       installer: RecordingInstaller(),
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "symlinked config rejected")
+
+        controller.configureTeslaAccount(
+            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        ) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("symlinked config was accepted")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub configuration is not a regular file.")
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 1)
+        XCTAssertEqual(runner.calls, 0)
+    }
+
     func testInstalledUnconfiguredLegacyReusesExactPackagedService() throws {
         let events = EventRecorder()
-        let embedded = ScriptedRunner(events: events, result: .success("configured"))
+        let embedded = VersionAwareRunner(
+            events: events,
+            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n"),
+            commandResult: .success("configured")
+        )
         let installed = VersionAwareRunner(
             events: events,
             versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n")
@@ -1095,7 +1173,7 @@ final class HubControllerTests: XCTestCase {
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(installer.installCalls, 0)
         XCTAssertEqual(events.values, [
-            "service:stop", "setup", "version", "service:start", "command"
+            "service:stop", "setup", "version", "version", "service:start", "command"
         ])
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
@@ -1228,6 +1306,16 @@ final class HubControllerTests: XCTestCase {
             finished.fulfill()
         }
         wait(for: [finished], timeout: 5)
+    }
+
+    func testBoundedProcessOutputRetainsOnlyNewestBytes() {
+        let output = BoundedProcessOutput(maximumBytes: 8)
+        output.append(Data("12345".utf8))
+        output.append(Data("67890".utf8))
+        XCTAssertEqual(String(decoding: output.snapshot(), as: UTF8.self), "34567890")
+
+        output.append(Data("abcdefghijk".utf8))
+        XCTAssertEqual(String(decoding: output.snapshot(), as: UTF8.self), "defghijk")
     }
 
     func testProcessExecutorTerminatesThenKillsHungCommandAtDeadline() {
@@ -1581,7 +1669,7 @@ private final class VersionAwareRunner: HubCommandRunning {
             events.append("version")
             completion(versionResult)
         } else {
-            events.append("command")
+            events.append(arguments.contains("setup") ? "setup" : "command")
             completion(commandResult)
         }
     }

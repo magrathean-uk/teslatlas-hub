@@ -703,12 +703,22 @@ final class HubController {
     }
 
     private func installedServiceMatchesBundledVersion(completion: @escaping (Bool) -> Void) {
-        installedCommandRunner.run(arguments: ["--version"]) { result in
-            switch result {
-            case let .success(output):
-                completion(Self.isBundledServiceVersionOutput(output))
-            case .failure:
+        commandRunner.run(arguments: ["--version"]) { [weak self] bundledResult in
+            guard let self,
+                  case let .success(bundledOutput) = bundledResult,
+                  Self.isBundledServiceVersionOutput(bundledOutput) else {
                 completion(false)
+                return
+            }
+            self.installedCommandRunner.run(arguments: ["--version"]) { installedResult in
+                guard case let .success(installedOutput) = installedResult else {
+                    completion(false)
+                    return
+                }
+                completion(
+                    installedOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        == bundledOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
             }
         }
     }
@@ -902,9 +912,7 @@ final class HubController {
             ?? configuredCollectorProvider()
         let originalConfig: String?
         do {
-            originalConfig = FileManager.default.fileExists(atPath: configPath.path)
-                ? try String(contentsOf: configPath, encoding: .utf8)
-                : nil
+            originalConfig = try readConfigIfPresent()
         } catch {
             completion(.failure(error))
             return
@@ -1035,9 +1043,7 @@ final class HubController {
             ?? configuredCollectorProvider()
         let originalConfig: String?
         do {
-            originalConfig = FileManager.default.fileExists(atPath: configPath.path)
-                ? try String(contentsOf: configPath, encoding: .utf8)
-                : nil
+            originalConfig = try readConfigIfPresent()
         } catch {
             completion(.failure(error))
             return
@@ -1125,9 +1131,7 @@ final class HubController {
         do {
             invocation = try Self.fleetSetupInvocation(configPath: configPath,
                                                        credentials: credentials)
-            originalConfig = FileManager.default.fileExists(atPath: configPath.path)
-                ? try String(contentsOf: configPath, encoding: .utf8)
-                : nil
+            originalConfig = try readConfigIfPresent()
         } catch {
             completion(.failure(error))
             return
@@ -1354,9 +1358,7 @@ final class HubController {
                                                   tokens: tokens,
                                                   vehicleID: vehicleID)
             installedInvocation = Self.oldCompatibleSetupInvocation(invocation)
-            originalConfig = installed && FileManager.default.fileExists(atPath: configPath.path)
-                ? try String(contentsOf: configPath, encoding: .utf8)
-                : nil
+            originalConfig = installed ? try readConfigIfPresent() : nil
         } catch {
             completion(.failure(error))
             return
@@ -1989,17 +1991,56 @@ final class HubController {
     }
 
     private func configuredCollectorIntervalSeconds() -> Int {
-        guard let content = try? String(contentsOf: configPath, encoding: .utf8),
+        guard let content = try? readConfigIfPresent(),
               let configured = Self.collectorIntervalSeconds(in: content),
               configured > 0 else { return 60 }
         return configured
     }
 
     private func configuredCollectorProvider() -> String? {
-        guard let content = try? String(contentsOf: configPath, encoding: .utf8) else {
+        guard let content = try? readConfigIfPresent() else {
             return nil
         }
         return Self.collectorProvider(in: content)
+    }
+
+    private func readConfigIfPresent() throws -> String? {
+        let descriptor = Darwin.open(configPath.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else {
+            if errno == ENOENT { return nil }
+            throw HubActionError.commandFailed("Hub configuration is not a regular file.")
+        }
+        defer { Darwin.close(descriptor) }
+
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFREG else {
+            throw HubActionError.commandFailed("Hub configuration is not a regular file.")
+        }
+        let maximumBytes = 1024 * 1024
+        guard information.st_size >= 0, information.st_size <= off_t(maximumBytes) else {
+            throw HubActionError.commandFailed("Hub configuration is too large.")
+        }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+        while true {
+            let count = buffer.withUnsafeMutableBytes { bytes in
+                Darwin.read(descriptor, bytes.baseAddress, bytes.count)
+            }
+            if count == 0 { break }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw HubActionError.commandFailed("Hub configuration could not be read.")
+            }
+            guard data.count + count <= maximumBytes else {
+                throw HubActionError.commandFailed("Hub configuration is too large.")
+            }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        guard let content = String(data: data, encoding: .utf8) else {
+            throw HubActionError.commandFailed("Hub configuration must use UTF-8 text.")
+        }
+        return content
     }
 
     private func ensureConfig(provider: String? = nil,
@@ -2010,15 +2051,7 @@ final class HubController {
         try manager.setAttributes([.posixPermissions: NSNumber(value: 0o700)], ofItemAtPath: configFolder.path)
         try manager.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
         try manager.setAttributes([.posixPermissions: NSNumber(value: 0o700)], ofItemAtPath: dataDirectory.path)
-        if manager.fileExists(atPath: configPath.path) {
-            let values = try configPath.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-            guard values.isRegularFile == true, values.isSymbolicLink != true else {
-                throw HubActionError.commandFailed("Hub configuration is not a regular file.")
-            }
-            guard let fileSize = values.fileSize, fileSize <= 1024 * 1024 else {
-                throw HubActionError.commandFailed("Hub configuration is too large.")
-            }
-            let original = try String(contentsOf: configPath, encoding: .utf8)
+        if let original = try readConfigIfPresent() {
             var updated = Self.addOfflineDefaults(to: original)
             if let provider {
                 updated = Self.settingCollectorProvider(provider, in: updated)

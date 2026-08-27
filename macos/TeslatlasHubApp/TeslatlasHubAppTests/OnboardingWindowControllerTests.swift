@@ -427,6 +427,23 @@ final class OnboardingWindowControllerTests: XCTestCase {
             ),
             "multiple_database_instances"
         )
+        XCTAssertEqual(
+            TeslaMateServerImporter.discoveryFailureMessage(
+                HubActionError.commandExited(255, "ssh: connect to private-host port 40022: Connection refused")
+            ),
+            "The SSH server refused the connection. Check that SSH is running and the port is correct."
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.tunnelFailureMessage(
+                "WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED for secret-host"
+            ),
+            "SSH host identity verification failed. Verify or update this server in your SSH known-hosts file."
+        )
+        XCTAssertFalse(
+            TeslaMateServerImporter.tunnelFailureMessage(
+                "ssh: Could not resolve hostname secret-host: nodename nor servname provided"
+            ).contains("secret-host")
+        )
     }
 
     func testCommandLLogWindowOffersFullDiagnosticsAndSharing() throws {
