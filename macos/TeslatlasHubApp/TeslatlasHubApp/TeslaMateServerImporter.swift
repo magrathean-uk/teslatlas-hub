@@ -52,8 +52,43 @@ final class TeslaMateServerImportSession {
 }
 
 enum TeslaMateServerImporter {
+    private static let temporaryDirectoryPrefix = "teslatlas-hub-import-"
     private static let maximumTunnelDiagnosticBytes = 64 * 1024
     private static let ssh = URL(fileURLWithPath: "/usr/bin/ssh")
+
+    /// Remove secret-bearing import directories left by a previous crashed app.
+    /// Only exact UUID names, real directories, and the current user's inodes
+    /// are admitted; similarly named files and symlinks are left untouched.
+    @discardableResult
+    static func cleanupStaleTemporaryDirectories(
+        in root: URL = FileManager.default.temporaryDirectory
+    ) -> Int {
+        let manager = FileManager.default
+        guard let entries = try? manager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+        var removed = 0
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard name.hasPrefix(temporaryDirectoryPrefix),
+                  UUID(uuidString: String(name.dropFirst(temporaryDirectoryPrefix.count))) != nil
+            else { continue }
+            var information = stat()
+            guard lstat(entry.path, &information) == 0,
+                  information.st_mode & S_IFMT == S_IFDIR,
+                  information.st_uid == getuid()
+            else { continue }
+            do {
+                try manager.removeItem(at: entry)
+                removed += 1
+            } catch {
+                continue
+            }
+        }
+        return removed
+    }
 
     private struct SSHConnectionResources {
         let temporaryDirectory: URL
@@ -216,7 +251,7 @@ printf 'address=%s\n' "$(encode "$db_ip")"
     ) throws -> SSHConnectionResources {
         let manager = FileManager.default
         let directory = manager.temporaryDirectory
-            .appendingPathComponent("teslatlas-hub-import-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("\(temporaryDirectoryPrefix)\(UUID().uuidString)", isDirectory: true)
         try manager.createDirectory(at: directory,
                                     withIntermediateDirectories: false,
                                     attributes: [.posixPermissions: 0o700])

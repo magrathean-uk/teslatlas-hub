@@ -64,6 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let staleImports = TeslaMateServerImporter.cleanupStaleTemporaryDirectories()
+        if staleImports > 0 {
+            HubAppLog.shared.record("temporary_files.removed", category: "teslamate_import",
+                                    fields: ["directories": String(staleImports)])
+        }
         hubController = HubController()
         HubAppLog.shared.record("launch.completed", category: "app")
         showDashboard { [weak self] snapshot in

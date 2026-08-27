@@ -4,6 +4,30 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class OnboardingWindowControllerTests: XCTestCase {
+    func testStaleSSHSecretCleanupAdmitsOnlyOwnedUUIDDirectories() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-cleanup-test-\(UUID().uuidString)", isDirectory: true)
+        let eligible = root.appendingPathComponent(
+            "teslatlas-hub-import-\(UUID().uuidString)", isDirectory: true
+        )
+        let unrelated = root.appendingPathComponent("teslatlas-hub-import-not-a-uuid", isDirectory: true)
+        let outside = root.appendingPathComponent("outside", isDirectory: true)
+        let linked = root.appendingPathComponent("teslatlas-hub-import-\(UUID().uuidString)")
+        try manager.createDirectory(at: eligible, withIntermediateDirectories: true)
+        try Data("secret".utf8).write(to: eligible.appendingPathComponent("ssh-password"))
+        try manager.createDirectory(at: unrelated, withIntermediateDirectories: true)
+        try manager.createDirectory(at: outside, withIntermediateDirectories: true)
+        try manager.createSymbolicLink(at: linked, withDestinationURL: outside)
+        defer { try? manager.removeItem(at: root) }
+
+        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
+        XCTAssertFalse(manager.fileExists(atPath: eligible.path))
+        XCTAssertTrue(manager.fileExists(atPath: unrelated.path))
+        XCTAssertTrue(manager.fileExists(atPath: linked.path))
+        XCTAssertTrue(manager.fileExists(atPath: outside.path))
+    }
+
     func testDashboardReportsInitialRefreshWithoutLeavingLaunchBlank() {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let refreshed = expectation(description: "initial dashboard refresh delivered")
