@@ -551,6 +551,11 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let copied = try XCTUnwrap(NSPasteboard.general.string(forType: .string))
         XCTAssertTrue(copied.contains("== full Hub diagnostics =="))
         XCTAssertTrue(copied.contains("== support metadata =="))
+        XCTAssertEqual(LogsWindowController.diagnosticsStatus(for: copied), "Diagnostics complete")
+        XCTAssertEqual(
+            LogsWindowController.diagnosticsStatus(for: "== doctor (failed) ==\nproblem"),
+            "Diagnostics found issues"
+        )
     }
 
     func testCommandLRedactsServiceSecretsBeforeDisplay() throws {

@@ -132,7 +132,7 @@ final class LogsWindowController: NSWindowController {
             ].joined(separator: "\n"))
             self.latestText = combined
             self.textView.string = combined
-            self.statusLabel.stringValue = "Diagnostics complete"
+            self.statusLabel.stringValue = Self.diagnosticsStatus(for: report)
             self.refreshButton.isEnabled = true
             self.diagnosticsButton.isEnabled = true
             self.copyButton.isEnabled = true
@@ -178,6 +178,10 @@ final class LogsWindowController: NSWindowController {
 
     private static func shareableText(_ text: String) -> String {
         HubShareRedactor.redact(text)
+    }
+
+    static func diagnosticsStatus(for report: String) -> String {
+        report.contains(" (failed) ==") ? "Diagnostics found issues" : "Diagnostics complete"
     }
 
     private func configureFlatButton(_ button: NSButton,
