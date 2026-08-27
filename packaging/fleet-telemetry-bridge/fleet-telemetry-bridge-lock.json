@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "upstream": {
+    "repository": "https://github.com/teslamotors/fleet-telemetry",
+    "version": "v0.9.4",
+    "commit": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "archive_url": "https://codeload.github.com/teslamotors/fleet-telemetry/tar.gz/d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9"
+  },
+  "overlay": {
+    "patch": "0001-teslatlas-http-dispatcher.patch",
+    "patch_sha256": "800b8572eb32da0f851316cf6e13349325ca6a3c4470887e8f3dc9bc222d8b59"
+  },
+  "bridge": {
+    "endpoint": "http://127.0.0.1:8080/v1/internal/fleet-telemetry",
+    "bearer_file_env": "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE",
+    "envelope_version": 1,
+    "max_envelope_bytes": 262144,
+    "default_timeout_ms": 2000,
+    "maximum_timeout_ms": 5000
+  },
+  "toolchain": {
+    "go_version": "go1.27.0",
+    "cgo_enabled": false
+  },
+  "targets": [
+    "darwin-arm64",
+    "darwin-amd64",
+    "linux-arm64",
+    "linux-amd64"
+  ]
+}

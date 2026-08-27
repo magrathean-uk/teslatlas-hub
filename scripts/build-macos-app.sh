@@ -24,6 +24,7 @@ PROJECT_DIR="$DERIVED/project"
 PROJECT="$PROJECT_DIR/TeslatlasHubApp.xcodeproj"
 RUST_BINARY="$ROOT/target/release/teslatlas-hub"
 PROXY_BINARY="$ROOT/target/release/tesla-http-proxy"
+FLEET_TELEMETRY_BINARY="$ROOT/target/release/fleet-telemetry"
 SERVICE_PACKAGE="$GENERATED/TeslatlasHubService.pkg"
 PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
 DIST="$ROOT/dist"
@@ -144,10 +145,14 @@ ensure_real_directory "$DIST"
 
 "$ROOT/scripts/build-tesla-command-proxy.sh" \
     --output "$PROXY_BINARY" >/dev/null
+"$ROOT/scripts/build-fleet-telemetry-bridge.sh" \
+    --target darwin-arm64 \
+    --output "$FLEET_TELEMETRY_BINARY" >/dev/null
 
 "$ROOT/scripts/build-macos-service-package.sh" \
     --binary "$RUST_BINARY" \
     --proxy-binary "$PROXY_BINARY" \
+    --fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY" \
     --version "$version" \
     --output "$SERVICE_PACKAGE" >/dev/null
 
@@ -185,6 +190,7 @@ resources="$PRODUCT/Contents/Resources"
 # Keep a separately signed app resource for release provenance; the service
 # package copy is the LaunchAgent's runtime sibling beside the Hub binary.
 /usr/bin/install -m 0755 "$PROXY_BINARY" "$resources/tesla-http-proxy"
+/usr/bin/install -m 0755 "$FLEET_TELEMETRY_BINARY" "$resources/fleet-telemetry"
 /usr/bin/install -m 0644 "$SERVICE_PACKAGE" "$resources/TeslatlasHubService.pkg"
 for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md; do
     if [ -f "$ROOT/$legal_file" ]; then
@@ -204,6 +210,12 @@ require_macos_13_or_earlier "$resources/teslatlas-hub"
     || die "embedded Tesla command proxy is not arm64-only"
 is_executable_macho "$resources/tesla-http-proxy" \
     || die "embedded Tesla command proxy is not a Mach-O executable"
+require_macos_13_or_earlier "$resources/tesla-http-proxy"
+[ "$(/usr/bin/lipo -archs "$resources/fleet-telemetry")" = arm64 ] \
+    || die "embedded Fleet Telemetry receiver is not arm64-only"
+is_executable_macho "$resources/fleet-telemetry" \
+    || die "embedded Fleet Telemetry receiver is not a Mach-O executable"
+require_macos_13_or_earlier "$resources/fleet-telemetry"
 proxy_minimum_macos=$(
     /usr/bin/otool -l "$resources/tesla-http-proxy" | /usr/bin/awk '
         $1 == "cmd" { command = $2 }
@@ -226,6 +238,7 @@ require_macos_13_or_earlier "$app_binary"
 
 /usr/bin/codesign --force --sign - --timestamp=none "$resources/teslatlas-hub" >/dev/null
 /usr/bin/codesign --force --sign - --timestamp=none "$resources/tesla-http-proxy" >/dev/null
+/usr/bin/codesign --force --sign - --timestamp=none "$resources/fleet-telemetry" >/dev/null
 /usr/bin/codesign --force --deep --sign - --timestamp=none "$PRODUCT" >/dev/null
 /usr/bin/codesign --verify --deep --strict "$PRODUCT"
 

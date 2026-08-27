@@ -5,6 +5,7 @@
 *.zst
 *.deb
 /dist/
+__pycache__/
 # Private Hub state and sanitized VPS-derived development data.
 /.teslatlas-hub/
 /.worktrees/

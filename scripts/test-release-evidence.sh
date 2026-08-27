@@ -78,7 +78,11 @@ printf '%s\n' '# lockfile' 'version = 4' '' '[[package]]' \
 mkdir "$TMP/signed-repo/scripts"
 cp "$ROOT/scripts/go-proxy-evidence.py" "$TMP/signed-repo/scripts/"
 cp "$ROOT/scripts/tesla-proxy-lock.json" "$TMP/signed-repo/scripts/"
-git -C "$TMP/signed-repo" add Cargo.toml main.rs LICENSE THIRD_PARTY_NOTICES.md Cargo.lock scripts
+cp "$ROOT/scripts/fleet-telemetry-evidence.py" "$TMP/signed-repo/scripts/"
+mkdir -p "$TMP/signed-repo/packaging/fleet-telemetry-bridge"
+cp "$ROOT/packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json" \
+    "$TMP/signed-repo/packaging/fleet-telemetry-bridge/"
+git -C "$TMP/signed-repo" add Cargo.toml main.rs LICENSE THIRD_PARTY_NOTICES.md Cargo.lock scripts packaging
 git -C "$TMP/signed-repo" commit -q -m fixture
 GNUPGHOME="$GPG_TMP" git -C "$TMP/signed-repo" tag -s -m fixture v1.0.0
 printf '%s\n' artifact >"$TMP/signed-repo/artifact.deb"
@@ -158,13 +162,43 @@ else
 fi
 python3 "$TMP/signed-repo/scripts/go-proxy-evidence.py" \
     --repo "$TMP/signed-repo" --verify-dir "$TMP/go-evidence" >/dev/null
+cp "$TMP/tesla-http-proxy" "$TMP/fleet-telemetry"
+python3 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
+    --receiver-binary "$TMP/fleet-telemetry" --output-dir "$TMP/fleet-telemetry-evidence" >/dev/null
+python3 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
+    --verify-dir "$TMP/fleet-telemetry-evidence" >/dev/null
+mkdir -p "$TMP/substituted-repo/packaging/fleet-telemetry-bridge"
+cp "$ROOT/packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json" \
+    "$TMP/substituted-repo/packaging/fleet-telemetry-bridge/"
+python3 - "$TMP/substituted-repo/packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+lock = json.loads(path.read_text())
+lock["upstream"]["commit"] = "0" * 40
+path.write_text(json.dumps(lock, indent=2) + "\n")
+PY
+python3 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$TMP/substituted-repo" \
+    --receiver-binary "$TMP/fleet-telemetry" \
+    --output-dir "$TMP/substituted-fleet-telemetry-evidence" >/dev/null
+if python3 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
+    --verify-dir "$TMP/substituted-fleet-telemetry-evidence" \
+    >"$TMP/substituted-fleet-telemetry.out" 2>&1; then
+    echo 'release-evidence test: substituted Fleet Telemetry lock was accepted' >&2
+    exit 1
+fi
+grep -Fq 'does not match the reviewed repository lock' \
+    "$TMP/substituted-fleet-telemetry.out"
 
 if GNUPGHOME="$GPG_TMP" python3 "$SCRIPT" --repo "$TMP/signed-repo" --tag v1.0.0 \
     --tag-signer-fingerprint "$TAG_FINGERPRINT" \
     --output-dir "$TMP/signed-repo/forged-mac-evidence" --signing-key "$TMP/signing.pem" \
     --public-key-sha256 "$PUBLIC_KEY_SHA256" \
     --artifact "$TMP/signed-repo/artifact.zip" \
-    --go-proxy-evidence "$TMP/go-evidence" >"$TMP/forged-mac.out" 2>&1; then
+    --go-proxy-evidence "$TMP/go-evidence" \
+    --fleet-telemetry-evidence "$TMP/fleet-telemetry-evidence" >"$TMP/forged-mac.out" 2>&1; then
     echo 'release-evidence test: arbitrary ZIP was accepted as a macOS release' >&2
     exit 1
 fi
@@ -179,17 +213,20 @@ printf '%s\n' '#!/bin/sh' 'exit 0' \
 chmod 0755 "$TMP/mac-artifact/Teslatlas Hub.app/Contents/MacOS/Teslatlas Hub"
 cp "$TMP/tesla-http-proxy" \
     "$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/tesla-http-proxy"
+cp "$TMP/fleet-telemetry" \
+    "$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/fleet-telemetry"
 printf '%s\n' service-package \
     >"$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg"
 python3 - "$TMP/mac-artifact/Teslatlas Hub.app/Contents/Info.plist" \
-    "$TMP/tesla-http-proxy" "$TMP/go-evidence/go-component-manifest.json" \
+    "$TMP/tesla-http-proxy" "$TMP/fleet-telemetry" "$TMP/go-evidence/go-component-manifest.json" \
+    "$TMP/fleet-telemetry-evidence/fleet-telemetry-component-manifest.json" \
     "$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg" <<'PY'
 import hashlib
 from pathlib import Path
 import plistlib
 import sys
 
-info, proxy, evidence, package = map(Path, sys.argv[1:])
+info, proxy, receiver, evidence, receiver_evidence, package = map(Path, sys.argv[1:])
 sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
 info.write_bytes(plistlib.dumps({
     "CFBundleExecutable": "Teslatlas Hub",
@@ -199,6 +236,8 @@ info.write_bytes(plistlib.dumps({
     "TeslatlasReleaseTeamIdentifier": "4AA2EMZ2HA",
     "TeslatlasUnsignedProxySHA256": sha(proxy),
     "TeslatlasGoEvidenceManifestSHA256": sha(evidence),
+    "TeslatlasUnsignedFleetTelemetrySHA256": sha(receiver),
+    "TeslatlasFleetTelemetryEvidenceManifestSHA256": sha(receiver_evidence),
     "TeslatlasServicePackageSHA256": sha(package),
 }))
 PY
@@ -218,7 +257,8 @@ if GNUPGHOME="$GPG_TMP" python3 "$SCRIPT" --repo "$TMP/signed-repo" --tag v1.0.0
     --output-dir "$TMP/signed-repo/extra-zip-content" --signing-key "$TMP/signing.pem" \
     --public-key-sha256 "$PUBLIC_KEY_SHA256" \
     --artifact "$TMP/signed-repo/artifact.zip" \
-    --go-proxy-evidence "$TMP/go-evidence" >"$TMP/extra-zip-content.out" 2>&1; then
+    --go-proxy-evidence "$TMP/go-evidence" \
+    --fleet-telemetry-evidence "$TMP/fleet-telemetry-evidence" >"$TMP/extra-zip-content.out" 2>&1; then
     echo 'release-evidence test: unsigned ZIP sidecar was accepted' >&2
     exit 1
 fi
@@ -252,6 +292,8 @@ case "$1" in
         mkdir -p "$3/Payload/Library/Application Support/Teslatlas Hub/bin"
         cp "$RELEASE_TEST_PROXY" \
             "$3/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
+        cp "$RELEASE_TEST_FLEET_TELEMETRY" \
+            "$3/Payload/Library/Application Support/Teslatlas Hub/bin/fleet-telemetry"
         if [ "${RELEASE_MUTATE_PACKAGE_PROXY:-0}" = 1 ]; then
             printf '%s\n' changed >> \
                 "$3/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
@@ -275,6 +317,8 @@ PATH="$TMP/mac-bin:$PATH"
 export PATH
 RELEASE_TEST_PROXY="$TMP/tesla-http-proxy"
 export RELEASE_TEST_PROXY
+RELEASE_TEST_FLEET_TELEMETRY="$TMP/fleet-telemetry"
+export RELEASE_TEST_FLEET_TELEMETRY
 
 if RELEASE_REJECT_GATEKEEPER=1 GNUPGHOME="$GPG_TMP" \
     python3 "$SCRIPT" --repo "$TMP/signed-repo" --tag v1.0.0 \
@@ -282,7 +326,8 @@ if RELEASE_REJECT_GATEKEEPER=1 GNUPGHOME="$GPG_TMP" \
     --output-dir "$TMP/signed-repo/gatekeeper-rejected" --signing-key "$TMP/signing.pem" \
     --public-key-sha256 "$PUBLIC_KEY_SHA256" \
     --artifact "$TMP/signed-repo/artifact.zip" \
-    --go-proxy-evidence "$TMP/go-evidence" >"$TMP/gatekeeper-rejected.out" 2>&1; then
+    --go-proxy-evidence "$TMP/go-evidence" \
+    --fleet-telemetry-evidence "$TMP/fleet-telemetry-evidence" >"$TMP/gatekeeper-rejected.out" 2>&1; then
     echo 'release-evidence test: Gatekeeper rejection was accepted' >&2
     exit 1
 fi
@@ -295,7 +340,8 @@ if RELEASE_REJECT_STAPLER=1 GNUPGHOME="$GPG_TMP" \
     --output-dir "$TMP/signed-repo/stapler-rejected" --signing-key "$TMP/signing.pem" \
     --public-key-sha256 "$PUBLIC_KEY_SHA256" \
     --artifact "$TMP/signed-repo/artifact.zip" \
-    --go-proxy-evidence "$TMP/go-evidence" >"$TMP/stapler-rejected.out" 2>&1; then
+    --go-proxy-evidence "$TMP/go-evidence" \
+    --fleet-telemetry-evidence "$TMP/fleet-telemetry-evidence" >"$TMP/stapler-rejected.out" 2>&1; then
     echo 'release-evidence test: notarization rejection was accepted' >&2
     exit 1
 fi
@@ -312,7 +358,8 @@ if GNUPGHOME="$GPG_TMP" python3 "$SCRIPT" --repo "$TMP/signed-repo" --tag v1.0.0
     --output-dir "$TMP/signed-repo/wrong-app-proxy" --signing-key "$TMP/signing.pem" \
     --public-key-sha256 "$PUBLIC_KEY_SHA256" \
     --artifact "$TMP/signed-repo/artifact.zip" \
-    --go-proxy-evidence "$TMP/go-evidence" >"$TMP/wrong-app-proxy.out" 2>&1; then
+    --go-proxy-evidence "$TMP/go-evidence" \
+    --fleet-telemetry-evidence "$TMP/fleet-telemetry-evidence" >"$TMP/wrong-app-proxy.out" 2>&1; then
     echo 'release-evidence test: mismatched app proxy was accepted' >&2
     exit 1
 fi
@@ -329,7 +376,8 @@ if RELEASE_MUTATE_PACKAGE_PROXY=1 GNUPGHOME="$GPG_TMP" \
     --output-dir "$TMP/signed-repo/wrong-package-proxy" --signing-key "$TMP/signing.pem" \
     --public-key-sha256 "$PUBLIC_KEY_SHA256" \
     --artifact "$TMP/signed-repo/artifact.zip" \
-    --go-proxy-evidence "$TMP/go-evidence" >"$TMP/wrong-package-proxy.out" 2>&1; then
+    --go-proxy-evidence "$TMP/go-evidence" \
+    --fleet-telemetry-evidence "$TMP/fleet-telemetry-evidence" >"$TMP/wrong-package-proxy.out" 2>&1; then
     echo 'release-evidence test: mismatched package proxy was accepted' >&2
     exit 1
 fi
@@ -351,7 +399,8 @@ if PATH="$TMP/mutate-bin:$PATH" RELEASE_REAL_CARGO="$REAL_CARGO" \
     --output-dir "$TMP/signed-repo/mutated-go-evidence" --signing-key "$TMP/signing.pem" \
     --public-key-sha256 "$PUBLIC_KEY_SHA256" \
     --artifact "$TMP/signed-repo/artifact.zip" \
-    --go-proxy-evidence "$TMP/go-evidence" >"$TMP/go-mutation.out" 2>&1; then
+    --go-proxy-evidence "$TMP/go-evidence" \
+    --fleet-telemetry-evidence "$TMP/fleet-telemetry-evidence" >"$TMP/go-mutation.out" 2>&1; then
     echo 'release-evidence test: Go evidence mutation was accepted' >&2
     exit 1
 fi
@@ -365,7 +414,8 @@ GNUPGHOME="$GPG_TMP" python3 "$SCRIPT" --repo "$TMP/signed-repo" --tag v1.0.0 \
     --output-dir "$TMP/signed-repo/mac-evidence" --signing-key "$TMP/signing.pem" \
     --public-key-sha256 "$PUBLIC_KEY_SHA256" \
     --artifact "$TMP/signed-repo/artifact.zip" \
-    --go-proxy-evidence "$TMP/go-evidence" >/dev/null
+    --go-proxy-evidence "$TMP/go-evidence" \
+    --fleet-telemetry-evidence "$TMP/fleet-telemetry-evidence" >/dev/null
 [ -s "$TMP/signed-repo/mac-evidence/go-proxy-evidence/go-component-manifest.json" ]
 (cd "$TMP/signed-repo" && shasum -a 256 -c mac-evidence/SHA256SUMS >/dev/null)
 python3 - "$TMP/signed-repo/mac-evidence" <<'PY'
@@ -388,6 +438,7 @@ cp "$TMP/good-artifact.zip" "$bundle/Teslatlas Hub.zip"
 cp "$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg" \
     "$bundle/TeslatlasHubService.pkg"
 cp -R "$TMP/go-evidence" "$bundle/go-proxy-evidence"
+cp -R "$TMP/fleet-telemetry-evidence" "$bundle/fleet-telemetry-evidence"
 for receipt in app-log.json app-submit.json service-package-log.json \
     service-package-submit.json; do
     printf '%s\n' '{"status":"Accepted"}' >"$bundle/notary-logs/$receipt"
@@ -399,6 +450,9 @@ done
         find go-proxy-evidence -type f -print | LC_ALL=C sort | while IFS= read -r file; do
             shasum -a 256 "$file"
         done
+        find fleet-telemetry-evidence -type f -print | LC_ALL=C sort | while IFS= read -r file; do
+            shasum -a 256 "$file"
+        done
     } >SHA256SUMS
 )
 GNUPGHOME="$GPG_TMP" python3 "$SCRIPT" --repo "$TMP/signed-repo" --tag v1.0.0 \
@@ -407,7 +461,8 @@ GNUPGHOME="$GPG_TMP" python3 "$SCRIPT" --repo "$TMP/signed-repo" --tag v1.0.0 \
     --public-key-sha256 "$PUBLIC_KEY_SHA256" \
     --artifact "$bundle/Teslatlas Hub.zip" \
     --artifact "$bundle/TeslatlasHubService.pkg" \
-    --go-proxy-evidence "$bundle/go-proxy-evidence" >/dev/null
+    --go-proxy-evidence "$bundle/go-proxy-evidence" \
+    --fleet-telemetry-evidence "$bundle/fleet-telemetry-evidence" >/dev/null
 [ -s "$TMP/signed-repo/bundle-evidence/macos-release-receipts/SHA256SUMS" ]
 [ -s "$TMP/signed-repo/bundle-evidence/macos-release-receipts/notary-logs/app-log.json" ]
 (cd "$TMP/signed-repo" && shasum -a 256 -c bundle-evidence/SHA256SUMS >/dev/null)
@@ -421,6 +476,7 @@ if GNUPGHOME="$GPG_TMP" python3 "$SCRIPT" --repo "$TMP/signed-repo" --tag v1.0.0
     --artifact "$bundle/Teslatlas Hub.zip" \
     --artifact "$bundle/TeslatlasHubService.pkg" \
     --go-proxy-evidence "$bundle/go-proxy-evidence" \
+    --fleet-telemetry-evidence "$bundle/fleet-telemetry-evidence" \
     >"$TMP/mutated-bundle.out" 2>&1; then
     echo 'release-evidence test: mutated release bundle was accepted' >&2
     exit 1

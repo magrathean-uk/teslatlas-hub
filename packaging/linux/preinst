@@ -4,10 +4,77 @@ set -eu
 [ "${1:-}" = upgrade ] || exit 0
 
 service=teslatlas-hub.service
+command_proxy_service=teslatlas-command-proxy.service
+fleet_telemetry_service=teslatlas-fleet-telemetry.service
 state_file=${TESLATLAS_HUB_MAINTAINER_STATE_FILE:-/run/teslatlas-hub-maintainer.state}
 backup_dir=${TESLATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/teslatlas-hub-package-upgrade}
 hub_binary=${TESLATLAS_HUB_BINARY:-/usr/bin/teslatlas-hub}
 unit_file=${TESLATLAS_HUB_UNIT_FILE:-/lib/systemd/system/teslatlas-hub.service}
+command_proxy_binary=${TESLATLAS_COMMAND_PROXY_BINARY:-/usr/lib/teslatlas-hub/tesla-http-proxy}
+fleet_telemetry_binary=${TESLATLAS_FLEET_TELEMETRY_BINARY:-/usr/lib/teslatlas-hub/fleet-telemetry}
+command_proxy_unit_file=${TESLATLAS_COMMAND_PROXY_UNIT_FILE:-/lib/systemd/system/teslatlas-command-proxy.service}
+fleet_telemetry_unit_file=${TESLATLAS_FLEET_TELEMETRY_UNIT_FILE:-/lib/systemd/system/teslatlas-fleet-telemetry.service}
+command_proxy_config=${TESLATLAS_COMMAND_PROXY_CONFIG:-/etc/teslatlas-hub/command-proxy.env}
+fleet_telemetry_config=${TESLATLAS_FLEET_TELEMETRY_CONFIG:-/etc/teslatlas-hub/fleet-telemetry.json}
+
+unit_available() {
+    systemctl cat "$1" >/dev/null 2>&1
+}
+
+service_state() {
+    inspected_service=$1
+    inspected_present=0
+    inspected_active=0
+    inspected_enabled=0
+    if unit_available "$inspected_service"; then
+        inspected_present=1
+        systemctl is-active --quiet "$inspected_service" && inspected_active=1
+        systemctl is-enabled --quiet "$inspected_service" && inspected_enabled=1
+    fi
+    return 0
+}
+
+record_service_state() {
+    service_state "$service"
+    hub_present=$inspected_present
+    hub_active=$inspected_active
+    hub_enabled=$inspected_enabled
+    service_state "$command_proxy_service"
+    proxy_present=$inspected_present
+    proxy_active=$inspected_active
+    proxy_enabled=$inspected_enabled
+    service_state "$fleet_telemetry_service"
+    telemetry_present=$inspected_present
+    telemetry_active=$inspected_active
+    telemetry_enabled=$inspected_enabled
+
+    state_tmp="${state_file}.$$"
+    (umask 077 && printf '%s %s %s %s %s %s %s %s %s\n' \
+        "$hub_present" "$hub_active" "$hub_enabled" \
+        "$proxy_present" "$proxy_active" "$proxy_enabled" \
+        "$telemetry_present" "$telemetry_active" "$telemetry_enabled" > "$state_tmp")
+    mv -f "$state_tmp" "$state_file"
+}
+
+stop_if_active() {
+    [ "$2" = 1 ] || return 0
+    systemctl stop "$1"
+}
+
+backup_optional_file() {
+    source_file=$1
+    backup_name=$2
+    backup_mode=$3
+    if [ -e "$source_file" ] || [ -L "$source_file" ]; then
+        [ -f "$source_file" ] && [ ! -L "$source_file" ] || {
+            echo "Installed Teslatlas sidecar payload is unsafe: $source_file" >&2
+            return 1
+        }
+        install -o root -g root -m "$backup_mode" "$source_file" "$backup_dir/$backup_name"
+    else
+        install -o root -g root -m 0600 /dev/null "$backup_dir/$backup_name.absent"
+    fi
+}
 
 [ ! -e "$backup_dir" ] && [ ! -L "$backup_dir" ] || {
     echo "Teslatlas Hub upgrade backup already exists: $backup_dir" >&2
@@ -18,13 +85,27 @@ unit_file=${TESLATLAS_HUB_UNIT_FILE:-/lib/systemd/system/teslatlas-hub.service}
     exit 1
 }
 install -d -o root -g root -m 0700 "$backup_dir"
+services_recorded=0
 
 cleanup_on_failure() {
     status=$?
     trap - EXIT HUP INT TERM
     if [ "$status" -ne 0 ]; then
-        rm -f "$state_file" "${state_file}.$$"
-        find "$backup_dir" -depth -delete 2>/dev/null || true
+        services_restored=1
+        if [ "$services_recorded" = 1 ] && [ -d /run/systemd/system ]; then
+            [ "$proxy_active" = 0 ] || systemctl start "$command_proxy_service" \
+                || services_restored=0
+            [ "$hub_active" = 0 ] || systemctl start "$service" || services_restored=0
+            [ "$telemetry_active" = 0 ] || systemctl start "$fleet_telemetry_service" \
+                || services_restored=0
+        fi
+        rm -f "${state_file}.$$"
+        if [ "$services_restored" = 1 ]; then
+            rm -f "$state_file"
+            find "$backup_dir" -depth -delete 2>/dev/null || true
+        else
+            echo "Teslatlas Hub upgrade preparation failed; retained rollback state at $state_file" >&2
+        fi
     fi
     exit "$status"
 }
@@ -41,18 +122,31 @@ trap 'exit 1' HUP INT TERM
 }
 install -o root -g root -m 0755 "$hub_binary" "$backup_dir/teslatlas-hub"
 install -o root -g root -m 0644 "$unit_file" "$backup_dir/teslatlas-hub.service"
+backup_optional_file "$command_proxy_binary" tesla-http-proxy 0755
+backup_optional_file "$fleet_telemetry_binary" fleet-telemetry 0755
+backup_optional_file "$command_proxy_unit_file" teslatlas-command-proxy.service 0644
+backup_optional_file "$fleet_telemetry_unit_file" teslatlas-fleet-telemetry.service 0644
+backup_optional_file "$command_proxy_config" command-proxy.env 0644
+backup_optional_file "$fleet_telemetry_config" fleet-telemetry.json 0644
 
-was_active=0
-was_enabled=0
 if [ -d /run/systemd/system ]; then
-    systemctl is-active --quiet "$service" && was_active=1
-    systemctl is-enabled --quiet "$service" && was_enabled=1
+    record_service_state
+    services_recorded=1
+else
+    hub_present=0
+    hub_active=0
+    hub_enabled=0
+    proxy_present=0
+    proxy_active=0
+    proxy_enabled=0
+    telemetry_present=0
+    telemetry_active=0
+    telemetry_enabled=0
 fi
-state_tmp="${state_file}.$$"
-(umask 077 && printf '%s %s\n' "$was_active" "$was_enabled" > "$state_tmp")
-mv -f "$state_tmp" "$state_file"
 
-if [ "$was_active" = 1 ]; then
-    systemctl stop "$service"
+if [ -d /run/systemd/system ]; then
+    stop_if_active "$fleet_telemetry_service" "$telemetry_active"
+    stop_if_active "$service" "$hub_active"
+    stop_if_active "$command_proxy_service" "$proxy_active"
 fi
 trap - EXIT HUP INT TERM

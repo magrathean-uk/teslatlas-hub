@@ -919,6 +919,10 @@ enum Command {
         #[arg(long)]
         all_vehicles: bool,
     },
+    /// Install the fixed low-cost native Fleet Telemetry policy on configured vehicles.
+    #[cfg(unix)]
+    #[command(name = "configure-fleet-telemetry")]
+    ConfigureFleetTelemetry,
     /// Full read-only check of the Hub database, stored Tesla credentials, TLS, and collector readiness.
     Doctor,
     /// Print the redacted local status consumed by the native control app.
@@ -2029,6 +2033,23 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         "scopes": fleet_scope_summary,
                         "scopeStatus": fleet_scope_status,
                     },
+                    "fleetTelemetry": {
+                        "enabled": config.collector.fleet_telemetry.is_some(),
+                        "configured": config.collector.fleet_telemetry.is_some(),
+                        "mode": if config.collector.fleet_telemetry.is_some() {
+                            "native_push_configured"
+                        } else {
+                            "disabled"
+                        },
+                        "operationalState": if config.collector.fleet_telemetry.is_some() {
+                            "requires_receiver_and_vehicle_receipt_proof"
+                        } else {
+                            "disabled"
+                        },
+                        "paidVehicleDataPolling": config.collector.provider == CollectorProvider::Fleet
+                            && config.collector.fleet_telemetry.is_none(),
+                        "deliveryPolicy": config.collector.fleet_telemetry.as_ref().map(|_| "latest"),
+                    },
                 })
             );
             return Ok(());
@@ -2262,6 +2283,27 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             println!("{report}");
             return Ok(());
         }
+        #[cfg(unix)]
+        Command::ConfigureFleetTelemetry => {
+            if config.collector.provider != CollectorProvider::Fleet
+                || config.collector.fleet_telemetry.is_none()
+            {
+                return Err(
+                    "configure-fleet-telemetry requires collector.provider = \"fleet\" and collector.fleet_telemetry"
+                        .into(),
+                );
+            }
+            let admission = admitted_user_hub
+                .as_ref()
+                .cloned()
+                .ok_or("Fleet Telemetry setup reached runtime without user admission")?;
+            let report =
+                collector::configure_fleet_telemetry_for_admitted_user(&store, &config, admission)
+                    .await?;
+            catalogue_checkpoint.finish()?;
+            println!("{}", serde_json::to_string(&report)?);
+            return Ok(());
+        }
         Command::Legal
         | Command::Doctor
         | Command::Status
@@ -2489,6 +2531,7 @@ fn command_requires_user_hub_admission(command: &Command) -> bool {
             | Command::Bootstrap
             | Command::Setup { .. }
             | Command::SetupFleet { .. }
+            | Command::ConfigureFleetTelemetry
             | Command::Serve
             | Command::Observe { .. }
             | Command::Migrate { .. }

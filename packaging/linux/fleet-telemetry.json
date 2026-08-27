@@ -1,0 +1,22 @@
+{
+  "host": "0.0.0.0",
+  "port": 443,
+  "status_port": 0,
+  "log_level": "info",
+  "json_log_enable": true,
+  "namespace": "teslatlas",
+  "teslatlas": {
+    "timeout_ms": 2000
+  },
+  "reliable_ack_sources": {
+    "V": "teslatlas"
+  },
+  "records": {
+    "V": ["teslatlas"],
+    "connectivity": ["teslatlas"]
+  },
+  "tls": {
+    "server_cert": "/etc/teslatlas-hub/tls.crt",
+    "server_key": "/etc/teslatlas-hub/tls.key"
+  }
+}

@@ -38,6 +38,7 @@ use crate::{
     BUILD_VERSION,
     config::TlsListenerConfig,
     db::{HubStore, PairedDeviceRecord, PublishedVehicle, ReadinessReasonCode, StoredPack},
+    fleet_telemetry::{FleetTelemetryAccumulator, MAX_FLEET_TELEMETRY_INPUT_BYTES, vin_from_json},
     http_range::{parse_single_range, unsatisfied_content_range},
     manifest_signing::ManifestSigning,
     protocol::{
@@ -345,6 +346,44 @@ pub struct AppState {
     readiness_singleflight: Arc<tokio::sync::Semaphore>,
     pack_stream_slots: Arc<tokio::sync::Semaphore>,
     pack_streams_by_device: Arc<Mutex<HashMap<Uuid, usize>>>,
+    fleet_telemetry: Option<Arc<FleetTelemetryIngress>>,
+}
+
+#[derive(Clone)]
+struct FleetTelemetryIngress {
+    token_digest: Sha256Digest,
+    accumulators: Arc<tokio::sync::Mutex<HashMap<String, FleetTelemetryAccumulator>>>,
+}
+
+impl FleetTelemetryIngress {
+    fn from_token_file(path: &FsPath) -> std::io::Result<Self> {
+        const MAX_TOKEN_BYTES: usize = 256;
+        const MIN_TOKEN_BYTES: usize = 32;
+        let token = read_tls_identity_file(path, MAX_TOKEN_BYTES, true)
+            .map_err(|_| std::io::Error::other("Fleet Telemetry ingress token is unavailable"))?;
+        let token = token
+            .strip_suffix(b"\r\n")
+            .or_else(|| token.strip_suffix(b"\n"))
+            .unwrap_or(&token);
+        if token.len() < MIN_TOKEN_BYTES
+            || !token
+                .iter()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(std::io::Error::other(
+                "Fleet Telemetry ingress token is invalid",
+            ));
+        }
+        Ok(Self {
+            token_digest: Sha256Digest::of_bytes(token),
+            accumulators: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        })
+    }
+
+    fn authorizes(&self, headers: &HeaderMap) -> bool {
+        bearer_from_headers(headers)
+            .is_some_and(|bearer| self.token_digest.matches(bearer.as_bytes()))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -362,6 +401,7 @@ impl AppState {
         manifest_signing: Option<ManifestSigning>,
         cursor_key: Option<CursorKey>,
         native_config_digest: Option<Sha256Digest>,
+        fleet_telemetry: Option<FleetTelemetryIngress>,
     ) -> Self {
         Self {
             store: Arc::new(store),
@@ -375,6 +415,7 @@ impl AppState {
             readiness_singleflight: Arc::new(tokio::sync::Semaphore::new(1)),
             pack_stream_slots: Arc::new(tokio::sync::Semaphore::new(MAX_ACTIVE_PACK_STREAMS)),
             pack_streams_by_device: Arc::new(Mutex::new(HashMap::new())),
+            fleet_telemetry: fleet_telemetry.map(Arc::new),
         }
     }
 
@@ -489,7 +530,30 @@ fn router_with_access(
     cursor_key: Option<CursorKey>,
     native_config_digest: Option<Sha256Digest>,
 ) -> Router {
-    let router = Router::new()
+    router_with_access_and_telemetry(
+        store,
+        supervised_collector_required,
+        require_device_auth,
+        pairing_claim_enabled,
+        manifest_signing,
+        cursor_key,
+        native_config_digest,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn router_with_access_and_telemetry(
+    store: HubStore,
+    supervised_collector_required: bool,
+    require_device_auth: bool,
+    pairing_claim_enabled: bool,
+    manifest_signing: Option<ManifestSigning>,
+    cursor_key: Option<CursorKey>,
+    native_config_digest: Option<Sha256Digest>,
+    fleet_telemetry: Option<FleetTelemetryIngress>,
+) -> Router {
+    let ordinary = Router::new()
         .route("/healthz", get(health))
         .route("/readyz", get(ready))
         .route("/.well-known/teslatlas-hub", get(capabilities))
@@ -500,7 +564,12 @@ fn router_with_access(
         .route("/v1/vehicles/{vehicle_id}/sync/manifest", get(manifest))
         .route("/v1/vehicles/{vehicle_id}/sync/noop", get(schema_22_noop))
         .route("/v1/packs/sha256/{object_name}", get(pack))
-        .layer(DefaultBodyLimit::max(4 * 1024))
+        .layer(DefaultBodyLimit::max(4 * 1024));
+    let telemetry = Router::new()
+        .route("/v1/internal/fleet-telemetry", post(ingest_fleet_telemetry))
+        .layer(DefaultBodyLimit::max(MAX_FLEET_TELEMETRY_INPUT_BYTES));
+    let router = ordinary
+        .merge(telemetry)
         .layer(TraceLayer::new_for_http())
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
@@ -512,6 +581,7 @@ fn router_with_access(
             manifest_signing,
             cursor_key,
             native_config_digest,
+            fleet_telemetry,
         ));
     apply_http_resource_limits(router, MAX_IN_FLIGHT_HTTP_REQUESTS, HTTP_HANDLER_TIMEOUT)
 }
@@ -601,6 +671,12 @@ where
 {
     crate::crypto::install_default_provider();
     let supervised_collector_required = config.collector.interval_seconds > 0;
+    let fleet_telemetry = config
+        .collector
+        .fleet_telemetry
+        .as_ref()
+        .map(|telemetry| FleetTelemetryIngress::from_token_file(&telemetry.ingest_token_path))
+        .transpose()?;
     if let Some(tls) = &config.tls {
         let cursor_key = cursor_key.ok_or_else(|| {
             std::io::Error::new(
@@ -618,7 +694,7 @@ where
             handle,
             tokio::spawn(
                 server.serve(
-                    router_with_access(
+                    router_with_access_and_telemetry(
                         store,
                         supervised_collector_required,
                         true,
@@ -626,6 +702,7 @@ where
                         Some(ManifestSigning::from_cursor_key(&cursor_key)),
                         Some(cursor_key.clone()),
                         Some(native_config_digest),
+                        fleet_telemetry,
                     )
                     .into_make_service(),
                 ),
@@ -650,11 +727,15 @@ where
             handle,
             tokio::spawn(
                 server.serve(
-                    trusted_local_router(
+                    router_with_access_and_telemetry(
                         store,
                         supervised_collector_required,
+                        false,
+                        false,
+                        cursor_key.as_ref().map(ManifestSigning::from_cursor_key),
                         cursor_key,
                         Some(native_config_digest),
+                        fleet_telemetry,
                     )
                     .into_make_service(),
                 ),
@@ -702,6 +783,62 @@ async fn health() -> impl IntoResponse {
             version: BUILD_VERSION,
         }),
     )
+}
+
+async fn ingest_fleet_telemetry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let Some(ingress) = state.fleet_telemetry.as_ref() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !ingress.authorizes(&headers) {
+        return unauthorized();
+    }
+    let Some(cursor_key) = state.cursor_key.as_deref() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let vin = match vin_from_json(&body) {
+        Ok(vin) => vin,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
+    // Serialize apply+commit per process. The receiver acknowledges only a
+    // 2xx response, so publish the candidate accumulator after SQLite commits;
+    // a transient failure can then be retried without losing the transaction.
+    let mut accumulators = ingress.accumulators.lock().await;
+    let mut candidate = if let Some(accumulator) = accumulators.get(&vin) {
+        accumulator.clone()
+    } else {
+        match crate::collector::fleet_telemetry_seed_for_vin(&state.store, &vin) {
+            Ok(Some(owner_data)) => match FleetTelemetryAccumulator::restore(&vin, &owner_data) {
+                Ok(accumulator) => accumulator,
+                Err(_) => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+            },
+            Ok(None) => match FleetTelemetryAccumulator::empty(&vin) {
+                Ok(accumulator) => accumulator,
+                Err(_) => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+            },
+            Err(_) => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+        }
+    };
+    let snapshot = match candidate.apply_json(&body) {
+        Ok(snapshot) => snapshot,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match crate::collector::persist_fleet_telemetry_snapshot(&state.store, cursor_key, &snapshot)
+        .await
+    {
+        Ok(_) => {
+            accumulators.insert(vin, candidate);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "Fleet Telemetry commit failed");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
 }
 
 async fn ready(State(state): State<AppState>) -> impl IntoResponse {
@@ -1575,6 +1712,73 @@ mod tests {
             sign_updates_schema_22_noop, updates_pack_request, write_updates_schema_22_pack,
         },
     };
+
+    #[tokio::test]
+    async fn fleet_telemetry_ingress_is_token_gated_and_separately_bounded() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let token_path = temporary.path().join("telemetry-token");
+        let token = "a".repeat(64);
+        fs::write(&token_path, format!("{token}\n")).expect("token");
+        fs::set_permissions(&token_path, fs::Permissions::from_mode(0o600)).expect("private token");
+        let ingress = FleetTelemetryIngress::from_token_file(&token_path).expect("ingress");
+        let app = router_with_access_and_telemetry(
+            HubStore::initialize(temporary.path().join("data")).expect("store"),
+            false,
+            false,
+            false,
+            None,
+            Some(CursorKey::from_bytes([7; 32])),
+            None,
+            Some(ingress),
+        );
+        let body = serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "vin": "5YJ3E1EA7KF000001",
+            "txid": "tx-1",
+            "tx_type": "vehicle_data",
+            "received_at_ms": 1_800_000_000_100_i64,
+            "timestamp_ms": 1_800_000_000_000_i64,
+            "payload": {"data": {"Soc": {"intValue": "80"}}}
+        }))
+        .expect("telemetry body");
+
+        let unauthorized_response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/internal/fleet-telemetry")
+                    .body(Body::from(body.clone()))
+                    .unwrap(),
+            )
+            .await
+            .expect("unauthorized response");
+        assert_eq!(unauthorized_response.status(), StatusCode::UNAUTHORIZED);
+
+        let unknown_vehicle_response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/internal/fleet-telemetry")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .expect("unknown vehicle response");
+        assert_eq!(
+            unknown_vehicle_response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+
+        let oversized_response = app
+            .oneshot(
+                Request::post("/v1/internal/fleet-telemetry")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(vec![b'x'; MAX_FLEET_TELEMETRY_INPUT_BYTES + 1]))
+                    .unwrap(),
+            )
+            .await
+            .expect("oversized response");
+        assert_eq!(oversized_response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
 
     #[tokio::test]
     async fn http_resource_limits_bound_handlers_and_wait_time() {
@@ -3002,6 +3206,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let first_id = Uuid::new_v4();
         let first = state
@@ -3028,6 +3233,7 @@ mod tests {
             false,
             true,
             true,
+            None,
             None,
             None,
             None,

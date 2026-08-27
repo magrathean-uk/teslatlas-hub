@@ -2,18 +2,48 @@
 set -eu
 
 service=teslatlas-hub.service
+command_proxy_service=teslatlas-command-proxy.service
+fleet_telemetry_service=teslatlas-fleet-telemetry.service
 state_file=${TESLATLAS_HUB_MAINTAINER_STATE_FILE:-/run/teslatlas-hub-maintainer.state}
+
+unit_available() {
+    systemctl cat "$1" >/dev/null 2>&1
+}
+
+service_state() {
+    inspected_service=$1
+    inspected_present=0
+    inspected_active=0
+    inspected_enabled=0
+    if unit_available "$inspected_service"; then
+        inspected_present=1
+        systemctl is-active --quiet "$inspected_service" && inspected_active=1
+        systemctl is-enabled --quiet "$inspected_service" && inspected_enabled=1
+    fi
+    return 0
+}
 
 record_service_state() {
     [ ! -e "$state_file" ] && [ ! -L "$state_file" ] || return 0
 
-    was_active=0
-    was_enabled=0
-    systemctl is-active --quiet "$service" && was_active=1
-    systemctl is-enabled --quiet "$service" && was_enabled=1
+    service_state "$service"
+    hub_present=$inspected_present
+    hub_active=$inspected_active
+    hub_enabled=$inspected_enabled
+    service_state "$command_proxy_service"
+    proxy_present=$inspected_present
+    proxy_active=$inspected_active
+    proxy_enabled=$inspected_enabled
+    service_state "$fleet_telemetry_service"
+    telemetry_present=$inspected_present
+    telemetry_active=$inspected_active
+    telemetry_enabled=$inspected_enabled
 
     state_tmp="${state_file}.$$"
-    if ! (umask 077 && printf '%s %s\n' "$was_active" "$was_enabled" > "$state_tmp"); then
+    if ! (umask 077 && printf '%s %s %s %s %s %s %s %s %s\n' \
+        "$hub_present" "$hub_active" "$hub_enabled" \
+        "$proxy_present" "$proxy_active" "$proxy_enabled" \
+        "$telemetry_present" "$telemetry_active" "$telemetry_enabled" > "$state_tmp"); then
         rm -f "$state_tmp"
         return 1
     fi
@@ -23,12 +53,19 @@ record_service_state() {
     fi
 }
 
+stop_and_disable_if_present() {
+    [ "$2" = 1 ] || return 0
+    systemctl stop "$1" || true
+    systemctl disable "$1" || true
+}
+
 case "${1:-}" in
     remove|deconfigure)
         if [ -d /run/systemd/system ]; then
             record_service_state
-            systemctl stop "$service" || true
-            systemctl disable "$service" || true
+            stop_and_disable_if_present "$fleet_telemetry_service" "$telemetry_present"
+            stop_and_disable_if_present "$service" "$hub_present"
+            stop_and_disable_if_present "$command_proxy_service" "$proxy_present"
         fi
         ;;
 esac

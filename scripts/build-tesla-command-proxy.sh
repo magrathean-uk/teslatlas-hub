@@ -3,12 +3,8 @@
 set -eu
 
 umask 022
-PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 export PATH
-MACOSX_DEPLOYMENT_TARGET=13.0
-export MACOSX_DEPLOYMENT_TARGET
-COPYFILE_DISABLE=1
-export COPYFILE_DISABLE
 GOENV=off
 GOWORK=off
 GOTOOLCHAIN=local
@@ -32,16 +28,25 @@ usage() {
     cat <<'EOF'
 Usage: scripts/build-tesla-command-proxy.sh --output PATH
 
-Builds Tesla's official tesla-http-proxy for macOS 13+ arm64.
+Builds Tesla's official tesla-http-proxy. TARGET defaults to darwin-arm64.
+
+Options:
+  --target darwin-arm64|linux-amd64|linux-arm64
 EOF
 }
 
 output=
+target=darwin-arm64
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --output)
             [ "$#" -ge 2 ] || die "--output requires a path"
             output=$2
+            shift 2
+            ;;
+        --target)
+            [ "$#" -ge 2 ] || die "--target requires a value"
+            target=$2
             shift 2
             ;;
         -h|--help)
@@ -55,6 +60,31 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 [ -n "$output" ] || die "--output is required"
+
+case "$target" in
+    darwin-arm64)
+        target_os=darwin
+        target_arch=arm64
+        target_cgo=1
+        file_pattern='Mach-O 64-bit executable arm64'
+        MACOSX_DEPLOYMENT_TARGET=13.0
+        COPYFILE_DISABLE=1
+        export MACOSX_DEPLOYMENT_TARGET COPYFILE_DISABLE
+        ;;
+    linux-amd64)
+        target_os=linux
+        target_arch=amd64
+        target_cgo=0
+        file_pattern='ELF 64-bit LSB.*x86-64'
+        ;;
+    linux-arm64)
+        target_os=linux
+        target_arch=arm64
+        target_cgo=0
+        file_pattern='ELF 64-bit LSB.*ARM aarch64'
+        ;;
+    *) die "unsupported target: $target" ;;
+esac
 
 GO=$(command -v go) || die "go is required"
 [ -x "$GO" ] || die "go is not executable"
@@ -138,24 +168,36 @@ private_module_gosum=$(printf '%s\n' "$private_module_json" | /usr/bin/awk -F'"'
     GOWORK=off $GO mod edit -godebug=default=go1.27
 )
 
-(
-    cd "$work/source"
-    GOWORK=off CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-        $GO build -trimpath -buildvcs=false -ldflags='-s -w' \
-        -o "$work/tesla-http-proxy" ./cmd/tesla-http-proxy \
-        || die "cannot build Tesla command proxy"
-)
+if [ "$target" = darwin-arm64 ]; then
+    (
+        cd "$work/source"
+        GOWORK=off CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+            $GO build -trimpath -buildvcs=false -ldflags='-s -w' \
+            -o "$work/tesla-http-proxy" ./cmd/tesla-http-proxy \
+            || die "cannot build Tesla command proxy"
+    )
+else
+    (
+        cd "$work/source"
+        GOWORK=off CGO_ENABLED="$target_cgo" GOOS="$target_os" GOARCH="$target_arch" \
+            $GO build -trimpath -buildvcs=false -ldflags='-s -w' \
+            -o "$work/tesla-http-proxy" ./cmd/tesla-http-proxy \
+            || die "cannot build Tesla command proxy for $target"
+    )
+fi
 
 [ -f "$work/tesla-http-proxy" ] && [ ! -L "$work/tesla-http-proxy" ] \
     || die "proxy build did not produce a regular file"
-/usr/bin/file "$work/tesla-http-proxy" | /usr/bin/grep -Eq 'Mach-O 64-bit executable arm64$' \
-    || die "proxy is not an arm64 Mach-O executable"
-/usr/bin/otool -l "$work/tesla-http-proxy" | /usr/bin/awk '
-    $1 == "cmd" { command = $2 }
-    command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit }
-    command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }
-' | /usr/bin/grep -Eq '^([0-9]|1[0-2])\.|^13(\.|$)' \
-    || die "proxy requires newer than macOS 13"
+/usr/bin/file "$work/tesla-http-proxy" | /usr/bin/grep -Eq "$file_pattern" \
+    || die "proxy architecture does not match $target"
+if [ "$target" = darwin-arm64 ]; then
+    /usr/bin/otool -l "$work/tesla-http-proxy" | /usr/bin/awk '
+        $1 == "cmd" { command = $2 }
+        command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit }
+        command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }
+    ' | /usr/bin/grep -Eq '^([0-9]|1[0-2])\.|^13(\.|$)' \
+        || die "proxy requires newer than macOS 13"
+fi
 /usr/bin/install -m 0755 "$work/tesla-http-proxy" "$output"
 
 printf '%s\n' "$output"

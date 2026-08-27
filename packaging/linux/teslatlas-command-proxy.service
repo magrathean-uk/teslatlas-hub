@@ -1,0 +1,38 @@
+[Unit]
+Description=Teslatlas Tesla command proxy
+After=network-online.target
+Before=teslatlas-hub.service
+Wants=network-online.target
+ConditionPathExists=/etc/teslatlas-hub/command-auth-private.pem
+ConditionPathExists=/etc/teslatlas-hub/command-proxy-cert.pem
+ConditionPathExists=/etc/teslatlas-hub/command-proxy-tls-key.pem
+
+[Service]
+Type=simple
+User=teslatlas
+Group=teslatlas
+EnvironmentFile=/etc/teslatlas-hub/command-proxy.env
+StateDirectory=teslatlas-hub
+StateDirectoryMode=0700
+ExecStart=/usr/lib/teslatlas-hub/tesla-http-proxy
+ExecStartPost=/bin/bash -ec 'test "$${TESLA_HTTP_PROXY_HOST}" = 127.0.0.1; case "$${TESLA_HTTP_PROXY_PORT}" in ""|*[!0-9]*) exit 1;; esac; for attempt in {1..10}; do if exec 3<>"/dev/tcp/$${TESLA_HTTP_PROXY_HOST}/$${TESLA_HTTP_PROXY_PORT}"; then exec 3>&-; exit 0; fi; sleep 1; done; exit 1'
+TimeoutStartSec=20
+Restart=on-failure
+RestartSec=5
+UMask=0077
+CapabilityBoundingSet=
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/teslatlas-hub
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

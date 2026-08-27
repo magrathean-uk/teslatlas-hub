@@ -1,0 +1,766 @@
+diff --git a/config/config.go b/config/config.go
+index 859f499..69d4472 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -17,17 +17,15 @@ import (
+ 	"cloud.google.com/go/pubsub"
+ 	githubairbrake "github.com/airbrake/gobrake/v5"
+ 
+-	confluent "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+ 	goredis "github.com/redis/go-redis/v9"
+ 	githublogrus "github.com/sirupsen/logrus"
+ 
+ 	"github.com/teslamotors/fleet-telemetry/datastore/googlepubsub"
+-	"github.com/teslamotors/fleet-telemetry/datastore/kafka"
+ 	"github.com/teslamotors/fleet-telemetry/datastore/kinesis"
+ 	"github.com/teslamotors/fleet-telemetry/datastore/mqtt"
+ 	redisdatastore "github.com/teslamotors/fleet-telemetry/datastore/redis"
+ 	"github.com/teslamotors/fleet-telemetry/datastore/simple"
+-	"github.com/teslamotors/fleet-telemetry/datastore/zmq"
++	"github.com/teslamotors/fleet-telemetry/datastore/teslatlas"
+ 	logrus "github.com/teslamotors/fleet-telemetry/logger"
+ 	"github.com/teslamotors/fleet-telemetry/metrics"
+ 	"github.com/teslamotors/fleet-telemetry/server/airbrake"
+@@ -64,7 +62,7 @@ type Config struct {
+ 	// Kafka is a configuration for the standard librdkafka configuration properties
+ 	// seen here: https://raw.githubusercontent.com/confluentinc/librdkafka/master/CONFIGURATION.md
+ 	// we extract the "topic" key as the default topic for the producer
+-	Kafka *confluent.ConfigMap `json:"kafka,omitempty"`
++	Kafka *KafkaConfig `json:"kafka,omitempty"`
+ 
+ 	// Kinesis is a configuration for AWS Kinesis
+ 	Kinesis *Kinesis `json:"kinesis,omitempty"`
+@@ -73,7 +71,7 @@ type Config struct {
+ 	Pubsub *Pubsub `json:"pubsub,omitempty"`
+ 
+ 	// ZMQ configures a zeromq socket
+-	ZMQ *zmq.Config `json:"zmq,omitempty"`
++	ZMQ *ZMQConfig `json:"zmq,omitempty"`
+ 
+ 	// Redis configures a Redis pub/sub producer
+ 	Redis *Redis `json:"redis,omitempty"`
+@@ -113,6 +111,9 @@ type Config struct {
+ 
+ 	// MQTT config
+ 	MQTT *mqtt.Config `json:"mqtt,omitempty"`
++
++	// Teslatlas configures the fixed loopback whole-record HTTP bridge.
++	Teslatlas *teslatlas.Config `json:"teslatlas,omitempty"`
+ }
+ 
+ // Airbrake config
+@@ -368,6 +369,9 @@ func (c *Config) prometheusEnabled() bool {
+ // ConfigureProducers validates and establishes connections to the producers (kafka/pubsub/logger)
+ func (c *Config) ConfigureProducers(airbrakeHandler *airbrake.Handler, logger *logrus.Logger, test bool) (map[telemetry.Dispatcher]telemetry.Producer, map[string][]telemetry.Producer, error) {
+ 	var pubsubTxTypes []string
++	if err := c.ensureTeslatlasReliableAcks(); err != nil {
++		return nil, nil, err
++	}
+ 	reliableAckSources, err := c.configureReliableAckSources()
+ 	if err != nil {
+ 		return nil, nil, err
+@@ -387,8 +391,7 @@ func (c *Config) ConfigureProducers(airbrakeHandler *airbrake.Handler, logger *l
+ 		if c.Kafka == nil {
+ 			return nil, nil, errors.New("expected Kafka to be configured")
+ 		}
+-		convertKafkaConfig(c.Kafka)
+-		kafkaProducer, err := kafka.NewProducer(c.Kafka, c.Namespace, c.prometheusEnabled(), c.MetricCollector, airbrakeHandler, c.AckChan, reliableAckSources[telemetry.Kafka], logger)
++		kafkaProducer, err := c.newKafkaProducer(airbrakeHandler, reliableAckSources, logger)
+ 		if err != nil {
+ 			return nil, nil, err
+ 		}
+@@ -426,7 +429,7 @@ func (c *Config) ConfigureProducers(airbrakeHandler *airbrake.Handler, logger *l
+ 		if c.ZMQ == nil {
+ 			return nil, nil, errors.New("expected ZMQ to be configured")
+ 		}
+-		zmqProducer, err := zmq.NewProducer(context.Background(), c.ZMQ, c.MetricCollector, c.Namespace, airbrakeHandler, c.AckChan, reliableAckSources[telemetry.ZMQ], logger)
++		zmqProducer, err := c.newZMQProducer(airbrakeHandler, reliableAckSources, logger)
+ 		if err != nil {
+ 			return nil, nil, err
+ 		}
+@@ -459,6 +462,17 @@ func (c *Config) ConfigureProducers(airbrakeHandler *airbrake.Handler, logger *l
+ 		producers[telemetry.Redis] = redisProducer
+ 	}
+ 
++	if _, ok := requiredDispatchers[telemetry.Teslatlas]; ok {
++		if c.Teslatlas == nil {
++			return nil, nil, errors.New("expected Teslatlas to be configured")
++		}
++		teslatlasProducer, err := teslatlas.NewProducer(context.Background(), c.Teslatlas, airbrakeHandler, c.AckChan, reliableAckSources[telemetry.Teslatlas], logger)
++		if err != nil {
++			return nil, nil, err
++		}
++		producers[telemetry.Teslatlas] = teslatlasProducer
++	}
++
+ 	dispatchProducerRules := make(map[string][]telemetry.Producer)
+ 	for recordName, dispatchRules := range c.Records {
+ 		var dispatchFuncs []telemetry.Producer
+@@ -489,6 +503,31 @@ func (c *Config) ConfigureProducers(airbrakeHandler *airbrake.Handler, logger *l
+ 	return producers, dispatchProducerRules, nil
+ }
+ 
++func (c *Config) ensureTeslatlasReliableAcks() error {
++	for txType, dispatchers := range c.Records {
++		if txType == "connectivity" || !containsDispatcher(dispatchers, telemetry.Teslatlas) {
++			continue
++		}
++		if c.ReliableAckSources == nil {
++			c.ReliableAckSources = make(map[string]telemetry.Dispatcher)
++		}
++		if configured, ok := c.ReliableAckSources[txType]; ok && configured != telemetry.Teslatlas {
++			return fmt.Errorf("%s must use teslatlas reliable ack when dispatched to teslatlas", txType)
++		}
++		c.ReliableAckSources[txType] = telemetry.Teslatlas
++	}
++	return nil
++}
++
++func containsDispatcher(dispatchers []telemetry.Dispatcher, wanted telemetry.Dispatcher) bool {
++	for _, dispatcher := range dispatchers {
++		if dispatcher == wanted {
++			return true
++		}
++	}
++	return false
++}
++
+ func (c *Config) configureReliableAckSources() (map[telemetry.Dispatcher]map[string]interface{}, error) {
+ 	reliableAckSources := make(map[telemetry.Dispatcher]map[string]interface{}, 0)
+ 	for txType, dispatchRule := range c.ReliableAckSources {
+@@ -532,16 +571,6 @@ func parseValidDispatchers(input []telemetry.Dispatcher) []telemetry.Dispatcher
+ 	return result
+ }
+ 
+-// convertKafkaConfig will prioritize int over float
+-// see: https://github.com/confluentinc/confluent-kafka-go/blob/cde2827bc49655eca0f9ce3fc1cda13cb6cdabc9/kafka/config.go#L108-L125
+-func convertKafkaConfig(input *confluent.ConfigMap) {
+-	for key, val := range *input {
+-		if i, ok := val.(float64); ok {
+-			(*input)[key] = int(i)
+-		}
+-	}
+-}
+-
+ // CreateKinesisStreamMapping uses the config, overrides with ENV variable names, and finally falls back to namespace based names
+ func (c *Config) CreateKinesisStreamMapping(recordNames []string) map[string]string {
+ 	streamMapping := make(map[string]string)
+diff --git a/config/optional_dispatchers_cgo.go b/config/optional_dispatchers_cgo.go
+new file mode 100644
+index 0000000..87e401d
+--- /dev/null
++++ b/config/optional_dispatchers_cgo.go
+@@ -0,0 +1,36 @@
++//go:build cgo
++
++package config
++
++import (
++	"context"
++
++	confluent "github.com/confluentinc/confluent-kafka-go/v2/kafka"
++
++	"github.com/teslamotors/fleet-telemetry/datastore/kafka"
++	"github.com/teslamotors/fleet-telemetry/datastore/zmq"
++	logrus "github.com/teslamotors/fleet-telemetry/logger"
++	"github.com/teslamotors/fleet-telemetry/server/airbrake"
++	"github.com/teslamotors/fleet-telemetry/telemetry"
++)
++
++type KafkaConfig = confluent.ConfigMap
++type ZMQConfig = zmq.Config
++
++func (c *Config) newKafkaProducer(airbrakeHandler *airbrake.Handler, reliableAckSources map[telemetry.Dispatcher]map[string]interface{}, logger *logrus.Logger) (telemetry.Producer, error) {
++	convertKafkaConfig(c.Kafka)
++	return kafka.NewProducer(c.Kafka, c.Namespace, c.prometheusEnabled(), c.MetricCollector, airbrakeHandler, c.AckChan, reliableAckSources[telemetry.Kafka], logger)
++}
++
++func (c *Config) newZMQProducer(airbrakeHandler *airbrake.Handler, reliableAckSources map[telemetry.Dispatcher]map[string]interface{}, logger *logrus.Logger) (telemetry.Producer, error) {
++	return zmq.NewProducer(context.Background(), c.ZMQ, c.MetricCollector, c.Namespace, airbrakeHandler, c.AckChan, reliableAckSources[telemetry.ZMQ], logger)
++}
++
++// convertKafkaConfig will prioritize int over float.
++func convertKafkaConfig(input *KafkaConfig) {
++	for key, val := range *input {
++		if i, ok := val.(float64); ok {
++			(*input)[key] = int(i)
++		}
++	}
++}
+diff --git a/config/optional_dispatchers_nocgo.go b/config/optional_dispatchers_nocgo.go
+new file mode 100644
+index 0000000..6ae9efb
+--- /dev/null
++++ b/config/optional_dispatchers_nocgo.go
+@@ -0,0 +1,22 @@
++//go:build !cgo
++
++package config
++
++import (
++	"errors"
++
++	logrus "github.com/teslamotors/fleet-telemetry/logger"
++	"github.com/teslamotors/fleet-telemetry/server/airbrake"
++	"github.com/teslamotors/fleet-telemetry/telemetry"
++)
++
++type KafkaConfig map[string]interface{}
++type ZMQConfig map[string]interface{}
++
++func (c *Config) newKafkaProducer(_ *airbrake.Handler, _ map[telemetry.Dispatcher]map[string]interface{}, _ *logrus.Logger) (telemetry.Producer, error) {
++	return nil, errors.New("Kafka is unavailable in the CGO-free Teslatlas bridge build")
++}
++
++func (c *Config) newZMQProducer(_ *airbrake.Handler, _ map[telemetry.Dispatcher]map[string]interface{}, _ *logrus.Logger) (telemetry.Producer, error) {
++	return nil, errors.New("ZMQ is unavailable in the CGO-free Teslatlas bridge build")
++}
+diff --git a/datastore/teslatlas/teslatlas.go b/datastore/teslatlas/teslatlas.go
+new file mode 100644
+index 0000000..d286799
+--- /dev/null
++++ b/datastore/teslatlas/teslatlas.go
+@@ -0,0 +1,288 @@
++package teslatlas
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"net/http"
++	"net/url"
++	"os"
++	"path/filepath"
++	"time"
++
++	logrus "github.com/teslamotors/fleet-telemetry/logger"
++	"github.com/teslamotors/fleet-telemetry/protos"
++	"github.com/teslamotors/fleet-telemetry/server/airbrake"
++	"github.com/teslamotors/fleet-telemetry/telemetry"
++	"golang.org/x/sys/unix"
++	"google.golang.org/protobuf/types/known/timestamppb"
++)
++
++const (
++	Endpoint            = "http://127.0.0.1:8080/v1/internal/fleet-telemetry"
++	BearerFileEnv       = "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE"
++	EnvelopeVersion     = 1
++	MaxEnvelopeBytes    = 256 * 1024
++	MaxBearerBytes      = 4096
++	DefaultTimeoutMS    = 2000
++	MinimumTimeoutMS    = 100
++	MaximumTimeoutMS    = 5000
++	maximumResponseBody = 1024
++)
++
++type Config struct {
++	TimeoutMS int `json:"timeout_ms,omitempty"`
++}
++
++type Envelope struct {
++	Version      int             `json:"version"`
++	VIN          string          `json:"vin"`
++	TXID         string          `json:"txid"`
++	TXType       string          `json:"tx_type"`
++	ReceivedAtMS int64           `json:"received_at_ms"`
++	TimestampMS  int64           `json:"timestamp_ms"`
++	Payload      json.RawMessage `json:"payload"`
++}
++
++type Producer struct {
++	ctx                context.Context
++	endpoint           string
++	bearer             string
++	client             *http.Client
++	transport          *http.Transport
++	logger             *logrus.Logger
++	airbrakeHandler    *airbrake.Handler
++	ackChan            chan *telemetry.Record
++	reliableAckTxTypes map[string]interface{}
++}
++
++func NewProducer(ctx context.Context, config *Config, airbrakeHandler *airbrake.Handler, ackChan chan *telemetry.Record, reliableAckTxTypes map[string]interface{}, logger *logrus.Logger) (telemetry.Producer, error) {
++	if config == nil {
++		return nil, errors.New("teslatlas config is required")
++	}
++	bearer, err := loadBearerFile()
++	if err != nil {
++		return nil, err
++	}
++	return newProducer(ctx, config, Endpoint, bearer, airbrakeHandler, ackChan, reliableAckTxTypes, logger)
++}
++
++func newProducer(ctx context.Context, config *Config, endpoint string, bearer string, airbrakeHandler *airbrake.Handler, ackChan chan *telemetry.Record, reliableAckTxTypes map[string]interface{}, logger *logrus.Logger) (*Producer, error) {
++	if err := validateEndpoint(endpoint); err != nil {
++		return nil, err
++	}
++	if err := validateBearer(bearer); err != nil {
++		return nil, err
++	}
++	timeout, err := requestTimeout(config.TimeoutMS)
++	if err != nil {
++		return nil, err
++	}
++	dialTimeout := timeout
++	if dialTimeout > 500*time.Millisecond {
++		dialTimeout = 500 * time.Millisecond
++	}
++	transport := &http.Transport{
++		Proxy:                 nil,
++		DialContext:           (&net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}).DialContext,
++		DisableCompression:    true,
++		ForceAttemptHTTP2:     false,
++		MaxIdleConns:          1,
++		MaxIdleConnsPerHost:   1,
++		IdleConnTimeout:       30 * time.Second,
++		ResponseHeaderTimeout: timeout,
++	}
++	client := &http.Client{
++		Transport: transport,
++		Timeout:   timeout,
++		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
++			return http.ErrUseLastResponse
++		},
++	}
++	return &Producer{
++		ctx:                ctx,
++		endpoint:           endpoint,
++		bearer:             bearer,
++		client:             client,
++		transport:          transport,
++		logger:             logger,
++		airbrakeHandler:    airbrakeHandler,
++		ackChan:            ackChan,
++		reliableAckTxTypes: reliableAckTxTypes,
++	}, nil
++}
++
++func requestTimeout(timeoutMS int) (time.Duration, error) {
++	if timeoutMS == 0 {
++		timeoutMS = DefaultTimeoutMS
++	}
++	if timeoutMS < MinimumTimeoutMS || timeoutMS > MaximumTimeoutMS {
++		return 0, fmt.Errorf("teslatlas timeout_ms must be between %d and %d", MinimumTimeoutMS, MaximumTimeoutMS)
++	}
++	return time.Duration(timeoutMS) * time.Millisecond, nil
++}
++
++func validateEndpoint(endpoint string) error {
++	parsed, err := url.Parse(endpoint)
++	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
++		return errors.New("teslatlas endpoint must be a fixed loopback HTTP URL")
++	}
++	address := net.ParseIP(parsed.Hostname())
++	if address == nil || !address.IsLoopback() || parsed.Port() == "" {
++		return errors.New("teslatlas endpoint must be a fixed loopback HTTP URL")
++	}
++	return nil
++}
++
++func validateBearer(bearer string) error {
++	if len(bearer) == 0 || len(bearer) > MaxBearerBytes {
++		return errors.New("teslatlas bearer is missing or invalid")
++	}
++	for index := 0; index < len(bearer); index++ {
++		if bearer[index] < 0x21 || bearer[index] > 0x7e {
++			return errors.New("teslatlas bearer is missing or invalid")
++		}
++	}
++	return nil
++}
++
++func loadBearerFile() (string, error) {
++	path := os.Getenv(BearerFileEnv)
++	if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
++		return "", errors.New("teslatlas bearer file path is missing or invalid")
++	}
++	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
++	if err != nil {
++		return "", errors.New("cannot securely open teslatlas bearer file")
++	}
++	file := os.NewFile(uintptr(fd), path)
++	if file == nil {
++		_ = unix.Close(fd)
++		return "", errors.New("cannot securely open teslatlas bearer file")
++	}
++	defer file.Close()
++	var stat unix.Stat_t
++	if err := unix.Fstat(fd, &stat); err != nil {
++		return "", errors.New("cannot inspect teslatlas bearer file")
++	}
++	if stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Uid != uint32(os.Geteuid()) || stat.Mode&0o077 != 0 {
++		return "", errors.New("teslatlas bearer file must be a private regular file owned by the service user")
++	}
++	if stat.Size < 1 || stat.Size > MaxBearerBytes+2 {
++		return "", errors.New("teslatlas bearer file size is invalid")
++	}
++	contents, err := io.ReadAll(io.LimitReader(file, MaxBearerBytes+3))
++	if err != nil || len(contents) > MaxBearerBytes+2 {
++		return "", errors.New("cannot read teslatlas bearer file")
++	}
++	if bytes.HasSuffix(contents, []byte("\r\n")) {
++		contents = contents[:len(contents)-2]
++	} else if bytes.HasSuffix(contents, []byte("\n")) {
++		contents = contents[:len(contents)-1]
++	}
++	bearer := string(contents)
++	if err := validateBearer(bearer); err != nil {
++		return "", err
++	}
++	return bearer, nil
++}
++
++func (p *Producer) Produce(record *telemetry.Record) {
++	if p.ctx.Err() != nil {
++		return
++	}
++	body, err := marshalEnvelope(record)
++	if err == nil {
++		err = p.post(body)
++	}
++	if err != nil {
++		p.ReportError("teslatlas_dispatch_error", err, logrus.LogInfo{
++			"tx_type": record.TxType,
++		})
++		return
++	}
++	p.ProcessReliableAck(record)
++}
++
++func marshalEnvelope(record *telemetry.Record) ([]byte, error) {
++	payload, err := record.GetJSONPayload()
++	if err != nil {
++		return nil, fmt.Errorf("decode payload: %w", err)
++	}
++	if !json.Valid(payload) {
++		return nil, errors.New("decoded payload is not valid JSON")
++	}
++	body, err := json.Marshal(Envelope{
++		Version:      EnvelopeVersion,
++		VIN:          record.Vin,
++		TXID:         record.Txid,
++		TXType:       record.TxType,
++		ReceivedAtMS: record.ReceivedTimestamp,
++		TimestampMS:  payloadTimestampMS(record),
++		Payload:      json.RawMessage(payload),
++	})
++	if err != nil {
++		return nil, fmt.Errorf("encode envelope: %w", err)
++	}
++	if len(body) > MaxEnvelopeBytes {
++		return nil, fmt.Errorf("teslatlas envelope exceeds %d bytes", MaxEnvelopeBytes)
++	}
++	return body, nil
++}
++
++func payloadTimestampMS(record *telemetry.Record) int64 {
++	var timestamp *timestamppb.Timestamp
++	switch payload := record.GetProtoMessage().(type) {
++	case *protos.Payload:
++		timestamp = payload.GetCreatedAt()
++	case *protos.VehicleAlerts:
++		timestamp = payload.GetCreatedAt()
++	case *protos.VehicleErrors:
++		timestamp = payload.GetCreatedAt()
++	case *protos.VehicleConnectivity:
++		timestamp = payload.GetCreatedAt()
++	}
++	if timestamp == nil || timestamp.CheckValid() != nil {
++		return 0
++	}
++	return timestamp.AsTime().UnixMilli()
++}
++
++func (p *Producer) post(body []byte) error {
++	request, err := http.NewRequestWithContext(p.ctx, http.MethodPost, p.endpoint, bytes.NewReader(body))
++	if err != nil {
++		return err
++	}
++	request.Header.Set("Authorization", "Bearer "+p.bearer)
++	request.Header.Set("Content-Type", "application/json")
++	response, err := p.client.Do(request)
++	if err != nil {
++		return err
++	}
++	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maximumResponseBody))
++	closeErr := response.Body.Close()
++	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
++		return fmt.Errorf("teslatlas endpoint returned HTTP %d", response.StatusCode)
++	}
++	return closeErr
++}
++
++func (p *Producer) ProcessReliableAck(record *telemetry.Record) {
++	if _, ok := p.reliableAckTxTypes[record.TxType]; ok {
++		p.ackChan <- record
++	}
++}
++
++func (p *Producer) ReportError(message string, err error, logInfo logrus.LogInfo) {
++	p.airbrakeHandler.ReportLogMessage(logrus.ERROR, message, err, logInfo)
++	p.logger.ErrorLog(message, err, logInfo)
++}
++
++func (p *Producer) Close() error {
++	p.transport.CloseIdleConnections()
++	return nil
++}
+diff --git a/datastore/teslatlas/teslatlas_test.go b/datastore/teslatlas/teslatlas_test.go
+new file mode 100644
+index 0000000..a6b4396
+--- /dev/null
++++ b/datastore/teslatlas/teslatlas_test.go
+@@ -0,0 +1,236 @@
++package teslatlas
++
++import (
++	"context"
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"google.golang.org/protobuf/proto"
++	"google.golang.org/protobuf/types/known/timestamppb"
++
++	logrus "github.com/teslamotors/fleet-telemetry/logger"
++	"github.com/teslamotors/fleet-telemetry/messages"
++	"github.com/teslamotors/fleet-telemetry/protos"
++	"github.com/teslamotors/fleet-telemetry/server/airbrake"
++	"github.com/teslamotors/fleet-telemetry/telemetry"
++)
++
++func TestProducePostsOneEnvelopeThenAcknowledges(t *testing.T) {
++	received := make(chan Envelope, 1)
++	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
++		if request.Method != http.MethodPost {
++			t.Errorf("method = %s", request.Method)
++		}
++		if request.Header.Get("Authorization") != "Bearer bridge-secret" {
++			t.Errorf("authorization was not the bridge bearer")
++		}
++		if request.Header.Get("Content-Type") != "application/json" {
++			t.Errorf("content type = %s", request.Header.Get("Content-Type"))
++		}
++		body, err := io.ReadAll(request.Body)
++		if err != nil {
++			t.Errorf("read envelope: %v", err)
++			response.WriteHeader(http.StatusBadRequest)
++			return
++		}
++		if strings.Contains(string(body), "device_client_version") {
++			t.Error("envelope contains an unsupported field")
++		}
++		var envelope Envelope
++		if err := json.Unmarshal(body, &envelope); err != nil {
++			t.Errorf("decode envelope: %v", err)
++			response.WriteHeader(http.StatusBadRequest)
++			return
++		}
++		received <- envelope
++		response.WriteHeader(http.StatusNoContent)
++	}))
++	defer server.Close()
++
++	acks := make(chan *telemetry.Record, 1)
++	producer := testProducer(t, server.URL, acks)
++	record := testRecord(t, "Athena")
++	producer.Produce(record)
++
++	select {
++	case ack := <-acks:
++		if ack != record {
++			t.Fatal("acknowledged a different record")
++		}
++	default:
++		t.Fatal("successful delivery was not acknowledged")
++	}
++	envelope := <-received
++	if envelope.Version != EnvelopeVersion || envelope.VIN != "TEST123" || envelope.TXID != "tx-1" || envelope.TXType != "V" {
++		t.Fatalf("unexpected envelope identity: %+v", envelope)
++	}
++	if envelope.TimestampMS != 1700000000123 || envelope.ReceivedAtMS != record.ReceivedTimestamp {
++		t.Fatalf("unexpected envelope timestamps: %+v", envelope)
++	}
++	var payload map[string]interface{}
++	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
++		t.Fatalf("decode payload: %v", err)
++	}
++	data, ok := payload["data"].([]interface{})
++	if !ok || len(data) != 1 {
++		t.Fatalf("unexpected decoded payload: %#v", payload)
++	}
++	datum, ok := data[0].(map[string]interface{})
++	value, valueOK := datum["value"].(map[string]interface{})
++	if !ok || !valueOK || datum["key"] != "VehicleName" || value["stringValue"] != "Athena" || payload["vin"] != "TEST123" {
++		t.Fatalf("unexpected decoded payload: %#v", payload)
++	}
++}
++
++func TestNonSuccessAndRedirectNeverAcknowledge(t *testing.T) {
++	var redirected atomic.Int32
++	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
++		redirected.Add(1)
++	}))
++	defer target.Close()
++
++	for name, handler := range map[string]http.HandlerFunc{
++		"non-success": func(response http.ResponseWriter, _ *http.Request) {
++			response.WriteHeader(http.StatusServiceUnavailable)
++		},
++		"redirect": func(response http.ResponseWriter, request *http.Request) {
++			http.Redirect(response, request, target.URL, http.StatusTemporaryRedirect)
++		},
++	} {
++		t.Run(name, func(t *testing.T) {
++			server := httptest.NewServer(handler)
++			defer server.Close()
++			acks := make(chan *telemetry.Record, 1)
++			producer := testProducer(t, server.URL, acks)
++			producer.Produce(testRecord(t, "Athena"))
++			select {
++			case <-acks:
++				t.Fatal("failed delivery was acknowledged")
++			default:
++			}
++		})
++	}
++	if redirected.Load() != 0 {
++		t.Fatal("bridge followed a redirect")
++	}
++}
++
++func TestOversizeEnvelopeNeverPostsOrAcknowledges(t *testing.T) {
++	var requests atomic.Int32
++	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
++		requests.Add(1)
++		response.WriteHeader(http.StatusNoContent)
++	}))
++	defer server.Close()
++
++	acks := make(chan *telemetry.Record, 1)
++	producer := testProducer(t, server.URL, acks)
++	producer.Produce(testRecord(t, strings.Repeat("\x00", 700000)))
++	if requests.Load() != 0 {
++		t.Fatal("oversize envelope reached HTTP endpoint")
++	}
++	select {
++	case <-acks:
++		t.Fatal("oversize envelope was acknowledged")
++	default:
++	}
++}
++
++func TestBearerLoadsOnlyFromPrivateOwnedRegularFile(t *testing.T) {
++	file := t.TempDir() + "/bearer"
++	if err := os.WriteFile(file, []byte("bridge-secret\n"), 0o600); err != nil {
++		t.Fatalf("write bearer: %v", err)
++	}
++	t.Setenv(BearerFileEnv, file)
++	bearer, err := loadBearerFile()
++	if err != nil || bearer != "bridge-secret" {
++		t.Fatalf("load bearer = %q, %v", bearer, err)
++	}
++	if err := os.Chmod(file, 0o644); err != nil {
++		t.Fatalf("loosen bearer mode: %v", err)
++	}
++	if _, err := loadBearerFile(); err == nil {
++		t.Fatal("world-readable bearer was accepted")
++	}
++}
++
++func TestBearerFileRejectsSymlink(t *testing.T) {
++	directory := t.TempDir()
++	file := directory + "/bearer"
++	link := directory + "/bearer-link"
++	if err := os.WriteFile(file, []byte("bridge-secret"), 0o600); err != nil {
++		t.Fatalf("write bearer: %v", err)
++	}
++	if err := os.Symlink(file, link); err != nil {
++		t.Fatalf("link bearer: %v", err)
++	}
++	t.Setenv(BearerFileEnv, link)
++	if _, err := loadBearerFile(); err == nil {
++		t.Fatal("symlink bearer was accepted")
++	}
++}
++
++func testProducer(t *testing.T, endpoint string, acks chan *telemetry.Record) *Producer {
++	t.Helper()
++	logger, _ := logrus.NoOpLogger()
++	producer, err := newProducer(
++		context.Background(),
++		&Config{TimeoutMS: 500},
++		endpoint,
++		"bridge-secret",
++		airbrake.NewAirbrakeHandler(nil),
++		acks,
++		map[string]interface{}{"V": true},
++		logger,
++	)
++	if err != nil {
++		t.Fatalf("new producer: %v", err)
++	}
++	t.Cleanup(func() { _ = producer.Close() })
++	return producer
++}
++
++func testRecord(t *testing.T, vehicleName string) *telemetry.Record {
++	t.Helper()
++	createdAt := timestamppb.New(time.UnixMilli(1700000000123))
++	payloadBytes, err := proto.Marshal(&protos.Payload{
++		CreatedAt: createdAt,
++		Vin:       "TEST123",
++		Data: []*protos.Datum{{
++			Key: protos.Field_VehicleName,
++			Value: &protos.Value{Value: &protos.Value_StringValue{
++				StringValue: vehicleName,
++			}},
++		}},
++	})
++	if err != nil {
++		t.Fatalf("marshal payload: %v", err)
++	}
++	wireBytes, err := (&messages.StreamMessage{
++		TXID:         []byte("tx-1"),
++		SenderID:     []byte("vehicle_device.TEST123"),
++		MessageTopic: []byte("V"),
++		Payload:      payloadBytes,
++	}).ToBytes()
++	if err != nil {
++		t.Fatalf("marshal stream message: %v", err)
++	}
++	logger, _ := logrus.NoOpLogger()
++	serializer := telemetry.NewBinarySerializer(&telemetry.RequestIdentity{
++		DeviceID:            "TEST123",
++		SenderID:            "vehicle_device.TEST123",
++		DeviceClientVersion: "1.2.3",
++	}, map[string][]telemetry.Producer{"V": nil}, logger)
++	record, err := telemetry.NewRecord(serializer, wireBytes, "socket-1", true)
++	if err != nil {
++		t.Fatalf("new record: %v", err)
++	}
++	return record
++}
+diff --git a/telemetry/producer.go b/telemetry/producer.go
+index ef30578..0d0fec1 100644
+--- a/telemetry/producer.go
++++ b/telemetry/producer.go
+@@ -24,6 +24,8 @@ const (
+ 	MQTT Dispatcher = "mqtt"
+ 	// Redis registers a Redis pub/sub dispatcher
+ 	Redis Dispatcher = "redis"
++	// Teslatlas registers the local whole-record HTTP bridge
++	Teslatlas Dispatcher = "teslatlas"
+ )
+ 
+ // BuildTopicName creates a topic from a namespace and a recordName

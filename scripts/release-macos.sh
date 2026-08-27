@@ -10,6 +10,7 @@ Usage: scripts/release-macos.sh \
   --app PATH \
   --service-package PATH \
   --go-proxy-evidence PATH \
+  --fleet-telemetry-evidence PATH \
   --app-identity "Developer ID Application: Name (TEAMID)" \
   --installer-identity "Developer ID Installer: Name (TEAMID)" \
   --notary-profile PROFILE-TEAMID \
@@ -28,6 +29,7 @@ die() {
 app=
 service_package=
 go_proxy_evidence=
+fleet_telemetry_evidence=
 app_identity=
 installer_identity=
 notary_profile=
@@ -48,6 +50,11 @@ while [ "$#" -gt 0 ]; do
         --go-proxy-evidence)
             [ "$#" -ge 2 ] || die "--go-proxy-evidence requires a path"
             go_proxy_evidence=$2
+            shift 2
+            ;;
+        --fleet-telemetry-evidence)
+            [ "$#" -ge 2 ] || die "--fleet-telemetry-evidence requires a path"
+            fleet_telemetry_evidence=$2
             shift 2
             ;;
         --app-identity)
@@ -85,6 +92,7 @@ done
 [ -n "$app" ] || die "--app is required"
 [ -n "$service_package" ] || die "--service-package is required"
 [ -n "$go_proxy_evidence" ] || die "--go-proxy-evidence is required"
+[ -n "$fleet_telemetry_evidence" ] || die "--fleet-telemetry-evidence is required"
 [ -n "$app_identity" ] || die "--app-identity is required"
 [ -n "$installer_identity" ] || die "--installer-identity is required"
 [ -n "$notary_profile" ] || die "--notary-profile is required"
@@ -100,6 +108,8 @@ done
     || die "service package must be a regular file"
 [ -d "$go_proxy_evidence" ] && [ ! -L "$go_proxy_evidence" ] \
     || die "Go proxy evidence must be a real directory"
+[ -d "$fleet_telemetry_evidence" ] && [ ! -L "$fleet_telemetry_evidence" ] \
+    || die "Fleet Telemetry evidence must be a real directory"
 case "$(basename "$app")" in
     *.app) ;;
     *) die "app path must end in .app" ;;
@@ -113,6 +123,9 @@ embedded_hub="$app/Contents/Resources/teslatlas-hub"
 embedded_proxy="$app/Contents/Resources/tesla-http-proxy"
 [ -f "$embedded_proxy" ] && [ ! -L "$embedded_proxy" ] \
     || die "app is missing Contents/Resources/tesla-http-proxy"
+embedded_fleet_telemetry="$app/Contents/Resources/fleet-telemetry"
+[ -f "$embedded_fleet_telemetry" ] && [ ! -L "$embedded_fleet_telemetry" ] \
+    || die "app is missing Contents/Resources/fleet-telemetry"
 app_info="$app/Contents/Info.plist"
 [ -f "$app_info" ] && [ ! -L "$app_info" ] \
     || die "app is missing Contents/Info.plist"
@@ -126,6 +139,12 @@ go_evidence_helper="$script_root/scripts/go-proxy-evidence.py"
 python3 "$go_evidence_helper" --repo "$script_root" \
     --verify-dir "$go_proxy_evidence" >/dev/null \
     || die "Go proxy evidence is invalid"
+fleet_evidence_helper="$script_root/scripts/fleet-telemetry-evidence.py"
+[ -f "$fleet_evidence_helper" ] && [ ! -L "$fleet_evidence_helper" ] \
+    || die "Fleet Telemetry evidence verifier is missing"
+python3 "$fleet_evidence_helper" --repo "$script_root" \
+    --verify-dir "$fleet_telemetry_evidence" >/dev/null \
+    || die "Fleet Telemetry evidence is invalid"
 evidence_proxy_sha256=$(python3 -c \
     'import json,sys; print(json.load(open(sys.argv[1]))["subject"]["sha256"])' \
     "$go_proxy_evidence/go-component-manifest.json") \
@@ -133,6 +152,13 @@ evidence_proxy_sha256=$(python3 -c \
 embedded_proxy_sha256=$(shasum -a 256 "$embedded_proxy" | awk '{ print $1 }')
 [ "$evidence_proxy_sha256" = "$embedded_proxy_sha256" ] \
     || die "Go proxy evidence does not match the unsigned app proxy"
+evidence_fleet_telemetry_sha256=$(python3 -c \
+    'import json,sys; print(json.load(open(sys.argv[1]))["subject"]["sha256"])' \
+    "$fleet_telemetry_evidence/fleet-telemetry-component-manifest.json") \
+    || die "cannot read Fleet Telemetry evidence subject"
+embedded_fleet_telemetry_sha256=$(shasum -a 256 "$embedded_fleet_telemetry" | awk '{ print $1 }')
+[ "$evidence_fleet_telemetry_sha256" = "$embedded_fleet_telemetry_sha256" ] \
+    || die "Fleet Telemetry evidence does not match the unsigned app receiver"
 
 identity_team() {
     value=$1
@@ -198,6 +224,14 @@ release_app_proxy_sha256=$(shasum -a 256 "$release_app_proxy" | awk '{ print $1 
     || die "app proxy changed while staging the release"
 [ "$release_app_proxy_sha256" = "$evidence_proxy_sha256" ] \
     || die "copied app proxy does not match Go evidence"
+release_app_fleet_telemetry="$release_app/Contents/Resources/fleet-telemetry"
+[ -f "$release_app_fleet_telemetry" ] && [ ! -L "$release_app_fleet_telemetry" ] \
+    || die "copied release app is missing fleet-telemetry"
+release_app_fleet_telemetry_sha256=$(shasum -a 256 "$release_app_fleet_telemetry" | awk '{ print $1 }')
+[ "$release_app_fleet_telemetry_sha256" = "$embedded_fleet_telemetry_sha256" ] \
+    || die "app Fleet Telemetry receiver changed while staging the release"
+[ "$release_app_fleet_telemetry_sha256" = "$evidence_fleet_telemetry_sha256" ] \
+    || die "copied app Fleet Telemetry receiver does not match evidence"
 release_go_evidence="$release/go-proxy-evidence"
 ditto --noextattr --norsrc "$go_proxy_evidence" "$release_go_evidence"
 python3 "$go_evidence_helper" --repo "$script_root" \
@@ -212,6 +246,20 @@ copied_evidence_proxy_sha256=$(python3 -c \
 evidence_proxy_sha256=$copied_evidence_proxy_sha256
 go_component_manifest_sha256=$(shasum -a 256 \
     "$release_go_evidence/go-component-manifest.json" | awk '{ print $1 }')
+release_fleet_telemetry_evidence="$release/fleet-telemetry-evidence"
+ditto --noextattr --norsrc "$fleet_telemetry_evidence" "$release_fleet_telemetry_evidence"
+python3 "$fleet_evidence_helper" --repo "$script_root" \
+    --verify-dir "$release_fleet_telemetry_evidence" >/dev/null \
+    || die "copied Fleet Telemetry evidence is invalid"
+copied_evidence_fleet_telemetry_sha256=$(python3 -c \
+    'import json,sys; print(json.load(open(sys.argv[1]))["subject"]["sha256"])' \
+    "$release_fleet_telemetry_evidence/fleet-telemetry-component-manifest.json") \
+    || die "cannot read copied Fleet Telemetry evidence subject"
+[ "$copied_evidence_fleet_telemetry_sha256" = "$embedded_fleet_telemetry_sha256" ] \
+    || die "copied Fleet Telemetry evidence does not match the unsigned app receiver"
+evidence_fleet_telemetry_sha256=$copied_evidence_fleet_telemetry_sha256
+fleet_telemetry_component_manifest_sha256=$(shasum -a 256 \
+    "$release_fleet_telemetry_evidence/fleet-telemetry-component-manifest.json" | awk '{ print $1 }')
 
 expanded="$work/service-expanded"
 pkgutil --expand-full "$service_package" "$expanded"
@@ -221,11 +269,17 @@ expanded_proxy="$expanded/Payload/Library/Application Support/Teslatlas Hub/bin/
 expanded_proxy_sha256=$(shasum -a 256 "$expanded_proxy" | awk '{ print $1 }')
 [ "$expanded_proxy_sha256" = "$evidence_proxy_sha256" ] \
     || die "Go proxy evidence does not match the unsigned package proxy"
+expanded_fleet_telemetry="$expanded/Payload/Library/Application Support/Teslatlas Hub/bin/fleet-telemetry"
+[ -f "$expanded_fleet_telemetry" ] && [ ! -L "$expanded_fleet_telemetry" ] \
+    || die "expanded package is missing fleet-telemetry"
+expanded_fleet_telemetry_sha256=$(shasum -a 256 "$expanded_fleet_telemetry" | awk '{ print $1 }')
+[ "$expanded_fleet_telemetry_sha256" = "$evidence_fleet_telemetry_sha256" ] \
+    || die "Fleet Telemetry evidence does not match the unsigned package receiver"
 
 sign_named_binaries() {
     root=$1
     require_hub=$2
-    for name in teslatlas-hub tesla-http-proxy; do
+    for name in teslatlas-hub tesla-http-proxy fleet-telemetry; do
         link=$(find "$root" -type l -name "$name" -print -quit)
         [ -z "$link" ] || die "refusing symlinked nested executable: $link"
         matches=$(find "$root" -type f -name "$name" -print)
@@ -306,11 +360,15 @@ release_info="$release_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Delete :TeslatlasOfficialRelease' "$release_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c 'Delete :TeslatlasUnsignedProxySHA256' "$release_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c 'Delete :TeslatlasGoEvidenceManifestSHA256' "$release_info" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c 'Delete :TeslatlasUnsignedFleetTelemetrySHA256' "$release_info" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c 'Delete :TeslatlasFleetTelemetryEvidenceManifestSHA256' "$release_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c "Add :TeslatlasServicePackageSHA256 string $service_package_sha256" "$release_info"
 /usr/libexec/PlistBuddy -c "Add :TeslatlasReleaseTeamIdentifier string $app_team" "$release_info"
 /usr/libexec/PlistBuddy -c 'Add :TeslatlasOfficialRelease bool true' "$release_info"
 /usr/libexec/PlistBuddy -c "Add :TeslatlasUnsignedProxySHA256 string $evidence_proxy_sha256" "$release_info"
 /usr/libexec/PlistBuddy -c "Add :TeslatlasGoEvidenceManifestSHA256 string $go_component_manifest_sha256" "$release_info"
+/usr/libexec/PlistBuddy -c "Add :TeslatlasUnsignedFleetTelemetrySHA256 string $evidence_fleet_telemetry_sha256" "$release_info"
+/usr/libexec/PlistBuddy -c "Add :TeslatlasFleetTelemetryEvidenceManifestSHA256 string $fleet_telemetry_component_manifest_sha256" "$release_info"
 plutil -lint "$release_info" >/dev/null || die "release trust metadata is invalid"
 sign_named_binaries "$release_resources" 1
 codesign --force --sign "$app_identity" \
@@ -336,6 +394,9 @@ find "$release_app" -depth -delete \
         shasum -a 256 "$(basename "$signed_package")" \
             "$(basename "$final_zip")"
         find go-proxy-evidence -type f -print | LC_ALL=C sort | while IFS= read -r evidence_file; do
+            shasum -a 256 "$evidence_file"
+        done
+        find fleet-telemetry-evidence -type f -print | LC_ALL=C sort | while IFS= read -r evidence_file; do
             shasum -a 256 "$evidence_file"
         done
     } >SHA256SUMS

@@ -6,10 +6,9 @@
   <string>com.teslatlas.hub</string>
   <key>ProgramArguments</key>
   <array>
-    <string>@BINARY@</string>
+    <string>@SUPERVISOR@</string>
     <string>--config</string>
     <string>@CONFIG@</string>
-    <string>serve</string>
   </array>
   <key>StandardOutPath</key>
   <string>@STDOUT@</string>

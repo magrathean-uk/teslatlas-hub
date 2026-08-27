@@ -2,29 +2,57 @@
 set -eu
 
 usage() {
-    echo "usage: $0 --binary PATH --version VERSION --output PATH [--architecture amd64|arm64]" >&2
+    echo "usage: $0 --binary PATH --version VERSION --output PATH [--architecture amd64|arm64] [--command-proxy-binary PATH --fleet-telemetry-binary PATH]" >&2
     exit 64
 }
 
 binary=
+command_proxy_binary=
+fleet_telemetry_binary=
 version=
 output=
 architecture=
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --binary) binary=${2-}; shift 2 ;;
-        --version) version=${2-}; shift 2 ;;
-        --output) output=${2-}; shift 2 ;;
-        --architecture) architecture=${2-}; shift 2 ;;
+        --binary) [ "$#" -ge 2 ] || usage; binary=$2; shift 2 ;;
+        --command-proxy-binary) [ "$#" -ge 2 ] || usage; command_proxy_binary=$2; shift 2 ;;
+        --fleet-telemetry-binary) [ "$#" -ge 2 ] || usage; fleet_telemetry_binary=$2; shift 2 ;;
+        --version) [ "$#" -ge 2 ] || usage; version=$2; shift 2 ;;
+        --output) [ "$#" -ge 2 ] || usage; output=$2; shift 2 ;;
+        --architecture) [ "$#" -ge 2 ] || usage; architecture=$2; shift 2 ;;
         *) usage ;;
     esac
 done
 
 [ -n "$binary" ] && [ -n "$version" ] && [ -n "$output" ] || usage
-[ -f "$binary" ] && [ ! -L "$binary" ] \
-    || { echo "binary is not a regular file" >&2; exit 65; }
-binary_directory=$(CDPATH='' cd -- "$(dirname -- "$binary")" && pwd)
-binary="$binary_directory/$(basename -- "$binary")"
+case "${command_proxy_binary:+set}:${fleet_telemetry_binary:+set}" in
+    :) include_fleet_sidecars=false ;;
+    set:set) include_fleet_sidecars=true ;;
+    *) echo "both sidecar binaries must be supplied together" >&2; exit 64 ;;
+esac
+regular_binary_path() {
+    input=$1
+    label=$2
+    [ -f "$input" ] && [ ! -L "$input" ] \
+        || { echo "$label is not a regular file" >&2; exit 65; }
+    input_directory=$(CDPATH='' cd -- "$(dirname -- "$input")" && pwd)
+    printf '%s/%s\n' "$input_directory" "$(basename -- "$input")"
+}
+binary=$(regular_binary_path "$binary" 'binary')
+if [ "$include_fleet_sidecars" = true ]; then
+    command_proxy_binary=$(regular_binary_path "$command_proxy_binary" 'command proxy binary')
+    fleet_telemetry_binary=$(regular_binary_path "$fleet_telemetry_binary" 'Fleet Telemetry binary')
+fi
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        echo "sha256sum or shasum is required" >&2
+        exit 69
+    fi
+}
 command -v readelf >/dev/null 2>&1 || {
     echo "readelf is required; install binutils" >&2
     exit 69
@@ -43,6 +71,39 @@ case "$architecture" in
         ;;
     *) echo "unsupported Debian architecture: $architecture" >&2; exit 65 ;;
 esac
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+if [ "$include_fleet_sidecars" = true ]; then
+    sidecar_lock="$root/packaging/linux/sidecar-sha256.lock"
+    [ -f "$sidecar_lock" ] && [ ! -L "$sidecar_lock" ] \
+        || { echo "reviewed Linux sidecar lock is missing or unsafe" >&2; exit 65; }
+    lock_values=$(awk -v wanted="$architecture" '
+        /^[[:space:]]*(#|$)/ { next }
+        NF != 3 || ($1 != "amd64" && $1 != "arm64") { invalid = 1; next }
+        seen[$1]++
+        $1 == wanted { selected = $2 " " $3 }
+        END {
+            if (invalid || seen["amd64"] != 1 || seen["arm64"] != 1 || selected == "") exit 1
+            print selected
+        }
+    ' "$sidecar_lock") || {
+        echo "reviewed Linux sidecar lock is invalid" >&2
+        exit 65
+    }
+    set -f
+    set -- $lock_values
+    set +f
+    [ "$#" -eq 2 ] || { echo "reviewed Linux sidecar lock is invalid" >&2; exit 65; }
+    command_proxy_sha256=$1
+    fleet_telemetry_sha256=$2
+    for reviewed_digest in "$command_proxy_sha256" "$fleet_telemetry_sha256"; do
+        printf '%s\n' "$reviewed_digest" | grep -Eq '^[0-9a-f]{64}$' \
+            || { echo "reviewed Linux sidecar lock is invalid" >&2; exit 65; }
+    done
+    [ "$(sha256_file "$command_proxy_binary")" = "$command_proxy_sha256" ] \
+        || { echo "command proxy does not match the reviewed Linux build" >&2; exit 65; }
+    [ "$(sha256_file "$fleet_telemetry_binary")" = "$fleet_telemetry_sha256" ] \
+        || { echo "Fleet Telemetry receiver does not match the reviewed Linux build" >&2; exit 65; }
+fi
 printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
     || { echo "version must be semver with an optional prerelease" >&2; exit 65; }
 case "$version" in
@@ -50,7 +111,9 @@ case "$version" in
     *) debian_version=$version-1 ;;
 esac
 elf_header_field() {
-    LC_ALL=C readelf -h "$binary" 2>/dev/null | awk -F: -v field="$1" '
+    elf_binary=$1
+    elf_field=$2
+    LC_ALL=C readelf -h "$elf_binary" 2>/dev/null | awk -F: -v field="$elf_field" '
         {
             key = $1
             sub(/^[[:space:]]+/, "", key)
@@ -66,33 +129,36 @@ elf_header_field() {
     '
 }
 
-actual_class=$(elf_header_field 'Class')
-actual_data=$(elf_header_field 'Data')
-actual_os_abi=$(elf_header_field 'OS/ABI')
-actual_machine=$(elf_header_field 'Machine')
-actual_type=$(elf_header_field 'Type')
-[ "$actual_class" = 'ELF64' ] || {
-    echo "binary ELF class is ${actual_class:-unknown}, expected ELF64" >&2
-    exit 65
-}
-[ "$actual_data" = "2's complement, little endian" ] || {
-    echo "binary ELF byte order is ${actual_data:-unknown}, expected little endian" >&2
-    exit 65
-}
-case "$actual_os_abi" in
-    'UNIX - System V'|'UNIX - GNU') ;;
-    *) echo "binary OS ABI is ${actual_os_abi:-unknown}, expected UNIX - System V or UNIX - GNU" >&2; exit 65 ;;
-esac
-[ "$actual_machine" = "$expected_machine" ] || {
-    echo "binary machine is ${actual_machine:-unknown}, expected $expected_machine for $architecture" >&2
-    exit 65
-}
-case "$actual_type" in
-    'EXEC (Executable file)'|'DYN (Position-Independent Executable file)') ;;
-    *) echo "binary ELF type is ${actual_type:-unknown}, expected an executable" >&2; exit 65 ;;
-esac
+validate_elf_binary() {
+    elf_binary=$1
+    elf_label=$2
+    actual_class=$(elf_header_field "$elf_binary" 'Class')
+    actual_data=$(elf_header_field "$elf_binary" 'Data')
+    actual_os_abi=$(elf_header_field "$elf_binary" 'OS/ABI')
+    actual_machine=$(elf_header_field "$elf_binary" 'Machine')
+    actual_type=$(elf_header_field "$elf_binary" 'Type')
+    [ "$actual_class" = 'ELF64' ] || {
+        echo "$elf_label ELF class is ${actual_class:-unknown}, expected ELF64" >&2
+        exit 65
+    }
+    [ "$actual_data" = "2's complement, little endian" ] || {
+        echo "$elf_label ELF byte order is ${actual_data:-unknown}, expected little endian" >&2
+        exit 65
+    }
+    case "$actual_os_abi" in
+        'UNIX - System V'|'UNIX - GNU') ;;
+        *) echo "$elf_label OS ABI is ${actual_os_abi:-unknown}, expected UNIX - System V or UNIX - GNU" >&2; exit 65 ;;
+    esac
+    [ "$actual_machine" = "$expected_machine" ] || {
+        echo "$elf_label machine is ${actual_machine:-unknown}, expected $expected_machine for $architecture" >&2
+        exit 65
+    }
+    case "$actual_type" in
+        'EXEC (Executable file)'|'DYN (Position-Independent Executable file)') ;;
+        *) echo "$elf_label ELF type is ${actual_type:-unknown}, expected an executable" >&2; exit 65 ;;
+    esac
 
-actual_interpreter=$(LC_ALL=C readelf -l "$binary" 2>/dev/null | awk '
+    actual_interpreter=$(LC_ALL=C readelf -l "$elf_binary" 2>/dev/null | awk '
     /Requesting program interpreter:/ {
         value = $0
         sub(/^.*Requesting program interpreter: /, "", value)
@@ -101,32 +167,62 @@ actual_interpreter=$(LC_ALL=C readelf -l "$binary" 2>/dev/null | awk '
         exit
     }
 ')
-binary_is_dynamic=false
-if [ -n "$actual_interpreter" ]; then
-    binary_is_dynamic=true
-    interpreter_ok=false
-    for expected_interpreter in $expected_interpreters; do
-        if [ "$actual_interpreter" = "$expected_interpreter" ]; then
-            interpreter_ok=true
-            break
-        fi
-    done
-    [ "$interpreter_ok" = true ] || {
-        echo "binary interpreter is $actual_interpreter, unsupported for $architecture" >&2
+    validated_binary_is_dynamic=false
+    if [ -n "$actual_interpreter" ]; then
+        validated_binary_is_dynamic=true
+        interpreter_ok=false
+        for expected_interpreter in $expected_interpreters; do
+            if [ "$actual_interpreter" = "$expected_interpreter" ]; then
+                interpreter_ok=true
+                break
+            fi
+        done
+        [ "$interpreter_ok" = true ] || {
+            echo "$elf_label interpreter is $actual_interpreter, unsupported for $architecture" >&2
+            exit 65
+        }
+    elif LC_ALL=C readelf -d "$elf_binary" 2>/dev/null | awk '/\(NEEDED\)/ { found = 1 } END { exit !found }'; then
+        validated_binary_is_dynamic=true
+        echo "$elf_label is dynamic but has no program interpreter" >&2
         exit 65
-    }
-elif LC_ALL=C readelf -d "$binary" 2>/dev/null | awk '/\(NEEDED\)/ { found = 1 } END { exit !found }'; then
-    binary_is_dynamic=true
-    echo "dynamic binary has no program interpreter" >&2
-    exit 65
+    fi
+}
+
+validate_elf_binary "$binary" 'binary'
+binary_is_dynamic=$validated_binary_is_dynamic
+command_proxy_is_dynamic=false
+fleet_telemetry_is_dynamic=false
+if [ "$include_fleet_sidecars" = true ]; then
+    validate_elf_binary "$command_proxy_binary" 'command proxy binary'
+    command_proxy_is_dynamic=$validated_binary_is_dynamic
+    validate_elf_binary "$fleet_telemetry_binary" 'Fleet Telemetry binary'
+    fleet_telemetry_is_dynamic=$validated_binary_is_dynamic
 fi
 
-root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 stage=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-hub-deb.XXXXXX")
 trap 'find "$stage" -depth -delete' EXIT HUP INT TERM
 package_root="$stage/debian/teslatlas-hub"
 
 install -D -m 0755 "$binary" "$package_root/usr/bin/teslatlas-hub"
+if [ "$include_fleet_sidecars" = true ]; then
+    install -D -m 0755 "$command_proxy_binary" \
+        "$package_root/usr/lib/teslatlas-hub/tesla-http-proxy"
+    install -D -m 0755 "$fleet_telemetry_binary" \
+        "$package_root/usr/lib/teslatlas-hub/fleet-telemetry"
+    [ "$(sha256_file "$package_root/usr/lib/teslatlas-hub/tesla-http-proxy")" \
+        = "$command_proxy_sha256" ] \
+        || { echo "staged command proxy digest changed" >&2; exit 65; }
+    [ "$(sha256_file "$package_root/usr/lib/teslatlas-hub/fleet-telemetry")" \
+        = "$fleet_telemetry_sha256" ] \
+        || { echo "staged Fleet Telemetry receiver digest changed" >&2; exit 65; }
+    mkdir -p "$package_root/usr/share/doc/teslatlas-hub"
+    printf '%s  %s\n%s  %s\n' \
+        "$command_proxy_sha256" tesla-http-proxy \
+        "$fleet_telemetry_sha256" fleet-telemetry \
+        > "$package_root/usr/share/doc/teslatlas-hub/SIDECAR_SHA256SUMS"
+    install -m 0644 "$sidecar_lock" \
+        "$package_root/usr/share/doc/teslatlas-hub/SIDECAR_BUILD_LOCK"
+fi
 mkdir -p "$stage/debian"
 printf '%s\n' \
     'Source: teslatlas-hub' \
@@ -138,13 +234,21 @@ printf '%s\n' \
     "Architecture: $architecture" \
     'Description: Self-hosted multi-car Tesla telemetry hub' > "$stage/debian/control"
 runtime_dependencies=
-if [ "$binary_is_dynamic" = true ]; then
+if [ "$binary_is_dynamic" = true ] \
+    || [ "$command_proxy_is_dynamic" = true ] \
+    || [ "$fleet_telemetry_is_dynamic" = true ]; then
     command -v dpkg-shlibdeps >/dev/null 2>&1 || {
         echo "dpkg-shlibdeps is required for dynamic binaries; install dpkg-dev" >&2
         exit 69
     }
-    if ! shlib_substvars=$(CDPATH='' cd -- "$stage" && \
-        dpkg-shlibdeps -O -e "debian/teslatlas-hub/usr/bin/teslatlas-hub"); then
+    set -- -O
+    [ "$binary_is_dynamic" = false ] \
+        || set -- "$@" -e "debian/teslatlas-hub/usr/bin/teslatlas-hub"
+    [ "$command_proxy_is_dynamic" = false ] \
+        || set -- "$@" -e "debian/teslatlas-hub/usr/lib/teslatlas-hub/tesla-http-proxy"
+    [ "$fleet_telemetry_is_dynamic" = false ] \
+        || set -- "$@" -e "debian/teslatlas-hub/usr/lib/teslatlas-hub/fleet-telemetry"
+    if ! shlib_substvars=$(CDPATH='' cd -- "$stage" && dpkg-shlibdeps "$@"); then
         echo "failed to determine shared-library dependencies" >&2
         exit 65
     fi
@@ -179,6 +283,16 @@ install -D -m 0644 "$root/packaging/linux/teslatlas-hub.service" \
     "$package_root/lib/systemd/system/teslatlas-hub.service"
 install -D -m 0644 "$root/packaging/linux/config.toml" \
     "$package_root/etc/teslatlas-hub/config.toml"
+if [ "$include_fleet_sidecars" = true ]; then
+    install -D -m 0644 "$root/packaging/linux/teslatlas-command-proxy.service" \
+        "$package_root/lib/systemd/system/teslatlas-command-proxy.service"
+    install -D -m 0644 "$root/packaging/linux/teslatlas-fleet-telemetry.service" \
+        "$package_root/lib/systemd/system/teslatlas-fleet-telemetry.service"
+    install -D -m 0644 "$root/packaging/linux/command-proxy.env" \
+        "$package_root/etc/teslatlas-hub/command-proxy.env"
+    install -D -m 0644 "$root/packaging/linux/fleet-telemetry.json" \
+        "$package_root/etc/teslatlas-hub/fleet-telemetry.json"
+fi
 install -D -m 0644 "$root/LICENSE" "$package_root/usr/share/doc/teslatlas-hub/copyright"
 install -D -m 0644 "$root/NOTICE" "$package_root/usr/share/doc/teslatlas-hub/NOTICE"
 install -D -m 0644 "$root/THIRD_PARTY_NOTICES.md" \
@@ -195,6 +309,11 @@ sed \
     -e "s|@RUNTIME_DEPENDS@|$escaped_runtime_dependency_suffix|g" \
     "$root/packaging/linux/control.in" > "$package_root/DEBIAN/control"
 printf '%s\n' '/etc/teslatlas-hub/config.toml' > "$package_root/DEBIAN/conffiles"
+if [ "$include_fleet_sidecars" = true ]; then
+    printf '%s\n' \
+        '/etc/teslatlas-hub/command-proxy.env' \
+        '/etc/teslatlas-hub/fleet-telemetry.json' >> "$package_root/DEBIAN/conffiles"
+fi
 
 mkdir -p "$(dirname -- "$output")"
 dpkg-deb --root-owner-group --build "$package_root" "$output"

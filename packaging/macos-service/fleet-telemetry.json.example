@@ -1,0 +1,22 @@
+{
+  "host": "0.0.0.0",
+  "port": 8443,
+  "status_port": 0,
+  "log_level": "info",
+  "json_log_enable": true,
+  "namespace": "teslatlas",
+  "teslatlas": {
+    "timeout_ms": 2000
+  },
+  "reliable_ack_sources": {
+    "V": "teslatlas"
+  },
+  "records": {
+    "V": ["teslatlas"],
+    "connectivity": ["teslatlas"]
+  },
+  "tls": {
+    "server_cert": "/absolute/path/to/fleet-telemetry.crt",
+    "server_key": "/absolute/path/to/fleet-telemetry.key"
+  }
+}

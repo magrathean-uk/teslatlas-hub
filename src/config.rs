@@ -199,6 +199,11 @@ pub struct CollectorConfig {
     /// Optional PEM trust root for the loopback Fleet command proxy.
     #[serde(default)]
     pub fleet_command_proxy_root_certificate_path: Option<PathBuf>,
+    /// Native Fleet Telemetry receiver configuration. When present, Fleet
+    /// collection is push-only and never falls back to paid vehicle-data
+    /// polling.
+    #[serde(default)]
+    pub fleet_telemetry: Option<FleetTelemetryConfig>,
     #[serde(default = "default_stream_health_timeout_seconds")]
     pub stream_health_timeout_seconds: u64,
     /// Enables explicit legacy owner-auth refresh calls. No secret is read
@@ -256,6 +261,10 @@ impl fmt::Debug for CollectorConfig {
                     .fleet_command_proxy_root_certificate_path
                     .as_ref()
                     .map(|_| "[configured]"),
+            )
+            .field(
+                "fleet_telemetry",
+                &self.fleet_telemetry.as_ref().map(|_| "[configured]"),
             )
             .field(
                 "stream_health_timeout_seconds",
@@ -338,9 +347,71 @@ impl Default for CollectorConfig {
             stream_region: None,
             fleet_command_proxy_url: None,
             fleet_command_proxy_root_certificate_path: None,
+            fleet_telemetry: None,
             stream_health_timeout_seconds: default_stream_health_timeout_seconds(),
             legacy_auth: LegacyAuthConfig::default(),
         }
+    }
+}
+
+/// Public Tesla Fleet Telemetry endpoint and its local Hub ingress secret.
+///
+/// The hostname is sent to the vehicle. TLS termination happens in the
+/// companion receiver; the Rust Hub remains bound to its configured local
+/// address.
+#[derive(Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct FleetTelemetryConfig {
+    pub hostname: String,
+    #[serde(default = "default_fleet_telemetry_port")]
+    pub port: u16,
+    pub ca_certificate_path: PathBuf,
+    pub ingest_token_path: PathBuf,
+}
+
+impl fmt::Debug for FleetTelemetryConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FleetTelemetryConfig")
+            .field("hostname", &self.hostname)
+            .field("port", &self.port)
+            .field("ca_certificate_path", &"[configured]")
+            .field("ingest_token_path", &"[redacted]")
+            .finish()
+    }
+}
+
+const fn default_fleet_telemetry_port() -> u16 {
+    443
+}
+
+impl FleetTelemetryConfig {
+    fn validate(&self) -> Result<(), ConfigError> {
+        let hostname = self.hostname.as_str();
+        let hostname_valid = !hostname.is_empty()
+            && hostname.len() <= 253
+            && hostname.is_ascii()
+            && !hostname.starts_with('.')
+            && !hostname.ends_with('.')
+            && hostname.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            });
+        if !hostname_valid || self.port == 0 {
+            return Err(ConfigError::InvalidFleetTelemetry);
+        }
+        if !self.ca_certificate_path.is_absolute()
+            || !self.ingest_token_path.is_absolute()
+            || self.ca_certificate_path == self.ingest_token_path
+        {
+            return Err(ConfigError::InvalidFleetTelemetry);
+        }
+        Ok(())
     }
 }
 
@@ -819,6 +890,16 @@ impl HubConfig {
         {
             return Err(ConfigError::InvalidFleetCommandProxy);
         }
+        if let Some(telemetry) = &self.collector.fleet_telemetry {
+            telemetry.validate()?;
+            if self.collector.provider != CollectorProvider::Fleet
+                || self.collector.fleet_command_proxy_url.is_none()
+                || self.bind.ip() != std::net::Ipv4Addr::LOCALHOST
+                || self.bind.port() != 8080
+            {
+                return Err(ConfigError::InvalidFleetTelemetry);
+            }
+        }
         let source_set = self.teslamate.source_url.is_some();
         let source_key_set = self.teslamate.source_key.is_some();
         if source_set != source_key_set {
@@ -913,6 +994,8 @@ pub enum ConfigError {
     InvalidStreamEndpoint,
     #[error("Fleet command proxy configuration is invalid or unsafe")]
     InvalidFleetCommandProxy,
+    #[error("Fleet Telemetry configuration is invalid or unsafe")]
+    InvalidFleetTelemetry,
     #[error("geocoder endpoint is invalid or unsafe")]
     InvalidGeocoderEndpoint,
     #[error("geocoder language is invalid")]
@@ -1282,6 +1365,49 @@ mod tests {
             assert!(!rendered.contains("access-secret"));
             assert!(!rendered.contains("refresh-secret"));
         }
+    }
+
+    #[test]
+    fn fleet_telemetry_requires_fleet_proxy_and_safe_paths() {
+        let valid = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+                     [collector]\nprovider = 'fleet'\n\
+                     fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
+                     [collector.fleet_telemetry]\n\
+                     hostname = 'telemetry.example.test'\n\
+                     ca_certificate_path = '/etc/teslatlas-hub/telemetry/ca.pem'\n\
+                     ingest_token_path = '/var/lib/teslatlas-hub/secrets/telemetry-token'\n";
+        HubConfig::from_exact_bytes(valid.as_bytes()).expect("valid Fleet Telemetry config");
+
+        for invalid in [
+            valid.replace("provider = 'fleet'\n", ""),
+            valid.replace("fleet_command_proxy_url = 'https://127.0.0.1:4443'\n", ""),
+            valid.replace("127.0.0.1:8080", "127.0.0.1:8081"),
+            valid.replace("127.0.0.1:8080", "[::1]:8080"),
+            valid.replace("telemetry.example.test", "https://telemetry.example.test"),
+            valid.replace(
+                "/var/lib/teslatlas-hub/secrets/telemetry-token",
+                "relative-token",
+            ),
+        ] {
+            assert!(matches!(
+                HubConfig::from_exact_bytes(invalid.as_bytes()),
+                Err(ConfigError::InvalidFleetTelemetry)
+            ));
+        }
+    }
+
+    #[test]
+    fn fleet_telemetry_debug_redacts_secret_path() {
+        let telemetry = FleetTelemetryConfig {
+            hostname: "telemetry.example.test".to_owned(),
+            port: 443,
+            ca_certificate_path: PathBuf::from("/public/ca.pem"),
+            ingest_token_path: PathBuf::from("/secret/marker-token"),
+        };
+        let rendered = format!("{telemetry:?}");
+        assert!(rendered.contains("telemetry.example.test"));
+        assert!(!rendered.contains("marker-token"));
+        assert!(!rendered.contains("ca.pem"));
     }
 
     #[test]

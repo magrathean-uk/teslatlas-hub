@@ -11,6 +11,7 @@ require_root
 read_console_user
 
 CONFIG="$CONSOLE_HOME/Library/Application Support/Teslatlas Hub/config.toml"
+SUPERVISOR="$BINARY_ROOT/libexec/run-hub-service.sh"
 MIGRATION_HANDOVER_MARKER="$CONSOLE_HOME/Library/Application Support/Teslatlas Hub/.teslamate-handover-pending"
 LAUNCH_AGENTS="$CONSOLE_HOME/Library/LaunchAgents"
 PLIST="$LAUNCH_AGENTS/$LABEL.plist"
@@ -226,6 +227,10 @@ require_safe_regular_file "$BINARY" 0 "installed Hub binary"
 [ "$(/usr/bin/stat -f '%g' "$BINARY")" = 0 ] \
     || installer_error "installed Hub binary has unexpected group"
 [ -x "$BINARY" ] || installer_error "installed Hub binary is not executable"
+require_safe_regular_file "$SUPERVISOR" 0 "installed Hub service supervisor"
+[ "$(/usr/bin/stat -f '%g' "$SUPERVISOR")" = 0 ] \
+    || installer_error "installed Hub service supervisor has unexpected group"
+[ -x "$SUPERVISOR" ] || installer_error "installed Hub service supervisor is not executable"
 require_safe_regular_file "$TEMPLATE" 0 "LaunchAgent template"
 
 ensure_user_directory "$CONSOLE_HOME/Library" 0700
@@ -248,6 +253,7 @@ rendered_plist="$STATE_DIRECTORY/launch-agent.rendered"
 /usr/bin/install -o root -g wheel -m 0600 /dev/null "$rendered_plist" \
     || installer_error "cannot create protected temporary LaunchAgent plist"
 /usr/bin/sed \
+    -e "s|@SUPERVISOR@|$(xml_sed_replacement "$SUPERVISOR")|g" \
     -e "s|@BINARY@|$(xml_sed_replacement "$BINARY")|g" \
     -e "s|@CONFIG@|$(xml_sed_replacement "$CONFIG")|g" \
     -e "s|@STDOUT@|$(xml_sed_replacement "$STDOUT")|g" \

@@ -17,6 +17,7 @@ mod durability_fault;
 pub mod fake_tesla;
 pub mod fleet_api;
 pub mod fleet_credentials;
+pub mod fleet_telemetry;
 pub mod geocoder;
 pub mod gpx;
 pub mod http_range;

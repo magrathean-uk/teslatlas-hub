@@ -48,9 +48,11 @@ use crate::{
     },
     fleet_api::{
         FleetApi, FleetApiConfigError, FleetApiError, FleetAuthApi, FleetCommand,
-        FleetCommandProxy, FleetCommandProxyBase, FleetCommandResult, VehicleVin, WakeResult,
+        FleetCommandProxy, FleetCommandProxyBase, FleetCommandResult, FleetTelemetryConfigBuilder,
+        FleetTelemetryVins, VehicleVin, WakeResult,
     },
     fleet_credentials::{FleetAuthManager, FleetCredentialError, FleetSetupCredentials},
+    fleet_telemetry::FleetTelemetrySnapshot,
     geocoder::{AdmittedUserEgressGuard, Geocoder, GeocoderError},
     hub_pack::{
         ProjectionBinding, ProjectionCar, ProjectionDeltaPackRequest, ProjectionPackError,
@@ -87,6 +89,9 @@ const EARLIEST_PLAUSIBLE_TIMESTAMP_MS: i64 = 946_684_800_000; // 2000-01-01 UTC
 const FUTURE_TIMESTAMP_SKEW_MS: i64 = 5 * 60 * 1000;
 const STREAM_SOURCE_KIND: &str = OWNER_API_SOURCE_KIND;
 const STREAM_SOURCE_KEY: &str = OWNER_API_SOURCE_KEY;
+const FLEET_TELEMETRY_CONFIG_LIFETIME_SECONDS: u64 = 30 * 24 * 60 * 60;
+const FLEET_TELEMETRY_CONFIG_RENEWAL_INTERVAL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const FLEET_TELEMETRY_CONFIG_RETRY_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
 fn provider_source(provider: CollectorProvider) -> SourceDescriptor {
     match provider {
@@ -832,6 +837,238 @@ async fn finish_collection_for_provider(
     Ok(report)
 }
 
+/// Restore the latest complete Fleet snapshot for one configured VIN. Native
+/// Fleet Telemetry sends deltas, so restart must seed the in-memory
+/// accumulator from this durable allowlisted state.
+pub(crate) fn fleet_telemetry_seed_for_vin(
+    store: &HubStore,
+    vin: &str,
+) -> Result<Option<Value>, CollectorError> {
+    let (vehicle_id, _, _) = configured_fleet_vehicle_for_vin(store, vin)?;
+    let observations = store.current_observations_for_vehicle(vehicle_id)?;
+    Ok(observations.into_iter().rev().find_map(|observation| {
+        (observation
+            .payload
+            .get("record_type")
+            .and_then(Value::as_str)
+            == Some(provider_vehicle_data_record_type(CollectorProvider::Fleet)))
+        .then(|| {
+            observation
+                .payload
+                .get("provider_raw_json")
+                .and_then(|raw| raw.get("response"))
+                .cloned()
+        })
+        .flatten()
+    }))
+}
+
+/// Commit one accumulated native Fleet Telemetry snapshot through the same
+/// atomic lifecycle and projection path used by ordinary Fleet responses.
+/// Returning success is the receiver's permission to acknowledge the vehicle.
+pub(crate) async fn persist_fleet_telemetry_snapshot(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    snapshot: &FleetTelemetrySnapshot,
+) -> Result<ManualCollectionReport, CollectorError> {
+    let (_, eid, settings) = configured_fleet_vehicle_for_vin(store, &snapshot.vin)?;
+    let source_vehicle_id =
+        VehicleId::try_from_i64(eid).ok_or(CollectorError::SelectedVehicleMissing)?;
+    let stream_id =
+        StreamVehicleId::try_from_i64(eid).ok_or(CollectorError::SelectedVehicleMissing)?;
+    let source_vehicle_state = snapshot
+        .owner_data
+        .get("state")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty() && value.len() <= 64)
+        .unwrap_or("unknown")
+        .to_owned();
+    let data = VehicleData::from_provider_raw_json(
+        source_vehicle_id,
+        serde_json::json!({"response": snapshot.owner_data}),
+    )?;
+    let vehicle = Vehicle {
+        id: source_vehicle_id,
+        stream_id,
+        vin: snapshot.vin.clone(),
+        state: source_vehicle_state,
+        display_name: None,
+        settings,
+    };
+    finish_collection_for_provider(
+        store,
+        cursor_key,
+        &ManualCollection {
+            vehicles: vec![vehicle],
+            snapshots: vec![data],
+            failures: Vec::new(),
+        },
+        CollectorProvider::Fleet,
+    )
+    .await
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct FleetTelemetrySetupReport {
+    pub vehicles_configured: usize,
+    pub vehicles_skipped: usize,
+    pub vehicles_revoked: usize,
+    pub expires_at: u64,
+}
+
+/// Send the fixed low-cost Fleet Telemetry field policy through Tesla's local
+/// command proxy. VINs come only from configured Hub identities; no discovery
+/// or vehicle-data request is made by this operation.
+#[cfg(unix)]
+pub async fn configure_fleet_telemetry_for_admitted_user(
+    store: &HubStore,
+    config: &HubConfig,
+    admission: Arc<crate::hub_user_process::AdmittedUserHub>,
+) -> Result<FleetTelemetrySetupReport, CollectorError> {
+    let mut manager = FleetAuthManager::from_store_for_admitted_user(
+        store.clone(),
+        &config.data_dir,
+        Arc::clone(&admission),
+    )?;
+    let auth_api = FleetAuthApi::new(
+        manager.region(),
+        Duration::from_secs(config.collector.request_timeout_seconds),
+    )?;
+    apply_fleet_telemetry_configuration(store, config, &mut manager, &auth_api, &admission).await
+}
+
+#[cfg(unix)]
+async fn apply_fleet_telemetry_configuration(
+    store: &HubStore,
+    config: &HubConfig,
+    manager: &mut FleetAuthManager,
+    auth_api: &FleetAuthApi,
+    admission: &Arc<crate::hub_user_process::AdmittedUserHub>,
+) -> Result<FleetTelemetrySetupReport, CollectorError> {
+    admission.assert_sensitive_access()?;
+    let telemetry = config
+        .collector
+        .fleet_telemetry
+        .as_ref()
+        .ok_or(ConfigError::InvalidFleetTelemetry)?;
+    let proxy = fleet_command_proxy(config)?.ok_or(ConfigError::InvalidFleetTelemetry)?;
+    let certificate =
+        read_fleet_proxy_root_certificate(&telemetry.ca_certificate_path, 128 * 1024)?;
+    let certificate =
+        std::str::from_utf8(&certificate).map_err(|_| FleetApiConfigError::InvalidTelemetryCa)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| CollectorError::InvalidReceiptTimestamp)?
+        .as_secs();
+    let expires_at = now
+        .checked_add(FLEET_TELEMETRY_CONFIG_LIFETIME_SECONDS)
+        .ok_or(CollectorError::InvalidReceiptTimestamp)?;
+    let destination = FleetTelemetryConfigBuilder::new(
+        telemetry.hostname.clone(),
+        telemetry.port,
+        certificate,
+        expires_at,
+    )
+    .with_recommended_fields()
+    .build()?;
+    let mut enabled_vins = Vec::new();
+    let mut disabled_vins = Vec::new();
+    for (vehicle_id, _, settings) in store.configured_tesla_vehicles()? {
+        let Some((_, Some(vin))) = store.configured_tesla_vehicle_identity(vehicle_id)? else {
+            return Err(CollectorError::SelectedVehicleMissing);
+        };
+        if settings.enabled {
+            enabled_vins.push(vin);
+        } else {
+            disabled_vins.push(VehicleVin::parse(&vin)?);
+        }
+    }
+    manager.refresh_if_due(auth_api, SystemTime::now()).await?;
+
+    let (vehicles_configured, vehicles_skipped) = if enabled_vins.is_empty() {
+        (0, 0)
+    } else {
+        let vins = FleetTelemetryVins::parse(&enabled_vins)?;
+        admission.assert_sensitive_access()?;
+        let first = proxy
+            .configure_fleet_telemetry(
+                manager.access_token_for_sensitive_use()?,
+                &vins,
+                &destination,
+            )
+            .await;
+        let result = if matches!(first, Err(FleetApiError::HttpStatus(401 | 403))) {
+            manager.mark_refresh_due();
+            manager.refresh_if_due(auth_api, SystemTime::now()).await?;
+            admission.assert_sensitive_access()?;
+            proxy
+                .configure_fleet_telemetry(
+                    manager.access_token_for_sensitive_use()?,
+                    &vins,
+                    &destination,
+                )
+                .await?
+        } else {
+            first?
+        };
+        (result.updated_vehicles, result.skipped_vehicles.len())
+    };
+
+    let mut vehicles_revoked = 0;
+    for vin in disabled_vins {
+        admission.assert_sensitive_access()?;
+        let first = proxy
+            .remove_fleet_telemetry(manager.access_token_for_sensitive_use()?, &vin)
+            .await;
+        let removal = if matches!(first, Err(FleetApiError::HttpStatus(401 | 403))) {
+            manager.mark_refresh_due();
+            manager.refresh_if_due(auth_api, SystemTime::now()).await?;
+            admission.assert_sensitive_access()?;
+            proxy
+                .remove_fleet_telemetry(manager.access_token_for_sensitive_use()?, &vin)
+                .await
+        } else {
+            first
+        };
+        match removal {
+            Ok(()) => vehicles_revoked += 1,
+            Err(error) if error.http_status() == Some(404) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    Ok(FleetTelemetrySetupReport {
+        vehicles_configured,
+        vehicles_skipped,
+        vehicles_revoked,
+        expires_at,
+    })
+}
+
+fn configured_fleet_vehicle_for_vin(
+    store: &HubStore,
+    vin: &str,
+) -> Result<(Uuid, i64, crate::hub_pack::ProjectionCarSettings), CollectorError> {
+    let mut matched = None;
+    for (vehicle_id, eid, settings) in store.configured_tesla_vehicles()? {
+        let Some((identity_eid, configured_vin)) =
+            store.configured_tesla_vehicle_identity(vehicle_id)?
+        else {
+            continue;
+        };
+        if identity_eid == eid && configured_vin.as_deref() == Some(vin) {
+            if !settings.enabled {
+                continue;
+            }
+            if matched.is_some() {
+                return Err(CollectorError::SelectedVehicleMissing);
+            }
+            matched = Some((vehicle_id, eid, settings));
+        }
+    }
+    matched.ok_or(CollectorError::SelectedVehicleMissing)
+}
+
 /// Configure one clean Hub directly from a bounded legacy token pair. This
 /// performs products discovery only: no vehicle-data read, wake, or command.
 pub async fn setup_native_vehicle(
@@ -1305,14 +1542,18 @@ fn legacy_action_completion(error: Option<&OwnerApiAuthError>) -> OutboundReques
 fn fleet_action_completion(error: Option<&FleetApiError>) -> OutboundRequestCompletion {
     let (outcome, http_status, retry_after_seconds) = match error {
         None => (OutboundRequestOutcome::Success, Some(200), None),
-        Some(FleetApiError::HttpStatus(status @ (401 | 403))) => (
+        Some(FleetApiError::HttpStatus(status @ (401 | 403)))
+        | Some(FleetApiError::ProviderHttpStatus {
+            status: status @ (401 | 403),
+            ..
+        }) => (
             OutboundRequestOutcome::AuthenticationRejected,
             Some(*status),
             None,
         ),
-        Some(FleetApiError::HttpStatus(status)) => {
-            (OutboundRequestOutcome::HttpError, Some(*status), None)
-        }
+        Some(
+            FleetApiError::HttpStatus(status) | FleetApiError::ProviderHttpStatus { status, .. },
+        ) => (OutboundRequestOutcome::HttpError, Some(*status), None),
         Some(FleetApiError::RateLimited {
             retry_after_seconds,
         }) => (
@@ -2466,9 +2707,9 @@ fn fleet_failure_as_owner_error(error: &CollectorError) -> OwnerApiError {
         CollectorError::FleetApi(FleetApiError::RequestNotSent | FleetApiError::Transport) => {
             OwnerApiError::Transport
         }
-        CollectorError::FleetApi(FleetApiError::HttpStatus(status)) => {
-            OwnerApiError::HttpStatus(*status)
-        }
+        CollectorError::FleetApi(
+            FleetApiError::HttpStatus(status) | FleetApiError::ProviderHttpStatus { status, .. },
+        ) => OwnerApiError::HttpStatus(*status),
         CollectorError::FleetApi(FleetApiError::RateLimited {
             retry_after_seconds,
         }) => OwnerApiError::RateLimited {
@@ -2580,6 +2821,19 @@ where
         tokio::pin!(resident_control_loop);
         let collection_loop = async {
             startup_result?;
+            if config.collector.fleet_telemetry.is_some() {
+                return run_fleet_telemetry_maintenance_loop(
+                    store,
+                    config,
+                    &auth_api,
+                    &manager,
+                    &cursor_key,
+                    &terrain_wake,
+                    &admission,
+                    allow_refresh,
+                )
+                .await;
+            }
             loop {
                 admission.assert_sensitive_access()?;
                 let configured = store.configured_tesla_vehicles()?;
@@ -2851,6 +3105,120 @@ where
         collection_result = release_result;
     }
     collection_result
+}
+
+/// Keep Fleet credentials, deferred publication, and local enrichment healthy
+/// while native Fleet Telemetry supplies observations. This mode deliberately
+/// makes no Fleet list or vehicle-data requests and has no polling fallback.
+#[allow(clippy::too_many_arguments)]
+async fn run_fleet_telemetry_maintenance_loop(
+    store: &HubStore,
+    config: &HubConfig,
+    auth_api: &FleetAuthApi,
+    manager: &Arc<tokio::sync::Mutex<FleetAuthManager>>,
+    cursor_key: &CursorKey,
+    terrain_wake: &mpsc::Sender<()>,
+    admission: &Arc<crate::hub_user_process::AdmittedUserHub>,
+    allow_refresh: bool,
+) -> Result<(), CollectorError> {
+    const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60);
+    tracing::info!("Fleet Telemetry push collection active; paid vehicle-data polling is disabled");
+    let mut next_configuration_renewal = Instant::now();
+    loop {
+        admission.assert_sensitive_access()?;
+        let vehicles = configured_fleet_telemetry_vehicles(store)?;
+        if allow_refresh && Instant::now() >= next_configuration_renewal {
+            let result = {
+                let mut manager = manager.lock().await;
+                apply_fleet_telemetry_configuration(
+                    store,
+                    config,
+                    &mut manager,
+                    auth_api,
+                    admission,
+                )
+                .await
+            };
+            let retry_after = match result {
+                Ok(report) if report.vehicles_skipped == 0 => {
+                    tracing::info!(
+                        vehicles_configured = report.vehicles_configured,
+                        vehicles_revoked = report.vehicles_revoked,
+                        expires_at = report.expires_at,
+                        "Fleet Telemetry configuration renewed"
+                    );
+                    FLEET_TELEMETRY_CONFIG_RENEWAL_INTERVAL
+                }
+                Ok(report) => {
+                    tracing::warn!(
+                        vehicles_configured = report.vehicles_configured,
+                        vehicles_skipped = report.vehicles_skipped,
+                        vehicles_revoked = report.vehicles_revoked,
+                        "Fleet Telemetry configuration skipped vehicles; retrying"
+                    );
+                    FLEET_TELEMETRY_CONFIG_RETRY_INTERVAL
+                }
+                Err(error) => {
+                    tracing::warn!(error = %error, "Fleet Telemetry configuration renewal failed; existing push collection remains active");
+                    FLEET_TELEMETRY_CONFIG_RETRY_INTERVAL
+                }
+            };
+            next_configuration_renewal = Instant::now() + retry_after;
+        }
+        if allow_refresh {
+            manager
+                .lock()
+                .await
+                .refresh_if_due(auth_api, SystemTime::now())
+                .await?;
+        }
+        if vehicles.is_empty() {
+            sleep(MAINTENANCE_INTERVAL).await;
+            continue;
+        }
+        let now_ms = current_epoch_millis()?;
+        run_address_enrichment_once_with_runtime_admission(
+            store,
+            config,
+            cursor_key,
+            &vehicles,
+            now_ms,
+            Some(admission),
+        )
+        .await?;
+        replay_export_outbox(store, cursor_key, &vehicles, now_ms).await?;
+        let _ = terrain_wake.try_send(());
+        sleep(MAINTENANCE_INTERVAL).await;
+    }
+}
+
+fn configured_fleet_telemetry_vehicles(store: &HubStore) -> Result<Vec<Vehicle>, CollectorError> {
+    let mut vehicles = Vec::new();
+    for (vehicle_id, eid, settings) in store.configured_tesla_vehicles()? {
+        if !settings.enabled {
+            continue;
+        }
+        let Some((identity_eid, vin)) = store.configured_tesla_vehicle_identity(vehicle_id)? else {
+            return Err(CollectorError::SelectedVehicleMissing);
+        };
+        if identity_eid != eid {
+            return Err(CollectorError::SelectedVehicleMissing);
+        }
+        let vin = vin.ok_or(CollectorError::SelectedVehicleMissing)?;
+        let id = VehicleId::try_from_i64(eid).ok_or(CollectorError::SelectedVehicleMissing)?;
+        let stream_id = crate::owner_api::StreamVehicleId::try_from_i64(eid)
+            .ok_or(CollectorError::SelectedVehicleMissing)?;
+        let materialised = store.materialised_car_for_vehicle(vehicle_id)?;
+        vehicles.push(Vehicle {
+            id,
+            stream_id,
+            vin,
+            state: "online".to_owned(),
+            display_name: materialised.map(|car| car.name),
+            settings,
+        });
+    }
+    Ok(vehicles)
 }
 
 fn filter_configured_vehicles(
@@ -5016,8 +5384,15 @@ impl VehicleScheduler {
                 FleetApiError::RateLimited {
                     retry_after_seconds,
                 } => self.vehicle_rate_limited(id, *retry_after_seconds, now),
-                FleetApiError::HttpStatus(404) => self.vehicle_not_found(id, now),
-                FleetApiError::RequestTimeout | FleetApiError::HttpStatus(401 | 403) => {
+                FleetApiError::HttpStatus(404)
+                | FleetApiError::ProviderHttpStatus { status: 404, .. } => {
+                    self.vehicle_not_found(id, now)
+                }
+                FleetApiError::RequestTimeout
+                | FleetApiError::HttpStatus(401 | 403)
+                | FleetApiError::ProviderHttpStatus {
+                    status: 401 | 403, ..
+                } => {
                     self.vehicle_failed(id, now);
                 }
                 _ => self.vehicle_api_error(id, now),
@@ -6422,6 +6797,48 @@ mod tests {
     };
 
     #[test]
+    fn fleet_provider_http_errors_keep_http_classification() {
+        let error = FleetApiError::ProviderHttpStatus {
+            status: 400,
+            error: "invalid_configuration".to_owned(),
+            description: None,
+        };
+        assert_eq!(
+            fleet_action_completion(Some(&error)),
+            OutboundRequestCompletion {
+                outcome: OutboundRequestOutcome::HttpError,
+                http_status: Some(400),
+                retry_after_seconds: None,
+            }
+        );
+        assert_eq!(
+            fleet_failure_as_owner_error(&CollectorError::FleetApi(error)),
+            OwnerApiError::HttpStatus(400)
+        );
+    }
+
+    #[test]
+    fn fleet_provider_not_found_uses_not_found_schedule() {
+        let now = Instant::now();
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let vehicle_id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+
+        scheduler.vehicle_failed_for_error(
+            vehicle_id,
+            &CollectorError::FleetApi(FleetApiError::ProviderHttpStatus {
+                status: 404,
+                error: "vehicle_not_found".to_owned(),
+                description: None,
+            }),
+            now,
+        );
+
+        assert_eq!(scheduler.vehicle_fuses[&vehicle_id].not_found.len(), 1);
+    }
+
+    #[test]
     fn lifecycle_id_seed_uses_covering_import_indexes_once() {
         let temporary = crate::private_tempdir().expect("temporary store");
         let store = HubStore::initialize(temporary.path()).expect("store");
@@ -7012,6 +7429,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_fleet_telemetry_commits_and_restores_through_fleet_projection() {
+        const VIN: &str = "5YJ3E1EA7KF000001";
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("Hub store");
+        let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+            .expect("cursor key");
+        finish_collection_for_provider(
+            &store,
+            &cursor_key,
+            &ManualCollection {
+                vehicles: vec![Vehicle::for_test(70, VIN, "online")],
+                snapshots: Vec::new(),
+                failures: Vec::new(),
+            },
+            CollectorProvider::Fleet,
+        )
+        .await
+        .expect("configured Fleet vehicle");
+        assert!(
+            fleet_telemetry_seed_for_vin(&store, VIN)
+                .expect("empty seed lookup")
+                .is_none()
+        );
+
+        let mut accumulator =
+            crate::fleet_telemetry::FleetTelemetryAccumulator::empty(VIN).expect("accumulator");
+        let t0 = current_epoch_millis().expect("clock") - 1_000;
+        let snapshot = accumulator
+            .apply_json(
+                &serde_json::to_vec(&serde_json::json!({
+                    "version": 1,
+                    "vin": VIN,
+                    "txid": "tx-drive-1",
+                    "tx_type": "vehicle_data",
+                    "received_at_ms": t0 + 100,
+                    "timestamp_ms": t0,
+                    "payload": {
+                        "vin": VIN,
+                        "createdAt": "2027-01-15T08:00:00Z",
+                        "data": {
+                            "Location": {"locationValue": {"latitude": 51.5, "longitude": -0.12}},
+                            "VehicleSpeed": {"doubleValue": 48.0},
+                            "Gear": {"stringValue": "drive"},
+                            "Power": {"doubleValue": 12.0},
+                            "BatteryLevel": {"doubleValue": 80.0},
+                            "Soc": {"doubleValue": 79.0}
+                        }
+                    }
+                }))
+                .expect("telemetry JSON"),
+            )
+            .expect("telemetry snapshot");
+        let report = persist_fleet_telemetry_snapshot(&store, &cursor_key, &snapshot)
+            .await
+            .expect("telemetry commit");
+        assert_eq!(report.observations_inserted, 1);
+
+        let restored = fleet_telemetry_seed_for_vin(&store, VIN)
+            .expect("restored seed")
+            .expect("Fleet state");
+        assert_eq!(restored["charge_state"]["battery_level"], 80);
+        assert_eq!(restored["drive_state"]["shift_state"], "D");
+
+        let duplicate = persist_fleet_telemetry_snapshot(&store, &cursor_key, &snapshot)
+            .await
+            .expect("duplicate telemetry commit");
+        assert_eq!(duplicate.observations_inserted, 0);
+        assert_eq!(duplicate.observations_already_present, 1);
+    }
+
+    #[tokio::test]
     async fn fleet_vin_match_rotates_eid_without_losing_car_settings() {
         const VIN: &str = "5YJ3E1EA7KF000001";
         let temporary = crate::private_tempdir().expect("temporary Hub");
@@ -7073,6 +7561,10 @@ mod tests {
                 .expect("canonical identity"),
             Some((999, Some(VIN.to_owned())))
         );
+        assert!(matches!(
+            configured_fleet_vehicle_for_vin(&store, VIN),
+            Err(CollectorError::SelectedVehicleMissing)
+        ));
     }
 
     #[tokio::test]

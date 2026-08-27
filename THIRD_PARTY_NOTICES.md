@@ -74,12 +74,35 @@ Licence: Apache License 2.0
 
 The macOS service includes the upstream `cmd/tesla-http-proxy` executable as a
 separate process. It is built from the pinned upstream source for arm64 with a
-macOS 12 deployment target. No Tesla command private key, TLS private key,
+macOS 13 deployment target. No Tesla command private key, TLS private key,
 OAuth token, or session cache is included in the application or package.
 
 The upstream `LICENSE` file applies to this component. Its Go module graph is
 fixed by the upstream `go.mod` and `go.sum`; the exact source revision and
 build inputs are recorded in `PROVENANCE.md`.
+
+## Tesla Fleet Telemetry receiver
+
+Upstream: https://github.com/teslamotors/fleet-telemetry
+
+Reviewed release: `v0.9.4`
+
+Reviewed revision: `d64c73ab65e7c5fb5fc12b35fe507e2c6054227b`
+
+Licence: Apache License 2.0
+
+The macOS service package and optional Debian Fleet package include a separately
+executed receiver built from the pinned upstream source with a Teslatlas patch. The patch adds a strict
+loopback HTTP dispatcher: decoded vehicle and connectivity records are sent to
+Hub with a private bearer, and reliable vehicle-record acknowledgement waits
+for Hub's successful commit. The packaged runtime configuration selects no
+message-queue dispatcher; the CGO-only Kafka and ZMQ integrations are
+unavailable in this build.
+
+The upstream `LICENSE` file applies to this modified component. Its source
+revision, archive checksum, patch checksum, build targets, and Go toolchain are
+recorded in `PROVENANCE.md` and the checked-in bridge lock file. No receiver
+TLS private key, vehicle credential, Fleet token, or loopback bearer is bundled.
 
 ## Data and services
 

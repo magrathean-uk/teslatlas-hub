@@ -10,7 +10,9 @@ COMMON="$SCRIPTS/common.sh"
 PREINSTALL="$SCRIPTS/preinstall"
 POSTINSTALL="$SCRIPTS/postinstall"
 UNINSTALL="$SCRIPTS/uninstall-macos-service.sh"
+SUPERVISOR="$SCRIPTS/run-hub-service.sh"
 PLIST="$ROOT/packaging/macos-service/com.teslatlas.hub.plist.in"
+FLEET_TELEMETRY_EXAMPLE="$ROOT/packaging/macos-service/fleet-telemetry.json.example"
 CLI_PLIST="$ROOT/packaging/com.teslatlas.hub.plist.in"
 APP_BUILD="$ROOT/scripts/build-macos-app.sh"
 SERVICE_BUILD="$ROOT/scripts/build-macos-service-package.sh"
@@ -46,13 +48,15 @@ assert_before_fixed() {
     [ "$first" -lt "$second" ] || fail "wrong operation order: $1 must precede $2"
 }
 
-for script in "$SCRIPTS/common.sh" "$PREINSTALL" "$POSTINSTALL" "$UNINSTALL"; do
+for script in "$SCRIPTS/common.sh" "$PREINSTALL" "$POSTINSTALL" "$UNINSTALL" "$SUPERVISOR"; do
     /bin/sh -n "$script" || fail "invalid shell syntax: $script"
 done
 /bin/sh -n "$APP_BUILD" || fail "invalid macOS app build script"
 /bin/sh -n "$SERVICE_BUILD" || fail "invalid macOS service build script"
 /bin/sh -n "$PROXY_BUILD" || fail "invalid Tesla command proxy build script"
 /usr/bin/plutil -lint "$PLIST" >/dev/null || fail "invalid LaunchAgent template"
+/usr/bin/python3 -m json.tool "$FLEET_TELEMETRY_EXAMPLE" >/dev/null \
+    || fail "invalid Fleet Telemetry receiver example"
 /usr/bin/plutil -lint "$CLI_PLIST" >/dev/null || fail "invalid CLI LaunchAgent template"
 [ -f "$APP_ICON" ] && [ ! -L "$APP_ICON" ] \
     || fail "Hub app icon is missing or unsafe"
@@ -66,6 +70,11 @@ done
     || fail "packaged LaunchAgent does not set a private umask"
 /usr/bin/grep -q '<integer>63</integer>' "$CLI_PLIST" \
     || fail "CLI LaunchAgent does not set a private umask"
+/usr/bin/grep -Fq '@SUPERVISOR@' "$PLIST" \
+    || fail "LaunchAgent does not use the Hub service supervisor"
+if /usr/bin/grep -Fq '<string>serve</string>' "$PLIST"; then
+    fail "LaunchAgent must not bypass the Fleet receiver supervisor"
+fi
 /usr/bin/grep -Fq 'require_safe_owned_tree "$directory" "$CONSOLE_UID" "user directory"' "$COMMON" \
     || fail "existing user directories are not safely admitted"
 
@@ -130,6 +139,10 @@ assert_before_fixed '"$BINARY" --config "$CONFIG" preflight' '"$BINARY" --config
 /usr/bin/grep -Fq '/bin/mv -fh "$temporary_plist" "$PLIST"' "$POSTINSTALL" \
     || fail "LaunchAgent installation can follow a destination symlink"
 assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_plist"' '/bin/mv -fh "$temporary_plist" "$PLIST"' "$POSTINSTALL"
+/usr/bin/grep -Fq '@SUPERVISOR@' "$POSTINSTALL" \
+    || fail "postinstall does not render the Hub service supervisor"
+/usr/bin/grep -Fq 'installed Hub service supervisor' "$POSTINSTALL" \
+    || fail "postinstall does not validate the Hub service supervisor"
 /usr/bin/grep -Fq 'CURRENT_PROJECT_VERSION="$bundle_version"' "$APP_BUILD" \
     || fail "app build does not preserve prerelease build identity"
 /usr/bin/grep -Fq 'TESLATLAS_HUB_VERSION="$version"' "$APP_BUILD" \
@@ -144,12 +157,24 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "app build does not verify the app icon Info.plist value"
 /usr/bin/grep -Fq -- '--proxy-binary "$PROXY_BINARY"' "$APP_BUILD" \
     || fail "app build does not package Tesla command proxy"
+/usr/bin/grep -Fq -- '--fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY"' "$APP_BUILD" \
+    || fail "app build does not package the Fleet Telemetry receiver"
 /usr/bin/grep -Fq -- 'build-tesla-command-proxy.sh' "$APP_BUILD" \
     || fail "app build does not build pinned Tesla command proxy"
+/usr/bin/grep -Fq -- 'build-fleet-telemetry-bridge.sh' "$APP_BUILD" \
+    || fail "app build does not build the pinned Fleet Telemetry receiver"
+/usr/bin/grep -Fq -- '--target darwin-arm64' "$APP_BUILD" \
+    || fail "app build does not build an arm64 Fleet Telemetry receiver"
 /usr/bin/grep -Fq -- '--proxy-binary PATH' "$SERVICE_BUILD" \
     || fail "service package has no proxy binary input"
+/usr/bin/grep -Fq -- '--fleet-telemetry-binary PATH' "$SERVICE_BUILD" \
+    || fail "service package has no Fleet Telemetry binary input"
 /usr/bin/grep -Fq 'payload_proxy_binary=' "$SERVICE_BUILD" \
     || fail "service package does not install Tesla command proxy"
+/usr/bin/grep -Fq 'payload_fleet_telemetry_binary=' "$SERVICE_BUILD" \
+    || fail "service package does not install Fleet Telemetry receiver"
+/usr/bin/grep -Fq 'run-hub-service.sh' "$SERVICE_BUILD" \
+    || fail "service package does not install Fleet receiver supervision"
 /usr/bin/grep -Fq 'tesla-http-proxy' "$PLIST" \
     && fail "proxy must not have a second LaunchAgent"
 /usr/bin/grep -Fq '49977a18fd68567501d59e16a6c9e4a8b9348544' "$PROXY_BUILD" \
@@ -162,6 +187,45 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "proxy build is not arm64-only"
 /usr/bin/grep -Fq 'MACOSX_DEPLOYMENT_TARGET=13.0' "$PROXY_BUILD" \
     || fail "proxy build has no macOS 13 deployment target"
+
+/usr/bin/grep -Fq 'port": 8443' "$FLEET_TELEMETRY_EXAMPLE" \
+    || fail "macOS Fleet Telemetry example must use an unprivileged port"
+/usr/bin/grep -Fq 'TESLATLAS_FLEET_TELEMETRY_BEARER_FILE' "$SUPERVISOR" \
+    || fail "Fleet receiver supervisor does not pass the ingress bearer privately"
+/usr/bin/grep -Fq 'safe_user_file "$RECEIVER_CONFIG"' "$SUPERVISOR" \
+    || fail "Fleet receiver supervisor accepts unsafe user config"
+/usr/bin/grep -Fq 'safe_root_executable "$RECEIVER"' "$SUPERVISOR" \
+    || fail "Fleet receiver supervisor accepts unsafe receiver binary"
+/usr/bin/grep -Fq 'safe_root_executable "$PROXY"' "$SUPERVISOR" \
+    || fail "Fleet receiver supervisor accepts unsafe command proxy binary"
+/usr/bin/grep -Fq 'The Hub starts tesla-http-proxy itself' "$SUPERVISOR" \
+    || fail "Fleet receiver supervisor does not retain Hub-owned proxy lifecycle"
+if /usr/bin/grep -Fq '"$PROXY" &' "$SUPERVISOR"; then
+    fail "Fleet receiver supervisor must not start a duplicate command proxy"
+fi
+/usr/bin/grep -Fq 'stop_child "$hub_pid"' "$SUPERVISOR" \
+    || fail "Fleet receiver supervisor does not stop Hub with its receiver"
+/usr/bin/grep -Fq 'stop_child "$receiver_pid"' "$SUPERVISOR" \
+    || fail "Fleet receiver supervisor does not stop receiver with Hub"
+
+SUPERVISOR_FUNCTIONS="$TEST_ROOT/supervisor-functions.sh"
+/usr/bin/awk 'index($0, "if [ \"$#\" -ne 2 ]") == 1 { exit } { print }' \
+    "$SUPERVISOR" >"$SUPERVISOR_FUNCTIONS"
+. "$SUPERVISOR_FUNCTIONS"
+single_token="$TEST_ROOT/fleet bearer # literal"
+printf '%s\n' '[collector.fleet_telemetry]' \
+    "hostname = 'telemetry.example.invalid'" \
+    "ingest_token_path = '$single_token' # trailing comment" \
+    >"$TEST_ROOT/single-quoted.toml"
+[ "$(fleet_telemetry_bearer "$TEST_ROOT/single-quoted.toml")" = "$single_token" ] \
+    || fail "Fleet receiver supervisor rejects a valid single-quoted TOML bearer path"
+double_token="$TEST_ROOT/fleet-bearer-double"
+printf '%s\n' '[collector.fleet_telemetry]' \
+    'hostname = "telemetry.example.invalid"' \
+    "ingest_token_path = \"$double_token\"" \
+    >"$TEST_ROOT/double-quoted.toml"
+[ "$(fleet_telemetry_bearer "$TEST_ROOT/double-quoted.toml")" = "$double_token" ] \
+    || fail "Fleet receiver supervisor rejects a valid double-quoted TOML bearer path"
 
 /usr/bin/grep -q 'delete_data=0' "$UNINSTALL" \
     || fail "uninstall must preserve data by default"

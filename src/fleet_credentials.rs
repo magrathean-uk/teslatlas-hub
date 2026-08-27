@@ -1509,7 +1509,9 @@ mod tests {
 
         assert!(matches!(
             manager.refresh_now(&api, SystemTime::now()).await,
-            Err(FleetCredentialError::Api(FleetApiError::HttpStatus(500)))
+            Err(FleetCredentialError::Api(
+                FleetApiError::ProviderHttpStatus { status: 500, .. }
+            ))
         ));
         assert!(
             store
@@ -1567,6 +1569,11 @@ mod tests {
             FleetApiError::Transport,
             FleetApiError::HttpStatus(401),
             FleetApiError::HttpStatus(500),
+            FleetApiError::ProviderHttpStatus {
+                status: 500,
+                error: "temporarily_unavailable".to_owned(),
+                description: None,
+            },
             FleetApiError::RateLimited {
                 retry_after_seconds: 17,
             },

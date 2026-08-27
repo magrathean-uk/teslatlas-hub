@@ -11,7 +11,7 @@ export COPYFILE_DISABLE
 
 usage() {
     cat <<'EOF'
-Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --version VERSION [--output PATH]
+Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --fleet-telemetry-binary PATH --version VERSION [--output PATH]
 
 Builds an unsigned local macOS 13+ arm64 installer package. The package never
 installs or starts the Hub during its build.
@@ -32,8 +32,17 @@ is_executable_macho() {
 }
 # END TESTABLE MACH-O HELPER
 
+minimum_macos() {
+    /usr/bin/otool -l "$1" | /usr/bin/awk '
+        $1 == "cmd" { command = $2 }
+        command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit }
+        command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }
+    '
+}
+
 binary=
 proxy_binary=
+fleet_telemetry_binary=
 version=
 output=
 while [ "$#" -gt 0 ]; do
@@ -46,6 +55,11 @@ while [ "$#" -gt 0 ]; do
         --proxy-binary)
             [ "$#" -ge 2 ] || die "--proxy-binary requires a path"
             proxy_binary=$2
+            shift 2
+            ;;
+        --fleet-telemetry-binary)
+            [ "$#" -ge 2 ] || die "--fleet-telemetry-binary requires a path"
+            fleet_telemetry_binary=$2
             shift 2
             ;;
         --version)
@@ -71,6 +85,7 @@ done
 
 [ -n "$binary" ] || die "--binary is required"
 [ -n "$proxy_binary" ] || die "--proxy-binary is required"
+[ -n "$fleet_telemetry_binary" ] || die "--fleet-telemetry-binary is required"
 [ -n "$version" ] || die "--version is required"
 /usr/bin/printf '%s\n' "$version" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
     || die "version must be semver with an optional prerelease: $version"
@@ -86,6 +101,8 @@ esac
     || die "binary must be an executable regular file"
 [ -f "$proxy_binary" ] && [ ! -L "$proxy_binary" ] && [ -x "$proxy_binary" ] \
     || die "proxy binary must be an executable regular file"
+[ -f "$fleet_telemetry_binary" ] && [ ! -L "$fleet_telemetry_binary" ] && [ -x "$fleet_telemetry_binary" ] \
+    || die "Fleet Telemetry binary must be an executable regular file"
 
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 TEMPLATE="$ROOT/packaging/macos-service/com.teslatlas.hub.plist.in"
@@ -94,6 +111,9 @@ PACKAGE_SCRIPTS="$ROOT/packaging/macos-service/scripts"
 [ -x "$PACKAGE_SCRIPTS/preinstall" ] || die "preinstall script is not executable"
 [ -x "$PACKAGE_SCRIPTS/postinstall" ] || die "postinstall script is not executable"
 [ -x "$PACKAGE_SCRIPTS/uninstall-macos-service.sh" ] || die "uninstall script is not executable"
+[ -x "$PACKAGE_SCRIPTS/run-hub-service.sh" ] || die "service supervisor is not executable"
+[ -f "$ROOT/packaging/macos-service/fleet-telemetry.json.example" ] \
+    || die "Fleet Telemetry config example is missing"
 "$ROOT/scripts/test-macos-packaging.sh" >/dev/null \
     || die "macOS packaging source checks failed"
 /usr/bin/plutil -lint "$TEMPLATE" >/dev/null || die "LaunchAgent template is invalid"
@@ -124,6 +144,8 @@ scripts="$staging/scripts"
     || die "binary has no arm64 slice"
 /usr/bin/lipo -verify_arch arm64 "$proxy_binary" \
     || die "proxy binary has no arm64 slice"
+/usr/bin/lipo -verify_arch arm64 "$fleet_telemetry_binary" \
+    || die "Fleet Telemetry binary has no arm64 slice"
 payload_binary="$payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub"
 architectures=$(/usr/bin/lipo -archs "$binary") \
     || die "cannot inspect binary architectures"
@@ -139,6 +161,11 @@ fi
 payload_proxy_binary="$payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
 /usr/bin/install -m 0755 "$proxy_binary" "$payload_proxy_binary" \
     || die "cannot copy Tesla command proxy"
+/usr/bin/lipo -archs "$fleet_telemetry_binary" | /usr/bin/grep -qx arm64 \
+    || die "Fleet Telemetry binary must be arm64-only"
+payload_fleet_telemetry_binary="$payload/Library/Application Support/Teslatlas Hub/bin/fleet-telemetry"
+/usr/bin/install -m 0755 "$fleet_telemetry_binary" "$payload_fleet_telemetry_binary" \
+    || die "cannot copy Fleet Telemetry receiver"
 /usr/bin/find "$payload/Library/Application Support/Teslatlas Hub/share" -type f -delete
 for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md; do
     if [ -f "$ROOT/$legal_file" ]; then
@@ -150,7 +177,11 @@ done
     "$payload/Library/Application Support/Teslatlas Hub/libexec/common.sh"
 /usr/bin/install -m 0755 "$PACKAGE_SCRIPTS/uninstall-macos-service.sh" \
     "$payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
-/usr/bin/xattr -c "$payload_binary" "$payload_proxy_binary" >/dev/null 2>&1 \
+/usr/bin/install -m 0755 "$PACKAGE_SCRIPTS/run-hub-service.sh" \
+    "$payload/Library/Application Support/Teslatlas Hub/libexec/run-hub-service.sh"
+/usr/bin/install -m 0644 "$ROOT/packaging/macos-service/fleet-telemetry.json.example" \
+    "$payload/Library/Application Support/Teslatlas Hub/share/fleet-telemetry.json.example"
+/usr/bin/xattr -c "$payload_binary" "$payload_proxy_binary" "$payload_fleet_telemetry_binary" >/dev/null 2>&1 \
     || die "cannot clear Hub binary metadata"
 [ "$(/usr/bin/lipo -archs "$payload_binary")" = arm64 ] \
     || die "payload binary is not arm64-only"
@@ -158,6 +189,8 @@ is_executable_macho "$payload_binary" \
     || die "payload binary is not a Mach-O executable"
 is_executable_macho "$payload_proxy_binary" \
     || die "payload proxy binary is not a Mach-O executable"
+is_executable_macho "$payload_fleet_telemetry_binary" \
+    || die "payload Fleet Telemetry receiver is not a Mach-O executable"
 
 minimum_macos=$(
     /usr/bin/otool -l "$payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub" \
@@ -173,20 +206,20 @@ esac
 minimum_major=${minimum_macos%%.*}
 [ "$minimum_major" -le 13 ] \
     || die "binary requires macOS $minimum_macos; macOS 13 compatibility is required"
-proxy_minimum_macos=$(
-    /usr/bin/otool -l "$payload_proxy_binary" \
-        | /usr/bin/awk '
-            $1 == "cmd" { command = $2 }
-            command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit }
-            command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }
-        '
-)
+proxy_minimum_macos=$(minimum_macos "$payload_proxy_binary")
 case "$proxy_minimum_macos" in
     ''|*[!0-9.]*) die "cannot read proxy macOS deployment target" ;;
 esac
 proxy_minimum_major=${proxy_minimum_macos%%.*}
 [ "$proxy_minimum_major" -le 13 ] \
     || die "proxy requires macOS $proxy_minimum_macos; macOS 13 compatibility is required"
+fleet_telemetry_minimum_macos=$(minimum_macos "$payload_fleet_telemetry_binary")
+case "$fleet_telemetry_minimum_macos" in
+    ''|*[!0-9.]*) die "cannot read Fleet Telemetry macOS deployment target" ;;
+esac
+fleet_telemetry_minimum_major=${fleet_telemetry_minimum_macos%%.*}
+[ "$fleet_telemetry_minimum_major" -le 13 ] \
+    || die "Fleet Telemetry receiver requires macOS $fleet_telemetry_minimum_macos; macOS 13 compatibility is required"
 
 /usr/bin/install -m 0644 "$TEMPLATE" "$scripts/com.teslatlas.hub.plist.in"
 /usr/bin/install -m 0644 "$PACKAGE_SCRIPTS/common.sh" "$scripts/common.sh"
@@ -253,6 +286,19 @@ expanded_proxy_binary="$expanded/Payload/Library/Application Support/Teslatlas H
     || die "generated package proxy is not arm64-only"
 is_executable_macho "$expanded_proxy_binary" \
     || die "generated package proxy is not a Mach-O executable"
+expanded_fleet_telemetry_binary="$expanded/Payload/Library/Application Support/Teslatlas Hub/bin/fleet-telemetry"
+[ -f "$expanded_fleet_telemetry_binary" ] && [ ! -L "$expanded_fleet_telemetry_binary" ] \
+    || die "generated package has no Fleet Telemetry receiver"
+[ "$(/usr/bin/lipo -archs "$expanded_fleet_telemetry_binary")" = arm64 ] \
+    || die "generated package Fleet Telemetry receiver is not arm64-only"
+is_executable_macho "$expanded_fleet_telemetry_binary" \
+    || die "generated package Fleet Telemetry receiver is not a Mach-O executable"
+expanded_supervisor="$expanded/Payload/Library/Application Support/Teslatlas Hub/libexec/run-hub-service.sh"
+[ -f "$expanded_supervisor" ] && [ ! -L "$expanded_supervisor" ] && [ -x "$expanded_supervisor" ] \
+    || die "generated package is missing the Fleet receiver supervisor"
+expanded_fleet_telemetry_example="$expanded/Payload/Library/Application Support/Teslatlas Hub/share/fleet-telemetry.json.example"
+[ -f "$expanded_fleet_telemetry_example" ] && [ ! -L "$expanded_fleet_telemetry_example" ] \
+    || die "generated package is missing the Fleet receiver config example"
 expanded_uninstaller="$expanded/Payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
 [ -f "$expanded_uninstaller" ] && [ ! -L "$expanded_uninstaller" ] && [ -x "$expanded_uninstaller" ] \
     || die "generated package is missing the privileged uninstaller"

@@ -27,8 +27,9 @@ The current `v1.0.0-alpha.1` implementation includes:
 - independent collection for every configured vehicle on an account;
 - legacy Owner API authentication with native Tesla OAuth onboarding, polling,
   and Tesla streaming;
-- official Fleet API authentication, discovery, polling, token rotation, direct
-  wake, and signed commands through a local Tesla vehicle-command proxy;
+- official Fleet API authentication, discovery, low-cost native Fleet
+  Telemetry push, token rotation, direct wake, and signed commands through a
+  local Tesla vehicle-command proxy;
 - PostgreSQL history import, encrypted credential transfer, lifecycle
   persistence, backup, repair, bounded provider-response retention, and an
   explicit charge-cost write-back command;
@@ -36,8 +37,13 @@ The current `v1.0.0-alpha.1` implementation includes:
 - a per-user LaunchAgent on macOS or a systemd service on Debian;
 - no Grafana, MQTT, TeslaFi import, bundled dashboard, or App Store build.
 
-Legacy mode uses Tesla's streaming endpoint while driving. Fleet mode currently
-uses bounded REST polling; native Fleet Telemetry streaming is not implemented.
+Legacy mode uses Tesla's streaming endpoint while driving. Fleet mode can use
+Tesla's native Fleet Telemetry protocol: the vehicle sends changed fields to a
+self-hosted public mTLS receiver, which forwards authenticated records over
+loopback to Hub. With that mode configured, the resident collector makes no
+periodic Fleet `vehicle_data` calls and has no paid polling fallback. Fleet
+Telemetry is not fully equivalent to `vehicle_data`; see the setup guide for
+the selected fields and remaining caveats.
 
 ## Project boundaries
 
@@ -91,6 +97,13 @@ arguments or temporary files. Once connected, the dashboard hides **Connect
 Tesla** and exposes climate, wake, lock, unlock, flash, and honk controls;
 charging controls are deliberately absent.
 
+The signed macOS service also bundles the pinned Fleet Telemetry receiver. It
+runs only when the user supplies a private receiver configuration and bearer;
+otherwise the LaunchAgent runs the Hub alone. In Fleet receiver mode, Hub owns
+the bundled loopback command proxy as its child while the LaunchAgent
+supervisor owns Hub and the receiver together. See the macOS receiver steps in
+[Fleet API setup](docs/FLEET_SETUP.md).
+
 The migration route accepts exact TeslaMate 4.1.1 only. It checks compatibility
 before copying one read-only PostgreSQL snapshot, installs Hub stopped, runs
 diagnostics, and waits for explicit handover before collection starts. The app
@@ -114,15 +127,24 @@ Build on the target Debian host. The package script defaults to the host Debian
 architecture and accepts only `amd64` or `arm64`; it verifies that the binary
 matches before creating the package.
 
-Building requires Rust 1.98 plus Debian's `build-essential`, `pkg-config`,
-`libssl-dev`, `dpkg-dev`, and `binutils` packages (`readelf` is the ELF
-architecture check). Installing a finished package needs only its declared
+Building the core package requires Rust 1.98 plus Debian's `build-essential`,
+`pkg-config`, `libssl-dev`, `dpkg-dev`, and `binutils` packages (`readelf` is
+the ELF architecture check). Building the Fleet sidecars additionally requires
+Go 1.27.0 exactly. Installing a finished package needs only its declared
 runtime dependencies.
 
 ```sh
 cargo build --locked --release
+scripts/build-tesla-command-proxy.sh \
+  --target "linux-$(dpkg --print-architecture)" \
+  --output dist/tesla-http-proxy
+scripts/build-fleet-telemetry-bridge.sh \
+  --target "linux-$(dpkg --print-architecture)" \
+  --output dist/fleet-telemetry
 scripts/build-deb.sh \
   --binary target/release/teslatlas-hub \
+  --command-proxy-binary dist/tesla-http-proxy \
+  --fleet-telemetry-binary dist/fleet-telemetry \
   --version 1.0.0-alpha.1 \
   --architecture "$(dpkg --print-architecture)" \
   --output "dist/teslatlas-hub_1.0.0-alpha.1_$(dpkg --print-architecture).deb"
@@ -134,6 +156,15 @@ The package creates the private `teslatlas` service user, configuration at
 `/var/lib/teslatlas-hub`. New and existing minimal package configurations get
 explicit offline defaults for geocoding and terrain; existing table settings
 are never overridden. Bootstrap and setup run as that service user:
+
+Supplying both sidecar binaries also installs the official Tesla command proxy,
+the pinned Fleet Telemetry receiver bridge, their configuration, and hardened
+systemd units. The builder accepts only the exact amd64 or ARM64 outputs bound
+in `packaging/linux/sidecar-sha256.lock`; arbitrary caller-supplied digests are
+not trusted. Those units remain disabled until the operator supplies the
+required keys, certificates, and private loopback bearer. Omit both binaries
+for a core-only package; an incomplete or mismatched pair is rejected. The
+accepted lock and digests are included in the package.
 
 ```sh
 sudo -u teslatlas teslatlas-hub bootstrap
@@ -224,9 +255,18 @@ and virtual-key command requirements.
 [collector]
 provider = "fleet"
 
-# Optional. Required only for signed vehicle commands, not collection or wake.
+# Required for signed commands and native Fleet Telemetry configuration.
 fleet_command_proxy_url = "https://127.0.0.1:4443/"
 fleet_command_proxy_root_certificate_path = "/absolute/path/proxy-ca.pem"
+
+# Optional low-cost push collection. The public receiver terminates vehicle
+# mTLS; Hub ingestion stays on 127.0.0.1:8080 behind a private bearer. Tesla
+# requires this hostname to use the Fleet application's registered domain.
+[collector.fleet_telemetry]
+hostname = "telemetry.example.com"
+port = 443
+ca_certificate_path = "/absolute/path/public-receiver-ca.pem"
+ingest_token_path = "/absolute/private/path/fleet-telemetry-bearer"
 ```
 
 Feed one bounded JSON object to `setup-fleet` through stdin. It contains

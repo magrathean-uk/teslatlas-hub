@@ -34,6 +34,11 @@ GO_EVIDENCE_NAMES = (
     "tesla-http-proxy.unsigned",
     "tesla-http-proxy-go-sources.tar.gz",
 )
+FLEET_TELEMETRY_EVIDENCE_NAMES = (
+    "fleet-telemetry-bridge-lock.json",
+    "fleet-telemetry-component-manifest.json",
+    "fleet-telemetry.unsigned",
+)
 
 
 class GateError(RuntimeError):
@@ -271,14 +276,32 @@ def capture_go_evidence(repo: Path, directory: Path) -> list[ArtifactWitness]:
     return witnesses
 
 
+def capture_fleet_telemetry_evidence(repo: Path, directory: Path) -> list[ArtifactWitness]:
+    if not directory.is_dir() or directory.is_symlink():
+        raise GateError("Fleet Telemetry evidence must be a real directory")
+    helper = repo / "scripts" / "fleet-telemetry-evidence.py"
+    regular_file(helper, "Fleet Telemetry evidence verifier")
+    run([sys.executable, str(helper), "--repo", str(repo), "--verify-dir", str(directory)], repo)
+    if {path.name for path in directory.iterdir()} != set(FLEET_TELEMETRY_EVIDENCE_NAMES):
+        raise GateError("Fleet Telemetry evidence file set changed after validation")
+    witnesses = [capture_artifact(repo, directory / name) for name in FLEET_TELEMETRY_EVIDENCE_NAMES]
+    run([sys.executable, str(helper), "--repo", str(repo), "--verify-dir", str(directory)], repo)
+    for witness in witnesses:
+        verify_artifact_unchanged(repo, witness)
+    return witnesses
+
+
 def capture_macos_release_bundle(
     repo: Path,
     artifacts: list[ArtifactWitness],
     go_evidence: Path,
     go_witnesses: list[ArtifactWitness],
+    fleet_telemetry_evidence: Path,
+    fleet_telemetry_witnesses: list[ArtifactWitness],
 ) -> tuple[Path, list[ArtifactWitness]] | None:
     try:
         go_evidence.relative_to(repo)
+        fleet_telemetry_evidence.relative_to(repo)
     except ValueError:
         return None
     zip_artifacts = [item for item in artifacts if item.path.suffix.lower() == ".zip"]
@@ -286,7 +309,8 @@ def capture_macos_release_bundle(
     if len(zip_artifacts) != 1 or len(package_artifacts) != 1:
         return None
     bundle = zip_artifacts[0].path.parent
-    if package_artifacts[0].path.parent != bundle or go_evidence.parent != bundle:
+    if package_artifacts[0].path.parent != bundle or go_evidence.parent != bundle \
+            or fleet_telemetry_evidence.parent != bundle:
         return None
     logs = bundle / "notary-logs"
     checksums = bundle / "SHA256SUMS"
@@ -294,6 +318,7 @@ def capture_macos_release_bundle(
         zip_artifacts[0].path.name,
         package_artifacts[0].path.name,
         go_evidence.name,
+        fleet_telemetry_evidence.name,
         logs.name,
         checksums.name,
     }
@@ -302,6 +327,7 @@ def capture_macos_release_bundle(
     for directory, label in (
         (bundle, "macOS release bundle"),
         (go_evidence, "Go proxy evidence"),
+        (fleet_telemetry_evidence, "Fleet Telemetry evidence"),
         (logs, "macOS notary logs"),
     ):
         if not directory.is_dir() or directory.is_symlink():
@@ -325,6 +351,7 @@ def capture_macos_release_bundle(
         zip_artifacts[0].path.name,
         package_artifacts[0].path.name,
         *(f"{go_evidence.name}/{name}" for name in GO_EVIDENCE_NAMES),
+        *(f"{fleet_telemetry_evidence.name}/{name}" for name in FLEET_TELEMETRY_EVIDENCE_NAMES),
     }
     expected_digests = {
         zip_artifacts[0].path.name: zip_artifacts[0].digest,
@@ -332,6 +359,10 @@ def capture_macos_release_bundle(
         **{
             f"{go_evidence.name}/{witness.path.name}": witness.digest
             for witness in go_witnesses
+        },
+        **{
+            f"{fleet_telemetry_evidence.name}/{witness.path.name}": witness.digest
+            for witness in fleet_telemetry_witnesses
         },
     }
     checksum_records: dict[str, str] = {}
@@ -368,6 +399,7 @@ def verify_macos_release_bundle_structure(
     bundle: Path,
     artifacts: list[ArtifactWitness],
     go_evidence: Path,
+    fleet_telemetry_evidence: Path,
     receipts: list[ArtifactWitness],
 ) -> None:
     zip_artifact = next(item for item in artifacts if item.path.suffix.lower() == ".zip")
@@ -379,12 +411,14 @@ def verify_macos_release_bundle_structure(
         zip_artifact.path.name,
         package_artifact.path.name,
         go_evidence.name,
+        fleet_telemetry_evidence.name,
         logs.name,
         "SHA256SUMS",
     }
     for directory, label in (
         (bundle, "macOS release bundle"),
         (go_evidence, "Go proxy evidence"),
+        (fleet_telemetry_evidence, "Fleet Telemetry evidence"),
         (logs, "macOS notary logs"),
     ):
         if not directory.is_dir() or directory.is_symlink():
@@ -393,6 +427,8 @@ def verify_macos_release_bundle_structure(
         raise GateError("macOS release bundle changed during evidence generation")
     if {path.name for path in go_evidence.iterdir()} != set(GO_EVIDENCE_NAMES):
         raise GateError("Go proxy evidence file set changed during evidence generation")
+    if {path.name for path in fleet_telemetry_evidence.iterdir()} != set(FLEET_TELEMETRY_EVIDENCE_NAMES):
+        raise GateError("Fleet Telemetry evidence file set changed during evidence generation")
     expected_logs = {
         witness.path.name
         for witness in receipts
@@ -559,6 +595,8 @@ def validate_macos_artifacts(
     artifacts: list[ArtifactWitness],
     go_manifest: dict,
     go_manifest_digest: str,
+    fleet_telemetry_manifest: dict,
+    fleet_telemetry_manifest_digest: str,
     stage: Path,
 ) -> None:
     macos = [item for item in artifacts if requires_external_proxy_notice(item.path)]
@@ -590,10 +628,12 @@ def validate_macos_artifacts(
 
         info_path = app / "Contents" / "Info.plist"
         proxy_path = app / "Contents" / "Resources" / "tesla-http-proxy"
+        fleet_telemetry_path = app / "Contents" / "Resources" / "fleet-telemetry"
         package_path = app / "Contents" / "Resources" / "TeslatlasHubService.pkg"
         for path, label in (
             (info_path, "Info.plist"),
             (proxy_path, "Tesla proxy"),
+            (fleet_telemetry_path, "Fleet Telemetry receiver"),
             (package_path, "service package"),
         ):
             regular_file(path, f"macOS release {label}")
@@ -612,6 +652,13 @@ def validate_macos_artifacts(
             raise GateError("macOS artifact does not bind the locked unsigned proxy")
         if info.get("TeslatlasGoEvidenceManifestSHA256") != go_manifest_digest:
             raise GateError("macOS artifact does not bind the supplied Go evidence")
+        fleet_subject = fleet_telemetry_manifest.get("subject")
+        if not isinstance(fleet_subject, dict) or not isinstance(fleet_subject.get("sha256"), str):
+            raise GateError("Fleet Telemetry component manifest subject is invalid")
+        if info.get("TeslatlasUnsignedFleetTelemetrySHA256") != fleet_subject["sha256"]:
+            raise GateError("macOS artifact does not bind the locked Fleet Telemetry receiver")
+        if info.get("TeslatlasFleetTelemetryEvidenceManifestSHA256") != fleet_telemetry_manifest_digest:
+            raise GateError("macOS artifact does not bind the supplied Fleet Telemetry evidence")
         embedded_package_digest = sha256(package_path)
         if info.get("TeslatlasServicePackageSHA256") != embedded_package_digest:
             raise GateError("macOS app does not bind its embedded service package")
@@ -642,6 +689,26 @@ def validate_macos_artifacts(
         )
         if app_code_digest != reviewed_code_digest:
             raise GateError("macOS app Tesla proxy does not match the reviewed unsigned proxy")
+
+        run(["codesign", "--verify", "--strict", str(fleet_telemetry_path)], repo)
+        fleet_description = run(["codesign", "-d", "--verbose=4", str(fleet_telemetry_path)], repo)
+        fleet_team = signed_team(
+            f"{fleet_description.stdout}\n{fleet_description.stderr}",
+            "Developer ID Application",
+            "macOS app Fleet Telemetry receiver",
+        )
+        if fleet_team != team:
+            raise GateError("macOS app Fleet Telemetry receiver Team ID does not match the app")
+        unsigned_receiver = stage / "fleet-telemetry-evidence" / "fleet-telemetry.unsigned"
+        regular_file(unsigned_receiver, "Fleet Telemetry evidence unsigned receiver")
+        reviewed_receiver_digest = unsigned_code_digest(
+            repo, unsigned_receiver, check_root / "reviewed-fleet-telemetry.stripped"
+        )
+        app_receiver_digest = unsigned_code_digest(
+            repo, fleet_telemetry_path, check_root / "app-fleet-telemetry.stripped"
+        )
+        if app_receiver_digest != reviewed_receiver_digest:
+            raise GateError("macOS app Fleet Telemetry receiver does not match the reviewed unsigned receiver")
 
         package_signature = run(["pkgutil", "--check-signature", str(package_path)], repo)
         package_details = f"{package_signature.stdout}\n{package_signature.stderr}"
@@ -683,6 +750,24 @@ def validate_macos_artifacts(
         )
         if package_code_digest != reviewed_code_digest:
             raise GateError("macOS package Tesla proxy does not match the reviewed unsigned proxy")
+        package_receiver = checked_package_payload_file(
+            expanded_package,
+            PurePosixPath("Payload/Library/Application Support/Teslatlas Hub/bin/fleet-telemetry"),
+        )
+        run(["codesign", "--verify", "--strict", str(package_receiver)], repo)
+        receiver_description = run(["codesign", "-d", "--verbose=4", str(package_receiver)], repo)
+        receiver_team = signed_team(
+            f"{receiver_description.stdout}\n{receiver_description.stderr}",
+            "Developer ID Application",
+            "macOS package Fleet Telemetry receiver",
+        )
+        if receiver_team != team:
+            raise GateError("macOS package Fleet Telemetry receiver Team ID does not match the app")
+        package_receiver_digest = unsigned_code_digest(
+            repo, package_receiver, check_root / "package-fleet-telemetry.stripped"
+        )
+        if package_receiver_digest != reviewed_receiver_digest:
+            raise GateError("macOS package Fleet Telemetry receiver does not match the reviewed unsigned receiver")
     finally:
         shutil.rmtree(check_root, ignore_errors=True)
 
@@ -988,6 +1073,8 @@ def main() -> int:
                         help="final artifact path; repeat for each pkg/zip/deb")
     parser.add_argument("--go-proxy-evidence", type=Path,
                         help="evidence generated for the unsigned Tesla proxy in macOS artifacts")
+    parser.add_argument("--fleet-telemetry-evidence", type=Path,
+                        help="evidence generated for the unsigned Fleet Telemetry receiver in macOS artifacts")
     args = parser.parse_args()
     if not TAG_RE.fullmatch(args.tag):
         raise GateError("tag contains unsafe filename characters")
@@ -1028,22 +1115,33 @@ def main() -> int:
         )
     if has_macos_artifact and args.go_proxy_evidence is None:
         raise GateError("macOS artifacts require --go-proxy-evidence")
+    if has_macos_artifact and args.fleet_telemetry_evidence is None:
+        raise GateError("macOS artifacts require --fleet-telemetry-evidence")
     go_evidence_dir: Path | None = None
     go_evidence_witnesses: list[ArtifactWitness] = []
     if args.go_proxy_evidence is not None:
         go_evidence_dir = args.go_proxy_evidence.resolve()
         go_evidence_witnesses = capture_go_evidence(repo, go_evidence_dir)
+    fleet_telemetry_evidence_dir: Path | None = None
+    fleet_telemetry_evidence_witnesses: list[ArtifactWitness] = []
+    if args.fleet_telemetry_evidence is not None:
+        fleet_telemetry_evidence_dir = args.fleet_telemetry_evidence.resolve()
+        fleet_telemetry_evidence_witnesses = capture_fleet_telemetry_evidence(
+            repo, fleet_telemetry_evidence_dir
+        )
     artifact_witnesses = [capture_artifact(repo, path) for path in artifacts]
     ignored_paths: list[Path] = []
     release_bundle_path: Path | None = None
     release_receipt_witnesses: list[ArtifactWitness] = []
     if has_macos_artifact:
-        assert go_evidence_dir is not None
+        assert go_evidence_dir is not None and fleet_telemetry_evidence_dir is not None
         release_bundle = capture_macos_release_bundle(
             repo,
             artifact_witnesses,
             go_evidence_dir,
             go_evidence_witnesses,
+            fleet_telemetry_evidence_dir,
+            fleet_telemetry_evidence_witnesses,
         )
         if release_bundle is not None:
             release_bundle_path, release_receipt_witnesses = release_bundle
@@ -1051,6 +1149,7 @@ def main() -> int:
                 witness.path
                 for witness in [
                     *go_evidence_witnesses,
+                    *fleet_telemetry_evidence_witnesses,
                     *release_receipt_witnesses,
                 ]
             )
@@ -1061,6 +1160,13 @@ def main() -> int:
             pass
         else:
             ignored_paths.extend(witness.path for witness in go_evidence_witnesses)
+    if fleet_telemetry_evidence_dir is not None and release_bundle_path is None:
+        try:
+            fleet_telemetry_evidence_dir.relative_to(repo)
+        except ValueError:
+            pass
+        else:
+            ignored_paths.extend(witness.path for witness in fleet_telemetry_evidence_witnesses)
     commit, created, tag_signer = clean_and_tag(
         repo, args.tag, artifacts, ignored_paths, args.tag_signer_fingerprint
     )
@@ -1068,6 +1174,7 @@ def main() -> int:
     stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
     try:
         go_manifest: dict | None = None
+        fleet_telemetry_manifest: dict | None = None
         if go_evidence_witnesses:
             go_output = stage / "go-proxy-evidence"
             go_output.mkdir(mode=0o700)
@@ -1092,6 +1199,20 @@ def main() -> int:
                 )
             except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise GateError("staged Go component manifest is unreadable") from exc
+        if fleet_telemetry_evidence_witnesses:
+            fleet_output = stage / "fleet-telemetry-evidence"
+            fleet_output.mkdir(mode=0o700)
+            by_name = {witness.path.name: witness for witness in fleet_telemetry_evidence_witnesses}
+            for name in FLEET_TELEMETRY_EVIDENCE_NAMES:
+                copy_witness_to(repo, by_name[name], fleet_output / name)
+            helper = repo / "scripts" / "fleet-telemetry-evidence.py"
+            run([sys.executable, str(helper), "--repo", str(repo), "--verify-dir", str(fleet_output)], repo)
+            try:
+                fleet_telemetry_manifest = json.loads(
+                    (fleet_output / "fleet-telemetry-component-manifest.json").read_text()
+                )
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise GateError("staged Fleet Telemetry component manifest is unreadable") from exc
         if release_receipt_witnesses:
             receipt_output = stage / "macos-release-receipts"
             log_output = receipt_output / "notary-logs"
@@ -1104,12 +1225,14 @@ def main() -> int:
                 )
                 copy_witness_to(repo, witness, destination)
         if has_macos_artifact:
-            assert go_manifest is not None
+            assert go_manifest is not None and fleet_telemetry_manifest is not None
             validate_macos_artifacts(
                 repo,
                 artifact_witnesses,
                 go_manifest,
                 sha256(stage / "go-proxy-evidence/go-component-manifest.json"),
+                fleet_telemetry_manifest,
+                sha256(stage / "fleet-telemetry-evidence/fleet-telemetry-component-manifest.json"),
                 stage,
             )
         source_name = f"teslatlas-hub-{args.tag}-source.tar.gz"
@@ -1133,6 +1256,9 @@ def main() -> int:
         if go_evidence_witnesses:
             for name in GO_EVIDENCE_NAMES:
                 generated_names.append(f"go-proxy-evidence/{name}")
+        if fleet_telemetry_evidence_witnesses:
+            for name in FLEET_TELEMETRY_EVIDENCE_NAMES:
+                generated_names.append(f"fleet-telemetry-evidence/{name}")
         if release_receipt_witnesses:
             generated_names.append("macos-release-receipts/SHA256SUMS")
             generated_names.extend(
@@ -1148,6 +1274,11 @@ def main() -> int:
             manifest["go_proxy_evidence"] = {
                 "subject": go_manifest["subject"],
                 "manifest_sha256": sha256(stage / "go-proxy-evidence/go-component-manifest.json"),
+            }
+        if fleet_telemetry_manifest is not None:
+            manifest["fleet_telemetry_evidence"] = {
+                "subject": fleet_telemetry_manifest["subject"],
+                "manifest_sha256": sha256(stage / "fleet-telemetry-evidence/fleet-telemetry-component-manifest.json"),
             }
         write_json(stage / "artifact-manifest.json", manifest)
 
@@ -1170,6 +1301,11 @@ def main() -> int:
             provenance["go_proxy_evidence"] = {
                 "subject": go_manifest["subject"],
                 "manifest_sha256": sha256(stage / "go-proxy-evidence/go-component-manifest.json"),
+            }
+        if fleet_telemetry_manifest is not None:
+            provenance["fleet_telemetry_evidence"] = {
+                "subject": fleet_telemetry_manifest["subject"],
+                "manifest_sha256": sha256(stage / "fleet-telemetry-evidence/fleet-telemetry-component-manifest.json"),
             }
         provenance_path = stage / "provenance.json"
         write_json(provenance_path, provenance)
@@ -1204,6 +1340,8 @@ def main() -> int:
             verify_artifact_unchanged(repo, witness)
         for witness in go_evidence_witnesses:
             verify_go_evidence_unchanged(repo, witness)
+        for witness in fleet_telemetry_evidence_witnesses:
+            verify_artifact_unchanged(repo, witness)
         for witness in release_receipt_witnesses:
             verify_artifact_unchanged(repo, witness)
         if release_bundle_path is not None:
@@ -1212,6 +1350,7 @@ def main() -> int:
                 release_bundle_path,
                 artifact_witnesses,
                 go_evidence_dir,
+                fleet_telemetry_evidence_dir,
                 release_receipt_witnesses,
             )
         publish_evidence_directory(stage, output)

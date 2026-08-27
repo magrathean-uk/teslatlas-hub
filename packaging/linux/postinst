@@ -2,6 +2,8 @@
 set -eu
 
 service=teslatlas-hub.service
+command_proxy_service=teslatlas-command-proxy.service
+fleet_telemetry_service=teslatlas-fleet-telemetry.service
 state_file=${TESLATLAS_HUB_MAINTAINER_STATE_FILE:-/run/teslatlas-hub-maintainer.state}
 backup_dir=${TESLATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/teslatlas-hub-package-upgrade}
 health_attempts=${TESLATLAS_HUB_HEALTH_ATTEMPTS:-10}
@@ -11,10 +13,107 @@ preflight_timeout=${TESLATLAS_HUB_PREFLIGHT_TIMEOUT_SECONDS:-120}
 bootstrap_timeout=${TESLATLAS_HUB_BOOTSTRAP_TIMEOUT_SECONDS:-300}
 hub_binary=${TESLATLAS_HUB_BINARY:-/usr/bin/teslatlas-hub}
 unit_file=${TESLATLAS_HUB_UNIT_FILE:-/lib/systemd/system/teslatlas-hub.service}
+command_proxy_binary=${TESLATLAS_COMMAND_PROXY_BINARY:-/usr/lib/teslatlas-hub/tesla-http-proxy}
+fleet_telemetry_binary=${TESLATLAS_FLEET_TELEMETRY_BINARY:-/usr/lib/teslatlas-hub/fleet-telemetry}
+command_proxy_unit_file=${TESLATLAS_COMMAND_PROXY_UNIT_FILE:-/lib/systemd/system/teslatlas-command-proxy.service}
+fleet_telemetry_unit_file=${TESLATLAS_FLEET_TELEMETRY_UNIT_FILE:-/lib/systemd/system/teslatlas-fleet-telemetry.service}
+command_proxy_config=${TESLATLAS_COMMAND_PROXY_CONFIG:-/etc/teslatlas-hub/command-proxy.env}
+fleet_telemetry_config=${TESLATLAS_FLEET_TELEMETRY_CONFIG:-/etc/teslatlas-hub/fleet-telemetry.json}
 config_file=${TESLATLAS_HUB_CONFIG:-/etc/teslatlas-hub/config.toml}
 runuser_binary=${TESLATLAS_HUB_RUNUSER:-/usr/sbin/runuser}
 timeout_binary=${TESLATLAS_HUB_TIMEOUT:-/usr/bin/timeout}
 forward_only=0
+
+unit_available() {
+    systemctl cat "$1" >/dev/null 2>&1
+}
+
+read_service_state() {
+    [ -f "$state_file" ] && [ ! -L "$state_file" ] || return 1
+    IFS= read -r state_line < "$state_file" || return 1
+    set -f
+    set -- $state_line
+    set +f
+    case "$#" in
+        2)
+            hub_present=1
+            hub_active=$1
+            hub_enabled=$2
+            proxy_present=0
+            proxy_active=0
+            proxy_enabled=0
+            telemetry_present=0
+            telemetry_active=0
+            telemetry_enabled=0
+            ;;
+        9)
+            hub_present=$1
+            hub_active=$2
+            hub_enabled=$3
+            proxy_present=$4
+            proxy_active=$5
+            proxy_enabled=$6
+            telemetry_present=$7
+            telemetry_active=$8
+            telemetry_enabled=$9
+            ;;
+        *) return 1 ;;
+    esac
+    for state_value in \
+        "$hub_present" "$hub_active" "$hub_enabled" \
+        "$proxy_present" "$proxy_active" "$proxy_enabled" \
+        "$telemetry_present" "$telemetry_active" "$telemetry_enabled"; do
+        case "$state_value" in 0|1) ;; *) return 1 ;; esac
+    done
+}
+
+wait_service_active() {
+    checked_service=$1
+    attempt=1
+    while [ "$attempt" -le "$health_attempts" ]; do
+        systemctl is-active --quiet "$checked_service" && return 0
+        [ "$attempt" -eq "$health_attempts" ] || sleep "$health_delay"
+        attempt=$((attempt + 1))
+    done
+    return 1
+}
+
+set_enabled_state() {
+    configured_service=$1
+    previous_present=$2
+    previous_enabled=$3
+    [ "$previous_present" = 1 ] && unit_available "$configured_service" || return 0
+    if [ "$previous_enabled" = 1 ]; then
+        systemctl enable "$configured_service"
+    else
+        systemctl disable "$configured_service"
+    fi
+}
+
+stop_recorded_service() {
+    configured_service=$1
+    previous_present=$2
+    previous_active=$3
+    [ "$previous_present" = 1 ] && [ "$previous_active" = 0 ] \
+        && unit_available "$configured_service" || return 0
+    systemctl stop "$configured_service"
+}
+
+start_recorded_service() {
+    configured_service=$1
+    previous_present=$2
+    previous_active=$3
+    [ "$previous_present" = 1 ] && [ "$previous_active" = 1 ] \
+        && unit_available "$configured_service" || return 0
+    systemctl start "$configured_service" && wait_service_active "$configured_service"
+}
+
+stop_all_services() {
+    [ -d /run/systemd/system ] || return 0
+    systemctl stop "$fleet_telemetry_service" || true
+    systemctl stop "$service" || true
+    systemctl stop "$command_proxy_service" || true
+}
 
 hub_is_ready() {
     status=$(
@@ -88,12 +187,31 @@ remove_upgrade_backup() {
     find "$backup_dir" -depth -delete
 }
 
+restore_optional_file() {
+    backup_name=$1
+    destination=$2
+    destination_mode=$3
+    if [ -f "$backup_dir/$backup_name.absent" ] \
+        && [ ! -L "$backup_dir/$backup_name.absent" ]; then
+        rm -f "$destination"
+        return 0
+    fi
+    [ -f "$backup_dir/$backup_name" ] && [ ! -L "$backup_dir/$backup_name" ] || return 1
+    install -o root -g root -m "$destination_mode" "$backup_dir/$backup_name" "$destination"
+}
+
 restore_upgrade_payload() {
     [ -f "$backup_dir/teslatlas-hub" ] && [ ! -L "$backup_dir/teslatlas-hub" ] || return 1
     [ -f "$backup_dir/teslatlas-hub.service" ] \
         && [ ! -L "$backup_dir/teslatlas-hub.service" ] || return 1
     install -o root -g root -m 0755 "$backup_dir/teslatlas-hub" "$hub_binary"
     install -o root -g root -m 0644 "$backup_dir/teslatlas-hub.service" "$unit_file"
+    restore_optional_file tesla-http-proxy "$command_proxy_binary" 0755
+    restore_optional_file fleet-telemetry "$fleet_telemetry_binary" 0755
+    restore_optional_file teslatlas-command-proxy.service "$command_proxy_unit_file" 0644
+    restore_optional_file teslatlas-fleet-telemetry.service "$fleet_telemetry_unit_file" 0644
+    restore_optional_file command-proxy.env "$command_proxy_config" 0644
+    restore_optional_file fleet-telemetry.json "$fleet_telemetry_config" 0644
 }
 
 restore_service_state() {
@@ -105,31 +223,30 @@ restore_service_state() {
     systemctl daemon-reload || restored=0
 
     [ -f "$state_file" ] || return 0
-    IFS=' ' read -r was_active was_enabled < "$state_file" || return 1
-    case "$was_active:$was_enabled" in
-        0:0|0:1|1:0|1:1) ;;
-        *) return 1 ;;
-    esac
+    read_service_state || return 1
 
-    if [ "$was_enabled" = 1 ]; then
-        systemctl enable "$service" || restored=0
-    else
-        systemctl disable "$service" || restored=0
-    fi
-    if [ "$was_active" = 1 ]; then
-        systemctl start "$service" || restored=0
-    else
-        systemctl stop "$service" || restored=0
-    fi
+    set_enabled_state "$service" "$hub_present" "$hub_enabled" || restored=0
+    set_enabled_state "$command_proxy_service" "$proxy_present" "$proxy_enabled" || restored=0
+    set_enabled_state "$fleet_telemetry_service" "$telemetry_present" "$telemetry_enabled" || restored=0
+
+    stop_recorded_service "$fleet_telemetry_service" "$telemetry_present" "$telemetry_active" \
+        || restored=0
+    stop_recorded_service "$service" "$hub_present" "$hub_active" || restored=0
+    stop_recorded_service "$command_proxy_service" "$proxy_present" "$proxy_active" \
+        || restored=0
+
+    start_recorded_service "$command_proxy_service" "$proxy_present" "$proxy_active" \
+        || restored=0
+    start_recorded_service "$service" "$hub_present" "$hub_active" || restored=0
+    start_recorded_service "$fleet_telemetry_service" "$telemetry_present" "$telemetry_active" \
+        || restored=0
     [ "$restored" = 1 ] && rm -f "$state_file"
     [ "$restored" = 1 ]
 }
 
 rollback_upgrade() {
     reason=$1
-    if [ -d /run/systemd/system ]; then
-        systemctl stop "$service" || true
-    fi
+    stop_all_services
     if restore_upgrade_payload && restore_service_state; then
         remove_upgrade_backup || true
         echo "$reason; restored the installed Teslatlas Hub" >&2
@@ -142,15 +259,17 @@ rollback_upgrade() {
 retain_forward_only_stopped() {
     retained=1
     if [ -d /run/systemd/system ]; then
-        systemctl stop "$service" || retained=0
+        stop_all_services || retained=0
         systemctl daemon-reload || retained=0
         if [ -f "$state_file" ]; then
-            IFS=' ' read -r _ was_enabled < "$state_file" || retained=0
-            case "${was_enabled:-}" in
-                1) systemctl enable "$service" || retained=0 ;;
-                0) systemctl disable "$service" || retained=0 ;;
-                *) retained=0 ;;
-            esac
+            read_service_state || retained=0
+            if [ "$retained" = 1 ]; then
+                set_enabled_state "$service" "$hub_present" "$hub_enabled" || retained=0
+                set_enabled_state "$command_proxy_service" "$proxy_present" "$proxy_enabled" \
+                    || retained=0
+                set_enabled_state "$fleet_telemetry_service" "$telemetry_present" \
+                    "$telemetry_enabled" || retained=0
+            fi
         fi
     fi
     if [ "$retained" = 1 ]; then
@@ -231,20 +350,37 @@ fi
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload
     if [ "${1:-}" = configure ] && [ -n "${2:-}" ]; then
-        was_active=0
         if [ -f "$state_file" ]; then
-            IFS=' ' read -r was_active _ < "$state_file" || was_active=0
-        elif systemctl is-active --quiet "$service"; then
-            was_active=1
+            read_service_state || fail_upgrade "saved service state is invalid"
+        else
+            hub_present=1
+            hub_active=0
+            hub_enabled=0
+            proxy_present=0
+            proxy_active=0
+            proxy_enabled=0
+            telemetry_present=0
+            telemetry_active=0
+            telemetry_enabled=0
+            systemctl is-active --quiet "$service" && hub_active=1
         fi
-        case "$was_active" in 0|1) ;; *) was_active=0 ;; esac
 
-        if [ "$was_active" = 1 ]; then
+        stop_recorded_service "$fleet_telemetry_service" "$telemetry_present" \
+            "$telemetry_active" || fail_upgrade "Fleet Telemetry service could not remain stopped"
+        stop_recorded_service "$service" "$hub_present" "$hub_active" \
+            || fail_upgrade "Hub service could not remain stopped"
+        stop_recorded_service "$command_proxy_service" "$proxy_present" "$proxy_active" \
+            || fail_upgrade "command proxy could not remain stopped"
+
+        start_recorded_service "$command_proxy_service" "$proxy_present" "$proxy_active" \
+            || fail_upgrade "command proxy failed its bounded startup check"
+
+        if [ "$hub_active" = 1 ]; then
             systemctl start "$service" || fail_upgrade "New Hub failed to start"
         else
             systemctl stop "$service" || true
         fi
-        if [ "$was_active" = 1 ]; then
+        if [ "$hub_active" = 1 ]; then
             attempt=1
             ready=0
             while [ "$attempt" -le "$health_attempts" ]; do
@@ -262,6 +398,9 @@ if [ -d /run/systemd/system ]; then
                 fail_upgrade "New Hub did not become ready"
             fi
         fi
+
+        start_recorded_service "$fleet_telemetry_service" "$telemetry_present" \
+            "$telemetry_active" || fail_upgrade "Fleet Telemetry failed its bounded startup check"
     fi
 fi
 

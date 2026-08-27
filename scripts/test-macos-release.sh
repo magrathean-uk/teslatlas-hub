@@ -29,6 +29,8 @@ mkdir -p "$BIN" "$INPUT/Teslatlas Hub.app/Contents/MacOS" \
 
 GO_EVIDENCE="$INPUT/go-proxy-evidence"
 TEST_PROXY="$INPUT/Teslatlas Hub.app/Contents/Resources/tesla-http-proxy"
+FLEET_TELEMETRY_EVIDENCE="$INPUT/fleet-telemetry-evidence"
+TEST_FLEET_TELEMETRY="$INPUT/Teslatlas Hub.app/Contents/Resources/fleet-telemetry"
 if [ -n "${TESLATLAS_TEST_GO_PROXY:-}" ] || [ -n "${TESLATLAS_TEST_GO_EVIDENCE:-}" ]; then
     [ -n "${TESLATLAS_TEST_GO_PROXY:-}" ] \
         && [ -n "${TESLATLAS_TEST_GO_EVIDENCE:-}" ] \
@@ -42,7 +44,14 @@ else
 fi
 python3 "$ROOT/scripts/go-proxy-evidence.py" --repo "$ROOT" \
     --verify-dir "$GO_EVIDENCE" >/dev/null
+cp "$TEST_PROXY" "$TEST_FLEET_TELEMETRY"
+python3 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
+    --receiver-binary "$TEST_FLEET_TELEMETRY" \
+    --output-dir "$FLEET_TELEMETRY_EVIDENCE" >/dev/null
+python3 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
+    --verify-dir "$FLEET_TELEMETRY_EVIDENCE" >/dev/null
 export RELEASE_TEST_PROXY="$TEST_PROXY"
+export RELEASE_TEST_FLEET_TELEMETRY="$TEST_FLEET_TELEMETRY"
 
 cat >"$BIN/uname" <<'EOF'
 #!/bin/sh
@@ -93,6 +102,8 @@ case "$1" in
         : >"$3/Payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub"
         cp "$RELEASE_TEST_PROXY" \
             "$3/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
+        cp "$RELEASE_TEST_FLEET_TELEMETRY" \
+            "$3/Payload/Library/Application Support/Teslatlas Hub/bin/fleet-telemetry"
         cat >"$3/PackageInfo" <<'PACKAGE_INFO'
 <pkg-info identifier="com.teslatlas.hub.service" version="1.0.0a1" install-location="/"/>
 PACKAGE_INFO
@@ -158,6 +169,7 @@ run_release() {
         --app "$INPUT/Teslatlas Hub.app" \
         --service-package "$INPUT/service.pkg" \
         --go-proxy-evidence "$GO_EVIDENCE" \
+        --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" \
         --app-identity "$APP_ID" \
         --installer-identity "$1" \
         --notary-profile "$2" \
@@ -253,6 +265,12 @@ expected_proxy_sha=$(shasum -a 256 "$INPUT/Teslatlas Hub.app/Contents/Resources/
 expected_evidence_sha=$(shasum -a 256 "$good_output/go-proxy-evidence/go-component-manifest.json" | awk '{ print $1 }')
 [ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasGoEvidenceManifestSHA256' "$release_info")" = "$expected_evidence_sha" ] \
     || fail "Go evidence manifest is not bound into the app"
+expected_fleet_telemetry_sha=$(shasum -a 256 "$INPUT/Teslatlas Hub.app/Contents/Resources/fleet-telemetry" | awk '{ print $1 }')
+[ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasUnsignedFleetTelemetrySHA256' "$release_info")" = "$expected_fleet_telemetry_sha" ] \
+    || fail "unsigned Fleet Telemetry receiver digest is not bound into the app"
+expected_fleet_telemetry_evidence_sha=$(shasum -a 256 "$good_output/fleet-telemetry-evidence/fleet-telemetry-component-manifest.json" | awk '{ print $1 }')
+[ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasFleetTelemetryEvidenceManifestSHA256' "$release_info")" = "$expected_fleet_telemetry_evidence_sha" ] \
+    || fail "Fleet Telemetry evidence manifest is not bound into the app"
 
 line_number() {
     grep -n "$1" "$LOG" | head -1 | cut -d: -f1
@@ -285,6 +303,8 @@ grep -Fq -- '--ownership recommended' "$LOG" \
     || fail "signed package does not restore root-recommended ownership"
 [ "$(grep -c 'codesign --force .*tesla-http-proxy' "$LOG")" -eq 2 ] \
     || fail "package and app proxy copies were not both signed"
+[ "$(grep -c 'codesign --force .*fleet-telemetry' "$LOG")" -eq 2 ] \
+    || fail "package and app Fleet Telemetry receiver copies were not both signed"
 (
     cd "$good_output"
     shasum -a 256 -c SHA256SUMS >/dev/null
