@@ -697,6 +697,22 @@ final class HubController {
         snapshot = initialSnapshot ?? (previewMode ? .previewRunning : .firstRun)
     }
 
+    static func isBundledServiceVersionOutput(_ output: String) -> Bool {
+        output.trimmingCharacters(in: .whitespacesAndNewlines)
+            == "teslatlas-hub \(HubRelease.bundledVersion)"
+    }
+
+    private func installedServiceMatchesBundledVersion(completion: @escaping (Bool) -> Void) {
+        installedCommandRunner.run(arguments: ["--version"]) { result in
+            switch result {
+            case let .success(output):
+                completion(Self.isBundledServiceVersionOutput(output))
+            case .failure:
+                completion(false)
+            }
+        }
+    }
+
     var hasPendingMigrationHandover: Bool {
         !previewMode && FileManager.default.fileExists(atPath: migrationHandoverMarker.path)
     }
@@ -1198,13 +1214,22 @@ final class HubController {
                                        stdin: invocation.standardInput) { setupResult in
                     switch setupResult {
                     case .success:
-                        self.installer.install { installResult in
-                            switch installResult {
-                            case .success: startService()
-                            case let .failure(error):
-                                finish(.failure(HubActionError.commandFailed(
-                                    "Fleet is configured, but the service update failed. Hub remains stopped; retry Update Service. \(error.localizedDescription)"
-                                )))
+                        self.installedServiceMatchesBundledVersion { matches in
+                            if matches {
+                                HubAppLog.shared.record("installed_version.reused",
+                                                        category: "service",
+                                                        fields: ["provider": "fleet"])
+                                startService()
+                                return
+                            }
+                            self.installer.install { installResult in
+                                switch installResult {
+                                case .success: startService()
+                                case let .failure(error):
+                                    finish(.failure(HubActionError.commandFailed(
+                                        "Fleet is configured, but the service update failed. Hub remains stopped; retry Update Service. \(error.localizedDescription)"
+                                    )))
+                                }
                             }
                         }
                     case let .failure(error):
@@ -1406,13 +1431,22 @@ final class HubController {
                                        stdin: invocation.standardInput) { setupResult in
                     switch setupResult {
                     case .success:
-                        self.installer.install { installResult in
-                            switch installResult {
-                            case .success: startService()
-                            case let .failure(error):
-                                finish(.failure(HubActionError.commandFailed(
-                                    "Legacy Tesla login is configured, but the service update failed. Hub remains stopped; retry Update Service. \(error.localizedDescription)"
-                                )))
+                        self.installedServiceMatchesBundledVersion { matches in
+                            if matches {
+                                HubAppLog.shared.record("installed_version.reused",
+                                                        category: "service",
+                                                        fields: ["provider": "legacy"])
+                                startService()
+                                return
+                            }
+                            self.installer.install { installResult in
+                                switch installResult {
+                                case .success: startService()
+                                case let .failure(error):
+                                    finish(.failure(HubActionError.commandFailed(
+                                        "Legacy Tesla login is configured, but the service update failed. Hub remains stopped; retry Update Service. \(error.localizedDescription)"
+                                    )))
+                                }
                             }
                         }
                     case let .failure(error):

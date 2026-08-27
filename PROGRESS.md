@@ -9,21 +9,28 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`12bc026d578acc9a879a0b2d9862da4d1060ef8e2bedbf9de1ade8b01fde7684`.
-It is a 66,614,702-byte ad-hoc development package, not a notarized release.
+`07888e99dd2d03e700cba9df80045bcd80f9a21bd19fd2ef034b3db1edd73f99`.
+It is a 66,615,937-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-27: full locked Rust tests passed (832 library,
 49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-89 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source,
+92 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source,
 macOS release, release-evidence, and dependency-audit gates passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`9f1b10beaf25db2bee882e68ab0ef3fdb41acfd28fd6362ef4bcce211348b684`.
+`e2534ded90448c3835ea61d9df8586909fbd4e242422b314db03047918bef41c`.
 An earlier package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, and preserved the safely
 stopped Hub and migration data; the new package has not been installed live.
+
+Fresh all-in-one package onboarding now checks the installed root Hub's exact
+version after credentials are configured. When it matches the bundled Hub, the
+app starts that already-installed root-owned service instead of attempting a
+redundant embedded privileged installation. A missing or mismatched version
+still enters the fail-closed signed update path. Exact-match and mismatch paths
+are covered for both Fleet and legacy setup.
 
 Current macOS reliability pass: the dashboard now exposes a native selector
 for every configured vehicle and sends each confirmed command to the explicit
@@ -210,8 +217,9 @@ physical drive is still required for parity proof. Legacy streaming was not
 exercised by this drive.
 
 Deliberate exclusions: TeslaFi import, `addresses.raw`, Grafana/MQTT/dashboard,
-and native Fleet Telemetry ingestion. Fleet currently uses official REST
-polling; legacy Owner API keeps TeslaMate-compatible vehicle streaming.
+and Fleet Telemetry fields Tesla does not publish through the configured native
+push contract. Fleet supports official native push with bounded REST setup and
+initial snapshots; legacy Owner API keeps TeslaMate-compatible streaming.
 
 Blocked: Fleet REST drive capture needs one new physical-drive confirmation.
 Real Developer ID notarization is separately blocked by a local

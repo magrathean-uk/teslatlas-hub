@@ -162,7 +162,41 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         wait(for: [finished], timeout: 2)
 
         XCTAssertTrue(configAtInstall.contains("provider = \"fleet\""))
-        XCTAssertEqual(events.values, ["service:stop", "embedded-setup", "install", "service:start", "state", "command"])
+        XCTAssertEqual(events.values, ["service:stop", "embedded-setup", "command", "install", "service:start", "state", "command"])
+    }
+
+    func testInstalledUnconfiguredSetupReusesExactPackagedService() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeOriginalConfig(in: home)
+        let events = FleetRecoveryEvents()
+        let embedded = FleetRecoveryRunner(events: events,
+                                            event: "embedded-setup",
+                                            result: .success("configured"))
+        let installed = FleetRecoveryRunner(
+            events: events,
+            event: "installed-setup",
+            result: .success("teslatlas-hub 1.0.0-alpha.1\n")
+        )
+        let controller = HubController(commandRunner: embedded,
+                                       installedCommandRunner: installed,
+                                       installer: FleetRecoveryInstaller(events: events),
+                                       serviceRunner: FleetRecoveryService(events: events, state: .loaded),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+
+        let finished = expectation(description: "matching Fleet service reused")
+        controller.configureFleetAccount(credentials: credentials) { result in
+            guard case .success = result else { return XCTFail("expected setup success") }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"fleet\""))
+        XCTAssertFalse(events.values.contains("install"))
+        XCTAssertEqual(events.values, [
+            "service:stop", "embedded-setup", "command", "service:start", "state", "command"
+        ])
     }
 
     func testInstalledUnconfiguredInstallerFailureKeepsFleetConfiguredAndStopped() throws {
@@ -199,7 +233,7 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         wait(for: [finished], timeout: 2)
 
         XCTAssertTrue(try configContents(in: home).contains("provider = \"fleet\""))
-        XCTAssertEqual(events.values, ["service:stop", "embedded-setup", "install"])
+        XCTAssertEqual(events.values, ["service:stop", "embedded-setup", "command", "install"])
     }
 
     func testInstalledStopFailureDoesNotChangeConfig() throws {

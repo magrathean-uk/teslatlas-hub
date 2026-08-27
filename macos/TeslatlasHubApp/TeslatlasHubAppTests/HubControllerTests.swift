@@ -1061,9 +1061,58 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(events.values, [
-            "service:stop", "setup", "install", "service:start", "command"
+            "service:stop", "setup", "command", "install", "service:start", "command"
         ])
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
+    }
+
+    func testInstalledUnconfiguredLegacyReusesExactPackagedService() throws {
+        let events = EventRecorder()
+        let embedded = ScriptedRunner(events: events, result: .success("configured"))
+        let installed = VersionAwareRunner(
+            events: events,
+            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n")
+        )
+        let installer = RecordingInstaller()
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "fleet")
+        let controller = HubController(commandRunner: embedded,
+                                       installedCommandRunner: installed,
+                                       installer: installer,
+                                       serviceRunner: ScriptedService(events: events),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "matching service reused")
+
+        controller.configureTeslaAccount(
+            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        ) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(installer.installCalls, 0)
+        XCTAssertEqual(events.values, [
+            "service:stop", "setup", "version", "service:start", "command"
+        ])
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
+    }
+
+    func testBundledServiceVersionMatchIsExact() {
+        XCTAssertTrue(HubController.isBundledServiceVersionOutput(
+            "teslatlas-hub 1.0.0-alpha.1\n"
+        ))
+        XCTAssertFalse(HubController.isBundledServiceVersionOutput(
+            "teslatlas-hub 1.0.0-alpha.0"
+        ))
+        XCTAssertFalse(HubController.isBundledServiceVersionOutput(
+            "prefix teslatlas-hub 1.0.0-alpha.1"
+        ))
+        XCTAssertFalse(HubController.isBundledServiceVersionOutput(
+            "teslatlas-hub 1.0.0-alpha.1\nextra"
+        ))
     }
 
     func testUnconfiguredLegacyInstallerFailureKeepsNewCredentialsStopped() throws {
@@ -1096,7 +1145,7 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["service:stop", "setup", "install"])
+        XCTAssertEqual(events.values, ["service:stop", "setup", "command", "install"])
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
@@ -1511,6 +1560,30 @@ private final class ScriptedRunner: HubCommandRunning {
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
         self.stdin = stdin
         run(arguments: arguments, completion: completion)
+    }
+}
+
+private final class VersionAwareRunner: HubCommandRunning {
+    private let events: EventRecorder
+    private let versionResult: Result<String, Error>
+    private let commandResult: Result<String, Error>
+
+    init(events: EventRecorder,
+         versionResult: Result<String, Error>,
+         commandResult: Result<String, Error> = .success("{}")) {
+        self.events = events
+        self.versionResult = versionResult
+        self.commandResult = commandResult
+    }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        if arguments == ["--version"] {
+            events.append("version")
+            completion(versionResult)
+        } else {
+            events.append("command")
+            completion(commandResult)
+        }
     }
 }
 
