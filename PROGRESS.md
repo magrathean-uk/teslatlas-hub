@@ -39,8 +39,8 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`eef8ee29cd4c32513cea3146a5d9a1887f5e595e8585af30d5bd3af2b8ada92d`.
-It is a 66,699,996-byte ad-hoc development package, not a notarized release.
+`c63de73124b4dfa312a891d911a1f6286dd477028d5f4c4f57d0896f600f1dff`.
+It is a 66,700,171-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-28: full locked Rust tests passed (838 library,
 50 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
@@ -50,7 +50,7 @@ macOS release, release-evidence, and dependency-audit gates passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`e53f2c0aec34decf9f7050aec552ddda55dc644469ffb9de0b5594d3105e4197`.
+`bbd9d760e857310c9a817f4f2776cbbf6e707daffeadb1eebeddf434a95df269`.
 Its embedded Hub SHA-256 is
 `c9b6176c0ce6602699cd521fe0e8bdebb65b2902a2d27427df6d432ed42043ef`;
 the root service payload Hub SHA-256 is
