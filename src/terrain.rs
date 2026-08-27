@@ -4,7 +4,12 @@
 //! 0.8.0 dependency. It deliberately does not download, cache, or schedule
 //! terrain work.
 
-use std::{fs::File, os::unix::fs::FileExt, path::Path, sync::Arc};
+use std::{
+    fs::{File, Metadata},
+    os::unix::fs::{FileExt, MetadataExt},
+    path::Path,
+    sync::Arc,
+};
 
 use rustix::fs::{Mode, OFlags, open};
 use sha2::{Digest, Sha256};
@@ -140,6 +145,27 @@ enum HgtStorage {
     File(Arc<File>),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct HgtFileIdentity {
+    device: u64,
+    inode: u64,
+    length: u64,
+    modified_seconds: i64,
+    modified_nanoseconds: i64,
+}
+
+impl HgtFileIdentity {
+    fn from_metadata(metadata: &Metadata) -> Self {
+        Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            length: metadata.len(),
+            modified_seconds: metadata.mtime(),
+            modified_nanoseconds: metadata.mtime_nsec(),
+        }
+    }
+}
+
 pub struct HgtTile {
     id: TileId,
     side: HgtSide,
@@ -185,6 +211,13 @@ impl HgtTile {
         self.side.side()
     }
 
+    pub(crate) fn file_identity(&self) -> Result<Option<HgtFileIdentity>, TerrainError> {
+        match &self.storage {
+            HgtStorage::Bytes(_) => Ok(None),
+            HgtStorage::File(file) => Ok(Some(HgtFileIdentity::from_metadata(&file.metadata()?))),
+        }
+    }
+
     /// Hash the exact bytes admitted by this tile instance. File-backed tiles
     /// keep using the pinned descriptor even if the pathname is replaced.
     pub fn sha256_hex(&self) -> Result<String, TerrainError> {
@@ -192,6 +225,7 @@ impl HgtTile {
         match &self.storage {
             HgtStorage::Bytes(bytes) => digest.update(bytes),
             HgtStorage::File(file) => {
+                let before = HgtFileIdentity::from_metadata(&file.metadata()?);
                 let expected = self.side.byte_len();
                 let mut offset = 0_u64;
                 let mut buffer = [0_u8; 64 * 1024];
@@ -204,6 +238,14 @@ impl HgtTile {
                     }
                     digest.update(&buffer[..read]);
                     offset += read as u64;
+                }
+                let after = HgtFileIdentity::from_metadata(&file.metadata()?);
+                if before != after {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "HGT tile changed while hashing",
+                    )
+                    .into());
                 }
             }
         }

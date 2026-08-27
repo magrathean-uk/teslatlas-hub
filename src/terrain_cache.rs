@@ -21,7 +21,7 @@ use zip::ZipArchive;
 use crate::{
     config::TerrainConfig,
     geocoder::EgressGuard,
-    terrain::{HgtTile, SRTM1_BYTES, SRTM3_BYTES, TerrainError, TileId},
+    terrain::{HgtFileIdentity, HgtTile, SRTM1_BYTES, SRTM3_BYTES, TerrainError, TileId},
 };
 
 pub const AWS_SKADI_BASE: &str = "https://elevation-tiles-prod.s3.amazonaws.com/";
@@ -106,6 +106,7 @@ pub struct TerrainCache {
     client: Client,
     locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     quota_lock: AsyncMutex<()>,
+    hashes: Mutex<HashMap<String, (HgtFileIdentity, String)>>,
 }
 
 impl TerrainCache {
@@ -132,6 +133,7 @@ impl TerrainCache {
             client,
             locks: Mutex::new(HashMap::new()),
             quota_lock: AsyncMutex::new(()),
+            hashes: Mutex::new(HashMap::new()),
         })
     }
 
@@ -204,10 +206,50 @@ impl TerrainCache {
                 .elevation_at(latitude, longitude)
                 .map_err(TerrainCacheError::InvalidTile)?,
             tile_name: tile.name(),
-            tile_hash: hgt.sha256_hex().map_err(TerrainCacheError::InvalidTile)?,
+            tile_hash: self.tile_hash(&tile.name(), &hgt)?,
             dataset_source: source,
             dataset_version: crate::terrain::TERRAIN_DATASET_VERSION.to_owned(),
         })
+    }
+
+    fn tile_hash(&self, name: &str, tile: &HgtTile) -> Result<String, TerrainCacheError> {
+        let identity = tile
+            .file_identity()
+            .map_err(TerrainCacheError::InvalidTile)?
+            .ok_or(TerrainCacheError::InvalidConfig)?;
+        {
+            let hashes = self
+                .hashes
+                .lock()
+                .map_err(|_| TerrainCacheError::InvalidConfig)?;
+            if let Some((cached_identity, hash)) = hashes.get(name)
+                && *cached_identity == identity
+            {
+                return Ok(hash.clone());
+            }
+        }
+        let hash = tile.sha256_hex().map_err(TerrainCacheError::InvalidTile)?;
+        let stable_identity = tile
+            .file_identity()
+            .map_err(TerrainCacheError::InvalidTile)?
+            .ok_or(TerrainCacheError::InvalidConfig)?;
+        if stable_identity != identity {
+            return Err(TerrainCacheError::InvalidTile(TerrainError::Io(
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "terrain tile changed while hashing",
+                ),
+            )));
+        }
+        let mut hashes = self
+            .hashes
+            .lock()
+            .map_err(|_| TerrainCacheError::InvalidConfig)?;
+        if hashes.len() >= 64 && !hashes.contains_key(name) {
+            hashes.clear();
+        }
+        hashes.insert(name.to_owned(), (identity, hash.clone()));
+        Ok(hash)
     }
 
     async fn ensure_tile<G: EgressGuard + ?Sized>(
@@ -819,6 +861,40 @@ mod tests {
             crate::terrain::TERRAIN_DATASET_VERSION
         );
         assert_eq!(result.tile_hash.len(), 64);
+        assert_eq!(cache.hashes.lock().unwrap().len(), 1);
+
+        let repeated = cache
+            .lookup(51.5, -0.1, Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert_eq!(repeated.tile_hash, result.tile_hash);
+        assert_eq!(cache.hashes.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn cached_hash_is_invalidated_by_atomic_tile_replacement() {
+        let dir = tempdir().unwrap();
+        let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
+        let path = dir.path().join(format!("{}.hgt", tile.name()));
+        fs::write(&path, hgt_bytes()).unwrap();
+        let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+        let first = cache
+            .lookup(51.5, -0.1, Duration::from_secs(1))
+            .await
+            .unwrap();
+
+        let replacement = dir.path().join("replacement.hgt");
+        let mut bytes = hgt_bytes();
+        bytes[0] = 1;
+        fs::write(&replacement, bytes).unwrap();
+        fs::rename(replacement, &path).unwrap();
+        let second = cache
+            .lookup(51.5, -0.1, Duration::from_secs(1))
+            .await
+            .unwrap();
+
+        assert_ne!(second.tile_hash, first.tile_hash);
+        assert_eq!(cache.hashes.lock().unwrap().len(), 1);
     }
 
     #[test]
