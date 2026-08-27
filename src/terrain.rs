@@ -7,6 +7,7 @@
 use std::{fs::File, os::unix::fs::FileExt, path::Path, sync::Arc};
 
 use rustix::fs::{Mode, OFlags, open};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const SRTM3_SIDE: usize = 1_201;
@@ -44,6 +45,13 @@ impl HgtSide {
         match self {
             Self::Srtm3 => SRTM3_SIDE,
             Self::Srtm1 => SRTM1_SIDE,
+        }
+    }
+
+    fn byte_len(self) -> u64 {
+        match self {
+            Self::Srtm3 => SRTM3_BYTES,
+            Self::Srtm1 => SRTM1_BYTES,
         }
     }
 
@@ -175,6 +183,31 @@ impl HgtTile {
 
     pub fn side(&self) -> usize {
         self.side.side()
+    }
+
+    /// Hash the exact bytes admitted by this tile instance. File-backed tiles
+    /// keep using the pinned descriptor even if the pathname is replaced.
+    pub fn sha256_hex(&self) -> Result<String, TerrainError> {
+        let mut digest = Sha256::new();
+        match &self.storage {
+            HgtStorage::Bytes(bytes) => digest.update(bytes),
+            HgtStorage::File(file) => {
+                let expected = self.side.byte_len();
+                let mut offset = 0_u64;
+                let mut buffer = [0_u8; 64 * 1024];
+                while offset < expected {
+                    let remaining = usize::try_from((expected - offset).min(buffer.len() as u64))
+                        .map_err(|_| TerrainError::InvalidHgtLength)?;
+                    let read = file.read_at(&mut buffer[..remaining], offset)?;
+                    if read == 0 {
+                        return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+                    }
+                    digest.update(&buffer[..read]);
+                    offset += read as u64;
+                }
+            }
+        }
+        Ok(hex::encode(digest.finalize()))
     }
 
     /// Return the raw HGT cell selected by TeslaMate's SRTM dependency.
@@ -347,6 +380,7 @@ mod tests {
         let (_directory, path) = sparse_tile("N00E000", SRTM3_SIDE);
         write_cell(&path, SRTM3_SIDE, 600, 600, 321);
         let tile = HgtTile::open("N00E000", &path).expect("valid HGT");
+        let expected_hash = tile.sha256_hex().expect("original tile hash");
         let retained = path.with_extension("retained");
         fs::rename(&path, &retained).expect("retain original tile inode");
         assert!(
@@ -362,6 +396,7 @@ mod tests {
             tile.elevation_at(coordinate.0, coordinate.1).unwrap(),
             Some(321)
         );
+        assert_eq!(tile.sha256_hex().expect("pinned tile hash"), expected_hash);
     }
 
     #[test]

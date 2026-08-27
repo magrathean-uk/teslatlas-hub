@@ -12,7 +12,7 @@ use std::{
 use flate2::read::GzDecoder;
 use futures_util::StreamExt;
 use reqwest::{Client, redirect::Policy};
-use sha2::{Digest, Sha256};
+use rustix::fs::{Mode, OFlags, open};
 use thiserror::Error;
 use tokio::{io::AsyncWriteExt, sync::Mutex as AsyncMutex, time::timeout};
 use url::Url;
@@ -204,7 +204,7 @@ impl TerrainCache {
                 .elevation_at(latitude, longitude)
                 .map_err(TerrainCacheError::InvalidTile)?,
             tile_name: tile.name(),
-            tile_hash: hash_file(&path).map_err(TerrainCacheError::Io)?,
+            tile_hash: hgt.sha256_hex().map_err(TerrainCacheError::InvalidTile)?,
             dataset_source: source,
             dataset_version: crate::terrain::TERRAIN_DATASET_VERSION.to_owned(),
         })
@@ -272,12 +272,28 @@ impl TerrainCache {
 
     fn read_source(&self, tile: TileId) -> String {
         let path = self.source_path(tile);
-        fs::metadata(&path)
-            .ok()
-            .filter(|metadata| metadata.is_file() && metadata.len() <= MAX_SOURCE_BYTES)
-            .and_then(|_| fs::read_to_string(path).ok())
-            .filter(|source| matches!(source.trim(), "aws" | "esa"))
-            .unwrap_or_else(|| "cache".to_owned())
+        open(
+            &path,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+            Mode::empty(),
+        )
+        .ok()
+        .map(File::from)
+        .filter(|file| {
+            file.metadata()
+                .is_ok_and(|metadata| metadata.is_file() && metadata.len() <= MAX_SOURCE_BYTES)
+        })
+        .and_then(|mut file| {
+            let mut bytes = Vec::new();
+            Read::by_ref(&mut file)
+                .take(MAX_SOURCE_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .ok()
+                .filter(|_| bytes.len() as u64 <= MAX_SOURCE_BYTES)
+                .and_then(|_| String::from_utf8(bytes).ok())
+        })
+        .filter(|source| matches!(source.trim(), "aws" | "esa"))
+        .unwrap_or_else(|| "cache".to_owned())
     }
 
     fn enforce_cache_quota(
@@ -544,20 +560,6 @@ fn write_source_atomic(path: &Path, source: &str) -> Result<(), TerrainCacheErro
     fs::rename(temporary, path).map_err(TerrainCacheError::Io)
 }
 
-fn hash_file(path: &Path) -> io::Result<String> {
-    let mut file = File::open(path)?;
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        digest.update(&buffer[..read]);
-    }
-    Ok(hex::encode(digest.finalize()))
-}
-
 fn create_private_temp(dir: &Path, label: &str) -> Result<(File, PathBuf), TerrainCacheError> {
     for attempt in 0..16_u32 {
         let path = dir.join(format!(".{label}.{}.{}.tmp", std::process::id(), attempt));
@@ -817,6 +819,25 @@ mod tests {
             crate::terrain::TERRAIN_DATASET_VERSION
         );
         assert_eq!(result.tile_hash.len(), 64);
+    }
+
+    #[test]
+    fn source_marker_fifo_is_ignored_without_blocking() {
+        let dir = tempdir().unwrap();
+        let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
+        let source = dir.path().join(format!("{}.source", tile.name()));
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&source)
+                .status()
+                .expect("run mkfifo")
+                .success()
+        );
+        let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+
+        let started = std::time::Instant::now();
+        assert_eq!(cache.read_source(tile), "cache");
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 
     #[test]
