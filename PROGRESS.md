@@ -1,5 +1,14 @@
 # Hub progress
 
+- Cmd-L final acceptance — the app launched directly from the newly expanded
+  all-in-one package while the Hub service remained stopped. Cmd-L opened the
+  combined app/import/service log window with Refresh, Run Diagnostics, Copy,
+  and Save available. The rendered service log contained no raw terminal
+  escapes. Redirected Rust logs now disable terminal colour at their source;
+  share output also strips ANSI/control sequences and redacts private IPv6.
+  Xcode-hosted tests use a per-process temporary log and no longer pollute the
+  user's production `app.log`.
+
 - Pinned diagnostic log directories — Cmd-L app/service log reads and app-log
   writes now open a real, owned, non-writable directory descriptor with
   `O_NOFOLLOW`, then open the final log through `openat`. A replaced or
@@ -30,22 +39,22 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`75a2029667a28f3e23bc348ef7dff30c5011fed7fc1c3c57a532eac692f2b45c`.
-It is a 66,689,959-byte ad-hoc development package, not a notarized release.
+`eef8ee29cd4c32513cea3146a5d9a1887f5e595e8585af30d5bd3af2b8ada92d`.
+It is a 66,699,996-byte ad-hoc development package, not a notarized release.
 
-Current verification on 2026-08-27: full locked Rust tests passed (837 library,
-49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
+Current verification on 2026-08-28: full locked Rust tests passed (838 library,
+50 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-99 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux packaging source,
+102 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux packaging source,
 macOS release, release-evidence, and dependency-audit gates passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`878421d0607b8ac0f3b8aab260ff98c690ef71595c88c8a7f74b0277cfe34992`.
+`e53f2c0aec34decf9f7050aec552ddda55dc644469ffb9de0b5594d3105e4197`.
 Its embedded Hub SHA-256 is
-`15ade924cdea3284e8b966db45558ab73aae79bcb21770764d495b0ac74a269f`;
+`c9b6176c0ce6602699cd521fe0e8bdebb65b2902a2d27427df6d432ed42043ef`;
 the root service payload Hub SHA-256 is
-`83490b49aa20e52a94f852cfa3352c97efb623ca75ff87cbc9bcc7f916206ffe`.
+`347ea11b5c1c77e2fd090a5212ec08040cc7e6e5eddb2fd803446823c9e76e36`.
 An earlier package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, and preserved the safely
 stopped Hub and migration data; the new package has not been installed live.
