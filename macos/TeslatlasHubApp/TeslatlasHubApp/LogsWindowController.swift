@@ -56,7 +56,7 @@ final class LogsWindowController: NSWindowController {
         actions.alignment = .centerY
 
         let note = NSTextField(labelWithString:
-            "Copy and Save redact credentials, VINs, private-network addresses, and your home path.")
+            "Displayed, copied, and saved logs redact credentials and private identifiers. Review before sharing.")
         note.font = .systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
 
