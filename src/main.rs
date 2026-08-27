@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{Read, Write},
+    io::{IsTerminal, Read, Write},
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     process::{ExitCode, Stdio},
@@ -1107,6 +1107,7 @@ async fn main() -> ExitCode {
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
+        .with_ansi(std::io::stderr().is_terminal())
         .with_target(false)
         .init();
 
