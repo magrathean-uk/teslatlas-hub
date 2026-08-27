@@ -66,7 +66,7 @@ final class DiagnosticsWindowController: NSWindowController {
         actions.alignment = .centerY
 
         let privacy = NSTextField(labelWithString:
-            "Copy and Save redact credential values and shorten your home-folder path. Review the report before sharing it.")
+            "Copy and Save redact credentials, VINs, private-network addresses, and your home path. Review before sharing.")
         privacy.font = .systemFont(ofSize: 11)
         privacy.textColor = .secondaryLabelColor
 

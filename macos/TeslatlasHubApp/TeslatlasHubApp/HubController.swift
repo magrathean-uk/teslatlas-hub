@@ -18,7 +18,9 @@ enum HubShareRedactor {
         (#"(?i)(\b(?:access_?token|refresh_?token|ingest_?token|pairing_?token|device_?token|token|client_?secret|api_?key|private_?key|encryption_?key|password|authorization_?code|oauth_?code)\b\s*[\"']?\s*[:=]\s*[\"']?)[^\"'\s,&;}]+"#, "$1[redacted]"),
         (#"(?i)([?&](?:access_token|refresh_token|client_secret|code)=)[^&#\s]+"#, "$1[redacted]"),
         (#"(?i)((?:postgres(?:ql)?|https?)://[^/\s:@]+:)[^@/\s]+(@)"#, "$1[redacted]$2"),
-        (#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[redacted-jwt]")
+        (#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[redacted-jwt]"),
+        (#"(?i)\b[0-9A-HJ-NPR-Z]{17}\b"#, "[redacted-vin]"),
+        (#"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b"#, "[redacted-private-ip]")
     ]
 
     static func redact(_ text: String, homeDirectory: String = NSHomeDirectory()) -> String {

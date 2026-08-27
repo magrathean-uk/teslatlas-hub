@@ -208,6 +208,8 @@ final class HubControllerTests: XCTestCase {
         callback=https://fleet.example/callback?code=EU_secret_code&state=public-state
         source=postgresql://reader:database-secret@127.0.0.1/teslamate
         jwt=eyJheader.payload.signature
+        vehicle=5YJ3E1EA7KF317000
+        server=10.8.0.1
         /Users/example/Library/Logs/Teslatlas Hub/hub.err.log
         """
 
@@ -220,10 +222,13 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(redacted.contains("code=[redacted]&state=public-state"))
         XCTAssertTrue(redacted.contains("postgresql://reader:[redacted]@127.0.0.1"))
         XCTAssertTrue(redacted.contains("[redacted-jwt]"))
+        XCTAssertTrue(redacted.contains("vehicle=[redacted-vin]"))
+        XCTAssertTrue(redacted.contains("server=[redacted-private-ip]"))
         XCTAssertTrue(redacted.contains("~/Library/Logs"))
         for secret in ["bearer-secret-value", "access-secret-value", "refresh-secret-value",
                        "ingest-secret-value", "private-secret-value",
-                       "EU_secret_code", "database-secret", "eyJheader.payload.signature"] {
+                       "EU_secret_code", "database-secret", "eyJheader.payload.signature",
+                       "5YJ3E1EA7KF317000", "10.8.0.1"] {
             XCTAssertFalse(redacted.contains(secret), "leaked \(secret)")
         }
     }
