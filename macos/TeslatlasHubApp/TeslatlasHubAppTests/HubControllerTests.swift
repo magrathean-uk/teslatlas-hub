@@ -213,7 +213,7 @@ final class HubControllerTests: XCTestCase {
         vehicle=5YJ3E1EA7KF317000
         server=10.8.0.1
         ipv6=[fd12:3456:789a::1]:5432 link=fe80::42%en0 loopback=::1
-        coloured=\u{001B}[2m2026-08-27T19:02:26Z\u{001B}[0m \u{001B}[32mINFO\u{001B}[0m ready
+        coloured=\u{001B}[2m2026-08-27T19:02:26Z\u{001B}[0m \u{001B}[32mINFO\u{001B}[0m ready\u{0007}
         /Users/example/Library/Logs/Teslatlas Hub/hub.err.log
         """
 

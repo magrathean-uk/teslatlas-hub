@@ -15,6 +15,7 @@ private enum HubRelease {
 enum HubShareRedactor {
     private static let replacements: [(pattern: String, template: String)] = [
         ("\u{001B}\\[[0-?]*[ -/]*[@-~]", ""),
+        ("[\u{0000}-\u{0008}\u{000B}\u{000C}\u{000E}-\u{001F}\u{007F}]", ""),
         (#"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,;]+"#, "$1[redacted]"),
         (#"(?i)(\b(?:access_?token|refresh_?token|ingest_?token|pairing_?token|device_?token|token|client_?secret|api_?key|private_?key|encryption_?key|password|authorization_?code|oauth_?code)\b\s*[\"']?\s*[:=]\s*[\"']?)[^\"'\s,&;}]+"#, "$1[redacted]"),
         (#"(?i)([?&](?:access_token|refresh_token|client_secret|code)=)[^&#\s]+"#, "$1[redacted]"),
