@@ -54,8 +54,9 @@ final class MainWindowController: NSWindowController {
         window.contentView = makeContentView()
         window.center()
         update()
-        let refreshTimer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+        let refreshTimer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
             guard let self,
+                  NSApp.isActive,
                   self.window?.isVisible == true,
                   !self.accountWorkflowActive,
                   !self.serviceDetailsMutationPending else { return }
