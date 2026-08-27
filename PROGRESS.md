@@ -1,5 +1,11 @@
 # Hub progress
 
+- Active macOS log bounds — the service wrapper now checks and compacts both
+  launchd-owned logs every 30 seconds during uninterrupted Fleet Telemetry
+  operation, preserving the existing 1 MiB/512 KiB bound instead of waiting
+  for the next service restart. Packaging regression checks cover startup and
+  active-run compaction.
+
 Status on 2026-08-27: the current Rust 1.98 Hub and native macOS app are
 installed, but the Hub LaunchAgent is deliberately stopped. The imported
 TeslaMate v4.1.1 store is ready in legacy mode with one vehicle, encrypted

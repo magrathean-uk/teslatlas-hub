@@ -176,9 +176,16 @@ finish() {
 }
 trap finish EXIT HUP INT TERM
 
+log_check_seconds=0
 while /bin/kill -0 "$hub_pid" >/dev/null 2>&1 \
     && /bin/kill -0 "$receiver_pid" >/dev/null 2>&1; do
     /bin/sleep 1
+    log_check_seconds=$((log_check_seconds + 1))
+    if [ "$log_check_seconds" -ge 30 ]; then
+        compact_log "$STDOUT_LOG"
+        compact_log "$STDERR_LOG"
+        log_check_seconds=0
+    fi
 done
 
 if ! /bin/kill -0 "$hub_pid" >/dev/null 2>&1; then

@@ -146,6 +146,12 @@ assert_before_fixed 'if [ -f "$STATE_DIRECTORY/was-loaded" ]; then' '    stop_lo
     || fail "service supervisor does not compact stdout before launch"
 /usr/bin/grep -Fq 'compact_log "$STDERR_LOG"' "$SUPERVISOR" \
     || fail "service supervisor does not compact stderr before launch"
+/usr/bin/grep -Fq 'log_check_seconds=$((log_check_seconds + 1))' "$SUPERVISOR" \
+    || fail "service supervisor does not schedule bounded active-log maintenance"
+[ "$(/usr/bin/grep -Fc 'compact_log "$STDOUT_LOG"' "$SUPERVISOR")" -eq 2 ] \
+    || fail "service supervisor does not compact stdout during long runs"
+[ "$(/usr/bin/grep -Fc 'compact_log "$STDERR_LOG"' "$SUPERVISOR")" -eq 2 ] \
+    || fail "service supervisor does not compact stderr during long runs"
 /usr/bin/grep -q 'completed.*-ne 1' "$POSTINSTALL" \
     || fail "postinstall has no failure rollback"
 /usr/bin/grep -q 'launchctl bootstrap' "$POSTINSTALL" \
