@@ -152,6 +152,11 @@ assert_before_fixed 'if [ -f "$STATE_DIRECTORY/was-loaded" ]; then' '    stop_lo
     || fail "service supervisor does not compact stdout during long runs"
 [ "$(/usr/bin/grep -Fc 'compact_log "$STDERR_LOG"' "$SUPERVISOR")" -eq 2 ] \
     || fail "service supervisor does not compact stderr during long runs"
+if /usr/bin/grep -Fq 'exec "$HUB" --config "$CONFIG" serve' "$SUPERVISOR"; then
+    fail "legacy service bypasses active log maintenance"
+fi
+/usr/bin/grep -Fq '[ -n "$child" ] || return 0' "$SUPERVISOR" \
+    || fail "legacy service supervision cannot omit the Fleet receiver safely"
 /usr/bin/grep -q 'completed.*-ne 1' "$POSTINSTALL" \
     || fail "postinstall has no failure rollback"
 /usr/bin/grep -q 'launchctl bootstrap' "$POSTINSTALL" \

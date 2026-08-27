@@ -117,48 +117,49 @@ safe_root_executable "$HUB" || {
 
 DATA_ROOT=$(/usr/bin/dirname "$CONFIG")
 RECEIVER_CONFIG="$DATA_ROOT/fleet-telemetry.json"
+receiver_pid=
 if [ ! -e "$RECEIVER_CONFIG" ] && [ ! -L "$RECEIVER_CONFIG" ]; then
-    exec "$HUB" --config "$CONFIG" serve
-fi
-
-safe_user_file "$RECEIVER_CONFIG" || {
-    printf '%s\n' 'Teslatlas Hub service: Fleet receiver config is not a private regular file' >&2
-    exit 1
-}
-safe_root_executable "$RECEIVER" || {
-    printf '%s\n' 'Teslatlas Hub service: Fleet receiver executable is unsafe' >&2
-    exit 1
-}
-safe_root_executable "$PROXY" || {
-    printf '%s\n' 'Teslatlas Hub service: Tesla command proxy executable is unsafe' >&2
-    exit 1
-}
-BEARER=$(fleet_telemetry_bearer "$CONFIG")
-case "$BEARER" in
-    /*) ;;
-    *)
-        printf '%s\n' 'Teslatlas Hub service: Fleet receiver config exists but native Fleet Telemetry is not enabled' >&2
+    "$HUB" --config "$CONFIG" serve &
+    hub_pid=$!
+else
+    safe_user_file "$RECEIVER_CONFIG" || {
+        printf '%s\n' 'Teslatlas Hub service: Fleet receiver config is not a private regular file' >&2
         exit 1
-        ;;
-esac
-safe_user_file "$BEARER" || {
-    printf '%s\n' 'Teslatlas Hub service: Fleet Telemetry bearer is not a private regular file' >&2
-    exit 1
-}
+    }
+    safe_root_executable "$RECEIVER" || {
+        printf '%s\n' 'Teslatlas Hub service: Fleet receiver executable is unsafe' >&2
+        exit 1
+    }
+    safe_root_executable "$PROXY" || {
+        printf '%s\n' 'Teslatlas Hub service: Tesla command proxy executable is unsafe' >&2
+        exit 1
+    }
+    BEARER=$(fleet_telemetry_bearer "$CONFIG")
+    case "$BEARER" in
+        /*) ;;
+        *)
+            printf '%s\n' 'Teslatlas Hub service: Fleet receiver config exists but native Fleet Telemetry is not enabled' >&2
+            exit 1
+            ;;
+    esac
+    safe_user_file "$BEARER" || {
+        printf '%s\n' 'Teslatlas Hub service: Fleet Telemetry bearer is not a private regular file' >&2
+        exit 1
+    }
 
-# The Hub starts tesla-http-proxy itself with its already validated private key,
-# TLS certificate/key, and session-cache paths. Do not start a second proxy
-# here: a duplicate would race its loopback listener and leak operational
-# details into this service wrapper. The Hub exiting therefore also stops its
-# proxy before this wrapper stops the receiver.
-"$HUB" --config "$CONFIG" serve &
-hub_pid=$!
-TESLATLAS_FLEET_TELEMETRY_BEARER_FILE="$BEARER" \
-    "$RECEIVER" -config="$RECEIVER_CONFIG" &
-receiver_pid=$!
+    # The Hub starts tesla-http-proxy itself with its already validated private
+    # key, TLS certificate/key, and session-cache paths. Do not start a second
+    # proxy here: a duplicate would race its loopback listener.
+    "$HUB" --config "$CONFIG" serve &
+    hub_pid=$!
+    TESLATLAS_FLEET_TELEMETRY_BEARER_FILE="$BEARER" \
+        "$RECEIVER" -config="$RECEIVER_CONFIG" &
+    receiver_pid=$!
+fi
 
 stop_child() {
     child=$1
+    [ -n "$child" ] || return 0
     if /bin/kill -0 "$child" >/dev/null 2>&1; then
         /bin/kill -TERM "$child" >/dev/null 2>&1 || true
         /bin/sleep 2
@@ -178,7 +179,7 @@ trap finish EXIT HUP INT TERM
 
 log_check_seconds=0
 while /bin/kill -0 "$hub_pid" >/dev/null 2>&1 \
-    && /bin/kill -0 "$receiver_pid" >/dev/null 2>&1; do
+    && { [ -z "$receiver_pid" ] || /bin/kill -0 "$receiver_pid" >/dev/null 2>&1; }; do
     /bin/sleep 1
     log_check_seconds=$((log_check_seconds + 1))
     if [ "$log_check_seconds" -ge 30 ]; then
@@ -188,7 +189,7 @@ while /bin/kill -0 "$hub_pid" >/dev/null 2>&1 \
     fi
 done
 
-if ! /bin/kill -0 "$hub_pid" >/dev/null 2>&1; then
+if [ -z "$receiver_pid" ] || ! /bin/kill -0 "$hub_pid" >/dev/null 2>&1; then
     wait "$hub_pid"
     exit $?
 fi
