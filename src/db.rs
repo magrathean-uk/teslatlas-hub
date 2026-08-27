@@ -9727,7 +9727,7 @@ impl HubStore {
         }
 
         let pairing_id = Uuid::new_v4();
-        let secret = PairingSecret::generate();
+        let secret = PairingSecret::generate()?;
         Ok(PairingInvitation {
             pairing_id,
             secret,
@@ -9862,7 +9862,7 @@ impl HubStore {
         }
 
         let device_id = Uuid::new_v4();
-        let access_token = DeviceAccessToken::generate();
+        let access_token = DeviceAccessToken::generate()?;
         let expires_at_ms = claimed_at_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS);
         transaction
             .execute(
@@ -9976,7 +9976,7 @@ impl HubStore {
         let Some((device_id, _display_name)) = device else {
             return Err(StoreError::PairingRejected);
         };
-        let replacement = DeviceAccessToken::generate();
+        let replacement = DeviceAccessToken::generate()?;
         let expires_at_ms = now_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS);
         let changed = transaction
             .execute(
@@ -15297,10 +15297,10 @@ fn paired_device_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PairedDev
     })
 }
 
-fn random_secret_wire() -> String {
+fn random_secret_wire() -> Result<String, StoreError> {
     let mut bytes = Zeroizing::new([0_u8; PAIRING_SECRET_BYTES]);
-    getrandom::fill(&mut *bytes).expect("operating system entropy for pairing credential");
-    hex::encode(bytes.as_slice())
+    getrandom::fill(&mut *bytes).map_err(|_| StoreError::EntropyUnavailable)?;
+    Ok(hex::encode(bytes.as_slice()))
 }
 
 fn sha256_bytes(value: &[u8]) -> [u8; PAIRING_SECRET_BYTES] {
@@ -18854,6 +18854,8 @@ fn persistent_journal_mode(database_path: &Path) -> Result<String, StoreError> {
 
 #[derive(Debug, Error)]
 pub enum StoreError {
+    #[error("operating-system entropy is unavailable for pairing credentials")]
+    EntropyUnavailable,
     #[error("cannot create data directory: {0}")]
     CreateDataDir(std::io::Error),
     #[error("cannot create packs directory: {0}")]
@@ -20935,7 +20937,7 @@ mod tests {
         let unrelated = store
             .prepare_pairing("unrelated invitation", 1_000, 61_000)
             .expect("pairing prepares");
-        let unrelated_bearer = DeviceAccessToken::generate();
+        let unrelated_bearer = DeviceAccessToken::generate().expect("random bearer");
 
         let mut writer = store.open().expect("open writer");
         let transaction = writer
@@ -29092,8 +29094,8 @@ impl std::fmt::Debug for PairingInvitation {
 struct PairingSecret(String);
 
 impl PairingSecret {
-    fn generate() -> Self {
-        Self(random_secret_wire())
+    fn generate() -> Result<Self, StoreError> {
+        Ok(Self(random_secret_wire()?))
     }
 
     fn as_wire(&self) -> &str {
@@ -29121,8 +29123,8 @@ impl PairingSecret {
 pub struct DeviceAccessToken(String);
 
 impl DeviceAccessToken {
-    fn generate() -> Self {
-        Self(random_secret_wire())
+    fn generate() -> Result<Self, StoreError> {
+        Ok(Self(random_secret_wire()?))
     }
 
     pub fn as_bearer(&self) -> &str {

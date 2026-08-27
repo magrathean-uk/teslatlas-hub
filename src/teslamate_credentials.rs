@@ -23,10 +23,11 @@ const CURSOR_KEY_BYTES: usize = 32;
 const PREVIOUS_KEY_FILE_NAME: &str = ".teslamate-encryption.previous.key";
 
 /// Generate a new local key for a user-supplied legacy token pair.
-pub fn random_encryption_key() -> Zeroizing<Vec<u8>> {
+pub fn random_encryption_key() -> Result<Zeroizing<Vec<u8>>, TeslaMateCredentialError> {
     let mut key = Zeroizing::new(vec![0_u8; 32]);
-    getrandom::fill(key.as_mut_slice()).expect("system entropy");
-    key
+    getrandom::fill(key.as_mut_slice())
+        .map_err(|_| TeslaMateCredentialError::EntropyUnavailable)?;
+    Ok(key)
 }
 
 /// Exact, non-text-normalized TeslaMate encryption-key bytes.
@@ -391,7 +392,7 @@ fn create_cursor_key_once(
 ) -> Result<crate::protocol::CursorKey, TeslaMateCredentialError> {
     let temporary = secrets_dir.join(format!(".hub-cursor-{}.tmp", Uuid::new_v4()));
     let mut bytes = [0_u8; CURSOR_KEY_BYTES];
-    getrandom::fill(&mut bytes).expect("system entropy");
+    getrandom::fill(&mut bytes).map_err(|_| TeslaMateCredentialError::EntropyUnavailable)?;
     let created = (|| {
         let mut file = OpenOptions::new()
             .write(true)
@@ -641,6 +642,8 @@ fn sync_directory(path: &Path) -> Result<(), TeslaMateCredentialError> {
 
 #[derive(Debug, Error)]
 pub enum TeslaMateCredentialError {
+    #[error("operating-system entropy is unavailable for credential creation")]
+    EntropyUnavailable,
     #[error("TeslaMate encryption key is empty")]
     EmptyKey,
     #[error("TeslaMate encryption key exceeds the fixed size limit")]

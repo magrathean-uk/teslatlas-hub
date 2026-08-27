@@ -1215,7 +1215,7 @@ fn persist_legacy_setup_and_drop_fleet(
     store: &HubStore,
     tokens: &OwnerTokens,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let encryption_key = random_encryption_key();
+    let encryption_key = random_encryption_key()?;
     let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, tokens)?;
     let stored = TeslaMateLegacyTokenStore::imported(access, refresh)?;
     replace_key_and_tokens(data_dir, store, &encryption_key, &stored).map_err(|error| {
@@ -2808,7 +2808,7 @@ async fn run_macos_migration(
     } else {
         let access_path = access_token_file.expect("validated access-token input");
         let refresh_path = refresh_token_file.expect("validated refresh-token input");
-        let key = random_encryption_key();
+        let key = random_encryption_key()?;
         let (access, refresh) = encrypt_legacy_owner_token_files(
             &key,
             read_migration_secret(access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
@@ -4713,7 +4713,7 @@ mod tests {
             zeroize::Zeroizing::new(b"doctor-refresh".to_vec()),
         )
         .expect("legacy credentials");
-        let encryption_key = random_encryption_key();
+        let encryption_key = random_encryption_key().expect("random encryption key");
         let (access, refresh) =
             encrypt_legacy_owner_tokens(&encryption_key, &legacy).expect("encrypt");
         let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
@@ -5096,7 +5096,7 @@ mod tests {
             zeroize::Zeroizing::new(b"refresh".to_vec()),
         )
         .expect("legacy credentials");
-        let legacy_key = random_encryption_key();
+        let legacy_key = random_encryption_key().expect("random legacy key");
         let (access, refresh) =
             encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
         let legacy_store =
@@ -5153,7 +5153,7 @@ mod tests {
             zeroize::Zeroizing::new(b"refresh".to_vec()),
         )
         .expect("legacy credentials");
-        let legacy_key = random_encryption_key();
+        let legacy_key = random_encryption_key().expect("random legacy key");
         let (access, refresh) =
             encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
         let legacy_store =
@@ -5199,7 +5199,7 @@ mod tests {
             zeroize::Zeroizing::new(b"refresh".to_vec()),
         )
         .expect("legacy credentials");
-        let legacy_key = random_encryption_key();
+        let legacy_key = random_encryption_key().expect("random legacy key");
         let (access, refresh) =
             encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
         let legacy_store =
@@ -5277,7 +5277,7 @@ mod tests {
             zeroize::Zeroizing::new(b"migrate-refresh".to_vec()),
         )
         .expect("legacy credentials");
-        let encryption_key = random_encryption_key();
+        let encryption_key = random_encryption_key().expect("random encryption key");
         let (access, refresh) =
             encrypt_legacy_owner_tokens(&encryption_key, &legacy).expect("encrypt legacy");
         let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");

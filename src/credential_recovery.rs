@@ -69,6 +69,8 @@ pub enum CredentialRecoveryError {
     InstallationMismatch,
     #[error("credential-recovery keys do not match the restored catalogue")]
     CatalogueMismatch,
+    #[error("operating-system entropy is unavailable for credential recovery")]
+    EntropyUnavailable,
     #[error("credential-recovery restore refuses to replace an existing secrets directory")]
     SecretsAlreadyExist,
     #[error("credential-recovery I/O failed while {operation} at {path}: {source}")]
@@ -170,7 +172,7 @@ pub fn export_credentials(
         fleet_key.as_deref().map(Vec::as_slice),
     )?;
     let mut nonce_bytes = [0_u8; NONCE_BYTES];
-    getrandom::fill(&mut nonce_bytes).expect("system entropy");
+    getrandom::fill(&mut nonce_bytes).map_err(|_| CredentialRecoveryError::EntropyUnavailable)?;
     let ciphertext = cipher
         .encrypt(
             &Nonce::from(nonce_bytes),
@@ -829,7 +831,7 @@ mod tests {
             "credential-recovery-refresh".to_owned(),
         )
         .expect("tokens");
-        let teslamate_key = random_encryption_key();
+        let teslamate_key = random_encryption_key().expect("random TeslaMate key");
         let (access, refresh) =
             encrypt_legacy_owner_tokens(&teslamate_key, &tokens).expect("ciphertext");
         let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored tokens");

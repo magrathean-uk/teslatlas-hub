@@ -679,7 +679,7 @@ fn load_or_create_fleet_key(data_dir: &Path) -> Result<Zeroizing<Vec<u8>>, Fleet
         return load_existing_fleet_key_bytes(data_dir)?.ok_or(FleetCredentialError::KeyMissing);
     }
     let mut key = Zeroizing::new(vec![0_u8; FLEET_KEY_BYTES]);
-    getrandom::fill(key.as_mut_slice()).expect("system entropy");
+    getrandom::fill(key.as_mut_slice()).map_err(|_| FleetCredentialError::EntropyUnavailable)?;
     let result = (|| {
         write_private_file(&temporary, &key)?;
         match renameat_with(CWD, &temporary, CWD, &destination, RenameFlags::NOREPLACE) {
@@ -933,6 +933,8 @@ fn encrypt_store(
 
 #[derive(Debug, Error)]
 pub enum FleetCredentialError {
+    #[error("operating-system entropy is unavailable for Fleet credential creation")]
+    EntropyUnavailable,
     #[error("Fleet credentials are not configured")]
     Missing,
     #[error("Fleet credential key is missing")]

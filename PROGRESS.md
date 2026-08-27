@@ -1,5 +1,10 @@
 # Hub progress
 
+- Entropy failure handling — TeslaMate token nonces, legacy/Fleet/cursor keys,
+  credential-recovery nonces, and pairing/device secrets now return typed
+  errors if operating-system randomness is unavailable. None of these
+  credential paths can panic the Hub during setup, recovery, or pairing.
+
 - Fleet refresh continuity — native Fleet Telemetry now keeps its local push
   collector alive and retries after five minutes when the refresh request is
   proven unsent. Any response, timeout, or otherwise ambiguous rotation still

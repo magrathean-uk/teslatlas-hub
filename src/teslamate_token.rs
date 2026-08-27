@@ -175,7 +175,7 @@ fn encrypt_cloak_value(
     plaintext: &[u8],
 ) -> Result<Vec<u8>, TeslaMateTokenError> {
     let mut nonce_bytes = [0_u8; NONCE_BYTES];
-    getrandom::fill(&mut nonce_bytes).expect("system entropy");
+    getrandom::fill(&mut nonce_bytes).map_err(|_| TeslaMateTokenError::EntropyUnavailable)?;
     let nonce = Nonce::from(nonce_bytes);
     let mut ciphertext_and_tag = cipher
         .encrypt(
@@ -205,6 +205,8 @@ fn encrypt_cloak_value(
 
 #[derive(Debug, Error)]
 pub enum TeslaMateTokenError {
+    #[error("operating-system entropy is unavailable for TeslaMate token encryption")]
+    EntropyUnavailable,
     #[error("TeslaMate encryption key is empty")]
     EmptyEncryptionKey,
     #[error("TeslaMate encryption key is invalid")]
