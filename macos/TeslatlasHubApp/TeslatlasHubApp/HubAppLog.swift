@@ -73,7 +73,7 @@ final class HubAppLog {
         return Self.regularFileTail(of: fileURL,
                                     maximumBytes: maximumBytes,
                                     hardLimit: Self.maximumFileBytes)
-            ?? "No app diagnostics are available yet.\n"
+            ?? "App diagnostics are unavailable or the log path is unsafe.\n"
     }
 
     static func errorCode(_ error: Error) -> String {
