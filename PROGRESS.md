@@ -12,7 +12,7 @@ The current local installer SHA-256 is
 `fa57a43c11d0507cc86290fc9362a574ca62b59cea238def82cf183297dd7ad9`.
 It is a 66,616,614-byte ad-hoc development package, not a notarized release.
 
-Current verification on 2026-08-27: full locked Rust tests passed (832 library,
+Current verification on 2026-08-27: full locked Rust tests passed (833 library,
 49 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
 96 AppKit tests passed under Xcode 27 beta. macOS and Linux packaging source,
@@ -76,6 +76,13 @@ one MiB during both metadata validation and reading, and require UTF-8. The
 descriptor is opened nonblocking so a substituted FIFO is rejected instead of
 hanging setup. Unsafe FIFO, symlink, and oversized configs fail before any
 account command or service mutation.
+
+Rust-side bounded readers now also open TLS identity files, update packs,
+schema-finalizer files, import ownership markers, and TeslaMate staging files
+nonblocking before validating the descriptor as a regular file. A substituted
+FIFO is therefore rejected instead of hanging Hub startup, recovery, import, or
+update work. The TLS FIFO regression, the affected focused suites, the full
+locked Rust suite, doc tests, formatting, and Clippy with warnings denied pass.
 
 Unlocked native UI acceptance passed. Cmd-L opened the bounded redacted app,
 SSH/import and service logs; Run Diagnostics completed doctor, preflight,

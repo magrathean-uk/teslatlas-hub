@@ -4547,7 +4547,7 @@ impl HubStore {
         let fd = match openat(
             &directory.file,
             name,
-            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
             Mode::empty(),
         ) {
             Ok(fd) => fd,
@@ -7537,7 +7537,7 @@ impl HubStore {
         let descriptor = openat(
             &content_directory,
             file_name.as_str(),
-            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
             Mode::empty(),
         )
         .map_err(|source| StoreError::CleanupUnpublishedPack {

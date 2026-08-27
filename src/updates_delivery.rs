@@ -938,7 +938,7 @@ fn private_sqlite_tempfile_from_pack(
         .map_err(|error| reject(error.to_string()))?;
     let source_fd = open(
         pack_path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
     .map_err(|_| reject("cannot securely open candidate pack"))?;
@@ -1017,7 +1017,7 @@ fn read_bounded_pack_bytes(
         .map_err(|error| reject(error.to_string()))?;
     let fd = open(
         pack_path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
     .map_err(|_| reject("cannot securely open candidate pack"))?;

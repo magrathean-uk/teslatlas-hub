@@ -2377,7 +2377,7 @@ fn validate_owner_marker(
     let path = run_directory.join(OWNER_FILE_NAME);
     let fd = open(
         &path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
     .map_err(|source| TeslaMateProjectionStateError::ScopedFilesystem {
@@ -2458,7 +2458,7 @@ fn validate_owned_import_run_fd(
     let owner_fd = openat(
         run_fd,
         OWNER_FILE_NAME,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
     .map_err(|source| TeslaMateProjectionStateError::ScopedFilesystem {

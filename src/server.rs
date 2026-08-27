@@ -106,7 +106,7 @@ pub fn read_tls_identity_file_after_open(
 ) -> std::io::Result<zeroize::Zeroizing<Vec<u8>>> {
     let descriptor = open(
         path,
-        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
     .map_err(|_| std::io::Error::other("TLS identity file cannot be safely opened"))?;
@@ -1672,10 +1672,13 @@ mod tests {
         fs,
         net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
         os::unix::fs::{PermissionsExt, symlink},
+        process::Command,
         sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
+            mpsc,
         },
+        thread,
         time::Duration,
     };
 
@@ -1712,6 +1715,33 @@ mod tests {
             sign_updates_schema_22_noop, updates_pack_request, write_updates_schema_22_pack,
         },
     };
+
+    #[test]
+    fn tls_identity_reader_rejects_a_fifo_without_waiting_for_a_writer() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let path = temporary.path().join("identity.fifo");
+        assert!(
+            Command::new("mkfifo")
+                .arg(&path)
+                .status()
+                .expect("run mkfifo")
+                .success()
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("FIFO mode");
+
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            sender
+                .send(read_tls_identity_file(&path, 1024, true).is_err())
+                .expect("send FIFO result");
+        });
+        assert!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("FIFO identity admission must not block")
+        );
+        worker.join().expect("FIFO identity worker");
+    }
 
     #[tokio::test]
     async fn fleet_telemetry_ingress_is_token_gated_and_separately_bounded() {

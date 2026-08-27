@@ -1289,7 +1289,7 @@ fn open_private_stage_file_at(
     let file = openat(
         &directory.descriptor,
         file_name,
-        access | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        access | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
         Mode::empty(),
     )
     .map_err(|source| TeslaMateStageError::SecureOpen {
