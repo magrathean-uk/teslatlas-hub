@@ -29,17 +29,21 @@ enum HubShareRedactor {
         (#"(?i)\[(?:(?:f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):[0-9a-f:.]+|::1)(?:%[a-z0-9_.-]+)?\](?::\d{1,5})?"#, "[redacted-private-ip]"),
         (#"(?i)(?<![0-9a-f:])(?:(?:f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):[0-9a-f:.]+|::1)(?:%[a-z0-9_.-]+)?(?![0-9a-f:])"#, "[redacted-private-ip]")
     ]
+    private static let compiledReplacements: [(expression: NSRegularExpression, template: String)] =
+        replacements.compactMap { replacement in
+            guard let expression = try? NSRegularExpression(pattern: replacement.pattern) else {
+                return nil
+            }
+            return (expression: expression, template: replacement.template)
+        }
 
     static func redact(_ text: String, homeDirectory: String = NSHomeDirectory()) -> String {
         var redacted = homeDirectory.isEmpty
             ? text
             : text.replacingOccurrences(of: homeDirectory, with: "~")
-        for replacement in replacements {
-            guard let expression = try? NSRegularExpression(pattern: replacement.pattern) else {
-                continue
-            }
+        for replacement in compiledReplacements {
             let range = NSRange(redacted.startIndex..<redacted.endIndex, in: redacted)
-            redacted = expression.stringByReplacingMatches(
+            redacted = replacement.expression.stringByReplacingMatches(
                 in: redacted,
                 range: range,
                 withTemplate: replacement.template
