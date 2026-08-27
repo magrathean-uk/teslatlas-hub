@@ -1,5 +1,10 @@
 # Hub progress
 
+- Fleet refresh continuity — native Fleet Telemetry now keeps its local push
+  collector alive and retries after five minutes when the refresh request is
+  proven unsent. Any response, timeout, or otherwise ambiguous rotation still
+  fails closed instead of risking reuse of a consumed refresh token.
+
 - Active macOS log bounds — the service wrapper now checks and compacts both
   launchd-owned logs every 30 seconds during uninterrupted Fleet Telemetry
   operation, preserving the existing 1 MiB/512 KiB bound instead of waiting

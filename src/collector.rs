@@ -92,6 +92,7 @@ const STREAM_SOURCE_KEY: &str = OWNER_API_SOURCE_KEY;
 const FLEET_TELEMETRY_CONFIG_LIFETIME_SECONDS: u64 = 30 * 24 * 60 * 60;
 const FLEET_TELEMETRY_CONFIG_RENEWAL_INTERVAL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const FLEET_TELEMETRY_CONFIG_RETRY_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+const FLEET_REFRESH_REQUEST_NOT_SENT_RETRY: Duration = Duration::from_secs(5 * 60);
 
 fn provider_source(provider: CollectorProvider) -> SourceDescriptor {
     match provider {
@@ -3166,11 +3167,22 @@ async fn run_fleet_telemetry_maintenance_loop(
             next_configuration_renewal = Instant::now() + retry_after;
         }
         if allow_refresh {
-            manager
+            let refresh = manager
                 .lock()
                 .await
                 .refresh_if_due(auth_api, SystemTime::now())
-                .await?;
+                .await;
+            if let Err(error) = refresh {
+                if let Some(delay) = fleet_refresh_retry_delay(&error) {
+                    tracing::warn!(
+                        retry_seconds = delay.as_secs(),
+                        "Fleet token refresh request was not sent; push collection remains active"
+                    );
+                    sleep(delay).await;
+                    continue;
+                }
+                return Err(error.into());
+            }
         }
         if vehicles.is_empty() {
             sleep(MAINTENANCE_INTERVAL).await;
@@ -3190,6 +3202,14 @@ async fn run_fleet_telemetry_maintenance_loop(
         let _ = terrain_wake.try_send(());
         sleep(MAINTENANCE_INTERVAL).await;
     }
+}
+
+fn fleet_refresh_retry_delay(error: &FleetCredentialError) -> Option<Duration> {
+    matches!(
+        error,
+        FleetCredentialError::Api(FleetApiError::RequestNotSent)
+    )
+    .then_some(FLEET_REFRESH_REQUEST_NOT_SENT_RETRY)
 }
 
 fn configured_fleet_telemetry_vehicles(store: &HubStore) -> Result<Vec<Vehicle>, CollectorError> {
@@ -7374,6 +7394,30 @@ mod tests {
 
         server.abort();
         let _ = server.await;
+    }
+
+    #[test]
+    fn fleet_push_refresh_retries_only_a_proven_unsent_request() {
+        assert_eq!(
+            fleet_refresh_retry_delay(&FleetCredentialError::Api(FleetApiError::RequestNotSent)),
+            Some(FLEET_REFRESH_REQUEST_NOT_SENT_RETRY)
+        );
+        for error in [
+            FleetApiError::RequestTimeout,
+            FleetApiError::Transport,
+            FleetApiError::HttpStatus(500),
+            FleetApiError::InvalidResponse,
+        ] {
+            assert_eq!(
+                fleet_refresh_retry_delay(&FleetCredentialError::Api(error)),
+                None,
+                "ambiguous Fleet refresh failure must remain terminal"
+            );
+        }
+        assert_eq!(
+            fleet_refresh_retry_delay(&FleetCredentialError::RotationOutcomeUnknown),
+            None
+        );
     }
 
     #[test]
