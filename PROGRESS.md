@@ -39,18 +39,19 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`1df440baa82b7c296ad93fd9b706fef090143b5c6f328c8994b178b0e32b4a68`.
-It is a 66,699,924-byte ad-hoc development package, not a notarized release.
+`1d02f4bbedb66afc33349b92775c7fbfef61bb05646717c589a9d9773069713d`.
+It is a 66,700,231-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-28: full locked Rust tests passed (838 library,
 50 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-102 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux packaging source,
-macOS release, release-evidence, and dependency-audit gates passed. The current
+102 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux
+packaging source, macOS release, release-evidence, and dependency-audit gates
+passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`6b75b1de870f8ee5abebaa16a5d2146f784ced88c0c21587324e3be69d12a942`.
+`8b117ca1955dcf6b44f624a7197e33af01f56ca282bfe3989a06d7398e988332`.
 Its embedded Hub SHA-256 is
 `c9b6176c0ce6602699cd521fe0e8bdebb65b2902a2d27427df6d432ed42043ef`;
 the root service payload Hub SHA-256 is
@@ -62,6 +63,13 @@ acceptance and the exact-source 102-test suite remain the UI evidence.
 An earlier package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, and preserved the safely
 stopped Hub and migration data; the new package has not been installed live.
+
+Cmd-L now records Tesla legacy-login start, completion, cancellation, and safe
+typed failure codes in addition to the existing SSH discovery, authentication,
+tunnel, compatibility, import, setup, service, and diagnostics events. It never
+records authorization URLs, callback codes, tokens, account identifiers, SSH
+passwords, or server addresses. The exact-source 102-test suite and Xcode
+analysis passed after this addition.
 
 Fresh all-in-one package onboarding now checks the installed root Hub's exact
 version after credentials are configured. The app requires its embedded Hub to
