@@ -82,13 +82,14 @@ cargo build --locked --release
 scripts/build-macos-app.sh
 ```
 
-The app is written to `dist/Teslatlas Hub.app`. This local build is ad-hoc
-signed and is not notarised. It can be used for UI and command-line development,
-but its privileged embedded installer and updater are deliberately disabled.
-They require the package digest, Team ID, Developer ID signatures and
-notarisation metadata injected only by `scripts/release-macos.sh`. Use a signed,
-notarised release for app-driven setup or service installation; the local app
-will show an explicit trust error instead of elevating its unsigned package.
+The build writes one all-in-one `dist/TeslatlasHub.pkg`. It installs the app in
+`/Applications`, installs the root-owned Hub service payload, and opens the app.
+The temporary standalone app used to assemble the package is removed. This
+local package is ad-hoc signed and not notarised, so it is only for direct local
+testing through macOS Installer. The app's own privileged update action remains
+disabled because it will not elevate an unsigned embedded package. Public and
+app-driven updates require the package digest, Team ID, Developer ID signatures,
+and notarisation metadata injected by `scripts/release-macos.sh`.
 
 A signed release can use Fleet API (recommended; see
 [Fleet API setup](docs/FLEET_SETUP.md)) or the legacy TeslaMate-style login.
