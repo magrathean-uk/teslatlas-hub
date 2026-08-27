@@ -148,9 +148,8 @@ final class DiagnosticsWindowController: NSWindowController {
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let destination = panel.url else { return }
             do {
-                try Self.shareableReport(latestReport).write(to: destination,
-                                                             atomically: true,
-                                                             encoding: .utf8)
+                try HubAppLog.writePrivateReport(Self.shareableReport(latestReport),
+                                                 to: destination)
                 self?.statusDetail.stringValue = "Redacted report saved."
             } catch {
                 NSAlert(error: error).runModal()

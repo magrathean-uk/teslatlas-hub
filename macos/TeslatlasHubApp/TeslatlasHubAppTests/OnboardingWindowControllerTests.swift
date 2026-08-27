@@ -88,6 +88,23 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(permissions & 0o777, 0o600)
     }
 
+    func testSavedSupportReportsAreOwnerOnly() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-report-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let report = directory.appendingPathComponent("diagnostics.txt")
+        try Data("old".utf8).write(to: report)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: report.path)
+
+        try HubAppLog.writePrivateReport("redacted report", to: report)
+
+        XCTAssertEqual(try String(contentsOf: report, encoding: .utf8), "redacted report")
+        let attributes = try FileManager.default.attributesOfItem(atPath: report.path)
+        let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue
+        XCTAssertEqual(permissions & 0o777, 0o600)
+    }
+
     func testHostedXCTestLogsStayOutOfTheUserLogDirectory() {
         let home = URL(fileURLWithPath: "/Users/example", isDirectory: true)
         let temporary = URL(fileURLWithPath: "/private/var/tmp", isDirectory: true)

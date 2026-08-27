@@ -163,7 +163,7 @@ final class LogsWindowController: NSWindowController {
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let destination = panel.url else { return }
             do {
-                try report.write(to: destination, atomically: true, encoding: .utf8)
+                try HubAppLog.writePrivateReport(report, to: destination)
                 self?.statusLabel.stringValue = "Redacted logs saved"
                 HubAppLog.shared.record("save.completed", category: "logs", fields: [
                     "bytes": String(report.utf8.count)

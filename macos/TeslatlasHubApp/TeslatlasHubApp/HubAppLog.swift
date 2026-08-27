@@ -102,6 +102,14 @@ final class HubAppLog {
         }
     }
 
+    static func writePrivateReport(_ text: String, to destination: URL) throws {
+        try Data(text.utf8).write(to: destination, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o600)],
+            ofItemAtPath: destination.path
+        )
+    }
+
     private func append(_ line: String) {
         let manager = FileManager.default
         let directory = fileURL.deletingLastPathComponent()

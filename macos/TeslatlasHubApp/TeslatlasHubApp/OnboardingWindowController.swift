@@ -801,6 +801,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
               !fleetClientID.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !fleetAccessToken.stringValue.isEmpty,
               !fleetRefreshToken.stringValue.isEmpty else {
+            HubAppLog.shared.record("setup.rejected", category: "account", level: "WARN",
+                                    fields: [
+                                        "provider": "fleet",
+                                        "reason": "incomplete_fields"
+                                    ])
             showInlineError("Complete the Fleet client ID, token, region, and expiry fields.")
             return
         }
@@ -825,6 +830,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         let refresh = legacyRefreshToken.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if !access.isEmpty || !refresh.isEmpty {
             guard !access.isEmpty, !refresh.isEmpty else {
+                HubAppLog.shared.record("setup.rejected", category: "account", level: "WARN",
+                                        fields: [
+                                            "provider": "legacy",
+                                            "reason": "incomplete_token_pair"
+                                        ])
                 showInlineError("Enter both the access token and refresh token.")
                 return
             }
@@ -987,10 +997,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private func importMigration() {
         guard let session = migrationSession,
               migrationInputsComplete, compatibility?.compatible == true else {
+            HubAppLog.shared.record("import.rejected", category: "teslamate_import",
+                                    level: "WARN", fields: ["reason": "connection_not_ready"])
             showInlineError("Connect to the TeslaMate server before importing.")
             return
         }
         guard connectedMigrationIdentity == currentMigrationIdentity else {
+            HubAppLog.shared.record("import.rejected", category: "teslamate_import",
+                                    level: "WARN", fields: ["reason": "settings_changed"])
             session.close()
             migrationSession = nil
             connectedMigrationIdentity = nil
