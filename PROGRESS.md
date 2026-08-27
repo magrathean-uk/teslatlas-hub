@@ -1,5 +1,10 @@
 # Hub progress
 
+- Pinned diagnostic log directories — Cmd-L app/service log reads and app-log
+  writes now open a real, owned, non-writable directory descriptor with
+  `O_NOFOLLOW`, then open the final log through `openat`. A replaced or
+  symlinked log directory cannot redirect support-data reads or writes.
+
 - Entropy failure handling — TeslaMate token nonces, legacy/Fleet/cursor keys,
   credential-recovery nonces, and pairing/device secrets now return typed
   errors if operating-system randomness is unavailable instead of directly

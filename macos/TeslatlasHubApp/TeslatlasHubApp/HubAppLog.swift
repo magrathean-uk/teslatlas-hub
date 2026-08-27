@@ -78,10 +78,17 @@ final class HubAppLog {
             try manager.createDirectory(at: directory,
                                         withIntermediateDirectories: true,
                                         attributes: [.posixPermissions: 0o700])
-            try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-            let descriptor = Darwin.open(fileURL.path,
-                                         O_RDWR | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK,
-                                         S_IRUSR | S_IWUSR)
+            guard let directoryDescriptor = Self.ownedDirectoryDescriptor(at: directory) else {
+                return
+            }
+            defer { Darwin.close(directoryDescriptor) }
+            guard fchmod(directoryDescriptor, S_IRWXU) == 0 else { return }
+            let descriptor = Darwin.openat(
+                directoryDescriptor,
+                fileURL.lastPathComponent,
+                O_RDWR | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK,
+                S_IRUSR | S_IWUSR
+            )
             guard descriptor >= 0 else { return }
             defer { Darwin.close(descriptor) }
             var information = stat()
@@ -129,7 +136,15 @@ final class HubAppLog {
                                 hardLimit: Int = maximumFileBytes) -> String? {
         let boundedMaximum = min(maximumBytes, hardLimit)
         guard boundedMaximum > 0 else { return nil }
-        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard let directoryDescriptor = ownedDirectoryDescriptor(
+            at: url.deletingLastPathComponent()
+        ) else { return nil }
+        defer { Darwin.close(directoryDescriptor) }
+        let descriptor = Darwin.openat(
+            directoryDescriptor,
+            url.lastPathComponent,
+            O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+        )
         guard descriptor >= 0 else { return nil }
         defer { Darwin.close(descriptor) }
         var information = stat()
@@ -145,7 +160,15 @@ final class HubAppLog {
 
     static func regularFileData(of url: URL, maximumBytes: Int) -> Data? {
         guard maximumBytes > 0 else { return nil }
-        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard let directoryDescriptor = ownedDirectoryDescriptor(
+            at: url.deletingLastPathComponent()
+        ) else { return nil }
+        defer { Darwin.close(directoryDescriptor) }
+        let descriptor = Darwin.openat(
+            directoryDescriptor,
+            url.lastPathComponent,
+            O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+        )
         guard descriptor >= 0 else { return nil }
         defer { Darwin.close(descriptor) }
         var information = stat()
@@ -156,6 +179,23 @@ final class HubAppLog {
         return try? read(descriptor: descriptor,
                          offset: 0,
                          maximumBytes: Int(information.st_size))
+    }
+
+    private static func ownedDirectoryDescriptor(at url: URL) -> Int32? {
+        let descriptor = Darwin.open(
+            url.path,
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+        )
+        guard descriptor >= 0 else { return nil }
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFDIR,
+              information.st_uid == getuid(),
+              information.st_mode & 0o022 == 0 else {
+            Darwin.close(descriptor)
+            return nil
+        }
+        return descriptor
     }
 
     private static func read(descriptor: Int32,

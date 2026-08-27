@@ -123,6 +123,25 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(log.recentText(), "No app diagnostics are available yet.\n")
     }
 
+    func testAppDiagnosticsRefuseASymlinkedDirectory() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-log-directory-test-\(UUID().uuidString)",
+                                    isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let target = root.appendingPathComponent("target", isDirectory: true)
+        let linked = root.appendingPathComponent("linked", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: target)
+
+        let log = HubAppLog(fileURL: linked.appendingPathComponent("app.log"))
+        log.record("must.not.follow.directory", category: "test")
+
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: target.appendingPathComponent("app.log").path
+        ))
+        XCTAssertEqual(log.recentText(), "No app diagnostics are available yet.\n")
+    }
+
     func testAppAndServiceDiagnosticsRejectAFIFOWithoutBlocking() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("teslatlas-hub-log-fifo-test-\(UUID().uuidString)", isDirectory: true)
