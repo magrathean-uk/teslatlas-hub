@@ -9,6 +9,10 @@
     <string>@SUPERVISOR@</string>
     <string>--config</string>
     <string>@CONFIG@</string>
+    <string>--stdout-log</string>
+    <string>@STDOUT@</string>
+    <string>--stderr-log</string>
+    <string>@STDERR@</string>
   </array>
   <key>StandardOutPath</key>
   <string>@STDOUT@</string>

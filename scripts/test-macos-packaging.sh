@@ -138,6 +138,14 @@ assert_before_fixed 'if [ -f "$STATE_DIRECTORY/was-loaded" ]; then' '    stop_lo
 /usr/bin/grep -A1 '<key>ThrottleInterval</key>' "$PLIST" \
     | /usr/bin/grep -Fq '<integer>30</integer>' \
     || fail "LaunchAgent restart failures are not throttled"
+/usr/bin/grep -Fq '<string>--stdout-log</string>' "$PLIST" \
+    || fail "LaunchAgent does not pass stdout log to the supervisor"
+/usr/bin/grep -Fq '<string>--stderr-log</string>' "$PLIST" \
+    || fail "LaunchAgent does not pass stderr log to the supervisor"
+/usr/bin/grep -Fq 'compact_log "$STDOUT_LOG"' "$SUPERVISOR" \
+    || fail "service supervisor does not compact stdout before launch"
+/usr/bin/grep -Fq 'compact_log "$STDERR_LOG"' "$SUPERVISOR" \
+    || fail "service supervisor does not compact stderr before launch"
 /usr/bin/grep -q 'completed.*-ne 1' "$POSTINSTALL" \
     || fail "postinstall has no failure rollback"
 /usr/bin/grep -q 'launchctl bootstrap' "$POSTINSTALL" \
@@ -256,7 +264,7 @@ fi
     || fail "Fleet receiver supervisor does not stop receiver with Hub"
 
 SUPERVISOR_FUNCTIONS="$TEST_ROOT/supervisor-functions.sh"
-/usr/bin/awk 'index($0, "if [ \"$#\" -ne 2 ]") == 1 { exit } { print }' \
+/usr/bin/awk 'index($0, "if [ \"$#\" -ne 6 ]") == 1 { exit } { print }' \
     "$SUPERVISOR" >"$SUPERVISOR_FUNCTIONS"
 . "$SUPERVISOR_FUNCTIONS"
 single_token="$TEST_ROOT/fleet bearer # literal"

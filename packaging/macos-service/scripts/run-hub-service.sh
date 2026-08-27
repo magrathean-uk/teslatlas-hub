@@ -16,7 +16,7 @@ PROXY="$BINARY_ROOT/bin/tesla-http-proxy"
 RECEIVER="$BINARY_ROOT/bin/fleet-telemetry"
 
 usage() {
-    printf '%s\n' 'usage: run-hub-service.sh --config PATH' >&2
+    printf '%s\n' 'usage: run-hub-service.sh --config PATH --stdout-log PATH --stderr-log PATH' >&2
     exit 64
 }
 
@@ -38,6 +38,32 @@ safe_root_executable() {
     case "$mode" in
         *[2367][0-7]|*[0-7][2367]) return 1 ;;
     esac
+}
+
+# launchd appends to these files but does not rotate them. Compact oversized
+# logs in place before every service launch. Keeping the inode avoids racing
+# launchd's already-open descriptor.
+compact_log() {
+    path=$1
+    safe_user_file "$path" || {
+        printf '%s\n' 'Teslatlas Hub service: log is not a private regular file' >&2
+        exit 1
+    }
+    bytes=$(/usr/bin/stat -f '%z' "$path") || exit 1
+    [ "$bytes" -le 1048576 ] && return 0
+    directory=$(/usr/bin/dirname "$path")
+    temporary=$(/usr/bin/mktemp "$directory/.hub-log.XXXXXX") || exit 1
+    /bin/chmod 0600 "$temporary" || {
+        /bin/rm -f "$temporary"
+        exit 1
+    }
+    if /usr/bin/tail -c 524288 "$path" >"$temporary" \
+            && /bin/cat "$temporary" >"$path"; then
+        /bin/rm -f "$temporary"
+        return 0
+    fi
+    /bin/rm -f "$temporary"
+    exit 1
 }
 
 fleet_telemetry_bearer() {
@@ -71,14 +97,19 @@ fleet_telemetry_bearer() {
     ' "$config"
 }
 
-if [ "$#" -ne 2 ] || [ "$1" != '--config' ]; then
+if [ "$#" -ne 6 ] || [ "$1" != '--config' ] \
+        || [ "$3" != '--stdout-log' ] || [ "$5" != '--stderr-log' ]; then
     usage
 fi
 CONFIG=$2
+STDOUT_LOG=$4
+STDERR_LOG=$6
 safe_user_file "$CONFIG" || {
     printf '%s\n' 'Teslatlas Hub service: configuration is not a private regular file' >&2
     exit 1
 }
+compact_log "$STDOUT_LOG"
+compact_log "$STDERR_LOG"
 safe_root_executable "$HUB" || {
     printf '%s\n' 'Teslatlas Hub service: Hub executable is unsafe' >&2
     exit 1
