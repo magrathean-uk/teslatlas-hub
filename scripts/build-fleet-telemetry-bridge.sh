@@ -178,22 +178,49 @@ if [ -e "$output" ] || [ -L "$output" ]; then
 fi
 
 work=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/fleet-telemetry-bridge.XXXXXX")
+cache_installing=
 cleanup() {
     /usr/bin/find "$work" -depth -delete >/dev/null 2>&1 || true
+    if [ -n "$cache_installing" ]; then
+        /bin/rm -f "$cache_installing" >/dev/null 2>&1 || true
+    fi
 }
 trap cleanup EXIT HUP INT TERM
-archive="$work/fleet-telemetry.tar.gz"
 source_directory="$work/fleet-telemetry-$COMMIT"
 binary="$work/fleet-telemetry-$target"
 GOCACHE="$work/go-build-cache"
 export GOCACHE
 /bin/mkdir -p "$GOCACHE"
 
-"$CURL" --fail --silent --show-error --location --max-redirs 3 \
-    --proto '=https' --tlsv1.2 --connect-timeout 15 --retry 2 \
-    --output "$archive" "$ARCHIVE_URL" \
-    || die "cannot download pinned fleet-telemetry source"
-[ "$(sha256_file "$archive")" = "$ARCHIVE_SHA256" ] || die "upstream archive checksum mismatch"
+cache_directory="$repository_root/target/upstream-cache"
+if [ -e "$cache_directory" ] || [ -L "$cache_directory" ]; then
+    [ -d "$cache_directory" ] && [ ! -L "$cache_directory" ] \
+        || die "upstream cache is not a real directory"
+else
+    /bin/mkdir -p "$cache_directory"
+fi
+archive="$cache_directory/fleet-telemetry-$COMMIT-$ARCHIVE_SHA256.tar.gz"
+if [ -e "$archive" ] || [ -L "$archive" ]; then
+    [ -f "$archive" ] && [ ! -L "$archive" ] \
+        || die "cached upstream archive is not a regular file"
+fi
+if [ ! -f "$archive" ] || [ "$(sha256_file "$archive")" != "$ARCHIVE_SHA256" ]; then
+    cache_installing=$(/usr/bin/mktemp "$cache_directory/.fleet-telemetry.XXXXXX") \
+        || die "cannot create an upstream cache candidate"
+    "$CURL" --fail --silent --show-error --location --max-redirs 3 \
+        --proto '=https' --tlsv1.2 --connect-timeout 15 --retry 2 \
+        --output "$cache_installing" "$ARCHIVE_URL" \
+        || die "cannot download pinned fleet-telemetry source"
+    [ "$(sha256_file "$cache_installing")" = "$ARCHIVE_SHA256" ] \
+        || die "upstream archive checksum mismatch"
+    /bin/chmod 0644 "$cache_installing" \
+        || die "cannot protect the upstream cache candidate"
+    /bin/mv -f "$cache_installing" "$archive" \
+        || die "cannot publish the verified upstream archive cache"
+    cache_installing=
+fi
+[ "$(sha256_file "$archive")" = "$ARCHIVE_SHA256" ] \
+    || die "cached upstream archive checksum mismatch"
 
 archive_root=$("$TAR" -tzf "$archive" | /usr/bin/awk -F/ 'NF {print $1}' | /usr/bin/sort -u)
 [ "$archive_root" = "fleet-telemetry-$COMMIT" ] || die "upstream archive revision mismatch"

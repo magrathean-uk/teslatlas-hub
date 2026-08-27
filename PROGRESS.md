@@ -40,6 +40,12 @@ for a normal exit, and use a bounded kill fallback for an unresponsive old
 process. Postinstall then opens the newly installed app. The helper is exercised
 with a real named process, and the packaging gate verifies its scope and order.
 
+The pinned Fleet Telemetry source archive is now retained only as one verified
+836 KiB file under the normal `hub/target/upstream-cache`. Every build rechecks
+its locked SHA-256 before extraction; missing or corrupt content is downloaded
+to a same-directory temporary file and atomically published. This removes the
+repeated network download without retaining another source tree or target.
+
 Current macOS reliability pass: the dashboard now exposes a native selector
 for every configured vehicle and sends each confirmed command to the explicit
 selected UUID. Single-vehicle presentation is unchanged. Cmd-L was exercised

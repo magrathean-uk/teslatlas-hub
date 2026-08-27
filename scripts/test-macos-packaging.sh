@@ -17,6 +17,7 @@ CLI_PLIST="$ROOT/packaging/com.teslatlas.hub.plist.in"
 APP_BUILD="$ROOT/scripts/build-macos-app.sh"
 SERVICE_BUILD="$ROOT/scripts/build-macos-service-package.sh"
 PROXY_BUILD="$ROOT/scripts/build-tesla-command-proxy.sh"
+FLEET_TELEMETRY_BUILD="$ROOT/scripts/build-fleet-telemetry-bridge.sh"
 APP_INFO="$ROOT/macos/TeslatlasHubApp/TeslatlasHubApp/Info.plist"
 APP_PROJECT="$ROOT/macos/TeslatlasHubApp/project.yml"
 APP_ICON="$ROOT/macos/TeslatlasHubApp/TeslatlasHubApp/Resources/AppIcon.icns"
@@ -54,6 +55,7 @@ done
 /bin/sh -n "$APP_BUILD" || fail "invalid macOS app build script"
 /bin/sh -n "$SERVICE_BUILD" || fail "invalid macOS service build script"
 /bin/sh -n "$PROXY_BUILD" || fail "invalid Tesla command proxy build script"
+/bin/sh -n "$FLEET_TELEMETRY_BUILD" || fail "invalid Fleet Telemetry build script"
 /usr/bin/plutil -lint "$PLIST" >/dev/null || fail "invalid LaunchAgent template"
 /usr/bin/python3 -m json.tool "$FLEET_TELEMETRY_EXAMPLE" >/dev/null \
     || fail "invalid Fleet Telemetry receiver example"
@@ -223,6 +225,12 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "proxy build is not arm64-only"
 /usr/bin/grep -Fq 'MACOSX_DEPLOYMENT_TARGET=13.0' "$PROXY_BUILD" \
     || fail "proxy build has no macOS 13 deployment target"
+/usr/bin/grep -Fq 'target/upstream-cache' "$FLEET_TELEMETRY_BUILD" \
+    || fail "Fleet Telemetry source archive is not cached inside the normal Hub target"
+/usr/bin/grep -Fq 'cached upstream archive checksum mismatch' "$FLEET_TELEMETRY_BUILD" \
+    || fail "Fleet Telemetry cached source is not revalidated before use"
+/usr/bin/grep -Fq 'cache_installing=$(/usr/bin/mktemp' "$FLEET_TELEMETRY_BUILD" \
+    || fail "Fleet Telemetry cache publication is not staged atomically"
 
 /usr/bin/grep -Fq 'port": 8443' "$FLEET_TELEMETRY_EXAMPLE" \
     || fail "macOS Fleet Telemetry example must use an unprivileged port"
