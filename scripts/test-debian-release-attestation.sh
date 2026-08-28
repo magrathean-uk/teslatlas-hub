@@ -693,7 +693,7 @@ if [ "$(uname -s)" = Linux ] \
     if [ -n "$NATIVE_ARCHITECTURE" ]; then
         cat >"$TMP/native.rs" <<'RS'
 fn main() {
-    if std::env::args().as_deref().nth(1) == Some("--version") {
+    if std::env::args().nth(1).as_deref() == Some("--version") {
         println!("teslatlas-hub 1.0.0");
     } else {
         std::process::exit(64);
