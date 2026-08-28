@@ -1,5 +1,13 @@
 # Hub progress
 
+- Legacy-token command gating complete. The macOS dashboard keeps the vehicle
+  status card but does not render climate, wake, lock, unlock, flash, or horn
+  controls unless the configured provider is Fleet API. The controller also
+  rejects any legacy command attempt before invoking the Hub binary. The
+  all-in-one package upgraded the existing installation successfully; the
+  installed legacy dashboard accessibility tree exposes no vehicle-command
+  buttons, and Hub remains deliberately stopped.
+
 - Fixed the installed Mac app's 30-second false start failure. An unloaded
   RunAtLoad/KeepAlive LaunchAgent was bootstrapped and then immediately killed
   with `kickstart -k`, causing launchd to apply its 30-second throttle while the
@@ -10,7 +18,7 @@
   refresh requested while another is in flight, so Stop cannot leave a stale
   running dashboard. Live launchd proof
   reached ready in under one second for Start and Restart, preserved the PID on
-  idempotent Start, and left Hub stopped. All 105 AppKit tests and macOS
+  idempotent Start, and left Hub stopped. All 107 AppKit tests and macOS
   packaging checks pass.
 
 - Cmd-L support diagnostics complete — the native Mac app now keeps one bounded
@@ -70,22 +78,22 @@ TeslaMate v4.1.1 store is ready in legacy mode with one vehicle, encrypted
 legacy credentials, a 2,065,952,768-byte SQLite catalogue, and the normal
 60-second collector interval. The explicit handover gate completed. VPS
 TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
-active legacy-token owner. The installed Hub SHA-256 is
-`893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
+active legacy-token owner. The installed app binary SHA-256 is
+`088fab951b39783b5930af4688e16c0bb3909870c4e1bd444b1a05d0d31291f2`.
 The current local installer SHA-256 is
-`8fb7b021bc6ad5a89981689f2427c2ddfb190197f4dd744ef4c0ea51d0543a80`.
-It is a 66,709,305-byte ad-hoc development package, not a notarized release.
+`785dcb1d3d245152c9a0484283f653da4c7013fa7601ce0eb71762eb5c772957`.
+It is a 66,712,720-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-28: full locked Rust tests passed (838 library,
 50 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-105 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux
+107 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux
 packaging source, macOS release, release-evidence, and dependency-audit gates
 passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`0354dc1212283f3760204020d1b00f68a75e1354fa0d93d6c8b5c16f09e2201c`.
+`088fab951b39783b5930af4688e16c0bb3909870c4e1bd444b1a05d0d31291f2`.
 Its embedded Hub SHA-256 is
 `c9b6176c0ce6602699cd521fe0e8bdebb65b2902a2d27427df6d432ed42043ef`;
 the root service payload Hub SHA-256 is
