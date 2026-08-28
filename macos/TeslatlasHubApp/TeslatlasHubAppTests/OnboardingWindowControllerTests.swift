@@ -37,7 +37,9 @@ final class OnboardingWindowControllerTests: XCTestCase {
             TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: missingRoot),
             0
         )
-        XCTAssertTrue(HubAppLog.shared.recentText().contains("temporary_files.scan_failed"))
+        let diagnostics = HubAppLog.shared.recentText()
+        XCTAssertTrue(diagnostics.contains("temporary_files.scan_failed"))
+        XCTAssertTrue(diagnostics.contains("error_code=cocoa_"))
     }
 
     func testDashboardReportsInitialRefreshWithoutLeavingLaunchBlank() {
@@ -95,6 +97,8 @@ final class OnboardingWindowControllerTests: XCTestCase {
                        "missing_resource")
         XCTAssertEqual(HubAppLog.errorCode(TeslaAuthError.stateMismatch), "state_mismatch")
         XCTAssertEqual(HubAppLog.errorCode(TeslaAuthError.exchangeFailed), "exchange_failed")
+        XCTAssertEqual(HubAppLog.errorCode(CocoaError(.fileNoSuchFile)), "cocoa_4")
+        XCTAssertEqual(HubAppLog.errorCode(POSIXError(.EACCES)), "posix_13")
         let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
         let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue
         XCTAssertEqual(permissions & 0o777, 0o600)

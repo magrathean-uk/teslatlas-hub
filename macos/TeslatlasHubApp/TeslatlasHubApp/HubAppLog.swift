@@ -90,16 +90,22 @@ final class HubAppLog {
             case .exchangeFailed: return "exchange_failed"
             }
         }
-        guard let error = error as? HubActionError else {
-            return String(describing: type(of: error))
+        if let error = error as? HubActionError {
+            switch error {
+            case .preview: return "preview_read_only"
+            case .missingResource: return "missing_resource"
+            case .untrustedInstaller: return "untrusted_installer"
+            case .commandFailed: return "command_failed"
+            case let .commandExited(status, _): return "command_exited_\(status)"
+            case .commandTimedOut: return "command_timed_out"
+            }
         }
-        switch error {
-        case .preview: return "preview_read_only"
-        case .missingResource: return "missing_resource"
-        case .untrustedInstaller: return "untrusted_installer"
-        case .commandFailed: return "command_failed"
-        case let .commandExited(status, _): return "command_exited_\(status)"
-        case .commandTimedOut: return "command_timed_out"
+        let foundationError = error as NSError
+        switch foundationError.domain {
+        case NSCocoaErrorDomain: return "cocoa_\(foundationError.code)"
+        case NSURLErrorDomain: return "url_\(foundationError.code)"
+        case NSPOSIXErrorDomain: return "posix_\(foundationError.code)"
+        default: return String(describing: type(of: error))
         }
     }
 
