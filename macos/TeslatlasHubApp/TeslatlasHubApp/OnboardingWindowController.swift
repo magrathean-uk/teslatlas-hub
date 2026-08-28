@@ -86,8 +86,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private var authWindow: TeslaAuthWindowController?
     private var logsWindow: LogsWindowController?
 
-    private let continueButton = NSButton(title: "Continue", target: nil, action: nil)
-    private let backButton = NSButton(title: "Back", target: nil, action: nil)
+    private let continueButton = HubActionButton(title: "Continue", target: nil, action: nil)
+    private let backButton = HubActionButton(title: "Back", target: nil, action: nil)
     private let spinner = NSProgressIndicator()
     private let migrationSpinner = NSProgressIndicator()
     private let footerSpinner = NSProgressIndicator()
@@ -389,7 +389,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private var pageSubtitle: String {
         switch state.route {
         case .welcome:
-            return "Teslatlas Hub is the backend service replacing TeslaMate. It records the same data as TeslaMate without:"
+            return "Teslatlas Hub is the backend service replacing TeslaMate. It records the same data as TeslaMate but optimized and re-written."
         case .choose:
             return "Choose how you would like to set up Teslatlas Hub."
         case .provider:
@@ -469,7 +469,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func fleetBody() -> NSView {
-        let guide = NSButton(title: "Create Tesla Fleet App", target: self, action: #selector(openFleetGuide))
+        let guide = HubActionButton(title: "Create Tesla Fleet App", target: self, action: #selector(openFleetGuide))
         configureFlatButton(guide, symbol: "book")
         let fields = NSStackView(views: [
             guide,
@@ -486,7 +486,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func legacyBody() -> NSView {
-        let signIn = NSButton(title: "Sign in with Tesla", target: self, action: #selector(startLegacySignIn))
+        let signIn = HubActionButton(title: "Sign in with Tesla", target: self, action: #selector(startLegacySignIn))
         configurePrimaryButton(signIn, symbol: "person.crop.circle.badge.checkmark")
         let or = NSTextField(labelWithString: "or use an existing token pair")
         or.textColor = .secondaryLabelColor
@@ -505,7 +505,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func migrationBody() -> NSView {
-        let check = NSButton(title: "Connect to Server", target: self, action: #selector(checkMigrationCompatibility))
+        let check = HubActionButton(title: "Connect to Server", target: self, action: #selector(checkMigrationCompatibility))
         migrationConnectButton = check
         configurePrimaryButton(check)
         check.controlSize = .large
@@ -532,7 +532,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         ]
         migrationKeyViews = [migrationServer, migrationUser, migrationPort, migrationAuthentication]
         if migrationAuthentication.indexOfSelectedItem == 0 {
-            let choose = NSButton(title: "Choose Key…", target: self, action: #selector(chooseMigrationIdentity))
+            let choose = HubActionButton(title: "Choose Key…", target: self, action: #selector(chooseMigrationIdentity))
             views.append(formRow("SSH key", fieldWithButton(migrationIdentityFile, choose, symbol: "key.fill")))
             let automatic = NSTextField(wrappingLabelWithString:
                 "Optional. Hub automatically uses ~/.ssh/config, ssh-agent, ProxyJump, and standard private keys.")
@@ -605,21 +605,21 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             let button: NSButton
             switch action {
             case .chooseKey:
-                button = NSButton(title: "Choose Another Key…", target: self,
+                button = HubActionButton(title: "Choose Another Key…", target: self,
                                   action: #selector(chooseMigrationIdentity))
             case .usePassword:
-                button = NSButton(title: "Use Password", target: self,
+                button = HubActionButton(title: "Use Password", target: self,
                                   action: #selector(useMigrationPassword))
             case .useKey:
-                button = NSButton(title: "Use SSH Key", target: self,
+                button = HubActionButton(title: "Use SSH Key", target: self,
                                   action: #selector(useMigrationKey))
             case .openLogs:
-                button = NSButton(title: "Open Logs", target: self, action: #selector(openLogs))
+                button = HubActionButton(title: "Open Logs", target: self, action: #selector(openLogs))
             }
             configureFlatButton(button)
             buttons.append(button)
         }
-        let copy = NSButton(title: "Copy Details", target: self,
+        let copy = HubActionButton(title: "Copy Details", target: self,
                             action: #selector(copyMigrationDiagnostic))
         configureFlatButton(copy)
         buttons.append(copy)
@@ -647,7 +647,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                                                     color: check.passed ? .systemGreen : .systemRed))
             }
         }
-        let logs = NSButton(title: "View Logs", target: self, action: #selector(openLogs))
+        let logs = HubActionButton(title: "View Logs", target: self, action: #selector(openLogs))
         configureFlatButton(logs, symbol: "doc.text")
         stack.addArrangedSubview(logs)
         return withError(stack)
@@ -1305,7 +1305,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         content.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(content)
 
-        let button = NSButton(title: title, target: self, action: action)
+        let button = HubActionButton(title: title, target: self, action: action)
         button.isBordered = false
         button.isTransparent = true
         button.toolTip = subtitle
@@ -1402,16 +1402,15 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             NSImage(systemSymbolName: $0, accessibilityDescription: button.title)
         }
         button.imagePosition = .imageLeading
-        button.contentTintColor = tint
+        button.contentTintColor = .labelColor
+        (button as? HubActionButton)?.hubAppearance = .flat
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.focusRingType = .default
     }
 
     private func configurePrimaryButton(_ button: NSButton, symbol: String? = nil) {
         button.isBordered = false
-        button.wantsLayer = true
-        button.layer?.cornerRadius = 8
-        button.layer?.cornerCurve = .continuous
+        (button as? HubActionButton)?.hubAppearance = .primary
         button.image = symbol.flatMap {
             NSImage(systemSymbolName: $0, accessibilityDescription: button.title)
         }
@@ -1423,19 +1422,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func updatePrimaryAppearance(_ button: NSButton) {
-        let foreground = button.isEnabled ? NSColor.white : NSColor.secondaryLabelColor
-        let background = button.isEnabled
-            ? NSColor.systemBlue
-            : NSColor.unemphasizedSelectedContentBackgroundColor
-        button.layer?.backgroundColor = background.cgColor
-        button.contentTintColor = foreground
-        button.attributedTitle = NSAttributedString(
-            string: button.title,
-            attributes: [
-                .foregroundColor: foreground,
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
-            ]
-        )
+        if let button = button as? HubActionButton {
+            button.updateHubAppearance()
+        }
     }
 
     private func centered(_ view: NSView) -> NSView {

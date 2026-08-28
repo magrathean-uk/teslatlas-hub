@@ -4,10 +4,10 @@ final class LogsWindowController: NSWindowController {
     private let controller: HubController
     private let textView = NSTextView()
     private let statusLabel = NSTextField(labelWithString: "Loading logs…")
-    private let refreshButton = NSButton(title: "Refresh", target: nil, action: nil)
-    private let diagnosticsButton = NSButton(title: "Run Diagnostics", target: nil, action: nil)
-    private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
-    private let saveButton = NSButton(title: "Save…", target: nil, action: nil)
+    private let refreshButton = HubActionButton(title: "Refresh", target: nil, action: nil)
+    private let diagnosticsButton = HubActionButton(title: "Run Diagnostics", target: nil, action: nil)
+    private let copyButton = HubActionButton(title: "Copy", target: nil, action: nil)
+    private let saveButton = HubActionButton(title: "Save…", target: nil, action: nil)
     private var latestText = ""
     private var operationInProgress = false
 
@@ -198,7 +198,8 @@ final class LogsWindowController: NSWindowController {
         button.isBordered = false
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
         button.imagePosition = .imageLeading
-        button.contentTintColor = tint
+        button.contentTintColor = .labelColor
+        (button as? HubActionButton)?.hubAppearance = .flat
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.focusRingType = .default
     }

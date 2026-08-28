@@ -7154,9 +7154,15 @@ impl HubStore {
         let Some((current_base_snapshot_id, current_head_sequence)) = current else {
             return Err(StoreError::LineageCatalogConflict);
         };
+        let current_head_sequence =
+            u64::try_from(current_head_sequence).map_err(|_| StoreError::InvalidStoredSequence)?;
+        // The projection-state head records the last completed TeslaMate
+        // import. Normal Hub collection may advance the same immutable
+        // lineage afterward. Reject a different base or a regressed head;
+        // the atomic import finalizer revalidates the newer live head before
+        // publishing a successor.
         if current_base_snapshot_id != header.base_snapshot_id.to_string()
-            || current_head_sequence
-                != i64::try_from(header.head_sequence).map_err(|_| StoreError::SequenceTooLarge)?
+            || current_head_sequence < header.head_sequence
         {
             return Err(StoreError::LineageCatalogConflict);
         }
@@ -7684,7 +7690,11 @@ impl HubStore {
             .map_err(StoreError::Query)?;
         let catalog_head: Option<i64> = transaction
             .query_row(
-                "SELECT MAX(head_sequence) FROM sync_manifests WHERE vehicle_id = ?1",
+                "SELECT MAX(head_sequence) FROM (
+                    SELECT head_sequence FROM sync_manifests WHERE vehicle_id = ?1
+                    UNION ALL
+                    SELECT head_sequence FROM sync_heads WHERE vehicle_id = ?1
+                 )",
                 params![vehicle_id.to_string()],
                 |row| row.get(0),
             )
@@ -20790,6 +20800,40 @@ mod tests {
                 .expect("second marker"),
             2
         );
+        let base_snapshot_id = Uuid::from_u128(9).to_string();
+        let connection = store.open().expect("database opens");
+        connection
+            .execute(
+                "INSERT INTO sync_bases
+                 (vehicle_id, snapshot_id, base_sequence, base_digest, packs_json)
+                 VALUES (?1, ?2, 1, ?3, ?4)",
+                params![
+                    vehicle.vehicle_id.to_string(),
+                    base_snapshot_id,
+                    "0".repeat(64),
+                    b"[]".to_vec()
+                ],
+            )
+            .expect("base inserts");
+        connection
+            .execute(
+                "INSERT INTO sync_heads
+                 (vehicle_id, base_snapshot_id, head_sequence, head_digest, terminal_cursor)
+                 VALUES (?1, ?2, 598, ?3, '{}')",
+                params![
+                    vehicle.vehicle_id.to_string(),
+                    base_snapshot_id,
+                    "1".repeat(64)
+                ],
+            )
+            .expect("advanced live head inserts");
+        drop(connection);
+        assert_eq!(
+            store
+                .reserve_next_full_snapshot_sequence(&publication_gate, vehicle.vehicle_id)
+                .expect("marker after live head"),
+            599
+        );
 
         let conflicting = store
             .register_vehicle_with_id(&descriptor, 3_000, Uuid::from_u128(8))
@@ -22619,6 +22663,45 @@ mod tests {
             .expect("capture unchanged direct car");
         capture.seal().expect("seal direct successor state");
         capture.into_state()
+    }
+
+    #[test]
+    fn projection_state_lookup_allows_live_lineage_after_the_last_import() {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let (vehicle, binding) = persist_projection_state_rows(
+            &store,
+            temporary.path(),
+            &[(TeslaMateProjectionStateEntity::Position, 10)],
+        );
+        let imported_head = store
+            .teslamate_import_projection_state_lookup(
+                vehicle.vehicle_id,
+                binding.account_id,
+                binding.selected_car_id,
+            )
+            .expect("import projection state")
+            .header()
+            .head_sequence;
+        let (claim, delta) = claimed_collector_delta(&store, vehicle.vehicle_id, &binding);
+        store
+            .commit_v2_delta_claim(
+                &claim,
+                &delta,
+                &import_delta_test_cursor_key(),
+                &import_delta_test_cursor(&binding, delta.to_sequence),
+            )
+            .expect("publish live Hub delta");
+
+        let lookup = store
+            .teslamate_import_projection_state_lookup(
+                vehicle.vehicle_id,
+                binding.account_id,
+                binding.selected_car_id,
+            )
+            .expect("a later live head must not invalidate the prior import state");
+        assert_eq!(lookup.header().head_sequence, imported_head);
+        assert!(delta.to_sequence > imported_head);
     }
 
     #[test]

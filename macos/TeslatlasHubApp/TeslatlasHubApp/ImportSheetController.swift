@@ -1,8 +1,8 @@
 import AppKit
 
 final class ImportSheetController: NSWindowController {
-    static let teslaMateStoppedConfirmationDetail =
-        "This alpha completes its final snapshot and leaves Hub stopped until you finish the TeslaMate handover. Continue only after the source TeslaMate collector is stopped."
+    static let teslaMateHandoverDetail =
+        "Hub reads TeslaMate without stopping or changing it. After import, Hub tells you when to disable Tesla access in TeslaMate yourself."
 
     private let controller: HubController
     private let sourceField = NSTextField(string: "postgres://localhost/teslamate")
@@ -41,6 +41,11 @@ final class ImportSheetController: NSWindowController {
         help.textColor = .secondaryLabelColor
         help.lineBreakMode = .byWordWrapping
         stack.addArrangedSubview(help)
+        let handover = NSTextField(wrappingLabelWithString: Self.teslaMateHandoverDetail)
+        handover.textColor = .secondaryLabelColor
+        handover.maximumNumberOfLines = 2
+        handover.widthAnchor.constraint(equalToConstant: 504).isActive = true
+        stack.addArrangedSubview(handover)
         stack.addArrangedSubview(field("PostgreSQL source", sourceField))
         stack.addArrangedSubview(field("Car ID", carField))
         let passwordRow = NSStackView(views: [passwordField, button("Choose…", #selector(choosePassword))])
@@ -73,11 +78,12 @@ final class ImportSheetController: NSWindowController {
     }
 
     private func button(_ title: String, _ action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
+        let button = HubActionButton(title: title, target: self, action: action)
         button.isBordered = false
         button.image = NSImage(systemSymbolName: symbol(for: title), accessibilityDescription: title)
         button.imagePosition = .imageLeading
-        button.contentTintColor = title == "Import" ? .controlAccentColor : .labelColor
+        button.contentTintColor = .labelColor
+        button.hubAppearance = .flat
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.focusRingType = .default
         return button
@@ -134,12 +140,6 @@ final class ImportSheetController: NSWindowController {
             NSAlert(error: error).runModal()
             return
         }
-        let confirmation = NSAlert()
-        confirmation.messageText = "Stop TeslaMate before importing"
-        confirmation.informativeText = Self.teslaMateStoppedConfirmationDetail
-        confirmation.addButton(withTitle: "TeslaMate is stopped")
-        confirmation.addButton(withTitle: "Cancel")
-        guard confirmation.runModal() == .alertFirstButtonReturn else { return }
         controller.importTeslaMate(source: sourceField.stringValue, carID: carField.stringValue, passwordFile: passwordField.stringValue, encryptionKeyFile: encryptionField.stringValue) { [weak self] result in
             switch result {
             case .success: if let window = self?.window, let parent = window.sheetParent { parent.endSheet(window) }

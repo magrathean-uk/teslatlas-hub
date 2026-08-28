@@ -1,5 +1,17 @@
 # Hub progress
 
+- Live repeat migration fixed and proved. The installed macOS package imported
+  the running VPS TeslaMate 4.1.1 source read-only without stopping or changing
+  TeslaMate. A prior import state now remains valid when normal Hub collection
+  has advanced the same immutable lineage, and full-snapshot sequence
+  reservation considers both manifests and the live head. Source parity is
+  exact: 3,302 closed drives plus one open drive, including its 557 provisional
+  positions. The app's full diagnostics completed with zero failed sections;
+  SQLite integrity is `ok`, schema is 56, and WAL settled to zero. Rust tests
+  pass 890/890 with two intentional ignores, Clippy is clean, the AppKit suite
+  and macOS/Linux packaging checks pass. The redacted diagnostics receipt is
+  `dist/teslatlas-hub-diagnostics.txt`.
+
 - TeslaMate SSH import reliability complete. The macOS importer now preserves
   normal OpenSSH compatibility (`~/.ssh/config`, agent, ProxyJump, standard or
   selected keys, and password authentication) while isolating app-owned SSH

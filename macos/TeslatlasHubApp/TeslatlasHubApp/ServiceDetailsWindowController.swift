@@ -6,8 +6,8 @@ final class ServiceDetailsWindowController: NSWindowController {
     private let onMutationStateChanged: (Bool) -> Void
     private let onChanged: () -> Void
     private let detailsField = NSTextField(labelWithString: "")
-    private let updateButton = NSButton(title: "Update Service…", target: nil, action: nil)
-    private let uninstallButton = NSButton(title: "Uninstall Hub…", target: nil, action: nil)
+    private let updateButton = HubActionButton(title: "Update Service…", target: nil, action: nil)
+    private let uninstallButton = HubActionButton(title: "Uninstall Hub…", target: nil, action: nil)
     private var mutationsEnabled = true
     private var mutationPending = false
 
@@ -33,10 +33,10 @@ final class ServiceDetailsWindowController: NSWindowController {
         legal.lineBreakMode = .byWordWrapping
         legal.translatesAutoresizingMaskIntoConstraints = false
 
-        let sourceButton = NSButton(title: "Open Source", target: self, action: #selector(openSource))
+        let sourceButton = HubActionButton(title: "Open Source", target: self, action: #selector(openSource))
         configureFlatButton(sourceButton, symbol: "chevron.left.forwardslash.chevron.right")
         sourceButton.translatesAutoresizingMaskIntoConstraints = false
-        let licenseButton = NSButton(title: "Open License", target: self, action: #selector(openLicense))
+        let licenseButton = HubActionButton(title: "Open License", target: self, action: #selector(openLicense))
         configureFlatButton(licenseButton, symbol: "doc.plaintext")
         licenseButton.translatesAutoresizingMaskIntoConstraints = false
         updateButton.target = self
@@ -93,7 +93,8 @@ final class ServiceDetailsWindowController: NSWindowController {
         button.isBordered = false
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
         button.imagePosition = .imageLeading
-        button.contentTintColor = tint
+        button.contentTintColor = .labelColor
+        (button as? HubActionButton)?.hubAppearance = .flat
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.focusRingType = .default
     }

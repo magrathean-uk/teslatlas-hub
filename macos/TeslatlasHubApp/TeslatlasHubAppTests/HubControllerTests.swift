@@ -4,6 +4,21 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class HubControllerTests: XCTestCase {
+    func testActionButtonsUseBlackWhenEnabledAndLightGreyWhenDisabled() {
+        let flat = HubActionButton(title: "Action", target: nil, action: nil)
+        flat.hubAppearance = .flat
+        XCTAssertEqual(flat.contentTintColor, .labelColor)
+        flat.isEnabled = false
+        XCTAssertEqual(flat.contentTintColor, .disabledControlTextColor)
+
+        let primary = HubActionButton(title: "Continue", target: nil, action: nil)
+        primary.hubAppearance = .primary
+        XCTAssertEqual(primary.contentTintColor, .white)
+        XCTAssertEqual(primary.layer?.backgroundColor, NSColor.black.cgColor)
+        primary.isEnabled = false
+        XCTAssertEqual(primary.layer?.backgroundColor, NSColor.lightGray.cgColor)
+    }
+
     func testMainWindowBuildsInPreviewMode() {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let windowController = MainWindowController(controller: controller)
@@ -643,6 +658,10 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testStartShowsProgressImmediatelyAndSettlesToRunning() {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-start-test-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
         let status = """
         {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """
@@ -650,6 +669,7 @@ final class HubControllerTests: XCTestCase {
         let service = PendingServiceRunner(loadState: .unloaded)
         let controller = HubController(installedCommandRunner: installed,
                                        serviceRunner: service,
+                                       homeDirectory: home,
                                        serviceInstalledOverride: true)
         let loaded = expectation(description: "stopped dashboard loaded")
         var dashboard: MainWindowController?
@@ -803,18 +823,16 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(alert.informativeText.contains("Do not repeat"))
     }
 
-    func testImportSheetDoesNotClaimHubStartsAutomatically() {
-        XCTAssertFalse(
-            ImportSheetController.teslaMateStoppedConfirmationDetail.contains("starts Hub automatically")
-        )
-        XCTAssertTrue(
-            ImportSheetController.teslaMateStoppedConfirmationDetail.contains("leaves Hub stopped")
-        )
+    func testImportSheetExplainsManualTeslaMateHandover() {
+        XCTAssertTrue(ImportSheetController.teslaMateHandoverDetail.contains("without stopping"))
+        XCTAssertTrue(ImportSheetController.teslaMateHandoverDetail.contains("yourself"))
     }
 
-    func testInstalledMigrationStopsConfirmsFinalCopyAndRestarts() throws {
+    func testInstalledMigrationUsesLiveSnapshotWithoutStoppingTeslaMate() throws {
         let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success("imported"))
+        let runner = ScriptedRunner(events: events, result: .success(
+            #"{"status":"imported","captureMode":"online-snapshot"}"#
+        ))
         let installer = ScriptedInstaller(events: events)
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
@@ -837,7 +855,8 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(events.values, ["service:stop", "migrate"])
-        XCTAssertEqual(runner.stdin, "y\nn\n")
+        XCTAssertNil(runner.stdin)
+        XCTAssertTrue(runner.arguments.joined().contains("--online-snapshot"))
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         XCTAssertFalse(events.values.contains("install"))
         XCTAssertFalse(events.values.contains("service:start"))
@@ -845,7 +864,9 @@ final class HubControllerTests: XCTestCase {
 
     func testInstalledMigrationKeepsFleetProviderAndTokensConfig() throws {
         let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success("imported"))
+        let runner = ScriptedRunner(events: events, result: .success(
+            #"{"status":"imported","captureMode":"online-snapshot"}"#
+        ))
         let installer = ScriptedInstaller(events: events)
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
@@ -879,7 +900,9 @@ final class HubControllerTests: XCTestCase {
 
     func testFreshMigrationInstallsCurrentServicePackageAfterSuccessfulCopy() throws {
         let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success("imported"))
+        let runner = ScriptedRunner(events: events, result: .success(
+            #"{"status":"imported","captureMode":"online-snapshot"}"#
+        ))
         let installer = ScriptedInstaller(events: events)
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
@@ -902,7 +925,8 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(events.values, ["migrate"])
-        XCTAssertEqual(runner.stdin, "y\nn\n")
+        XCTAssertNil(runner.stdin)
+        XCTAssertTrue(runner.arguments.joined().contains("--online-snapshot"))
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         XCTAssertFalse(events.values.contains("install"))
         XCTAssertFalse(events.values.contains("service:start"))
@@ -940,7 +964,7 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(events.values, ["service:stop", "migrate"])
-        XCTAssertEqual(runner.stdin, "y\nn\n")
+        XCTAssertNil(runner.stdin)
         XCTAssertFalse(events.values.contains("service:start"))
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         let config = try configContents(in: home)
@@ -1022,7 +1046,9 @@ final class HubControllerTests: XCTestCase {
 
     func testInstalledMigrationDoesNotMutateWithStaleBinaryWhenPackageUpdateFails() throws {
         let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success("unused"))
+        let runner = ScriptedRunner(events: events, result: .success(
+            #"{"status":"imported","captureMode":"online-snapshot"}"#
+        ))
         let installer = ScriptedInstaller(
             events: events,
             result: .failure(HubActionError.commandFailed("package failed"))
@@ -1048,7 +1074,7 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(events.values, ["service:stop", "migrate"])
-        XCTAssertEqual(runner.stdin, "y\nn\n")
+        XCTAssertNil(runner.stdin)
         XCTAssertFalse(events.values.contains("install"))
         XCTAssertFalse(events.values.contains("service:start"))
         XCTAssertTrue(controller.hasPendingMigrationHandover)
@@ -1840,6 +1866,7 @@ private final class RecordingCommandRunner: HubCommandRunning {
 private final class PendingServiceRunner: HubServiceControlling {
     var loadState: HubServiceLoadState
     private var completion: ((Result<String, Error>) -> Void)?
+    private var pendingResult: Result<String, Error>?
 
     init(loadState: HubServiceLoadState) {
         self.loadState = loadState
@@ -1847,6 +1874,10 @@ private final class PendingServiceRunner: HubServiceControlling {
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         self.completion = completion
+        if let pendingResult {
+            self.pendingResult = nil
+            complete(pendingResult)
+        }
     }
 
     func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
@@ -1854,9 +1885,12 @@ private final class PendingServiceRunner: HubServiceControlling {
     }
 
     func complete(_ result: Result<String, Error>) {
-        let completion = completion
+        guard let completion else {
+            pendingResult = result
+            return
+        }
         self.completion = nil
-        completion?(result)
+        completion(result)
     }
 }
 

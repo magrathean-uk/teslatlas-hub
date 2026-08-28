@@ -1,5 +1,44 @@
 import AppKit
 
+final class HubActionButton: NSButton {
+    enum Appearance: Equatable { case flat, primary }
+
+    var hubAppearance: Appearance = .flat {
+        didSet { updateHubAppearance() }
+    }
+
+    override var isEnabled: Bool {
+        didSet { updateHubAppearance() }
+    }
+
+    override var title: String {
+        didSet { updateHubAppearance() }
+    }
+
+    func updateHubAppearance() {
+        wantsLayer = true
+        let font = NSFont.systemFont(ofSize: 13,
+                                     weight: hubAppearance == .primary ? .semibold : .medium)
+        let foreground: NSColor
+        switch hubAppearance {
+        case .flat:
+            layer?.backgroundColor = NSColor.clear.cgColor
+            foreground = isEnabled ? .labelColor : .disabledControlTextColor
+        case .primary:
+            layer?.cornerRadius = 8
+            layer?.cornerCurve = .continuous
+            layer?.masksToBounds = true
+            layer?.backgroundColor = (isEnabled ? NSColor.black : NSColor.lightGray).cgColor
+            foreground = .white
+        }
+        contentTintColor = foreground
+        attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [.foregroundColor: foreground, .font: font]
+        )
+    }
+}
+
 private enum HubServiceTransition: Equatable {
     case starting
     case stopping
@@ -55,13 +94,13 @@ final class MainWindowController: NSWindowController {
     private let activityStack = NSStackView()
     private let versionLabel = NSTextField(labelWithString: "")
     private let titlebarTitle = NSTextField(labelWithString: "Teslatlas Hub")
-    private let stopButton = NSButton(title: "Stop Hub", target: nil, action: nil)
-    private let restartButton = NSButton(title: "Restart", target: nil, action: nil)
-    private let installButton = NSButton(title: "Set Up Hub", target: nil, action: nil)
-    private let heroDiagnosticsButton = NSButton(title: "Run Diagnostics", target: nil, action: nil)
-    let connectButton = NSButton(title: "Connect Tesla", target: nil, action: nil)
-    let importButton = NSButton(title: "Import", target: nil, action: nil)
-    let detailsButton = NSButton(title: "Service Details", target: nil, action: nil)
+    private let stopButton = HubActionButton(title: "Stop Hub", target: nil, action: nil)
+    private let restartButton = HubActionButton(title: "Restart", target: nil, action: nil)
+    private let installButton = HubActionButton(title: "Set Up Hub", target: nil, action: nil)
+    private let heroDiagnosticsButton = HubActionButton(title: "Run Diagnostics", target: nil, action: nil)
+    let connectButton = HubActionButton(title: "Connect Tesla", target: nil, action: nil)
+    let importButton = HubActionButton(title: "Import", target: nil, action: nil)
+    let detailsButton = HubActionButton(title: "Service Details", target: nil, action: nil)
     private var vehicleActionButtons: [NSButton] = []
     private var vehicleControlSectionViews: [NSView] = []
     private var vehicleControlSectionHeightConstraints: [NSLayoutConstraint] = []
@@ -614,7 +653,7 @@ final class MainWindowController: NSWindowController {
     }
 
     private func compactButton(_ title: String, _ symbol: String, _ action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: self, action: action)
+        let button = HubActionButton(title: title, target: self, action: action)
         configureFlatButton(button, symbol: symbol)
         button.controlSize = .regular
         return button
@@ -624,17 +663,16 @@ final class MainWindowController: NSWindowController {
                                      symbol: String,
                                      tint: NSColor = .labelColor) {
         button.isBordered = false
-        button.wantsLayer = true
-        button.layer?.backgroundColor = NSColor.clear.cgColor
+        (button as? HubActionButton)?.hubAppearance = .flat
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
         button.imagePosition = .imageLeading
         button.imageHugsTitle = true
-        button.contentTintColor = tint
+        button.contentTintColor = .labelColor
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
-                .foregroundColor: tint,
+                .foregroundColor: NSColor.labelColor,
                 .font: NSFont.systemFont(ofSize: 13, weight: .medium)
             ]
         )
@@ -643,11 +681,7 @@ final class MainWindowController: NSWindowController {
 
     private func configurePrimaryButton(_ button: NSButton, symbol: String) {
         button.isBordered = false
-        button.wantsLayer = true
-        button.layer?.cornerRadius = 8
-        button.layer?.cornerCurve = .continuous
-        button.layer?.masksToBounds = true
-        button.layer?.backgroundColor = NSColor.systemBlue.cgColor
+        (button as? HubActionButton)?.hubAppearance = .primary
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
         button.imagePosition = .imageLeading
         button.imageHugsTitle = true
@@ -661,6 +695,7 @@ final class MainWindowController: NSWindowController {
             ]
         )
         button.focusRingType = .default
+        (button as? HubActionButton)?.updateHubAppearance()
     }
 
     private func sectionLabel(_ title: String) -> NSTextField {

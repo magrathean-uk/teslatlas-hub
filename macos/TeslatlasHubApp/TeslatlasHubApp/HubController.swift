@@ -1093,6 +1093,10 @@ final class HubController {
             }
         }
         // This controls Teslatlas Hub only. TeslaMate is never stopped or changed.
+        guard isServiceInstalled else {
+            runImport()
+            return
+        }
         serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
             switch stopResult {
             case .success:
@@ -1146,74 +1150,11 @@ final class HubController {
             completion(.failure(error))
             return
         }
-        let previousInterval = migrationHandoverState?.previousIntervalSeconds
-            ?? configuredCollectorIntervalSeconds()
-        let previousProvider = migrationHandoverState?.previousProvider
-            ?? configuredCollectorProvider()
-        let originalConfig: String?
-        do {
-            originalConfig = try readConfigIfPresent()
-        } catch {
-            completion(.failure(error))
-            return
-        }
-        do {
-            try writeMigrationHandoverMarker(
-                HubMigrationHandoverState(phase: .importing,
-                                          previousIntervalSeconds: previousInterval,
-                                          previousProvider: previousProvider)
-            )
-            try ensureConfig(collectorIntervalSeconds: 0)
-        } catch {
-            completion(.failure(recoverFailedImport(error, originalConfig: originalConfig)))
-            return
-        }
-        let arguments = ["--config", configPath.path, "migrate", "--source", source, "--car-id", carID,
-                         "--postgres-password-file", passwordFile, "--encryption-key-file", encryptionKeyFile]
-        let finish: (Result<Void, Error>) -> Void = { result in
-            DispatchQueue.main.async { completion(result) }
-        }
-        let abortBeforeImport: (Error) -> Void = { [weak self] error in
-            guard let self else { finish(.failure(error)); return }
-            finish(.failure(self.recoverFailedImport(error, originalConfig: originalConfig)))
-        }
-        let failStartedImport: (Error) -> Void = { error in
-            finish(.failure(Self.migrationStoppedError(error)))
-        }
-        let runImport = { [weak self] in
-            guard let self else { return }
-            self.commandRunner.run(arguments: arguments, stdin: "y\nn\n") { result in
-                switch result {
-                case .success:
-                    do {
-                        try self.writeMigrationHandoverMarker(
-                            HubMigrationHandoverState(phase: .awaitingVerification,
-                                                      previousIntervalSeconds: previousInterval,
-                                                      previousProvider: previousProvider)
-                        )
-                        finish(.success(()))
-                    } catch {
-                        finish(.failure(HubActionError.commandFailed(
-                            "Import completed, but Hub could not record the safe handover gate: \(error.localizedDescription). Hub remains stopped."
-                        )))
-                    }
-                case let .failure(error):
-                    failStartedImport(error)
-                }
-            }
-        }
-        // Dashboard import never starts Hub. Collection stays stopped until the
-        // same explicit handover used by onboarding.
-        guard isServiceInstalled else {
-            runImport()
-            return
-        }
-        serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
-            switch stopResult {
-            case .success: runImport()
-            case let .failure(error): abortBeforeImport(error)
-            }
-        }
+        prepareOnlineMigration(source: source,
+                               carID: carID,
+                               passwordFile: passwordFile,
+                               encryptionKeyFile: encryptionKeyFile,
+                               completion: completion)
     }
 
     static func validateMigrationSource(_ source: String) throws {

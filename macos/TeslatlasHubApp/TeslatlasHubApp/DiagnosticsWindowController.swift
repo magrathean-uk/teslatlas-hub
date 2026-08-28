@@ -7,9 +7,9 @@ final class DiagnosticsWindowController: NSWindowController {
     private let statusTitle = NSTextField(labelWithString: "Ready")
     private let statusDetail = NSTextField(wrappingLabelWithString:
         "Run a local database, credential, TLS, collector, and recent-log check when you need it.")
-    private let runButton = NSButton(title: "Run Diagnostics", target: nil, action: nil)
-    private let copyButton = NSButton(title: "Copy Report", target: nil, action: nil)
-    private let saveButton = NSButton(title: "Save Report…", target: nil, action: nil)
+    private let runButton = HubActionButton(title: "Run Diagnostics", target: nil, action: nil)
+    private let copyButton = HubActionButton(title: "Copy Report", target: nil, action: nil)
+    private let saveButton = HubActionButton(title: "Save Report…", target: nil, action: nil)
     private var latestReport: String?
 
     init(controller: HubController) {
@@ -170,7 +170,8 @@ final class DiagnosticsWindowController: NSWindowController {
         button.isBordered = false
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
         button.imagePosition = .imageLeading
-        button.contentTintColor = tint
+        button.contentTintColor = .labelColor
+        (button as? HubActionButton)?.hubAppearance = .flat
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.focusRingType = .default
     }

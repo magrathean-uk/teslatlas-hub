@@ -427,7 +427,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let text = labels(in: onboarding.window?.contentView).map(\.stringValue)
         XCTAssertTrue(text.contains("Teslatlas Hub"))
         XCTAssertTrue(text.contains(
-            "Teslatlas Hub is the backend service replacing TeslaMate. It records the same data as TeslaMate without:"
+            "Teslatlas Hub is the backend service replacing TeslaMate. It records the same data as TeslaMate but optimized and re-written."
         ))
         XCTAssertTrue(text.contains("Written purely in Rust."))
         XCTAssertTrue(text.contains("No Docker."))
@@ -736,7 +736,8 @@ final class OnboardingWindowControllerTests: XCTestCase {
             }
             directory.deleteLastPathComponent()
         }
-        throw CocoaError(.fileNoSuchFile)
+        return FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-design-qa", isDirectory: true)
     }
 
     private func render(_ window: NSWindow?, to destination: URL) throws {
