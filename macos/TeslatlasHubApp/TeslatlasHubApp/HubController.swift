@@ -695,6 +695,7 @@ final class HubController {
     private let homeDirectory: URL
     private let serviceInstalledOverride: Bool?
     private(set) var snapshot: HubSnapshot
+    private var lastStatusFailureCode: String?
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment,
          commandRunner: HubCommandRunning = EmbeddedHubCommandRunner(),
@@ -768,15 +769,38 @@ final class HubController {
             let runner = installed ? self.installedCommandRunner : self.commandRunner
             runner.run(arguments: ["--config", self.configPath.path, "status"]) { result in
                 DispatchQueue.main.async {
-                    if case let .success(output) = result, let status = self.parseStatus(output) {
-                        self.snapshot = self.statusSnapshot(status, installed: installed, loaded: loaded)
-                    } else {
+                    switch result {
+                    case let .success(output):
+                        if let status = self.parseStatus(output) {
+                            if let previousCode = self.lastStatusFailureCode {
+                                HubAppLog.shared.record("status.recovered", category: "dashboard",
+                                                        fields: ["previous_error_code": previousCode])
+                            }
+                            self.lastStatusFailureCode = nil
+                            self.snapshot = self.statusSnapshot(status, installed: installed,
+                                                                loaded: loaded)
+                        } else {
+                            self.recordStatusFailure("invalid_status_output", installed: installed)
+                            self.snapshot = self.fallbackSnapshot(installed: installed, loaded: loaded)
+                        }
+                    case let .failure(error):
+                        self.recordStatusFailure(HubAppLog.errorCode(error), installed: installed)
                         self.snapshot = self.fallbackSnapshot(installed: installed, loaded: loaded)
                     }
                     completion(self.snapshot)
                 }
             }
         }
+    }
+
+    private func recordStatusFailure(_ code: String, installed: Bool) {
+        guard lastStatusFailureCode != code else { return }
+        lastStatusFailureCode = code
+        HubAppLog.shared.record("status.failed", category: "dashboard", level: "WARN",
+                                fields: [
+                                    "error_code": code,
+                                    "service_installed": installed ? "true" : "false"
+                                ])
     }
 
     func installService(completion: @escaping (Result<Void, Error>) -> Void) {
