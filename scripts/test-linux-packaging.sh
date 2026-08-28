@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -14,6 +15,7 @@ upgrade_backup="$test_root/upgrade-backup"
 config_file="$test_root/config.toml"
 installed_binary="$test_root/teslatlas-hub"
 installed_unit="$test_root/teslatlas-hub.service"
+installed_terminal_failure_target="$test_root/teslatlas-hub-terminal-failure.target"
 installed_proxy="$test_root/tesla-http-proxy"
 installed_fleet="$test_root/fleet-telemetry"
 installed_proxy_unit="$test_root/teslatlas-command-proxy.service"
@@ -33,6 +35,7 @@ export TESLATLAS_HUB_UPGRADE_BACKUP_DIR="$upgrade_backup"
 export TESLATLAS_HUB_CONFIG="$config_file"
 export TESLATLAS_HUB_BINARY="$installed_binary"
 export TESLATLAS_HUB_UNIT_FILE="$installed_unit"
+export TESLATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE="$installed_terminal_failure_target"
 export TESLATLAS_COMMAND_PROXY_BINARY="$installed_proxy"
 export TESLATLAS_FLEET_TELEMETRY_BINARY="$installed_fleet"
 export TESLATLAS_COMMAND_PROXY_UNIT_FILE="$installed_proxy_unit"
@@ -105,6 +108,33 @@ grep -Fq '$${TESLA_HTTP_PROXY_PORT}' \
     || fail 'command proxy readiness does not use configured port'
 grep -Fqx 'TimeoutStartSec=20' "$root/packaging/linux/teslatlas-command-proxy.service" \
     || fail 'command proxy readiness is not time bounded'
+grep -Fqx 'Wants=network-online.target teslatlas-command-proxy.service teslatlas-fleet-telemetry.service' \
+    "$root/packaging/linux/teslatlas-hub.service" \
+    || fail 'Hub does not pull in configured sidecars'
+grep -Fqx 'OnFailure=teslatlas-hub-terminal-failure.target' \
+    "$root/packaging/linux/teslatlas-hub.service" \
+    || fail 'Hub does not stop companions after restart exhaustion'
+grep -Fqx 'Restart=always' "$root/packaging/linux/teslatlas-hub.service" \
+    || fail 'Hub does not self-heal after an unexpected clean exit'
+grep -Fqx 'RestartMode=direct' "$root/packaging/linux/teslatlas-hub.service" \
+    || fail 'Hub transient restarts incorrectly notify companion units'
+for sidecar_unit in "$root/packaging/linux/teslatlas-command-proxy.service" \
+    "$root/packaging/linux/teslatlas-fleet-telemetry.service"; do
+    grep -Fqx 'PartOf=teslatlas-hub.service' "$sidecar_unit" \
+        || fail "sidecar does not follow Hub stop/restart: $sidecar_unit"
+    if grep -Fqx 'BindsTo=teslatlas-hub.service' "$sidecar_unit"; then
+        fail "sidecar cannot run independently during Fleet setup: $sidecar_unit"
+    fi
+done
+grep -Fqx 'Conflicts=teslatlas-command-proxy.service teslatlas-fleet-telemetry.service' \
+    "$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
+    || fail 'terminal failure target does not stop both companions'
+grep -Fqx 'StopWhenUnneeded=yes' \
+    "$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
+    || fail 'terminal failure target can block later recovery'
+grep -Fqx 'RefuseManualStart=yes' \
+    "$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
+    || fail 'terminal failure target accepts unsafe manual activation'
 grep -Fqx 'TESLA_HTTP_PROXY_PORT=4445' "$root/packaging/linux/command-proxy.env" \
     || fail 'packaged command proxy port is not 4445'
 
@@ -229,6 +259,7 @@ awk '
 : > "$systemctl_log"
 printf '%s\n' old-binary > "$installed_binary"
 printf '%s\n' old-unit > "$installed_unit"
+printf '%s\n' old-terminal-failure-target > "$installed_terminal_failure_target"
 if PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=1 \
     SYSTEMCTL_PROXY_PRESENT=1 SYSTEMCTL_PROXY_ACTIVE=1 SYSTEMCTL_PROXY_ENABLED=1 \
@@ -248,6 +279,7 @@ require_log 'start teslatlas-fleet-telemetry.service'
 : > "$hub_status_log"
 printf '%s\n' old-binary > "$installed_binary"
 printf '%s\n' old-unit > "$installed_unit"
+printf '%s\n' old-terminal-failure-target > "$installed_terminal_failure_target"
 printf '%s\n' old-proxy > "$installed_proxy"
 printf '%s\n' old-fleet > "$installed_fleet"
 printf '%s\n' old-proxy-unit > "$installed_proxy_unit"
@@ -289,6 +321,7 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     sh "$test_root/preinst" upgrade 1.0.0
 printf '%s\n' same-schema-unhealthy > "$installed_binary"
 printf '%s\n' same-schema-unit > "$installed_unit"
+printf '%s\n' new-terminal-failure-target > "$installed_terminal_failure_target"
 printf '%s\n' new-proxy > "$installed_proxy"
 printf '%s\n' new-fleet > "$installed_fleet"
 printf '%s\n' new-proxy-unit > "$installed_proxy_unit"
@@ -302,6 +335,8 @@ if PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$
 fi
 grep -Fqx old-binary "$installed_binary" \
     || fail 'same-schema health failure did not restore old binary'
+grep -Fqx old-terminal-failure-target "$installed_terminal_failure_target" \
+    || fail 'same-schema health failure did not restore terminal failure target'
 for restored_pair in \
     "$installed_proxy:old-proxy" \
     "$installed_fleet:old-fleet" \
@@ -319,7 +354,8 @@ done
 : > "$hub_status_log"
 rm -f "$installed_proxy" "$installed_fleet" \
     "$installed_proxy_unit" "$installed_fleet_unit" \
-    "$installed_proxy_config" "$installed_fleet_config"
+    "$installed_proxy_config" "$installed_fleet_config" \
+    "$installed_terminal_failure_target"
 printf '%s\n' old-binary > "$installed_binary"
 printf '%s\n' old-unit > "$installed_unit"
 PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
@@ -327,6 +363,7 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
     sh "$test_root/preinst" upgrade 1.0.0
 printf '%s\n' new-binary > "$installed_binary"
 printf '%s\n' new-unit > "$installed_unit"
+printf '%s\n' newly-unpacked > "$installed_terminal_failure_target"
 for new_sidecar_path in \
     "$installed_proxy" "$installed_fleet" \
     "$installed_proxy_unit" "$installed_fleet_unit" \
@@ -341,7 +378,8 @@ fi
 for absent_sidecar_path in \
     "$installed_proxy" "$installed_fleet" \
     "$installed_proxy_unit" "$installed_fleet_unit" \
-    "$installed_proxy_config" "$installed_fleet_config"; do
+    "$installed_proxy_config" "$installed_fleet_config" \
+    "$installed_terminal_failure_target"; do
     [ ! -e "$absent_sidecar_path" ] \
         || fail "rollback retained newly introduced sidecar: $absent_sidecar_path"
 done
@@ -654,10 +692,17 @@ printf '%s\n' \
     '[ "$1" = --build ] && shift' \
     '[ -f "$1/DEBIAN/preinst" ]' \
     '[ -f "$1/DEBIAN/postrm" ]' \
+    'cmp "$EXPECTED_TERMINAL_FAILURE_TARGET" "$1/lib/systemd/system/teslatlas-hub-terminal-failure.target"' \
     'cmp "$EXPECTED_LICENSE" "$1/usr/share/doc/teslatlas-hub/copyright"' \
     'cmp "$EXPECTED_NOTICE" "$1/usr/share/doc/teslatlas-hub/NOTICE"' \
     'cmp "$EXPECTED_THIRD_PARTY_NOTICES" "$1/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md"' \
     'cmp "$EXPECTED_PROVENANCE" "$1/usr/share/doc/teslatlas-hub/PROVENANCE.md"' \
+    'cmp "$EXPECTED_ADDITIONAL_TERMS" "$1/usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md"' \
+    'cmp "$EXPECTED_SOURCE_AVAILABILITY" "$1/usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md"' \
+    'cmp "$EXPECTED_RELEASE_VERIFICATION" "$1/usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md"' \
+    'for legal_component in "$EXPECTED_LEGAL_BUNDLE"/*; do' \
+    '  cmp "$legal_component" "$1/usr/share/doc/teslatlas-hub/dependency-legal/$(basename "$legal_component")"' \
+    'done' \
     'if [ "${EXPECT_SIDECARS:-0}" = 1 ]; then' \
     '  cmp "$EXPECTED_PROXY" "$1/usr/lib/teslatlas-hub/tesla-http-proxy"' \
     '  cmp "$EXPECTED_FLEET" "$1/usr/lib/teslatlas-hub/fleet-telemetry"' \
@@ -684,14 +729,50 @@ printf '%s\n' \
     'cp "$1/DEBIAN/control" "$CAPTURED_CONTROL"' \
     ': > "$2"' > "$elf_bin/dpkg-deb"
 chmod 0755 "$elf_bin/dpkg-deb"
-: > "$test_root/fake-binary"
+printf '%s\n' \
+    '#!/bin/sh' \
+    'printf "%s\n" "teslatlas-hub ${FAKE_HUB_VERSION:-1.0.0}"' \
+    '[ "${FAKE_HUB_EXTRA_NEWLINE:-0}" != 1 ] || printf "\n"' \
+    '[ "${FAKE_HUB_STDERR:-0}" != 1 ] || printf "%s\n" warning >&2' \
+    > "$test_root/fake-binary"
+chmod 0755 "$test_root/fake-binary"
 : > "$test_root/fake-command-proxy"
 : > "$test_root/fake-fleet-telemetry"
 package_fixture="$test_root/package-fixture"
 mkdir -p "$package_fixture/scripts" "$package_fixture/packaging"
 cp "$root/scripts/build-deb.sh" "$package_fixture/scripts/build-deb.sh"
+cat >"$package_fixture/scripts/legal-bundle.py" <<'PY'
+#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--repo")
+parser.add_argument("--verify-dir", type=Path, required=True)
+parser.add_argument("--go-proxy-evidence")
+parser.add_argument("--fleet-telemetry-evidence")
+args = parser.parse_args()
+sidecars = (args.go_proxy_evidence is not None, args.fleet_telemetry_evidence is not None)
+if sidecars[0] != sidecars[1] or not args.verify_dir.is_dir() or args.verify_dir.is_symlink():
+    raise SystemExit(1)
+base = {"RUST_THIRD_PARTY_NOTICES.generated.md", "rust-dependency-inventory.json",
+        "rust-sbom.spdx.json", "legal-bundle-manifest.json"}
+extra = {"FLEET_TELEMETRY_THIRD_PARTY_NOTICES.generated.md",
+         "GO_THIRD_PARTY_NOTICES.generated.md", "fleet-telemetry-bridge-lock.json",
+         "fleet-telemetry-dependency-inventory.json", "fleet-telemetry-legal-lock.json",
+         "fleet-telemetry-license-material.tar.gz", "fleet-telemetry-sbom.spdx.json",
+         "go-dependency-inventory.json", "go-sbom.spdx.json"}
+expected = base | (extra if sidecars[0] else set())
+if {path.name for path in args.verify_dir.iterdir()} != expected:
+    raise SystemExit(1)
+if any(not path.is_file() or path.is_symlink() for path in args.verify_dir.iterdir()):
+    raise SystemExit(1)
+PY
+chmod 0755 "$package_fixture/scripts/legal-bundle.py"
 cp -R "$root/packaging/linux" "$package_fixture/packaging/linux"
-for package_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md; do
+for package_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md \
+    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
     cp "$root/$package_file" "$package_fixture/$package_file"
 done
 package_proxy_sha=$(test_sha256 "$test_root/fake-command-proxy")
@@ -703,6 +784,22 @@ printf '%s\n' \
     "arm64 $package_proxy_sha $package_fleet_sha" \
     > "$package_fixture/packaging/linux/sidecar-sha256.lock"
 package_builder="$package_fixture/scripts/build-deb.sh"
+legal_bundle_base="$test_root/legal-bundle-base"
+legal_bundle_sidecar="$test_root/legal-bundle-sidecar"
+mkdir "$legal_bundle_base" "$legal_bundle_sidecar" \
+    "$test_root/go-evidence" "$test_root/fleet-evidence"
+for legal_component in RUST_THIRD_PARTY_NOTICES.generated.md \
+    rust-dependency-inventory.json rust-sbom.spdx.json legal-bundle-manifest.json; do
+    printf '%s\n' "$legal_component fixture" >"$legal_bundle_base/$legal_component"
+    cp "$legal_bundle_base/$legal_component" "$legal_bundle_sidecar/$legal_component"
+done
+for legal_component in FLEET_TELEMETRY_THIRD_PARTY_NOTICES.generated.md \
+    GO_THIRD_PARTY_NOTICES.generated.md fleet-telemetry-bridge-lock.json \
+    fleet-telemetry-dependency-inventory.json fleet-telemetry-legal-lock.json \
+    fleet-telemetry-license-material.tar.gz fleet-telemetry-sbom.spdx.json \
+    go-dependency-inventory.json go-sbom.spdx.json; do
+    printf '%s\n' "$legal_component fixture" >"$legal_bundle_sidecar/$legal_component"
+done
 
 run_package() {
     (
@@ -715,17 +812,27 @@ run_package() {
         package_proxy_mode=${6:-$package_elf_mode}
         package_fleet_mode=${7:-$package_elf_mode}
         set -- --binary fake-binary --version "$package_version" \
-            --architecture "$package_architecture" --output "$test_root/output.deb"
+            --architecture "$package_architecture" --output "$test_root/output.deb" \
+            --legal-bundle "$legal_bundle_base"
         if [ "$package_sidecars" = 1 ]; then
             set -- "$@" --command-proxy-binary fake-command-proxy \
-                --fleet-telemetry-binary fake-fleet-telemetry
+                --fleet-telemetry-binary fake-fleet-telemetry \
+                --legal-bundle "$legal_bundle_sidecar" \
+                --go-proxy-evidence "$test_root/go-evidence" \
+                --fleet-telemetry-evidence "$test_root/fleet-evidence"
         fi
-        FAKE_ELF_MODE=$package_elf_mode FAKE_SHLIBDEPS_MODE=$package_shlibdeps_mode \
+        FAKE_HUB_VERSION=$package_version \
+            FAKE_ELF_MODE=$package_elf_mode FAKE_SHLIBDEPS_MODE=$package_shlibdeps_mode \
             FAKE_PROXY_ELF_MODE=$package_proxy_mode FAKE_FLEET_ELF_MODE=$package_fleet_mode \
             EXPECT_SIDECARS=$package_sidecars \
             CAPTURED_CONTROL="$captured_control" EXPECTED_LICENSE="$root/LICENSE" \
             EXPECTED_NOTICE="$root/NOTICE" EXPECTED_THIRD_PARTY_NOTICES="$root/THIRD_PARTY_NOTICES.md" \
             EXPECTED_PROVENANCE="$root/PROVENANCE.md" \
+            EXPECTED_ADDITIONAL_TERMS="$root/ADDITIONAL_TERMS.md" \
+            EXPECTED_SOURCE_AVAILABILITY="$root/SOURCE_AVAILABILITY.md" \
+            EXPECTED_RELEASE_VERIFICATION="$root/RELEASE_VERIFICATION.md" \
+            EXPECTED_TERMINAL_FAILURE_TARGET="$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
+            EXPECTED_LEGAL_BUNDLE="$([ "$package_sidecars" = 1 ] && printf %s "$legal_bundle_sidecar" || printf %s "$legal_bundle_base")" \
             EXPECTED_PROXY="$test_root/fake-command-proxy" \
             EXPECTED_FLEET="$test_root/fake-fleet-telemetry" \
             EXPECTED_PROXY_SHA="$package_proxy_sha" EXPECTED_FLEET_SHA="$package_fleet_sha" \
@@ -773,19 +880,46 @@ fi
 run_package good_amd64 amd64 || fail 'valid amd64 ELF rejected'
 grep -Fqx 'Version: 1.0.0-1' "$captured_control" \
     || fail 'stable semver was not mapped to a Debian revision'
-grep -Fqx 'Depends: adduser, ca-certificates, systemd, libc6 (>= 2.38), libgcc-s1 (>= 3.0)' \
+grep -Fqx 'Depends: adduser, ca-certificates, systemd (>= 254), libc6 (>= 2.38), libgcc-s1 (>= 3.0)' \
     "$captured_control" || fail 'amd64 shared-library dependencies missing from control'
 grep -Fqx 'Description: Self-hosted multi-car Tesla telemetry hub' "$captured_control" \
     || fail 'package description does not describe multi-car support'
 run_package good_arm64 arm64 || fail 'valid dynamic arm64 ELF rejected'
-grep -Fqx 'Depends: adduser, ca-certificates, systemd, libc6 (>= 2.38), libgcc-s1 (>= 3.0)' \
+grep -Fqx 'Depends: adduser, ca-certificates, systemd (>= 254), libc6 (>= 2.38), libgcc-s1 (>= 3.0)' \
     "$captured_control" || fail 'arm64 shared-library dependencies missing from control'
 run_package good_arm64_static arm64 || fail 'valid static arm64 ELF rejected'
-grep -Fqx 'Depends: adduser, ca-certificates, systemd' "$captured_control" \
+grep -Fqx 'Depends: adduser, ca-certificates, systemd (>= 254)' "$captured_control" \
     || fail 'static arm64 package gained shared-library dependencies'
-run_package good_amd64 amd64 good 1.0.0-alpha.2 || fail 'valid prerelease rejected'
-grep -Fqx 'Version: 1.0.0~alpha.2-1' "$captured_control" \
+run_package good_amd64 amd64 good 1.0.0-beta.1 || fail 'valid prerelease rejected'
+grep -Fqx 'Version: 1.0.0~beta.1-1' "$captured_control" \
     || fail 'prerelease does not sort before the stable Debian package'
+if (
+    cd "$test_root"
+    FAKE_HUB_VERSION=1.0.0-alpha.2 PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
+        sh "$package_builder" --binary fake-binary --version 1.0.0-beta.1 \
+        --architecture amd64 --output "$test_root/version-mismatch.deb" \
+        --legal-bundle "$legal_bundle_base"
+) >"$test_root/version-mismatch-output" 2>&1; then
+    fail 'mismatched Hub binary version accepted'
+fi
+grep -Fq 'binary version does not match package version' \
+    "$test_root/version-mismatch-output" \
+    || fail 'mismatched Hub binary version has no stable diagnostic'
+for noisy_version_variable in FAKE_HUB_EXTRA_NEWLINE FAKE_HUB_STDERR; do
+    if (
+        cd "$test_root"
+        env "$noisy_version_variable=1" FAKE_HUB_VERSION=1.0.0 \
+            PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
+            sh "$package_builder" --binary fake-binary --version 1.0.0 \
+            --architecture amd64 --output "$test_root/noisy-version.deb" \
+            --legal-bundle "$legal_bundle_base"
+    ) >"$test_root/noisy-version-output" 2>&1; then
+        fail "noisy Hub version output accepted: $noisy_version_variable"
+    fi
+    grep -Fq 'binary version does not match package version' \
+        "$test_root/noisy-version-output" \
+        || fail "noisy Hub version output has no stable diagnostic: $noisy_version_variable"
+done
 run_package good_amd64 amd64 good 1.0.0 1 good_amd64_static good_amd64_static \
     || fail 'valid static Fleet sidecars rejected'
 run_package good_amd64 amd64 good 1.0.0 1 good_amd64 good_amd64_static \

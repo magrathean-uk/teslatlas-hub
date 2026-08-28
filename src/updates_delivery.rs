@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Shipped selected-car TeslaMate `updates` path through Hub schema 2.2.
 //!
 //! Read-only source decode, Hub persist/publish, signed full snapshot, signed

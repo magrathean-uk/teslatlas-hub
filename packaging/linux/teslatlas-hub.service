@@ -1,7 +1,8 @@
 [Unit]
 Description=Teslatlas Hub
 After=network-online.target
-Wants=network-online.target
+Wants=network-online.target teslatlas-command-proxy.service teslatlas-fleet-telemetry.service
+OnFailure=teslatlas-hub-terminal-failure.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -12,7 +13,8 @@ Group=teslatlas
 StateDirectory=teslatlas-hub
 StateDirectoryMode=0700
 ExecStart=/usr/bin/teslatlas-hub --config /etc/teslatlas-hub/config.toml serve
-Restart=on-failure
+Restart=always
+RestartMode=direct
 RestartSec=5
 UMask=0077
 CapabilityBoundingSet=

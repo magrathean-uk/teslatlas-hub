@@ -6,12 +6,17 @@ Discuss substantial protocol, storage, authentication, migration, licensing or b
 
 An external contribution is merged only after:
 
-1. DCO 1.1 sign-off on every commit;
+1. DCO 1.1 sign-off on every commit in the contribution;
 2. a signed individual or corporate contributor assignment, unless a recorded employment/contractor instrument already transfers title;
 3. a provenance declaration; and
 4. security, dependency and licence review.
 
-The founder does not sign a CLA to himself or to his own company. The founder is covered by the private confirmatory deed, but still uses DCO sign-off for public Hub commits.
+The founder does not sign a CLA to himself or to his own company. Private
+Company records, not this repository, determine whether founder, director,
+employee, or contractor work is assigned. All new maintainer commits use DCO
+sign-off. The historical pre-beta exception is disclosed in
+`HISTORICAL_CONTRIBUTIONS.md`; published history is not rewritten to manufacture
+missing trailers.
 
 ## Provenance declaration
 

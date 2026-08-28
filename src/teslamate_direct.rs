@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Direct, bounded TeslaMate PostgreSQL to immutable typed-pack production.
 //!
 //! The source stays inside one read-only repeatable-read transaction. Large

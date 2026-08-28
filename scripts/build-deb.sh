@@ -1,8 +1,9 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
 usage() {
-    echo "usage: $0 --binary PATH --version VERSION --output PATH [--architecture amd64|arm64] [--command-proxy-binary PATH --fleet-telemetry-binary PATH]" >&2
+    echo "usage: $0 --binary PATH --version VERSION --output PATH --legal-bundle PATH [--architecture amd64|arm64] [--command-proxy-binary PATH --fleet-telemetry-binary PATH --go-proxy-evidence PATH --fleet-telemetry-evidence PATH]" >&2
     exit 64
 }
 
@@ -12,6 +13,9 @@ fleet_telemetry_binary=
 version=
 output=
 architecture=
+legal_bundle=
+go_proxy_evidence=
+fleet_telemetry_evidence=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --binary) [ "$#" -ge 2 ] || usage; binary=$2; shift 2 ;;
@@ -20,14 +24,21 @@ while [ "$#" -gt 0 ]; do
         --version) [ "$#" -ge 2 ] || usage; version=$2; shift 2 ;;
         --output) [ "$#" -ge 2 ] || usage; output=$2; shift 2 ;;
         --architecture) [ "$#" -ge 2 ] || usage; architecture=$2; shift 2 ;;
+        --legal-bundle) [ "$#" -ge 2 ] || usage; legal_bundle=$2; shift 2 ;;
+        --go-proxy-evidence) [ "$#" -ge 2 ] || usage; go_proxy_evidence=$2; shift 2 ;;
+        --fleet-telemetry-evidence) [ "$#" -ge 2 ] || usage; fleet_telemetry_evidence=$2; shift 2 ;;
         *) usage ;;
     esac
 done
 
-[ -n "$binary" ] && [ -n "$version" ] && [ -n "$output" ] || usage
+[ -n "$binary" ] && [ -n "$version" ] && [ -n "$output" ] && [ -n "$legal_bundle" ] || usage
 case "${command_proxy_binary:+set}:${fleet_telemetry_binary:+set}" in
-    :) include_fleet_sidecars=false ;;
-    set:set) include_fleet_sidecars=true ;;
+    :) include_fleet_sidecars=false
+       [ -z "$go_proxy_evidence" ] && [ -z "$fleet_telemetry_evidence" ] \
+           || { echo "sidecar evidence requires sidecar binaries" >&2; exit 64; } ;;
+    set:set) include_fleet_sidecars=true
+       [ -n "$go_proxy_evidence" ] && [ -n "$fleet_telemetry_evidence" ] \
+           || { echo "sidecar binaries require both sidecar evidence directories" >&2; exit 64; } ;;
     *) echo "both sidecar binaries must be supplied together" >&2; exit 64 ;;
 esac
 regular_binary_path() {
@@ -37,6 +48,18 @@ regular_binary_path() {
         || { echo "$label is not a regular file" >&2; exit 65; }
     input_directory=$(CDPATH='' cd -- "$(dirname -- "$input")" && pwd)
     printf '%s/%s\n' "$input_directory" "$(basename -- "$input")"
+}
+require_hub_version() {
+    version_binary=$1
+    expected_version=$2
+    version_output=$(
+        version_status=0
+        "$version_binary" --version 2>&1 || version_status=$?
+        printf '%s' "__TESLATLAS_HUB_VERSION_STATUS_${version_status}__"
+    )
+    expected_output=$(printf 'teslatlas-hub %s\n%s' \
+        "$expected_version" '__TESLATLAS_HUB_VERSION_STATUS_0__')
+    [ "$version_output" = "$expected_output" ]
 }
 binary=$(regular_binary_path "$binary" 'binary')
 if [ "$include_fleet_sidecars" = true ]; then
@@ -72,6 +95,24 @@ case "$architecture" in
     *) echo "unsupported Debian architecture: $architecture" >&2; exit 65 ;;
 esac
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+command -v python3 >/dev/null 2>&1 || {
+    echo "python3 is required" >&2
+    exit 69
+}
+legal_helper="$root/scripts/legal-bundle.py"
+[ -f "$legal_helper" ] && [ ! -L "$legal_helper" ] \
+    || { echo "dependency legal bundle verifier is missing or unsafe" >&2; exit 65; }
+verify_legal_bundle() {
+    if [ "$include_fleet_sidecars" = true ]; then
+        python3 "$legal_helper" --repo "$root" --verify-dir "$legal_bundle" \
+            --go-proxy-evidence "$go_proxy_evidence" \
+            --fleet-telemetry-evidence "$fleet_telemetry_evidence"
+    else
+        python3 "$legal_helper" --repo "$root" --verify-dir "$legal_bundle"
+    fi
+}
+verify_legal_bundle >/dev/null \
+    || { echo "dependency legal bundle is invalid" >&2; exit 65; }
 if [ "$include_fleet_sidecars" = true ]; then
     sidecar_lock="$root/packaging/linux/sidecar-sha256.lock"
     [ -f "$sidecar_lock" ] && [ ! -L "$sidecar_lock" ] \
@@ -89,12 +130,12 @@ if [ "$include_fleet_sidecars" = true ]; then
         echo "reviewed Linux sidecar lock is invalid" >&2
         exit 65
     }
-    set -f
-    set -- $lock_values
-    set +f
-    [ "$#" -eq 2 ] || { echo "reviewed Linux sidecar lock is invalid" >&2; exit 65; }
-    command_proxy_sha256=$1
-    fleet_telemetry_sha256=$2
+    command_proxy_sha256=${lock_values%% *}
+    fleet_telemetry_sha256=${lock_values#* }
+    [ "$command_proxy_sha256" != "$lock_values" ] \
+        && [ "$fleet_telemetry_sha256" != "$lock_values" ] \
+        && [ "${fleet_telemetry_sha256#* }" = "$fleet_telemetry_sha256" ] \
+        || { echo "reviewed Linux sidecar lock is invalid" >&2; exit 65; }
     for reviewed_digest in "$command_proxy_sha256" "$fleet_telemetry_sha256"; do
         printf '%s\n' "$reviewed_digest" | grep -Eq '^[0-9a-f]{64}$' \
             || { echo "reviewed Linux sidecar lock is invalid" >&2; exit 65; }
@@ -106,6 +147,14 @@ if [ "$include_fleet_sidecars" = true ]; then
 fi
 printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
     || { echo "version must be semver with an optional prerelease" >&2; exit 65; }
+[ -x "$binary" ] || {
+    echo "binary must be executable" >&2
+    exit 65
+}
+require_hub_version "$binary" "$version" || {
+    echo "binary version does not match package version" >&2
+    exit 65
+}
 case "$version" in
     *-*) debian_version=${version%%-*}\~${version#*-}-1 ;;
     *) debian_version=$version-1 ;;
@@ -281,6 +330,8 @@ escaped_runtime_dependency_suffix=$(printf '%s' "$runtime_dependency_suffix" | s
 
 install -D -m 0644 "$root/packaging/linux/teslatlas-hub.service" \
     "$package_root/lib/systemd/system/teslatlas-hub.service"
+install -D -m 0644 "$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
+    "$package_root/lib/systemd/system/teslatlas-hub-terminal-failure.target"
 install -D -m 0644 "$root/packaging/linux/config.toml" \
     "$package_root/etc/teslatlas-hub/config.toml"
 if [ "$include_fleet_sidecars" = true ]; then
@@ -299,6 +350,34 @@ install -D -m 0644 "$root/THIRD_PARTY_NOTICES.md" \
     "$package_root/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md"
 install -D -m 0644 "$root/PROVENANCE.md" \
     "$package_root/usr/share/doc/teslatlas-hub/PROVENANCE.md"
+install -D -m 0644 "$root/ADDITIONAL_TERMS.md" \
+    "$package_root/usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md"
+install -D -m 0644 "$root/SOURCE_AVAILABILITY.md" \
+    "$package_root/usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md"
+install -D -m 0644 "$root/RELEASE_VERIFICATION.md" \
+    "$package_root/usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md"
+dependency_legal="$package_root/usr/share/doc/teslatlas-hub/dependency-legal"
+mkdir -p "$dependency_legal"
+for legal_component in RUST_THIRD_PARTY_NOTICES.generated.md \
+    rust-dependency-inventory.json rust-sbom.spdx.json legal-bundle-manifest.json; do
+    install -m 0644 "$legal_bundle/$legal_component" "$dependency_legal/$legal_component"
+done
+if [ "$include_fleet_sidecars" = true ]; then
+    for legal_component in FLEET_TELEMETRY_THIRD_PARTY_NOTICES.generated.md \
+        GO_THIRD_PARTY_NOTICES.generated.md fleet-telemetry-bridge-lock.json \
+        fleet-telemetry-dependency-inventory.json fleet-telemetry-legal-lock.json \
+        fleet-telemetry-license-material.tar.gz fleet-telemetry-sbom.spdx.json \
+        go-dependency-inventory.json go-sbom.spdx.json; do
+        install -m 0644 "$legal_bundle/$legal_component" "$dependency_legal/$legal_component"
+    done
+fi
+verify_legal_bundle >/dev/null \
+    || { echo "dependency legal bundle changed while packaging" >&2; exit 65; }
+for legal_component in "$legal_bundle"/*; do
+    component_name=$(basename -- "$legal_component")
+    cmp "$legal_component" "$dependency_legal/$component_name" >/dev/null \
+        || { echo "staged dependency legal component changed: $component_name" >&2; exit 65; }
+done
 install -D -m 0755 "$root/packaging/linux/preinst" "$package_root/DEBIAN/preinst"
 install -D -m 0755 "$root/packaging/linux/postinst" "$package_root/DEBIAN/postinst"
 install -D -m 0755 "$root/packaging/linux/prerm" "$package_root/DEBIAN/prerm"

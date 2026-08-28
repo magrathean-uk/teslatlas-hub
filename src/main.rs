@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 use std::{
     fs,
     io::{IsTerminal, Read, Write},
@@ -879,7 +881,10 @@ enum WriteBackCommand {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Print licence, source, and independence notices.
+    #[command(visible_aliases = ["licence", "license"])]
     Legal,
+    /// Print the version-bound Corresponding Source release-page URL.
+    Source,
     /// Initialize or migrate the local Hub database.
     Init,
     /// Create the configured local store for a packaged Linux installation.
@@ -1944,6 +1949,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", teslatlas_hub::legal_notice());
             return Ok(());
         }
+        Command::Source => {
+            println!("{}", teslatlas_hub::corresponding_source_url());
+            return Ok(());
+        }
         Command::Doctor => {
             let config = HubConfig::load(&config_path)?;
             let report = run_immutable_diagnostic(&config.data_dir, |store| {
@@ -2312,6 +2321,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         Command::Legal
+        | Command::Source
         | Command::Doctor
         | Command::Status
         | Command::TeslaMateCheck { .. }
@@ -3481,6 +3491,16 @@ mod tests {
         teslamate_reader::TeslaMateReaderError, teslamate_schema::SchemaCompatibilityError,
     };
     use uuid::Uuid;
+
+    #[test]
+    fn legal_aliases_and_source_command_parse_without_configuration() {
+        for name in ["legal", "licence", "license"] {
+            let cli = Cli::try_parse_from(["teslatlas-hub", name]).expect("legal CLI alias");
+            assert!(matches!(cli.command, Command::Legal));
+        }
+        let source = Cli::try_parse_from(["teslatlas-hub", "source"]).expect("source CLI");
+        assert!(matches!(source.command, Command::Source));
+    }
 
     #[cfg(target_os = "macos")]
     fn supervisor_cursor_proof(cursor_key: &CursorKey) -> String {
@@ -5371,6 +5391,7 @@ mod tests {
         ));
         assert!(!command_requires_user_hub_admission(&Command::Doctor));
         assert!(!command_requires_user_hub_admission(&Command::Legal));
+        assert!(!command_requires_user_hub_admission(&Command::Source));
         assert!(!command_requires_user_hub_admission(&Command::Status));
         assert!(!command_requires_user_hub_admission(&Command::Preflight));
         assert!(!command_requires_user_hub_admission(&Command::Service {

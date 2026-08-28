@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Private deterministic durability checkpoints used only by unit tests.
 //!
 //! Production builds retain no way to arm a checkpoint. The no-op `check`

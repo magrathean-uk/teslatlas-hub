@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Read-only TeslaMate schema contract.
 //!
 //! This module is deliberately only a contract: it never opens a socket, builds

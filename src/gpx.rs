@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Bounded TeslaMate-compatible GPX drive export.
 
 use std::io::{self, Write};

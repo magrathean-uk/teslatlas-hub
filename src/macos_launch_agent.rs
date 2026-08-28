@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Small per-user LaunchAgent installer for the one Hub process.
 
 use std::{

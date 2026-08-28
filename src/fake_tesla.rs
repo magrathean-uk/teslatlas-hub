@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Deterministic loopback fake Tesla Owner API + streaming source.
 //!
 //! Used only for local replacement proof (R04–R06). It never contacts a real

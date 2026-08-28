@@ -28,3 +28,11 @@ Sources and revisions:
 - [ ] Corresponding Source requirements are satisfied.
 - [ ] Dependency/SBOM/notice generation has been reviewed.
 - [ ] Modified upstream material is marked and attributed where applicable.
+
+## Release-sensitive changes
+
+- [ ] Cargo, binary, GUI, package, tag, and documentation versions agree.
+- [ ] The tracked-file provenance verifier passes.
+- [ ] Platform artifacts include the complete legal/source bundle.
+- [ ] No GitHub workflow or external automation was added without explicit
+      project-owner approval.

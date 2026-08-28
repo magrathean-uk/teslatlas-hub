@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Canonical TeslaMate `updates` logical-row stream and three-layer receipt.
 //!
 //! Counts, bounds, and SHA-256 are derived from the same

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
@@ -13,14 +14,29 @@ trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$TMP/build-cache"
 GOCACHE="$TMP/build-cache" \
-    "$ROOT/scripts/build-tesla-command-proxy.sh" --output "$TMP/tesla-http-proxy" \
+    "$ROOT/scripts/build-tesla-command-proxy.sh" --target darwin-arm64 \
+    --output "$TMP/tesla-http-proxy" \
     >/dev/null
+GOCACHE="$TMP/build-cache" \
+    "$ROOT/scripts/build-tesla-command-proxy.sh" --target linux-amd64 \
+    --output "$TMP/tesla-http-proxy-linux-amd64" >/dev/null
+GOCACHE="$TMP/build-cache" \
+    "$ROOT/scripts/build-tesla-command-proxy.sh" --target linux-arm64 \
+    --output "$TMP/tesla-http-proxy-linux-arm64" >/dev/null
 
 python3 "$HELPER" --repo "$ROOT" --proxy-binary "$TMP/tesla-http-proxy" \
     --output-dir "$TMP/evidence-one" >/dev/null
 python3 "$HELPER" --repo "$ROOT" --proxy-binary "$TMP/tesla-http-proxy" \
     --output-dir "$TMP/evidence-two" >/dev/null
+python3 "$HELPER" --repo "$ROOT" --target linux-amd64 \
+    --proxy-binary "$TMP/tesla-http-proxy-linux-amd64" \
+    --output-dir "$TMP/evidence-linux-amd64" >/dev/null
+python3 "$HELPER" --repo "$ROOT" --target linux-arm64 \
+    --proxy-binary "$TMP/tesla-http-proxy-linux-arm64" \
+    --output-dir "$TMP/evidence-linux-arm64" >/dev/null
 python3 "$HELPER" --repo "$ROOT" --verify-dir "$TMP/evidence-one" >/dev/null
+python3 "$HELPER" --repo "$ROOT" --verify-dir "$TMP/evidence-linux-amd64" >/dev/null
+python3 "$HELPER" --repo "$ROOT" --verify-dir "$TMP/evidence-linux-arm64" >/dev/null
 
 for name in \
     GO_THIRD_PARTY_NOTICES.generated.md \
@@ -49,8 +65,9 @@ proxy = Path(sys.argv[2])
 digest = lambda data: hashlib.sha256(data).hexdigest()
 
 manifest = json.loads((evidence / "go-component-manifest.json").read_text())
-assert manifest["schema"] == "teslatlas.go-proxy-evidence/v1"
-assert manifest["source_module_count"] == 19
+assert manifest["schema"] == "teslatlas.go-proxy-evidence/v2"
+assert manifest["target"] == "darwin-arm64"
+assert manifest["source_module_count"] == 21
 assert manifest["runtime_dependency_count"] == 18
 assert manifest["clean_rebuild_byte_identical"] is True
 assert manifest["subject"]["sha256"] == digest(proxy.read_bytes())
@@ -70,8 +87,8 @@ for item in manifest["components"]:
 assert (evidence / "tesla-http-proxy.unsigned").read_bytes() == proxy.read_bytes()
 
 inventory = json.loads((evidence / "go-dependency-inventory.json").read_text())
-assert inventory["runtime_dependency_count"] == 18
-assert len(inventory["runtime_dependencies"]) == 18
+assert inventory["runtime_dependency_count"] == 20
+assert len(inventory["runtime_dependencies"]) == 20
 replacement = next(
     item for item in inventory["runtime_dependencies"]
     if item["path"] == "github.com/JuulLabs-OSS/cbgo"
@@ -80,11 +97,12 @@ assert replacement["replacement"]["path"] == "github.com/tinygo-org/cbgo"
 
 sbom = json.loads((evidence / "go-sbom.spdx.json").read_text())
 assert sbom["spdxVersion"] == "SPDX-2.3"
-assert len(sbom["packages"]) == 19
+assert len(sbom["packages"]) == 21
 assert all(package["licenseDeclared"] != "NOASSERTION" for package in sbom["packages"])
 
 receipt = json.loads((evidence / "go-build-receipt.json").read_text())
 assert receipt["clean_rebuild_byte_identical"] is True
+assert receipt["target"] == "darwin-arm64"
 assert receipt["clean_rebuild_sha256"] == digest(proxy.read_bytes())
 assert receipt["strict_go_environment"]["GOFLAGS"] == ""
 assert receipt["toolchain"]["go_version"] == "go1.27.0"
@@ -99,9 +117,14 @@ assert receipt["build_host"]["xcode"]["version"].startswith("Xcode ")
 assert receipt["build_host"]["sdk"]["version"] == "27.0"
 assert receipt["source_configuration"]["archived_upstream_source_unchanged"] is True
 assert receipt["source_configuration"]["private_build_copy_go_mod_directive"] == "godebug default=go1.27"
+assert receipt["source_configuration"]["overlay_path"] == (
+    "packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch"
+)
+assert len(receipt["source_configuration"]["overlay_sha256"]) == 64
+assert len(receipt["source_configuration"]["modified_go_mod_sha256"]) == 64
 
 notice = (evidence / "GO_THIRD_PARTY_NOTICES.generated.md").read_text()
-assert notice.count("----- BEGIN EXACT LICENSE TEXT -----") == 20
+assert notice.count("----- BEGIN EXACT LICENSE TEXT -----") == 22
 assert "github.com/tinygo-org/cbgo@v0.0.4" in notice
 
 archive_data = gzip.decompress((evidence / "tesla-http-proxy-go-sources.tar.gz").read_bytes())
@@ -109,16 +132,63 @@ with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:") as archive:
     members = archive.getmembers()
     names = [member.name for member in members]
     assert all(member.isfile() and not member.issym() and member.mtime == 0 for member in members)
-    assert len([name for name in names if name.endswith("/module.zip")]) == 19
-    assert len([name for name in names if name.endswith("/module.mod")]) == 19
-    assert len([name for name in names if name.endswith("/source.json")]) == 19
+    assert len([name for name in names if name.endswith("/module.zip")]) == 21
+    assert len([name for name in names if name.endswith("/module.mod")]) == 21
+    assert len([name for name in names if name.endswith("/source.json")]) == 21
     assert "tesla-http-proxy-go-sources/tesla-proxy-lock.json" in names
-    for index in range(19):
+    overlay_name = (
+        "tesla-http-proxy-go-sources/packaging/tesla-command-proxy/"
+        "0001-go-1.27-runtime-defaults.patch"
+    )
+    assert overlay_name in names
+    assert digest(archive.extractfile(overlay_name).read()) == (
+        receipt["source_configuration"]["overlay_sha256"]
+    )
+    for index in range(21):
         root = f"tesla-http-proxy-go-sources/modules/{index:02d}"
         source = json.load(archive.extractfile(f"{root}/source.json"))
         assert digest(archive.extractfile(f"{root}/module.zip").read()) == source["zip_sha256"]
         assert digest(archive.extractfile(f"{root}/module.mod").read()) == source["go_mod_sha256"]
 PY
+
+python3 - \
+    "$TMP/evidence-linux-amd64" "$TMP/tesla-http-proxy-linux-amd64" linux-amd64 16 \
+    "$TMP/evidence-linux-arm64" "$TMP/tesla-http-proxy-linux-arm64" linux-arm64 16 <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+for offset in (1, 5):
+    evidence = Path(sys.argv[offset])
+    binary = Path(sys.argv[offset + 1])
+    target = sys.argv[offset + 2]
+    dependency_count = int(sys.argv[offset + 3])
+    manifest = json.loads((evidence / "go-component-manifest.json").read_text())
+    receipt = json.loads((evidence / "go-build-receipt.json").read_text())
+    digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+    assert manifest["schema"] == "teslatlas.go-proxy-evidence/v2"
+    assert manifest["target"] == target
+    assert manifest["subject"]["sha256"] == digest
+    assert manifest["subject"]["size"] == binary.stat().st_size
+    assert manifest["source_module_count"] == 21
+    assert manifest["runtime_dependency_count"] == dependency_count
+    assert receipt["target"] == target
+    assert receipt["proxy"]["target"] == target
+    assert receipt["proxy"]["minimum_macos"] is None
+    assert receipt["proxy"]["signature"] == "not applicable to static ELF"
+    assert receipt["clean_rebuild_sha256"] == digest
+    assert receipt["clean_rebuild_byte_identical"] is True
+PY
+
+if python3 "$HELPER" --repo "$ROOT" --target linux-arm64 \
+    --proxy-binary "$TMP/tesla-http-proxy-linux-amd64" \
+    --output-dir "$TMP/cross-target-evidence" >"$TMP/cross-target.out" 2>&1; then
+    echo 'go-proxy-evidence test: cross-target binary was accepted' >&2
+    exit 1
+fi
+grep -Fq 'does not match the reviewed locked subject' "$TMP/cross-target.out"
+test ! -e "$TMP/cross-target-evidence"
 
 cp -R "$TMP/evidence-one" "$TMP/mutated-published-evidence"
 printf '%s\n' tamper >>"$TMP/mutated-published-evidence/go-build-receipt.json"
@@ -199,9 +269,18 @@ shutil.copytree(source, proxy)
 with (proxy / "tesla-http-proxy.unsigned").open("ab") as output:
     output.write(b"forged proxy\n")
 rewrite_manifest(proxy)
+
+target = root / "forged-target"
+shutil.copytree(source, target)
+manifest_path = target / "go-component-manifest.json"
+manifest = json.loads(manifest_path.read_text())
+manifest["target"] = "linux-amd64"
+manifest_path.write_text(
+    json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+)
 PY
 for forgery in forged-receipt forged-build-host forged-inventory forged-sbom \
-    forged-notices forged-archive forged-proxy-component
+    forged-notices forged-archive forged-proxy-component forged-target
 do
     if python3 "$HELPER" --repo "$ROOT" --verify-dir "$TMP/$forgery" \
         >"$TMP/$forgery.out" 2>&1; then
@@ -217,6 +296,7 @@ grep -Fq 'notices do not match the locked source licenses' "$TMP/forged-notices.
 grep -Eq 'valid gzip stream|canonical reproducible format' "$TMP/forged-archive.out"
 grep -Fq 'unsigned Tesla proxy component does not match the locked subject' \
     "$TMP/forged-proxy-component.out"
+grep -Fq 'subject does not match the locked proxy' "$TMP/forged-target.out"
 
 cp "$TMP/tesla-http-proxy" "$TMP/tampered-proxy"
 printf '%s\n' tamper >>"$TMP/tampered-proxy"

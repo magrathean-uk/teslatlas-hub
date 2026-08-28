@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Strict single-range parsing for immutable transport-pack objects.
 //!
 //! The pack endpoint deliberately supports one HTTP byte range only.  This is

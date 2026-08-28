@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
 
@@ -7,6 +8,8 @@ cargo=${CARGO:-cargo}
 advisory=RUSTSEC-2026-0235
 
 cd "$root"
+
+python3 "$root/scripts/verify-provenance.py" --repo "$root"
 
 if grep -A2 -F 'name = "rkyv"' Cargo.lock | grep -Fq 'version = "0.7.46"'; then
     reverse=$($cargo tree --locked --target all --edges normal,build -i rkyv@0.7.46 2>/dev/null)

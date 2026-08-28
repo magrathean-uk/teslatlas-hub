@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
 
@@ -17,6 +18,7 @@ die() {
 }
 
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
+ICON_BUILD="$ROOT/scripts/build-app-icon.sh"
 APP_SOURCE="$ROOT/macos/TeslatlasHubApp"
 DERIVED="$ROOT/target/macos-app"
 GENERATED="$DERIVED/generated"
@@ -29,7 +31,17 @@ SERVICE_PACKAGE="$GENERATED/TeslatlasHubService.pkg"
 PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
 DIST="$ROOT/dist"
 DIST_APP="$DIST/Teslatlas Hub.app"
-DIST_PACKAGE="$DIST/TeslatlasHub.pkg"
+DIST_PACKAGE="$DIST/TeslatlasHubService.pkg"
+GO_EVIDENCE="$GENERATED/go-proxy-evidence"
+FLEET_TELEMETRY_EVIDENCE="$GENERATED/fleet-telemetry-evidence"
+LEGAL_BUNDLE="$GENERATED/dependency-legal"
+DIST_GO_EVIDENCE="$DIST/go-proxy-evidence"
+DIST_FLEET_TELEMETRY_EVIDENCE="$DIST/fleet-telemetry-evidence"
+DIST_LEGAL_BUNDLE="$DIST/dependency-legal"
+
+[ -x "$ICON_BUILD" ] && [ ! -L "$ICON_BUILD" ] \
+    || die "app icon generator is missing or unsafe"
+"$ICON_BUILD"
 
 ensure_real_directory() {
     directory=$1
@@ -150,11 +162,35 @@ ensure_real_directory "$DIST"
     --target darwin-arm64 \
     --output "$FLEET_TELEMETRY_BINARY" >/dev/null
 
+for generated_legal_input in "$GO_EVIDENCE" "$FLEET_TELEMETRY_EVIDENCE" "$LEGAL_BUNDLE"; do
+    case "$generated_legal_input" in
+        "$GENERATED"/*) ;;
+        *) die "refusing unsafe generated legal input path" ;;
+    esac
+    if [ -e "$generated_legal_input" ] || [ -L "$generated_legal_input" ]; then
+        [ -d "$generated_legal_input" ] && [ ! -L "$generated_legal_input" ] \
+            || die "unsafe generated legal input path"
+        /usr/bin/find "$generated_legal_input" -depth -delete
+    fi
+done
+"$ROOT/scripts/go-proxy-evidence.py" --repo "$ROOT" \
+    --proxy-binary "$PROXY_BINARY" --output-dir "$GO_EVIDENCE" >/dev/null
+"$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
+    --receiver-binary "$FLEET_TELEMETRY_BINARY" \
+    --output-dir "$FLEET_TELEMETRY_EVIDENCE" >/dev/null
+"$ROOT/scripts/legal-bundle.py" --repo "$ROOT" \
+    --go-proxy-evidence "$GO_EVIDENCE" \
+    --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" \
+    --output-dir "$LEGAL_BUNDLE" >/dev/null
+
 "$ROOT/scripts/build-macos-service-package.sh" \
     --binary "$RUST_BINARY" \
     --proxy-binary "$PROXY_BINARY" \
     --fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY" \
     --version "$version" \
+    --legal-bundle "$LEGAL_BUNDLE" \
+    --go-proxy-evidence "$GO_EVIDENCE" \
+    --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" \
     --output "$SERVICE_PACKAGE" >/dev/null
 
 xcodegen generate --quiet \
@@ -193,7 +229,24 @@ resources="$PRODUCT/Contents/Resources"
 /usr/bin/install -m 0755 "$PROXY_BINARY" "$resources/tesla-http-proxy"
 /usr/bin/install -m 0755 "$FLEET_TELEMETRY_BINARY" "$resources/fleet-telemetry"
 /usr/bin/install -m 0644 "$SERVICE_PACKAGE" "$resources/TeslatlasHubService.pkg"
-for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md; do
+for required_release_legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md \
+    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
+    [ -f "$ROOT/$required_release_legal_file" ] \
+        && [ ! -L "$ROOT/$required_release_legal_file" ] \
+        || die "required release legal file is missing or unsafe: $required_release_legal_file"
+done
+/bin/mkdir -p "$resources/DependencyLegal"
+for legal_component in "$LEGAL_BUNDLE"/*; do
+    /usr/bin/install -m 0644 "$legal_component" \
+        "$resources/DependencyLegal/$(/usr/bin/basename "$legal_component")"
+done
+"$ROOT/scripts/legal-bundle.py" --repo "$ROOT" \
+    --verify-dir "$resources/DependencyLegal" \
+    --go-proxy-evidence "$GO_EVIDENCE" \
+    --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" >/dev/null \
+    || die "app dependency legal bundle is invalid"
+for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md \
+    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
     if [ -f "$ROOT/$legal_file" ]; then
         /usr/bin/install -m 0644 "$ROOT/$legal_file" "$resources/$legal_file"
     fi
@@ -263,22 +316,33 @@ reject_appledouble "$DIST_APP"
     || die "distribution app icon Info.plist value is missing"
 /usr/bin/codesign --verify --deep --strict "$DIST_APP"
 
-"$ROOT/scripts/build-macos-service-package.sh" \
-    --binary "$RUST_BINARY" \
-    --proxy-binary "$PROXY_BINARY" \
-    --fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY" \
-    --version "$version" \
-    --app "$DIST_APP" \
-    --output "$DIST_PACKAGE" >/dev/null
+/usr/bin/install -m 0644 "$SERVICE_PACKAGE" "$DIST_PACKAGE"
 [ -f "$DIST_PACKAGE" ] && [ ! -L "$DIST_PACKAGE" ] \
     || die "final installer package is missing"
+[ "$(/usr/bin/shasum -a 256 "$DIST_PACKAGE" | /usr/bin/awk '{print $1}')" \
+    = "$(/usr/bin/shasum -a 256 "$DIST_APP/Contents/Resources/TeslatlasHubService.pkg" | /usr/bin/awk '{print $1}')" ] \
+    || die "external service package does not match the app's embedded package"
 
-case "$DIST_APP" in
-    "$ROOT/dist/Teslatlas Hub.app") /bin/rm -rf "$DIST_APP" ;;
-    *) die "refusing unsafe distribution cleanup" ;;
-esac
+for dist_evidence in "$DIST_GO_EVIDENCE" "$DIST_FLEET_TELEMETRY_EVIDENCE" "$DIST_LEGAL_BUNDLE"; do
+    case "$dist_evidence" in
+        "$DIST"/*) ;;
+        *) die "refusing unsafe distribution evidence path" ;;
+    esac
+    if [ -e "$dist_evidence" ] || [ -L "$dist_evidence" ]; then
+        [ -d "$dist_evidence" ] && [ ! -L "$dist_evidence" ] \
+            || die "unsafe distribution evidence path"
+        /usr/bin/find "$dist_evidence" -depth -delete
+    fi
+done
+/usr/bin/ditto --noextattr --norsrc "$GO_EVIDENCE" "$DIST_GO_EVIDENCE"
+/usr/bin/ditto --noextattr --norsrc "$FLEET_TELEMETRY_EVIDENCE" "$DIST_FLEET_TELEMETRY_EVIDENCE"
+/usr/bin/ditto --noextattr --norsrc "$LEGAL_BUNDLE" "$DIST_LEGAL_BUNDLE"
+"$ROOT/scripts/legal-bundle.py" --repo "$ROOT" --verify-dir "$DIST_LEGAL_BUNDLE" \
+    --go-proxy-evidence "$DIST_GO_EVIDENCE" \
+    --fleet-telemetry-evidence "$DIST_FLEET_TELEMETRY_EVIDENCE" >/dev/null \
+    || die "distribution dependency legal bundle is invalid"
 
-# A successful all-in-one package is the only deliverable from this script.
+# The app and byte-identical service-only package are the local deliverables.
 # Drop the exact Xcode staging tree so repeated builds do not retain hundreds
 # of megabytes. Failed builds intentionally keep it for diagnosis.
 case "$DERIVED" in
@@ -293,4 +357,4 @@ esac
 
 printf '%s\n' \
     'build-macos-app: local ad-hoc build; privileged install and update are disabled. Use a signed, notarized release for service installation.' >&2
-printf '%s\n' "$DIST_PACKAGE"
+printf '%s\n%s\n' "$DIST_APP" "$DIST_PACKAGE"

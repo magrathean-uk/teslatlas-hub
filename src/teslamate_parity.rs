@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Honest TeslaMate source-parity accounting.
 //!
 //! The selected telemetry projection is not a byte-for-byte TeslaMate backup.

@@ -1,6 +1,9 @@
 # Attribution
 
-Copyright in original project material is held by **MAGRATHEAN UK LTD**, subject to identified third-party and contributor rights.
+**MAGRATHEAN UK LTD** publishes and stewards the project. Copyright ownership
+in original material follows the applicable verified Company, founder, and
+contributor title records; this repository is not proof of those private
+records.
 
 The original project creator and lead developer is **Gyorgy Bolyki**.
 

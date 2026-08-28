@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import AppKit
 
 enum HubOnboardingPath: Equatable {
@@ -389,7 +391,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private var pageSubtitle: String {
         switch state.route {
         case .welcome:
-            return "Teslatlas Hub is the backend service replacing TeslaMate. It records the same data as TeslaMate but optimized and re-written."
+            return "Teslatlas Hub is a self-hosted backend for Teslatlas. It collects selected Tesla telemetry and can import supported TeslaMate history."
         case .choose:
             return "Choose how you would like to set up Teslatlas Hub."
         case .provider:
@@ -424,7 +426,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     private func welcomeBody() -> NSView {
         let rows = NSStackView(views: [
-            rustFeatureRow("Written purely in Rust."),
+            featureRow("Written purely in Rust.", "chevron.left.forwardslash.chevron.right"),
             featureRow("No Docker.", "shippingbox.fill", color: .systemBlue),
             featureRow("Developed natively for macOS and Debian.",
                        "desktopcomputer", color: .systemGreen),
@@ -1333,22 +1335,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             NSImage.SymbolConfiguration(pointSize: 24, weight: .medium)
         )
         image.contentTintColor = color
-        image.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        image.heightAnchor.constraint(equalToConstant: 30).isActive = true
-        let label = NSTextField(wrappingLabelWithString: title)
-        label.font = .systemFont(ofSize: 14)
-        label.maximumNumberOfLines = 2
-        let row = NSStackView(views: [image, label])
-        row.spacing = 12
-        row.alignment = .centerY
-        return row
-    }
-
-    private func rustFeatureRow(_ title: String) -> NSView {
-        let logo = Bundle.main.image(forResource: "RustLogo") ?? NSImage()
-        let image = NSImageView(image: logo)
-        image.imageScaling = .scaleProportionallyUpOrDown
-        image.setAccessibilityLabel("Rust language logo")
         image.widthAnchor.constraint(equalToConstant: 30).isActive = true
         image.heightAnchor.constraint(equalToConstant: 30).isActive = true
         let label = NSTextField(wrappingLabelWithString: title)

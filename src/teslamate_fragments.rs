@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Bounded full-snapshot pack production from a sealed TeslaMate stage.
 //!
 //! The PostgreSQL reader owns capture consistency. This producer owns only

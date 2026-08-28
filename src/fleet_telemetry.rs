@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Bounded normalization for trusted-loopback Fleet Telemetry sidecars.
 //!
 //! This module deliberately owns no socket, credential, or database state. It

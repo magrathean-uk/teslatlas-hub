@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 #![forbid(unsafe_code)]
 // Intentional API surface: multi-arg import/finalize and complex store
 // closures are preferred over artificial parameter objects for now.
@@ -61,6 +63,17 @@ pub(crate) mod user_lifetime_lock;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/teslatlas-hub";
 
+/// Signed release tag containing the exact source for this binary version.
+pub fn source_release_tag() -> String {
+    format!("v{BUILD_VERSION}")
+}
+
+/// Version-bound release page listing every Corresponding Source component.
+pub fn corresponding_source_url() -> String {
+    let tag = source_release_tag();
+    format!("{SOURCE_URL}/releases/tag/{tag}")
+}
+
 #[cfg(test)]
 pub(crate) fn private_tempdir() -> std::io::Result<tempfile::TempDir> {
     use std::os::unix::fs::PermissionsExt;
@@ -72,18 +85,32 @@ pub(crate) fn private_tempdir() -> std::io::Result<tempfile::TempDir> {
 
 /// Interactive legal notice printed by `teslatlas-hub legal`.
 pub fn legal_notice() -> String {
+    let corresponding_source = corresponding_source_url();
     format!(
         "Teslatlas Hub {BUILD_VERSION}\n\
-         Copyright © 2026 Magrathean UK Ltd\n\
+         Copyright © 2026 Gyorgy Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own\n\
          License: AGPL-3.0-only\n\
-         Teslatlas Hub — originally authored by Gyorgy Bolyki and published by Magrathean UK Ltd. Source: {SOURCE_URL}\n\
+         Teslatlas Hub — originally authored by Gyorgy Bolyki and published by MAGRATHEAN UK LTD. Source: {SOURCE_URL}\n\
+         Corresponding Source for this version: {corresponding_source}\n\
          Unofficial; not affiliated with Tesla or TeslaMate; no warranty."
     )
 }
 
 #[cfg(test)]
 mod legal_notice_tests {
-    use super::{BUILD_VERSION, SOURCE_URL, legal_notice};
+    use super::{
+        BUILD_VERSION, SOURCE_URL, corresponding_source_url, legal_notice, source_release_tag,
+    };
+
+    #[test]
+    fn corresponding_source_is_bound_to_the_exact_package_version() {
+        let tag = format!("v{BUILD_VERSION}");
+        assert_eq!(source_release_tag(), tag);
+        assert_eq!(
+            corresponding_source_url(),
+            format!("{SOURCE_URL}/releases/tag/{tag}")
+        );
+    }
 
     #[test]
     fn legal_notice_identifies_agpl_only_and_notice_facts() {
@@ -101,17 +128,21 @@ mod legal_notice_tests {
             "notice must not offer or-later: {notice}"
         );
         assert!(
-            notice.contains("Copyright © 2026 Magrathean UK Ltd"),
+            notice.contains("Copyright © 2026 Gyorgy Bolyki, MAGRATHEAN UK LTD"),
             "notice must name the company copyright: {notice}"
         );
         assert!(
             notice.contains("originally authored by Gyorgy Bolyki")
-                && notice.contains("published by Magrathean UK Ltd"),
+                && notice.contains("published by MAGRATHEAN UK LTD"),
             "notice must carry the founder/company attribution: {notice}"
         );
         assert!(
             notice.contains(SOURCE_URL),
             "notice must offer the source URL: {notice}"
+        );
+        assert!(
+            notice.contains(&corresponding_source_url()),
+            "notice must offer exact Corresponding Source: {notice}"
         );
         assert!(
             notice.contains("no warranty")

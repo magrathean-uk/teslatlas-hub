@@ -1,6 +1,11 @@
 # Remaining and runtime-only risks
 
-This ledger is cumulative. Entries may be removed only by a later review finding with exact code/test/runtime evidence; otherwise they remain merge gates or accepted limitations.
+> Historical review snapshot for its 18 August 2026 baseline. Later fixes and
+> current release evidence are not backported into this ledger. See
+> [the current release process](../../RELEASING.md) for current status.
+
+This ledger is cumulative within the dated review package. Entries were not
+removed without a later finding in that package.
 
 ## Open P0/P1 risks after S1
 

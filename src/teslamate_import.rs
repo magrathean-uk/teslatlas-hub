@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! TeslaMate full-snapshot migration publisher.
 //!
 //! The PostgreSQL reader is intentionally separate from this module. Once a

@@ -8,7 +8,7 @@ Common permissive licences may be accepted after verification, including MIT, BS
 
 Review is mandatory for:
 
-- GPL, AGPL, LGPL and MPL components;
+- GPL, AGPL, LGPL, MPL, EPL and other copyleft or weak-copyleft components;
 - custom or non-SPDX terms;
 - source-available licences;
 - fonts, icons, maps, models, corpora and databases;
@@ -37,3 +37,19 @@ Run and retain outputs from:
 - provenance/header checks.
 
 Every lockfile change requires a recorded dependency diff.
+
+For a dependency whose licence requires source availability, release evidence
+must include the exact locked source or an independently durable, version-bound
+source location, plus an accompanying notice that tells recipients how to
+obtain it. A licence text or repository homepage alone is not a source offer.
+
+Generate `scripts/legal-bundle.py` after unsigned sidecar evidence and before
+platform packaging. Every distributed package must embed that exact verified
+bundle; release evidence must recompute the Rust material, verify the Go and
+Fleet locks, and byte-compare every packaged component.
+
+When a package declares a standard SPDX expression but its archive omits the
+licence text, release evidence may use only the pinned canonical SPDX corpus in
+`LICENSES/`, as documented by `LICENSE_CORPUS.md`. A missing identifier or text
+blocks release. The fallback does not choose a licence alternative or replace
+package-specific notices.

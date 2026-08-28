@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Deterministic vehicle lifecycle projection from owner-API observations.
 //!
 //! This module is pure: it never performs I/O, never wakes a vehicle, and never

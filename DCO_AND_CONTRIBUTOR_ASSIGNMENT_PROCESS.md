@@ -29,7 +29,7 @@ Signed agreements must be stored in Company-controlled encrypted records, not Gi
 
 Suggested logical path:
 
-`Company Secretarial/IP/Contributors/Teslatlas-Hub/<year>/<account>/`
+`Company Secretarial/IP/Contributors/teslatlas-hub/<year>/<account>/`
 
 The public repository may record only:
 
@@ -43,7 +43,7 @@ Do not publish legal names, home addresses, signatures or identity documents unl
 
 ## Merge gate
 
-A maintainer confirms:
+A maintainer confirms for every new pull request or maintainer commit:
 
 - every commit has sign-off;
 - contributor status is verified;
@@ -52,6 +52,19 @@ A maintainer confirms:
 - no proprietary app source was copied;
 - no secret or personal data exists;
 - branch is current and reviewed.
+
+## Historical baseline
+
+The DCO policy was added after the first public alpha commit. The existing
+pre-beta history contains maintainer commits without a `Signed-off-by` trailer.
+Do not rewrite the published alpha tag or shared history to manufacture a
+certification that was not recorded at commit time.
+
+Before releasing a descendant, an authorised Company maintainer must review the
+historical authorship set, confirm the applicable private employment,
+assignment, contractor, or founder records, and record that release decision.
+See `HISTORICAL_CONTRIBUTIONS.md`. This administrative review does not replace
+third-party provenance or licence analysis.
 
 ## Revocation
 

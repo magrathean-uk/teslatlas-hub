@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 use serde::Serialize;
 use serde_json::{Map, Value};
 use uuid::Uuid;

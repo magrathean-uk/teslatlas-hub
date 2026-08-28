@@ -1,10 +1,22 @@
 {
-  "schema": "teslatlas.tesla-proxy-lock/v1",
+  "schema": "teslatlas.tesla-proxy-lock/v2",
   "package": "github.com/teslamotors/vehicle-command/cmd/tesla-http-proxy",
-  "subject": {
-    "name": "tesla-http-proxy",
-    "sha256": "52eefaa62497dc345721fc6b5b75c80d86f03827d2c29d071de0485beacb97ca",
-    "size": 12666818
+  "subjects": {
+    "darwin-arm64": {
+      "name": "tesla-http-proxy",
+      "sha256": "52eefaa62497dc345721fc6b5b75c80d86f03827d2c29d071de0485beacb97ca",
+      "size": 12666818
+    },
+    "linux-amd64": {
+      "name": "tesla-http-proxy",
+      "sha256": "6f8bf205479b577f4d84f1aab23b3d3435198293faa4bd04ba883169bf739edc",
+      "size": 13574304
+    },
+    "linux-arm64": {
+      "name": "tesla-http-proxy",
+      "sha256": "12dc00a2547de67908501e47f56c4fab8f8d9ab315886d405987bcb08a21c64c",
+      "size": 12779680
+    }
   },
   "build_host": {
     "go": {
@@ -29,17 +41,99 @@
   },
   "toolchain": {
     "go_version": "go1.27.0",
-    "goos": "darwin",
-    "goarch": "arm64",
-    "goarm64": "v8.0",
-    "cgo_enabled": "1",
-    "macosx_deployment_target": "13.0",
     "trimpath": true,
     "buildvcs": false,
     "ldflags": "-s -w",
     "buildmode": "exe",
     "compiler": "gc",
     "godebug_default": "go1.27"
+  },
+  "targets": {
+    "darwin-arm64": {
+      "goos": "darwin",
+      "goarch": "arm64",
+      "cgo_enabled": "1",
+      "architecture_level_key": "GOARM64",
+      "architecture_level_value": "v8.0",
+      "macosx_deployment_target": "13.0",
+      "runtime_module_paths": [
+        "github.com/99designs/go-keychain",
+        "github.com/99designs/keyring",
+        "github.com/JuulLabs-OSS/cbgo",
+        "github.com/cronokirby/saferith",
+        "github.com/dvsekhvalnov/jose2go",
+        "github.com/go-ble/ble",
+        "github.com/golang-jwt/jwt/v5",
+        "github.com/mattn/go-colorable",
+        "github.com/mattn/go-isatty",
+        "github.com/mgutz/ansi",
+        "github.com/mgutz/logxi",
+        "github.com/mtibben/percent",
+        "github.com/pkg/errors",
+        "github.com/raff/goble",
+        "github.com/sirupsen/logrus",
+        "golang.org/x/sys",
+        "golang.org/x/term",
+        "google.golang.org/protobuf"
+      ]
+    },
+    "linux-amd64": {
+      "goos": "linux",
+      "goarch": "amd64",
+      "cgo_enabled": "0",
+      "architecture_level_key": "GOAMD64",
+      "architecture_level_value": "v1",
+      "macosx_deployment_target": null,
+      "runtime_module_paths": [
+        "github.com/99designs/keyring",
+        "github.com/cronokirby/saferith",
+        "github.com/dvsekhvalnov/jose2go",
+        "github.com/go-ble/ble",
+        "github.com/godbus/dbus",
+        "github.com/golang-jwt/jwt/v5",
+        "github.com/gsterjov/go-libsecret",
+        "github.com/mattn/go-colorable",
+        "github.com/mattn/go-isatty",
+        "github.com/mgutz/ansi",
+        "github.com/mgutz/logxi",
+        "github.com/mtibben/percent",
+        "github.com/pkg/errors",
+        "golang.org/x/sys",
+        "golang.org/x/term",
+        "google.golang.org/protobuf"
+      ]
+    },
+    "linux-arm64": {
+      "goos": "linux",
+      "goarch": "arm64",
+      "cgo_enabled": "0",
+      "architecture_level_key": "GOARM64",
+      "architecture_level_value": "v8.0",
+      "macosx_deployment_target": null,
+      "runtime_module_paths": [
+        "github.com/99designs/keyring",
+        "github.com/cronokirby/saferith",
+        "github.com/dvsekhvalnov/jose2go",
+        "github.com/go-ble/ble",
+        "github.com/godbus/dbus",
+        "github.com/golang-jwt/jwt/v5",
+        "github.com/gsterjov/go-libsecret",
+        "github.com/mattn/go-colorable",
+        "github.com/mattn/go-isatty",
+        "github.com/mgutz/ansi",
+        "github.com/mgutz/logxi",
+        "github.com/mtibben/percent",
+        "github.com/pkg/errors",
+        "golang.org/x/sys",
+        "golang.org/x/term",
+        "google.golang.org/protobuf"
+      ]
+    }
+  },
+  "overlay": {
+    "path": "packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch",
+    "sha256": "0eb6a95f175ebdde51b18485a7ccd19c5e23aeb009a6f989b4512eb12b843a16",
+    "modified_go_mod_sha256": "7459a52ecd7758154ae58d6ec85ac621293aad7d942055f239206ea082e00c3e"
   },
   "main": {
     "path": "github.com/teslamotors/vehicle-command",
@@ -153,6 +247,21 @@
       ]
     },
     {
+      "path": "github.com/godbus/dbus",
+      "version": "v0.0.0-20190726142602-4481cbc300e2",
+      "sum": "h1:ZpnhV/YsD2/4cESfV5+Hoeu/iUR3ruzNvZ+yQfO03a0=",
+      "effective_path": "github.com/godbus/dbus",
+      "effective_version": "v0.0.0-20190726142602-4481cbc300e2",
+      "effective_sum": "h1:ZpnhV/YsD2/4cESfV5+Hoeu/iUR3ruzNvZ+yQfO03a0=",
+      "go_mod_sum": "h1:bBOAhwG1umN6/6ZUMtDFBMQR8jRg9O75tm9K00oMsK4=",
+      "zip_sha256": "e581c19036afcca2e656efcc4aa99a1348e2f9736177e206990a285d0a1c4c31",
+      "go_mod_sha256": "9ad306797abf441bfd561fdd73cda222c9e1a3423488a4258d7d215a19ade4bf",
+      "license_expression": "BSD-2-Clause",
+      "license_files": [
+        "LICENSE"
+      ]
+    },
+    {
       "path": "github.com/golang-jwt/jwt/v5",
       "version": "v5.2.2",
       "sum": "h1:Rl4B7itRWVtYIHFrSNd7vhTiz9UpLdi6gZhZ3wEeDy8=",
@@ -162,6 +271,21 @@
       "go_mod_sum": "h1:pqrtFR0X4osieyHYxtmOUWsAWrfe1Q5UVIyoH402zdk=",
       "zip_sha256": "278980d9e52498b7c54baf21fed203b942aa1d08b7f62eec494110b61b6fd3c9",
       "go_mod_sha256": "3ea9a4810104feb6bfc26ee805e7e427a018ee497065e7b1b117c0131e4ee30a",
+      "license_expression": "MIT",
+      "license_files": [
+        "LICENSE"
+      ]
+    },
+    {
+      "path": "github.com/gsterjov/go-libsecret",
+      "version": "v0.0.0-20161001094733-a6f4afe4910c",
+      "sum": "h1:6rhixN/i8ZofjG1Y75iExal34USq5p+wiN1tpie8IrU=",
+      "effective_path": "github.com/gsterjov/go-libsecret",
+      "effective_version": "v0.0.0-20161001094733-a6f4afe4910c",
+      "effective_sum": "h1:6rhixN/i8ZofjG1Y75iExal34USq5p+wiN1tpie8IrU=",
+      "go_mod_sum": "h1:NMPJylDgVpX0MLRlPy15sqSwOFv/U1GZ2m21JhFfek0=",
+      "zip_sha256": "cffe0a452fd3f00e4d07730caeb254417a720d907294b5b4a3428322655fb130",
+      "go_mod_sha256": "9056c469e0f3b4fa6733316cf9d853513cd17e7eb1e63ad2a36efb7551585360",
       "license_expression": "MIT",
       "license_files": [
         "LICENSE"

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Deliberate compatibility requests for a Tesla Owner API endpoint.
 //!
 //! This is not a polling loop or a Fleet implementation. It sends authenticated

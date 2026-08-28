@@ -2,6 +2,11 @@ diff --git a/config/config.go b/config/config.go
 index 859f499..69d4472 100644
 --- a/config/config.go
 +++ b/config/config.go
+@@ -1 +1,4 @@
++// Modified by MAGRATHEAN UK LTD for Teslatlas Hub on 2026-08-28.
++// Based on Tesla Fleet Telemetry revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b.
++
+ package config
 @@ -17,17 +17,15 @@ import (
  	"cloud.google.com/go/pubsub"
  	githubairbrake "github.com/airbrake/gobrake/v5"
@@ -150,8 +155,11 @@ new file mode 100644
 index 0000000..87e401d
 --- /dev/null
 +++ b/config/optional_dispatchers_cgo.go
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,39 @@
 +//go:build cgo
++
++// Modified by MAGRATHEAN UK LTD for Teslatlas Hub on 2026-08-28.
++// Based on Tesla Fleet Telemetry revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b.
 +
 +package config
 +
@@ -192,8 +200,11 @@ new file mode 100644
 index 0000000..6ae9efb
 --- /dev/null
 +++ b/config/optional_dispatchers_nocgo.go
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,25 @@
 +//go:build !cgo
++
++// Modified by MAGRATHEAN UK LTD for Teslatlas Hub on 2026-08-28.
++// Based on Tesla Fleet Telemetry revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b.
 +
 +package config
 +
@@ -220,7 +231,9 @@ new file mode 100644
 index 0000000..d286799
 --- /dev/null
 +++ b/datastore/teslatlas/teslatlas.go
-@@ -0,0 +1,288 @@
+@@ -0,0 +1,290 @@
++// Teslatlas change notice: added for the Teslatlas bridge on 2026-08-28.
++
 +package teslatlas
 +
 +import (
@@ -514,7 +527,9 @@ new file mode 100644
 index 0000000..a6b4396
 --- /dev/null
 +++ b/datastore/teslatlas/teslatlas_test.go
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,238 @@
++// Teslatlas change notice: added for the Teslatlas bridge on 2026-08-28.
++
 +package teslatlas
 +
 +import (
@@ -755,6 +770,11 @@ diff --git a/telemetry/producer.go b/telemetry/producer.go
 index ef30578..0d0fec1 100644
 --- a/telemetry/producer.go
 +++ b/telemetry/producer.go
+@@ -1 +1,4 @@
++// Modified by MAGRATHEAN UK LTD for Teslatlas Hub on 2026-08-28.
++// Based on Tesla Fleet Telemetry revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b.
++
+ package telemetry
 @@ -24,6 +24,8 @@ const (
  	MQTT Dispatcher = "mqtt"
  	// Redis registers a Redis pub/sub dispatcher

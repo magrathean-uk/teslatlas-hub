@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Pure SRTM HGT tile naming and sample decoding.
 //!
 //! This matches the tile and sample behavior of the pinned TeslaMate SRTM

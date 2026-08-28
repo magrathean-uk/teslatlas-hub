@@ -18,7 +18,12 @@ Canonical instruments: `INDIVIDUAL_CONTRIBUTOR_ASSIGNMENT_AGREEMENT.md` and `COR
 
 ## Company-owned contributions
 
-No separate assignment is required where a contribution is already Company-owned through employment, director duties, contractor assignment or another executed title instrument. DCO sign-off remains required. The founder does not sign an assignment to the Company for each commit; the private confirmatory deed is the chain-of-title instrument.
+No separate assignment is required where a contribution is already Company-
+owned through employment, director duties, contractor assignment, or another
+executed title instrument. DCO sign-off remains required. The founder does not
+sign an assignment for each commit. Any applicable confirmatory deed or other
+title record must be verified privately before release; this policy does not
+assert that one exists.
 
 ## Trivial changes
 

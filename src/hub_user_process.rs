@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Process marker for the one local Hub instance.
 
 use std::{path::Path, sync::Arc, time::Duration};

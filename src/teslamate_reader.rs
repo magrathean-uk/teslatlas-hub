@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Read-only, bounded TeslaMate PostgreSQL history reader.
 //!
 //! This is deliberately a source adapter, not a TeslaMate clone. It accepts a

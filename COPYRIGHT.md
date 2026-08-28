@@ -2,9 +2,13 @@
 
 ## Original material
 
-Copyright © 2026 MAGRATHEAN UK LTD.
+Copyright notices identify Gyorgy Bolyki, MAGRATHEAN UK LTD, and other
+contributors only for material each applicable rightsholder owns.
 
-The original project creator and lead developer is Gyorgy Bolyki. Economic rights in founder-created Product material are held by the Company under the Company's chain-of-title instruments.
+The original project creator and lead developer is Gyorgy Bolyki. Founder-
+created Product material is treated as Company-owned only after an authorised
+maintainer verifies an executed Company title record. This repository does not
+prove that private record.
 
 ## Contributions
 
@@ -22,7 +26,8 @@ Ideas, facts, methods of operation, interfaces and data formats may receive diff
 
 Open-source publication is a licence grant, not abandonment of copyright.
 
-MAGRATHEAN UK LTD reserves all rights not expressly granted by GNU AGPL or another signed licence.
+Each rightsholder reserves only rights not expressly granted by GNU AGPL or
+another applicable signed licence.
 
 ## Corrections
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 use std::{collections::BTreeMap, io, process::Command};
 
 pub const UNIT_NAME: &str = "teslatlas-hub.service";

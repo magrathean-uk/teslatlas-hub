@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 # Literal dollar-sign patterns below inspect package source text.
 # shellcheck disable=SC2016
 
@@ -15,6 +16,8 @@ PLIST="$ROOT/packaging/macos-service/com.teslatlas.hub.plist.in"
 FLEET_TELEMETRY_EXAMPLE="$ROOT/packaging/macos-service/fleet-telemetry.json.example"
 CLI_PLIST="$ROOT/packaging/com.teslatlas.hub.plist.in"
 APP_BUILD="$ROOT/scripts/build-macos-app.sh"
+ICON_BUILD="$ROOT/scripts/build-app-icon.sh"
+APPKIT_TEST="$ROOT/scripts/test-macos-appkit.sh"
 SERVICE_BUILD="$ROOT/scripts/build-macos-service-package.sh"
 PROXY_BUILD="$ROOT/scripts/build-tesla-command-proxy.sh"
 FLEET_TELEMETRY_BUILD="$ROOT/scripts/build-fleet-telemetry-bridge.sh"
@@ -53,6 +56,8 @@ for script in "$SCRIPTS/common.sh" "$PREINSTALL" "$POSTINSTALL" "$UNINSTALL" "$S
     /bin/sh -n "$script" || fail "invalid shell syntax: $script"
 done
 /bin/sh -n "$APP_BUILD" || fail "invalid macOS app build script"
+/bin/sh -n "$ICON_BUILD" || fail "invalid app icon build script"
+/bin/sh -n "$APPKIT_TEST" || fail "invalid AppKit test script"
 /bin/sh -n "$SERVICE_BUILD" || fail "invalid macOS service build script"
 /bin/sh -n "$PROXY_BUILD" || fail "invalid Tesla command proxy build script"
 /bin/sh -n "$FLEET_TELEMETRY_BUILD" || fail "invalid Fleet Telemetry build script"
@@ -64,6 +69,8 @@ done
     || fail "Hub app icon is missing or unsafe"
 /usr/bin/file "$APP_ICON" | /usr/bin/grep -Fq 'Mac OS X icon' \
     || fail "Hub app icon is not an ICNS file"
+/usr/bin/grep -Fq '"$ICON_BUILD"' "$APP_BUILD" \
+    || fail "macOS app build does not regenerate the icon from tracked source"
 /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP_INFO" | /usr/bin/grep -qx AppIcon \
     || fail "Hub app Info.plist has no app icon"
 /usr/bin/grep -Fq 'CFBundleIconFile: AppIcon' "$APP_PROJECT" \
@@ -204,6 +211,50 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "app build does not expose exact Hub version"
 /usr/bin/grep -Fq -- '--version "$package_version"' "$SERVICE_BUILD" \
     || fail "service package does not use mapped prerelease identity"
+/usr/bin/grep -Fq 'require_hub_version "$binary" "$version"' "$SERVICE_BUILD" \
+    || fail "service package does not bind package version to Hub binary"
+for release_legal_file in ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
+    /usr/bin/grep -Fq "$release_legal_file" "$APP_BUILD" \
+        || fail "app bundle omits release legal file: $release_legal_file"
+    /usr/bin/grep -Fq "$release_legal_file" "$SERVICE_BUILD" \
+        || fail "service package omits release legal file: $release_legal_file"
+done
+/usr/bin/grep -Fq 'required_release_legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md' \
+    "$APP_BUILD" || fail "app build does not require its release legal payload"
+/usr/bin/grep -Fq 'required_release_legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md' \
+    "$SERVICE_BUILD" || fail "service package does not require its release legal payload"
+version_helper="$TEST_ROOT/version-helper.sh"
+/usr/bin/sed -n \
+    '/^# BEGIN TESTABLE HUB VERSION HELPER$/,/^# END TESTABLE HUB VERSION HELPER$/p' \
+    "$SERVICE_BUILD" > "$version_helper"
+# shellcheck source=/dev/null
+. "$version_helper"
+matching_binary="$TEST_ROOT/matching-hub"
+mismatched_binary="$TEST_ROOT/mismatched-hub"
+extra_output_binary="$TEST_ROOT/extra-output-hub"
+stderr_binary="$TEST_ROOT/stderr-hub"
+/usr/bin/printf '%s\n' '#!/bin/sh' \
+    'printf "%s\n" "teslatlas-hub 1.0.0-beta.1"' > "$matching_binary"
+/usr/bin/printf '%s\n' '#!/bin/sh' \
+    'printf "%s\n" "teslatlas-hub 1.0.0-alpha.2"' > "$mismatched_binary"
+/usr/bin/printf '%s\n' '#!/bin/sh' \
+    'printf "teslatlas-hub 1.0.0-beta.1\n\n"' > "$extra_output_binary"
+/usr/bin/printf '%s\n' '#!/bin/sh' \
+    'printf "%s\n" "teslatlas-hub 1.0.0-beta.1"' \
+    'printf "%s\n" warning >&2' > "$stderr_binary"
+/bin/chmod 0700 "$matching_binary" "$mismatched_binary" \
+    "$extra_output_binary" "$stderr_binary"
+require_hub_version "$matching_binary" 1.0.0-beta.1 \
+    || fail "matching Hub binary version was rejected"
+if require_hub_version "$mismatched_binary" 1.0.0-beta.1; then
+    fail "mismatched Hub binary version was accepted"
+fi
+if require_hub_version "$extra_output_binary" 1.0.0-beta.1; then
+    fail "extra Hub version output was accepted"
+fi
+if require_hub_version "$stderr_binary" 1.0.0-beta.1; then
+    fail "Hub version stderr was accepted"
+fi
 /usr/bin/grep -Fq '<key>TeslatlasHubVersion</key>' "$APP_INFO" \
     || fail "app bundle does not carry exact Hub version"
 /usr/bin/grep -Fq 'AppIcon.icns' "$APP_BUILD" \
@@ -214,17 +265,33 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "app build does not package Tesla command proxy"
 /usr/bin/grep -Fq -- '--fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY"' "$APP_BUILD" \
     || fail "app build does not package the Fleet Telemetry receiver"
-/usr/bin/grep -Fq 'DIST_PACKAGE="$DIST/TeslatlasHub.pkg"' "$APP_BUILD" \
+/usr/bin/grep -Fq 'DIST_PACKAGE="$DIST/TeslatlasHubService.pkg"' "$APP_BUILD" \
     || fail "app build does not produce the requested final package name"
 /usr/bin/grep -Fq '"$ROOT/target/macos-app") ;;' "$APP_BUILD" \
     || fail "app build does not scope Xcode staging cleanup"
 /usr/bin/grep -Fq '/usr/bin/find "$DERIVED" -depth -delete' "$APP_BUILD" \
     || fail "app build does not clean successful Xcode staging"
 assert_before_fixed 'final installer package is missing' '/usr/bin/find "$DERIVED" -depth -delete' "$APP_BUILD"
-/usr/bin/grep -Fq -- '--app "$DIST_APP"' "$APP_BUILD" \
-    || fail "final package does not include the app"
-/usr/bin/grep -Fq '"$payload/Applications/Teslatlas Hub.app"' "$SERVICE_BUILD" \
-    || fail "package does not install the app into Applications"
+if /usr/bin/grep -Fq -- '--app "$DIST_APP"' "$APP_BUILD" \
+    || /usr/bin/grep -Fq '"$payload/Applications/Teslatlas Hub.app"' "$SERVICE_BUILD"; then
+    fail "service-only package still contains the app"
+fi
+/usr/bin/grep -Fq 'external service package does not match the app' "$APP_BUILD" \
+    || fail "app build does not bind external and embedded service packages"
+/usr/bin/grep -Fq -- '--legal-bundle "$LEGAL_BUNDLE"' "$APP_BUILD" \
+    || fail "app build does not pass the exact dependency legal bundle"
+/usr/bin/grep -Fq 'share/dependency-legal' "$SERVICE_BUILD" \
+    || fail "service package does not install the exact dependency legal bundle"
+/usr/bin/grep -Fq 'RUSTUP=$(PATH="$CALLER_PATH" command -v rustup)' "$SERVICE_BUILD" \
+    || fail "service package cannot resolve the pinned Rust toolchain from the caller"
+/usr/bin/grep -Fq '"$RUSTUP" which --toolchain "$RUST_TOOLCHAIN" cargo' "$SERVICE_BUILD" \
+    || fail "service package does not resolve pinned cargo"
+/usr/bin/grep -Fq '"$RUSTUP" which --toolchain "$RUST_TOOLCHAIN" rustc' "$SERVICE_BUILD" \
+    || fail "service package does not resolve pinned rustc"
+/usr/bin/grep -Fq 'PATH="$RUST_TOOLCHAIN_BIN:/usr/bin:/bin:/usr/sbin:/sbin"' "$SERVICE_BUILD" \
+    || fail "service package does not retain a bounded build-tool PATH"
+/usr/bin/grep -Fq 'export PATH RUSTC' "$SERVICE_BUILD" \
+    || fail "service package does not bind Cargo to its pinned compiler"
 /usr/bin/grep -Fq '/usr/bin/open "$APP"' "$POSTINSTALL" \
     || fail "successful package install does not open the app"
 /usr/bin/grep -Fq -- 'build-tesla-command-proxy.sh' "$APP_BUILD" \

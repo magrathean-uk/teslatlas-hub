@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! TeslaMate-history projection into the typed Hub snapshot contract.
 //!
 //! A PostgreSQL reader will decode only the fixed schema-contract projections

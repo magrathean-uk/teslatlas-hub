@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! TeslaMate is a migration-only source. This module intentionally contains no
 //! source writes and no credential transport.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Teslatlas Sync Protocol v1.
 //!
 //! The manifest is deliberately small and JSON serialisable.  History never

@@ -1,14 +1,35 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import AppKit
 import Darwin
 import Foundation
 
-private enum HubRelease {
-    static let fallbackVersion = "1.0.0-alpha.2"
+enum HubRelease {
+    static let fallbackVersion = "1.0.0-beta.1"
+    static let sourceRepository = "https://github.com/magrathean-uk/teslatlas-hub"
+    static let licenceExpression = "AGPL-3.0-only"
     static var bundledVersion: String {
         guard let value = Bundle.main.object(forInfoDictionaryKey: "TeslatlasHubVersion") as? String,
               !value.isEmpty,
               !value.contains("$(") else { return fallbackVersion }
         return value
+    }
+
+    static func correspondingSourceURL(for version: String = bundledVersion) -> URL? {
+        guard version.range(
+            of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
+            options: .regularExpression
+        ) != nil else { return nil }
+        let tag = "v\(version)"
+        return URL(string: "\(sourceRepository)/releases/tag/\(tag)")
+    }
+
+    static func licenceURL(for version: String = bundledVersion) -> URL? {
+        guard version.range(
+            of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
+            options: .regularExpression
+        ) != nil else { return nil }
+        return URL(string: "\(sourceRepository)/blob/v\(version)/LICENSE")
     }
 }
 

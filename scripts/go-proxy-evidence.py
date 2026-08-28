@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generate fail-closed, reproducible evidence for Tesla's Go command proxy."""
 
 from __future__ import annotations
@@ -23,8 +24,8 @@ from urllib.parse import quote
 import zipfile
 
 
-SCHEMA = "teslatlas.go-proxy-evidence/v1"
-LOCK_SCHEMA = "teslatlas.tesla-proxy-lock/v1"
+SCHEMA = "teslatlas.go-proxy-evidence/v2"
+LOCK_SCHEMA = "teslatlas.tesla-proxy-lock/v2"
 PACKAGE = "github.com/teslamotors/vehicle-command/cmd/tesla-http-proxy"
 MAX_LOCK_BYTES = 128 * 1024
 MAX_BINARY_BYTES = 128 * 1024 * 1024
@@ -35,6 +36,7 @@ MAX_ZIP_FILES = 50_000
 MAX_ZIP_FILE_BYTES = 32 * 1024 * 1024
 MAX_ZIP_EXPANDED_BYTES = 256 * 1024 * 1024
 MAX_LICENSE_BYTES = 1024 * 1024
+MAX_OVERLAY_BYTES = 1024 * 1024
 MAX_SOURCE_ARCHIVE_BYTES = 96 * 1024 * 1024
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SUM_RE = re.compile(r"^h1:[A-Za-z0-9+/]{43}=$")
@@ -50,11 +52,6 @@ ALLOWED_LICENSES = {
 }
 TOOLCHAIN_POLICY = {
     "go_version": "go1.27.0",
-    "goos": "darwin",
-    "goarch": "arm64",
-    "goarm64": "v8.0",
-    "cgo_enabled": "1",
-    "macosx_deployment_target": "13.0",
     "trimpath": True,
     "buildvcs": False,
     "ldflags": "-s -w",
@@ -62,12 +59,99 @@ TOOLCHAIN_POLICY = {
     "compiler": "gc",
     "godebug_default": "go1.27",
 }
+TARGET_POLICIES = {
+    "darwin-arm64": {
+        "goos": "darwin",
+        "goarch": "arm64",
+        "cgo_enabled": "1",
+        "architecture_level_key": "GOARM64",
+        "architecture_level_value": "v8.0",
+        "macosx_deployment_target": "13.0",
+        "runtime_module_paths": [
+            "github.com/99designs/go-keychain",
+            "github.com/99designs/keyring",
+            "github.com/JuulLabs-OSS/cbgo",
+            "github.com/cronokirby/saferith",
+            "github.com/dvsekhvalnov/jose2go",
+            "github.com/go-ble/ble",
+            "github.com/golang-jwt/jwt/v5",
+            "github.com/mattn/go-colorable",
+            "github.com/mattn/go-isatty",
+            "github.com/mgutz/ansi",
+            "github.com/mgutz/logxi",
+            "github.com/mtibben/percent",
+            "github.com/pkg/errors",
+            "github.com/raff/goble",
+            "github.com/sirupsen/logrus",
+            "golang.org/x/sys",
+            "golang.org/x/term",
+            "google.golang.org/protobuf",
+        ],
+    },
+    "linux-amd64": {
+        "goos": "linux",
+        "goarch": "amd64",
+        "cgo_enabled": "0",
+        "architecture_level_key": "GOAMD64",
+        "architecture_level_value": "v1",
+        "macosx_deployment_target": None,
+        "runtime_module_paths": [
+            "github.com/99designs/keyring",
+            "github.com/cronokirby/saferith",
+            "github.com/dvsekhvalnov/jose2go",
+            "github.com/go-ble/ble",
+            "github.com/godbus/dbus",
+            "github.com/golang-jwt/jwt/v5",
+            "github.com/gsterjov/go-libsecret",
+            "github.com/mattn/go-colorable",
+            "github.com/mattn/go-isatty",
+            "github.com/mgutz/ansi",
+            "github.com/mgutz/logxi",
+            "github.com/mtibben/percent",
+            "github.com/pkg/errors",
+            "golang.org/x/sys",
+            "golang.org/x/term",
+            "google.golang.org/protobuf",
+        ],
+    },
+    "linux-arm64": {
+        "goos": "linux",
+        "goarch": "arm64",
+        "cgo_enabled": "0",
+        "architecture_level_key": "GOARM64",
+        "architecture_level_value": "v8.0",
+        "macosx_deployment_target": None,
+        "runtime_module_paths": [
+            "github.com/99designs/keyring",
+            "github.com/cronokirby/saferith",
+            "github.com/dvsekhvalnov/jose2go",
+            "github.com/go-ble/ble",
+            "github.com/godbus/dbus",
+            "github.com/golang-jwt/jwt/v5",
+            "github.com/gsterjov/go-libsecret",
+            "github.com/mattn/go-colorable",
+            "github.com/mattn/go-isatty",
+            "github.com/mgutz/ansi",
+            "github.com/mgutz/logxi",
+            "github.com/mtibben/percent",
+            "github.com/pkg/errors",
+            "golang.org/x/sys",
+            "golang.org/x/term",
+            "google.golang.org/protobuf",
+        ],
+    },
+}
 MAIN_POLICY = {
     "path": "github.com/teslamotors/vehicle-command",
     "version": "v0.4.1",
     "commit": "49977a18fd68567501d59e16a6c9e4a8b9348544",
     "sum": "h1:J4ne/TNGwgodJLYJDLm/hjoygXyQ/bpqO/EiCaeoobM=",
     "go_mod_sum": "h1:liN6VG6MCc7m02wFaBm2sQT6MYGm/dJua6bG00QSpnA=",
+}
+OVERLAY_POLICY = {
+    "path": "packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch",
+    "sha256": "0eb6a95f175ebdde51b18485a7ccd19c5e23aeb009a6f989b4512eb12b843a16",
+    "modified_go_mod_sha256": "7459a52ecd7758154ae58d6ec85ac621293aad7d942055f239206ea082e00c3e",
 }
 
 
@@ -250,9 +334,11 @@ def validate_lock(lock: object) -> dict[str, Any]:
         {
             "schema",
             "package",
-            "subject",
+            "subjects",
             "build_host",
             "toolchain",
+            "targets",
+            "overlay",
             "main",
             "modules",
         },
@@ -260,16 +346,30 @@ def validate_lock(lock: object) -> dict[str, Any]:
     )
     if root["schema"] != LOCK_SCHEMA or root["package"] != PACKAGE:
         raise GateError("lock schema or package does not match the supported proxy")
-    subject = require_keys(root["subject"], {"name", "sha256", "size"}, "lock.subject")
-    if subject["name"] != "tesla-http-proxy":
-        raise GateError("lock subject name does not match the supported proxy")
-    validate_sha(subject["sha256"], "lock.subject.sha256")
-    if not isinstance(subject["size"], int) or subject["size"] <= 0:
-        raise GateError("lock.subject.size must be a positive integer")
+    subjects = require_keys(root["subjects"], set(TARGET_POLICIES), "lock.subjects")
+    for target, raw_subject in subjects.items():
+        subject = require_keys(
+            raw_subject, {"name", "sha256", "size"}, f"lock.subjects.{target}"
+        )
+        if subject["name"] != "tesla-http-proxy":
+            raise GateError(f"lock subject name does not match the supported proxy: {target}")
+        validate_sha(subject["sha256"], f"lock.subjects.{target}.sha256")
+        if not isinstance(subject["size"], int) or subject["size"] <= 0:
+            raise GateError(f"lock.subjects.{target}.size must be a positive integer")
     validate_build_host(root["build_host"])
     toolchain = require_keys(root["toolchain"], set(TOOLCHAIN_POLICY), "lock.toolchain")
     if toolchain != TOOLCHAIN_POLICY:
         raise GateError("lock toolchain does not match the reviewed build policy")
+    targets = require_keys(root["targets"], set(TARGET_POLICIES), "lock.targets")
+    if targets != TARGET_POLICIES:
+        raise GateError("lock targets do not match the reviewed build policy")
+    overlay = require_keys(root["overlay"], set(OVERLAY_POLICY), "lock.overlay")
+    if overlay != OVERLAY_POLICY:
+        raise GateError("lock overlay does not match the reviewed source modification")
+    validate_sha(overlay["sha256"], "lock.overlay.sha256")
+    validate_sha(
+        overlay["modified_go_mod_sha256"], "lock.overlay.modified_go_mod_sha256"
+    )
     main_keys = {
         "path", "version", "commit", "sum", "go_mod_sum", "zip_sha256",
         "go_mod_sha256", "license_expression", "license_files",
@@ -286,8 +386,8 @@ def validate_lock(lock: object) -> dict[str, Any]:
     validate_license_fields(main, "lock.main")
 
     modules = root["modules"]
-    if not isinstance(modules, list) or len(modules) != 18:
-        raise GateError("lock.modules must contain the 18 reviewed runtime dependencies")
+    if not isinstance(modules, list) or len(modules) != 20:
+        raise GateError("lock.modules must contain the 20 reviewed cross-platform dependencies")
     normal_keys = {
         "path", "version", "sum", "effective_path", "effective_version",
         "effective_sum", "go_mod_sum", "zip_sha256", "go_mod_sha256",
@@ -342,6 +442,52 @@ def validate_lock(lock: object) -> dict[str, Any]:
     return root
 
 
+def target_policy(lock: dict[str, Any], target: str) -> dict[str, Any]:
+    if target not in TARGET_POLICIES:
+        raise GateError(f"unsupported command-proxy evidence target: {target}")
+    policy = lock["targets"].get(target)
+    if policy != TARGET_POLICIES[target]:
+        raise GateError(f"command-proxy target policy does not match the lock: {target}")
+    return policy
+
+
+def locked_subject(repo: Path, lock: dict[str, Any], target: str) -> dict[str, Any]:
+    target_policy(lock, target)
+    subject = lock["subjects"][target]
+    if target.startswith("linux-"):
+        architecture = target.removeprefix("linux-")
+        lock_data = regular_bytes(
+            repo / "packaging" / "linux" / "sidecar-sha256.lock",
+            "Linux sidecar lock",
+            MAX_LOCK_BYTES,
+        )
+        selected: str | None = None
+        seen: set[str] = set()
+        try:
+            lines = lock_data.decode("ascii").splitlines()
+        except UnicodeDecodeError as exc:
+            raise GateError("Linux sidecar lock is not ASCII") from exc
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            fields = stripped.split()
+            if len(fields) != 3 or fields[0] not in {"amd64", "arm64"}:
+                raise GateError("Linux sidecar lock has an invalid row")
+            if fields[0] in seen:
+                raise GateError("Linux sidecar lock has a duplicate architecture")
+            seen.add(fields[0])
+            validate_sha(fields[1], f"Linux {fields[0]} command-proxy digest")
+            validate_sha(fields[2], f"Linux {fields[0]} Fleet digest")
+            if fields[0] == architecture:
+                selected = fields[1]
+        if seen != {"amd64", "arm64"} or selected is None:
+            raise GateError("Linux sidecar lock is incomplete")
+        if selected != subject["sha256"]:
+            raise GateError(f"Linux command-proxy subject disagrees with sidecar lock: {target}")
+    return subject
+
+
 def strict_go_environment() -> tuple[str, dict[str, str], dict[str, str]]:
     go = shutil.which("go")
     if not go or not Path(go).is_file():
@@ -349,7 +495,7 @@ def strict_go_environment() -> tuple[str, dict[str, str], dict[str, str]]:
     environment = os.environ.copy()
     for key in (
         "CC", "CXX", "CGO_CFLAGS", "CGO_CPPFLAGS", "CGO_CXXFLAGS", "CGO_LDFLAGS",
-        "GOEXPERIMENT", "GODEBUG", "GOARM64",
+        "GOEXPERIMENT", "GODEBUG", "GOAMD64", "GOARM64",
     ):
         environment.pop(key, None)
     environment.update({
@@ -680,9 +826,21 @@ def normalized_module(module: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def expected_runtime_modules(lock: dict[str, Any]) -> list[dict[str, Any]]:
+def runtime_lock_items(lock: dict[str, Any], target: str) -> list[dict[str, Any]]:
+    paths = target_policy(lock, target)["runtime_module_paths"]
+    if not isinstance(paths, list) or paths != sorted(paths) or len(paths) != len(set(paths)):
+        raise GateError(f"runtime module paths are invalid for target: {target}")
+    by_path = {item["path"]: item for item in lock["modules"]}
+    if any(path not in by_path for path in paths):
+        raise GateError(f"runtime module path is absent from the source lock: {target}")
+    return [by_path[path] for path in paths]
+
+
+def expected_runtime_modules(
+    lock: dict[str, Any], target: str
+) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
-    for item in lock["modules"]:
+    for item in runtime_lock_items(lock, target):
         module: dict[str, Any] = {
             "path": item["path"],
             "version": item["version"],
@@ -698,9 +856,11 @@ def expected_runtime_modules(lock: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
-def expected_build_dependencies(lock: dict[str, Any]) -> list[dict[str, Any]]:
+def expected_build_dependencies(
+    lock: dict[str, Any], target: str
+) -> list[dict[str, Any]]:
     dependencies: list[dict[str, Any]] = []
-    for item in lock["modules"]:
+    for item in runtime_lock_items(lock, target):
         dependency: dict[str, Any] = {
             "Path": item["path"],
             "Version": item["version"],
@@ -717,19 +877,27 @@ def expected_build_dependencies(lock: dict[str, Any]) -> list[dict[str, Any]]:
     return dependencies
 
 
-def expected_build_settings(lock: dict[str, Any]) -> list[dict[str, str]]:
+def expected_build_settings(
+    lock: dict[str, Any], target: str
+) -> list[dict[str, str]]:
+    policy = target_policy(lock, target)
     return [
         {"Key": "-buildmode", "Value": lock["toolchain"]["buildmode"]},
         {"Key": "-compiler", "Value": lock["toolchain"]["compiler"]},
         {"Key": "-trimpath", "Value": "true"},
-        {"Key": "CGO_ENABLED", "Value": lock["toolchain"]["cgo_enabled"]},
-        {"Key": "GOARCH", "Value": lock["toolchain"]["goarch"]},
-        {"Key": "GOOS", "Value": lock["toolchain"]["goos"]},
-        {"Key": "GOARM64", "Value": lock["toolchain"]["goarm64"]},
+        {"Key": "CGO_ENABLED", "Value": policy["cgo_enabled"]},
+        {"Key": "GOARCH", "Value": policy["goarch"]},
+        {"Key": "GOOS", "Value": policy["goos"]},
+        {
+            "Key": policy["architecture_level_key"],
+            "Value": policy["architecture_level_value"],
+        },
     ]
 
 
-def validate_build_info_value(info: object, lock: dict[str, Any]) -> dict[str, Any]:
+def validate_build_info_value(
+    info: object, lock: dict[str, Any], target: str
+) -> dict[str, Any]:
     value = require_keys(
         info,
         {"GoVersion", "Path", "Main", "Deps", "Settings"},
@@ -739,8 +907,8 @@ def validate_build_info_value(info: object, lock: dict[str, Any]) -> dict[str, A
         "GoVersion": lock["toolchain"]["go_version"],
         "Path": PACKAGE,
         "Main": {"Path": lock["main"]["path"], "Version": "(devel)"},
-        "Deps": expected_build_dependencies(lock),
-        "Settings": expected_build_settings(lock),
+        "Deps": expected_build_dependencies(lock, target),
+        "Settings": expected_build_settings(lock, target),
     }
     if value != expected:
         raise GateError("proxy Go build information does not match the exact lock")
@@ -775,14 +943,30 @@ def verify_build_info(
     cwd: Path,
     binary: Path,
     lock: dict[str, Any],
+    target: str,
 ) -> dict[str, Any]:
     result = run([go, "version", "-m", "-json", str(binary)], cwd=cwd, env=environment)
     info = parse_json(result.stdout.encode(), "go version -m")
-    return validate_build_info_value(info, lock)
+    return validate_build_info_value(info, lock, target)
 
 
-def verify_macho(binary: Path, cwd: Path, environment: dict[str, str], lock: dict[str, Any]) -> None:
+def verify_executable(
+    binary: Path,
+    cwd: Path,
+    environment: dict[str, str],
+    lock: dict[str, Any],
+    target: str,
+) -> None:
+    policy = target_policy(lock, target)
     file_result = run(["/usr/bin/file", str(binary)], cwd=cwd, env=environment)
+    if target == "linux-amd64":
+        if "ELF 64-bit LSB executable, x86-64" not in file_result.stdout or "statically linked" not in file_result.stdout:
+            raise GateError("proxy is not a static Linux amd64 executable")
+        return
+    if target == "linux-arm64":
+        if "ELF 64-bit LSB executable, ARM aarch64" not in file_result.stdout or "statically linked" not in file_result.stdout:
+            raise GateError("proxy is not a static Linux ARM64 executable")
+        return
     if "Mach-O 64-bit executable arm64" not in file_result.stdout:
         raise GateError("proxy is not a thin arm64 Mach-O executable")
     codesign = run(["/usr/bin/codesign", "-dv", "--verbose=4", str(binary)], cwd=cwd, env=environment)
@@ -802,15 +986,52 @@ def verify_macho(binary: Path, cwd: Path, environment: dict[str, str], lock: dic
         elif command == "LC_VERSION_MIN_MACOSX" and len(fields) == 2 and fields[0] == "version":
             minimum = fields[1]
             break
-    expected = lock["toolchain"]["macosx_deployment_target"]
+    expected = policy["macosx_deployment_target"]
     if minimum != expected:
         raise GateError(f"proxy minimum macOS version is {minimum}, expected {expected}")
 
 
+def receipt_toolchain(lock: dict[str, Any], target: str) -> dict[str, Any]:
+    target_values = {
+        key: value
+        for key, value in target_policy(lock, target).items()
+        if key != "runtime_module_paths"
+    }
+    return {
+        **lock["toolchain"],
+        **target_values,
+        "target": target,
+    }
+
+
+def proxy_receipt(subject: dict[str, Any], lock: dict[str, Any], target: str) -> dict[str, Any]:
+    policy = target_policy(lock, target)
+    formats = {
+        "darwin-arm64": "Mach-O 64-bit arm64",
+        "linux-amd64": "ELF 64-bit x86-64 static",
+        "linux-arm64": "ELF 64-bit ARM aarch64 static",
+    }
+    return {
+        "sha256": subject["sha256"],
+        "size": subject["size"],
+        "target": target,
+        "format": formats[target],
+        "signature": (
+            "Mach-O linker-signed ad hoc; no TeamIdentifier"
+            if target == "darwin-arm64"
+            else "not applicable to static ELF"
+        ),
+        "minimum_macos": policy["macosx_deployment_target"],
+    }
+
+
 def clean_build_environment(
-    base: dict[str, str], lock: dict[str, Any], proxy: Path, work: Path
+    base: dict[str, str], lock: dict[str, Any], target: str, proxy: Path, work: Path
 ) -> dict[str, str]:
+    policy = target_policy(lock, target)
     environment = base.copy()
+    for key in ("GOAMD64", "GOARM64", "MACOSX_DEPLOYMENT_TARGET", "COPYFILE_DISABLE"):
+        environment.pop(key, None)
     environment.update({
         "GOENV": "off",
         "GOWORK": "off",
@@ -822,21 +1043,58 @@ def clean_build_environment(
         "GOPRIVATE": "",
         "GOMODCACHE": str(work / "module-cache"),
         "GOCACHE": str(work / "build-cache"),
-        "CGO_ENABLED": lock["toolchain"]["cgo_enabled"],
-        "GOOS": lock["toolchain"]["goos"],
-        "GOARCH": lock["toolchain"]["goarch"],
-        "GOARM64": lock["toolchain"]["goarm64"],
-        "MACOSX_DEPLOYMENT_TARGET": lock["toolchain"]["macosx_deployment_target"],
-        "COPYFILE_DISABLE": "1",
+        "CGO_ENABLED": policy["cgo_enabled"],
+        "GOOS": policy["goos"],
+        "GOARCH": policy["goarch"],
+        policy["architecture_level_key"]: policy["architecture_level_value"],
     })
+    if policy["macosx_deployment_target"] is not None:
+        environment["MACOSX_DEPLOYMENT_TARGET"] = policy["macosx_deployment_target"]
+        environment["COPYFILE_DISABLE"] = "1"
     return environment
+
+
+def load_overlay(repo: Path, lock: dict[str, Any]) -> bytes:
+    relative = PurePosixPath(lock["overlay"]["path"])
+    if relative.is_absolute() or any(part in ("", ".", "..") for part in relative.parts):
+        raise GateError("lock overlay path is unsafe")
+    overlay = regular_bytes(
+        repo.joinpath(*relative.parts), "Tesla command-proxy overlay", MAX_OVERLAY_BYTES
+    )
+    if sha256_bytes(overlay) != lock["overlay"]["sha256"]:
+        raise GateError("Tesla command-proxy overlay does not match the exact lock")
+    return overlay
+
+
+def apply_overlay(
+    source_root: Path,
+    work: Path,
+    overlay: bytes,
+    lock: dict[str, Any],
+    environment: dict[str, str],
+) -> None:
+    patch_tool = shutil.which("patch")
+    if not patch_tool or not Path(patch_tool).is_file():
+        raise GateError("patch is required")
+    patch_path = work / "tesla-command-proxy-overlay.patch"
+    write_file(patch_path, overlay, mode=0o600)
+    run(
+        [patch_tool, "--batch", "--forward", "--fuzz=0", "-p1", "-i", str(patch_path)],
+        cwd=source_root,
+        env=environment,
+    )
+    modified = regular_bytes(source_root / "go.mod", "modified Tesla go.mod", MAX_MOD_BYTES)
+    if sha256_bytes(modified) != lock["overlay"]["modified_go_mod_sha256"]:
+        raise GateError("modified Tesla go.mod does not match the exact overlay lock")
 
 
 def clean_rebuild(
     go: str,
     base_environment: dict[str, str],
     lock: dict[str, Any],
+    target: str,
     sources: list[dict[str, Any]],
+    overlay: bytes,
     work: Path,
     supplied: bytes,
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -846,24 +1104,15 @@ def clean_rebuild(
     extract_main(sources[0], source_root)
     edit_environment = base_environment.copy()
     edit_environment["GOWORK"] = "off"
-    run(
-        [
-            go,
-            "mod",
-            "edit",
-            f"-godebug=default={lock['toolchain']['godebug_default']}",
-        ],
-        cwd=source_root,
-        env=edit_environment,
-    )
-    environment = clean_build_environment(base_environment, lock, proxy, work)
+    apply_overlay(source_root, work, overlay, lock, edit_environment)
+    environment = clean_build_environment(base_environment, lock, target, proxy, work)
     listed = run(
         [go, "list", "-mod=readonly", "-deps", "-json", f"./cmd/tesla-http-proxy"],
         cwd=source_root, env=environment,
     )
     list_objects = parse_json_stream(listed.stdout, "go list -deps")
     modules = modules_from_go_list(list_objects, lock["main"]["path"])
-    if modules != expected_runtime_modules(lock):
+    if modules != expected_runtime_modules(lock, target):
         raise GateError("source runtime module graph does not match the exact dependency lock")
     rebuilt = work / "rebuilt-tesla-http-proxy"
     run(
@@ -905,11 +1154,18 @@ def source_metadata(source: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def source_archive_bytes(sources: list[dict[str, Any]], lock_data: bytes) -> bytes:
+def source_archive_bytes(
+    sources: list[dict[str, Any]], lock_data: bytes, overlay: bytes
+) -> bytes:
     tar_buffer = io.BytesIO()
     root = "tesla-http-proxy-go-sources"
     with tarfile.open(fileobj=tar_buffer, mode="w", format=tarfile.USTAR_FORMAT) as archive:
         add_tar_member(archive, f"{root}/tesla-proxy-lock.json", lock_data)
+        add_tar_member(
+            archive,
+            f"{root}/{OVERLAY_POLICY['path']}",
+            overlay,
+        )
         for index, source in enumerate(sources):
             directory = f"{root}/modules/{index:02d}"
             add_tar_member(archive, f"{directory}/module.zip", source["zip"])
@@ -923,8 +1179,10 @@ def source_archive_bytes(sources: list[dict[str, Any]], lock_data: bytes) -> byt
     return compressed.getvalue()
 
 
-def create_source_archive(path: Path, sources: list[dict[str, Any]], lock_data: bytes) -> None:
-    write_file(path, source_archive_bytes(sources, lock_data), mode=0o644)
+def create_source_archive(
+    path: Path, sources: list[dict[str, Any]], lock_data: bytes, overlay: bytes
+) -> None:
+    write_file(path, source_archive_bytes(sources, lock_data, overlay), mode=0o644)
 
 
 def archived_source_policy(lock: dict[str, Any], index: int) -> dict[str, Any]:
@@ -954,7 +1212,7 @@ def archived_source_policy(lock: dict[str, Any], index: int) -> dict[str, Any]:
 
 
 def parse_source_archive(
-    data: bytes, lock_data: bytes, lock: dict[str, Any]
+    data: bytes, lock_data: bytes, lock: dict[str, Any], overlay: bytes
 ) -> list[dict[str, Any]]:
     try:
         with gzip.GzipFile(fileobj=io.BytesIO(data), mode="rb") as compressed:
@@ -965,7 +1223,8 @@ def parse_source_archive(
         raise GateError("Go source archive expands beyond the safety limit")
 
     root = "tesla-http-proxy-go-sources"
-    expected_names = {f"{root}/tesla-proxy-lock.json"}
+    overlay_name = f"{root}/{lock['overlay']['path']}"
+    expected_names = {f"{root}/tesla-proxy-lock.json", overlay_name}
     for index in range(1 + len(lock["modules"])):
         directory = f"{root}/modules/{index:02d}"
         expected_names.update({
@@ -998,6 +1257,10 @@ def parse_source_archive(
         raise GateError("Go source archive member set does not match the exact lock")
     if entries[f"{root}/tesla-proxy-lock.json"] != lock_data:
         raise GateError("Go source archive embeds a different Tesla proxy lock")
+    if entries[overlay_name] != overlay:
+        raise GateError("Go source archive embeds a different source overlay")
+    if sha256_bytes(entries[overlay_name]) != lock["overlay"]["sha256"]:
+        raise GateError("Go source archive overlay does not match the exact lock")
 
     sources: list[dict[str, Any]] = []
     for index in range(1 + len(lock["modules"])):
@@ -1027,7 +1290,7 @@ def parse_source_archive(
         if metadata != json_bytes(source_metadata(source)):
             raise GateError(f"Go source archive module {index:02d} metadata does not match the lock")
         sources.append(source)
-    if source_archive_bytes(sources, lock_data) != data:
+    if source_archive_bytes(sources, lock_data, overlay) != data:
         raise GateError("Go source archive is not in the canonical reproducible format")
     return sources
 
@@ -1178,12 +1441,14 @@ def validate_build_receipt(
     lock: dict[str, Any],
     lock_sha: str,
     subject: dict[str, Any],
+    target: str,
 ) -> dict[str, Any]:
     receipt = require_keys(
         parse_json(data, "Go build receipt"),
         {
             "schema",
             "package",
+            "target",
             "lock_sha256",
             "proxy",
             "toolchain",
@@ -1200,23 +1465,23 @@ def validate_build_receipt(
     )
     if receipt["schema"] != SCHEMA or receipt["package"] != PACKAGE:
         raise GateError("Go build receipt schema or package is invalid")
+    if receipt["target"] != target:
+        raise GateError("Go build receipt target does not match its manifest")
     if receipt["lock_sha256"] != lock_sha:
         raise GateError("Go build receipt does not match the exact lock")
-    expected_proxy = {
-        "sha256": subject["sha256"],
-        "size": subject["size"],
-        "signature": "Mach-O linker-signed ad hoc; no TeamIdentifier",
-        "minimum_macos": lock["toolchain"]["macosx_deployment_target"],
-    }
+    expected_proxy = proxy_receipt(subject, lock, target)
     if receipt["proxy"] != expected_proxy:
         raise GateError("Go build receipt proxy does not match the locked subject")
-    if receipt["toolchain"] != lock["toolchain"]:
+    if receipt["toolchain"] != receipt_toolchain(lock, target):
         raise GateError("Go build receipt toolchain does not match the exact lock")
     validate_build_host(receipt["build_host"])
     if receipt["build_host"] != lock["build_host"]:
         raise GateError("Go build receipt host identity does not match the exact lock")
     expected_source_configuration = {
         "archived_upstream_source_unchanged": True,
+        "overlay_path": lock["overlay"]["path"],
+        "overlay_sha256": lock["overlay"]["sha256"],
+        "modified_go_mod_sha256": lock["overlay"]["modified_go_mod_sha256"],
         "private_build_copy_go_mod_directive": (
             f"godebug default={lock['toolchain']['godebug_default']}"
         ),
@@ -1247,8 +1512,8 @@ def validate_build_receipt(
     ]
     if receipt["build_command"] != expected_command:
         raise GateError("Go build receipt command is invalid")
-    validate_build_info_value(receipt["build_info"], lock)
-    if receipt["runtime_modules"] != expected_runtime_modules(lock):
+    validate_build_info_value(receipt["build_info"], lock, target)
+    if receipt["runtime_modules"] != expected_runtime_modules(lock, target):
         raise GateError("Go build receipt runtime modules do not match the exact lock")
     if (
         receipt["clean_rebuild_sha256"] != subject["sha256"]
@@ -1280,6 +1545,7 @@ def verify_published_evidence(repo: Path, directory: Path) -> dict[str, Any]:
     )
     lock = validate_lock(parse_json(lock_data, "Tesla proxy lock"))
     lock_sha = sha256_bytes(lock_data)
+    overlay = load_overlay(repo, lock)
     manifest_data = regular_bytes(
         directory / "go-component-manifest.json",
         "Go component manifest",
@@ -1289,6 +1555,7 @@ def verify_published_evidence(repo: Path, directory: Path) -> dict[str, Any]:
         parse_json(manifest_data, "Go component manifest"),
         {
             "schema",
+            "target",
             "subject",
             "lock_sha256",
             "source_module_count",
@@ -1301,14 +1568,19 @@ def verify_published_evidence(repo: Path, directory: Path) -> dict[str, Any]:
     )
     if manifest["schema"] != SCHEMA or manifest["clean_rebuild_byte_identical"] is not True:
         raise GateError("Go component manifest policy is not satisfied")
+    target = require_string(manifest["target"], "Go component target")
+    target_policy(lock, target)
     subject = require_keys(
         manifest["subject"], {"name", "sha256", "size"}, "Go component subject"
     )
-    if subject != lock["subject"]:
+    if subject != locked_subject(repo, lock, target):
         raise GateError("Go component manifest subject does not match the locked proxy")
     if manifest["lock_sha256"] != lock_sha:
         raise GateError("Go component manifest does not match this source lock")
-    if manifest["source_module_count"] != 19 or manifest["runtime_dependency_count"] != 18:
+    if (
+        manifest["source_module_count"] != 21
+        or manifest["runtime_dependency_count"] != len(runtime_lock_items(lock, target))
+    ):
         raise GateError("Go component manifest dependency counts are unexpected")
 
     components = manifest["components"]
@@ -1345,7 +1617,7 @@ def verify_published_evidence(repo: Path, directory: Path) -> dict[str, Any]:
         raise GateError("Go component set digest is invalid")
 
     sources = parse_source_archive(
-        component_data["tesla-http-proxy-go-sources.tar.gz"], lock_data, lock
+        component_data["tesla-http-proxy-go-sources.tar.gz"], lock_data, lock, overlay
     )
     expected_inventory = json_bytes(dependency_inventory(lock, lock_sha))
     if component_data["go-dependency-inventory.json"] != expected_inventory:
@@ -1357,7 +1629,7 @@ def verify_published_evidence(repo: Path, directory: Path) -> dict[str, Any]:
     if component_data["GO_THIRD_PARTY_NOTICES.generated.md"] != expected_notices:
         raise GateError("Go third-party notices do not match the locked source licenses")
     validate_build_receipt(
-        component_data["go-build-receipt.json"], lock, lock_sha, subject
+        component_data["go-build-receipt.json"], lock, lock_sha, subject, target
     )
     unsigned_proxy = component_data["tesla-http-proxy.unsigned"]
     if len(unsigned_proxy) != subject["size"] or sha256_bytes(unsigned_proxy) != subject["sha256"]:
@@ -1369,18 +1641,21 @@ def evidence(
     repo: Path,
     proxy_path: Path,
     output: Path,
+    target: str,
 ) -> None:
     lock_path = repo / "scripts" / "tesla-proxy-lock.json"
     lock_data = regular_bytes(lock_path, "Tesla proxy lock", MAX_LOCK_BYTES)
     lock = validate_lock(parse_json(lock_data, "Tesla proxy lock"))
     lock_sha = sha256_bytes(lock_data)
+    overlay = load_overlay(repo, lock)
+    subject = locked_subject(repo, lock, target)
     proxy_data = regular_bytes(proxy_path, "unsigned Tesla proxy", MAX_BINARY_BYTES)
     proxy_sha = sha256_bytes(proxy_data)
     if {
         "name": "tesla-http-proxy",
         "sha256": proxy_sha,
         "size": len(proxy_data),
-    } != lock["subject"]:
+    } != subject:
         raise GateError("unsigned Tesla proxy does not match the reviewed locked subject")
     go, base_environment, go_environment = strict_go_environment()
 
@@ -1393,8 +1668,10 @@ def evidence(
         build_host = toolchain_identity(go, base_environment, temporary)
         if build_host != lock["build_host"]:
             raise GateError("local Go/Xcode build host does not match the reviewed lock")
-        build_info = verify_build_info(go, base_environment, temporary, staged_proxy, lock)
-        verify_macho(staged_proxy, temporary, base_environment, lock)
+        build_info = verify_build_info(
+            go, base_environment, temporary, staged_proxy, lock, target
+        )
+        verify_executable(staged_proxy, temporary, base_environment, lock, target)
 
         sources = [download_source(go, base_environment, repo, lock["main"], main=True)]
         sources.extend(
@@ -1402,11 +1679,11 @@ def evidence(
             for item in lock["modules"]
         )
         rebuilt_sha, runtime_modules = clean_rebuild(
-            go, base_environment, lock, sources, temporary, proxy_data
+            go, base_environment, lock, target, sources, overlay, temporary, proxy_data
         )
 
         source_archive = stage / "tesla-http-proxy-go-sources.tar.gz"
-        create_source_archive(source_archive, sources, lock_data)
+        create_source_archive(source_archive, sources, lock_data, overlay)
         write_output(
             stage / "go-dependency-inventory.json",
             json_bytes(dependency_inventory(lock, lock_sha)),
@@ -1420,17 +1697,16 @@ def evidence(
         receipt = {
             "schema": SCHEMA,
             "package": PACKAGE,
+            "target": target,
             "lock_sha256": lock_sha,
-            "proxy": {
-                "sha256": proxy_sha,
-                "size": len(proxy_data),
-                "signature": "Mach-O linker-signed ad hoc; no TeamIdentifier",
-                "minimum_macos": lock["toolchain"]["macosx_deployment_target"],
-            },
-            "toolchain": lock["toolchain"],
+            "proxy": proxy_receipt(subject, lock, target),
+            "toolchain": receipt_toolchain(lock, target),
             "build_host": build_host,
             "source_configuration": {
                 "archived_upstream_source_unchanged": True,
+                "overlay_path": lock["overlay"]["path"],
+                "overlay_sha256": lock["overlay"]["sha256"],
+                "modified_go_mod_sha256": lock["overlay"]["modified_go_mod_sha256"],
                 "private_build_copy_go_mod_directive": (
                     f"godebug default={lock['toolchain']['godebug_default']}"
                 ),
@@ -1461,6 +1737,7 @@ def evidence(
         ).encode()
         manifest = {
             "schema": SCHEMA,
+            "target": target,
             "subject": {
                 "name": "tesla-http-proxy",
                 "sha256": proxy_sha,
@@ -1468,7 +1745,7 @@ def evidence(
             },
             "lock_sha256": lock_sha,
             "source_module_count": len(sources),
-            "runtime_dependency_count": len(lock["modules"]),
+            "runtime_dependency_count": len(runtime_lock_items(lock, target)),
             "clean_rebuild_byte_identical": True,
             "components": components,
             "component_set_sha256": sha256_bytes(component_set),
@@ -1497,6 +1774,12 @@ def parse_args() -> argparse.Namespace:
     inputs.add_argument("--proxy-binary", help="unsigned linker-built proxy")
     inputs.add_argument("--verify-dir", help="verify an existing evidence directory")
     parser.add_argument("--output-dir", help="new evidence directory")
+    parser.add_argument(
+        "--target",
+        choices=tuple(TARGET_POLICIES),
+        default="darwin-arm64",
+        help="binary target for evidence generation (default: darwin-arm64)",
+    )
     return parser.parse_args()
 
 
@@ -1508,6 +1791,8 @@ def main() -> int:
         if args.verify_dir:
             if args.output_dir:
                 raise GateError("--output-dir cannot be used with --verify-dir")
+            if args.target != "darwin-arm64":
+                raise GateError("--target is inferred from evidence when using --verify-dir")
             directory = checked_directory(Path(args.verify_dir), "Go evidence directory")
             verify_published_evidence(repo, directory)
             print(directory)
@@ -1520,7 +1805,7 @@ def main() -> int:
         output = parent / output.name
         if os.path.lexists(output):
             raise GateError(f"output directory already exists: {output}")
-        evidence(repo, proxy, output)
+        evidence(repo, proxy, output, args.target)
         print(output)
         return 0
     except GateError as exc:

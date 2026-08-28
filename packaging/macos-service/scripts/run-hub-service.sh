@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 
 # The LaunchAgent runs this as the logged-in user. It keeps the optional Fleet
 # receiver in the same failure domain as the Hub without granting either

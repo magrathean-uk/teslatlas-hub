@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Ed25519 signing state for client-verifiable manifest response bytes.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};

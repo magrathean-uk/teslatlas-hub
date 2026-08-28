@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! One explicit Rustls cryptography provider for every Hub TLS path.
 //!
 //! Hub uses `ring` rather than compiling the larger AWS-LC provider on each

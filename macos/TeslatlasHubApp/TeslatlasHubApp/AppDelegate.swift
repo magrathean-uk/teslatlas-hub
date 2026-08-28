@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -20,6 +22,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applicationMenu.addItem(withTitle: "About Teslatlas Hub",
                                 action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                                 keyEquivalent: "")
+        let legal = applicationMenu.addItem(
+            withTitle: "Legal & Licence…",
+            action: #selector(showLegalNotice(_:)),
+            keyEquivalent: ""
+        )
+        legal.target = actionTarget
+        let source = applicationMenu.addItem(
+            withTitle: "Corresponding Source for v\(HubRelease.bundledVersion)…",
+            action: #selector(openCorrespondingSource(_:)),
+            keyEquivalent: ""
+        )
+        source.target = actionTarget
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Hide Teslatlas Hub",
                                 action: #selector(NSApplication.hide(_:)),
@@ -106,6 +120,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logsWindowController?.showWindow(nil)
         logsWindowController?.window?.makeKeyAndOrderFront(nil)
     }
+
+    @objc func openCorrespondingSource(_ sender: Any?) {
+        guard let url = HubRelease.correspondingSourceURL() else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc func showLegalNotice(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Teslatlas Hub v\(HubRelease.bundledVersion)"
+        alert.informativeText = Self.legalNoticeText
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "View Licence")
+        alert.addButton(withTitle: "Corresponding Source")
+        switch alert.runModal() {
+        case .alertSecondButtonReturn:
+            if let bundled = Bundle.main.url(forResource: "LICENSE", withExtension: nil) {
+                NSWorkspace.shared.open(bundled)
+            } else if let remote = HubRelease.licenceURL() {
+                NSWorkspace.shared.open(remote)
+            }
+        case .alertThirdButtonReturn:
+            openCorrespondingSource(sender)
+        default:
+            break
+        }
+    }
+
+    static let legalNoticeText = """
+    Licence: AGPL-3.0-only
+    Copyright © 2026 Gyorgy Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own.
+    Teslatlas Hub — originally authored by Gyorgy Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
+    Unofficial; not affiliated with Tesla or TeslaMate; no warranty.
+    """
 
     private func showOnboarding() {
         let onboarding = OnboardingWindowController(

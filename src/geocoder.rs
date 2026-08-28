@@ -1,4 +1,7 @@
-//! Optional, bounded Nominatim reverse geocoding.
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Optional, bounded reverse geocoding through an operator-selected,
+//! Nominatim-compatible endpoint.
 //!
 //! It performs one request per call, has no internal retries, stores only a
 //! bounded provider response, and keeps all provider errors free of
@@ -26,8 +29,7 @@ use crate::{
     location::Wgs84Point,
 };
 
-pub const DEFAULT_NOMINATIM_ENDPOINT: &str = "https://nominatim.openstreetmap.org";
-pub const FIXED_USER_AGENT: &str = concat!("TeslaAtlas-Hub/", env!("CARGO_PKG_VERSION"));
+pub const FIXED_USER_AGENT: &str = concat!("teslatlas-hub/", env!("CARGO_PKG_VERSION"));
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
 const MAX_RAW_JSON_BYTES: usize = 64 * 1024;
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);

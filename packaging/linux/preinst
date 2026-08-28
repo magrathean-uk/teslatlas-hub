@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
 [ "${1:-}" = upgrade ] || exit 0
@@ -10,6 +11,7 @@ state_file=${TESLATLAS_HUB_MAINTAINER_STATE_FILE:-/run/teslatlas-hub-maintainer.
 backup_dir=${TESLATLAS_HUB_UPGRADE_BACKUP_DIR:-/run/teslatlas-hub-package-upgrade}
 hub_binary=${TESLATLAS_HUB_BINARY:-/usr/bin/teslatlas-hub}
 unit_file=${TESLATLAS_HUB_UNIT_FILE:-/lib/systemd/system/teslatlas-hub.service}
+terminal_failure_target_file=${TESLATLAS_HUB_TERMINAL_FAILURE_TARGET_FILE:-/lib/systemd/system/teslatlas-hub-terminal-failure.target}
 command_proxy_binary=${TESLATLAS_COMMAND_PROXY_BINARY:-/usr/lib/teslatlas-hub/tesla-http-proxy}
 fleet_telemetry_binary=${TESLATLAS_FLEET_TELEMETRY_BINARY:-/usr/lib/teslatlas-hub/fleet-telemetry}
 command_proxy_unit_file=${TESLATLAS_COMMAND_PROXY_UNIT_FILE:-/lib/systemd/system/teslatlas-command-proxy.service}
@@ -122,6 +124,7 @@ trap 'exit 1' HUP INT TERM
 }
 install -o root -g root -m 0755 "$hub_binary" "$backup_dir/teslatlas-hub"
 install -o root -g root -m 0644 "$unit_file" "$backup_dir/teslatlas-hub.service"
+backup_optional_file "$terminal_failure_target_file" teslatlas-hub-terminal-failure.target 0644
 backup_optional_file "$command_proxy_binary" tesla-http-proxy 0755
 backup_optional_file "$fleet_telemetry_binary" fleet-telemetry 0755
 backup_optional_file "$command_proxy_unit_file" teslatlas-command-proxy.service 0644

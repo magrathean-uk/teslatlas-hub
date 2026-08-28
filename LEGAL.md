@@ -2,7 +2,10 @@
 
 ## Licence
 
-Copying, modification and distribution are governed by GNU AGPL version 3 only and the permitted section 7 notices.
+Project-authored and other AGPL-covered material is governed by GNU AGPL
+version 3 only and the permitted section 7 notices. Separately identified
+third-party material remains under its own licence and notices; see
+`LICENSING.md` and `THIRD_PARTY_NOTICES.md`.
 
 No repository document removes a freedom granted by the GNU AGPL.
 
@@ -33,3 +36,9 @@ Mandatory consumer, statutory and forum rights remain unaffected.
 ## Notices
 
 Send legal notices to `contact@magrathean.uk` with subject `LEGAL NOTICE`. Include sender identity, authority, exact material, legal basis, evidence and requested action.
+
+## Company information
+
+MAGRATHEAN UK LTD is registered in England and Wales under company number
+16955343. Its registered office is 16 Caledonian Court West Street, Watford,
+England, WD17 1RY.

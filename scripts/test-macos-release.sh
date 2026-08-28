@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
 
@@ -18,6 +19,8 @@ fail() {
 BIN="$TMP/bin"
 INPUT="$TMP/input"
 LOG="$TMP/tool.log"
+CARGO=$(command -v cargo) || fail "cargo is required"
+RUSTC=$(command -v rustc) || fail "rustc is required"
 mkdir -p "$BIN" "$INPUT/Teslatlas Hub.app/Contents/MacOS" \
     "$INPUT/Teslatlas Hub.app/Contents/Resources"
 /usr/bin/plutil -create xml1 "$INPUT/Teslatlas Hub.app/Contents/Info.plist"
@@ -50,8 +53,16 @@ python3 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
     --output-dir "$FLEET_TELEMETRY_EVIDENCE" >/dev/null
 python3 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
     --verify-dir "$FLEET_TELEMETRY_EVIDENCE" >/dev/null
+LEGAL_BUNDLE="$INPUT/dependency-legal"
+python3 "$ROOT/scripts/legal-bundle.py" --repo "$ROOT" \
+    --go-proxy-evidence "$GO_EVIDENCE" \
+    --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" \
+    --output-dir "$LEGAL_BUNDLE" >/dev/null
+cp -R "$LEGAL_BUNDLE" \
+    "$INPUT/Teslatlas Hub.app/Contents/Resources/DependencyLegal"
 export RELEASE_TEST_PROXY="$TEST_PROXY"
 export RELEASE_TEST_FLEET_TELEMETRY="$TEST_FLEET_TELEMETRY"
+export RELEASE_TEST_LEGAL_BUNDLE="$LEGAL_BUNDLE"
 
 cat >"$BIN/uname" <<'EOF'
 #!/bin/sh
@@ -70,6 +81,17 @@ cat >"$BIN/codesign" <<'EOF'
 #!/bin/sh
 printf 'codesign %s\n' "$*" >>"$RELEASE_TEST_LOG"
 exit 0
+EOF
+
+cat >"$BIN/cargo" <<'EOF'
+#!/bin/sh
+exec "$RELEASE_TEST_CARGO" "$@"
+EOF
+
+
+cat >"$BIN/rustc" <<'EOF'
+#!/bin/sh
+exec "$RELEASE_TEST_RUSTC" "$@"
 EOF
 
 cat >"$BIN/ditto" <<'EOF'
@@ -104,6 +126,9 @@ case "$1" in
             "$3/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
         cp "$RELEASE_TEST_FLEET_TELEMETRY" \
             "$3/Payload/Library/Application Support/Teslatlas Hub/bin/fleet-telemetry"
+        mkdir -p "$3/Payload/Library/Application Support/Teslatlas Hub/share"
+        cp -R "$RELEASE_TEST_LEGAL_BUNDLE" \
+            "$3/Payload/Library/Application Support/Teslatlas Hub/share/dependency-legal"
         cat >"$3/PackageInfo" <<'PACKAGE_INFO'
 <pkg-info identifier="com.teslatlas.hub.service" version="1.0.0a1" install-location="/"/>
 PACKAGE_INFO
@@ -160,6 +185,8 @@ EOF
 chmod 0755 "$BIN"/*
 export PATH="$BIN:/usr/bin:/bin:/usr/sbin:/sbin"
 export RELEASE_TEST_LOG="$LOG"
+export RELEASE_TEST_CARGO="$CARGO"
+export RELEASE_TEST_RUSTC="$RUSTC"
 
 APP_ID='Developer ID Application: Bolyki Gyorgy (4AA2EMZ2HA)'
 PKG_ID='Developer ID Installer: Bolyki Gyorgy (4AA2EMZ2HA)'
@@ -170,6 +197,7 @@ run_release() {
         --service-package "$INPUT/service.pkg" \
         --go-proxy-evidence "$GO_EVIDENCE" \
         --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" \
+        --legal-bundle "$LEGAL_BUNDLE" \
         --app-identity "$APP_ID" \
         --installer-identity "$1" \
         --notary-profile "$2" \
@@ -209,11 +237,11 @@ GO_EVIDENCE=$WRONG_GO_EVIDENCE
 wrong_go_output="$TMP/wrong-go-evidence"
 if run_release "$PKG_ID" teslatlas-hub-notary-4AA2EMZ2HA \
     "$wrong_go_output" >"$TMP/wrong-go.out" 2>&1; then
-    fail "Go evidence for a different proxy was accepted"
+    fail "tampered Go evidence was accepted"
 fi
 GO_EVIDENCE=$original_go_evidence
-grep -Fq 'subject does not match the locked proxy' "$TMP/wrong-go.out" \
-    || fail "wrong Go evidence did not fail for the expected reason"
+grep -Fq 'dependency legal bundle is invalid' "$TMP/wrong-go.out" \
+    || fail "tampered Go evidence did not fail at the legal-bundle gate"
 [ ! -e "$wrong_go_output" ] || fail "wrong Go evidence created output"
 [ ! -s "$LOG" ] || fail "wrong Go evidence invoked signing or notary tools"
 
@@ -224,8 +252,11 @@ if RELEASE_MUTATE_COPIED_PROXY=1 run_release "$PKG_ID" \
     fail "proxy changed while copying the release app was accepted"
 fi
 unset RELEASE_MUTATE_COPIED_PROXY
-grep -Fq 'app proxy changed while staging the release' "$TMP/staged-proxy-swap.out" \
-    || fail "staged proxy replacement did not fail for the expected reason"
+if ! grep -Fq 'app proxy changed while staging the release' \
+    "$TMP/staged-proxy-swap.out"; then
+    sed -n '1,120p' "$TMP/staged-proxy-swap.out" >&2
+    fail "staged proxy replacement did not fail for the expected reason"
+fi
 [ ! -e "$staged_swap_output" ] || fail "staged proxy replacement created output"
 : >"$LOG"
 
@@ -239,6 +270,8 @@ run_release "$PKG_ID" teslatlas-hub-notary-4AA2EMZ2HA "$good_output" >/dev/null
 [ -f "$good_output/SHA256SUMS" ] || fail "checksums are missing"
 [ -f "$good_output/go-proxy-evidence/go-component-manifest.json" ] \
     || fail "Go proxy evidence is missing"
+[ -f "$good_output/dependency-legal/legal-bundle-manifest.json" ] \
+    || fail "dependency legal bundle is missing"
 [ -f "$good_output/notary-logs/service-package-submit.json" ] \
     || fail "package submit log is missing"
 [ -f "$good_output/notary-logs/service-package-log.json" ] \
@@ -253,6 +286,8 @@ mkdir "$extracted_release"
 release_info="$extracted_release/Teslatlas Hub.app/Contents/Info.plist"
 embedded_package="$extracted_release/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg"
 embedded_digest=$(shasum -a 256 "$embedded_package" | awk '{ print $1 }')
+[ "$embedded_digest" = "$(shasum -a 256 "$good_output/TeslatlasHubService.pkg" | awk '{print $1}')" ] \
+    || fail "external package does not match the app's embedded package"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasServicePackageSHA256' "$release_info")" = "$embedded_digest" ] \
     || fail "signed package digest was not bound into the app"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasReleaseTeamIdentifier' "$release_info")" = 4AA2EMZ2HA ] \

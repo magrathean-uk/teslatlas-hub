@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Explicit, allow-listed TeslaMate write-back operations.
 //!
 //! Normal migration and collection never call this module. Every operation

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! One local process lock for the Hub data directory.
 
 use std::{

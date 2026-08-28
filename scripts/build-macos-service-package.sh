@@ -1,9 +1,11 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
 
 umask 022
 
+CALLER_PATH=${PATH-}
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export PATH
 COPYFILE_DISABLE=1
@@ -11,7 +13,7 @@ export COPYFILE_DISABLE
 
 usage() {
     cat <<'EOF'
-Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --fleet-telemetry-binary PATH --version VERSION [--app PATH] [--output PATH]
+Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --fleet-telemetry-binary PATH --version VERSION --legal-bundle PATH --go-proxy-evidence PATH --fleet-telemetry-evidence PATH [--output PATH]
 
 Builds an unsigned local macOS 13+ arm64 installer package. The package never
 installs or starts the Hub during its build.
@@ -22,6 +24,21 @@ die() {
     printf '%s\n' "build-macos-service-package: $*" >&2
     exit 1
 }
+
+# BEGIN TESTABLE HUB VERSION HELPER
+require_hub_version() {
+    version_binary=$1
+    expected_version=$2
+    version_output=$(
+        version_status=0
+        "$version_binary" --version 2>&1 || version_status=$?
+        printf '%s' "__TESLATLAS_HUB_VERSION_STATUS_${version_status}__"
+    )
+    expected_output=$(printf 'teslatlas-hub %s\n%s' \
+        "$expected_version" '__TESLATLAS_HUB_VERSION_STATUS_0__')
+    [ "$version_output" = "$expected_output" ]
+}
+# END TESTABLE HUB VERSION HELPER
 
 # BEGIN TESTABLE MACH-O HELPER
 is_executable_macho() {
@@ -43,9 +60,11 @@ minimum_macos() {
 binary=
 proxy_binary=
 fleet_telemetry_binary=
-app=
 version=
 output=
+legal_bundle=
+go_proxy_evidence=
+fleet_telemetry_evidence=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --binary)
@@ -63,11 +82,6 @@ while [ "$#" -gt 0 ]; do
             fleet_telemetry_binary=$2
             shift 2
             ;;
-        --app)
-            [ "$#" -ge 2 ] || die "--app requires a path"
-            app=$2
-            shift 2
-            ;;
         --version)
             [ "$#" -ge 2 ] || die "--version requires a value"
             version=$2
@@ -76,6 +90,21 @@ while [ "$#" -gt 0 ]; do
         --output)
             [ "$#" -ge 2 ] || die "--output requires a path"
             output=$2
+            shift 2
+            ;;
+        --legal-bundle)
+            [ "$#" -ge 2 ] || die "--legal-bundle requires a path"
+            legal_bundle=$2
+            shift 2
+            ;;
+        --go-proxy-evidence)
+            [ "$#" -ge 2 ] || die "--go-proxy-evidence requires a path"
+            go_proxy_evidence=$2
+            shift 2
+            ;;
+        --fleet-telemetry-evidence)
+            [ "$#" -ge 2 ] || die "--fleet-telemetry-evidence requires a path"
+            fleet_telemetry_evidence=$2
             shift 2
             ;;
         -h|--help)
@@ -93,6 +122,9 @@ done
 [ -n "$proxy_binary" ] || die "--proxy-binary is required"
 [ -n "$fleet_telemetry_binary" ] || die "--fleet-telemetry-binary is required"
 [ -n "$version" ] || die "--version is required"
+[ -n "$legal_bundle" ] || die "--legal-bundle is required"
+[ -n "$go_proxy_evidence" ] || die "--go-proxy-evidence is required"
+[ -n "$fleet_telemetry_evidence" ] || die "--fleet-telemetry-evidence is required"
 /usr/bin/printf '%s\n' "$version" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
     || die "version must be semver with an optional prerelease: $version"
 package_base_version=${version%%-*}
@@ -105,19 +137,52 @@ case "$version" in
 esac
 [ -f "$binary" ] && [ ! -L "$binary" ] && [ -x "$binary" ] \
     || die "binary must be an executable regular file"
+require_hub_version "$binary" "$version" \
+    || die "Hub binary version does not match package version"
 [ -f "$proxy_binary" ] && [ ! -L "$proxy_binary" ] && [ -x "$proxy_binary" ] \
     || die "proxy binary must be an executable regular file"
 [ -f "$fleet_telemetry_binary" ] && [ ! -L "$fleet_telemetry_binary" ] && [ -x "$fleet_telemetry_binary" ] \
     || die "Fleet Telemetry binary must be an executable regular file"
-if [ -n "$app" ]; then
-    [ -d "$app" ] && [ ! -L "$app" ] || die "app must be a real application bundle"
-    [ "$(basename "$app")" = "Teslatlas Hub.app" ] || die "unexpected app bundle name"
-    [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = "eu.teslatlas.hub.app" ] \
-        || die "unexpected app bundle identifier"
-    /usr/bin/codesign --verify --deep --strict "$app" || die "app signature verification failed"
-fi
-
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
+RUST_TOOLCHAIN=$(
+    /usr/bin/sed -nE 's/^rust-version = "([0-9]+\.[0-9]+(\.[0-9]+)?)"$/\1/p' \
+        "$ROOT/Cargo.toml"
+)
+case "$RUST_TOOLCHAIN" in
+    *.*.*) ;;
+    *.*) RUST_TOOLCHAIN="$RUST_TOOLCHAIN.0" ;;
+    *) die "cannot read the pinned Rust version" ;;
+esac
+RUSTUP=$(PATH="$CALLER_PATH" command -v rustup) \
+    || die "rustup is required for dependency legal verification"
+case "$RUSTUP" in
+    /*) ;;
+    *) die "rustup did not resolve to an absolute path" ;;
+esac
+[ -x "$RUSTUP" ] || die "rustup is not executable"
+RUST_CARGO=$("$RUSTUP" which --toolchain "$RUST_TOOLCHAIN" cargo) \
+    || die "cannot find Rust $RUST_TOOLCHAIN cargo"
+RUST_COMPILER=$("$RUSTUP" which --toolchain "$RUST_TOOLCHAIN" rustc) \
+    || die "cannot find Rust $RUST_TOOLCHAIN rustc"
+[ -x "$RUST_CARGO" ] || die "cargo is not executable"
+[ -x "$RUST_COMPILER" ] || die "rustc is not executable"
+RUST_TOOLCHAIN_BIN=$(/usr/bin/dirname "$RUST_CARGO")
+[ "$RUST_TOOLCHAIN_BIN" = "$(/usr/bin/dirname "$RUST_COMPILER")" ] \
+    || die "pinned cargo and rustc are not from one toolchain"
+case "$RUST_TOOLCHAIN_BIN" in
+    /*) ;;
+    *) die "Rust toolchain directory is not absolute" ;;
+esac
+PATH="$RUST_TOOLCHAIN_BIN:/usr/bin:/bin:/usr/sbin:/sbin"
+RUSTC="$RUST_COMPILER"
+export PATH RUSTC
+LEGAL_HELPER="$ROOT/scripts/legal-bundle.py"
+[ -f "$LEGAL_HELPER" ] && [ ! -L "$LEGAL_HELPER" ] \
+    || die "dependency legal bundle verifier is missing or unsafe"
+/usr/bin/python3 "$LEGAL_HELPER" --repo "$ROOT" --verify-dir "$legal_bundle" \
+    --go-proxy-evidence "$go_proxy_evidence" \
+    --fleet-telemetry-evidence "$fleet_telemetry_evidence" >/dev/null \
+    || die "dependency legal bundle is invalid"
 TEMPLATE="$ROOT/packaging/macos-service/com.teslatlas.hub.plist.in"
 PACKAGE_SCRIPTS="$ROOT/packaging/macos-service/scripts"
 [ -f "$TEMPLATE" ] || die "LaunchAgent template is missing"
@@ -153,15 +218,6 @@ scripts="$staging/scripts"
 /bin/mkdir -p "$payload/Library/Application Support/Teslatlas Hub/bin" \
     "$payload/Library/Application Support/Teslatlas Hub/libexec" \
     "$payload/Library/Application Support/Teslatlas Hub/share" "$scripts"
-if [ -n "$app" ]; then
-    /bin/mkdir -p "$payload/Applications"
-    /usr/bin/ditto --noextattr --norsrc "$app" "$payload/Applications/Teslatlas Hub.app" \
-        || die "cannot copy app into package payload"
-    /usr/bin/xattr -cr "$payload/Applications/Teslatlas Hub.app" >/dev/null 2>&1 \
-        || die "cannot clear packaged app metadata"
-    /usr/bin/codesign --verify --deep --strict "$payload/Applications/Teslatlas Hub.app" \
-        || die "packaged app signature verification failed"
-fi
 /usr/bin/lipo -verify_arch arm64 "$binary" \
     || die "binary has no arm64 slice"
 /usr/bin/lipo -verify_arch arm64 "$proxy_binary" \
@@ -189,7 +245,24 @@ payload_fleet_telemetry_binary="$payload/Library/Application Support/Teslatlas H
 /usr/bin/install -m 0755 "$fleet_telemetry_binary" "$payload_fleet_telemetry_binary" \
     || die "cannot copy Fleet Telemetry receiver"
 /usr/bin/find "$payload/Library/Application Support/Teslatlas Hub/share" -type f -delete
-for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md; do
+for required_release_legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md \
+    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
+    [ -f "$ROOT/$required_release_legal_file" ] \
+        && [ ! -L "$ROOT/$required_release_legal_file" ] \
+        || die "required release legal file is missing or unsafe: $required_release_legal_file"
+done
+dependency_legal="$payload/Library/Application Support/Teslatlas Hub/share/dependency-legal"
+/bin/mkdir -p "$dependency_legal"
+for legal_component in "$legal_bundle"/*; do
+    /usr/bin/install -m 0644 "$legal_component" \
+        "$dependency_legal/$(/usr/bin/basename "$legal_component")"
+done
+/usr/bin/python3 "$LEGAL_HELPER" --repo "$ROOT" --verify-dir "$dependency_legal" \
+    --go-proxy-evidence "$go_proxy_evidence" \
+    --fleet-telemetry-evidence "$fleet_telemetry_evidence" >/dev/null \
+    || die "staged dependency legal bundle is invalid"
+for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md \
+    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
     if [ -f "$ROOT/$legal_file" ]; then
         /usr/bin/install -m 0644 "$ROOT/$legal_file" \
             "$payload/Library/Application Support/Teslatlas Hub/share/$legal_file"
@@ -324,15 +397,8 @@ expanded_fleet_telemetry_example="$expanded/Payload/Library/Application Support/
 expanded_uninstaller="$expanded/Payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
 [ -f "$expanded_uninstaller" ] && [ ! -L "$expanded_uninstaller" ] && [ -x "$expanded_uninstaller" ] \
     || die "generated package is missing the privileged uninstaller"
-if [ -n "$app" ]; then
-    expanded_app="$expanded/Payload/Applications/Teslatlas Hub.app"
-    [ -d "$expanded_app" ] && [ ! -L "$expanded_app" ] \
-        || die "generated package is missing the app"
-    [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$expanded_app/Contents/Info.plist")" = "eu.teslatlas.hub.app" ] \
-        || die "generated package app has the wrong bundle identifier"
-    /usr/bin/codesign --verify --deep --strict "$expanded_app" \
-        || die "generated package app signature verification failed"
-fi
+[ ! -e "$expanded/Payload/Applications" ] && [ ! -L "$expanded/Payload/Applications" ] \
+    || die "service package must not contain an Applications payload"
 metadata=$(
     /usr/bin/find "$expanded/Payload" "$expanded/Scripts" \
         \( -name '._*' -o -name '.DS_Store' \) -print -quit

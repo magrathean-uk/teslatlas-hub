@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import AppKit
 import XCTest
 @testable import Teslatlas_Hub
@@ -140,7 +142,7 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         let embedded = FleetRecoveryRunner(events: events,
                                             event: "embedded-setup",
                                             result: .success("configured"),
-                                            versionResult: .success("teslatlas-hub 1.0.0-alpha.2\n"))
+                                            versionResult: .success("teslatlas-hub 1.0.0-beta.1\n"))
         let installed = FleetRecoveryRunner(events: events,
                                              event: "installed-setup",
                                              result: .success("unused"),
@@ -177,12 +179,12 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         let embedded = FleetRecoveryRunner(events: events,
                                             event: "embedded-setup",
                                             result: .success("configured"),
-                                            versionResult: .success("teslatlas-hub 1.0.0-alpha.2\n"))
+                                            versionResult: .success("teslatlas-hub 1.0.0-beta.1\n"))
         let installed = FleetRecoveryRunner(
             events: events,
             event: "installed-setup",
             result: .success("unused"),
-            versionResult: .success("teslatlas-hub 1.0.0-alpha.2\n")
+            versionResult: .success("teslatlas-hub 1.0.0-beta.1\n")
         )
         let controller = HubController(commandRunner: embedded,
                                        installedCommandRunner: installed,

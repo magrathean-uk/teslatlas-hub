@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2021 Adrian Kumpf
+// SPDX-License-Identifier: MIT
+
 import AppKit
 import CryptoKit
 import Foundation
@@ -6,6 +9,7 @@ import WebKit
 
 // OAuth parameters and callback semantics are derived from Tesla Auth v0.15.0
 // (MIT), commit 68da1f850e9cb87ac0e54c608d5a2e90d3ad1608.
+// Modified for Teslatlas Hub on 2026-08-22 and 2026-08-25.
 struct TeslaAuthTokens {
     let accessToken: String
     let refreshToken: String

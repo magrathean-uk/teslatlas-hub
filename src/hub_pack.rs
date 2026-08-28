@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Typed, bounded SQLite packs for the Teslatlas Hub source.
 //!
 //! This deliberately does not turn arbitrary Hub observations into rows for a

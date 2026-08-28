@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
 
@@ -18,10 +19,22 @@ export GOENV GOWORK GOTOOLCHAIN GOFLAGS GOPROXY GOSUMDB GONOSUMDB GOPRIVATE
 COMMIT=49977a18fd68567501d59e16a6c9e4a8b9348544
 VERSION=v0.4.1
 GO_VERSION=go1.27.0
+OVERLAY_PATCH_SHA256=0eb6a95f175ebdde51b18485a7ccd19c5e23aeb009a6f989b4512eb12b843a16
+MODIFIED_GO_MOD_SHA256=7459a52ecd7758154ae58d6ec85ac621293aad7d942055f239206ea082e00c3e
 
 die() {
     printf '%s\n' "build-tesla-command-proxy: $*" >&2
     exit 1
+}
+
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | /usr/bin/awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | /usr/bin/awk '{print $1}'
+    else
+        die "sha256sum or shasum is required"
+    fi
 }
 
 usage() {
@@ -86,8 +99,17 @@ case "$target" in
     *) die "unsupported target: $target" ;;
 esac
 
+script_directory=$(CDPATH='' cd "$(dirname "$0")" && pwd -P)
+repository_root=$(CDPATH='' cd "$script_directory/.." && pwd -P)
+overlay_patch="$repository_root/packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch"
+[ -f "$overlay_patch" ] && [ ! -L "$overlay_patch" ] \
+    || die "Tesla command-proxy overlay patch is missing or unsafe"
+[ "$(sha256_file "$overlay_patch")" = "$OVERLAY_PATCH_SHA256" ] \
+    || die "Tesla command-proxy overlay patch does not match the reviewed digest"
+
 GO=$(command -v go) || die "go is required"
 [ -x "$GO" ] || die "go is not executable"
+PATCH=$(command -v patch) || die "patch is required"
 go_version=$($GO env GOVERSION)
 [ "$go_version" = "$GO_VERSION" ] \
     || die "$GO_VERSION is required exactly: $go_version"
@@ -150,8 +172,8 @@ private_module_gosum=$(printf '%s\n' "$private_module_json" | /usr/bin/awk -F'"'
 [ -d "$private_module_dir" ] || die "private Tesla source directory is missing"
 
 # Upstream still declares an older Go language version. Build from a private
-# copy and add only a build-time GODEBUG policy. The cached/tagged source stays
-# untouched while the executable uses Go 1.27's secure runtime defaults.
+# copy and apply the reviewed, source-available change notice and GODEBUG
+# policy. The checksum-verified upstream archive remains untouched.
 /bin/cp -R "$private_module_dir" "$work/source"
 /bin/chmod -R u+w "$work/source"
 # Populate the host download proxy from the verified main source, then return
@@ -165,8 +187,10 @@ private_module_gosum=$(printf '%s\n' "$private_module_json" | /usr/bin/awk -F'"'
 ) || die "cannot cache the locked Tesla proxy dependencies"
 (
     cd "$work/source"
-    GOWORK=off $GO mod edit -godebug=default=go1.27
-)
+    "$PATCH" --batch --forward --fuzz=0 -p1 < "$overlay_patch"
+) || die "cannot apply the reviewed Tesla command-proxy overlay"
+[ "$(sha256_file "$work/source/go.mod")" = "$MODIFIED_GO_MOD_SHA256" ] \
+    || die "modified Tesla command-proxy go.mod does not match the reviewed digest"
 
 if [ "$target" = darwin-arm64 ]; then
     (

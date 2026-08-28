@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Small local credential helpers. Hub owns one encrypted TeslaMate pair.
 
 use crate::legacy_auth::{LegacyAuth, LegacyAuthError};

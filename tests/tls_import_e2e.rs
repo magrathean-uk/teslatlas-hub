@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Mac-local TLS end-to-end: claim → vehicle → signed manifest → pack stream
 //! with Range resume. Drives the shipped server and pack contracts without
 //! systemd, Docker, or a Debian VM.

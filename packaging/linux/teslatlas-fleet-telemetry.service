@@ -2,7 +2,7 @@
 Description=Teslatlas Fleet Telemetry bridge
 After=network-online.target teslatlas-hub.service
 Wants=network-online.target
-Requires=teslatlas-hub.service
+PartOf=teslatlas-hub.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 ConditionPathExists=/var/lib/teslatlas-hub/fleet-telemetry-bearer

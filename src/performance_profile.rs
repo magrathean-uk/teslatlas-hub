@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Conservative, host-local import tuning.
 //!
 //! This first profile slice only lowers PostgreSQL COPY parallelism. It never

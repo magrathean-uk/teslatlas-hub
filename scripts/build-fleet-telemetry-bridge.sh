@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
 
@@ -19,7 +20,7 @@ VERSION=v0.9.4
 COMMIT=d64c73ab65e7c5fb5fc12b35fe507e2c6054227b
 ARCHIVE_URL=https://codeload.github.com/teslamotors/fleet-telemetry/tar.gz/d64c73ab65e7c5fb5fc12b35fe507e2c6054227b
 ARCHIVE_SHA256=a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9
-PATCH_SHA256=800b8572eb32da0f851316cf6e13349325ca6a3c4470887e8f3dc9bc222d8b59
+PATCH_SHA256=cfc6831c9686af759781edd647d7c6e10c56b567af4eadf569c14586c2cfbec3
 GO_VERSION=go1.27.0
 
 die() {

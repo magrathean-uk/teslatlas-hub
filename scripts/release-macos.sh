@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
 
@@ -11,6 +12,7 @@ Usage: scripts/release-macos.sh \
   --service-package PATH \
   --go-proxy-evidence PATH \
   --fleet-telemetry-evidence PATH \
+  --legal-bundle PATH \
   --app-identity "Developer ID Application: Name (TEAMID)" \
   --installer-identity "Developer ID Installer: Name (TEAMID)" \
   --notary-profile PROFILE-TEAMID \
@@ -30,6 +32,7 @@ app=
 service_package=
 go_proxy_evidence=
 fleet_telemetry_evidence=
+legal_bundle=
 app_identity=
 installer_identity=
 notary_profile=
@@ -55,6 +58,11 @@ while [ "$#" -gt 0 ]; do
         --fleet-telemetry-evidence)
             [ "$#" -ge 2 ] || die "--fleet-telemetry-evidence requires a path"
             fleet_telemetry_evidence=$2
+            shift 2
+            ;;
+        --legal-bundle)
+            [ "$#" -ge 2 ] || die "--legal-bundle requires a path"
+            legal_bundle=$2
             shift 2
             ;;
         --app-identity)
@@ -93,12 +101,13 @@ done
 [ -n "$service_package" ] || die "--service-package is required"
 [ -n "$go_proxy_evidence" ] || die "--go-proxy-evidence is required"
 [ -n "$fleet_telemetry_evidence" ] || die "--fleet-telemetry-evidence is required"
+[ -n "$legal_bundle" ] || die "--legal-bundle is required"
 [ -n "$app_identity" ] || die "--app-identity is required"
 [ -n "$installer_identity" ] || die "--installer-identity is required"
 [ -n "$notary_profile" ] || die "--notary-profile is required"
 [ -n "$output_arg" ] || die "--output-dir is required"
 
-for tool in awk basename codesign dirname ditto find grep install mkdir mktemp mv \
+for tool in awk basename cargo cmp codesign dirname ditto find grep install mkdir mktemp mv \
     pkgbuild pkgutil plutil productsign python3 security sed shasum sort xcrun; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
@@ -110,6 +119,8 @@ done
     || die "Go proxy evidence must be a real directory"
 [ -d "$fleet_telemetry_evidence" ] && [ ! -L "$fleet_telemetry_evidence" ] \
     || die "Fleet Telemetry evidence must be a real directory"
+[ -d "$legal_bundle" ] && [ ! -L "$legal_bundle" ] \
+    || die "dependency legal bundle must be a real directory"
 case "$(basename "$app")" in
     *.app) ;;
     *) die "app path must end in .app" ;;
@@ -133,6 +144,27 @@ plutil -lint "$app_info" >/dev/null || die "app Info.plist is invalid"
 
 script_root=$(CDPATH='' cd "$(dirname "$0")/.." && pwd) \
     || die "cannot resolve repository root"
+legal_helper="$script_root/scripts/legal-bundle.py"
+[ -f "$legal_helper" ] && [ ! -L "$legal_helper" ] \
+    || die "dependency legal bundle verifier is missing"
+python3 "$legal_helper" --repo "$script_root" --verify-dir "$legal_bundle" \
+    --go-proxy-evidence "$go_proxy_evidence" \
+    --fleet-telemetry-evidence "$fleet_telemetry_evidence" >/dev/null \
+    || die "dependency legal bundle is invalid"
+app_legal_bundle="$app/Contents/Resources/DependencyLegal"
+python3 "$legal_helper" --repo "$script_root" --verify-dir "$app_legal_bundle" \
+    --go-proxy-evidence "$go_proxy_evidence" \
+    --fleet-telemetry-evidence "$fleet_telemetry_evidence" >/dev/null \
+    || die "app dependency legal bundle is invalid"
+for legal_component in "$legal_bundle"/*; do
+    component_name=$(basename "$legal_component")
+    cmp "$legal_component" "$app_legal_bundle/$component_name" >/dev/null \
+        || die "app dependency legal component mismatch: $component_name"
+done
+input_service_sha256=$(shasum -a 256 "$service_package" | awk '{print $1}')
+embedded_service_sha256=$(shasum -a 256 "$embedded_package" | awk '{print $1}')
+[ "$input_service_sha256" = "$embedded_service_sha256" ] \
+    || die "input service package does not match the app's embedded package"
 go_evidence_helper="$script_root/scripts/go-proxy-evidence.py"
 [ -f "$go_evidence_helper" ] && [ ! -L "$go_evidence_helper" ] \
     || die "Go proxy evidence verifier is missing"
@@ -260,9 +292,29 @@ copied_evidence_fleet_telemetry_sha256=$(python3 -c \
 evidence_fleet_telemetry_sha256=$copied_evidence_fleet_telemetry_sha256
 fleet_telemetry_component_manifest_sha256=$(shasum -a 256 \
     "$release_fleet_telemetry_evidence/fleet-telemetry-component-manifest.json" | awk '{ print $1 }')
+release_legal_bundle="$release/dependency-legal"
+ditto --noextattr --norsrc "$legal_bundle" "$release_legal_bundle"
+python3 "$legal_helper" --repo "$script_root" --verify-dir "$release_legal_bundle" \
+    --go-proxy-evidence "$release_go_evidence" \
+    --fleet-telemetry-evidence "$release_fleet_telemetry_evidence" >/dev/null \
+    || die "copied dependency legal bundle is invalid"
+legal_bundle_manifest_sha256=$(shasum -a 256 \
+    "$release_legal_bundle/legal-bundle-manifest.json" | awk '{print $1}')
 
 expanded="$work/service-expanded"
 pkgutil --expand-full "$service_package" "$expanded"
+[ ! -e "$expanded/Payload/Applications" ] && [ ! -L "$expanded/Payload/Applications" ] \
+    || die "service package must not contain an Applications payload"
+expanded_legal_bundle="$expanded/Payload/Library/Application Support/Teslatlas Hub/share/dependency-legal"
+python3 "$legal_helper" --repo "$script_root" --verify-dir "$expanded_legal_bundle" \
+    --go-proxy-evidence "$release_go_evidence" \
+    --fleet-telemetry-evidence "$release_fleet_telemetry_evidence" >/dev/null \
+    || die "service package dependency legal bundle is invalid"
+for legal_component in "$release_legal_bundle"/*; do
+    component_name=$(basename "$legal_component")
+    cmp "$legal_component" "$expanded_legal_bundle/$component_name" >/dev/null \
+        || die "service package dependency legal component mismatch: $component_name"
+done
 expanded_proxy="$expanded/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
 [ -f "$expanded_proxy" ] && [ ! -L "$expanded_proxy" ] \
     || die "expanded package is missing tesla-http-proxy"
@@ -362,6 +414,7 @@ release_info="$release_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Delete :TeslatlasGoEvidenceManifestSHA256' "$release_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c 'Delete :TeslatlasUnsignedFleetTelemetrySHA256' "$release_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c 'Delete :TeslatlasFleetTelemetryEvidenceManifestSHA256' "$release_info" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c 'Delete :TeslatlasLegalBundleManifestSHA256' "$release_info" >/dev/null 2>&1 || true
 /usr/libexec/PlistBuddy -c "Add :TeslatlasServicePackageSHA256 string $service_package_sha256" "$release_info"
 /usr/libexec/PlistBuddy -c "Add :TeslatlasReleaseTeamIdentifier string $app_team" "$release_info"
 /usr/libexec/PlistBuddy -c 'Add :TeslatlasOfficialRelease bool true' "$release_info"
@@ -369,6 +422,7 @@ release_info="$release_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :TeslatlasGoEvidenceManifestSHA256 string $go_component_manifest_sha256" "$release_info"
 /usr/libexec/PlistBuddy -c "Add :TeslatlasUnsignedFleetTelemetrySHA256 string $evidence_fleet_telemetry_sha256" "$release_info"
 /usr/libexec/PlistBuddy -c "Add :TeslatlasFleetTelemetryEvidenceManifestSHA256 string $fleet_telemetry_component_manifest_sha256" "$release_info"
+/usr/libexec/PlistBuddy -c "Add :TeslatlasLegalBundleManifestSHA256 string $legal_bundle_manifest_sha256" "$release_info"
 plutil -lint "$release_info" >/dev/null || die "release trust metadata is invalid"
 sign_named_binaries "$release_resources" 1
 codesign --force --sign "$app_identity" \
@@ -397,6 +451,9 @@ find "$release_app" -depth -delete \
             shasum -a 256 "$evidence_file"
         done
         find fleet-telemetry-evidence -type f -print | LC_ALL=C sort | while IFS= read -r evidence_file; do
+            shasum -a 256 "$evidence_file"
+        done
+        find dependency-legal -type f -print | LC_ALL=C sort | while IFS= read -r evidence_file; do
             shasum -a 256 "$evidence_file"
         done
     } >SHA256SUMS

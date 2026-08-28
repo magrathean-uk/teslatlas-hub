@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Operator diagnostics for Hub SQLite, stored Tesla credentials, and TLS.
 //!
 //! `doctor` is read-only: it never writes TeslaMate PostgreSQL and never

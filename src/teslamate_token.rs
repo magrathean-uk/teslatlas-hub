@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! TeslaMate legacy-token decryption without executing TeslaMate.
 //!
 //! The source database stays read-only. This module accepts only the opaque

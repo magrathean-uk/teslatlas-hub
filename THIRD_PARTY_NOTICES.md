@@ -74,12 +74,15 @@ Licence: Apache License 2.0
 
 The macOS service includes the upstream `cmd/tesla-http-proxy` executable as a
 separate process. It is built from the pinned upstream source for arm64 with a
-macOS 13 deployment target. No Tesla command private key, TLS private key,
+macOS 13 deployment target. A tracked patch adds the reviewed Go 1.27 runtime
+default and a dated Apache change notice to the private build copy of `go.mod`;
+the patch and original module sources are included in release evidence. No Tesla command private key, TLS private key,
 OAuth token, or session cache is included in the application or package.
 
 The upstream `LICENSE` file applies to this component. Its Go module graph is
 fixed by the upstream `go.mod` and `go.sum`; the exact source revision and
-build inputs are recorded in `PROVENANCE.md`.
+build inputs, overlay checksum, and modified-file checksum are recorded in
+`PROVENANCE.md`.
 
 ## Tesla Fleet Telemetry receiver
 
@@ -106,18 +109,47 @@ TLS private key, vehicle credential, Fleet token, or loopback bearer is bundled.
 
 ## Data and services
 
-Map, elevation, geocoding, weather, timezone, certificate and API providers may impose attribution, caching, database-right and rate conditions independent of software copyright.
+### Optional terrain data
 
-Record the actual provider and terms for each release/deployment.
+Teslatlas Hub does not bundle terrain tiles. When terrain enrichment is enabled,
+a cache miss first retrieves a `skadi` HGT tile from the
+[Mapzen Terrain Tiles dataset on AWS](https://registry.opendata.aws/terrain-tiles/)
+and may fall back to an SRTMGL1 HGT tile hosted by
+[ESA STEP](https://step.esa.int/auxdata/dem/SRTMGL1/).
 
-## Rust language logo
+The AWS registry identifies `elevation-tiles-prod` as Mapzen Terrain Tiles and
+points to the upstream [Tilezen attribution requirements](https://github.com/tilezen/joerd/blob/master/docs/attribution.md).
+Deployments that enable this provider must retain **Mapzen** credit and the
+source credits applicable to the requested tiles. The upstream attribution
+inventory covers ArcticDEM/DigitalGlobe and NSF awards; Geoscience Australia;
+Austria's DGM; Canadian government elevation data; Copernicus EU-DEM; NOAA
+ETOPO1; Mexico INEGI; Land Information New Zealand; Norway Kartverket; UK
+Environment Agency terrain; and USGS 3DEP, GMTED2010, and SRTM. Consult the
+linked upstream notice for its exact current wording and conditions rather than
+treating this summary as a substitute.
 
-Source: https://rustfoundation.org/wp-content/uploads/2024/07/cropped-rust-lang-logo-black-150x150.png
+For SRTM-derived elevation, retain: **SRTM data courtesy of the U.S. Geological
+Survey.** The underlying dataset is NASA Shuttle Radar Topography Mission
+Global 1 arc second version 3, produced by NASA JPL and distributed through the
+USGS/NASA LP DAAC; dataset DOI:
+[`10.5067/MEaSUREs/SRTM/SRTMGL1.003`](https://doi.org/10.5067/MEaSUREs/SRTM/SRTMGL1.003).
+ESA is identified only as the fallback file host, not as the SRTM data owner.
+Use of that host remains subject to ESA's current website/service terms.
 
-Trademark policy: https://rustfoundation.org/policy/rust-trademark-policy/
+Packaged macOS and Debian configurations disable terrain egress until the
+operator enables it. See `PRIVACY.md` and `docs/CONFIGURATION.md` for the
+location disclosure and disable control.
 
-Licence: Creative Commons Attribution (CC BY)
+Hub supports operator-selected Nominatim-compatible reverse-geocoding services
+but does not configure a public default provider. If a deployment uses
+OpenStreetMap-derived data, retain the attribution and ODbL/database-right
+notices required by that data source in every consuming interface. The public
+OpenStreetMap Foundation Nominatim service has a separate usage policy,
+including personal-data, bulk/systematic-query, vehicle-tracking, caching, and
+attribution constraints; compatibility with its protocol is not permission to
+use that public endpoint.
 
-The unmodified Rust language logo is used in the macOS onboarding screen to
-state accurately that Teslatlas Hub is written in Rust. This use does not imply
-affiliation with or endorsement by the Rust Foundation or Rust Project.
+Other map, geocoding, weather, timezone, certificate, and API providers may
+impose attribution, caching, database-right, privacy, and rate conditions
+independent of software copyright. Record the actual provider and current terms
+for each release and deployment.

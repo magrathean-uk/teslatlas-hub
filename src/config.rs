@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 use std::{
     fmt, fs,
     io::Read,
@@ -59,7 +61,7 @@ pub struct TerrainConfig {
 }
 
 const fn default_terrain_enabled() -> bool {
-    true
+    false
 }
 
 fn default_terrain_min_free_bytes() -> u64 {
@@ -461,7 +463,7 @@ impl GeocoderConfig {
         let raw = self
             .endpoint
             .as_deref()
-            .unwrap_or(crate::geocoder::DEFAULT_NOMINATIM_ENDPOINT);
+            .ok_or(ConfigError::InvalidGeocoderEndpoint)?;
         let mut endpoint = Url::parse(raw).map_err(|_| ConfigError::InvalidGeocoderEndpoint)?;
         if endpoint.host_str().is_none()
             || !matches!(endpoint.scheme(), "https" | "http")
@@ -863,7 +865,9 @@ impl HubConfig {
         if self.collector.request_timeout_seconds == 0 {
             return Err(ConfigError::InvalidOwnerApiTimeout);
         }
-        self.geocoder.endpoint_url(false)?;
+        if self.geocoder.enabled || self.geocoder.endpoint.is_some() {
+            self.geocoder.endpoint_url(false)?;
+        }
         self.geocoder.timeout()?;
         self.geocoder.validated_language()?;
         self.terrain.validate()?;
@@ -1193,9 +1197,20 @@ mod tests {
 
     #[test]
     fn enrichment_defaults_are_private() {
-        assert!(TerrainConfig::default().enabled);
+        assert!(!TerrainConfig::default().enabled);
         assert_eq!(TerrainConfig::default().max_cache_bytes, 512 * 1024 * 1024);
         assert!(!GeocoderConfig::default().enabled);
+        assert!(GeocoderConfig::default().endpoint.is_none());
+    }
+
+    #[test]
+    fn enabled_geocoder_requires_an_explicit_provider_endpoint() {
+        let error = HubConfig::from_exact_bytes(
+            b"data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+              [geocoder]\nenabled = true\n",
+        )
+        .expect_err("enabled geocoder without endpoint");
+        assert!(matches!(error, ConfigError::InvalidGeocoderEndpoint));
     }
 
     #[test]

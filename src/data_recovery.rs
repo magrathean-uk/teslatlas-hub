@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Bounded Hub data-backup generation, immutable verification, and restore.
 //!
 //! A backup generation contains the Hub catalogue (including encrypted token

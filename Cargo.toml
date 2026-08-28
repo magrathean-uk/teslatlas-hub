@@ -1,13 +1,13 @@
 [package]
 name = "teslatlas-hub"
-version = "1.0.0-alpha.2"
+version = "1.0.0-beta.1"
 edition = "2024"
 rust-version = "1.98"
 license = "AGPL-3.0-only"
-authors = ["Magrathean UK Ltd <contact@magrathean.uk>"]
+authors = ["MAGRATHEAN UK LTD <contact@magrathean.uk>"]
 description = "Self-hosted vehicle telemetry collector and local Teslatlas sync hub"
 repository = "https://github.com/magrathean-uk/teslatlas-hub"
-homepage = "https://teslatlas.eu"
+homepage = "https://github.com/magrathean-uk/teslatlas-hub"
 readme = "README.md"
 
 [lib]

@@ -161,7 +161,8 @@ periodic paid `vehicle_data` polling. It requires all of the following:
   certificates verified there (mTLS);
 - the host and complete CA chain supplied in the signed vehicle configuration;
 - the application's virtual key paired with every selected vehicle;
-- Tesla's command proxy on `127.0.0.1:4443` to sign the configuration;
+- Tesla's command proxy on loopback to sign the configuration: port `4443` for
+  the macOS bundled proxy and port `4445` for the packaged Debian service;
 - Hub on exactly `127.0.0.1:8080`; and
 - a private bearer shared only by the receiver bridge and Hub.
 
@@ -181,26 +182,55 @@ private bearer at the `ingest_token_path` from Hub configuration. The example
 uses unprivileged port 8443; route the public Tesla mTLS connection to that port
 without terminating TLS. If the receiver JSON is absent, Hub runs alone.
 
-On Debian, build the two pinned sidecars and include both in the package. The
-builds require Go 1.27.0 exactly. Replace `amd64` with `arm64` on ARM64:
+For an official Debian package, generate both pinned Linux sidecars and their
+paired Go/Fleet evidence on the approved Apple-silicon macOS release host by
+following [RELEASING.md](RELEASING.md). Go evidence generation requires its
+locked Go 1.27.0/Xcode host and records the clean target rebuild. On Debian,
+`--verify-dir` validates that evidence but does not rebuild it; Fleet evidence
+binds its receiver subject and complete source/legal corpus without claiming a
+clean receiver rebuild. Native Debian proof additionally binds the tagged
+architecture row in `packaging/linux/sidecar-sha256.lock`, the package's
+matching `SIDECAR_SHA256SUMS`, and the signed native attestation.
+Transfer the matching binaries, evidence directories, and platform-invariant
+legal bundle byte-for-byte. Replace every occurrence of `amd64` with `arm64` on
+ARM64:
 
 ```sh
 mkdir -p dist
-scripts/build-tesla-command-proxy.sh \
-  --target linux-amd64 \
-  --output dist/tesla-http-proxy
-scripts/build-fleet-telemetry-bridge.sh \
-  --target linux-amd64 \
-  --output dist/fleet-telemetry
+cargo build --locked --release --bin teslatlas-hub
+python3 scripts/go-proxy-evidence.py --repo . \
+  --verify-dir dist/go-proxy-evidence-amd64
+python3 scripts/fleet-telemetry-evidence.py --repo . \
+  --verify-dir dist/fleet-telemetry-evidence-amd64
+python3 scripts/legal-bundle.py \
+  --repo . \
+  --go-proxy-evidence dist/go-proxy-evidence-amd64 \
+  --fleet-telemetry-evidence dist/fleet-telemetry-evidence-amd64 \
+  --verify-dir dist/dependency-legal
 scripts/build-deb.sh \
   --binary target/release/teslatlas-hub \
-  --command-proxy-binary dist/tesla-http-proxy \
-  --fleet-telemetry-binary dist/fleet-telemetry \
-  --version 1.0.0-alpha.2 \
+  --command-proxy-binary dist/tesla-http-proxy-amd64 \
+  --fleet-telemetry-binary dist/fleet-telemetry-amd64 \
+  --go-proxy-evidence dist/go-proxy-evidence-amd64 \
+  --fleet-telemetry-evidence dist/fleet-telemetry-evidence-amd64 \
+  --legal-bundle dist/dependency-legal \
+  --version 1.0.0-beta.1 \
   --architecture amd64 \
-  --output dist/teslatlas-hub_1.0.0-alpha.2_amd64.deb
-sudo dpkg -i dist/teslatlas-hub_1.0.0-alpha.2_amd64.deb
+  --output dist/teslatlas-hub_1.0.0-beta.1_amd64.deb
+sudo dpkg -i dist/teslatlas-hub_1.0.0-beta.1_amd64.deb
 ```
+
+`fleet-telemetry-evidence/fleet-telemetry-upstream-source.tar.gz` is the exact
+pinned upstream Fleet Telemetry source asset. Keep it with the evidence; a
+manifest or URL is not a substitute for those bytes.
+`fleet-telemetry-go-module-sources.tar.gz` contains the exact source ZIP and
+`go.mod` for all 45 locked runtime modules, including Eclipse Paho under
+EPL-2.0. This Fleet Go source/legal corpus is platform-invariant; it is not a
+native Linux reproducibility receipt. The notice installed with the package
+points to that file in detailed release evidence. Official release builds must
+also follow the
+native-attestation procedure in
+[RELEASING.md](RELEASING.md).
 
 The package installs both sidecar units disabled. Supply the command-signing
 private key, loopback proxy certificate/key, public receiver certificate/key,
@@ -209,7 +239,7 @@ units:
 
 ```sh
 sudo install -d -o teslatlas -g teslatlas -m 0700 /var/lib/teslatlas-hub
-sudo -u teslatlas sh -c \
+sudo -u teslatlas -- sh -c \
   'umask 077; openssl rand -hex 32 > /var/lib/teslatlas-hub/fleet-telemetry-bearer'
 
 sudo install -o teslatlas -g teslatlas -m 0600 \
@@ -260,8 +290,10 @@ configuration command takes Hub's single-process data lock:
 
 ```sh
 sudo systemctl enable --now teslatlas-command-proxy.service
-sudo -u teslatlas teslatlas-hub preflight
-sudo -u teslatlas teslatlas-hub configure-fleet-telemetry
+sudo -u teslatlas -- /usr/bin/teslatlas-hub \
+  --config /etc/teslatlas-hub/config.toml preflight
+sudo -u teslatlas -- /usr/bin/teslatlas-hub \
+  --config /etc/teslatlas-hub/config.toml configure-fleet-telemetry
 sudo systemctl enable --now teslatlas-hub.service
 sudo systemctl enable --now teslatlas-fleet-telemetry.service
 ```
@@ -299,8 +331,10 @@ sudo systemctl --no-pager --full status \
   teslatlas-hub.service \
   teslatlas-command-proxy.service \
   teslatlas-fleet-telemetry.service
-sudo -u teslatlas teslatlas-hub status
-sudo -u teslatlas teslatlas-hub doctor
+sudo -u teslatlas -- /usr/bin/teslatlas-hub \
+  --config /etc/teslatlas-hub/config.toml status
+sudo -u teslatlas -- /usr/bin/teslatlas-hub \
+  --config /etc/teslatlas-hub/config.toml doctor
 ```
 
 `status` reports Fleet Telemetry mode `native_push_configured`, delivery policy
@@ -329,6 +363,11 @@ provider = "fleet"
 fleet_command_proxy_url = "https://127.0.0.1:4443/"
 fleet_command_proxy_root_certificate_path = "/absolute/path/proxy-ca.pem"
 ```
+
+The command example above is the macOS/source-run endpoint. The packaged
+Debian service is fixed to `https://127.0.0.1:4445/` by
+`command-proxy.env`; its Hub configuration must use port `4445`. Do not run a
+second proxy on either platform.
 
 Hub never issues a command implicitly. Every action goes through the resident
 control socket and requires `--confirm`. The macOS Hub app exposes confirmed

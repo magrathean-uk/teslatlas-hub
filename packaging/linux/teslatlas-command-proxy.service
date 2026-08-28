@@ -3,6 +3,7 @@ Description=Teslatlas Tesla command proxy
 After=network-online.target
 Before=teslatlas-hub.service
 Wants=network-online.target
+PartOf=teslatlas-hub.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 ConditionPathExists=/etc/teslatlas-hub/command-auth-private.pem

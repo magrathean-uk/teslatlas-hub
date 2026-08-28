@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Encrypted persistence and one resident refresh owner for Fleet OAuth.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};

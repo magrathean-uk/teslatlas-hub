@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Durable, local-only SQLite staging for a TeslaMate migration.
 //!
 //! The PostgreSQL reader will write decoded rows here one page at a time. This

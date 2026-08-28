@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 #[cfg(unix)]
 use std::future::Future;
 use std::{
@@ -37,6 +39,7 @@ use crate::config::HubConfig;
 use crate::{
     BUILD_VERSION,
     config::TlsListenerConfig,
+    corresponding_source_url,
     db::{HubStore, PairedDeviceRecord, PublishedVehicle, ReadinessReasonCode, StoredPack},
     fleet_telemetry::{FleetTelemetryAccumulator, MAX_FLEET_TELEMETRY_INPUT_BYTES, vin_from_json},
     http_range::{parse_single_range, unsatisfied_content_range},
@@ -879,6 +882,7 @@ async fn capabilities(State(state): State<AppState>) -> impl IntoResponse {
             protocol: "teslatlas-sync",
             protocol_major: 1,
             version: BUILD_VERSION,
+            source_url: corresponding_source_url(),
             pack_format: "sqlite-zstd",
             manifest_public_key: state
                 .manifest_signing
@@ -1589,6 +1593,8 @@ struct Capabilities<'a> {
     protocol: &'a str,
     protocol_major: u8,
     version: &'a str,
+    #[serde(rename = "sourceUrl")]
+    source_url: String,
     pack_format: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "manifestPublicKey")]
@@ -2619,6 +2625,7 @@ mod tests {
             .to_bytes();
         let payload: serde_json::Value = serde_json::from_slice(&bytes).expect("capabilities JSON");
         assert_eq!(payload["pack_format"], "sqlite-zstd");
+        assert_eq!(payload["sourceUrl"], crate::corresponding_source_url());
         assert!(payload.get("manifestPublicKey").is_none());
     }
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Explicit, separately encrypted recovery of the Hub's local key material.
 //!
 //! Normal data backups deliberately exclude these keys. This format is

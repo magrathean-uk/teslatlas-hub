@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Bounded, private projection-state capture for TeslaMate imports.
 //!
 //! A full source history can contain millions of facts.  This module retains

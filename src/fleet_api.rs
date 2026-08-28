@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Narrow Tesla Fleet REST wake and command client.
 //!
 //! Fleet REST calls use fixed regional Tesla endpoints. Vehicle commands are

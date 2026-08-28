@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Minimal on-disk ownership for the exact TeslaMate `ENCRYPTION_KEY` bytes.
 
 use std::{

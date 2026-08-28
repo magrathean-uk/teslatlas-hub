@@ -28,6 +28,7 @@ targets:
         CFBundleIconFile: AppIcon
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSHumanReadableCopyright: "Copyright © 2026 Gyorgy Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own. AGPL-3.0-only."
         TeslatlasHubVersion: "$(TESLATLAS_HUB_VERSION)"
     settings:
       base:

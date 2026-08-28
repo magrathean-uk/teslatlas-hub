@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 //! Persistence boundary for TeslaMate legacy Owner API reads.
 //!
 //! Networking lives in `owner_api`; this module turns completed reads into

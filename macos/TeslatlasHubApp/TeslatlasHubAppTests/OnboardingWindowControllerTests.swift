@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 import AppKit
 import Darwin
 import XCTest
@@ -80,6 +82,33 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(logs.keyEquivalent, "l")
         XCTAssertEqual(logs.keyEquivalentModifierMask, .command)
         XCTAssertTrue(logs.target === delegate)
+        let application = try XCTUnwrap(menu.items.first?.submenu)
+        let legal = try XCTUnwrap(application.item(withTitle: "Legal & Licence…"))
+        XCTAssertTrue(legal.target === delegate)
+        XCTAssertEqual(legal.action, #selector(AppDelegate.showLegalNotice(_:)))
+        XCTAssertTrue(AppDelegate.legalNoticeText.contains("AGPL-3.0-only"))
+        XCTAssertTrue(AppDelegate.legalNoticeText.contains(
+            "Teslatlas Hub — originally authored by Gyorgy Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub"
+        ))
+        let source = try XCTUnwrap(application.items.first {
+            $0.title == "Corresponding Source for v\(HubRelease.bundledVersion)…"
+        })
+        XCTAssertTrue(source.target === delegate)
+        XCTAssertEqual(source.action, #selector(AppDelegate.openCorrespondingSource(_:)))
+    }
+
+    func testCorrespondingSourceURLIsExactAndRejectsUnsafeVersions() throws {
+        XCTAssertEqual(
+            HubRelease.correspondingSourceURL(for: "1.0.0-beta.1")?.absoluteString,
+            "https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1"
+        )
+        XCTAssertNil(HubRelease.correspondingSourceURL(for: "1.0.0/../../main"))
+        XCTAssertNil(HubRelease.correspondingSourceURL(for: "$(TESLATLAS_HUB_VERSION)"))
+        XCTAssertEqual(
+            HubRelease.licenceURL(for: "1.0.0-beta.1")?.absoluteString,
+            "https://github.com/magrathean-uk/teslatlas-hub/blob/v1.0.0-beta.1/LICENSE"
+        )
+        XCTAssertNil(HubRelease.licenceURL(for: "1.0.0/../../main"))
     }
 
     func testAppDiagnosticsPersistBoundedShareSafeEvents() throws {
@@ -427,7 +456,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let text = labels(in: onboarding.window?.contentView).map(\.stringValue)
         XCTAssertTrue(text.contains("Teslatlas Hub"))
         XCTAssertTrue(text.contains(
-            "Teslatlas Hub is the backend service replacing TeslaMate. It records the same data as TeslaMate but optimized and re-written."
+            "Teslatlas Hub is a self-hosted backend for Teslatlas. It collects selected Tesla telemetry and can import supported TeslaMate history."
         ))
         XCTAssertTrue(text.contains("Written purely in Rust."))
         XCTAssertTrue(text.contains("No Docker."))
@@ -438,7 +467,6 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(text.contains("Your data stays on this Mac"))
         XCTAssertFalse(text.contains("Made for Teslatlas"))
         XCTAssertFalse(text.contains("Your vehicle data stays on this Mac."))
-        XCTAssertNotNil(Bundle.main.image(forResource: "RustLogo"))
         let continueButton = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "Continue" })
         XCTAssertNil(continueButton.image)

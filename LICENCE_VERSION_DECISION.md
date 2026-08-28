@@ -33,4 +33,5 @@ Before release, verify the same expression appears in:
 - source headers;
 - release notes.
 
-Current `main` was observed to use `AGPL-3.0-only` in Cargo, runtime legal output and the macOS service-details panel.
+The v1.0.0-beta.1 candidate uses `AGPL-3.0-only` in Cargo metadata, runtime
+legal output, the macOS About metadata, and the visible Legal & Licence menu.

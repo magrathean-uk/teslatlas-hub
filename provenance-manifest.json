@@ -1,0 +1,423 @@
+{
+  "schema": "teslatlas.provenance-classification/v1",
+  "scope_note": "This is an administrative classification of the current tracked tree, not evidence of authorship, employment scope, assignment, or any private deed. MAGRATHEAN-ORIGINAL means the repository currently treats the file as project-created. COMPANY-ASSIGNED-CONTRIBUTION is used only when file-specific title evidence has been checked; no current rule uses it. A release signer must verify authority and private records separately.",
+  "declared_classes": [
+    "MAGRATHEAN-ORIGINAL",
+    "COMPANY-ASSIGNED-CONTRIBUTION",
+    "TESLAMATE-COMPATIBILITY",
+    "THIRD-PARTY",
+    "GENERATED",
+    "DATA-OR-FACTS",
+    "UNKNOWN"
+  ],
+  "rules": [
+    {
+      "id": "project-root-material",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Repository-maintained project, policy, legal, operational, and contributor documentation. This treatment does not prove chain of title.",
+      "paths": [
+        ".gitignore",
+        "ADDITIONAL_TERMS.md",
+        "AGPL_COMPLIANCE.md",
+        "ATTRIBUTION.md",
+        "CHANGELOG.md",
+        "CLA_POLICY.md",
+        "CODE_OF_CONDUCT.md",
+        "CONTRIBUTING.md",
+        "COPYRIGHT.md",
+        "CORPORATE_CONTRIBUTOR_ASSIGNMENT_AGREEMENT.md",
+        "Cargo.toml",
+        "DCO.md",
+        "DCO_AND_CONTRIBUTOR_ASSIGNMENT_PROCESS.md",
+        "DEPENDENCY_POLICY.md",
+        "ENFORCEMENT_POLICY.md",
+        "FOUNDER_CONTRIBUTION_POLICY.md",
+        "GITHUB_REPOSITORY_SETTINGS.md",
+        "GOVERNANCE.md",
+        "HISTORICAL_CONTRIBUTIONS.md",
+        "INDIVIDUAL_CONTRIBUTOR_ASSIGNMENT_AGREEMENT.md",
+        "LEGAL.md",
+        "LEGAL_CHANGELOG.md",
+        "LICENCE_VERSION_DECISION.md",
+        "LICENSE_CORPUS.md",
+        "LICENSING.md",
+        "MIGRATION.md",
+        "NAME_AND_BRAND_DECISION.md",
+        "NOTICE",
+        "OWNER_CONTRIBUTIONS.md",
+        "PRIVACY.md",
+        "PROVENANCE.md",
+        "README.md",
+        "RELEASE_COMPLIANCE.md",
+        "RELEASE_KEYS.md",
+        "RELEASE_VERIFICATION.md",
+        "SAFETY_AND_USE_LIMITS.md",
+        "SECURITY.md",
+        "SOURCE_AVAILABILITY.md",
+        "SPDX_HEADER_POLICY.md",
+        "SUPPORT.md",
+        "TRADEMARKS.md",
+        "provenance-manifest.json"
+      ]
+    },
+    {
+      "id": "github-community-files",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Repository-maintained contribution and issue workflow text.",
+      "paths": [
+        ".github/CODEOWNERS",
+        ".github/ISSUE_TEMPLATE/bug_report.md",
+        ".github/ISSUE_TEMPLATE/documentation.md",
+        ".github/ISSUE_TEMPLATE/feature_request.md",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/release.yml"
+      ]
+    },
+    {
+      "id": "project-documentation",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Repository-maintained user, operator, compliance, and architecture documentation.",
+      "globs": [
+        "docs/*.md"
+      ]
+    },
+    {
+      "id": "historical-review-output",
+      "class": "GENERATED",
+      "rationale": "Historical GPT-5.6 review records retained as evidence, not runtime source or a legal conclusion.",
+      "globs": [
+        "docs/review/gpt56-hub-2026-08-18/*.md"
+      ],
+      "exception": {
+        "origin": "Generated during the dated GPT-5.6 Hub review from the repository references recorded in 00-BASELINE.md and 01-INVENTORY.md.",
+        "licensing": "Administrative review output; referenced third-party facts and rights remain with their respective sources. No separate chain-of-title conclusion is made.",
+        "release_treatment": "Retained as historical review evidence. Do not present it as current verification without rerunning its stated gates."
+      }
+    },
+    {
+      "id": "canonical-agpl-text",
+      "class": "THIRD-PARTY",
+      "rationale": "Canonical GNU Affero General Public License version 3 text.",
+      "paths": [
+        "LICENSE"
+      ],
+      "exception": {
+        "origin": "Free Software Foundation, GNU Affero General Public License version 3, 19 November 2007.",
+        "licensing": "Copyright 2007 Free Software Foundation, Inc.; verbatim copying and distribution are permitted, modification is not.",
+        "release_treatment": "Ship verbatim as the project licence. Never rewrite or apply project copyright headers to it."
+      }
+    },
+    {
+      "id": "canonical-dco-text",
+      "class": "THIRD-PARTY",
+      "rationale": "Canonical Developer Certificate of Origin 1.1 text.",
+      "paths": [
+        "DCO-1.1.md"
+      ],
+      "exception": {
+        "origin": "The Linux Foundation and its contributors, Developer Certificate of Origin version 1.1.",
+        "licensing": "Copyright 2004, 2006 The Linux Foundation and its contributors; verbatim copying and distribution are permitted, modification is not.",
+        "release_treatment": "Retain verbatim with its copyright and permission notice."
+      }
+    },
+    {
+      "id": "canonical-bundled-license-texts",
+      "class": "THIRD-PARTY",
+      "rationale": "Canonical dependency licence texts pinned from the SPDX license-list-data repository for offline release notices and verification.",
+      "paths": [
+        "LICENSES/Apache-2.0.txt",
+        "LICENSES/BSL-1.0.txt",
+        "LICENSES/LGPL-2.1-or-later.txt",
+        "LICENSES/MIT.txt",
+        "LICENSES/Zlib.txt"
+      ],
+      "exception": {
+        "origin": "SPDX license-list-data revision a3cbf2e897d54bccec0c35469c691521d089ef53, using the canonical text for each filename's SPDX identifier.",
+        "licensing": "Each text states the corresponding third-party licence terms. The SPDX compilation source does not transfer ownership of the underlying licence texts.",
+        "release_treatment": "Keep the files byte-for-byte pinned, record the SPDX source revision, and ship the applicable text with candidate-specific dependency notices."
+      }
+    },
+    {
+      "id": "compiled-third-party-notices",
+      "class": "THIRD-PARTY",
+      "rationale": "Project-authored compilation that embeds third-party notices and the Tesla Auth MIT licence text.",
+      "paths": [
+        "THIRD_PARTY_NOTICES.md"
+      ],
+      "exception": {
+        "origin": "Compilation of notices for TeslaMate, Tesla Auth, Tesla Vehicle Command, Tesla Fleet Telemetry, and release dependencies.",
+        "licensing": "Each embedded notice and licence remains governed by its named rightsholder and terms; compilation treatment does not replace generated release notices.",
+        "release_treatment": "Ship this policy notice and also generate candidate-specific dependency and bundled-component notices."
+      }
+    },
+    {
+      "id": "tesla-auth-adaptation",
+      "class": "THIRD-PARTY",
+      "rationale": "Native implementation adapts endpoint, PKCE, callback, issuer-routing, and token-exchange behaviour from Tesla Auth.",
+      "paths": [
+        "macos/TeslatlasHubApp/TeslatlasHubApp/TeslaAuthWindowController.swift"
+      ],
+      "exception": {
+        "origin": "Tesla Auth v0.15.0, revision 68da1f850e9cb87ac0e54c608d5a2e90d3ad1608, by Adrian Kumpf.",
+        "licensing": "MIT, copyright 2021 Adrian Kumpf. The notice and licence text are retained in THIRD_PARTY_NOTICES.md.",
+        "release_treatment": "Preserve the modification notice, upstream revision, copyright, and MIT text in source and release notices."
+      }
+    },
+    {
+      "id": "tesla-command-proxy-overlay",
+      "class": "THIRD-PARTY",
+      "rationale": "Patch contains context and a build-policy modification against Tesla's Apache-2.0 vehicle-command go.mod.",
+      "paths": [
+        "packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch"
+      ],
+      "exception": {
+        "origin": "Tesla vehicle-command v0.4.1, revision 49977a18fd68567501d59e16a6c9e4a8b9348544, plus the dated Teslatlas Go 1.27 runtime-default modification identified by the patch.",
+        "licensing": "Apache-2.0 for the upstream source and distributed modified command proxy; the modified go.mod carries a prominent change notice.",
+        "release_treatment": "Ship the patch, pinned upstream module sources, Apache-2.0 text, notices, checksums, and clean-rebuild evidence with bundled proxy releases."
+      }
+    },
+    {
+      "id": "fleet-telemetry-overlay",
+      "class": "THIRD-PARTY",
+      "rationale": "Patch contains context and modifications against Tesla's Fleet Telemetry receiver source.",
+      "paths": [
+        "packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch"
+      ],
+      "exception": {
+        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, plus the Teslatlas loopback-dispatcher modifications identified by the patch.",
+        "licensing": "Apache-2.0 for the upstream receiver and the distributed modified receiver; upstream notices remain required.",
+        "release_treatment": "Ship the patch, pinned upstream identity, Apache-2.0 text, notices, source archive, and modification record with bundled receiver releases."
+      }
+    },
+    {
+      "id": "generated-cargo-lock",
+      "class": "GENERATED",
+      "rationale": "Cargo resolver output pinned from Cargo.toml and dependency metadata.",
+      "paths": [
+        "Cargo.lock"
+      ],
+      "exception": {
+        "origin": "Generated by Cargo from Cargo.toml and the selected registry or source metadata.",
+        "licensing": "The lockfile does not replace dependency licence review; dependency rights are recorded by release SBOM and notice generation.",
+        "release_treatment": "Commit and release the exact lockfile. Run the dependency audit and candidate-specific SBOM/notice generator."
+      }
+    },
+    {
+      "id": "exported-release-public-key",
+      "class": "GENERATED",
+      "rationale": "ASCII-armoured export of the official release-signing public key; no private key material is tracked.",
+      "paths": [
+        "RELEASE_SIGNING_KEY.asc"
+      ],
+      "exception": {
+        "origin": "Exported OpenPGP Ed25519 public key for Teslatlas Hub Release <release@teslatlas.local>, fingerprint F59A16DD7828D75D8DAB23C52C4FD42128152ACC; tracked export SHA-256 6e4e81106ff953fed527d428fdb41c91bfb14aa8f07d6615dbe552181f77f1ef.",
+        "licensing": "Public verification material, not product source and not an independent trust assertion. No secret or private-key packet is included.",
+        "release_treatment": "Ship for verification, publish the full fingerprint through a separately authenticated channel, and preserve retired public keys after documented rotation."
+      }
+    },
+    {
+      "id": "project-icon-source",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Canonical editable raster iconset used to generate the macOS icon container and documentation preview. This treatment does not prove creator, assignment, or brand clearance.",
+      "globs": [
+        "macos/TeslatlasHubApp/Artwork/AppIcon.iconset/*.png"
+      ]
+    },
+    {
+      "id": "generated-app-icon",
+      "class": "GENERATED",
+      "rationale": "Compiled macOS icon container generated from the tracked canonical raster iconset.",
+      "paths": [
+        "macos/TeslatlasHubApp/TeslatlasHubApp/Resources/AppIcon.icns"
+      ],
+      "exception": {
+        "origin": "Generated by scripts/build-app-icon.sh from macos/TeslatlasHubApp/Artwork/AppIcon.iconset; candidate SHA-256 fda5f0d9a7fd2d81ef0afd1ef5a2d757e19237ac3ad37b6089f81479bf6ebe6a.",
+        "licensing": "Current repository treatment is project artwork. This manifest does not establish its creator, assignment, or trademark clearance.",
+        "release_treatment": "Regenerate from the tracked iconset, verify the committed digest and appearance, and verify source-art authority and brand clearance from private records."
+      }
+    },
+    {
+      "id": "generated-documentation-icon",
+      "class": "GENERATED",
+      "rationale": "Documentation PNG copied without artistic changes from the tracked canonical iconset.",
+      "paths": [
+        "docs/assets/teslatlas-hub-icon.png"
+      ],
+      "exception": {
+        "origin": "Generated by scripts/build-app-icon.sh from macos/TeslatlasHubApp/Artwork/AppIcon.iconset/icon_512x512.png; SHA-256 c91b1c9d47791be8835b2fea2dc256c2836372fd0f7c2d73b3e46c9f3fb76225.",
+        "licensing": "Copy of the tracked project icon source. It carries the same unresolved creator, assignment, and trademark-clearance evidence scope as the iconset.",
+        "release_treatment": "Regenerate from the tracked iconset and verify source-art authority and brand clearance from private records."
+      }
+    },
+    {
+      "id": "generated-sidecar-digests",
+      "class": "GENERATED",
+      "rationale": "Candidate-bound sidecar digest allow-list produced from separately built binaries.",
+      "paths": [
+        "packaging/linux/sidecar-sha256.lock"
+      ],
+      "exception": {
+        "origin": "SHA-256 values generated from the reviewed amd64 and arm64 Tesla command-proxy and Fleet Telemetry receiver builds.",
+        "licensing": "Digest facts carry no replacement licence; the corresponding Apache-2.0 sources and notices remain authoritative.",
+        "release_treatment": "Regenerate only through the reviewed build/evidence flow and verify every packaged sidecar against this exact lock."
+      }
+    },
+    {
+      "id": "fixture-data-and-facts",
+      "class": "DATA-OR-FACTS",
+      "rationale": "Deterministic test packs, manifests, checksums, lineage facts, and a synthetic TeslaMate source-shape corpus.",
+      "paths": [
+        "fixtures/delta-v2/SHA256SUMS",
+        "fixtures/delta-v2/manifest.json",
+        "fixtures/lineage_manifest_v2.json"
+      ],
+      "globs": [
+        "fixtures/delta-v2/v1/packs/sha256/*.sqlite.zst",
+        "fixtures/teslamate-corpus/v1/*.sql"
+      ],
+      "exception": {
+        "origin": "Repository test tooling and compatibility work produced deterministic, synthetic fixtures; the SQL fixture records TeslaMate v4 source schema shape and edge-case values, not a production vehicle dump.",
+        "licensing": "The original selection and fixture expression follow the project licence; TeslaMate schema names and third-party facts remain attributed to their sources. No database ownership is asserted.",
+        "release_treatment": "Ship only as test data, preserve compatibility attribution, and never substitute private or production telemetry."
+      }
+    },
+    {
+      "id": "pinned-build-facts",
+      "class": "DATA-OR-FACTS",
+      "rationale": "Machine-readable upstream, toolchain, component, checksum, and build-host facts used by release gates.",
+      "paths": [
+        "packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json",
+        "packaging/fleet-telemetry-bridge/fleet-telemetry-legal-lock.json",
+        "scripts/tesla-proxy-lock.json"
+      ],
+      "exception": {
+        "origin": "Captured from reviewed Tesla upstream revisions, archives, toolchains, and local clean builds identified inside each lock.",
+        "licensing": "Recorded facts do not replace Apache-2.0, dependency, notice, or source-offer obligations for the locked components.",
+        "release_treatment": "Verify the exact locks and their referenced bytes in the release-evidence gate; regenerate rather than hand-edit."
+      }
+    },
+    {
+      "id": "hub-original-rust",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Rust implementation and tests currently treated by the repository as project-created, excluding separately classified compatibility paths.",
+      "paths": [
+        "src/collector.rs",
+        "src/config.rs",
+        "src/credential_recovery.rs",
+        "src/credentials.rs",
+        "src/crypto.rs",
+        "src/current_state.rs",
+        "src/data_recovery.rs",
+        "src/db.rs",
+        "src/diagnostics.rs",
+        "src/durability_fault.rs",
+        "src/fleet_api.rs",
+        "src/fleet_credentials.rs",
+        "src/fleet_telemetry.rs",
+        "src/geocoder.rs",
+        "src/gpx.rs",
+        "src/http_range.rs",
+        "src/hub_pack.rs",
+        "src/hub_user_process.rs",
+        "src/lib.rs",
+        "src/lifecycle.rs",
+        "src/linux_systemd.rs",
+        "src/location.rs",
+        "src/macos_launch_agent.rs",
+        "src/main.rs",
+        "src/manifest_signing.rs",
+        "src/owner_api.rs",
+        "src/performance_profile.rs",
+        "src/protocol.rs",
+        "src/server.rs",
+        "src/terrain.rs",
+        "src/terrain_cache.rs",
+        "src/tesla_stream.rs",
+        "src/transport.rs",
+        "src/updates_delivery.rs",
+        "src/updates_logical.rs",
+        "src/user_lifetime_lock.rs"
+      ],
+      "globs": [
+        "tests/*.rs"
+      ]
+    },
+    {
+      "id": "teslamate-compatibility-rust",
+      "class": "TESLAMATE-COMPATIBILITY",
+      "rationale": "Compatibility, migration, schema, projection, token, and deterministic TeslaMate-behaviour paths reviewed against public TeslaMate material; classification is not a conclusion about protectable expression.",
+      "paths": [
+        "src/fake_tesla.rs",
+        "src/legacy_auth.rs"
+      ],
+      "globs": [
+        "src/teslamate*.rs"
+      ]
+    },
+    {
+      "id": "macos-original-implementation",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Native macOS controller, UI, service integration, and tests currently treated as project-created, excluding separately classified adaptations and assets.",
+      "paths": [
+        "macos/TeslatlasHubApp/TeslatlasHubApp/AppDelegate.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/DiagnosticsWindowController.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/HubAppLog.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/HubController.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/ImportSheetController.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/Info.plist",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/LogsWindowController.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/MainWindowController.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/OnboardingWindowController.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/ServiceDetailsWindowController.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/main.swift",
+        "macos/TeslatlasHubApp/project.yml"
+      ],
+      "globs": [
+        "macos/TeslatlasHubApp/TeslatlasHubAppTests/*.swift"
+      ]
+    },
+    {
+      "id": "teslamate-macos-importer",
+      "class": "TESLAMATE-COMPATIBILITY",
+      "rationale": "Native macOS migration adapter implements the reviewed TeslaMate compatibility and import contract.",
+      "paths": [
+        "macos/TeslatlasHubApp/TeslatlasHubApp/TeslaMateServerImporter.swift"
+      ]
+    },
+    {
+      "id": "project-packaging",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Repository-maintained launchd, systemd, Debian, and macOS package configuration and lifecycle scripts.",
+      "paths": [
+        "packaging/com.teslatlas.hub.plist.in",
+        "packaging/linux/command-proxy.env",
+        "packaging/linux/config.toml",
+        "packaging/linux/control.in",
+        "packaging/linux/fleet-telemetry.json",
+        "packaging/linux/postinst",
+        "packaging/linux/postrm",
+        "packaging/linux/preinst",
+        "packaging/linux/prerm",
+        "packaging/linux/teslatlas-command-proxy.service",
+        "packaging/linux/teslatlas-fleet-telemetry.service",
+        "packaging/linux/teslatlas-hub-terminal-failure.target",
+        "packaging/linux/teslatlas-hub.service",
+        "packaging/macos-service/com.teslatlas.hub.plist.in",
+        "packaging/macos-service/fleet-telemetry.json.example"
+      ],
+      "globs": [
+        "packaging/macos-service/scripts/*"
+      ]
+    },
+    {
+      "id": "project-release-tooling",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Repository-maintained build, audit, evidence, release, native Debian attestation, and hermetic test tooling.",
+      "globs": [
+        "scripts/*.py",
+        "scripts/*.sh"
+      ]
+    }
+  ]
+}
