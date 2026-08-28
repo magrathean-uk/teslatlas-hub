@@ -159,7 +159,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         log.record("must.not.follow", category: "test")
 
         XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "unchanged")
-        XCTAssertEqual(log.recentText(), "App diagnostics are unavailable or the log path is unsafe.\n")
+        XCTAssertEqual(log.recentText(), HubAppLog.unavailableText)
     }
 
     func testAppDiagnosticsRefuseASymlinkedDirectory() throws {
@@ -178,7 +178,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: target.appendingPathComponent("app.log").path
         ))
-        XCTAssertEqual(log.recentText(), "App diagnostics are unavailable or the log path is unsafe.\n")
+        XCTAssertEqual(log.recentText(), HubAppLog.unavailableText)
     }
 
     func testAppAndServiceDiagnosticsRejectAFIFOWithoutBlocking() throws {
@@ -192,7 +192,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let log = HubAppLog(fileURL: file)
         let started = Date()
         log.record("must.not.block", category: "test")
-        XCTAssertEqual(log.recentText(), "App diagnostics are unavailable or the log path is unsafe.\n")
+        XCTAssertEqual(log.recentText(), HubAppLog.unavailableText)
         XCTAssertNil(HubController.logTail(of: file, maximumBytes: 4096))
         XCTAssertLessThan(Date().timeIntervalSince(started), 1)
     }

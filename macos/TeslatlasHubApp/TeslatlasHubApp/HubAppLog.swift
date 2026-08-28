@@ -4,6 +4,7 @@ import Darwin
 
 final class HubAppLog {
     static let shared = HubAppLog()
+    static let unavailableText = "App diagnostics are unavailable or the log path is unsafe.\n"
 
     private static let maximumFileBytes = 1024 * 1024
     private static let retainedFileBytes = 512 * 1024
@@ -73,7 +74,7 @@ final class HubAppLog {
         return Self.regularFileTail(of: fileURL,
                                     maximumBytes: maximumBytes,
                                     hardLimit: Self.maximumFileBytes)
-            ?? "App diagnostics are unavailable or the log path is unsafe.\n"
+            ?? Self.unavailableText
     }
 
     static func errorCode(_ error: Error) -> String {

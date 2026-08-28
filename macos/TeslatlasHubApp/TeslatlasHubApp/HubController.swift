@@ -18,10 +18,12 @@ enum HubShareRedactor {
         ("[\u{0000}-\u{0008}\u{000B}\u{000C}\u{000E}-\u{001F}\u{007F}]", ""),
         (#"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,;]+"#, "$1[redacted]"),
         (#"(?i)(\b(?:access_?token|refresh_?token|ingest_?token|pairing_?token|device_?token|token|client_?secret|api_?key|private_?key|encryption_?key|password|authorization_?code|oauth_?code)\b\s*[\"']?\s*[:=]\s*[\"']?)[^\"'\s,&;}]+"#, "$1[redacted]"),
-        (#"(?i)([?&](?:access_token|refresh_token|client_secret|code)=)[^&#\s]+"#, "$1[redacted]"),
+        (#"(?i)([?&](?:access_token|refresh_token|client_secret|code|state|nonce)=)[^&#\s]+"#, "$1[redacted]"),
         (#"(?i)((?:postgres(?:ql)?|https?)://[^/\s:@]+:)[^@/\s]+(@)"#, "$1[redacted]$2"),
         (#"(?i)(\"(?:display_?name|vehicle_?name)\"\s*:\s*)\"[^\"]*\""#, "$1\"[redacted-name]\""),
         (#"(?i)(\b(?:display_?name|vehicle_?name)\b\s*=\s*)(?:\"[^\"]*\"|[^\s,;]+)"#, "$1[redacted-name]"),
+        (#"(?i)(\b(?:vehicle_?id|source_?car_?id|selected_?car_?id|car_?id|tesla_?eid)\b\s*[\"']?\s*[:=]\s*[\"']?)-?\d+(?![a-z0-9-])"#, "$1[redacted-id]"),
+        (#"(?i)(\b(?:latitude|longitude|lat|lon)\b\s*[\"']?\s*[:=]\s*[\"']?)-?\d+(?:\.\d+)?"#, "$1[redacted-location]"),
         (#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[redacted-jwt]"),
         (#"(?i)\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b"#, "[redacted-id]"),
         (#"(?i)\b[0-9A-HJ-NPR-Z]{17}\b"#, "[redacted-vin]"),
@@ -1682,6 +1684,8 @@ final class HubController {
 
     func startHub(completion: @escaping (Result<Void, Error>) -> Void) {
         guard !hasPendingMigrationHandover else {
+            HubAppLog.shared.record("service.rejected", category: "service", level: "WARN",
+                                    fields: ["action": "start", "reason": "handover_pending"])
             completion(.failure(HubActionError.commandFailed(
                 "Finish the TeslaMate handover before starting Hub."
             )))
@@ -1696,6 +1700,8 @@ final class HubController {
 
     func restartHub(completion: @escaping (Result<Void, Error>) -> Void) {
         guard !hasPendingMigrationHandover else {
+            HubAppLog.shared.record("service.rejected", category: "service", level: "WARN",
+                                    fields: ["action": "restart", "reason": "handover_pending"])
             completion(.failure(HubActionError.commandFailed(
                 "Finish the TeslaMate handover before restarting Hub."
             )))
@@ -1705,18 +1711,32 @@ final class HubController {
     }
 
     func acknowledgeMigrationHandoverAndStart(completion: @escaping (Result<Void, Error>) -> Void) {
-        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard !previewMode else {
+            HubAppLog.shared.record("handover_start.rejected", category: "teslamate_import",
+                                    level: "WARN", fields: ["reason": "preview_read_only"])
+            completion(.failure(HubActionError.preview))
+            return
+        }
         guard let handover = migrationHandoverState,
               handover.phase == .awaitingHandover else {
+            HubAppLog.shared.record("handover_start.rejected", category: "teslamate_import",
+                                    level: "WARN", fields: ["reason": "checks_incomplete"])
             completion(.failure(HubActionError.commandFailed(
                 "Finish the migration checks before starting Hub."
             )))
             return
         }
+        let started = Date()
+        HubAppLog.shared.record("handover_start.requested", category: "teslamate_import")
         do {
             try ensureConfig(provider: handover.previousProvider,
                              collectorIntervalSeconds: handover.previousIntervalSeconds)
         } catch {
+            HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
+                                    level: "ERROR", fields: [
+                                        "error_code": HubAppLog.errorCode(error),
+                                        "reason": "config_restore_failed"
+                                    ])
             completion(.failure(error))
             return
         }
@@ -1726,16 +1746,31 @@ final class HubController {
             case .success:
                 do {
                     try FileManager.default.removeItem(at: self.migrationHandoverMarker)
+                    HubAppLog.shared.record("handover_start.completed",
+                                            category: "teslamate_import", fields: [
+                                                "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000))
+                                            ])
                     DispatchQueue.main.async { completion(.success(())) }
                 } catch {
                     let cleanupError = error
+                    HubAppLog.shared.record("handover_start.failed",
+                                            category: "teslamate_import", level: "ERROR",
+                                            fields: [
+                                                "error_code": HubAppLog.errorCode(error),
+                                                "reason": "handover_gate_cleanup_failed"
+                                            ])
                     self.serviceRunner.run(arguments: ["service", "stop"]) { _ in
                         do {
                             try self.ensureConfig(provider: handover.previousProvider,
                                                   collectorIntervalSeconds: 0)
                             try self.writeMigrationHandoverMarker(handover)
                         } catch {
-                            // Preserve the original cleanup failure; Hub was explicitly stopped.
+                            HubAppLog.shared.record("handover_recovery.failed",
+                                                    category: "teslamate_import", level: "ERROR",
+                                                    fields: [
+                                                        "error_code": HubAppLog.errorCode(error),
+                                                        "reason": "cleanup_failure_rollback"
+                                                    ])
                         }
                         DispatchQueue.main.async {
                             completion(.failure(HubActionError.commandFailed(
@@ -1745,12 +1780,23 @@ final class HubController {
                     }
                 }
             case let .failure(startError):
+                HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
+                                        level: "ERROR", fields: [
+                                            "error_code": HubAppLog.errorCode(startError),
+                                            "reason": "service_start_failed"
+                                        ])
                 do {
                     try self.ensureConfig(provider: handover.previousProvider,
                                           collectorIntervalSeconds: 0)
                     try self.writeMigrationHandoverMarker(handover)
                     DispatchQueue.main.async { completion(.failure(startError)) }
                 } catch {
+                    HubAppLog.shared.record("handover_recovery.failed",
+                                            category: "teslamate_import", level: "ERROR",
+                                            fields: [
+                                                "error_code": HubAppLog.errorCode(error),
+                                                "reason": "start_failure_rollback"
+                                            ])
                     DispatchQueue.main.async {
                         completion(.failure(HubActionError.commandFailed(
                             "Hub did not start: \(startError.localizedDescription). The collector pause could not be restored: \(error.localizedDescription)"
@@ -1892,23 +1938,37 @@ final class HubController {
     func performVehicleControl(_ action: HubVehicleControl,
                                vehicleID requestedVehicleID: UUID? = nil,
                                completion: @escaping (Result<Void, Error>) -> Void) {
-        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard !previewMode else {
+            HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
+                                    fields: ["action": action.rawValue, "reason": "preview_read_only"])
+            completion(.failure(HubActionError.preview))
+            return
+        }
         guard snapshot.health == .running else {
+            HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
+                                    fields: ["action": action.rawValue, "reason": "service_not_running"])
             completion(.failure(HubActionError.commandFailed("Hub must be running before sending a vehicle command.")))
             return
         }
         guard snapshot.account == "Connected" else {
+            HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
+                                    fields: ["action": action.rawValue, "reason": "account_disconnected"])
             completion(.failure(HubActionError.commandFailed("Connect Tesla before sending a vehicle command.")))
             return
         }
         guard let vehicleID = requestedVehicleID ?? snapshot.controlVehicleID else {
+            HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
+                                    fields: ["action": action.rawValue, "reason": "vehicle_not_selected"])
             completion(.failure(HubActionError.commandFailed("Choose a vehicle before sending a command.")))
             return
         }
         guard snapshot.controlVehicles.contains(where: { $0.id == vehicleID }) else {
+            HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
+                                    fields: ["action": action.rawValue, "reason": "vehicle_stale"])
             completion(.failure(HubActionError.commandFailed("The selected vehicle is no longer configured.")))
             return
         }
+        let started = Date()
         HubAppLog.shared.record("command.requested", category: "vehicle_control",
                                 fields: ["action": action.rawValue])
         let runner = isServiceInstalled ? installedCommandRunner : commandRunner
@@ -1919,12 +1979,16 @@ final class HubController {
                 switch result {
                 case .success:
                     HubAppLog.shared.record("command.accepted", category: "vehicle_control",
-                                            fields: ["action": action.rawValue])
+                                            fields: [
+                                                "action": action.rawValue,
+                                                "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000))
+                                            ])
                     completion(.success(()))
                 case let .failure(error):
                     HubAppLog.shared.record("command.failed", category: "vehicle_control", level: "ERROR",
                                             fields: [
                                                 "action": action.rawValue,
+                                                "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
                                                 "error_code": HubAppLog.errorCode(error)
                                             ])
                     completion(.failure(error))

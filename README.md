@@ -135,8 +135,8 @@ App and service log reads are bounded and reject symlinks and non-regular files.
 App logs rotate at 1 MiB; service logs are compacted before launch and every 30
 seconds while Hub runs. Display, Copy, and Save use the same redaction pass for
 credentials, VINs, opaque vehicle/install IDs, vehicle names, private-network
-addresses, terminal controls, and the current user's home path. Review a report
-before sharing it.
+addresses, precise coordinates, terminal controls, and the current user's home
+path. Saved reports are owner-readable only. Review a report before sharing it.
 
 ## Debian package (amd64 and ARM64)
 

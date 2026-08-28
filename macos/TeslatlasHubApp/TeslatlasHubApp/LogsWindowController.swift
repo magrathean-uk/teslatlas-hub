@@ -99,7 +99,10 @@ final class LogsWindowController: NSWindowController {
             ].joined(separator: "\n"))
             self.latestText = combined
             self.textView.string = combined
-            self.statusLabel.stringValue = "Updated just now"
+            let appAvailable = appText != HubAppLog.unavailableText
+            self.statusLabel.stringValue = appAvailable
+                ? "Updated just now"
+                : "App diagnostics unavailable"
             self.refreshButton.isEnabled = true
             self.diagnosticsButton.isEnabled = true
             self.copyButton.isEnabled = !combined.isEmpty
@@ -107,6 +110,7 @@ final class LogsWindowController: NSWindowController {
             self.operationInProgress = false
             HubAppLog.shared.record("refresh.completed", category: "logs", fields: [
                 "app_bytes": String(appText.utf8.count),
+                "app_available": appAvailable ? "true" : "false",
                 "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
                 "service_bytes": String(text.utf8.count)
             ])

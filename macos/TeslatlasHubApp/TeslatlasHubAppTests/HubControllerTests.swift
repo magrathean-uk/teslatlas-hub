@@ -214,6 +214,9 @@ final class HubControllerTests: XCTestCase {
         display_name="Athena Road Trip"
         {"vehicleName":"Athena JSON"}
         vehicle_id=477a04f6-b726-50e3-86e0-a5a9143b3239
+        sourceCarId=17 teslaEid=12345678901234567 selected_car_id=42 car_id=5 vehicle_id=99
+        latitude=51.5074 longitude=-0.1278 url=https://example.test/?lat=51.5&lon=-0.1
+        {"sourceCarId":23,"teslaEid":98765432109876543,"latitude":48.8566,"longitude":2.3522}
         installationId=9ca970df-0616-43d5-8493-e1faf00e97f1
         server=10.8.0.1
         ipv6=[fd12:3456:789a::1]:5432 link=fe80::42%en0 loopback=::1
@@ -227,13 +230,22 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(redacted.contains("status code: 500"))
         XCTAssertTrue(redacted.contains("Authorization: Bearer [redacted]"))
         XCTAssertTrue(redacted.contains("\"accessToken\":\"[redacted]"))
-        XCTAssertTrue(redacted.contains("code=[redacted]&state=public-state"))
+        XCTAssertTrue(redacted.contains("code=[redacted]&state=[redacted]"))
         XCTAssertTrue(redacted.contains("postgresql://reader:[redacted]@127.0.0.1"))
         XCTAssertTrue(redacted.contains("[redacted-jwt]"))
         XCTAssertTrue(redacted.contains("vehicle=[redacted-vin]"))
         XCTAssertTrue(redacted.contains("display_name=[redacted-name]"))
         XCTAssertTrue(redacted.contains("\"vehicleName\":\"[redacted-name]\""))
         XCTAssertTrue(redacted.contains("vehicle_id=[redacted-id]"))
+        XCTAssertTrue(redacted.contains("sourceCarId=[redacted-id]"))
+        XCTAssertTrue(redacted.contains("teslaEid=[redacted-id]"))
+        XCTAssertTrue(redacted.contains("selected_car_id=[redacted-id]"))
+        XCTAssertTrue(redacted.contains("car_id=[redacted-id]"))
+        XCTAssertTrue(redacted.contains("latitude=[redacted-location]"))
+        XCTAssertTrue(redacted.contains("longitude=[redacted-location]"))
+        XCTAssertTrue(redacted.contains("lat=[redacted-location]&lon=[redacted-location]"))
+        XCTAssertTrue(redacted.contains("\"sourceCarId\":[redacted-id]"))
+        XCTAssertTrue(redacted.contains("\"latitude\":[redacted-location]"))
         XCTAssertTrue(redacted.contains("installationId=[redacted-id]"))
         XCTAssertTrue(redacted.contains("server=[redacted-private-ip]"))
         XCTAssertTrue(redacted.contains("ipv6=[redacted-private-ip] link=[redacted-private-ip] loopback=[redacted-private-ip]"))
@@ -241,9 +253,13 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(redacted.contains("~/Library/Logs"))
         for secret in ["bearer-secret-value", "access-secret-value", "refresh-secret-value",
                        "ingest-secret-value", "private-secret-value",
-                       "EU_secret_code", "database-secret", "eyJheader.payload.signature",
+                       "EU_secret_code", "public-state", "database-secret", "eyJheader.payload.signature",
                        "5YJ3E1EA7KF317000", "Athena Road Trip", "Athena JSON",
-                       "477a04f6-b726-50e3-86e0-a5a9143b3239",
+                       "477a04f6-b726-50e3-86e0-a5a9143b3239", "a04f6-b726",
+                       "12345678901234567", "sourceCarId=17", "selected_car_id=42",
+                       "car_id=5", "vehicle_id=99",
+                       "51.5074", "-0.1278", "lat=51.5", "lon=-0.1",
+                       "98765432109876543", "48.8566", "2.3522",
                        "9ca970df-0616-43d5-8493-e1faf00e97f1", "10.8.0.1", "fd12:3456:789a::1",
                        "fe80::42%en0", "\u{001B}"] {
             XCTAssertFalse(redacted.contains(secret), "leaked \(secret)")
