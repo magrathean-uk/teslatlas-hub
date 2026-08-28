@@ -12,7 +12,9 @@
   Docker/sudo failures are
   actionable without retaining server, account, password, or key-path data.
   A failed stale SSH-secret cleanup scan is also recorded with a safe typed
-  reason instead of disappearing silently.
+  reason instead of disappearing silently. Foundation, URL, POSIX, and support
+  report save failures use stable domain/code identifiers rather than Swift
+  runtime type names.
   Dashboard status failures record one warning per failure type and one recovery
   event, so transient service issues are visible without 15-second polling spam.
   Command-L is wired through the standard View menu and works from onboarding

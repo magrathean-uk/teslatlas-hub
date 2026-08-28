@@ -174,7 +174,7 @@ final class LogsWindowController: NSWindowController {
                 ])
             } catch {
                 HubAppLog.shared.record("save.failed", category: "logs", level: "ERROR", fields: [
-                    "error_code": String(describing: type(of: error))
+                    "error_code": HubAppLog.errorCode(error)
                 ])
                 NSAlert(error: error).runModal()
             }
