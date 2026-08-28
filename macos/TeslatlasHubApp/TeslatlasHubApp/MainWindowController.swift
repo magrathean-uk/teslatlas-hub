@@ -40,6 +40,7 @@ final class MainWindowController: NSWindowController {
     private var onInitialRefresh: ((HubSnapshot) -> Void)?
     private var refreshTimer: Timer?
     private var refreshInFlight = false
+    private var refreshPending = false
 
     init(controller: HubController, onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
         self.controller = controller
@@ -384,11 +385,20 @@ final class MainWindowController: NSWindowController {
     }
 
     private func update() {
-        guard !refreshInFlight else { return }
+        guard !refreshInFlight else {
+            refreshPending = true
+            return
+        }
         refreshInFlight = true
         controller.refresh { [weak self] snapshot in
             guard let self else { return }
-            defer { self.refreshInFlight = false }
+            defer {
+                self.refreshInFlight = false
+                if self.refreshPending {
+                    self.refreshPending = false
+                    DispatchQueue.main.async { [weak self] in self?.update() }
+                }
+            }
             self.heroDot.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Hub status")
             self.heroDot.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 24, weight: .regular)
             self.heroDot.contentTintColor = snapshot.health.color

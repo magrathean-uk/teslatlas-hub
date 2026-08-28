@@ -6,7 +6,9 @@
   app timed out and showed Attention needed. Start now bootstraps once, loaded
   Start is idempotent, and Restart performs a settled bootout/bootstrap. The
   installer update and rollback paths no longer double-start either. The UI
-  waits briefly for collector readiness before refreshing. Live launchd proof
+  waits briefly for collector readiness before refreshing and queues one
+  refresh requested while another is in flight, so Stop cannot leave a stale
+  running dashboard. Live launchd proof
   reached ready in under one second for Start and Restart, preserved the PID on
   idempotent Start, and left Hub stopped. All 105 AppKit tests and macOS
   packaging checks pass.
