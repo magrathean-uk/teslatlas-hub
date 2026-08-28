@@ -78,6 +78,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private var busy = false
     private var busyMessage: String?
     private var errorMessage: String?
+    private var migrationDiagnostic: TeslaMateSSHDiagnostic?
     private var compatibility: HubTeslaMateCompatibility?
     private var checks: [HubOnboardingCheck] = []
     private var verificationFinished = false
@@ -269,7 +270,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             "North America and Asia Pacific",
             "China"
         ])
-        migrationAuthentication.addItems(withTitles: ["SSH key or agent", "Password"])
+        migrationAuthentication.addItems(withTitles: ["SSH config, agent, or key", "Password"])
         migrationAuthentication.target = self
         migrationAuthentication.action = #selector(migrationAuthenticationChanged)
         migrationAuthentication.controlSize = .large
@@ -525,7 +526,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         var views: [NSView] = [
             guidance,
             formRow("Server", migrationServer),
-            formRow("SSH user", migrationUser),
+            formRow("SSH user (optional)", migrationUser),
             formRow("SSH port", migrationPort),
             formRow("Authentication", migrationAuthentication)
         ]
@@ -533,6 +534,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         if migrationAuthentication.indexOfSelectedItem == 0 {
             let choose = NSButton(title: "Choose Key…", target: self, action: #selector(chooseMigrationIdentity))
             views.append(formRow("SSH key", fieldWithButton(migrationIdentityFile, choose, symbol: "key.fill")))
+            let automatic = NSTextField(wrappingLabelWithString:
+                "Optional. Hub automatically uses ~/.ssh/config, ssh-agent, ProxyJump, and standard private keys.")
+            automatic.textColor = .secondaryLabelColor
+            automatic.maximumNumberOfLines = 2
+            automatic.widthAnchor.constraint(equalToConstant: 650).isActive = true
+            views.append(automatic)
             migrationKeyViews += [migrationIdentityFile, choose]
         } else {
             views.append(formRow("Password", migrationSSHPassword))
@@ -566,7 +573,61 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                                     color: compatibility.compatible ? .systemGreen : .systemOrange)
             stack.addArrangedSubview(status)
         }
+        if let migrationDiagnostic {
+            stack.addArrangedSubview(migrationDiagnosticView(migrationDiagnostic))
+        }
         return withError(stack)
+    }
+
+    private func migrationDiagnosticView(_ diagnostic: TeslaMateSSHDiagnostic) -> NSView {
+        let title = NSTextField(labelWithString: diagnostic.title)
+        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        title.textColor = .systemOrange
+
+        let summary = NSTextField(wrappingLabelWithString: diagnostic.summary)
+        summary.maximumNumberOfLines = 2
+        summary.widthAnchor.constraint(equalToConstant: 650).isActive = true
+
+        let stack = NSStackView(views: [title, summary])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        for suggestion in diagnostic.suggestions {
+            let label = NSTextField(wrappingLabelWithString: "• \(suggestion)")
+            label.textColor = .secondaryLabelColor
+            label.maximumNumberOfLines = 2
+            label.widthAnchor.constraint(equalToConstant: 650).isActive = true
+            stack.addArrangedSubview(label)
+        }
+
+        var buttons: [NSButton] = []
+        for action in diagnostic.recoveryActions {
+            let button: NSButton
+            switch action {
+            case .chooseKey:
+                button = NSButton(title: "Choose Another Key…", target: self,
+                                  action: #selector(chooseMigrationIdentity))
+            case .usePassword:
+                button = NSButton(title: "Use Password", target: self,
+                                  action: #selector(useMigrationPassword))
+            case .useKey:
+                button = NSButton(title: "Use SSH Key", target: self,
+                                  action: #selector(useMigrationKey))
+            case .openLogs:
+                button = NSButton(title: "Open Logs", target: self, action: #selector(openLogs))
+            }
+            configureFlatButton(button)
+            buttons.append(button)
+        }
+        let copy = NSButton(title: "Copy Details", target: self,
+                            action: #selector(copyMigrationDiagnostic))
+        configureFlatButton(copy)
+        buttons.append(copy)
+        let buttonRow = NSStackView(views: buttons)
+        buttonRow.spacing = 12
+        buttonRow.alignment = .centerY
+        stack.addArrangedSubview(buttonRow)
+        return stack
     }
 
     private func verifyBody() -> NSView {
@@ -926,6 +987,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         setBusy(true, message: "Connecting…")
         let requestedMigrationIdentity = currentMigrationIdentity
         compatibility = nil
+        migrationDiagnostic = nil
+        errorMessage = nil
         migrationSession?.close()
         migrationSession = nil
         connectedMigrationIdentity = nil
@@ -944,6 +1007,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             guard let self else { return }
             switch result {
             case let .success(session):
+                self.migrationDiagnostic = nil
                 self.migrationSSHPassword.stringValue = ""
                 self.migrationSession = session
                 self.connectedMigrationIdentity = requestedMigrationIdentity
@@ -985,10 +1049,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                                         level: "ERROR",
                                         fields: ["error_code": HubAppLog.errorCode(error)])
                 self.setBusy(false)
-                self.compatibility = HubTeslaMateCompatibility(compatible: false,
-                                                               message: error.localizedDescription,
-                                                               reasonCode: "unavailable",
-                                                               requiredVersion: "4.1.1")
+                self.compatibility = nil
+                self.errorMessage = nil
+                self.migrationDiagnostic = TeslaMateServerImporter.connectionDiagnostic(
+                    for: error,
+                    authentication: authentication
+                )
                 self.render()
             }
         }
@@ -1118,9 +1184,28 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         chooseFile(for: migrationIdentityFile)
     }
 
+    @objc private func useMigrationPassword() {
+        migrationAuthentication.selectItem(at: 1)
+        migrationAuthenticationChanged()
+        window?.makeFirstResponder(migrationSSHPassword)
+    }
+
+    @objc private func useMigrationKey() {
+        migrationAuthentication.selectItem(at: 0)
+        migrationAuthenticationChanged()
+        window?.makeFirstResponder(migrationIdentityFile)
+    }
+
+    @objc private func copyMigrationDiagnostic() {
+        guard let migrationDiagnostic else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(migrationDiagnostic.safeReport, forType: .string)
+    }
+
     @objc private func migrationAuthenticationChanged() {
         compatibility = nil
         errorMessage = nil
+        migrationDiagnostic = nil
         migrationSession?.close()
         migrationSession = nil
         connectedMigrationIdentity = nil

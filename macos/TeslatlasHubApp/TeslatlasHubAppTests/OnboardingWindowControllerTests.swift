@@ -9,20 +9,25 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let root = manager.temporaryDirectory
             .appendingPathComponent("teslatlas-hub-cleanup-test-\(UUID().uuidString)", isDirectory: true)
         let eligible = root.appendingPathComponent(
+            "th-\(UUID().uuidString)", isDirectory: true
+        )
+        let legacy = root.appendingPathComponent(
             "teslatlas-hub-import-\(UUID().uuidString)", isDirectory: true
         )
-        let unrelated = root.appendingPathComponent("teslatlas-hub-import-not-a-uuid", isDirectory: true)
+        let unrelated = root.appendingPathComponent("th-not-a-uuid", isDirectory: true)
         let outside = root.appendingPathComponent("outside", isDirectory: true)
-        let linked = root.appendingPathComponent("teslatlas-hub-import-\(UUID().uuidString)")
+        let linked = root.appendingPathComponent("th-\(UUID().uuidString)")
         try manager.createDirectory(at: eligible, withIntermediateDirectories: true)
+        try manager.createDirectory(at: legacy, withIntermediateDirectories: true)
         try Data("secret".utf8).write(to: eligible.appendingPathComponent("ssh-password"))
         try manager.createDirectory(at: unrelated, withIntermediateDirectories: true)
         try manager.createDirectory(at: outside, withIntermediateDirectories: true)
         try manager.createSymbolicLink(at: linked, withDestinationURL: outside)
         defer { try? manager.removeItem(at: root) }
 
-        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
+        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 2)
         XCTAssertFalse(manager.fileExists(atPath: eligible.path))
+        XCTAssertFalse(manager.fileExists(atPath: legacy.path))
         XCTAssertTrue(manager.fileExists(atPath: unrelated.path))
         XCTAssertTrue(manager.fileExists(atPath: linked.path))
         XCTAssertTrue(manager.fileExists(atPath: outside.path))
@@ -459,7 +464,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(buttons(in: view).first { $0.title == "Continue" }).isHidden)
 
         let authentication = try XCTUnwrap(popups(in: view).first {
-            $0.itemTitles == ["SSH key or agent", "Password"]
+            $0.itemTitles == ["SSH config, agent, or key", "Password"]
         })
         authentication.selectItem(withTitle: "Password")
         _ = NSApp.sendAction(authentication.action!, to: authentication.target, from: authentication)
@@ -482,7 +487,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let user = try XCTUnwrap(labels(in: view).first { $0.stringValue == "user" })
         let port = try XCTUnwrap(labels(in: view).first { $0.stringValue == "22" })
         let authentication = try XCTUnwrap(popups(in: view).first {
-            $0.itemTitles == ["SSH key or agent", "Password"]
+            $0.itemTitles == ["SSH config, agent, or key", "Password"]
         })
         XCTAssertTrue(server.nextKeyView === user)
         XCTAssertTrue(user.nextKeyView === port)
@@ -506,7 +511,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             $0.placeholderString == "Server name or IP address"
         })
         let authentication = try XCTUnwrap(popups(in: view).first {
-            $0.itemTitles == ["SSH key or agent", "Password"]
+            $0.itemTitles == ["SSH config, agent, or key", "Password"]
         })
 
         onboarding.setBusy(true, message: "Connecting…")
@@ -522,6 +527,27 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testTunnelFailuresAreSafeAndActionable() {
+        let isolation = TeslaMateServerImporter.sshIsolationArgumentsForTests.joined(separator: " ")
+        XCTAssertTrue(isolation.contains("ControlMaster=no"))
+        XCTAssertTrue(isolation.contains("ControlPath=none"))
+        XCTAssertTrue(isolation.contains("ControlPersist=no"))
+        XCTAssertTrue(isolation.contains("ForkAfterAuthentication=no"))
+        XCTAssertTrue(isolation.contains("RemoteCommand=none"))
+        let ownedTunnel = TeslaMateServerImporter.ownedTunnelArgumentsForTests(
+            controlPath: "/tmp/owned-control"
+        ).joined(separator: " ")
+        XCTAssertTrue(ownedTunnel.contains("ControlMaster=yes"))
+        XCTAssertTrue(ownedTunnel.contains("ControlPath=/tmp/owned-control"))
+        XCTAssertTrue(ownedTunnel.contains("ControlPersist=no"))
+
+        let keyDiagnostic = TeslaMateServerImporter.connectionDiagnostic(
+            for: HubActionError.commandExited(255, "Permission denied"),
+            authentication: .key(identityFile: nil)
+        )
+        XCTAssertEqual(keyDiagnostic.reasonCode, "authentication_failed")
+        XCTAssertEqual(keyDiagnostic.recoveryActions, [.chooseKey, .usePassword, .openLogs])
+        XCTAssertFalse(keyDiagnostic.safeReport.contains("Permission denied"))
+
         XCTAssertEqual(
             TeslaMateServerImporter.tunnelFailureMessage("open failed: administratively prohibited"),
             "The SSH server does not permit database forwarding. Enable TCP forwarding for this account."
@@ -601,6 +627,11 @@ final class OnboardingWindowControllerTests: XCTestCase {
             TeslaMateServerImporter.tunnelFailureMessage(
                 "ssh: Could not resolve hostname secret-host: nodename nor servname provided"
             ).contains("secret-host")
+        )
+        XCTAssertFalse(
+            TeslaMateServerImporter.tunnelFailureMessage(
+                "unix_listener: path /private/tmp/private-socket too long for Unix domain socket"
+            ).contains("private-socket")
         )
     }
 
@@ -688,7 +719,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         try render(welcome.window, to: destination.appendingPathComponent("onboarding-welcome.png"))
         try render(migration.window, to: destination.appendingPathComponent("onboarding-migration-key.png"))
         let authentication = try XCTUnwrap(popups(in: migration.window?.contentView).first {
-            $0.itemTitles == ["SSH key or agent", "Password"]
+            $0.itemTitles == ["SSH config, agent, or key", "Password"]
         })
         authentication.selectItem(withTitle: "Password")
         _ = NSApp.sendAction(authentication.action!, to: authentication.target, from: authentication)

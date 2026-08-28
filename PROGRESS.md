@@ -1,5 +1,21 @@
 # Hub progress
 
+- TeslaMate SSH import reliability complete. The macOS importer now preserves
+  normal OpenSSH compatibility (`~/.ssh/config`, agent, ProxyJump, standard or
+  selected keys, and password authentication) while isolating app-owned SSH
+  sessions from inherited multiplexing, remote commands, TTY settings, and
+  daemonisation. The database tunnel owns a short protected control socket so
+  existing ControlMaster sessions and macOS Unix-socket path limits cannot
+  break it. SSH user is optional. Failures now render safe App-style cause,
+  recovery steps, method switching, key selection, Copy Details, and Logs
+  actions. The installed package completed a read-only VPS discovery, tunnel,
+  and exact TeslaMate 4.1.1 compatibility check using automatic config/agent
+  authentication with no selected key. No import ran. TeslaMate and
+  TeslaMateAPI remained healthy; Hub remained stopped. AppKit tests pass
+  111/111 and macOS packaging checks pass. Current package:
+  `dist/TeslatlasHub.pkg` (66,724,653 bytes,
+  `0747edb12376e75db7206762757daac436ddeb266597f0842227ff1393bf571d`).
+
 - Dashboard visual simplification complete. Removed the outlined vehicle and
   service/account/database card frames, removed the outline treatment from
   onboarding choices, and removed coloured status dots everywhere on the

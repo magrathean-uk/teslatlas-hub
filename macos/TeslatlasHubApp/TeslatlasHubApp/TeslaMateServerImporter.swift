@@ -6,6 +6,28 @@ enum TeslaMateSSHAuthentication: Equatable {
     case password(String)
 }
 
+enum TeslaMateSSHRecoveryAction: Equatable {
+    case chooseKey
+    case usePassword
+    case useKey
+    case openLogs
+}
+
+struct TeslaMateSSHDiagnostic: LocalizedError, Equatable {
+    let reasonCode: String
+    let title: String
+    let summary: String
+    let suggestions: [String]
+    let recoveryActions: [TeslaMateSSHRecoveryAction]
+
+    var errorDescription: String? { summary }
+
+    var safeReport: String {
+        ([title, summary] + suggestions.map { "- \($0)" } + ["Code: \(reasonCode)"])
+            .joined(separator: "\n")
+    }
+}
+
 final class TeslaMateServerImportSession {
     let source: String
     let carID: String
@@ -66,7 +88,9 @@ final class TeslaMateServerImportSession {
 }
 
 enum TeslaMateServerImporter {
-    private static let temporaryDirectoryPrefix = "teslatlas-hub-import-"
+    private static let temporaryDirectoryPrefix = "th-"
+    private static let legacyTemporaryDirectoryPrefix = "teslatlas-hub-import-"
+    private static let temporaryRoot = URL(fileURLWithPath: "/tmp", isDirectory: true)
     private static let maximumTunnelDiagnosticBytes = 64 * 1024
     private static let ssh = URL(fileURLWithPath: "/usr/bin/ssh")
 
@@ -75,7 +99,7 @@ enum TeslaMateServerImporter {
     /// are admitted; similarly named files and symlinks are left untouched.
     @discardableResult
     static func cleanupStaleTemporaryDirectories(
-        in root: URL = FileManager.default.temporaryDirectory
+        in root: URL = temporaryRoot
     ) -> Int {
         let manager = FileManager.default
         let entries: [URL]
@@ -94,9 +118,10 @@ enum TeslaMateServerImporter {
         var removed = 0
         for entry in entries {
             let name = entry.lastPathComponent
-            guard name.hasPrefix(temporaryDirectoryPrefix),
-                  UUID(uuidString: String(name.dropFirst(temporaryDirectoryPrefix.count))) != nil
-            else { continue }
+            let prefix = [temporaryDirectoryPrefix, legacyTemporaryDirectoryPrefix]
+                .first { name.hasPrefix($0) }
+            guard let prefix,
+                  UUID(uuidString: String(name.dropFirst(prefix.count))) != nil else { continue }
             var information = stat()
             guard lstat(entry.path, &information) == 0,
                   information.st_mode & S_IFMT == S_IFDIR,
@@ -116,9 +141,45 @@ enum TeslaMateServerImporter {
     }
 
     private struct SSHConnectionResources {
+        enum Method: Equatable {
+            case keyOrAgent
+            case password
+        }
+
         let temporaryDirectory: URL
         let arguments: [String]
         let environment: [String: String]
+        let method: Method
+    }
+
+    private static let managedSSHArguments = [
+        "-o", "PermitLocalCommand=no",
+        "-o", "RemoteCommand=none",
+        "-o", "RequestTTY=no",
+        "-o", "StdinNull=no"
+    ]
+
+    private static let isolatedSSHArguments = [
+        "-o", "ControlMaster=no",
+        "-o", "ControlPath=none",
+        "-o", "ControlPersist=no",
+        "-o", "ForkAfterAuthentication=no",
+        "-o", "SessionType=default"
+    ] + managedSSHArguments
+
+    static var sshIsolationArgumentsForTests: [String] { isolatedSSHArguments }
+
+    private static func ownedTunnelArguments(controlPath: String) -> [String] {
+        [
+            "-o", "ControlMaster=yes",
+            "-o", "ControlPath=\(controlPath)",
+            "-o", "ControlPersist=no",
+            "-o", "ForkAfterAuthentication=no"
+        ] + managedSSHArguments
+    }
+
+    static func ownedTunnelArgumentsForTests(controlPath: String) -> [String] {
+        ownedTunnelArguments(controlPath: controlPath)
     }
 
     private static let discoveryScript = #"""
@@ -195,12 +256,15 @@ printf 'address=%s\n' "$(encode "$db_ip")"
                                     "passwordless_sudo": usePasswordlessSudo ? "true" : "false",
                                     "nonstandard_port": port == 22 ? "false" : "true"
                                 ])
-        guard host.range(of: #"^[A-Za-z0-9.-]+$"#, options: .regularExpression) != nil,
-              user.range(of: #"^[A-Za-z_][A-Za-z0-9_-]*$"#, options: .regularExpression) != nil,
+        guard host.range(of: #"^[A-Za-z0-9._:%-]+$"#, options: .regularExpression) != nil,
+              !host.hasPrefix("-"),
+              (user.isEmpty
+                  || user.range(of: #"^[A-Za-z_][A-Za-z0-9_-]*$"#,
+                                options: .regularExpression) != nil),
               (1...65535).contains(port) else {
             HubAppLog.shared.record("ssh.connect.rejected", category: "teslamate_import",
                                     level: "WARN", fields: ["reason": "invalid_input"])
-            completion(.failure(HubActionError.commandFailed("Server, SSH user, or port is invalid.")))
+            completion(.failure(diagnostic(reason: "invalid_input", method: method(for: authentication))))
             return
         }
         let resources: SSHConnectionResources
@@ -213,9 +277,9 @@ printf 'address=%s\n' "$(encode "$db_ip")"
             completion(.failure(error))
             return
         }
-        let destination = "\(user)@\(host)"
+        let destination = user.isEmpty ? host : "\(user)@\(host)"
         let discoveryStarted = Date()
-        let common = [
+        let common = isolatedSSHArguments + [
             "-o", "ConnectTimeout=12",
             "-o", "StrictHostKeyChecking=accept-new",
             "-o", "ForwardAgent=no",
@@ -242,9 +306,7 @@ printf 'address=%s\n' "$(encode "$db_ip")"
                 removeTemporaryDirectory(resources.temporaryDirectory,
                                          context: "discovery_failed")
                 DispatchQueue.main.async {
-                    completion(.failure(HubActionError.commandFailed(
-                        discoveryFailureMessage(error)
-                    )))
+                    completion(.failure(diagnostic(reason: reason, method: resources.method)))
                 }
             case let .success(output):
                 do {
@@ -277,7 +339,7 @@ printf 'address=%s\n' "$(encode "$db_ip")"
         authentication: TeslaMateSSHAuthentication
     ) throws -> SSHConnectionResources {
         let manager = FileManager.default
-        let directory = manager.temporaryDirectory
+        let directory = temporaryRoot
             .appendingPathComponent("\(temporaryDirectoryPrefix)\(UUID().uuidString)", isDirectory: true)
         try manager.createDirectory(at: directory,
                                     withIntermediateDirectories: false,
@@ -292,18 +354,17 @@ printf 'address=%s\n' "$(encode "$db_ip")"
                           info.st_mode & S_IFMT == S_IFREG,
                           info.st_uid == getuid(),
                           info.st_mode & 0o022 == 0 else {
-                        throw HubActionError.commandFailed(
-                            "The selected SSH key must be a safe file owned by this user."
-                        )
+                        throw diagnostic(reason: "unsafe_identity_file", method: .keyOrAgent)
                     }
                     arguments += ["-o", "IdentitiesOnly=yes", "-i", identityFile.path]
                 }
                 return SSHConnectionResources(temporaryDirectory: directory,
                                               arguments: arguments,
-                                              environment: [:])
+                                              environment: [:],
+                                              method: .keyOrAgent)
             case let .password(password):
                 guard !password.isEmpty else {
-                    throw HubActionError.commandFailed("Enter the SSH password.")
+                    throw diagnostic(reason: "password_required", method: .password)
                 }
                 let passwordFile = directory.appendingPathComponent("ssh-password")
                 let askpass = directory.appendingPathComponent("ssh-askpass")
@@ -327,7 +388,8 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
                         "SSH_ASKPASS_REQUIRE": "force",
                         "DISPLAY": "teslatlas-hub:0",
                         "TESLATLAS_SSH_PASSWORD_FILE": passwordFile.path
-                    ]
+                    ],
+                    method: .password
                 )
             }
         } catch {
@@ -358,32 +420,27 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
                                     resources: SSHConnectionResources) throws -> TeslaMateServerImportSession {
         let manager = FileManager.default
         let directory = resources.temporaryDirectory
-        do {
-            let passwordFile = directory.appendingPathComponent("postgres-password")
-            let keyFile = directory.appendingPathComponent("encryption-key")
-            try Data(values["password"]!.utf8).write(to: passwordFile, options: .atomic)
-            try Data(values["key"]!.utf8).write(to: keyFile, options: .atomic)
-            try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: passwordFile.path)
-            try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyFile.path)
+        let passwordFile = directory.appendingPathComponent("postgres-password")
+        let keyFile = directory.appendingPathComponent("encryption-key")
+        try Data(values["password"]!.utf8).write(to: passwordFile, options: .atomic)
+        try Data(values["key"]!.utf8).write(to: keyFile, options: .atomic)
+        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: passwordFile.path)
+        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyFile.path)
 
-            let (tunnel, localPort) = try openTunnel(address: values["address"]!,
-                                                     destination: destination,
-                                                     sshPort: sshPort,
-                                                     resources: resources)
-            let user = percentEncode(values["user"]!)
-            let database = percentEncode(values["database"]!)
-            return TeslaMateServerImportSession(
-                source: "postgresql://\(user)@127.0.0.1:\(localPort)/\(database)",
-                carID: values["car"]!,
-                passwordFile: passwordFile,
-                encryptionKeyFile: keyFile,
-                tunnel: tunnel,
-                temporaryDirectory: directory
-            )
-        } catch {
-            removeTemporaryDirectory(directory, context: "session_setup_failed")
-            throw error
-        }
+        let (tunnel, localPort) = try openTunnel(address: values["address"]!,
+                                                 destination: destination,
+                                                 sshPort: sshPort,
+                                                 resources: resources)
+        let user = percentEncode(values["user"]!)
+        let database = percentEncode(values["database"]!)
+        return TeslaMateServerImportSession(
+            source: "postgresql://\(user)@127.0.0.1:\(localPort)/\(database)",
+            carID: values["car"]!,
+            passwordFile: passwordFile,
+            encryptionKeyFile: keyFile,
+            tunnel: tunnel,
+            temporaryDirectory: directory
+        )
     }
 
     private static func removeTemporaryDirectory(_ directory: URL, context: String) {
@@ -413,7 +470,9 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             let diagnosticOutput = BoundedProcessOutput(maximumBytes: maximumTunnelDiagnosticBytes)
             let diagnosticDrain = DispatchGroup()
             tunnel.executableURL = ssh
-            tunnel.arguments = [
+            let controlPath = resources.temporaryDirectory
+                .appendingPathComponent("c\(attempt)", isDirectory: false).path
+            tunnel.arguments = ownedTunnelArguments(controlPath: controlPath) + [
                 "-N", "-o", "ConnectTimeout=12",
                 "-o", "ExitOnForwardFailure=yes", "-o", "ForwardAgent=no",
                 "-o", "StrictHostKeyChecking=accept-new",
@@ -463,9 +522,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
                 _ = diagnosticDrain.wait(timeout: .now() + 1)
                 HubAppLog.shared.record("ssh.tunnel.timeout", category: "teslamate_import",
                                         level: "ERROR")
-                throw HubActionError.commandFailed(
-                    "The protected TeslaMate database tunnel did not become ready. Try again."
-                )
+                throw diagnostic(reason: "tunnel_timeout", method: resources.method)
             }
             _ = diagnosticDrain.wait(timeout: .now() + 1)
             let diagnostic = String(decoding: diagnosticOutput.snapshot(), as: UTF8.self)
@@ -474,12 +531,145 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
                                         level: "WARN")
                 continue
             }
-            let message = tunnelFailureMessage(diagnostic)
+            let reason = tunnelFailureReason(diagnostic)
+            let safeDetail = String(HubShareRedactor.redact(diagnostic).prefix(512))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             HubAppLog.shared.record("ssh.tunnel.rejected", category: "teslamate_import",
-                                    level: "ERROR", fields: ["reason": tunnelFailureReason(diagnostic)])
-            throw HubActionError.commandFailed(message)
+                                    level: "ERROR", fields: [
+                                        "detail": safeDetail.isEmpty ? "none" : safeDetail,
+                                        "exit_status": String(tunnel.terminationStatus),
+                                        "reason": reason
+                                    ])
+            throw self.diagnostic(reason: reason, method: resources.method)
         }
-        throw HubActionError.commandFailed("Could not open the protected TeslaMate database tunnel.")
+        throw diagnostic(reason: "tunnel_failed", method: resources.method)
+    }
+
+    static func connectionDiagnostic(
+        for error: Error,
+        authentication: TeslaMateSSHAuthentication
+    ) -> TeslaMateSSHDiagnostic {
+        if let diagnostic = error as? TeslaMateSSHDiagnostic { return diagnostic }
+        let reason = discoveryFailureReason(error)
+        return diagnostic(reason: reason, method: method(for: authentication))
+    }
+
+    private static func method(for authentication: TeslaMateSSHAuthentication) -> SSHConnectionResources.Method {
+        switch authentication {
+        case .key: return .keyOrAgent
+        case .password: return .password
+        }
+    }
+
+    private static func diagnostic(
+        reason: String,
+        method: SSHConnectionResources.Method
+    ) -> TeslaMateSSHDiagnostic {
+        let actions: [TeslaMateSSHRecoveryAction]
+        switch (reason, method) {
+        case ("authentication_failed", .keyOrAgent),
+             ("ssh_authentication_or_connection", .keyOrAgent):
+            actions = [.chooseKey, .usePassword, .openLogs]
+        case ("authentication_failed", .password),
+             ("ssh_authentication_or_connection", .password):
+            actions = [.useKey, .openLogs]
+        case ("unsafe_identity_file", _):
+            actions = [.chooseKey, .openLogs]
+        case ("password_required", _):
+            actions = [.useKey, .openLogs]
+        default:
+            actions = [.openLogs]
+        }
+
+        let title: String
+        let summary: String
+        let suggestions: [String]
+        switch reason {
+        case "invalid_input":
+            title = "Check the server details"
+            summary = "Enter a valid server, SSH user, and port."
+            suggestions = ["A server name, IP address, or SSH config alias is accepted."]
+        case "unsafe_identity_file":
+            title = "Choose a usable private key"
+            summary = "Hub could not safely use the selected SSH key."
+            suggestions = ["Choose a private key owned by this Mac user.", "Do not select the .pub file."]
+        case "password_required":
+            title = "Enter the SSH password"
+            summary = "Password authentication was selected but no password was entered."
+            suggestions = ["Enter the server account password, or use SSH config, agent, or key authentication."]
+        case "authentication_failed", "ssh_authentication_or_connection":
+            title = "SSH authentication failed"
+            summary = "The server did not accept the selected account or authentication method."
+            suggestions = method == .keyOrAgent
+                ? ["Leave the key empty to use ~/.ssh/config, ssh-agent, and standard keys.",
+                   "Choose the private key that works in Terminal, or switch to Password."]
+                : ["Check the account password, or switch to SSH config, agent, or key."]
+        case "host_key_failed":
+            title = "Server identity changed"
+            summary = "OpenSSH refused the server identity."
+            suggestions = ["Verify the server first, then update its entry in ~/.ssh/known_hosts."]
+        case "connection_refused":
+            title = "SSH connection refused"
+            summary = "The server is reachable, but SSH is not accepting this connection."
+            suggestions = ["Check that SSH is running and the port is correct."]
+        case "name_resolution_failed":
+            title = "Server not found"
+            summary = "The server name could not be resolved."
+            suggestions = ["Check the server address, SSH config alias, DNS, and VPN."]
+        case "route_unavailable":
+            title = "Server unreachable"
+            summary = "This Mac has no route to the TeslaMate server."
+            suggestions = ["Check the network, VPN, and firewall."]
+        case "connection_timed_out", "timed_out":
+            title = "SSH connection timed out"
+            summary = "The TeslaMate server did not respond in time."
+            suggestions = ["Check the address, port, network, VPN, and firewall."]
+        case "connection_closed":
+            title = "SSH connection closed"
+            summary = "The server closed the connection."
+            suggestions = ["Check the server SSH logs and account policy."]
+        case "forwarding_disabled":
+            title = "SSH forwarding is disabled"
+            summary = "Hub connected, but the server refused the protected database tunnel."
+            suggestions = ["Allow TCP forwarding for this SSH account."]
+        case "tunnel_timeout", "tunnel_failed":
+            title = "Database tunnel failed"
+            summary = "Hub connected, but the protected database tunnel did not become ready."
+            suggestions = ["Try again, then open Logs for the safe reason code."]
+        case "local_port_unavailable":
+            title = "Local tunnel port unavailable"
+            summary = "Hub could not reserve a local database tunnel port."
+            suggestions = ["Try again."]
+        default:
+            title = "TeslaMate connection failed"
+            summary = discoveryFailureMessageForReason(reason)
+            suggestions = ["Check the server account and Docker access, then try again."]
+        }
+        return TeslaMateSSHDiagnostic(reasonCode: reason,
+                                      title: title,
+                                      summary: summary,
+                                      suggestions: suggestions,
+                                      recoveryActions: actions)
+    }
+
+    private static func discoveryFailureMessageForReason(_ reason: String) -> String {
+        switch reason {
+        case "teslamate_not_found": return "TeslaMate is not running or its container could not be found."
+        case "compose_project_missing": return "The TeslaMate Docker Compose project could not be identified."
+        case "database_not_found": return "The TeslaMate database container is not running or could not be found."
+        case "credentials_incomplete": return "TeslaMate database or encryption credentials are incomplete."
+        case "database_network_invalid": return "The TeslaMate database network could not be identified safely."
+        case "multiple_vehicles": return "Guided import currently requires a TeslaMate database with one vehicle."
+        case "vehicle_missing": return "TeslaMate has no vehicle available to import."
+        case "multiple_teslamate_instances": return "More than one TeslaMate instance is running."
+        case "multiple_database_instances": return "The TeslaMate project has more than one database container."
+        case "passwordless_sudo_required": return "This account cannot run Docker with passwordless sudo."
+        case "sudo_not_permitted": return "This account is not allowed to run Docker with sudo."
+        case "docker_permission_denied": return "This account cannot access Docker."
+        case "docker_missing": return "Docker was not found on the TeslaMate server."
+        case "docker_unavailable": return "Docker is installed but unavailable."
+        default: return "Hub could not read TeslaMate over SSH."
+        }
     }
 
     static func tunnelFailureMessage(_ diagnostic: String) -> String {
@@ -651,6 +841,9 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             return "connection_closed"
         }
         if diagnostic.localizedCaseInsensitiveContains("address already in use") { return "local_port_unavailable" }
+        if diagnostic.localizedCaseInsensitiveContains("too long for Unix domain socket") {
+            return "control_socket_path_too_long"
+        }
         return "unclassified"
     }
 
