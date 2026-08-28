@@ -14,7 +14,7 @@ use serde_json::json;
 use thiserror::Error;
 use tokio::{
     sync::{Mutex, mpsc, oneshot},
-    time::{sleep, timeout},
+    time::{Instant, sleep, timeout},
 };
 use tokio_tungstenite::{
     connect_async_with_config,
@@ -138,7 +138,10 @@ fn is_literal_loopback_host(host: Option<&str>) -> bool {
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamEvent {
     Healthy,
-    Telemetry(Box<StreamUpdate>),
+    Telemetry {
+        update: Box<StreamUpdate>,
+        queued_at: Instant,
+    },
     VehicleOffline,
     AuthRejected,
     TransportUnavailable,
@@ -204,7 +207,7 @@ impl StreamPowerGate {
 
     fn observe(&self, event: &StreamEvent) {
         match event {
-            StreamEvent::Telemetry(update) => self
+            StreamEvent::Telemetry { update, .. } => self
                 .confirmed
                 .store(update.power.is_some(), Ordering::Release),
             StreamEvent::VehicleOffline
@@ -734,7 +737,7 @@ impl TeslaStreamSupervisor {
                                 }
                             }
                             let valid_after_handshake = subscribed
-                                && matches!(event, StreamEvent::Telemetry(_));
+                                && matches!(event, StreamEvent::Telemetry { .. });
                             let terminal = matches!(event, StreamEvent::AuthRejected | StreamEvent::ProtocolViolation);
                             let should_reconnect = matches!(event, StreamEvent::TransportUnavailable);
                             if let Some(receipt) = subscribe_receipt.take() {
@@ -1078,7 +1081,7 @@ fn equal_jitter(delay: Duration) -> Duration {
 }
 
 fn resets_backoff(event: &StreamEvent) -> bool {
-    matches!(event, StreamEvent::Telemetry(_))
+    matches!(event, StreamEvent::Telemetry { .. })
 }
 
 fn apply_health_backoff_reset(
@@ -1266,7 +1269,10 @@ fn decode_wire(tag: &str, wire: StreamWire<'_>) -> Option<StreamEvent> {
         "data:update" if wire.tag != Some(tag) => None,
         "data:update" => parse_data_update_parts(tag, wire.timestamp, wire.value?)
             .ok()
-            .map(|update| StreamEvent::Telemetry(Box::new(update))),
+            .map(|update| StreamEvent::Telemetry {
+                update: Box::new(update),
+                queued_at: Instant::now(),
+            }),
         "data:error" if wire.tag.is_some_and(|frame_tag| frame_tag != tag) => None,
         "data:error" => {
             let category = classify_data_error(wire.error_type, wire.value);
@@ -1676,10 +1682,13 @@ mod tests {
                 &mut connect
             ));
         }
-        let telemetry = StreamEvent::Telemetry(Box::new(
-            parse_data_update(r#"{"msg_type":"data:update","tag":"9","timestamp":1700000000123,"value":"42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#)
-                .unwrap(),
-        ));
+        let telemetry = StreamEvent::Telemetry {
+            update: Box::new(
+                parse_data_update(r#"{"msg_type":"data:update","tag":"9","timestamp":1700000000123,"value":"42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#)
+                    .unwrap(),
+            ),
+            queued_at: Instant::now(),
+        };
         for event in [
             StreamEvent::Healthy,
             StreamEvent::VehicleOffline,
@@ -1772,7 +1781,7 @@ mod tests {
             Err(StreamSupervisorError::ProtocolViolation)
         ));
         while let Ok(event) = received.try_recv() {
-            assert!(!matches!(event, StreamEvent::Telemetry(_)));
+            assert!(!matches!(event, StreamEvent::Telemetry { .. }));
         }
         timeout(Duration::from_secs(1), server)
             .await
@@ -1883,7 +1892,7 @@ mod tests {
             Err(StreamSupervisorError::ProtocolViolation)
         ));
         while let Ok(event) = received.try_recv() {
-            assert!(!matches!(event, StreamEvent::Telemetry(_)));
+            assert!(!matches!(event, StreamEvent::Telemetry { .. }));
         }
         timeout(Duration::from_secs(1), server)
             .await
@@ -1936,7 +1945,7 @@ mod tests {
             timeout(Duration::from_secs(1), received.recv())
                 .await
                 .unwrap(),
-            Some(StreamEvent::Telemetry(_))
+            Some(StreamEvent::Telemetry { .. })
         ));
         stop.send(()).unwrap();
         timeout(Duration::from_secs(2), task)
@@ -2067,7 +2076,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let StreamEvent::Telemetry(update) = event else {
+        let StreamEvent::Telemetry { update, .. } = event else {
             panic!("tagless binary Tesla telemetry must be delivered")
         };
         assert_eq!(update.tag, "42");
@@ -2331,7 +2340,7 @@ mod tests {
             timeout(Duration::from_secs(1), received.recv())
                 .await
                 .unwrap(),
-            Some(StreamEvent::Telemetry(_))
+            Some(StreamEvent::Telemetry { .. })
         ));
         stop.send(()).unwrap();
         timeout(Duration::from_secs(1), task)
@@ -2423,7 +2432,7 @@ mod tests {
             timeout(Duration::from_secs(1), received.recv())
                 .await
                 .unwrap(),
-            Some(StreamEvent::Telemetry(_))
+            Some(StreamEvent::Telemetry { .. })
         ));
         stop.send(()).unwrap();
         timeout(Duration::from_secs(1), task)
@@ -2622,7 +2631,7 @@ mod tests {
             .await
             .expect("telemetry after timeout reconnect");
         assert!(
-            matches!(recovered, Some(StreamEvent::Telemetry(_))),
+            matches!(recovered, Some(StreamEvent::Telemetry { .. })),
             "unexpected recovery event: {recovered:?}"
         );
         stop.send(()).unwrap();
@@ -2691,7 +2700,7 @@ mod tests {
             Message::Text(update.into()),
             Message::Binary(update.as_bytes().to_vec().into()),
         ] {
-            let Some(StreamEvent::Telemetry(update)) = decode_message("42", message) else {
+            let Some(StreamEvent::Telemetry { update, .. }) = decode_message("42", message) else {
                 panic!("Tesla data:update must decode")
             };
             assert_eq!(update.tag, "42");

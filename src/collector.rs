@@ -137,6 +137,9 @@ const GENERIC_ONLINE_RETRY: Duration = Duration::from_secs(20);
 const GENERIC_OTHER_RETRY: Duration = Duration::from_secs(30);
 const RETRY_OVERFLOW_FALLBACK: Duration = Duration::from_secs(100 * 365 * 24 * 60 * 60);
 const STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const STREAM_SOURCE_GAP_WARN_MS: i64 = 5_000;
+const STREAM_QUEUE_LAG_WARN_MS: i64 = 5_000;
+const STREAM_QUEUE_LAG_RECOVERED_MS: i64 = 1_000;
 // Raw stream observations commit immediately. Derived client sync packs can
 // coalesce briefly so a high-rate stream does not create one immutable pack
 // per frame and repeatedly compact a nearly-full imported lineage.
@@ -3803,8 +3806,14 @@ where
                 .await?;
                 let export_now = Instant::now();
                 if streams.is_empty() || export_now >= next_stream_export_replay {
-                    replay_export_outbox(store, &cursor_key, &vehicles, current_epoch_millis()?)
-                        .await?;
+                    replay_export_outbox_with_compaction_deferral(
+                        store,
+                        &cursor_key,
+                        &vehicles,
+                        current_epoch_millis()?,
+                        !streams.is_empty(),
+                    )
+                    .await?;
                     next_stream_export_replay = export_now + STREAM_EXPORT_REPLAY_INTERVAL;
                 }
                 if !delay.is_zero() {
@@ -4012,12 +4021,29 @@ async fn replay_export_outbox(
     vehicles: &[Vehicle],
     now_ms: i64,
 ) -> Result<usize, CollectorError> {
+    replay_export_outbox_with_compaction_deferral(store, cursor_key, vehicles, now_ms, false).await
+}
+
+async fn replay_export_outbox_with_compaction_deferral(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    vehicles: &[Vehicle],
+    now_ms: i64,
+    defer_live_compaction: bool,
+) -> Result<usize, CollectorError> {
     let publication_gate = store.acquire_publication_gate().await?;
     let store = store.clone();
     let cursor_key = cursor_key.clone();
     let vehicles = vehicles.to_vec();
     tokio::task::spawn_blocking(move || {
-        replay_export_outbox_blocking(&store, &publication_gate, &cursor_key, &vehicles, now_ms)
+        replay_export_outbox_blocking(
+            &store,
+            &publication_gate,
+            &cursor_key,
+            &vehicles,
+            now_ms,
+            defer_live_compaction,
+        )
     })
     .await
     .map_err(|_| CollectorError::ExportPublicationTask)?
@@ -4029,11 +4055,24 @@ fn replay_export_outbox_blocking(
     cursor_key: &CursorKey,
     vehicles: &[Vehicle],
     now_ms: i64,
+    defer_live_compaction: bool,
 ) -> Result<usize, CollectorError> {
     let Some(claim) = store.claim_export_outbox(now_ms)? else {
         return Ok(0);
     };
     if store.vehicle_has_v2_base(claim.vehicle_id)? {
+        let pack_count = store.v2_lineage_pack_count(claim.vehicle_id)?;
+        if defer_live_compaction
+            && live_delta_compaction_required(pack_count, ProtocolLimits::default())
+        {
+            store.release_export_outbox(&claim)?;
+            tracing::info!(
+                vehicle_id = %claim.vehicle_id,
+                pack_count,
+                "deferred derived lineage compaction until active streams stop"
+            );
+            return Ok(0);
+        }
         let Some(sync_claim) = store.claim_sync_mutations(claim.vehicle_id, now_ms, 10_000)? else {
             if store.has_unpublished_sync_mutations(claim.vehicle_id)? {
                 store.release_export_outbox(&claim)?;
@@ -4179,8 +4218,7 @@ fn compact_v2_lineage_if_needed_with_limits(
     // Preserve enough headroom that a failed or temporarily unavailable
     // compaction does not make an otherwise valid lineage unservable. The
     // hard pre-commit validation remains the final authority at 512.
-    let trigger = limits.max_chunks.saturating_sub(limits.max_chunks.min(8));
-    if pack_count.saturating_add(1) <= trigger {
+    if !live_delta_compaction_required(pack_count, limits) {
         return Ok(());
     }
     let Some(plan) = store.plan_live_delta_compaction(vehicle_id)? else {
@@ -4263,6 +4301,11 @@ fn compact_v2_lineage_if_needed_with_limits(
         "compacted collector-owned V2 lineage suffix"
     );
     Ok(())
+}
+
+fn live_delta_compaction_required(pack_count: usize, limits: ProtocolLimits) -> bool {
+    let trigger = limits.max_chunks.saturating_sub(limits.max_chunks.min(8));
+    pack_count.saturating_add(1) > trigger
 }
 
 fn is_compaction_pack_capacity_error(error: &ProjectionPackError) -> bool {
@@ -4640,7 +4683,7 @@ fn process_stream_event(
                 scheduler.stream_healthy(stream.vehicle_id, Instant::now()),
             );
         }
-        StreamEvent::Telemetry(update) => {
+        StreamEvent::Telemetry { update, queued_at } => {
             *authenticated = true;
             report_stream_recovery(
                 stream.vehicle_id,
@@ -4651,6 +4694,7 @@ fn process_stream_event(
                 scheduler,
                 stream.vehicle_id,
                 &update,
+                queued_at.elapsed(),
                 projection_car_ids,
             )?;
         }
@@ -4785,6 +4829,7 @@ fn process_stream_telemetry_with_cache(
     scheduler: &mut VehicleScheduler,
     vehicle_id: VehicleId,
     update: &crate::tesla_stream::StreamUpdate,
+    queue_lag: Duration,
     projection_car_ids: &mut HashMap<VehicleId, StreamContext>,
 ) -> Result<bool, CollectorError> {
     if !scheduler.should_persist_stream_telemetry(vehicle_id, update.power, Instant::now()) {
@@ -4803,7 +4848,7 @@ fn process_stream_telemetry_with_cache(
     let context = projection_car_ids
         .get_mut(&vehicle_id)
         .expect("stream context is present after insertion");
-    persist_stream_update_with_projection(store, vehicle_id, update, Some(context))
+    persist_stream_update_with_projection(store, vehicle_id, update, Some((context, queue_lag)))
 }
 
 #[cfg(test)]
@@ -4820,6 +4865,50 @@ struct StreamContext {
     registered_vehicle_id: Uuid,
     selected_car_id: i64,
     writer: StreamObservationWriter,
+    last_stream_timestamp_ms: Option<i64>,
+    queue_lagging: bool,
+}
+
+impl StreamContext {
+    fn report_ingestion_health(
+        &mut self,
+        vehicle_id: VehicleId,
+        observed_at_ms: i64,
+        queue_lag: Duration,
+    ) {
+        if let Some(previous) = self.last_stream_timestamp_ms {
+            let source_gap_ms = observed_at_ms.saturating_sub(previous);
+            if source_gap_ms >= STREAM_SOURCE_GAP_WARN_MS {
+                tracing::warn!(
+                    vehicle_id = vehicle_id.get(),
+                    source_gap_ms,
+                    previous_observed_at_ms = previous,
+                    observed_at_ms,
+                    diagnosis = "upstream_stream_gap",
+                    "Tesla stream resumed after a source timestamp gap"
+                );
+            }
+        }
+        self.last_stream_timestamp_ms = Some(observed_at_ms);
+
+        let queue_lag_ms = i64::try_from(queue_lag.as_millis()).unwrap_or(i64::MAX);
+        if queue_lag_ms >= STREAM_QUEUE_LAG_WARN_MS && !self.queue_lagging {
+            self.queue_lagging = true;
+            tracing::warn!(
+                vehicle_id = vehicle_id.get(),
+                queue_lag_ms,
+                diagnosis = "local_stream_processing_lag",
+                "Tesla stream ingestion queue is falling behind"
+            );
+        } else if queue_lag_ms <= STREAM_QUEUE_LAG_RECOVERED_MS && self.queue_lagging {
+            self.queue_lagging = false;
+            tracing::info!(
+                vehicle_id = vehicle_id.get(),
+                queue_lag_ms,
+                "Tesla stream ingestion processing lag recovered"
+            );
+        }
+    }
 }
 
 fn stream_context(
@@ -4836,6 +4925,7 @@ fn stream_context(
             .with_tesla_identity(Some(vehicle_id.get() as i64), None),
         received_at_ms,
     )?;
+    let last_stream_timestamp_ms = store.stream_watermark(registered.vehicle_id)?;
     Ok(StreamContext {
         source_id: source.source_id,
         registered_vehicle_id: registered.vehicle_id,
@@ -4845,6 +4935,8 @@ fn stream_context(
             vehicle_id.get(),
         )?,
         writer: store.stream_observation_writer()?,
+        last_stream_timestamp_ms,
+        queue_lagging: false,
     })
 }
 
@@ -4852,7 +4944,7 @@ fn persist_stream_update_with_projection(
     store: &HubStore,
     vehicle_id: VehicleId,
     update: &crate::tesla_stream::StreamUpdate,
-    mut context: Option<&mut StreamContext>,
+    mut context: Option<(&mut StreamContext, Duration)>,
 ) -> Result<bool, CollectorError> {
     let received_at_ms = current_epoch_millis()?;
     let maximum = received_at_ms.saturating_add(FUTURE_TIMESTAMP_SKEW_MS);
@@ -4864,36 +4956,41 @@ fn persist_stream_update_with_projection(
         );
         return Ok(false);
     }
-    let (source_id, registered_vehicle_id, pack_car_id) = if let Some(context) = context.as_ref() {
-        (
-            context.source_id,
-            context.registered_vehicle_id,
-            context.selected_car_id,
-        )
-    } else {
-        let source = store.register_source(
-            &SourceDescriptor::new(STREAM_SOURCE_KIND, STREAM_SOURCE_KEY),
-            received_at_ms,
-        )?;
-        let registered = store.register_vehicle(
-            &VehicleDescriptor::new(source.source_id, vehicle_id.get().to_string())
-                .with_tesla_identity(Some(vehicle_id.get() as i64), None),
-            received_at_ms,
-        )?;
-        (
-            source.source_id,
-            registered.vehicle_id,
-            projection_car_id_for_vehicle(store, registered.vehicle_id, vehicle_id.get())?,
-        )
-    };
+    let (source_id, registered_vehicle_id, pack_car_id) =
+        if let Some((context, _)) = context.as_ref() {
+            (
+                context.source_id,
+                context.registered_vehicle_id,
+                context.selected_car_id,
+            )
+        } else {
+            let source = store.register_source(
+                &SourceDescriptor::new(STREAM_SOURCE_KIND, STREAM_SOURCE_KEY),
+                received_at_ms,
+            )?;
+            let registered = store.register_vehicle(
+                &VehicleDescriptor::new(source.source_id, vehicle_id.get().to_string())
+                    .with_tesla_identity(Some(vehicle_id.get() as i64), None),
+                received_at_ms,
+            )?;
+            (
+                source.source_id,
+                registered.vehicle_id,
+                projection_car_id_for_vehicle(store, registered.vehicle_id, vehicle_id.get())?,
+            )
+        };
     let input = ObservationInput {
         source_id,
         vehicle_id: registered_vehicle_id,
         observed_at_ms: update.timestamp_ms,
         payload: stream_observation_payload(update),
     };
-    let result = if let Some(context) = context.as_mut() {
-        context.writer.accept(&input, received_at_ms, pack_car_id)?
+    let result = if let Some((context, queue_lag)) = context.as_mut() {
+        let result = context.writer.accept(&input, received_at_ms, pack_car_id)?;
+        if matches!(result, StreamObservationResult::Committed { .. }) {
+            context.report_ingestion_health(vehicle_id, update.timestamp_ms, *queue_lag);
+        }
+        result
     } else {
         store.accept_stream_observation_and_lifecycle(&input, received_at_ms, pack_car_id)?
     };
@@ -7252,8 +7349,8 @@ mod tests {
         scheduler.accept_discovery(vec![vehicle], Instant::now());
         let (events, receiver) = mpsc::channel(2);
         events
-            .send(StreamEvent::Telemetry(Box::new(
-                crate::tesla_stream::StreamUpdate {
+            .send(StreamEvent::Telemetry {
+                update: Box::new(crate::tesla_stream::StreamUpdate {
                     tag: vehicle_id.to_string(),
                     timestamp_ms: current_epoch_millis().expect("clock") - 1_000,
                     speed: Some(20),
@@ -7268,8 +7365,9 @@ mod tests {
                     range: Some(200),
                     est_range: Some(210),
                     heading: Some(180),
-                },
-            )))
+                }),
+                queued_at: Instant::now(),
+            })
             .await
             .expect("final telemetry");
         events
@@ -8289,7 +8387,10 @@ mod tests {
         )
         .expect("valid authenticated stream frame");
         events
-            .send(StreamEvent::Telemetry(Box::new(telemetry)))
+            .send(StreamEvent::Telemetry {
+                update: Box::new(telemetry),
+                queued_at: Instant::now(),
+            })
             .await
             .expect("authenticated telemetry event");
         let transition = drain_stream_events(&store, &mut scheduler, &mut streams)
@@ -8335,8 +8436,8 @@ mod tests {
         let first_timestamp = current_epoch_millis().expect("clock")
             - i64::try_from((STREAM_EVENT_CHANNEL_CAPACITY + 2) * 200)
                 .expect("production queue duration fits i64");
-        let telemetry = |offset: usize| {
-            StreamEvent::Telemetry(Box::new(crate::tesla_stream::StreamUpdate {
+        let telemetry = |offset: usize| StreamEvent::Telemetry {
+            update: Box::new(crate::tesla_stream::StreamUpdate {
                 tag: vehicle_id.to_string(),
                 timestamp_ms: first_timestamp
                     + i64::try_from(offset * 200).expect("telemetry offset fits i64"),
@@ -8352,7 +8453,8 @@ mod tests {
                 range: Some(200),
                 est_range: Some(210),
                 heading: Some(180),
-            }))
+            }),
+            queued_at: Instant::now(),
         };
         for offset in 0..STREAM_EVENT_CHANNEL_CAPACITY {
             sender
@@ -9637,6 +9739,14 @@ mod tests {
     #[test]
     fn oversized_compaction_defers_only_while_an_aggregate_slot_remains() {
         let limits = ProtocolLimits::default();
+        assert!(!live_delta_compaction_required(
+            limits.max_chunks - 9,
+            limits
+        ));
+        assert!(live_delta_compaction_required(
+            limits.max_chunks - 8,
+            limits
+        ));
         let row_capacity = ProjectionPackError::TooManyRows;
         assert!(may_defer_compaction_capacity_error(
             &row_capacity,
@@ -12202,6 +12312,29 @@ mod tests {
             )
             .expect("provisional positions");
         assert_eq!(provisional, 2);
+
+        let mut context = stream_context(&store, vehicle_id).expect("stream context");
+        assert_eq!(
+            context.last_stream_timestamp_ms,
+            Some(first_timestamp + 1_000)
+        );
+        assert!(!context.queue_lagging);
+        context.report_ingestion_health(
+            vehicle_id,
+            first_timestamp + 12_000,
+            Duration::from_secs(6),
+        );
+        assert_eq!(
+            context.last_stream_timestamp_ms,
+            Some(first_timestamp + 12_000)
+        );
+        assert!(context.queue_lagging);
+        context.report_ingestion_health(
+            vehicle_id,
+            first_timestamp + 13_000,
+            Duration::from_millis(500),
+        );
+        assert!(!context.queue_lagging);
     }
 
     #[test]

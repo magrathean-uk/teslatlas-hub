@@ -4803,6 +4803,7 @@ impl HubStore {
             .execute(
                 "UPDATE export_outbox
                  SET claimed_until_ms = 0,
+                     attempts = MAX(attempts - 1, 0),
                      next_attempt_ms = CASE WHEN dirty_revision > ?1
                          THEN MAX(next_attempt_ms, ?2) ELSE next_attempt_ms END
                  WHERE vehicle_id = ?3 AND dirty_revision >= ?1
@@ -11565,6 +11566,18 @@ impl HubStore {
             store: self.clone(),
             connection: self.open()?,
         })
+    }
+
+    pub(crate) fn stream_watermark(&self, vehicle_id: Uuid) -> Result<Option<i64>, StoreError> {
+        let connection = self.open()?;
+        connection
+            .query_row(
+                "SELECT last_timestamp_ms FROM stream_watermarks WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)
     }
 
     fn accept_stream_observation_and_lifecycle_on(
@@ -26785,6 +26798,45 @@ mod tests {
                 .vehicle_has_v2_base(vehicle.vehicle_id)
                 .expect("base check")
         );
+    }
+
+    #[test]
+    fn export_outbox_release_does_not_inflate_failure_attempts() {
+        let temp = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let (_, vehicle) = test_registered_vehicle(&store);
+        mark_export_dirty_for_test(&store, vehicle.vehicle_id);
+
+        let first = store
+            .claim_export_outbox(1_000)
+            .expect("first claim")
+            .expect("outbox row");
+        assert_eq!(first.attempts, 1);
+        store
+            .release_export_outbox(&first)
+            .expect("release without failure");
+
+        let second = store
+            .claim_export_outbox(1_001)
+            .expect("second claim")
+            .expect("released outbox row");
+        assert_eq!(second.attempts, 1);
+        store
+            .fail_export_outbox(&second, "transient", 1_001)
+            .expect("real failure");
+        let third = store
+            .claim_export_outbox(3_001)
+            .expect("third claim")
+            .expect("failed outbox row");
+        assert_eq!(third.attempts, 2);
+        store
+            .release_export_outbox(&third)
+            .expect("release after earlier failure");
+        let fourth = store
+            .claim_export_outbox(3_002)
+            .expect("fourth claim")
+            .expect("released failed outbox row");
+        assert_eq!(fourth.attempts, 2);
     }
 
     #[test]
