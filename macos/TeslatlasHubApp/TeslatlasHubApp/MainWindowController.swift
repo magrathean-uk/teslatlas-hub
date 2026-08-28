@@ -26,6 +26,9 @@ final class MainWindowController: NSWindowController {
     let importButton = NSButton(title: "Import", target: nil, action: nil)
     let detailsButton = NSButton(title: "Service Details", target: nil, action: nil)
     private var vehicleActionButtons: [NSButton] = []
+    private var vehicleControlSectionViews: [NSView] = []
+    private var vehicleControlSectionHeightConstraints: [NSLayoutConstraint] = []
+    private var vehicleCardHeightConstraint: NSLayoutConstraint?
     private var controlVehicles: [HubControlVehicle] = []
     private var selectedControlVehicleID: UUID?
     private var vehicleControlPending = false
@@ -147,7 +150,9 @@ final class MainWindowController: NSWindowController {
         let vehicleCard = vehicleCardView()
         content.addArrangedSubview(vehicleCard)
         vehicleCard.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-        vehicleCard.heightAnchor.constraint(equalToConstant: 174).isActive = true
+        let vehicleCardHeightConstraint = vehicleCard.heightAnchor.constraint(equalToConstant: 174)
+        vehicleCardHeightConstraint.isActive = true
+        self.vehicleCardHeightConstraint = vehicleCardHeightConstraint
 
         let statusBox = NSBox()
         statusBox.boxType = .custom
@@ -268,8 +273,9 @@ final class MainWindowController: NSWindowController {
             row.alignment = .centerY
             row.distribution = .fillEqually
         }
-        firstRow.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        secondRow.heightAnchor.constraint(equalToConstant: 50).isActive = true
+        let firstRowHeightConstraint = firstRow.heightAnchor.constraint(equalToConstant: 40)
+        let secondRowHeightConstraint = secondRow.heightAnchor.constraint(equalToConstant: 50)
+        NSLayoutConstraint.activate([firstRowHeightConstraint, secondRowHeightConstraint])
         for button in vehicleActionButtons.prefix(2) {
             button.heightAnchor.constraint(equalTo: firstRow.heightAnchor).isActive = true
         }
@@ -277,6 +283,12 @@ final class MainWindowController: NSWindowController {
             button.heightAnchor.constraint(equalTo: secondRow.heightAnchor).isActive = true
         }
         let actionSeparator = separator()
+        vehicleControlSectionViews = [actionSeparator, firstRow, secondRow]
+        vehicleControlSectionHeightConstraints = [firstRowHeightConstraint,
+                                                  secondRowHeightConstraint]
+            + actionSeparator.constraints.filter {
+                $0.firstAttribute == .height && $0.secondItem == nil
+            }
         let stack = NSStackView(views: [heading, actionSeparator, firstRow, secondRow])
         stack.orientation = .vertical
         stack.alignment = .centerX
@@ -470,8 +482,17 @@ final class MainWindowController: NSWindowController {
                 && !self.vehicleControlOutcomeUnknown
                 && !self.accountWorkflowActive
                 && !self.serviceDetailsMutationPending
+            let controlsVisible = snapshot.provider == .fleet
+            if controlsVisible {
+                NSLayoutConstraint.activate(self.vehicleControlSectionHeightConstraints)
+            } else {
+                NSLayoutConstraint.deactivate(self.vehicleControlSectionHeightConstraints)
+            }
+            self.vehicleControlSectionViews.forEach { $0.isHidden = !controlsVisible }
+            self.vehicleCardHeightConstraint?.constant = controlsVisible ? 174 : 72
             self.vehicleActionButtons.forEach {
-                $0.isEnabled = controlsAvailable || self.controller.previewMode
+                $0.isHidden = !controlsVisible
+                $0.isEnabled = controlsVisible && (controlsAvailable || self.controller.previewMode)
             }
             self.stopButton.keyEquivalent = snapshot.health == .stopped ? "\r" : ""
             self.installButton.keyEquivalent = snapshot.health == .needsInstall ? "\r" : ""

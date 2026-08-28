@@ -637,6 +637,62 @@ final class HubControllerTests: XCTestCase {
         wait(for: [settled], timeout: 1)
     }
 
+    func testLegacyDashboardHidesVehicleControls() {
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.provider = .legacy
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                                       initialSnapshot: snapshot)
+        let windowController = MainWindowController(controller: controller)
+        let settled = expectation(description: "legacy dashboard settled")
+
+        DispatchQueue.main.async {
+            for title in ["Start Climate", "Stop Climate", "Wake", "Lock",
+                          "Unlock", "Flash", "Honk"] {
+                let button = self.buttons(in: windowController.window?.contentView)
+                    .first { $0.title == title }
+                XCTAssertNotNil(button, "missing \(title)")
+                XCTAssertTrue(button?.isHidden ?? false, "visible \(title)")
+                XCTAssertFalse(button?.isEnabled ?? true, "enabled \(title)")
+            }
+            XCTAssertTrue(self.labels(in: windowController.window?.contentView)
+                .contains { $0.stringValue == "Connected · Legacy token" })
+            settled.fulfill()
+        }
+
+        wait(for: [settled], timeout: 1)
+    }
+
+    func testLegacyProviderRejectsVehicleCommandsBeforeRunner() {
+        let vehicleID = UUID(uuidString: "7A5D69AB-8EA8-4056-8B2F-42C41C28AE36")!
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.provider = .legacy
+        snapshot.controlVehicleID = vehicleID
+        snapshot.controlVehicles = [
+            HubControlVehicle(id: vehicleID, displayName: "Vehicle", status: "online")
+        ]
+        let installed = CountingRunner()
+        let controller = HubController(environment: [:],
+                                       installedCommandRunner: installed,
+                                       serviceRunner: ScriptedService(events: EventRecorder(),
+                                                                      loadState: .loaded),
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: snapshot)
+        let rejected = expectation(description: "legacy command rejected")
+
+        controller.performVehicleControl(.wake) { result in
+            guard case let .failure(error) = result else {
+                XCTFail("legacy command unexpectedly accepted")
+                rejected.fulfill()
+                return
+            }
+            XCTAssertTrue(error.localizedDescription.contains("Fleet API"))
+            rejected.fulfill()
+        }
+
+        wait(for: [rejected], timeout: 1)
+        XCTAssertEqual(installed.calls, 0)
+    }
+
     func testDisconnectConfirmationDefaultsToCancel() {
         let alert = MainWindowController.disconnectConfirmation()
         XCTAssertEqual(alert.buttons.map(\.title), ["Cancel", "Disconnect"])

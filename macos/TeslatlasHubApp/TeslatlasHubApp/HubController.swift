@@ -2027,6 +2027,15 @@ final class HubController {
             completion(.failure(HubActionError.commandFailed("Connect Tesla before sending a vehicle command.")))
             return
         }
+        guard snapshot.provider == .fleet else {
+            HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
+                                    fields: ["action": action.rawValue,
+                                             "reason": "provider_does_not_support_commands"])
+            completion(.failure(HubActionError.commandFailed(
+                "Vehicle controls require Tesla Fleet API."
+            )))
+            return
+        }
         guard let vehicleID = requestedVehicleID ?? snapshot.controlVehicleID else {
             HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
                                     fields: ["action": action.rawValue, "reason": "vehicle_not_selected"])
