@@ -1,5 +1,22 @@
 # Hub progress
 
+- Cmd-L support diagnostics complete — the native Mac app now keeps one bounded
+  owner-only app/import log alongside bounded service logs; records safe app,
+  Tesla login, SSH discovery/tunnel, migration handover, service, diagnostics,
+  and vehicle-command lifecycle events with durations and typed reason codes;
+  and explicitly reports an unsafe or unavailable app log. Display, copy, and
+  save remove credentials, OAuth material, VINs, vehicle/numeric IDs, names,
+  coordinates, email addresses, public/private IP addresses, ANSI, and control
+  bytes. Saved reports are created mode 0600 through a nonblocking no-follow
+  descriptor and refuse symlinks, FIFOs, and non-user-owned files. SSH
+  Docker/sudo failures are
+  actionable without retaining server, account, password, or key-path data.
+  Dashboard status failures record one warning per failure type and one recovery
+  event, so transient service issues are visible without 15-second polling spam.
+  Command-L is wired through the standard View menu and works from onboarding
+  or the dashboard. All 104 exact-source AppKit tests and Xcode 27 beta static
+  analysis pass.
+
 - Cmd-L final acceptance — the app launched directly from the newly expanded
   all-in-one package while the Hub service remained stopped. Cmd-L opened the
   combined app/import/service log window with Refresh, Run Diagnostics, Copy,
@@ -39,19 +56,19 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`1d02f4bbedb66afc33349b92775c7fbfef61bb05646717c589a9d9773069713d`.
-It is a 66,700,231-byte ad-hoc development package, not a notarized release.
+`7cd8f0ef4b78575bf0666ba89bae2c697f811bffa41e930fdfaeaaef6c6683c6`.
+It is a 66,707,897-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-28: full locked Rust tests passed (838 library,
 50 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-102 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux
+104 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux
 packaging source, macOS release, release-evidence, and dependency-audit gates
 passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`8b117ca1955dcf6b44f624a7197e33af01f56ca282bfe3989a06d7398e988332`.
+`5387c0cd46723d7478694b7784a85997a542aa0619d673b58163118762423b2d`.
 Its embedded Hub SHA-256 is
 `c9b6176c0ce6602699cd521fe0e8bdebb65b2902a2d27427df6d432ed42043ef`;
 the root service payload Hub SHA-256 is
@@ -59,7 +76,7 @@ the root service payload Hub SHA-256 is
 The exact packaged root Hub also passed isolated bootstrap, status, and all
 seven doctor checks with a zero-byte WAL and no ANSI output. The final live UI
 replay was unavailable because the Mac was locked; the earlier packaged Cmd-L
-acceptance and the exact-source 102-test suite remain the UI evidence.
+acceptance and the exact-source 104-test suite remain the UI evidence.
 An earlier package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, and preserved the safely
 stopped Hub and migration data; the new package has not been installed live.
@@ -68,7 +85,7 @@ Cmd-L now records Tesla legacy-login start, completion, cancellation, and safe
 typed failure codes in addition to the existing SSH discovery, authentication,
 tunnel, compatibility, import, setup, service, and diagnostics events. It never
 records authorization URLs, callback codes, tokens, account identifiers, SSH
-passwords, or server addresses. The exact-source 102-test suite and Xcode
+passwords, or server addresses. The exact-source 104-test suite and Xcode
 analysis passed after this addition.
 
 Fresh all-in-one package onboarding now checks the installed root Hub's exact
