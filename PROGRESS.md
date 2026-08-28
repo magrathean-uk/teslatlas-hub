@@ -11,10 +11,12 @@
   descriptor and refuse symlinks, FIFOs, and non-user-owned files. SSH
   Docker/sudo failures are
   actionable without retaining server, account, password, or key-path data.
+  A failed stale SSH-secret cleanup scan is also recorded with a safe typed
+  reason instead of disappearing silently.
   Dashboard status failures record one warning per failure type and one recovery
   event, so transient service issues are visible without 15-second polling spam.
   Command-L is wired through the standard View menu and works from onboarding
-  or the dashboard. All 104 exact-source AppKit tests and Xcode 27 beta static
+  or the dashboard. All 105 exact-source AppKit tests and Xcode 27 beta static
   analysis pass.
 
 - Cmd-L final acceptance — the app launched directly from the newly expanded
@@ -56,19 +58,19 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`7cd8f0ef4b78575bf0666ba89bae2c697f811bffa41e930fdfaeaaef6c6683c6`.
-It is a 66,707,897-byte ad-hoc development package, not a notarized release.
+`5876ae863dc347bd496f4fe6864a384da3d77d31b1525ba918d1eef0248ba8bc`.
+It is a 66,707,131-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-28: full locked Rust tests passed (838 library,
 50 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-104 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux
+105 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux
 packaging source, macOS release, release-evidence, and dependency-audit gates
 passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`5387c0cd46723d7478694b7784a85997a542aa0619d673b58163118762423b2d`.
+`d59e56d4f1a4ab60f764ff5d8f7bb03fcb4a158deac5c1b269a82e604fc35f8d`.
 Its embedded Hub SHA-256 is
 `c9b6176c0ce6602699cd521fe0e8bdebb65b2902a2d27427df6d432ed42043ef`;
 the root service payload Hub SHA-256 is
@@ -76,7 +78,7 @@ the root service payload Hub SHA-256 is
 The exact packaged root Hub also passed isolated bootstrap, status, and all
 seven doctor checks with a zero-byte WAL and no ANSI output. The final live UI
 replay was unavailable because the Mac was locked; the earlier packaged Cmd-L
-acceptance and the exact-source 104-test suite remain the UI evidence.
+acceptance and the exact-source 105-test suite remain the UI evidence.
 An earlier package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, and preserved the safely
 stopped Hub and migration data; the new package has not been installed live.
@@ -85,7 +87,7 @@ Cmd-L now records Tesla legacy-login start, completion, cancellation, and safe
 typed failure codes in addition to the existing SSH discovery, authentication,
 tunnel, compatibility, import, setup, service, and diagnostics events. It never
 records authorization URLs, callback codes, tokens, account identifiers, SSH
-passwords, or server addresses. The exact-source 104-test suite and Xcode
+passwords, or server addresses. The exact-source 105-test suite and Xcode
 analysis passed after this addition.
 
 Fresh all-in-one package onboarding now checks the installed root Hub's exact
