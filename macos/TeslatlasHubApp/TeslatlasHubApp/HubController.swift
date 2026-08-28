@@ -644,10 +644,17 @@ final class LaunchctlServiceController: HubServiceControlling {
         switch action {
         case .stop:
             return loaded ? [["bootout", service]] : []
-        case .start, .restart:
-            var commands = loaded ? [] : [["bootstrap", domain, plist]]
-            commands.append(["kickstart", "-k", service])
-            return commands
+        case .start:
+            // RunAtLoad + KeepAlive starts an unloaded job during bootstrap.
+            // Kicking it immediately kills that first process and launchd then
+            // applies ThrottleInterval before starting it again.
+            return loaded
+                ? [["kickstart", service]]
+                : [["bootstrap", domain, plist]]
+        case .restart:
+            return loaded
+                ? [["bootout", service], ["bootstrap", domain, plist]]
+                : [["bootstrap", domain, plist]]
         }
     }
 
@@ -678,7 +685,44 @@ final class LaunchctlServiceController: HubServiceControlling {
         guard index < commands.count else { completion(.success("")); return }
         ProcessRunner.run(executable: URL(fileURLWithPath: "/bin/launchctl"), arguments: commands[index]) { [weak self] result in
             switch result {
-            case .success: self?.runCommands(commands, index: index + 1, completion: completion)
+            case .success:
+                if commands[index].first == "bootout",
+                   commands.indices.contains(index + 1),
+                   commands[index + 1].first == "bootstrap",
+                   commands[index].count == 2 {
+                    self?.waitUntilUnloaded(service: commands[index][1],
+                                            attemptsRemaining: 100) { waitResult in
+                        switch waitResult {
+                        case .success:
+                            self?.runCommands(commands, index: index + 1,
+                                              completion: completion)
+                        case let .failure(error): completion(.failure(error))
+                        }
+                    }
+                } else {
+                    self?.runCommands(commands, index: index + 1, completion: completion)
+                }
+            case let .failure(error): completion(.failure(error))
+            }
+        }
+    }
+
+    private func waitUntilUnloaded(service: String,
+                                   attemptsRemaining: Int,
+                                   completion: @escaping (Result<Void, Error>) -> Void) {
+        queryLoaded(service: service) { [weak self] result in
+            switch result {
+            case .success(false): completion(.success(()))
+            case .success(true) where attemptsRemaining > 1:
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.1) {
+                    self?.waitUntilUnloaded(service: service,
+                                            attemptsRemaining: attemptsRemaining - 1,
+                                            completion: completion)
+                }
+            case .success(true):
+                completion(.failure(HubActionError.commandFailed(
+                    "Hub service did not finish stopping before restart."
+                )))
             case let .failure(error): completion(.failure(error))
             }
         }

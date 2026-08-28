@@ -822,7 +822,7 @@ final class MainWindowController: NSWindowController {
     @objc private func startPressed() {
         guard !accountWorkflowActive, !serviceDetailsMutationPending else { return }
         controller.startHub { [weak self] result in
-            switch result { case .success: self?.update(); case let .failure(error): self?.showError(error) }
+            switch result { case .success: self?.refreshAfterServiceStart(); case let .failure(error): self?.showError(error) }
         }
     }
 
@@ -836,7 +836,15 @@ final class MainWindowController: NSWindowController {
     @objc private func restartPressed() {
         guard !accountWorkflowActive, !serviceDetailsMutationPending else { return }
         controller.restartHub { [weak self] result in
-            switch result { case .success: self?.update(); case let .failure(error): self?.showError(error) }
+            switch result { case .success: self?.refreshAfterServiceStart(); case let .failure(error): self?.showError(error) }
+        }
+    }
+
+    private func refreshAfterServiceStart() {
+        // launchctl bootstrap returns before the collector publishes readiness.
+        // Avoid briefly replacing a successful start with "Attention needed".
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
+            self?.update()
         }
     }
 

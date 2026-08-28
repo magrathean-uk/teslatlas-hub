@@ -84,9 +84,11 @@ final class HubControllerTests: XCTestCase {
 
     func testServicePlanBootstrapsOnlyWhenUnloaded() {
         let loaded = LaunchctlServiceController.commandPlan(action: .restart, loaded: true, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist")
-        XCTAssertEqual(loaded, [["kickstart", "-k", "gui/1/com.teslatlas.hub"]])
+        XCTAssertEqual(loaded, [["bootout", "gui/1/com.teslatlas.hub"], ["bootstrap", "gui/1", "/tmp/hub.plist"]])
         let unloaded = LaunchctlServiceController.commandPlan(action: .restart, loaded: false, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist")
-        XCTAssertEqual(unloaded, [["bootstrap", "gui/1", "/tmp/hub.plist"], ["kickstart", "-k", "gui/1/com.teslatlas.hub"]])
+        XCTAssertEqual(unloaded, [["bootstrap", "gui/1", "/tmp/hub.plist"]])
+        XCTAssertEqual(LaunchctlServiceController.commandPlan(action: .start, loaded: false, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist"), [["bootstrap", "gui/1", "/tmp/hub.plist"]])
+        XCTAssertEqual(LaunchctlServiceController.commandPlan(action: .start, loaded: true, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist"), [["kickstart", "gui/1/com.teslatlas.hub"]])
         XCTAssertEqual(LaunchctlServiceController.commandPlan(action: .stop, loaded: true, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist"), [["bootout", "gui/1/com.teslatlas.hub"]])
         XCTAssertEqual(LaunchctlServiceController.commandPlan(action: .stop, loaded: false, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist"), [])
     }

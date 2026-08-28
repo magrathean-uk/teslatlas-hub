@@ -210,9 +210,6 @@ finish() {
             run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
                 /bin/launchctl bootstrap "$(service_domain)" "$PLIST" >/dev/null 2>&1 \
                 || { status=1; rollback_failed=1; }
-            run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
-                /bin/launchctl kickstart -k "$(service_target)" >/dev/null 2>&1 \
-                || { status=1; rollback_failed=1; }
         fi
     elif [ "$completed" -ne 1 ] && [ "$forward_only" -eq 1 ]; then
         printf '%s\n' \
@@ -350,22 +347,19 @@ if [ "$should_start" -eq 1 ]; then
     healthy=0
     if run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
         /bin/launchctl bootstrap "$(service_domain)" "$PLIST"; then
-        if run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \
-            /bin/launchctl kickstart -k "$(service_target)"; then
-            attempt=1
-            while [ "$attempt" -le "$health_attempts" ]; do
-                if service_is_loaded_bounded && status=$(
-                    run_with_deadline "$status_timeout_seconds" "$termination_grace_seconds" \
-                        /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
-                        "$BINARY" --config "$CONFIG" status 2>/dev/null
-                ) && printf '%s\n' "$status" | /usr/bin/grep -Eq '"ready":[[:space:]]*true'; then
-                    healthy=1
-                    break
-                fi
-                /bin/sleep 1
-                attempt=$((attempt + 1))
-            done
-        fi
+        attempt=1
+        while [ "$attempt" -le "$health_attempts" ]; do
+            if service_is_loaded_bounded && status=$(
+                run_with_deadline "$status_timeout_seconds" "$termination_grace_seconds" \
+                    /usr/bin/sudo -u "$CONSOLE_USER" /usr/bin/env HOME="$CONSOLE_HOME" \
+                    "$BINARY" --config "$CONFIG" status 2>/dev/null
+            ) && printf '%s\n' "$status" | /usr/bin/grep -Eq '"ready":[[:space:]]*true'; then
+                healthy=1
+                break
+            fi
+            /bin/sleep 1
+            attempt=$((attempt + 1))
+        done
     fi
     if [ "$healthy" -ne 1 ]; then
         run_with_deadline "$service_timeout_seconds" "$termination_grace_seconds" \

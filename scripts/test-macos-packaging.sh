@@ -161,6 +161,9 @@ fi
     || fail "postinstall has no failure rollback"
 /usr/bin/grep -q 'launchctl bootstrap' "$POSTINSTALL" \
     || fail "postinstall cannot restart the prior service"
+if /usr/bin/grep -Fq 'launchctl kickstart -k' "$POSTINSTALL"; then
+    fail "postinstall kills the RunAtLoad service immediately after bootstrap"
+fi
 /usr/bin/grep -q 'previously_installed' "$POSTINSTALL" \
     || fail "postinstall does not preserve an intentionally stopped upgrade"
 /usr/bin/grep -Fq '"$BINARY" --config "$CONFIG" bootstrap' "$POSTINSTALL" \

@@ -1,5 +1,16 @@
 # Hub progress
 
+- Fixed the installed Mac app's 30-second false start failure. An unloaded
+  RunAtLoad/KeepAlive LaunchAgent was bootstrapped and then immediately killed
+  with `kickstart -k`, causing launchd to apply its 30-second throttle while the
+  app timed out and showed Attention needed. Start now bootstraps once, loaded
+  Start is idempotent, and Restart performs a settled bootout/bootstrap. The
+  installer update and rollback paths no longer double-start either. The UI
+  waits briefly for collector readiness before refreshing. Live launchd proof
+  reached ready in under one second for Start and Restart, preserved the PID on
+  idempotent Start, and left Hub stopped. All 105 AppKit tests and macOS
+  packaging checks pass.
+
 - Cmd-L support diagnostics complete — the native Mac app now keeps one bounded
   owner-only app/import log alongside bounded service logs; records safe app,
   Tesla login, SSH discovery/tunnel, migration handover, service, diagnostics,
