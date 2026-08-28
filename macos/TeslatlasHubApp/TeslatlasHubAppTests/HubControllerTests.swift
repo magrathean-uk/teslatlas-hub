@@ -219,6 +219,7 @@ final class HubControllerTests: XCTestCase {
         {"sourceCarId":23,"teslaEid":98765432109876543,"latitude":48.8566,"longitude":2.3522}
         installationId=9ca970df-0616-43d5-8493-e1faf00e97f1
         server=10.8.0.1
+        account=owner@example.com public_ip=203.0.113.42 public_ipv6=[2001:db8::42]:443
         ipv6=[fd12:3456:789a::1]:5432 link=fe80::42%en0 loopback=::1
         coloured=\u{001B}[2m2026-08-27T19:02:26Z\u{001B}[0m \u{001B}[32mINFO\u{001B}[0m ready\u{0007}
         /Users/example/Library/Logs/Teslatlas Hub/hub.err.log
@@ -248,6 +249,9 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(redacted.contains("\"latitude\":[redacted-location]"))
         XCTAssertTrue(redacted.contains("installationId=[redacted-id]"))
         XCTAssertTrue(redacted.contains("server=[redacted-private-ip]"))
+        XCTAssertTrue(redacted.contains("account=[redacted-email]"))
+        XCTAssertTrue(redacted.contains("public_ip=[redacted-ip]"))
+        XCTAssertTrue(redacted.contains("public_ipv6=[redacted-ip]"))
         XCTAssertTrue(redacted.contains("ipv6=[redacted-private-ip] link=[redacted-private-ip] loopback=[redacted-private-ip]"))
         XCTAssertTrue(redacted.contains("coloured=2026-08-27T19:02:26Z INFO ready"))
         XCTAssertTrue(redacted.contains("~/Library/Logs"))
@@ -260,7 +264,8 @@ final class HubControllerTests: XCTestCase {
                        "car_id=5", "vehicle_id=99",
                        "51.5074", "-0.1278", "lat=51.5", "lon=-0.1",
                        "98765432109876543", "48.8566", "2.3522",
-                       "9ca970df-0616-43d5-8493-e1faf00e97f1", "10.8.0.1", "fd12:3456:789a::1",
+                       "9ca970df-0616-43d5-8493-e1faf00e97f1", "10.8.0.1", "owner@example.com",
+                       "203.0.113.42", "2001:db8::42", "fd12:3456:789a::1",
                        "fe80::42%en0", "\u{001B}"] {
             XCTAssertFalse(redacted.contains(secret), "leaked \(secret)")
         }

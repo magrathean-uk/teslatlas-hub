@@ -27,8 +27,11 @@ enum HubShareRedactor {
         (#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[redacted-jwt]"),
         (#"(?i)\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b"#, "[redacted-id]"),
         (#"(?i)\b[0-9A-HJ-NPR-Z]{17}\b"#, "[redacted-vin]"),
+        (#"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,63}\b"#, "[redacted-email]"),
         (#"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b"#, "[redacted-private-ip]"),
+        (#"(?<!\d)(?!127\.)(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\d)"#, "[redacted-ip]"),
         (#"(?i)\[(?:(?:f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):[0-9a-f:.]+|::1)(?:%[a-z0-9_.-]+)?\](?::\d{1,5})?"#, "[redacted-private-ip]"),
+        (#"(?i)\[[0-9a-f]*:[0-9a-f:.]+(?:%[a-z0-9_.-]+)?\](?::\d{1,5})?"#, "[redacted-ip]"),
         (#"(?i)(?<![0-9a-f:])(?:(?:f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):[0-9a-f:.]+|::1)(?:%[a-z0-9_.-]+)?(?![0-9a-f:])"#, "[redacted-private-ip]")
     ]
     private static let compiledReplacements: [(expression: NSRegularExpression, template: String)] =
