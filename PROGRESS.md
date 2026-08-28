@@ -73,8 +73,8 @@ TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed Hub SHA-256 is
 `893717f1601419d66737dd6ab88013c0128adbb81f411055d560fbd2c8f6d63b`.
 The current local installer SHA-256 is
-`137706cb7f72e5452c3e1799309555cda8d56dd62745da78d67251b9c6f3f8d7`.
-It is a 66,709,404-byte ad-hoc development package, not a notarized release.
+`8fb7b021bc6ad5a89981689f2427c2ddfb190197f4dd744ef4c0ea51d0543a80`.
+It is a 66,709,305-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-28: full locked Rust tests passed (838 library,
 50 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
@@ -85,7 +85,7 @@ passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`388074db4d4b5413d192299ac7228af2c8f67ed29a83d4019844a8845dd068e8`.
+`0354dc1212283f3760204020d1b00f68a75e1354fa0d93d6c8b5c16f09e2201c`.
 Its embedded Hub SHA-256 is
 `c9b6176c0ce6602699cd521fe0e8bdebb65b2902a2d27427df6d432ed42043ef`;
 the root service payload Hub SHA-256 is
@@ -96,8 +96,10 @@ replay was unavailable because the Mac was locked; the earlier packaged Cmd-L
 acceptance and the exact-source 105-test suite remain the UI evidence.
 The corrected package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, installed app binary SHA-256
-`388074db4d4b5413d192299ac7228af2c8f67ed29a83d4019844a8845dd068e8`,
-and preserved the safely stopped Hub and migration data.
+`0354dc1212283f3760204020d1b00f68a75e1354fa0d93d6c8b5c16f09e2201c`,
+and preserved the safely stopped Hub and migration data. Its installed Start,
+Restart, and Stop controls completed without a false timeout; the dashboard
+showed running after Start/Restart and stopped after Stop.
 
 Cmd-L now records Tesla legacy-login start, completion, cancellation, and safe
 typed failure codes in addition to the existing SSH discovery, authentication,
