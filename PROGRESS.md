@@ -92,9 +92,10 @@ The exact packaged root Hub also passed isolated bootstrap, status, and all
 seven doctor checks with a zero-byte WAL and no ANSI output. The final live UI
 replay was unavailable because the Mac was locked; the earlier packaged Cmd-L
 acceptance and the exact-source 105-test suite remain the UI evidence.
-An earlier package upgraded the existing installation without error,
-auto-opened the exact app under `/Applications`, and preserved the safely
-stopped Hub and migration data; the new package has not been installed live.
+The corrected package upgraded the existing installation without error,
+auto-opened the exact app under `/Applications`, installed app binary SHA-256
+`388074db4d4b5413d192299ac7228af2c8f67ed29a83d4019844a8845dd068e8`,
+and preserved the safely stopped Hub and migration data.
 
 Cmd-L now records Tesla legacy-login start, completion, cancellation, and safe
 typed failure codes in addition to the existing SSH discovery, authentication,
