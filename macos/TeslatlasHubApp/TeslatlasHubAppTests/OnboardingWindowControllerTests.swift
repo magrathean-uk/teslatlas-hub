@@ -28,6 +28,18 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(manager.fileExists(atPath: outside.path))
     }
 
+    func testStaleSSHSecretCleanupRecordsAnUnavailableTemporaryRoot() {
+        let missingRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-missing-cleanup-\(UUID().uuidString)",
+                                    isDirectory: true)
+
+        XCTAssertEqual(
+            TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: missingRoot),
+            0
+        )
+        XCTAssertTrue(HubAppLog.shared.recentText().contains("temporary_files.scan_failed"))
+    }
+
     func testDashboardReportsInitialRefreshWithoutLeavingLaunchBlank() {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let refreshed = expectation(description: "initial dashboard refresh delivered")

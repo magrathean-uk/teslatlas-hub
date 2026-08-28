@@ -78,11 +78,19 @@ enum TeslaMateServerImporter {
         in root: URL = FileManager.default.temporaryDirectory
     ) -> Int {
         let manager = FileManager.default
-        guard let entries = try? manager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else { return 0 }
+        let entries: [URL]
+        do {
+            entries = try manager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            HubAppLog.shared.record("temporary_files.scan_failed",
+                                    category: "teslamate_import", level: "WARN",
+                                    fields: ["error_code": HubAppLog.errorCode(error)])
+            return 0
+        }
         var removed = 0
         for entry in entries {
             let name = entry.lastPathComponent
