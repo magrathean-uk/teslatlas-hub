@@ -15,7 +15,10 @@ use uuid::Uuid;
 use crate::{
     BUILD_VERSION,
     config::{CollectorProvider, HubConfig},
-    db::{CatalogueInventory, HubStore, ReadinessReasonCode, SCHEMA_VERSION, StoreError},
+    db::{
+        CatalogueInventory, HubStore, ReadinessReasonCode, SCHEMA_VERSION, StoreError,
+        StreamAuditSummary,
+    },
     fleet_credentials::{
         FleetCredentialError, stored_fleet_scope_summary, validate_stored_fleet_credentials,
     },
@@ -118,10 +121,13 @@ pub struct HubDoctorReport {
     pub catalogue: CatalogueInventory,
     pub credentials: CredentialDiagnostics,
     pub collector: CollectorDiagnostics,
+    pub stream_audit: StreamAuditSummary,
     pub tls: TlsDiagnostics,
     pub vehicles: Vec<VehicleDiagnostics>,
     pub safety: SafetyDiagnostics,
 }
+
+const STREAM_AUDIT_DIAGNOSTIC_WINDOW_MS: i64 = 24 * 60 * 60 * 1_000;
 
 impl HubDoctorReport {
     pub fn is_ok(&self) -> bool {
@@ -172,6 +178,21 @@ impl HubDoctorReport {
             teslamate_source_never_mutated = self.safety.teslamate_source_never_mutated,
             import_does_not_delete_fleet_tokens = self.safety.import_does_not_delete_fleet_tokens,
             "Hub doctor connection and safety"
+        );
+        tracing::info!(
+            since_ms = self.stream_audit.since_ms,
+            connect_attempts = self.stream_audit.connect_attempts,
+            successful_connects = self.stream_audit.successful_connects,
+            subscribe_attempts = self.stream_audit.subscribe_attempts,
+            successful_subscriptions = self.stream_audit.successful_subscriptions,
+            transport_errors = self.stream_audit.transport_errors,
+            authentication_rejections = self.stream_audit.authentication_rejections,
+            protocol_errors = self.stream_audit.protocol_errors,
+            unresolved_attempts = self.stream_audit.unresolved_attempts,
+            unresolved_sessions = self.stream_audit.unresolved_sessions,
+            last_subscription_success_at_ms = self.stream_audit.last_subscription_success_at_ms,
+            last_failure_at_ms = self.stream_audit.last_failure_at_ms,
+            "Hub doctor recent stream audit"
         );
         for check in &self.checks {
             if check.passed {
@@ -279,6 +300,9 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         CollectorProvider::Fleet => fleet.present,
     };
     let now_ms = diagnostic_epoch_ms();
+    let stream_audit = store
+        .stream_audit_summary_since(now_ms.saturating_sub(STREAM_AUDIT_DIAGNOSTIC_WINDOW_MS))?;
+    let stream_recovered = stream_audit_recovered(&stream_audit);
     let readiness = match store.service_readiness_at(collector_required, now_ms) {
         Ok(()) => "ready".to_owned(),
         Err(failure) => readiness_code(failure.code).to_owned(),
@@ -358,6 +382,27 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             collector_required, init_only, can_start, readiness
         ),
     };
+    let stream_check = DoctorCheck {
+        name: "streamRecovery".to_owned(),
+        passed: stream_audit.authentication_rejections == 0
+            && stream_audit.protocol_errors == 0
+            && stream_audit.unresolved_attempts == 0
+            && stream_audit.unresolved_sessions == 0
+            && stream_recovered,
+        detail: format!(
+            "windowHours=24 connects={}/{} subscribes={}/{} transportErrors={} authRejected={} protocolErrors={} unresolvedAttempts={} unresolvedSessions={} recovered={}",
+            stream_audit.successful_connects,
+            stream_audit.connect_attempts,
+            stream_audit.successful_subscriptions,
+            stream_audit.subscribe_attempts,
+            stream_audit.transport_errors,
+            stream_audit.authentication_rejections,
+            stream_audit.protocol_errors,
+            stream_audit.unresolved_attempts,
+            stream_audit.unresolved_sessions,
+            stream_recovered,
+        ),
+    };
     let token_preservation = DoctorCheck {
         name: "tokenPreservation".to_owned(),
         passed: true,
@@ -378,6 +423,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         credentials_check,
         tls_check,
         collector_check,
+        stream_check,
         token_preservation,
         teslamate_safety,
     ];
@@ -427,6 +473,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             terrain_enabled: config.terrain.enabled,
             bind: config.bind.to_string(),
         },
+        stream_audit,
         tls,
         vehicles,
         safety: SafetyDiagnostics {
@@ -441,9 +488,21 @@ fn collector_readiness_passes(required: bool, can_start: bool, readiness: &str) 
     !required || (can_start && matches!(readiness, "ready" | "collector_absent"))
 }
 
-/// Cheap collector/serve startup log: inventory and credentials, not pack hashing.
+fn stream_audit_recovered(audit: &StreamAuditSummary) -> bool {
+    match (
+        audit.last_subscription_success_at_ms,
+        audit.last_failure_at_ms,
+    ) {
+        (_, None) => true,
+        (Some(success), Some(failure)) => success >= failure,
+        (None, Some(_)) => false,
+    }
+}
+
+/// Cheap collector/serve startup log. It avoids retained-manifest parsing and
+/// pack-directory walks so a large catalogue cannot delay HTTP readiness.
 pub fn log_runtime_inventory(store: &HubStore, config: &HubConfig) {
-    match store.catalogue_inventory() {
+    match store.runtime_inventory() {
         Ok(catalogue) => tracing::info!(
             provider = ?config.collector.provider,
             interval_seconds = config.collector.interval_seconds,
@@ -578,6 +637,14 @@ mod tests {
         assert!(!report.credentials.legacy.present);
         assert!(!report.credentials.fleet.present);
         assert!(report.collector.init_only);
+        assert_eq!(report.stream_audit.connect_attempts, 0);
+        assert_eq!(report.stream_audit.unresolved_sessions, 0);
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.name == "streamRecovery" && check.passed)
+        );
         assert!(
             store
                 .load_teslamate_legacy_tokens()
@@ -589,6 +656,68 @@ mod tests {
         assert_eq!(json["status"], "ok");
         assert_eq!(json["sqlite"], report.sqlite);
         assert!(json["database"].as_str().is_some());
+        assert_eq!(json["streamAudit"]["transportErrors"], 0);
+    }
+
+    #[test]
+    fn doctor_flags_an_unrecovered_stream_failure_then_clears_after_success() {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let config_path = temporary.path().join("config.toml");
+        fs::write(
+            &config_path,
+            format!(
+                "data_dir = {:?}\nbind = '127.0.0.1:18443'\n\n[collector]\ninterval_seconds = 0\n",
+                temporary.path()
+            ),
+        )
+        .expect("write config");
+        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600))
+            .expect("private config");
+        let config = HubConfig::load(&config_path).expect("config");
+        let correlation_id = Uuid::new_v4();
+        let complete_subscribe = |outcome| {
+            let receipt = store
+                .begin_outbound_request(&crate::db::OutboundRequestStart {
+                    correlation_id,
+                    vehicle_tesla_id: Some(9),
+                    transport: crate::db::OutboundRequestTransport::Stream,
+                    operation: crate::db::OutboundRequestOperation::StreamSubscribe,
+                    safety_class: crate::db::OutboundRequestSafetyClass::NonWakeEndpoint,
+                    precondition: crate::db::OutboundRequestPrecondition::NotRequired,
+                })
+                .expect("subscribe receipt");
+            store
+                .complete_outbound_request(
+                    receipt,
+                    &crate::db::OutboundRequestCompletion {
+                        outcome,
+                        http_status: None,
+                        retry_after_seconds: None,
+                    },
+                )
+                .expect("subscribe completion");
+        };
+
+        complete_subscribe(crate::db::OutboundRequestOutcome::TransportError);
+        let degraded = inspect_hub(&store, &config).expect("degraded report");
+        assert_eq!(degraded.status, "failed");
+        assert!(
+            degraded
+                .checks
+                .iter()
+                .any(|check| check.name == "streamRecovery" && !check.passed)
+        );
+
+        complete_subscribe(crate::db::OutboundRequestOutcome::Success);
+        let recovered = inspect_hub(&store, &config).expect("recovered report");
+        assert_eq!(recovered.status, "ok");
+        assert!(
+            recovered
+                .checks
+                .iter()
+                .any(|check| check.name == "streamRecovery" && check.passed)
+        );
     }
 
     #[test]

@@ -3085,6 +3085,11 @@ where
     if let Err(error) = &collection_result {
         report_terminal_auth_failure(&collector_state, error);
     }
+    // The collection and resident-control futures have been dropped. Release
+    // every Fleet HTTP pool/proxy handle before the worker can report stopped.
+    drop(command_proxy);
+    drop(auth_api);
+    drop(api);
     let terrain_result = terrain_worker.shutdown(terrain_finished).await;
     if collection_result.is_ok() {
         collection_result = terrain_result;
@@ -3239,6 +3244,15 @@ fn configured_fleet_telemetry_vehicles(store: &HubStore) -> Result<Vec<Vehicle>,
         });
     }
     Ok(vehicles)
+}
+
+fn owner_failure_for_collector_error(error: CollectorError) -> OwnerApiError {
+    match error {
+        CollectorError::OwnerApi(error)
+        | CollectorError::OwnerApiAuth(OwnerApiAuthError::Owner(error)) => error,
+        CollectorError::OwnerApiAuth(_) => OwnerApiError::LegacyAuth,
+        _ => OwnerApiError::Transport,
+    }
 }
 
 fn filter_configured_vehicles(
@@ -3724,13 +3738,7 @@ where
                                 );
                                 failures.push(VehicleCollectionFailure {
                                     vehicle_id,
-                                    error: match error {
-                                        CollectorError::OwnerApi(error) => error,
-                                        CollectorError::OwnerApiAuth(_) => {
-                                            OwnerApiError::LegacyAuth
-                                        }
-                                        _ => OwnerApiError::Transport,
-                                    },
+                                    error: owner_failure_for_collector_error(error),
                                 });
                             }
                         }
@@ -3839,6 +3847,11 @@ where
             stop_and_clear_manual_probe_streams(&mut streams).await;
         }
     }
+    // Stream tasks are joined and the refresh worker is stopped above. Drop the
+    // last Owner API pool and credential authority before reporting collector
+    // shutdown, so Serve cannot return with an idle outbound connection alive.
+    drop(client);
+    drop(auth);
     let terrain_result = terrain_worker.shutdown(terrain_finished).await;
     if collection_result.is_ok() {
         collection_result = terrain_result;
@@ -4544,6 +4557,35 @@ struct StreamDrainResult {
     terminal_error: Option<CollectorError>,
 }
 
+fn report_stream_outage(vehicle_id: VehicleId, reason: &'static str, outage: StreamOutage) {
+    let StreamOutage::Active(outage) = outage else {
+        return;
+    };
+    tracing::warn!(
+        vehicle_id = vehicle_id.get(),
+        reason,
+        consecutive_failures = outage.consecutive_failures,
+        outage_ms = u64::try_from(outage.outage_duration.as_millis()).unwrap_or(u64::MAX),
+        phase = ?outage.phase,
+        owner_api_fallback_scheduled = outage.owner_api_fallback_scheduled,
+        live_power_gate = outage.live_power_gate,
+        recovery = "stream_reconnect_and_owner_api_fallback",
+        "vehicle stream degraded; bounded recovery active"
+    );
+}
+
+fn report_stream_recovery(vehicle_id: VehicleId, recovery: StreamRecovery) {
+    let StreamRecovery::Recovered(recovery) = recovery else {
+        return;
+    };
+    tracing::info!(
+        vehicle_id = vehicle_id.get(),
+        failures = recovery.failures,
+        outage_ms = u64::try_from(recovery.outage_duration.as_millis()).unwrap_or(u64::MAX),
+        "vehicle stream recovered"
+    );
+}
+
 fn process_stream_event(
     store: &HubStore,
     scheduler: &mut VehicleScheduler,
@@ -4556,11 +4598,17 @@ fn process_stream_event(
     match event {
         StreamEvent::Healthy => {
             *authenticated = true;
-            scheduler.stream_healthy(stream.vehicle_id, Instant::now());
+            report_stream_recovery(
+                stream.vehicle_id,
+                scheduler.stream_healthy(stream.vehicle_id, Instant::now()),
+            );
         }
         StreamEvent::Telemetry(update) => {
             *authenticated = true;
-            scheduler.stream_healthy(stream.vehicle_id, Instant::now());
+            report_stream_recovery(
+                stream.vehicle_id,
+                scheduler.stream_healthy(stream.vehicle_id, Instant::now()),
+            );
             process_stream_telemetry_with_cache(
                 store,
                 scheduler,
@@ -4571,19 +4619,38 @@ fn process_stream_event(
         }
         StreamEvent::VehicleOffline => {
             let now = Instant::now();
-            scheduler.stream_unhealthy(stream.vehicle_id, now);
+            report_stream_outage(
+                stream.vehicle_id,
+                "vehicle_offline",
+                scheduler.stream_unhealthy(stream.vehicle_id, now),
+            );
             scheduler.schedule_offline_state_fetch(stream.vehicle_id, now);
         }
         StreamEvent::AuthRejected => {
             *authentication_rejected = true;
-            scheduler.stream_unhealthy(stream.vehicle_id, Instant::now());
+            report_stream_outage(
+                stream.vehicle_id,
+                "authentication_rejected",
+                scheduler.stream_unhealthy(stream.vehicle_id, Instant::now()),
+            );
             tracing::warn!(
                 vehicle_id = stream.vehicle_id.get(),
                 "vehicle stream authentication rejected"
             );
         }
-        StreamEvent::TransportUnavailable | StreamEvent::ProtocolViolation => {
-            scheduler.stream_unhealthy(stream.vehicle_id, Instant::now());
+        StreamEvent::TransportUnavailable => {
+            report_stream_outage(
+                stream.vehicle_id,
+                "transport_unavailable",
+                scheduler.stream_unhealthy(stream.vehicle_id, Instant::now()),
+            );
+        }
+        StreamEvent::ProtocolViolation => {
+            report_stream_outage(
+                stream.vehicle_id,
+                "protocol_violation",
+                scheduler.stream_unhealthy(stream.vehicle_id, Instant::now()),
+            );
         }
     }
     Ok(())
@@ -4850,6 +4917,8 @@ struct ScheduledVehicle {
     last_used: Instant,
     suspended: bool,
     stream_healthy: bool,
+    stream_outage_started_at: Option<Instant>,
+    consecutive_stream_failures: u32,
     pre_online: PreOnlineCheck,
     service_mode: bool,
     offline_state_fetch_due: Option<Instant>,
@@ -4866,10 +4935,41 @@ struct VehicleFuseState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreOnlineCheck {
     Idle,
-    Probing { deadline: Instant },
-    ConfirmedFake { deadline: Instant },
+    Probing {
+        deadline: Instant,
+    },
+    ConfirmedFake {
+        deadline: Instant,
+    },
     ConfirmedReal,
-    FallbackReady,
+    /// `vehicle_data` is safe without a live stream gate. Reached either after
+    /// the bounded silent-stream fallback or after one successful gated read.
+    OwnerApiReady,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StreamOutageStatus {
+    consecutive_failures: u32,
+    outage_duration: Duration,
+    owner_api_fallback_scheduled: bool,
+    live_power_gate: bool,
+    phase: PollPhase,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StreamRecoveryStatus {
+    failures: u32,
+    outage_duration: Duration,
+}
+
+enum StreamRecovery {
+    Unchanged,
+    Recovered(StreamRecoveryStatus),
+}
+
+enum StreamOutage {
+    Ignored,
+    Active(StreamOutageStatus),
 }
 
 const PRE_ONLINE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -4946,6 +5046,8 @@ impl VehicleScheduler {
             scheduled.vehicle.settings = settings.clone();
             if !settings.enabled || !settings.use_streaming_api {
                 scheduled.stream_healthy = false;
+                scheduled.stream_outage_started_at = None;
+                scheduled.consecutive_stream_failures = 0;
                 scheduled.pre_online = PreOnlineCheck::Idle;
                 disconnect.push(scheduled.vehicle.id);
             } else if scheduled.vehicle.is_online() {
@@ -5038,6 +5140,16 @@ impl VehicleScheduler {
                         previous.is_some_and(|scheduled| scheduled.suspended)
                     },
                     stream_healthy,
+                    stream_outage_started_at: if state_changed {
+                        None
+                    } else {
+                        previous.and_then(|scheduled| scheduled.stream_outage_started_at)
+                    },
+                    consecutive_stream_failures: if state_changed {
+                        0
+                    } else {
+                        previous.map_or(0, |scheduled| scheduled.consecutive_stream_failures)
+                    },
                     pre_online,
                     service_mode,
                     offline_state_fetch_due: if state_changed {
@@ -5168,6 +5280,16 @@ impl VehicleScheduler {
                         previous.is_some_and(|scheduled| scheduled.suspended)
                     },
                     stream_healthy,
+                    stream_outage_started_at: if state_changed {
+                        None
+                    } else {
+                        previous.and_then(|scheduled| scheduled.stream_outage_started_at)
+                    },
+                    consecutive_stream_failures: if state_changed {
+                        0
+                    } else {
+                        previous.map_or(0, |scheduled| scheduled.consecutive_stream_failures)
+                    },
                     pre_online,
                     service_mode,
                     offline_state_fetch_due: if state_changed {
@@ -5221,12 +5343,13 @@ impl VehicleScheduler {
                 // TeslaMate falls back to vehicle_data when a new stream stays
                 // silent. A nil-power frame remains a confirmed fake-online
                 // signal and deliberately does not take this fallback.
-                scheduled.pre_online = PreOnlineCheck::FallbackReady;
+                scheduled.pre_online = PreOnlineCheck::OwnerApiReady;
                 scheduled.next_poll = now;
             }
         }
-        // Streaming cars require numeric stream power before vehicle_data.
-        // A car with streaming disabled uses normal Owner API polling.
+        // A newly online streaming car requires numeric stream power before
+        // its first vehicle_data read. Established cars and bounded silent
+        // probes use normal Owner API fallback.
         let candidates = self
             .vehicles
             .values()
@@ -5237,7 +5360,7 @@ impl VehicleScheduler {
                     && (!scheduled.settings.use_streaming_api
                         || matches!(
                             scheduled.pre_online,
-                            PreOnlineCheck::ConfirmedReal | PreOnlineCheck::FallbackReady
+                            PreOnlineCheck::ConfirmedReal | PreOnlineCheck::OwnerApiReady
                         ))
                     && now >= scheduled.next_poll
             })
@@ -5314,6 +5437,12 @@ impl VehicleScheduler {
             }
             if scheduled.service_mode {
                 return None;
+            }
+            // Numeric power protects only the first potentially waking read.
+            // Once that read succeeds, later driving/charging/online fallback
+            // must remain available when the legacy stream disconnects.
+            if matches!(scheduled.pre_online, PreOnlineCheck::ConfirmedReal) {
+                scheduled.pre_online = PreOnlineCheck::OwnerApiReady;
             }
             let was_suspended = scheduled.suspended;
             let (idle_suspend_after, suspended_interval) = if scheduled.settings.use_streaming_api
@@ -5432,6 +5561,14 @@ impl VehicleScheduler {
             | OwnerApiError::VehicleInService
             | OwnerApiError::HttpStatus(401) => self.vehicle_failed(id, now),
             OwnerApiError::LegacyAuth => self.vehicle_retry_after(id, LEGACY_REFRESH_RETRY, now),
+            OwnerApiError::StreamPowerNotConfirmed => {
+                let delay = self
+                    .vehicles
+                    .get(&id)
+                    .map(generic_api_retry_delay)
+                    .unwrap_or(GENERIC_OTHER_RETRY);
+                self.vehicle_retry_after(id, delay, now);
+            }
             _ => self.vehicle_api_error(id, now),
         }
     }
@@ -5519,6 +5656,8 @@ impl VehicleScheduler {
         if let Some(scheduled) = self.vehicles.get_mut(&id) {
             scheduled.service_mode = true;
             scheduled.stream_healthy = false;
+            scheduled.stream_outage_started_at = None;
+            scheduled.consecutive_stream_failures = 0;
             scheduled.suspended = false;
             scheduled.pre_online = PreOnlineCheck::Idle;
             scheduled.failure_backoff = self.cadence.online;
@@ -5538,6 +5677,8 @@ impl VehicleScheduler {
         if let Some(scheduled) = self.vehicles.get_mut(&id) {
             scheduled.service_mode = false;
             scheduled.stream_healthy = false;
+            scheduled.stream_outage_started_at = None;
+            scheduled.consecutive_stream_failures = 0;
             scheduled.suspended = false;
             scheduled.next_poll = now;
             scheduled.failure_backoff = self.cadence.online;
@@ -5551,11 +5692,20 @@ impl VehicleScheduler {
         }
     }
 
-    fn stream_healthy(&mut self, id: VehicleId, now: Instant) {
+    fn stream_healthy(&mut self, id: VehicleId, now: Instant) -> StreamRecovery {
         if let Some(scheduled) = self.vehicles.get_mut(&id)
             && scheduled.settings.use_streaming_api
         {
             let recovered = !scheduled.stream_healthy;
+            let recovery =
+                scheduled
+                    .stream_outage_started_at
+                    .take()
+                    .map(|started_at| StreamRecoveryStatus {
+                        failures: scheduled.consecutive_stream_failures,
+                        outage_duration: now.saturating_duration_since(started_at),
+                    });
+            scheduled.consecutive_stream_failures = 0;
             scheduled.stream_healthy = true;
             scheduled.suspended = false;
             if recovered
@@ -5566,13 +5716,18 @@ impl VehicleScheduler {
             {
                 scheduled.next_poll = scheduled.next_poll.min(now);
             }
+            return recovery.map_or(StreamRecovery::Unchanged, StreamRecovery::Recovered);
         }
+        StreamRecovery::Unchanged
     }
 
-    fn stream_unhealthy(&mut self, id: VehicleId, now: Instant) {
+    fn stream_unhealthy(&mut self, id: VehicleId, now: Instant) -> StreamOutage {
         if let Some(scheduled) = self.vehicles.get_mut(&id)
             && scheduled.settings.use_streaming_api
         {
+            let started_at = *scheduled.stream_outage_started_at.get_or_insert(now);
+            scheduled.consecutive_stream_failures =
+                scheduled.consecutive_stream_failures.saturating_add(1);
             scheduled.stream_healthy = false;
             scheduled.suspended = false;
             if matches!(scheduled.pre_online, PreOnlineCheck::ConfirmedReal) {
@@ -5586,7 +5741,20 @@ impl VehicleScheduler {
             ) {
                 scheduled.next_poll = now;
             }
+            return StreamOutage::Active(StreamOutageStatus {
+                consecutive_failures: scheduled.consecutive_stream_failures,
+                outage_duration: now.saturating_duration_since(started_at),
+                owner_api_fallback_scheduled: now >= scheduled.next_poll,
+                live_power_gate: matches!(
+                    scheduled.pre_online,
+                    PreOnlineCheck::Probing { .. }
+                        | PreOnlineCheck::ConfirmedFake { .. }
+                        | PreOnlineCheck::ConfirmedReal
+                ),
+                phase: scheduled.last_phase,
+            });
         }
+        StreamOutage::Ignored
     }
 
     fn pre_online_power(&mut self, id: VehicleId, power: Option<i64>, now: Instant) {
@@ -5595,7 +5763,7 @@ impl VehicleScheduler {
         {
             observe_pre_online_power(&mut scheduled.pre_online, power, now);
             match scheduled.pre_online {
-                PreOnlineCheck::ConfirmedReal | PreOnlineCheck::FallbackReady => {
+                PreOnlineCheck::ConfirmedReal | PreOnlineCheck::OwnerApiReady => {
                     scheduled.next_poll = now;
                 }
                 PreOnlineCheck::ConfirmedFake { deadline } => {
@@ -5668,7 +5836,7 @@ impl VehicleScheduler {
                     PreOnlineCheck::Probing { .. }
                         | PreOnlineCheck::ConfirmedFake { .. }
                         | PreOnlineCheck::ConfirmedReal
-                        | PreOnlineCheck::FallbackReady
+                        | PreOnlineCheck::OwnerApiReady
                 )
         })
     }
@@ -6834,6 +7002,22 @@ mod tests {
         assert_eq!(
             fleet_failure_as_owner_error(&CollectorError::FleetApi(error)),
             OwnerApiError::HttpStatus(400)
+        );
+    }
+
+    #[test]
+    fn owner_collection_failure_preserves_power_gate_error_classification() {
+        assert_eq!(
+            owner_failure_for_collector_error(CollectorError::OwnerApiAuth(
+                OwnerApiAuthError::Owner(OwnerApiError::StreamPowerNotConfirmed),
+            )),
+            OwnerApiError::StreamPowerNotConfirmed
+        );
+        assert_eq!(
+            owner_failure_for_collector_error(CollectorError::OwnerApiAuth(
+                OwnerApiAuthError::NotSignedIn,
+            )),
+            OwnerApiError::LegacyAuth
         );
     }
 
@@ -10742,6 +10926,15 @@ mod tests {
         join_supervised_restart_task("collector join", &mut task)
             .await
             .expect("collector result");
+        wait_for_supervised_restart_condition("stream socket shutdown", || {
+            fake.stream_session_stats().active_sessions == 0
+        })
+        .await;
+        assert!(
+            fake.audited_stream_events()
+                .iter()
+                .any(|event| { event.event == crate::fake_tesla::StreamAuditEvent::Unsubscribe })
+        );
 
         let stored = store
             .load_teslamate_legacy_tokens()
@@ -11171,6 +11364,52 @@ mod tests {
     }
 
     #[test]
+    fn established_drive_keeps_owner_api_fallback_when_stream_fails() {
+        let now = Instant::now();
+        let asleep = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "asleep");
+        let online = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let id = online.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![asleep], now);
+        scheduler.accept_discovery(vec![online], now + Duration::from_secs(30));
+        scheduler.pre_online_power(id, Some(1), now + Duration::from_secs(31));
+        assert!(scheduler.requires_live_stream_power_gate(id));
+
+        scheduler.stream_healthy(id, now + Duration::from_secs(31));
+        scheduler.vehicle_succeeded(id, PollPhase::Driving, false, now + Duration::from_secs(32));
+        assert!(!scheduler.requires_live_stream_power_gate(id));
+
+        let outage = now + Duration::from_secs(33);
+        let StreamOutage::Active(first) = scheduler.stream_unhealthy(id, outage) else {
+            panic!("stream outage status");
+        };
+        assert_eq!(first.consecutive_failures, 1);
+        assert!(first.owner_api_fallback_scheduled);
+        assert!(!first.live_power_gate);
+        assert_eq!(first.phase, PollPhase::Driving);
+        assert_eq!(scheduler.due_vehicles(outage), vec![id]);
+        assert_eq!(
+            scheduler.vehicles[&id].pre_online,
+            PreOnlineCheck::OwnerApiReady
+        );
+
+        let StreamOutage::Active(second) =
+            scheduler.stream_unhealthy(id, outage + Duration::from_secs(2))
+        else {
+            panic!("second stream outage status");
+        };
+        assert_eq!(second.consecutive_failures, 2);
+        assert_eq!(second.outage_duration, Duration::from_secs(2));
+        let StreamRecovery::Recovered(recovery) =
+            scheduler.stream_healthy(id, outage + Duration::from_secs(3))
+        else {
+            panic!("stream recovery status");
+        };
+        assert_eq!(recovery.failures, 2);
+        assert_eq!(recovery.outage_duration, Duration::from_secs(3));
+    }
+
+    #[test]
     fn nil_power_pre_online_stream_remains_gated_after_deadline() {
         let now = Instant::now();
         let asleep = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "asleep");
@@ -11458,13 +11697,8 @@ mod tests {
         scheduler.stream_unhealthy(vehicle_id, fallback_at);
         assert!(!scheduler.vehicles[&vehicle_id].stream_healthy);
         assert!(!scheduler.vehicles[&vehicle_id].suspended);
-        assert!(scheduler.due_vehicles(fallback_at).is_empty());
-        scheduler.pre_online_power(vehicle_id, Some(1), fallback_at + Duration::from_secs(1));
-        assert!(
-            scheduler
-                .due_vehicles(fallback_at + Duration::from_secs(1))
-                .contains(&vehicle_id)
-        );
+        assert!(scheduler.due_vehicles(fallback_at).contains(&vehicle_id));
+        assert!(!scheduler.requires_live_stream_power_gate(vehicle_id));
         scheduler.vehicle_succeeded(vehicle_id, PollPhase::Online, false, fallback_at);
         let fallback_idle = fallback_at + Duration::from_secs(15 * 60);
         let suspended = scheduler
@@ -12171,6 +12405,29 @@ mod tests {
                 .due_vehicles(now + Duration::from_secs(8 * 60))
                 .contains(&first_id)
         );
+    }
+
+    #[test]
+    fn stream_power_gate_race_does_not_trip_owner_api_fuse() {
+        let now = Instant::now();
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+        scheduler.pre_online_power(id, Some(1), now);
+
+        for offset in 0..API_ERROR_LIMIT {
+            scheduler.vehicle_failed_for_error(
+                id,
+                &CollectorError::OwnerApiAuth(OwnerApiAuthError::Owner(
+                    OwnerApiError::StreamPowerNotConfirmed,
+                )),
+                now + Duration::from_secs(offset as u64),
+            );
+        }
+
+        assert!(scheduler.vehicle_fuses[&id].api_errors.is_empty());
+        assert!(scheduler.vehicle_fuses[&id].api_blown_until.is_none());
     }
 
     #[test]

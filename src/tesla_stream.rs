@@ -50,6 +50,11 @@ const STREAM_MAX_WRITE_BUFFER_BYTES: usize = 256 * 1024;
 const STREAM_MAX_FRAME_BYTES: usize = 64 * 1024;
 const STREAM_MAX_MESSAGE_BYTES: usize = 256 * 1024;
 const OVERSIZE_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
+/// A peer can briefly lose the vehicle-side stream while keeping the WebSocket
+/// alive. Resubscribe twice on that socket, then force a fresh transport. This
+/// bounds a stale-socket loop without turning one ordinary disconnect into
+/// connection churn.
+const VEHICLE_DISCONNECTED_RECONNECT_LIMIT: u32 = 3;
 
 #[derive(Clone, Copy)]
 struct SupervisorPolicy {
@@ -574,6 +579,12 @@ impl TeslaStreamSupervisor {
                         connect_receipt,
                         OutboundRequestOutcome::TransportError,
                     )?;
+                    tracing::warn!(
+                        vehicle_id = self.vehicle_id.get(),
+                        reason = "connect_failed",
+                        recovery = "reconnect_with_backoff",
+                        "Tesla stream transport unavailable"
+                    );
                     if self
                         .emit_event(StreamEvent::TransportUnavailable, shutdown)
                         .await?
@@ -600,6 +611,12 @@ impl TeslaStreamSupervisor {
                 }
                 Err(AccessTokenError::Unavailable) => {
                     let _ = socket.close(None).await;
+                    tracing::warn!(
+                        vehicle_id = self.vehicle_id.get(),
+                        reason = "access_token_temporarily_unavailable",
+                        recovery = "retry_with_backoff",
+                        "Tesla stream transport unavailable"
+                    );
                     if self
                         .emit_event(StreamEvent::TransportUnavailable, shutdown)
                         .await?
@@ -632,6 +649,12 @@ impl TeslaStreamSupervisor {
                     subscribe_receipt,
                     OutboundRequestOutcome::TransportError,
                 )?;
+                tracing::warn!(
+                    vehicle_id = self.vehicle_id.get(),
+                    reason = "subscribe_send_failed",
+                    recovery = "reconnect_with_backoff",
+                    "Tesla stream transport unavailable"
+                );
                 if self
                     .emit_event(StreamEvent::TransportUnavailable, shutdown)
                     .await?
@@ -647,6 +670,7 @@ impl TeslaStreamSupervisor {
 
             let mut subscribed = false;
             let mut subscribe_receipt = Some(subscribe_receipt);
+            let mut consecutive_vehicle_disconnects = 0_u32;
             let mut silence = Box::pin(sleep(self.policy.silence_timeout));
             let clean = loop {
                 tokio::select! {
@@ -659,6 +683,14 @@ impl TeslaStreamSupervisor {
                                 OutboundRequestOutcome::TransportError,
                             )?;
                         }
+                        tracing::warn!(
+                            vehicle_id = self.vehicle_id.get(),
+                            reason = "stream_silence_timeout",
+                            silence_timeout_ms = u64::try_from(self.policy.silence_timeout.as_millis())
+                                .unwrap_or(u64::MAX),
+                            recovery = "reconnect_socket",
+                            "Tesla stream transport unavailable"
+                        );
                         if self.emit_event(StreamEvent::TransportUnavailable, shutdown).await?.is_shutdown() {
                             return Ok(disconnected_termination(ever_subscribed));
                         }
@@ -687,6 +719,7 @@ impl TeslaStreamSupervisor {
                                 &mut remote_backoff,
                                 &mut connect_backoff,
                             ) {
+                                consecutive_vehicle_disconnects = 0;
                                 subscribed = true;
                                 ever_subscribed = true;
                                 // A raw WebSocket handshake proves transport
@@ -723,6 +756,24 @@ impl TeslaStreamSupervisor {
                             }
                             if terminal { break false; }
                             if matches!(data_error, Some(DataErrorCategory::VehicleDisconnected)) {
+                                consecutive_vehicle_disconnects =
+                                    consecutive_vehicle_disconnects.saturating_add(1);
+                                let force_reconnect = consecutive_vehicle_disconnects
+                                    >= VEHICLE_DISCONNECTED_RECONNECT_LIMIT;
+                                tracing::warn!(
+                                    vehicle_id = self.vehicle_id.get(),
+                                    consecutive_disconnects = consecutive_vehicle_disconnects,
+                                    recovery = if force_reconnect {
+                                        "reconnect_socket"
+                                    } else {
+                                        "resubscribe_same_socket"
+                                    },
+                                    "Tesla stream vehicle disconnected; recovery scheduled"
+                                );
+                                if force_reconnect {
+                                    let _ = socket.close(None).await;
+                                    break false;
+                                }
                                 if wait_or_shutdown(remote_backoff.next(), shutdown).await {
                                     return Ok(disconnected_termination(ever_subscribed));
                                 }
@@ -764,6 +815,12 @@ impl TeslaStreamSupervisor {
                                         receipt,
                                         OutboundRequestOutcome::TransportError,
                                     )?;
+                                    tracing::warn!(
+                                        vehicle_id = self.vehicle_id.get(),
+                                        reason = "resubscribe_send_failed",
+                                        recovery = "reconnect_socket",
+                                        "Tesla stream transport unavailable"
+                                    );
                                     let _ = socket.close(None).await;
                                     break false;
                                 }
@@ -826,6 +883,12 @@ impl TeslaStreamSupervisor {
                                     OutboundRequestOutcome::TransportError,
                                 )?;
                             }
+                            tracing::warn!(
+                                vehicle_id = self.vehicle_id.get(),
+                                reason = "socket_closed_or_read_failed",
+                                recovery = "reconnect_with_backoff",
+                                "Tesla stream transport unavailable"
+                            );
                             if self.emit_event(StreamEvent::TransportUnavailable, shutdown).await?.is_shutdown() {
                                 return Ok(disconnected_termination(ever_subscribed));
                             }
@@ -2264,6 +2327,98 @@ mod tests {
                 .unwrap(),
             Some(StreamEvent::TransportUnavailable)
         );
+        assert!(matches!(
+            timeout(Duration::from_secs(1), received.recv())
+                .await
+                .unwrap(),
+            Some(StreamEvent::Telemetry(_))
+        ));
+        stop.send(()).unwrap();
+        timeout(Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn repeated_vehicle_disconnects_force_a_fresh_socket_then_recover() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("ws://{}/streaming/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (tcp, _) = timeout(Duration::from_secs(1), listener.accept())
+                .await
+                .unwrap()
+                .unwrap();
+            let mut first = accept_async(tcp).await.unwrap();
+            assert!(matches!(
+                first.next().await.unwrap().unwrap(),
+                Message::Text(ref text) if text.contains("data:subscribe_oauth")
+            ));
+            for disconnect in 1..=VEHICLE_DISCONNECTED_RECONNECT_LIMIT {
+                first
+                    .send(Message::Text(
+                        r#"{"msg_type":"data:error","tag":"9","error_type":"vehicle_disconnected"}"#
+                            .into(),
+                    ))
+                    .await
+                    .unwrap();
+                if disconnect < VEHICLE_DISCONNECTED_RECONNECT_LIMIT {
+                    assert!(matches!(
+                        timeout(Duration::from_secs(1), first.next())
+                            .await
+                            .unwrap()
+                            .unwrap()
+                            .unwrap(),
+                        Message::Text(ref text) if text.contains("data:subscribe_oauth")
+                    ));
+                }
+            }
+            let (tcp, _) = timeout(Duration::from_secs(1), listener.accept())
+                .await
+                .expect("fresh transport timeout")
+                .expect("fresh transport");
+            let mut second = accept_async(tcp).await.unwrap();
+            assert!(matches!(
+                second.next().await.unwrap().unwrap(),
+                Message::Text(ref text) if text.contains("data:subscribe_oauth")
+            ));
+            second
+                .send(Message::Text(
+                    r#"{"msg_type":"data:update","tag":"9","timestamp":1700000000123,"value":"42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#.into(),
+                ))
+                .await
+                .unwrap();
+            assert!(matches!(
+                timeout(Duration::from_secs(1), second.next())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap(),
+                Message::Text(ref text) if text.contains("data:unsubscribe")
+            ));
+        });
+        let (events, mut received) = mpsc::channel(8);
+        let supervisor = legacy_supervisor(9, 9, endpoint, events)
+            .unwrap()
+            .with_policy(SupervisorPolicy {
+                connect_timeout: Duration::from_millis(100),
+                silence_timeout: Duration::from_secs(1),
+                backoff_initial: Duration::from_millis(5),
+                remote_backoff_cap: Duration::from_millis(10),
+                connect_backoff_cap: Duration::from_millis(10),
+            });
+        let (stop, shutdown) = oneshot::channel();
+        let task = tokio::spawn(supervisor.run(shutdown));
+        for _ in 0..VEHICLE_DISCONNECTED_RECONNECT_LIMIT {
+            assert_eq!(
+                timeout(Duration::from_secs(1), received.recv())
+                    .await
+                    .unwrap(),
+                Some(StreamEvent::TransportUnavailable)
+            );
+        }
         assert!(matches!(
             timeout(Duration::from_secs(1), received.recv())
                 .await

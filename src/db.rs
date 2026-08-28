@@ -3751,8 +3751,53 @@ impl HubStore {
         self.verify_referenced_packs()
     }
 
-    /// Read-only catalogue inventory for `doctor`. This never mutates SQLite,
-    /// TeslaMate, or stored tokens.
+    /// Bounded inventory for collector/serve startup logging. This avoids
+    /// parsing retained manifests and walking pack directories.
+    pub fn runtime_inventory(&self) -> Result<RuntimeInventory, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        let journal_mode = connection
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .map_err(StoreError::Query)?;
+        let retired_expiry_cutoff_ms = retired_lineage_clock_ms()?;
+        let referenced_packs: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM (
+                    SELECT sha256 AS digest FROM sync_packs
+                    UNION
+                    SELECT packs.pack_digest AS digest
+                      FROM sync_retired_lineage_packs AS packs
+                      JOIN sync_retired_lineages AS lineage
+                        ON lineage.vehicle_id = packs.vehicle_id
+                       AND lineage.head_digest = packs.head_digest
+                     WHERE lineage.expires_at_ms > ?1
+                 )",
+                params![retired_expiry_cutoff_ms],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        Ok(RuntimeInventory {
+            journal_mode,
+            vehicles: read_only_count(&connection, "SELECT COUNT(*) FROM vehicles")?,
+            raw_observations: read_only_count(
+                &connection,
+                "SELECT COUNT(*) FROM raw_observations",
+            )?,
+            quarantined_sessions: read_only_count(
+                &connection,
+                "SELECT COUNT(*) FROM vehicle_lifecycle_state WHERE quarantined != 0",
+            )?,
+            referenced_packs: u64::try_from(referenced_packs)
+                .map_err(|_| StoreError::InvalidStoredCount)?,
+            teslamate_legacy_token_rows: read_only_count(
+                &connection,
+                "SELECT COUNT(*) FROM teslamate_legacy_tokens",
+            )?,
+            fleet_token_rows: read_only_count(&connection, "SELECT COUNT(*) FROM fleet_tokens")?,
+        })
+    }
+
+    /// Full read-only catalogue inventory for `doctor`. This also validates
+    /// retained-lineage bindings and inventories physical pack files.
     pub fn catalogue_inventory(&self) -> Result<CatalogueInventory, StoreError> {
         let connection = self.open_read_only_connection()?;
         // SQLite reports `delete` for an `immutable=1` handle even when the
@@ -10667,6 +10712,97 @@ impl HubStore {
         Ok(OutboundRequestWatermark { receipt_id })
     }
 
+    /// Bounded, redacted stream health aggregate for operator diagnostics.
+    /// Reads only typed receipt metadata; no URL, token, payload, or free-form
+    /// provider error is stored or returned.
+    pub fn stream_audit_summary_since(
+        &self,
+        since_ms: i64,
+    ) -> Result<StreamAuditSummary, StoreError> {
+        if since_ms < 0 {
+            return Err(StoreError::InvalidStreamAuditWindow);
+        }
+        let connection = self.open_read_only_connection()?;
+        let outbound: (i64, i64, i64, i64, i64, i64, i64, i64, Option<i64>, Option<i64>) =
+            connection
+                .query_row(
+                    "SELECT
+                        COUNT(*) FILTER (WHERE operation = 'stream_connect'),
+                        COUNT(*) FILTER (WHERE operation = 'stream_connect' AND outcome = 'success'),
+                        COUNT(*) FILTER (WHERE operation = 'stream_subscribe'),
+                        COUNT(*) FILTER (WHERE operation = 'stream_subscribe' AND outcome = 'success'),
+                        COUNT(*) FILTER (WHERE outcome = 'transport_error'),
+                        COUNT(*) FILTER (WHERE outcome = 'authentication_rejected'),
+                        COUNT(*) FILTER (WHERE outcome = 'protocol_error'),
+                        COUNT(*) FILTER (WHERE outcome = 'started'),
+                        MAX(CASE WHEN operation = 'stream_subscribe' AND outcome = 'success'
+                                 THEN completed_at_ms END),
+                        MAX(CASE WHEN outcome IN (
+                                'transport_error', 'authentication_rejected', 'protocol_error'
+                            ) THEN completed_at_ms END)
+                     FROM outbound_request_receipts
+                     WHERE transport = 'stream' AND started_at_ms >= ?1",
+                    params![since_ms],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                            row.get(6)?,
+                            row.get(7)?,
+                            row.get(8)?,
+                            row.get(9)?,
+                        ))
+                    },
+                )
+                .map_err(StoreError::OutboundRequestReceipt)?;
+        let sessions: (i64, i64, i64, i64, i64, i64) = connection
+            .query_row(
+                "SELECT COUNT(*),
+                        COUNT(*) FILTER (WHERE outcome = 'started'),
+                        COUNT(*) FILTER (WHERE outcome = 'orderly_shutdown'),
+                        COUNT(*) FILTER (WHERE outcome = 'transport_ended'),
+                        COUNT(*) FILTER (WHERE outcome = 'failed'),
+                        COUNT(*) FILTER (WHERE outcome = 'cancelled_before_subscription')
+                   FROM stream_session_receipts WHERE started_at_ms >= ?1",
+                params![since_ms],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .map_err(StoreError::StreamSessionReceipt)?;
+        let count = |value: i64| u64::try_from(value).map_err(|_| StoreError::InvalidStoredCount);
+        Ok(StreamAuditSummary {
+            since_ms,
+            connect_attempts: count(outbound.0)?,
+            successful_connects: count(outbound.1)?,
+            subscribe_attempts: count(outbound.2)?,
+            successful_subscriptions: count(outbound.3)?,
+            transport_errors: count(outbound.4)?,
+            authentication_rejections: count(outbound.5)?,
+            protocol_errors: count(outbound.6)?,
+            unresolved_attempts: count(outbound.7)?,
+            last_subscription_success_at_ms: outbound.8,
+            last_failure_at_ms: outbound.9,
+            sessions: count(sessions.0)?,
+            unresolved_sessions: count(sessions.1)?,
+            orderly_shutdowns: count(sessions.2)?,
+            transport_ended_sessions: count(sessions.3)?,
+            failed_sessions: count(sessions.4)?,
+            cancelled_before_subscription_sessions: count(sessions.5)?,
+        })
+    }
+
     /// Persist an outbound-request attempt before the caller performs network
     /// I/O. This API deliberately accepts only typed classifications and
     /// numeric metadata: URLs, headers, tokens, bodies, response payloads, and
@@ -13950,6 +14086,19 @@ pub struct RepairReport {
     pub freed_bytes: u64,
 }
 
+/// Bounded startup facts. Unlike `CatalogueInventory`, this intentionally
+/// avoids parsing retained manifests and walking pack directories.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeInventory {
+    pub journal_mode: String,
+    pub vehicles: u64,
+    pub raw_observations: u64,
+    pub quarantined_sessions: u64,
+    pub referenced_packs: u64,
+    pub teslamate_legacy_token_rows: u64,
+    pub fleet_token_rows: u64,
+}
+
 /// Read-only catalogue facts used by `doctor`. Counts and PRAGMA values only;
 /// this never hashes packs and never mutates tokens or TeslaMate.
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
@@ -14480,6 +14629,28 @@ impl StreamSessionTerminalOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutboundRequestWatermark {
     pub receipt_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamAuditSummary {
+    pub since_ms: i64,
+    pub connect_attempts: u64,
+    pub successful_connects: u64,
+    pub subscribe_attempts: u64,
+    pub successful_subscriptions: u64,
+    pub transport_errors: u64,
+    pub authentication_rejections: u64,
+    pub protocol_errors: u64,
+    pub unresolved_attempts: u64,
+    pub last_subscription_success_at_ms: Option<i64>,
+    pub last_failure_at_ms: Option<i64>,
+    pub sessions: u64,
+    pub unresolved_sessions: u64,
+    pub orderly_shutdowns: u64,
+    pub transport_ended_sessions: u64,
+    pub failed_sessions: u64,
+    pub cancelled_before_subscription_sessions: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19314,6 +19485,8 @@ pub enum StoreError {
     InvalidOutboundRequestRetryAfter,
     #[error("outbound request watermark must be non-negative")]
     InvalidOutboundRequestWatermark,
+    #[error("stream audit diagnostic window must be non-negative")]
+    InvalidStreamAuditWindow,
     #[error("outbound request query limit {actual} must be between 1 and {maximum}")]
     InvalidOutboundRequestQueryLimit { actual: u32, maximum: u32 },
     #[error("outbound request audit has no room without deleting an unresolved receipt")]
@@ -19529,6 +19702,15 @@ mod tests {
                 .is_some(),
             fleet_before
         );
+
+        let runtime = store.runtime_inventory().expect("runtime inventory");
+        assert_eq!(runtime.journal_mode, "wal");
+        assert_eq!(runtime.vehicles, 0);
+        assert_eq!(runtime.raw_observations, 0);
+        assert_eq!(runtime.quarantined_sessions, 0);
+        assert_eq!(runtime.referenced_packs, 0);
+        assert_eq!(runtime.teslamate_legacy_token_rows, 0);
+        assert_eq!(runtime.fleet_token_rows, 0);
     }
 
     #[test]
@@ -21124,6 +21306,70 @@ mod tests {
                 .receipt_id,
             0
         );
+    }
+
+    #[test]
+    fn stream_audit_summary_reports_recovery_and_unresolved_sessions_without_payloads() {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let store = HubStore::initialize(temporary.path()).expect("store initializes");
+        let correlation_id = Uuid::new_v4();
+        let complete = |operation, outcome| {
+            let receipt = store
+                .begin_outbound_request(&OutboundRequestStart {
+                    correlation_id,
+                    vehicle_tesla_id: Some(9),
+                    transport: OutboundRequestTransport::Stream,
+                    operation,
+                    safety_class: OutboundRequestSafetyClass::NonWakeEndpoint,
+                    precondition: OutboundRequestPrecondition::NotRequired,
+                })
+                .expect("stream attempt begins");
+            store
+                .complete_outbound_request(
+                    receipt,
+                    &OutboundRequestCompletion {
+                        outcome,
+                        http_status: None,
+                        retry_after_seconds: None,
+                    },
+                )
+                .expect("stream attempt completes");
+        };
+        complete(
+            OutboundRequestOperation::StreamConnect,
+            OutboundRequestOutcome::Success,
+        );
+        complete(
+            OutboundRequestOperation::StreamSubscribe,
+            OutboundRequestOutcome::TransportError,
+        );
+        complete(
+            OutboundRequestOperation::StreamSubscribe,
+            OutboundRequestOutcome::Success,
+        );
+        store
+            .begin_stream_session(correlation_id, 9)
+            .expect("stream session begins");
+
+        let summary = store
+            .stream_audit_summary_since(0)
+            .expect("stream diagnostic summary");
+        assert_eq!(summary.connect_attempts, 1);
+        assert_eq!(summary.successful_connects, 1);
+        assert_eq!(summary.subscribe_attempts, 2);
+        assert_eq!(summary.successful_subscriptions, 1);
+        assert_eq!(summary.transport_errors, 1);
+        assert_eq!(summary.authentication_rejections, 0);
+        assert_eq!(summary.protocol_errors, 0);
+        assert_eq!(summary.unresolved_attempts, 0);
+        assert_eq!(summary.sessions, 1);
+        assert_eq!(summary.unresolved_sessions, 1);
+        assert!(summary.last_subscription_success_at_ms.is_some());
+        assert!(summary.last_failure_at_ms.is_some());
+        assert!(matches!(
+            store.stream_audit_summary_since(-1),
+            Err(StoreError::InvalidStreamAuditWindow)
+        ));
     }
 
     #[test]
