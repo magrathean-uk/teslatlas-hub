@@ -231,7 +231,8 @@ printf 'address=%s\n' "$(encode "$db_ip")"
                                             "error_code": HubAppLog.errorCode(error),
                                             "reason": reason
                                         ])
-                try? FileManager.default.removeItem(at: resources.temporaryDirectory)
+                removeTemporaryDirectory(resources.temporaryDirectory,
+                                         context: "discovery_failed")
                 DispatchQueue.main.async {
                     completion(.failure(HubActionError.commandFailed(
                         discoveryFailureMessage(error)
@@ -256,7 +257,8 @@ printf 'address=%s\n' "$(encode "$db_ip")"
                     HubAppLog.shared.record("ssh.tunnel.failed", category: "teslamate_import",
                                             level: "ERROR",
                                             fields: ["error_code": HubAppLog.errorCode(error)])
-                    try? FileManager.default.removeItem(at: resources.temporaryDirectory)
+                    removeTemporaryDirectory(resources.temporaryDirectory,
+                                             context: "discovery_parse_failed")
                     DispatchQueue.main.async { completion(.failure(error)) }
                 }
             }
@@ -321,7 +323,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
                 )
             }
         } catch {
-            try? manager.removeItem(at: directory)
+            removeTemporaryDirectory(directory, context: "credential_prepare_failed")
             throw error
         }
     }
@@ -371,8 +373,21 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
                 temporaryDirectory: directory
             )
         } catch {
-            try? manager.removeItem(at: directory)
+            removeTemporaryDirectory(directory, context: "session_setup_failed")
             throw error
+        }
+    }
+
+    private static func removeTemporaryDirectory(_ directory: URL, context: String) {
+        do {
+            try FileManager.default.removeItem(at: directory)
+        } catch {
+            HubAppLog.shared.record("temporary_files.cleanup_failed",
+                                    category: "teslamate_import", level: "WARN",
+                                    fields: [
+                                        "context": context,
+                                        "error_code": HubAppLog.errorCode(error)
+                                    ])
         }
     }
 
