@@ -43,8 +43,8 @@ use crate::{
         HubStore, ObservationInput, OutboundRequestCompletion, OutboundRequestOperation,
         OutboundRequestOutcome, OutboundRequestPrecondition, OutboundRequestSafetyClass,
         OutboundRequestStart, OutboundRequestTransport, SUPERVISED_COLLECTOR_HEARTBEAT_INTERVAL,
-        SourceDescriptor, StoreError, StreamObservationResult, SupervisedCollectorLease,
-        SupervisedCollectorState, VehicleDescriptor,
+        SourceDescriptor, StoreError, StreamObservationResult, StreamObservationWriter,
+        SupervisedCollectorLease, SupervisedCollectorState, VehicleDescriptor,
     },
     fleet_api::{
         FleetApi, FleetApiConfigError, FleetApiError, FleetAuthApi, FleetCommand,
@@ -137,6 +137,10 @@ const GENERIC_ONLINE_RETRY: Duration = Duration::from_secs(20);
 const GENERIC_OTHER_RETRY: Duration = Duration::from_secs(30);
 const RETRY_OVERFLOW_FALLBACK: Duration = Duration::from_secs(100 * 365 * 24 * 60 * 60);
 const STREAM_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+// Raw stream observations commit immediately. Derived client sync packs can
+// coalesce briefly so a high-rate stream does not create one immutable pack
+// per frame and repeatedly compact a nearly-full imported lineage.
+const STREAM_EXPORT_REPLAY_INTERVAL: Duration = Duration::from_secs(60);
 // Keep a continuously noisy stream from monopolising the collection loop.
 // The channel absorbs bounded network/address work while the 100 ms active
 // drain cadence keeps normal Tesla telemetry well below capacity.
@@ -3400,6 +3404,7 @@ where
     let mut stream_authentication_rejected = false;
     let mut logical_legacy_sign_out = false;
     let mut stream_projection_car_ids = HashMap::new();
+    let mut next_stream_export_replay = Instant::now();
 
     let (mut collection_result, heartbeat_finished, terrain_finished) = {
         let resident_control_loop = async {
@@ -3452,10 +3457,12 @@ where
                 if let Some(error) = stream_drain.terminal_error {
                     return Err(error);
                 }
-                if stream_drain.backlog {
+                if stream_drain.backlog && !scheduler.has_due_stream_fallback(Instant::now()) {
                     // Drain a noisy stream to below the bounded queue before
                     // beginning Owner API, projection, or enrichment work.
-                    // This keeps collection work from starving the receiver.
+                    // A proven stream outage is the exception: its Owner API
+                    // fallback must not starve behind the same backlog it is
+                    // meant to cover.
                     tokio::task::yield_now().await;
                     continue;
                 }
@@ -3773,6 +3780,15 @@ where
                     );
                 }
 
+                if stream_drain.backlog {
+                    // After the outage fallback has had one chance to persist
+                    // a current snapshot, return directly to the stream queue.
+                    // Publication and enrichment can wait until the bounded
+                    // receiver has caught up.
+                    tokio::task::yield_now().await;
+                    continue;
+                }
+
                 let delay = scheduler.delay_until_next_action(Instant::now());
                 let vehicles = scheduler.vehicles();
                 assert_runtime_sensitive_access(runtime_admission.as_deref())?;
@@ -3785,8 +3801,12 @@ where
                     runtime_admission.as_ref(),
                 )
                 .await?;
-                replay_export_outbox(store, &cursor_key, &vehicles, current_epoch_millis()?)
-                    .await?;
+                let export_now = Instant::now();
+                if streams.is_empty() || export_now >= next_stream_export_replay {
+                    replay_export_outbox(store, &cursor_key, &vehicles, current_epoch_millis()?)
+                        .await?;
+                    next_stream_export_replay = export_now + STREAM_EXPORT_REPLAY_INTERVAL;
+                }
                 if !delay.is_zero() {
                     let cap = collection_sleep_cap(!streams.is_empty());
                     sleep(delay.min(cap)).await;
@@ -3993,6 +4013,23 @@ async fn replay_export_outbox(
     now_ms: i64,
 ) -> Result<usize, CollectorError> {
     let publication_gate = store.acquire_publication_gate().await?;
+    let store = store.clone();
+    let cursor_key = cursor_key.clone();
+    let vehicles = vehicles.to_vec();
+    tokio::task::spawn_blocking(move || {
+        replay_export_outbox_blocking(&store, &publication_gate, &cursor_key, &vehicles, now_ms)
+    })
+    .await
+    .map_err(|_| CollectorError::ExportPublicationTask)?
+}
+
+fn replay_export_outbox_blocking(
+    store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
+    cursor_key: &CursorKey,
+    vehicles: &[Vehicle],
+    now_ms: i64,
+) -> Result<usize, CollectorError> {
     let Some(claim) = store.claim_export_outbox(now_ms)? else {
         return Ok(0);
     };
@@ -4049,7 +4086,7 @@ async fn replay_export_outbox(
         snapshots: vec![],
         failures: vec![],
     };
-    match publish_compatibility_snapshots(store, &publication_gate, cursor_key, &collection, now_ms)
+    match publish_compatibility_snapshots(store, publication_gate, cursor_key, &collection, now_ms)
     {
         Ok(_) => {
             store.complete_export_outbox(&claim)?;
@@ -4759,13 +4796,13 @@ fn process_stream_telemetry_with_cache(
         update.power,
         Instant::now(),
     );
-    let context = if let Some(context) = projection_car_ids.get(&vehicle_id) {
-        *context
-    } else {
+    if let std::collections::hash_map::Entry::Vacant(entry) = projection_car_ids.entry(vehicle_id) {
         let context = stream_context(store, vehicle_id)?;
-        projection_car_ids.insert(vehicle_id, context);
-        context
-    };
+        entry.insert(context);
+    }
+    let context = projection_car_ids
+        .get_mut(&vehicle_id)
+        .expect("stream context is present after insertion");
     persist_stream_update_with_projection(store, vehicle_id, update, Some(context))
 }
 
@@ -4778,11 +4815,11 @@ fn persist_stream_update(
     persist_stream_update_with_projection(store, vehicle_id, update, None)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct StreamContext {
     source_id: Uuid,
     registered_vehicle_id: Uuid,
     selected_car_id: i64,
+    writer: StreamObservationWriter,
 }
 
 fn stream_context(
@@ -4807,6 +4844,7 @@ fn stream_context(
             registered.vehicle_id,
             vehicle_id.get(),
         )?,
+        writer: store.stream_observation_writer()?,
     })
 }
 
@@ -4814,7 +4852,7 @@ fn persist_stream_update_with_projection(
     store: &HubStore,
     vehicle_id: VehicleId,
     update: &crate::tesla_stream::StreamUpdate,
-    context: Option<StreamContext>,
+    mut context: Option<&mut StreamContext>,
 ) -> Result<bool, CollectorError> {
     let received_at_ms = current_epoch_millis()?;
     let maximum = received_at_ms.saturating_add(FUTURE_TIMESTAMP_SKEW_MS);
@@ -4826,7 +4864,7 @@ fn persist_stream_update_with_projection(
         );
         return Ok(false);
     }
-    let (source_id, registered_vehicle_id, pack_car_id) = if let Some(context) = context {
+    let (source_id, registered_vehicle_id, pack_car_id) = if let Some(context) = context.as_ref() {
         (
             context.source_id,
             context.registered_vehicle_id,
@@ -4848,16 +4886,17 @@ fn persist_stream_update_with_projection(
             projection_car_id_for_vehicle(store, registered.vehicle_id, vehicle_id.get())?,
         )
     };
-    let result = store.accept_stream_observation_and_lifecycle(
-        &ObservationInput {
-            source_id,
-            vehicle_id: registered_vehicle_id,
-            observed_at_ms: update.timestamp_ms,
-            payload: stream_observation_payload(update),
-        },
-        received_at_ms,
-        pack_car_id,
-    )?;
+    let input = ObservationInput {
+        source_id,
+        vehicle_id: registered_vehicle_id,
+        observed_at_ms: update.timestamp_ms,
+        payload: stream_observation_payload(update),
+    };
+    let result = if let Some(context) = context.as_mut() {
+        context.writer.accept(&input, received_at_ms, pack_car_id)?
+    } else {
+        store.accept_stream_observation_and_lifecycle(&input, received_at_ms, pack_car_id)?
+    };
     if matches!(result, StreamObservationResult::IgnoredDuplicate) {
         tracing::debug!(
             vehicle_id = vehicle_id.get(),
@@ -5370,6 +5409,14 @@ impl VehicleScheduler {
             .into_iter()
             .filter(|id| self.vehicle_fuse_healthy(*id, now))
             .collect()
+    }
+
+    fn has_due_stream_fallback(&mut self, now: Instant) -> bool {
+        self.due_vehicles(now).into_iter().any(|id| {
+            self.vehicles.get(&id).is_some_and(|scheduled| {
+                scheduled.settings.use_streaming_api && !scheduled.stream_healthy
+            })
+        })
     }
 
     fn schedule_offline_state_fetch(&mut self, id: VehicleId, now: Instant) {
@@ -6894,6 +6941,8 @@ pub enum CollectorError {
     SupervisedHeartbeatTask,
     #[error("terrain worker stopped unexpectedly")]
     TerrainWorkerTask,
+    #[error("export publication worker stopped unexpectedly")]
+    ExportPublicationTask,
     #[error("vehicle stream task stopped unexpectedly: {0}")]
     StreamTask(StreamTaskOutcome),
     #[error("terrain worker failed during local startup")]
@@ -11388,6 +11437,7 @@ mod tests {
         assert!(!first.live_power_gate);
         assert_eq!(first.phase, PollPhase::Driving);
         assert_eq!(scheduler.due_vehicles(outage), vec![id]);
+        assert!(scheduler.has_due_stream_fallback(outage));
         assert_eq!(
             scheduler.vehicles[&id].pre_online,
             PreOnlineCheck::OwnerApiReady
@@ -11407,6 +11457,7 @@ mod tests {
         };
         assert_eq!(recovery.failures, 2);
         assert_eq!(recovery.outage_duration, Duration::from_secs(3));
+        assert!(!scheduler.has_due_stream_fallback(outage + Duration::from_secs(3)));
     }
 
     #[test]

@@ -237,6 +237,30 @@ pub struct HubStore {
     projection_state_detach_fault: Arc<Mutex<bool>>,
 }
 
+/// One collector-owned SQLite handle for high-rate stream writes. Each
+/// observation still commits independently; only repeated connection setup,
+/// schema reads, and PRAGMA work leave the hot path.
+pub(crate) struct StreamObservationWriter {
+    store: HubStore,
+    connection: Connection,
+}
+
+impl StreamObservationWriter {
+    pub(crate) fn accept(
+        &mut self,
+        input: &ObservationInput,
+        received_at_ms: i64,
+        car_id: i64,
+    ) -> Result<StreamObservationResult, StoreError> {
+        self.store.accept_stream_observation_and_lifecycle_on(
+            &mut self.connection,
+            input,
+            received_at_ms,
+            car_id,
+        )
+    }
+}
+
 /// One encrypted TeslaMate legacy OAuth pair plus its refresh schedule.
 /// Schedule values are epoch seconds. Ciphertext must not be logged or formatted.
 #[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
@@ -11527,13 +11551,35 @@ impl HubStore {
         received_at_ms: i64,
         car_id: i64,
     ) -> Result<StreamObservationResult, StoreError> {
+        let mut connection = self.open()?;
+        self.accept_stream_observation_and_lifecycle_on(
+            &mut connection,
+            input,
+            received_at_ms,
+            car_id,
+        )
+    }
+
+    pub(crate) fn stream_observation_writer(&self) -> Result<StreamObservationWriter, StoreError> {
+        Ok(StreamObservationWriter {
+            store: self.clone(),
+            connection: self.open()?,
+        })
+    }
+
+    fn accept_stream_observation_and_lifecycle_on(
+        &self,
+        connection: &mut Connection,
+        input: &ObservationInput,
+        received_at_ms: i64,
+        car_id: i64,
+    ) -> Result<StreamObservationResult, StoreError> {
         input.validate()?;
         validate_timestamp("observation received_at_ms", received_at_ms)?;
         if car_id <= 0 {
             return Err(StoreError::InvalidLifecycleCarId);
         }
 
-        let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
