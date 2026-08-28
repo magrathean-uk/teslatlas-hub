@@ -356,7 +356,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(dashboard.importButton.isEnabled)
         XCTAssertFalse(dashboard.detailsButton.isEnabled)
         XCTAssertTrue(detailsMutations.allSatisfy { !$0.isEnabled })
-        for title in ["Stop Hub", "Restart", "Start Climate", "Wake", "Lock"] {
+        for title in ["Stop Hub…", "Start Climate", "Wake", "Lock"] {
             let button = try XCTUnwrap(buttons(in: dashboard.window?.contentView)
                 .first { $0.title == title })
             XCTAssertFalse(button.isEnabled, "\(title) remained active during account setup")

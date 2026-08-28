@@ -687,8 +687,6 @@ final class LaunchctlServiceController: HubServiceControlling {
             switch result {
             case .success:
                 if commands[index].first == "bootout",
-                   commands.indices.contains(index + 1),
-                   commands[index + 1].first == "bootstrap",
                    commands[index].count == 2 {
                     self?.waitUntilUnloaded(service: commands[index][1],
                                             attemptsRemaining: 100) { waitResult in
@@ -721,7 +719,7 @@ final class LaunchctlServiceController: HubServiceControlling {
                 }
             case .success(true):
                 completion(.failure(HubActionError.commandFailed(
-                    "Hub service did not finish stopping before restart."
+                    "Hub service did not finish stopping."
                 )))
             case let .failure(error): completion(.failure(error))
             }

@@ -353,13 +353,14 @@ final class HubControllerTests: XCTestCase {
             XCTAssertEqual(snapshot.health, .stopped)
             let copy = self.labels(in: dashboard?.window?.contentView).map(\.stringValue)
             XCTAssertTrue(copy.contains("Hub is stopped"))
-            XCTAssertTrue(copy.contains("Teslatlas Hub is stopped."))
+            XCTAssertTrue(copy.contains("Vehicle data is not being collected."))
             XCTAssertFalse(copy.contains { $0.localizedCaseInsensitiveContains("setup required") })
             XCTAssertFalse(copy.contains { $0.localizedCaseInsensitiveContains("needs attention") })
             let start = self.buttons(in: dashboard?.window?.contentView)
                 .first { $0.title == "Start Hub" }
             XCTAssertEqual(start?.keyEquivalent, "\r")
             XCTAssertTrue(dashboard?.window?.defaultButtonCell === start?.cell)
+            XCTAssertNotNil(start?.layer?.backgroundColor)
             settled.fulfill()
         }
 
@@ -625,6 +626,10 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
                 .allSatisfy { !$0.isBordered })
             XCTAssertNil(windowController.window?.defaultButtonCell)
+            XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
+                .contains { $0.title == "Stop Hub…" && !$0.isHidden })
+            XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
+                .contains { $0.title == "Restart Hub" && $0.isHidden })
             XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
                 .contains { $0.keyEquivalent == "\r" })
             XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
@@ -635,6 +640,65 @@ final class HubControllerTests: XCTestCase {
             settled.fulfill()
         }
         wait(for: [settled], timeout: 1)
+    }
+
+    func testStartShowsProgressImmediatelyAndSettlesToRunning() {
+        let status = """
+        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        """
+        let installed = RecordingCommandRunner(result: .success(status))
+        let service = PendingServiceRunner(loadState: .unloaded)
+        let controller = HubController(installedCommandRunner: installed,
+                                       serviceRunner: service,
+                                       serviceInstalledOverride: true)
+        let loaded = expectation(description: "stopped dashboard loaded")
+        var dashboard: MainWindowController?
+        dashboard = MainWindowController(controller: controller) { _ in loaded.fulfill() }
+        wait(for: [loaded], timeout: 1)
+
+        let start = buttons(in: dashboard?.window?.contentView)
+            .first { $0.title == "Start Hub" }
+        XCTAssertNotNil(start)
+        start?.performClick(nil)
+        XCTAssertTrue(labels(in: dashboard?.window?.contentView)
+            .contains { $0.stringValue == "Starting Hub…" })
+        XCTAssertTrue(labels(in: dashboard?.window?.contentView)
+            .contains { $0.stringValue == "Preparing vehicle data collection." })
+        XCTAssertFalse(dashboard?.connectButton.isEnabled ?? true)
+        XCTAssertFalse(dashboard?.importButton.isEnabled ?? true)
+
+        service.loadState = .loaded
+        service.complete(.success(""))
+        let running = expectation(description: "running dashboard settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            XCTAssertTrue(self.labels(in: dashboard?.window?.contentView)
+                .contains { $0.stringValue == "Collecting vehicle data" })
+            XCTAssertTrue(self.labels(in: dashboard?.window?.contentView)
+                .contains { $0.stringValue == "Hub runs in the background. You can close this window." })
+            running.fulfill()
+        }
+        wait(for: [running], timeout: 1)
+        withExtendedLifetime(dashboard) {}
+    }
+
+    func testDegradedDashboardLeadsWithDiagnosticsAndKeepsRecoverySecondary() {
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.health = .degraded
+        snapshot.service = "Installed · needs attention"
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                                       initialSnapshot: snapshot)
+        let dashboard = MainWindowController(controller: controller)
+        let buttons = self.buttons(in: dashboard.window?.contentView)
+        let diagnostics = buttons.first { $0.title == "Run Diagnostics" && !$0.isHidden }
+        let restart = buttons.first { $0.title == "Restart Hub" && !$0.isHidden }
+        let stop = buttons.first { $0.title == "Stop Hub…" && !$0.isHidden }
+
+        XCTAssertNotNil(diagnostics)
+        XCTAssertNotNil(restart)
+        XCTAssertNotNil(stop)
+        XCTAssertTrue(dashboard.window?.defaultButtonCell === diagnostics?.cell)
+        XCTAssertEqual(restart?.keyEquivalent, "")
+        XCTAssertEqual(stop?.keyEquivalent, "")
     }
 
     func testLegacyDashboardHidesVehicleControls() {
@@ -698,6 +762,15 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(alert.buttons.map(\.title), ["Cancel", "Disconnect"])
         XCTAssertEqual(alert.buttons.first?.keyEquivalent, "\r")
         XCTAssertNotEqual(alert.buttons.last?.keyEquivalent, "\r")
+    }
+
+    func testStopHubConfirmationExplainsCollectionAndDefaultsToCancel() {
+        let alert = MainWindowController.stopHubConfirmation()
+        XCTAssertEqual(alert.messageText, "Stop collecting vehicle data?")
+        XCTAssertTrue(alert.informativeText.contains("history stays safe"))
+        XCTAssertEqual(alert.buttons.map(\.title), ["Cancel", "Stop Hub"])
+        XCTAssertEqual(alert.buttons.first?.keyEquivalent, "\r")
+        XCTAssertEqual(alert.buttons.last?.keyEquivalent, "")
     }
 
     func testAmbiguousClimateFailureWarnsAgainstRetry() {
@@ -1736,6 +1809,29 @@ private final class RecordingCommandRunner: HubCommandRunning {
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         self.arguments.append(arguments)
         completion(result)
+    }
+}
+
+private final class PendingServiceRunner: HubServiceControlling {
+    var loadState: HubServiceLoadState
+    private var completion: ((Result<String, Error>) -> Void)?
+
+    init(loadState: HubServiceLoadState) {
+        self.loadState = loadState
+    }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        self.completion = completion
+    }
+
+    func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
+        completion(loadState)
+    }
+
+    func complete(_ result: Result<String, Error>) {
+        let completion = completion
+        self.completion = nil
+        completion?(result)
     }
 }
 

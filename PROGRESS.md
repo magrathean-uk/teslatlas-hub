@@ -1,5 +1,18 @@
 # Hub progress
 
+- Start/stop UX and state settlement complete. An intentional stop is a normal
+  orange stopped state, never Attention needed. Start, Stop, and Restart now
+  render immediate progress states, disable conflicting mutations, poll until
+  the intended real service state is observed, and then publish the stable
+  dashboard. Stop waits for launchd to prove the job unloaded and requires a
+  clear confirmation explaining that collection pauses while history remains
+  safe. Stopped has one centered blue Start action; running has one secondary
+  Stop action; Restart and a primary Diagnostics action appear only when the
+  service needs recovery. A stopped vehicle is shown as stale/gray rather than
+  falsely live/green. The installed package completed a live Start, running,
+  confirmed Stop, and stopped replay without a false failure; Hub ended
+  unloaded.
+
 - Legacy-token command gating complete. The macOS dashboard keeps the vehicle
   status card but does not render climate, wake, lock, unlock, flash, or horn
   controls unless the configured provider is Fleet API. The controller also
@@ -18,7 +31,7 @@
   refresh requested while another is in flight, so Stop cannot leave a stale
   running dashboard. Live launchd proof
   reached ready in under one second for Start and Restart, preserved the PID on
-  idempotent Start, and left Hub stopped. All 107 AppKit tests and macOS
+  idempotent Start, and left Hub stopped. All 110 AppKit tests and macOS
   packaging checks pass.
 
 - Cmd-L support diagnostics complete — the native Mac app now keeps one bounded
@@ -79,32 +92,33 @@ legacy credentials, a 2,065,952,768-byte SQLite catalogue, and the normal
 60-second collector interval. The explicit handover gate completed. VPS
 TeslaMate 4.1.1 and TeslaMateAPI are both healthy; TeslaMate is again the only
 active legacy-token owner. The installed app binary SHA-256 is
-`088fab951b39783b5930af4688e16c0bb3909870c4e1bd444b1a05d0d31291f2`.
+`b2f153d9d17a087444306b2159ca163bb58c58ec57edbfec04d4c626466d48d6`.
 The current local installer SHA-256 is
-`785dcb1d3d245152c9a0484283f653da4c7013fa7601ce0eb71762eb5c772957`.
-It is a 66,712,720-byte ad-hoc development package, not a notarized release.
+`7cfa864a10912b1c77d8a8b096216b7d727a7349112b7cadd994f3ee0659354c`.
+It is a 66,726,454-byte ad-hoc development package, not a notarized release.
 
 Current verification on 2026-08-28: full locked Rust tests passed (838 library,
 50 CLI, one TLS integration, and 3 doc tests; 2 intentional fixtures ignored),
 Clippy passed with `-D warnings`, and the optimized release build passed. All
-107 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux
+110 AppKit tests and Xcode 27 beta static analysis passed. macOS and Linux
 packaging source, macOS release, release-evidence, and dependency-audit gates
 passed. The current
 package expands with the app and root service payload in their exact paths,
 contains no AppleDouble or Finder metadata, and its ad-hoc app signature passes
 deep strict verification. The current built app binary SHA-256 is
-`088fab951b39783b5930af4688e16c0bb3909870c4e1bd444b1a05d0d31291f2`.
+`b2f153d9d17a087444306b2159ca163bb58c58ec57edbfec04d4c626466d48d6`.
 Its embedded Hub SHA-256 is
 `c9b6176c0ce6602699cd521fe0e8bdebb65b2902a2d27427df6d432ed42043ef`;
 the root service payload Hub SHA-256 is
 `347ea11b5c1c77e2fd090a5212ec08040cc7e6e5eddb2fd803446823c9e76e36`.
 The exact packaged root Hub also passed isolated bootstrap, status, and all
-seven doctor checks with a zero-byte WAL and no ANSI output. The final live UI
-replay was unavailable because the Mac was locked; the earlier packaged Cmd-L
-acceptance and the exact-source 105-test suite remain the UI evidence.
+seven doctor checks with a zero-byte WAL and no ANSI output. The installed UI
+completed the full stopped, Start, running, Stop confirmation, and stopped
+flow. Its accessibility tree matched each stable state and exposed no legacy
+vehicle-command controls.
 The corrected package upgraded the existing installation without error,
 auto-opened the exact app under `/Applications`, installed app binary SHA-256
-`0354dc1212283f3760204020d1b00f68a75e1354fa0d93d6c8b5c16f09e2201c`,
+`b2f153d9d17a087444306b2159ca163bb58c58ec57edbfec04d4c626466d48d6`,
 and preserved the safely stopped Hub and migration data. Its installed Start,
 Restart, and Stop controls completed without a false timeout; the dashboard
 showed running after Start/Restart and stopped after Stop.
