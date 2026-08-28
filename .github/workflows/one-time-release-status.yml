@@ -1,0 +1,124 @@
+name: One-time release status correction
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/one-time-release-status.yml
+
+permissions:
+  contents: write
+
+jobs:
+  correct-release-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Advance unreleased version and correct README status
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          old_version = "1.0.0-alpha.1"
+          new_version = "1.0.0-alpha.2"
+          search_roots = [
+              "README.md",
+              "Cargo.toml",
+              "Cargo.lock",
+              "docs",
+              "macos",
+              "scripts",
+              "src",
+              "tests",
+          ]
+          files = subprocess.check_output(
+              ["git", "grep", "-l", old_version, "--", *search_roots],
+              text=True,
+          ).splitlines()
+          if not files:
+              raise SystemExit(f"No tracked {old_version} references found")
+
+          for filename in files:
+              path = Path(filename)
+              text = path.read_text()
+              path.write_text(text.replace(old_version, new_version))
+
+          readme_path = Path("README.md")
+          readme = readme_path.read_text()
+          warning = (
+              "> **Alpha software:** interfaces, storage formats, authentication routes "
+              "and operational procedures may change. Keep an independent backup and test "
+              "recovery before using real data."
+          )
+          release_note = (
+              "\n>\n> **Release status:** `main` is the unreleased `1.0.0-alpha.2` "
+              "development line. The published `v1.0.0-alpha.1` release is the older "
+              "macOS Apple-silicon, one-vehicle legacy-token build; it does not contain "
+              "the multi-vehicle, Fleet API, Fleet Telemetry, signed-command, Debian "
+              "packaging, or system-service work documented below. Use the release page "
+              "for the immutable alpha.1 scope and build `main` only for development or "
+              "testing."
+          )
+          if release_note not in readme:
+              if warning not in readme:
+                  raise SystemExit("README alpha warning changed; refusing blind insertion")
+              readme = readme.replace(warning, warning + release_note, 1)
+
+          replacements = {
+              (
+                  "## Current alpha scope\n\n"
+                  "The current `v1.0.0-alpha.2` implementation includes:"
+              ): (
+                  "## Current unreleased scope\n\n"
+                  "The current `main` branch (`1.0.0-alpha.2`, not yet published) includes:"
+              ),
+              "## Build the current macOS alpha": "## Build current `main` on macOS",
+              (
+                  "Requirements for the current tagged alpha are Rust 1.98, Go 1.27.0 "
+                  "exactly,\nXcode 27 and XcodeGen."
+              ): (
+                  "Requirements for current `main` are Rust 1.98, Go 1.27.0 exactly,\n"
+                  "Xcode 27 and XcodeGen."
+              ),
+          }
+          for current, replacement in replacements.items():
+              if current not in readme:
+                  raise SystemExit(f"README marker changed; refusing blind replacement: {current!r}")
+              readme = readme.replace(current, replacement, 1)
+          readme_path.write_text(readme)
+
+          historical_hits = []
+          for filename in files:
+              count = Path(filename).read_text().count(old_version)
+              if count:
+                  historical_hits.append((filename, count))
+          if historical_hits != [("README.md", 1)]:
+              raise SystemExit(f"Unexpected old-version references remain: {historical_hits}")
+
+          print(f"Updated {len(files)} tracked files to {new_version}: {', '.join(files)}")
+          PY
+
+      - name: Validate manifests and scripts
+        shell: bash
+        run: |
+          grep -Fq 'version = "1.0.0-alpha.2"' Cargo.toml
+          grep -Fq 'published `v1.0.0-alpha.1` release' README.md
+          grep -Fq 'The current `main` branch (`1.0.0-alpha.2`, not yet published) includes:' README.md
+          cargo metadata --locked --no-deps --format-version 1 >/tmp/teslatlas-hub-metadata.json
+          bash -n scripts/test-linux-packaging.sh
+          git diff --check
+
+      - name: Commit correction
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md Cargo.toml Cargo.lock docs macos scripts src tests
+          git commit -m 'chore: advance unreleased alpha version'
+          git push
