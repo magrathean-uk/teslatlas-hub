@@ -182,7 +182,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(text.contains("TeslaMate is not written"))
             XCTAssertTrue(text.contains("tokens are not deleted") || text.contains("Tokens are not deleted") || text.contains("Owner and Fleet tokens"))
             XCTAssertTrue(text.contains("== support metadata =="))
-            XCTAssertTrue(text.contains("Expected Hub: 1.0.0-alpha.1"))
+            XCTAssertTrue(text.contains("Expected Hub: 1.0.0-alpha.2"))
             XCTAssertTrue(text.contains("Service: not installed"))
             XCTAssertTrue(text.contains("Provider: Not configured"))
             XCTAssertTrue(text.contains("macOS:"))
@@ -395,7 +395,7 @@ final class HubControllerTests: XCTestCase {
 
     func testStoppedDashboardSaysStoppedWithoutRequestingSetup() {
         let installed = RecordingCommandRunner(result: .success("""
-        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0-alpha.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """))
         let controller = HubController(installedCommandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .unloaded),
@@ -425,7 +425,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let installed = RecordingCommandRunner(result: .success("""
-        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
+        {"status":"ok","version":"1.0.0-alpha.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
         """))
         let controller = HubController(installedCommandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
@@ -450,7 +450,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let status = """
-        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0-alpha.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let controller = HubController(installedCommandRunner: installed,
@@ -479,7 +479,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let status = """
-        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0-alpha.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let controller = HubController(installedCommandRunner: installed,
@@ -520,7 +520,7 @@ final class HubControllerTests: XCTestCase {
         let installed = CommandMapRunner(responses: [
             "sign-out": .success("{\"status\":\"signed_out\"}"),
             "status": .success("""
-            {"status":"ok","version":"1.0.0-alpha.1","ready":false,"provider":"fleet","credentials":{"present":false}}
+            {"status":"ok","version":"1.0.0-alpha.2","ready":false,"provider":"fleet","credentials":{"present":false}}
             """)
         ])
         let controller = HubController(commandRunner: embedded,
@@ -585,7 +585,7 @@ final class HubControllerTests: XCTestCase {
         let installed = CommandMapRunner(responses: [
             "sign-out": .failure(HubActionError.commandFailed("checkpoint failed")),
             "status": .success("""
-            {"status":"ok","version":"1.0.0-alpha.1","ready":false,"provider":"fleet","credentials":{"present":false},"legacyCredentials":{"present":true},"fleetCredentials":{"present":false}}
+            {"status":"ok","version":"1.0.0-alpha.2","ready":false,"provider":"fleet","credentials":{"present":false},"legacyCredentials":{"present":true},"fleetCredentials":{"present":false}}
             """)
         ])
         let controller = HubController(installedCommandRunner: installed,
@@ -613,7 +613,7 @@ final class HubControllerTests: XCTestCase {
     func testSingleVehicleControlsUseInstalledBinaryExactlyOnce() {
         let vehicleID = UUID(uuidString: "7A5D69AB-8EA8-4056-8B2F-42C41C28AE36")!
         let status = """
-        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(vehicleID.uuidString)","displayName":"One"}],"credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0-alpha.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(vehicleID.uuidString)","displayName":"One"}],"credentials":{"present":true}}
         """
         let embedded = RecordingCommandRunner(result: .failure(HubActionError.commandFailed("unused")))
         let installed = RecordingCommandRunner(result: .success(status))
@@ -701,7 +701,7 @@ final class HubControllerTests: XCTestCase {
         try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let status = """
-        {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0-alpha.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let service = PendingServiceRunner(loadState: .unloaded)
@@ -1322,7 +1322,7 @@ final class HubControllerTests: XCTestCase {
         let events = EventRecorder()
         let embedded = VersionAwareRunner(
             events: events,
-            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n"),
+            versionResult: .success("teslatlas-hub 1.0.0-alpha.2\n"),
             commandResult: .success("ok")
         )
         let installed = VersionAwareRunner(
@@ -1456,12 +1456,12 @@ final class HubControllerTests: XCTestCase {
         let events = EventRecorder()
         let embedded = VersionAwareRunner(
             events: events,
-            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n"),
+            versionResult: .success("teslatlas-hub 1.0.0-alpha.2\n"),
             commandResult: .success("configured")
         )
         let installed = VersionAwareRunner(
             events: events,
-            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n")
+            versionResult: .success("teslatlas-hub 1.0.0-alpha.2\n")
         )
         let installer = RecordingInstaller()
         let home = try temporaryHome()
@@ -1492,16 +1492,16 @@ final class HubControllerTests: XCTestCase {
 
     func testBundledServiceVersionMatchIsExact() {
         XCTAssertTrue(HubController.isBundledServiceVersionOutput(
-            "teslatlas-hub 1.0.0-alpha.1\n"
+            "teslatlas-hub 1.0.0-alpha.2\n"
         ))
         XCTAssertFalse(HubController.isBundledServiceVersionOutput(
             "teslatlas-hub 1.0.0-alpha.0"
         ))
         XCTAssertFalse(HubController.isBundledServiceVersionOutput(
-            "prefix teslatlas-hub 1.0.0-alpha.1"
+            "prefix teslatlas-hub 1.0.0-alpha.2"
         ))
         XCTAssertFalse(HubController.isBundledServiceVersionOutput(
-            "teslatlas-hub 1.0.0-alpha.1\nextra"
+            "teslatlas-hub 1.0.0-alpha.2\nextra"
         ))
     }
 

@@ -5,6 +5,8 @@ Teslatlas Hub is an independent, self-hosted vehicle telemetry collector and loc
 The Hub is aimed primarily at new self-hosted installations. It also includes an optional, one-way migration path for data and legacy Owner API credentials held in a user-controlled TeslaMate PostgreSQL database. Migration support is secondary and does not make TeslaMate a runtime dependency.
 
 > **Alpha software:** interfaces, storage formats, authentication routes and operational procedures may change. Keep an independent backup and test recovery before using real data.
+>
+> **Release status:** `main` is the unreleased `1.0.0-alpha.2` development line. The published `v1.0.0-alpha.1` release is the older macOS Apple-silicon, one-vehicle legacy-token build; it does not contain the multi-vehicle, Fleet API, Fleet Telemetry, signed-command, Debian packaging, or system-service work documented below. Use the release page for the immutable alpha.1 scope and build `main` only for development or testing.
 
 ## Product direction
 
@@ -19,9 +21,9 @@ Teslatlas Hub is intended to provide:
 
 The paid Teslatlas application is a separate product and is not part of this repository.
 
-## Current alpha scope
+## Current unreleased scope
 
-The current `v1.0.0-alpha.1` implementation includes:
+The current `main` branch (`1.0.0-alpha.2`, not yet published) includes:
 
 - macOS 13 or later on Apple silicon, and Debian 13 amd64 or ARM64;
 - independent collection for every configured vehicle on an account;
@@ -72,9 +74,9 @@ TeslaMate is not bundled, modified or started by the Hub. The migration adapter 
 
 Tesla, vehicle model names, TeslaMate and all third-party marks belong to their respective owners. Compatibility references do not imply sponsorship.
 
-## Build the current macOS alpha
+## Build current `main` on macOS
 
-Requirements for the current tagged alpha are Rust 1.98, Go 1.27.0 exactly,
+Requirements for current `main` are Rust 1.98, Go 1.27.0 exactly,
 Xcode 27 and XcodeGen.
 
 ```sh
@@ -171,10 +173,10 @@ scripts/build-deb.sh \
   --binary target/release/teslatlas-hub \
   --command-proxy-binary dist/tesla-http-proxy \
   --fleet-telemetry-binary dist/fleet-telemetry \
-  --version 1.0.0-alpha.1 \
+  --version 1.0.0-alpha.2 \
   --architecture "$(dpkg --print-architecture)" \
-  --output "dist/teslatlas-hub_1.0.0-alpha.1_$(dpkg --print-architecture).deb"
-sudo dpkg -i "dist/teslatlas-hub_1.0.0-alpha.1_$(dpkg --print-architecture).deb"
+  --output "dist/teslatlas-hub_1.0.0-alpha.2_$(dpkg --print-architecture).deb"
+sudo dpkg -i "dist/teslatlas-hub_1.0.0-alpha.2_$(dpkg --print-architecture).deb"
 ```
 
 The package creates the private `teslatlas` service user, configuration at

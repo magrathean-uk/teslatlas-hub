@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 
 private enum HubRelease {
-    static let fallbackVersion = "1.0.0-alpha.1"
+    static let fallbackVersion = "1.0.0-alpha.2"
     static var bundledVersion: String {
         guard let value = Bundle.main.object(forInfoDictionaryKey: "TeslatlasHubVersion") as? String,
               !value.isEmpty,

@@ -196,10 +196,10 @@ scripts/build-deb.sh \
   --binary target/release/teslatlas-hub \
   --command-proxy-binary dist/tesla-http-proxy \
   --fleet-telemetry-binary dist/fleet-telemetry \
-  --version 1.0.0-alpha.1 \
+  --version 1.0.0-alpha.2 \
   --architecture amd64 \
-  --output dist/teslatlas-hub_1.0.0-alpha.1_amd64.deb
-sudo dpkg -i dist/teslatlas-hub_1.0.0-alpha.1_amd64.deb
+  --output dist/teslatlas-hub_1.0.0-alpha.2_amd64.deb
+sudo dpkg -i dist/teslatlas-hub_1.0.0-alpha.2_amd64.deb
 ```
 
 The package installs both sidecar units disabled. Supply the command-signing

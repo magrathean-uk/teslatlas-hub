@@ -783,7 +783,7 @@ grep -Fqx 'Depends: adduser, ca-certificates, systemd, libc6 (>= 2.38), libgcc-s
 run_package good_arm64_static arm64 || fail 'valid static arm64 ELF rejected'
 grep -Fqx 'Depends: adduser, ca-certificates, systemd' "$captured_control" \
     || fail 'static arm64 package gained shared-library dependencies'
-run_package good_amd64 amd64 good 1.0.0-alpha.1 || fail 'valid prerelease rejected'
+run_package good_amd64 amd64 good 1.0.0-alpha.2 || fail 'valid prerelease rejected'
 grep -Fqx 'Version: 1.0.0~alpha.1-1' "$captured_control" \
     || fail 'prerelease does not sort before the stable Debian package'
 run_package good_amd64 amd64 good 1.0.0 1 good_amd64_static good_amd64_static \

@@ -140,7 +140,7 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         let embedded = FleetRecoveryRunner(events: events,
                                             event: "embedded-setup",
                                             result: .success("configured"),
-                                            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n"))
+                                            versionResult: .success("teslatlas-hub 1.0.0-alpha.2\n"))
         let installed = FleetRecoveryRunner(events: events,
                                              event: "installed-setup",
                                              result: .success("unused"),
@@ -177,12 +177,12 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         let embedded = FleetRecoveryRunner(events: events,
                                             event: "embedded-setup",
                                             result: .success("configured"),
-                                            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n"))
+                                            versionResult: .success("teslatlas-hub 1.0.0-alpha.2\n"))
         let installed = FleetRecoveryRunner(
             events: events,
             event: "installed-setup",
             result: .success("unused"),
-            versionResult: .success("teslatlas-hub 1.0.0-alpha.1\n")
+            versionResult: .success("teslatlas-hub 1.0.0-alpha.2\n")
         )
         let controller = HubController(commandRunner: embedded,
                                        installedCommandRunner: installed,

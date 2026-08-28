@@ -235,7 +235,7 @@ private final class OnboardingRunner: HubCommandRunning {
         } else if arguments.contains("status") {
             events?.append("status")
             completion(.success("""
-            {"status":"ok","version":"1.0.0-alpha.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
+            {"status":"ok","version":"1.0.0-alpha.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
             """))
         } else if arguments.contains("doctor") {
             events?.append("doctor")
