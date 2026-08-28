@@ -104,11 +104,23 @@ final class HubAppLog {
     }
 
     static func writePrivateReport(_ text: String, to destination: URL) throws {
-        try Data(text.utf8).write(to: destination, options: .atomic)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: NSNumber(value: 0o600)],
-            ofItemAtPath: destination.path
+        let descriptor = Darwin.open(
+            destination.path,
+            O_WRONLY | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK,
+            S_IRUSR | S_IWUSR
         )
+        guard descriptor >= 0 else { throw CocoaError(.fileWriteUnknown) }
+        defer { Darwin.close(descriptor) }
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFREG,
+              information.st_uid == getuid(),
+              fchmod(descriptor, S_IRUSR | S_IWUSR) == 0,
+              ftruncate(descriptor, 0) == 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try write(Data(text.utf8), to: descriptor)
+        guard fsync(descriptor) == 0 else { throw CocoaError(.fileWriteUnknown) }
     }
 
     private func append(_ line: String) {

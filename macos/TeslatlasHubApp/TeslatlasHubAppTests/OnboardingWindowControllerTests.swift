@@ -105,6 +105,27 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(permissions & 0o777, 0o600)
     }
 
+    func testSavedSupportReportsRefuseSymlinksAndFIFOs() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-report-safety-test-\(UUID().uuidString)",
+                                    isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let target = directory.appendingPathComponent("target.txt")
+        let linked = directory.appendingPathComponent("linked.txt")
+        try Data("unchanged".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: target)
+
+        XCTAssertThrowsError(try HubAppLog.writePrivateReport("private", to: linked))
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "unchanged")
+
+        let fifo = directory.appendingPathComponent("report.fifo")
+        XCTAssertEqual(Darwin.mkfifo(fifo.path, S_IRUSR | S_IWUSR), 0)
+        let started = Date()
+        XCTAssertThrowsError(try HubAppLog.writePrivateReport("private", to: fifo))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1)
+    }
+
     func testHostedXCTestLogsStayOutOfTheUserLogDirectory() {
         let home = URL(fileURLWithPath: "/Users/example", isDirectory: true)
         let temporary = URL(fileURLWithPath: "/private/var/tmp", isDirectory: true)
