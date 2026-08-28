@@ -1,5 +1,16 @@
 # Hub progress
 
+- Dashboard visual simplification complete. Removed the outlined vehicle and
+  service/account/database card frames, removed the outline treatment from
+  onboarding choices, and removed coloured status dots everywhere on the
+  dashboard except the Service row. The real Hub app icon now occupies the
+  hero status position and stays visible during start/stop/restart transitions;
+  transition progress moved beside the status copy. The installed stopped app
+  was visually inspected with the service still unloaded. AppKit tests pass
+  111/111, Xcode analysis and macOS packaging checks pass. Current package:
+  `dist/TeslatlasHub.pkg` (66,724,972 bytes,
+  `cf7f4262c5a7f34d87c8f551533309baf54fc61350a55ec1f381cfad8c625d8f`).
+
 - Start/stop UX and state settlement complete. An intentional stop is a normal
   orange stopped state, never Attention needed. Start, Stop, and Restart now
   render immediate progress states, disable conflicting mutations, poll until

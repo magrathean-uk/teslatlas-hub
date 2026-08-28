@@ -1188,12 +1188,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                               action: Selector) -> NSView {
         let card = NSView()
         card.wantsLayer = true
-        card.layer?.cornerRadius = 0
-        card.layer?.borderWidth = selected ? 2 : 1
-        card.layer?.borderColor = (selected ? NSColor.systemBlue : NSColor.separatorColor).cgColor
+        card.layer?.cornerRadius = 12
+        card.layer?.cornerCurve = .continuous
         card.layer?.backgroundColor = (selected
-            ? NSColor.systemBlue.withAlphaComponent(0.045)
-            : NSColor.clear).cgColor
+            ? NSColor.systemBlue.withAlphaComponent(0.10)
+            : NSColor.controlBackgroundColor.withAlphaComponent(0.45)).cgColor
 
         let icon = NSImageView(image: symbolImage(symbol, description: title))
         icon.image = icon.image?.withSymbolConfiguration(

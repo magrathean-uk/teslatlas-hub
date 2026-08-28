@@ -726,6 +726,21 @@ final class HubControllerTests: XCTestCase {
         wait(for: [settled], timeout: 1)
     }
 
+    func testDashboardUsesLogoWithoutOutlinedCardsAndOnlyServiceStatusDot() {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                                       initialSnapshot: .previewRunning)
+        let dashboard = MainWindowController(controller: controller)
+        let content = dashboard.window?.contentView
+
+        XCTAssertTrue(imageViews(in: content).contains {
+            $0.accessibilityLabel() == "Teslatlas Hub" && !$0.isHidden
+        })
+        XCTAssertEqual(imageViews(in: content).filter {
+            $0.accessibilityLabel() == "Service status"
+        }.count, 1)
+        XCTAssertFalse(boxes(in: content).contains { $0.boxType == .custom })
+    }
+
     func testLegacyProviderRejectsVehicleCommandsBeforeRunner() {
         let vehicleID = UUID(uuidString: "7A5D69AB-8EA8-4056-8B2F-42C41C28AE36")!
         var snapshot = HubSnapshot.previewRunning
@@ -1765,6 +1780,16 @@ final class HubControllerTests: XCTestCase {
     private func popups(in view: NSView?) -> [NSPopUpButton] {
         guard let view else { return [] }
         return (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap { popups(in: $0) }
+    }
+
+    private func imageViews(in view: NSView?) -> [NSImageView] {
+        guard let view else { return [] }
+        return (view as? NSImageView).map { [$0] } ?? view.subviews.flatMap { imageViews(in: $0) }
+    }
+
+    private func boxes(in view: NSView?) -> [NSBox] {
+        guard let view else { return [] }
+        return (view as? NSBox).map { [$0] } ?? view.subviews.flatMap { boxes(in: $0) }
     }
 }
 

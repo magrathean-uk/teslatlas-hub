@@ -52,9 +52,6 @@ final class MainWindowController: NSWindowController {
     private let vehicleControlStatus = NSTextField(labelWithString: "")
     private let vehicleSelector = NSPopUpButton()
     private let serviceDot = NSImageView()
-    private let accountDot = NSImageView()
-    private let databaseDot = NSImageView()
-    private let vehicleControlDot = NSImageView()
     private let activityStack = NSStackView()
     private let versionLabel = NSTextField(labelWithString: "")
     private let titlebarTitle = NSTextField(labelWithString: "Teslatlas Hub")
@@ -195,19 +192,10 @@ final class MainWindowController: NSWindowController {
         vehicleCardHeightConstraint.isActive = true
         self.vehicleCardHeightConstraint = vehicleCardHeightConstraint
 
-        let statusBox = NSBox()
-        statusBox.boxType = .custom
-        statusBox.wantsLayer = true
-        statusBox.layer?.cornerRadius = 0
-        statusBox.layer?.borderWidth = 1
-        statusBox.layer?.borderColor = NSColor.separatorColor.cgColor
-        statusBox.fillColor = .clear
-        statusBox.cornerRadius = 0
-        statusBox.contentViewMargins = .zero
-        statusBox.contentView = statusRows()
-        content.addArrangedSubview(statusBox)
-        statusBox.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-        statusBox.heightAnchor.constraint(equalToConstant: 108).isActive = true
+        let status = statusRows()
+        content.addArrangedSubview(status)
+        status.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+        status.heightAnchor.constraint(equalToConstant: 108).isActive = true
 
         let activity = activityView()
         content.addArrangedSubview(activity)
@@ -221,40 +209,42 @@ final class MainWindowController: NSWindowController {
         hero.alignment = .centerX
         hero.spacing = 8
 
-        let statusIndicator = NSView()
-        statusIndicator.translatesAutoresizingMaskIntoConstraints = false
+        heroDot.image = NSApplication.shared.applicationIconImage
         heroDot.imageScaling = .scaleProportionallyDown
-        heroDot.translatesAutoresizingMaskIntoConstraints = false
+        heroDot.setAccessibilityLabel("Teslatlas Hub")
+        heroDot.widthAnchor.constraint(equalToConstant: 56).isActive = true
+        heroDot.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        hero.addArrangedSubview(heroDot)
+        heroTitle.font = .systemFont(ofSize: 24, weight: .semibold)
+        hero.addArrangedSubview(heroTitle)
+
+        let subtitleIndicator = NSView()
+        subtitleIndicator.translatesAutoresizingMaskIntoConstraints = false
+        heroStateIcon.imageScaling = .scaleProportionallyDown
+        heroStateIcon.contentTintColor = .secondaryLabelColor
+        heroStateIcon.translatesAutoresizingMaskIntoConstraints = false
         heroProgress.style = .spinning
         heroProgress.controlSize = .small
         heroProgress.isDisplayedWhenStopped = false
         heroProgress.isHidden = true
         heroProgress.translatesAutoresizingMaskIntoConstraints = false
-        statusIndicator.addSubview(heroDot)
-        statusIndicator.addSubview(heroProgress)
+        subtitleIndicator.addSubview(heroStateIcon)
+        subtitleIndicator.addSubview(heroProgress)
         NSLayoutConstraint.activate([
-            statusIndicator.widthAnchor.constraint(equalToConstant: 24),
-            statusIndicator.heightAnchor.constraint(equalToConstant: 24),
-            heroDot.centerXAnchor.constraint(equalTo: statusIndicator.centerXAnchor),
-            heroDot.centerYAnchor.constraint(equalTo: statusIndicator.centerYAnchor),
-            heroDot.widthAnchor.constraint(equalToConstant: 24),
-            heroDot.heightAnchor.constraint(equalToConstant: 24),
-            heroProgress.centerXAnchor.constraint(equalTo: statusIndicator.centerXAnchor),
-            heroProgress.centerYAnchor.constraint(equalTo: statusIndicator.centerYAnchor),
+            subtitleIndicator.widthAnchor.constraint(equalToConstant: 20),
+            subtitleIndicator.heightAnchor.constraint(equalToConstant: 20),
+            heroStateIcon.centerXAnchor.constraint(equalTo: subtitleIndicator.centerXAnchor),
+            heroStateIcon.centerYAnchor.constraint(equalTo: subtitleIndicator.centerYAnchor),
+            heroStateIcon.widthAnchor.constraint(equalToConstant: 20),
+            heroStateIcon.heightAnchor.constraint(equalToConstant: 20),
+            heroProgress.centerXAnchor.constraint(equalTo: subtitleIndicator.centerXAnchor),
+            heroProgress.centerYAnchor.constraint(equalTo: subtitleIndicator.centerYAnchor),
             heroProgress.widthAnchor.constraint(equalToConstant: 20),
             heroProgress.heightAnchor.constraint(equalToConstant: 20)
         ])
-        hero.addArrangedSubview(statusIndicator)
-        heroTitle.font = .systemFont(ofSize: 24, weight: .semibold)
-        hero.addArrangedSubview(heroTitle)
-
-        heroStateIcon.imageScaling = .scaleProportionallyDown
-        heroStateIcon.contentTintColor = .secondaryLabelColor
-        heroStateIcon.widthAnchor.constraint(equalToConstant: 20).isActive = true
-        heroStateIcon.heightAnchor.constraint(equalToConstant: 20).isActive = true
         heroSubtitle.font = .systemFont(ofSize: 13)
         heroSubtitle.textColor = .secondaryLabelColor
-        let subtitle = NSStackView(views: [heroStateIcon, heroSubtitle])
+        let subtitle = NSStackView(views: [subtitleIndicator, heroSubtitle])
         subtitle.spacing = 8
         subtitle.alignment = .centerY
         hero.addArrangedSubview(subtitle)
@@ -294,16 +284,6 @@ final class MainWindowController: NSWindowController {
     }
 
     private func vehicleCardView() -> NSView {
-        let card = NSBox()
-        card.boxType = .custom
-        card.wantsLayer = true
-        card.layer?.cornerRadius = 0
-        card.layer?.borderWidth = 1
-        card.layer?.borderColor = NSColor.separatorColor.cgColor
-        card.fillColor = .clear
-        card.cornerRadius = 0
-        card.contentViewMargins = .zero
-
         vehicleControlName.font = .systemFont(ofSize: 16, weight: .semibold)
         vehicleControlStatus.textColor = .secondaryLabelColor
         vehicleControlStatus.font = .systemFont(ofSize: 12)
@@ -320,11 +300,7 @@ final class MainWindowController: NSWindowController {
         let vehicleIcon = imageView("car.fill", .secondaryLabelColor)
         vehicleIcon.widthAnchor.constraint(equalToConstant: 32).isActive = true
         vehicleIcon.heightAnchor.constraint(equalToConstant: 32).isActive = true
-        vehicleControlDot.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Vehicle status")
-        vehicleControlDot.imageScaling = .scaleProportionallyDown
-        vehicleControlDot.widthAnchor.constraint(equalToConstant: 10).isActive = true
-        vehicleControlDot.heightAnchor.constraint(equalToConstant: 10).isActive = true
-        let heading = NSStackView(views: [vehicleIcon, identity, spacer(), vehicleControlDot])
+        let heading = NSStackView(views: [vehicleIcon, identity, spacer()])
         heading.spacing = 10
         heading.alignment = .centerY
 
@@ -380,8 +356,7 @@ final class MainWindowController: NSWindowController {
             stack.topAnchor.constraint(equalTo: container.topAnchor),
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
-        card.contentView = container
-        return card
+        return container
     }
 
     private func vehicleActionButton(_ action: HubVehicleControl,
@@ -403,8 +378,8 @@ final class MainWindowController: NSWindowController {
         stack.spacing = 0
         let views: [NSView] = [
             statusRow("Service", serviceValue, serviceDot, "gearshape.fill"), separator(),
-            statusRow("Tesla account", accountValue, accountDot, "person.fill"), separator(),
-            statusRow("Database", databaseValue, databaseDot, "cylinder.fill")
+            statusRow("Tesla account", accountValue, nil, "person.fill"), separator(),
+            statusRow("Database", databaseValue, nil, "cylinder.fill")
         ]
         for view in views {
             stack.addArrangedSubview(view)
@@ -413,22 +388,27 @@ final class MainWindowController: NSWindowController {
         return stack
     }
 
-    private func statusRow(_ name: String, _ value: NSTextField, _ dot: NSImageView, _ symbol: String) -> NSView {
+    private func statusRow(_ name: String, _ value: NSTextField, _ dot: NSImageView?, _ symbol: String) -> NSView {
         statusRow(NSTextField(labelWithString: name), value, dot, symbol)
     }
 
-    private func statusRow(_ name: NSTextField, _ value: NSTextField, _ dot: NSImageView, _ symbol: String) -> NSView {
+    private func statusRow(_ name: NSTextField, _ value: NSTextField, _ dot: NSImageView?, _ symbol: String) -> NSView {
         let icon = imageView(symbol, .secondaryLabelColor)
         icon.widthAnchor.constraint(equalToConstant: 22).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 22).isActive = true
         name.font = .systemFont(ofSize: 13, weight: .medium)
         name.widthAnchor.constraint(equalToConstant: 230).isActive = true
         value.font = .systemFont(ofSize: 13)
-        dot.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Status")
-        dot.imageScaling = .scaleProportionallyDown
-        dot.widthAnchor.constraint(equalToConstant: 11).isActive = true
-        dot.heightAnchor.constraint(equalToConstant: 11).isActive = true
-        let row = NSStackView(views: [icon, name, value, spacer(), dot])
+        var views: [NSView] = [icon, name, value, spacer()]
+        if let dot {
+            dot.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Service status")
+            dot.setAccessibilityLabel("Service status")
+            dot.imageScaling = .scaleProportionallyDown
+            dot.widthAnchor.constraint(equalToConstant: 11).isActive = true
+            dot.heightAnchor.constraint(equalToConstant: 11).isActive = true
+            views.append(dot)
+        }
+        let row = NSStackView(views: views)
         row.spacing = 10
         row.alignment = .centerY
         row.edgeInsets = NSEdgeInsets(top: 0, left: 18, bottom: 0, right: 16)
@@ -485,12 +465,11 @@ final class MainWindowController: NSWindowController {
                     DispatchQueue.main.async { [weak self] in self?.update() }
                 }
             }
-            self.heroDot.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "Hub status")
-            self.heroDot.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 24, weight: .regular)
-            self.heroDot.contentTintColor = snapshot.health.color
+            self.heroDot.image = NSApplication.shared.applicationIconImage
             self.heroDot.isHidden = false
             self.heroProgress.stopAnimation(nil)
             self.heroProgress.isHidden = true
+            self.heroStateIcon.isHidden = false
             self.heroTitle.stringValue = snapshot.health.title
             switch snapshot.health {
             case .running:
@@ -516,17 +495,6 @@ final class MainWindowController: NSWindowController {
             self.databaseValue.stringValue = snapshot.database
             self.versionLabel.stringValue = snapshot.version
             self.serviceDot.contentTintColor = snapshot.health.color
-            self.accountDot.contentTintColor = snapshot.account == "Connected" ? .systemGreen : .systemGray
-            let selectedVehicleStatus = self.selectedControlVehicle?.status ?? snapshot.vehicle
-            let vehicleUnavailable = selectedVehicleStatus.localizedCaseInsensitiveContains("offline")
-                || selectedVehicleStatus.localizedCaseInsensitiveContains("no observations")
-                || selectedVehicleStatus.localizedCaseInsensitiveContains("no imported")
-                || selectedVehicleStatus.localizedCaseInsensitiveContains("no configured")
-                || selectedVehicleStatus == "Unknown"
-            self.vehicleControlDot.contentTintColor = snapshot.health == .running && !vehicleUnavailable
-                ? .systemGreen
-                : .systemGray
-            self.databaseDot.contentTintColor = snapshot.database.hasPrefix("Healthy") ? .systemGreen : .systemGray
 
             self.stopButton.isHidden = snapshot.health == .needsInstall
             self.installButton.isHidden = snapshot.health != .needsInstall
@@ -623,13 +591,10 @@ final class MainWindowController: NSWindowController {
                         self.activityStack.addArrangedSubview(line)
                         line.widthAnchor.constraint(equalTo: self.activityStack.widthAnchor).isActive = true
                     }
-                    let dot = self.imageView("circle.fill", entry.color)
-                    dot.widthAnchor.constraint(equalToConstant: 9).isActive = true
-                    dot.heightAnchor.constraint(equalToConstant: 9).isActive = true
                     let message = NSTextField(labelWithString: entry.message)
                     let age = NSTextField(labelWithString: entry.age)
                     age.textColor = .secondaryLabelColor
-                    let row = NSStackView(views: [dot, message, self.spacer(), age])
+                    let row = NSStackView(views: [message, self.spacer(), age])
                     row.spacing = 9
                     row.alignment = .centerY
                     row.heightAnchor.constraint(equalToConstant: 30).isActive = true
@@ -801,7 +766,8 @@ final class MainWindowController: NSWindowController {
     }
 
     private func applyServiceTransitionPresentation(_ transition: HubServiceTransition) {
-        heroDot.isHidden = true
+        heroDot.isHidden = false
+        heroStateIcon.isHidden = true
         heroProgress.isHidden = false
         heroProgress.setAccessibilityLabel(transition.title)
         heroProgress.startAnimation(nil)
