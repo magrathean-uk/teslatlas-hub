@@ -178,9 +178,10 @@ def tar_bytes(entries, *, symlink=False, duplicate=False):
     return target.getvalue()
 
 
-def ar_member(name, data):
+def ar_member(name, data, *, trailing_slash=True):
+    archive_name = name + ("/" if trailing_slash else "")
     header = (
-        f"{name + '/':<16}"
+        f"{archive_name:<16}"
         f"{0:<12}"
         f"{0:<6}"
         f"{0:<6}"
@@ -327,16 +328,16 @@ data_tar = tar_bytes(
     duplicate=variant == "duplicate-tar",
 )
 parts = [
-    ar_member("debian-binary", b"2.0\n"),
-    ar_member("control.tar.gz", control_tar),
-    ar_member("data.tar.gz", data_tar),
+    ar_member("debian-binary", b"2.0\n", trailing_slash=variant != "good-noslash"),
+    ar_member("control.tar.gz", control_tar, trailing_slash=variant != "good-noslash"),
+    ar_member("data.tar.gz", data_tar, trailing_slash=variant != "good-noslash"),
 ]
 if variant == "duplicate-ar":
     parts.append(ar_member("data.tar.gz", data_tar))
 output.write_bytes(b"!<arch>\n" + b"".join(parts))
 PY
 
-for variant in good wrong-version wrong-arch symlink-member duplicate-tar \
+for variant in good good-noslash wrong-version wrong-arch symlink-member duplicate-tar \
     duplicate-ar malformed-control malformed-ar fleet fleet-tampered; do
     python3 "$TMP/make-fixture.py" "$REPO" "$TMP/$variant.deb" "$variant"
 done
@@ -478,6 +479,8 @@ output.write_bytes(module.canonical_json(receipt))
 PY
 python3 "$TMP/make-receipt.py" "$SCRIPT" "$REPO" "$TMP/good.deb" \
     "$TAG_FINGERPRINT" "$TMP/receipt.json"
+python3 "$TMP/make-receipt.py" "$SCRIPT" "$REPO" "$TMP/good-noslash.deb" \
+    "$TAG_FINGERPRINT" "$TMP/noslash-receipt.json"
 python3 "$TMP/make-receipt.py" "$SCRIPT" "$REPO" "$TMP/fleet.deb" \
     "$TAG_FINGERPRINT" "$TMP/fleet-receipt.json"
 
@@ -489,6 +492,7 @@ sign_receipt() {
         -out "$signature" >/dev/null 2>&1
 }
 sign_receipt "$TMP/receipt.json" "$TMP/receipt.sig"
+sign_receipt "$TMP/noslash-receipt.json" "$TMP/noslash-receipt.sig"
 sign_receipt "$TMP/fleet-receipt.json" "$TMP/fleet-receipt.sig"
 
 verify_package() {
@@ -529,6 +533,11 @@ expect_fail() {
 verify_package "$TMP/good.deb" amd64 "$TMP/receipt.json" "$TMP/receipt.sig" \
     "$TMP/attestation-public.pem" "$PUBLIC_DIGEST" v1.0.0 >"$TMP/good.out"
 grep -Fq 'Debian native attestation verified:' "$TMP/good.out"
+verify_package "$TMP/good-noslash.deb" amd64 \
+    "$TMP/noslash-receipt.json" "$TMP/noslash-receipt.sig" \
+    "$TMP/attestation-public.pem" "$PUBLIC_DIGEST" v1.0.0 \
+    >"$TMP/good-noslash.out"
+grep -Fq 'Debian native attestation verified:' "$TMP/good-noslash.out"
 verify_package "$TMP/fleet.deb" amd64 \
     "$TMP/fleet-receipt.json" "$TMP/fleet-receipt.sig" \
     "$TMP/attestation-public.pem" "$PUBLIC_DIGEST" v1.0.0 >"$TMP/fleet.out"

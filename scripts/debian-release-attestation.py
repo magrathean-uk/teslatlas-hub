@@ -395,9 +395,11 @@ def ar_members(data: bytes) -> dict[str, bytes]:
             size = int(header[48:58].decode("ascii").strip(), 10)
         except (UnicodeDecodeError, ValueError) as exc:
             raise GateError("Debian ar archive metadata is invalid") from exc
-        if not raw_name.endswith("/") or raw_name.startswith(("/", "#1/")):
+        if raw_name.startswith(("/", "#1/")):
             fail("Debian ar archive uses an unsupported member name")
-        name = raw_name[:-1]
+        name = raw_name[:-1] if raw_name.endswith("/") else raw_name
+        if "/" in name or "\\" in name:
+            fail("Debian ar archive uses an unsupported member name")
         if not name or name in members or size < 0:
             fail("Debian ar archive contains invalid duplicate members")
         start = offset + 60
