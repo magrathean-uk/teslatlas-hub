@@ -43,11 +43,25 @@ final class TeslaMateServerImportSession {
             let pid = process.processIdentifier
             process.terminate()
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1) {
-                if process.isRunning { Darwin.kill(pid, SIGKILL) }
+                if process.isRunning {
+                    let killed = Darwin.kill(pid, SIGKILL) == 0
+                    HubAppLog.shared.record("tunnel.force_stop", category: "teslamate_import",
+                                            level: "WARN",
+                                            fields: ["signal_sent": killed ? "true" : "false"])
+                }
             }
         }
-        try? FileManager.default.removeItem(at: temporaryDirectory)
-        HubAppLog.shared.record("tunnel.closed", category: "teslamate_import")
+        do {
+            try FileManager.default.removeItem(at: temporaryDirectory)
+            HubAppLog.shared.record("tunnel.closed", category: "teslamate_import",
+                                    fields: ["temporary_files_removed": "true"])
+        } catch {
+            HubAppLog.shared.record("tunnel.closed", category: "teslamate_import", level: "WARN",
+                                    fields: [
+                                        "error_code": HubAppLog.errorCode(error),
+                                        "temporary_files_removed": "false"
+                                    ])
+        }
     }
 }
 
@@ -84,6 +98,9 @@ enum TeslaMateServerImporter {
                 try manager.removeItem(at: entry)
                 removed += 1
             } catch {
+                HubAppLog.shared.record("temporary_files.cleanup_failed",
+                                        category: "teslamate_import", level: "WARN",
+                                        fields: ["error_code": HubAppLog.errorCode(error)])
                 continue
             }
         }
@@ -487,6 +504,16 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             return "More than one TeslaMate instance is running. Stop the instance you do not want to import, then try again."
         case "multiple_database_instances":
             return "The selected TeslaMate project has more than one database container. Stop the duplicate, then try again."
+        case "passwordless_sudo_required":
+            return "This account cannot run Docker with passwordless sudo. Grant Docker access or turn off passwordless sudo and use an account that can access Docker directly."
+        case "sudo_not_permitted":
+            return "This account is not allowed to run Docker with sudo. Grant Docker access or use another server account."
+        case "docker_permission_denied":
+            return "This account cannot access Docker. Grant direct Docker access or allow passwordless sudo for Docker."
+        case "docker_missing":
+            return "Docker was not found on the TeslaMate server. Check the server and account PATH."
+        case "docker_unavailable":
+            return "Docker is installed but unavailable. Check that the Docker service is running."
         case "ssh_authentication_or_connection":
             return "SSH could not connect or authenticate. Check the server, port, account, and selected authentication method."
         case "authentication_failed":
@@ -514,6 +541,9 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         guard let actionError = error as? HubActionError else { return "process_start_failed" }
         switch actionError {
         case let .commandExited(status, message):
+            if status != 255, let reason = remoteDockerFailureReason(message) {
+                return reason
+            }
             switch status {
             case 20: return "teslamate_not_found"
             case 21: return "compose_project_missing"
@@ -540,6 +570,30 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         case .preview:
             return "preview_read_only"
         }
+    }
+
+    private static func remoteDockerFailureReason(_ diagnostic: String) -> String? {
+        let message = diagnostic.lowercased()
+        if message.contains("sudo: a password is required")
+            || message.contains("sudo: a terminal is required")
+            || message.contains("sudo: no tty present and no askpass program specified") {
+            return "passwordless_sudo_required"
+        }
+        if message.contains("not in the sudoers") || message.contains("not allowed to execute") {
+            return "sudo_not_permitted"
+        }
+        if message.contains("permission denied")
+            && (message.contains("docker.sock") || message.contains("docker daemon socket")) {
+            return "docker_permission_denied"
+        }
+        if message.contains("docker: not found") || message.contains("docker: command not found") {
+            return "docker_missing"
+        }
+        if message.contains("cannot connect to the docker daemon")
+            || message.contains("is the docker daemon running") {
+            return "docker_unavailable"
+        }
+        return nil
     }
 
     private static func tunnelFailureReason(_ diagnostic: String) -> String {

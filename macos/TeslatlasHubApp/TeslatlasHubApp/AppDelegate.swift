@@ -70,7 +70,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                     fields: ["directories": String(staleImports)])
         }
         hubController = HubController()
-        HubAppLog.shared.record("launch.completed", category: "app")
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
+            as? String ?? "development"
+        let appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
+            as? String ?? "development"
+        HubAppLog.shared.record("launch.completed", category: "app", fields: [
+            "app_build": appBuild,
+            "app_version": appVersion
+        ])
         showDashboard { [weak self] snapshot in
             guard let self else { return }
             if self.hubController.shouldShowOnboarding(for: snapshot) {

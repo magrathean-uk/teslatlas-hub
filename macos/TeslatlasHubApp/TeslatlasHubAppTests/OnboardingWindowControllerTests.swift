@@ -533,6 +533,28 @@ final class OnboardingWindowControllerTests: XCTestCase {
             "The SSH server refused the connection. Check that SSH is running and the port is correct."
         )
         XCTAssertEqual(
+            TeslaMateServerImporter.discoveryFailureReason(
+                HubActionError.commandExited(1, "sudo: a password is required")
+            ),
+            "passwordless_sudo_required"
+        )
+        XCTAssertTrue(
+            TeslaMateServerImporter.discoveryFailureMessage(
+                HubActionError.commandExited(1, "permission denied while trying to connect to /var/run/docker.sock")
+            ).contains("cannot access Docker")
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.discoveryFailureReason(
+                HubActionError.commandExited(127, "sh: docker: not found")
+            ),
+            "docker_missing"
+        )
+        XCTAssertFalse(
+            TeslaMateServerImporter.discoveryFailureMessage(
+                HubActionError.commandExited(1, "sudo: private-host is not in the sudoers file")
+            ).contains("private-host")
+        )
+        XCTAssertEqual(
             TeslaMateServerImporter.tunnelFailureMessage(
                 "WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED for secret-host"
             ),

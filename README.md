@@ -128,8 +128,8 @@ Press **Command-L** from onboarding or the dashboard to open the combined app,
 SSH-import, and Hub service logs. **Run Diagnostics** adds bounded `doctor`,
 `preflight`, `status`, database, credential, connection, and recent-log checks.
 SSH failures are recorded as safe reason codes such as authentication, host-key,
-DNS, routing, forwarding, timeout, or local-port failure; credentials, server
-addresses, usernames, and key paths are not recorded.
+DNS, routing, forwarding, timeout, local-port, Docker, or sudo-access failure;
+credentials, server addresses, usernames, and key paths are not recorded.
 
 App and service log reads are bounded and reject symlinks and non-regular files.
 App logs rotate at 1 MiB; service logs are compacted before launch and every 30
