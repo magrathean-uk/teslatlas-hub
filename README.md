@@ -130,13 +130,16 @@ SSH-import, and Hub service logs. **Run Diagnostics** adds bounded `doctor`,
 SSH failures are recorded as safe reason codes such as authentication, host-key,
 DNS, routing, forwarding, timeout, local-port, Docker, or sudo-access failure;
 credentials, server addresses, usernames, and key paths are not recorded.
+Dashboard status failures are logged once per failure type and a recovery event
+is recorded when status becomes readable again, avoiding polling log spam.
 
 App and service log reads are bounded and reject symlinks and non-regular files.
 App logs rotate at 1 MiB; service logs are compacted before launch and every 30
 seconds while Hub runs. Display, Copy, and Save use the same redaction pass for
-credentials, VINs, opaque vehicle/install IDs, vehicle names, private-network
-addresses, precise coordinates, terminal controls, and the current user's home
-path. Saved reports are owner-readable only. Review a report before sharing it.
+credentials, VINs, opaque vehicle/install IDs, vehicle names, email addresses,
+public/private network addresses, precise coordinates, terminal controls, and
+the current user's home path. Saved reports are created owner-readable only and
+refuse symlinks or non-regular destinations. Review a report before sharing it.
 
 ## Debian package (amd64 and ARM64)
 

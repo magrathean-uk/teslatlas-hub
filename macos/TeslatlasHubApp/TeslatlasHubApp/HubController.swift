@@ -2142,6 +2142,14 @@ final class HubController {
 #else
         let architecture = "unknown"
 #endif
+        let availableStorage: String
+        if let bytes = try? homeDirectory.resourceValues(
+            forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+        ).volumeAvailableCapacityForImportantUsage {
+            availableStorage = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        } else {
+            availableStorage = "Unavailable"
+        }
         return [
             "== support metadata ==",
             "Generated: \(ISO8601DateFormatter().string(from: Date()))",
@@ -2151,7 +2159,8 @@ final class HubController {
             "Service: \(serviceState)",
             "Provider: \(provider)",
             "macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)",
-            "Architecture: \(architecture)"
+            "Architecture: \(architecture)",
+            "Available storage: \(availableStorage)"
         ].joined(separator: "\n")
     }
 

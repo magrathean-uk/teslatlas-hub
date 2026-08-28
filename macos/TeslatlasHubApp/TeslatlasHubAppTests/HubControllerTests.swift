@@ -170,6 +170,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(text.contains("Provider: Not configured"))
             XCTAssertTrue(text.contains("macOS:"))
             XCTAssertTrue(text.contains("Architecture: arm64"))
+            XCTAssertTrue(text.contains("Available storage:"))
             finished.fulfill()
         }
         wait(for: [finished], timeout: 2)
