@@ -298,25 +298,25 @@ final class MainWindowController: NSWindowController {
         stopButton.action = #selector(stopPressed)
         configureFlatButton(stopButton, symbol: "stop.fill", tint: .systemRed)
         stopButton.controlSize = .large
-        stopButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
+        stopButton.widthAnchor.constraint(equalToConstant: 150).isActive = true
         stopButton.heightAnchor.constraint(equalToConstant: 36).isActive = true
         restartButton.target = self
         restartButton.action = #selector(restartPressed)
         configureFlatButton(restartButton, symbol: "arrow.clockwise", tint: .controlAccentColor)
         restartButton.controlSize = .large
-        restartButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 130).isActive = true
+        restartButton.widthAnchor.constraint(equalToConstant: 150).isActive = true
         restartButton.heightAnchor.constraint(equalToConstant: 36).isActive = true
         heroDiagnosticsButton.target = self
         heroDiagnosticsButton.action = #selector(diagnosticsPressed)
-        configurePrimaryButton(heroDiagnosticsButton, symbol: "waveform.path.ecg")
+        configureFlatButton(heroDiagnosticsButton, symbol: "waveform.path.ecg")
         heroDiagnosticsButton.controlSize = .large
-        heroDiagnosticsButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        heroDiagnosticsButton.widthAnchor.constraint(equalToConstant: 150).isActive = true
         heroDiagnosticsButton.heightAnchor.constraint(equalToConstant: 36).isActive = true
         installButton.target = self
         installButton.action = #selector(connectTeslaPressed)
         configurePrimaryButton(installButton, symbol: "person.badge.key")
         installButton.controlSize = .large
-        installButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
+        installButton.widthAnchor.constraint(equalToConstant: 150).isActive = true
         installButton.heightAnchor.constraint(equalToConstant: 36).isActive = true
         hero.addArrangedSubview(actions)
         return hero
@@ -609,8 +609,8 @@ final class MainWindowController: NSWindowController {
             self.configureFlatButton(self.restartButton, symbol: "arrow.clockwise",
                                      tint: .controlAccentColor)
             self.heroDiagnosticsButton.title = "Run Diagnostics"
-            self.configurePrimaryButton(self.heroDiagnosticsButton,
-                                        symbol: "waveform.path.ecg")
+            self.configureFlatButton(self.heroDiagnosticsButton,
+                                     symbol: "waveform.path.ecg")
             self.installButton.title = "Set Up Hub"
             self.configurePrimaryButton(self.installButton, symbol: "person.badge.key")
 

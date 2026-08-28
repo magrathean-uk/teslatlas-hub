@@ -13202,7 +13202,27 @@ impl HubStore {
                         battery_heater, battery_heater_on, battery_heater_no_power,
                         tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                               ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                               ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+                     ON CONFLICT(vehicle_id, position_id) DO UPDATE SET
+                        drive_id = excluded.drive_id,
+                        car_id = excluded.car_id,
+                        position_json = excluded.position_json,
+                        speed = excluded.speed,
+                        power = excluded.power,
+                        est_battery_range_km = excluded.est_battery_range_km,
+                        fan_status = excluded.fan_status,
+                        driver_temp_setting = excluded.driver_temp_setting,
+                        passenger_temp_setting = excluded.passenger_temp_setting,
+                        is_climate_on = excluded.is_climate_on,
+                        is_rear_defroster_on = excluded.is_rear_defroster_on,
+                        is_front_defroster_on = excluded.is_front_defroster_on,
+                        battery_heater = excluded.battery_heater,
+                        battery_heater_on = excluded.battery_heater_on,
+                        battery_heater_no_power = excluded.battery_heater_no_power,
+                        tpms_pressure_fl = excluded.tpms_pressure_fl,
+                        tpms_pressure_fr = excluded.tpms_pressure_fr,
+                        tpms_pressure_rl = excluded.tpms_pressure_rl,
+                        tpms_pressure_rr = excluded.tpms_pressure_rr",
                     params![
                         commit.vehicle_id.to_string(),
                         position.id,
@@ -28683,6 +28703,65 @@ mod terrain_background_tests {
             tpms_pressure_rl: None,
             tpms_pressure_rr: None,
         }
+    }
+
+    #[test]
+    fn lifecycle_position_replay_after_import_is_idempotent() {
+        let temp = crate::private_tempdir().expect("tempdir");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let source = store
+            .register_source(&SourceDescriptor::new("replay_test", "one"), 1_000)
+            .expect("source");
+        let vehicle = store
+            .register_vehicle(&VehicleDescriptor::new(source.source_id, "7"), 1_000)
+            .expect("vehicle");
+        let encoded = OpenSessionState::new().encode().expect("open state");
+        let first = position(42, None);
+        let first_delta = LifecycleDelta {
+            positions: vec![first],
+            ..Default::default()
+        };
+        store
+            .commit_lifecycle_delta(&LifecycleCommit {
+                vehicle_id: vehicle.vehicle_id,
+                car_id: 7,
+                open_session_json: &encoded,
+                last_observation_id: 1,
+                quarantined: false,
+                updated_at_ms: 1_000,
+                delta: &first_delta,
+            })
+            .expect("initial materialisation");
+
+        let mut replay = position(42, None);
+        replay.speed = Some(30);
+        let replay_delta = LifecycleDelta {
+            positions: vec![replay],
+            ..Default::default()
+        };
+        store
+            .commit_lifecycle_delta(&LifecycleCommit {
+                vehicle_id: vehicle.vehicle_id,
+                car_id: 7,
+                open_session_json: &encoded,
+                last_observation_id: 2,
+                quarantined: false,
+                updated_at_ms: 2_000,
+                delta: &replay_delta,
+            })
+            .expect("replayed imported position");
+
+        let connection = store.open().expect("open");
+        let (count, speed): (i64, Option<i64>) = connection
+            .query_row(
+                "SELECT COUNT(*), MAX(speed) FROM materialised_positions
+                 WHERE vehicle_id = ?1 AND position_id = 42",
+                params![vehicle.vehicle_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("replayed row");
+        assert_eq!(count, 1);
+        assert_eq!(speed, Some(30));
     }
 
     #[test]

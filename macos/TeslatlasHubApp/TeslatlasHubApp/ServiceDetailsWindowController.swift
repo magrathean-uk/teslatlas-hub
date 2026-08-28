@@ -20,25 +20,13 @@ final class ServiceDetailsWindowController: NSWindowController {
         self.mutationAllowed = mutationAllowed
         self.onMutationStateChanged = onMutationStateChanged
         self.onChanged = onChanged
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 420), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 300), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Service Details"
         super.init(window: window)
         detailsField.font = .systemFont(ofSize: 13)
         detailsField.lineBreakMode = .byCharWrapping
         detailsField.translatesAutoresizingMaskIntoConstraints = false
 
-        let legal = NSTextField(labelWithString: "License: AGPL-3.0-only\nUnofficial project. No Tesla affiliation or warranty.")
-        legal.font = .systemFont(ofSize: 11)
-        legal.textColor = .secondaryLabelColor
-        legal.lineBreakMode = .byWordWrapping
-        legal.translatesAutoresizingMaskIntoConstraints = false
-
-        let sourceButton = HubActionButton(title: "Open Source", target: self, action: #selector(openSource))
-        configureFlatButton(sourceButton, symbol: "chevron.left.forwardslash.chevron.right")
-        sourceButton.translatesAutoresizingMaskIntoConstraints = false
-        let licenseButton = HubActionButton(title: "Open License", target: self, action: #selector(openLicense))
-        configureFlatButton(licenseButton, symbol: "doc.plaintext")
-        licenseButton.translatesAutoresizingMaskIntoConstraints = false
         updateButton.target = self
         updateButton.action = #selector(updateServicePressed)
         configureFlatButton(updateButton, symbol: "arrow.down.circle", tint: .controlAccentColor)
@@ -47,12 +35,12 @@ final class ServiceDetailsWindowController: NSWindowController {
         uninstallButton.action = #selector(uninstallPressed)
         configureFlatButton(uninstallButton, symbol: "trash", tint: .systemRed)
         uninstallButton.translatesAutoresizingMaskIntoConstraints = false
-        let buttons = NSStackView(views: [sourceButton, licenseButton, updateButton, uninstallButton])
+        let buttons = NSStackView(views: [updateButton, uninstallButton])
         buttons.orientation = .horizontal
         buttons.spacing = 8
         buttons.translatesAutoresizingMaskIntoConstraints = false
 
-        let stack = NSStackView(views: [detailsField, legal, buttons])
+        let stack = NSStackView(views: [detailsField, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 16
@@ -64,8 +52,7 @@ final class ServiceDetailsWindowController: NSWindowController {
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -28),
             stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 28),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -28),
-            legal.trailingAnchor.constraint(equalTo: stack.trailingAnchor)
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -28)
         ])
         window.center()
         update(snapshot: snapshot)
@@ -97,15 +84,6 @@ final class ServiceDetailsWindowController: NSWindowController {
         (button as? HubActionButton)?.hubAppearance = .flat
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.focusRingType = .default
-    }
-
-    @objc private func openSource() {
-        NSWorkspace.shared.open(URL(string: "https://github.com/magrathean-uk/teslatlas-hub")!)
-    }
-
-    @objc private func openLicense() {
-        guard let license = Bundle.main.url(forResource: "LICENSE", withExtension: nil) else { return }
-        NSWorkspace.shared.open(license)
     }
 
     @objc private func updateServicePressed() {

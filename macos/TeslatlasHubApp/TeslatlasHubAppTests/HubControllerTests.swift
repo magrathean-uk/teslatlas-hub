@@ -194,6 +194,44 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(runner.commands, ["doctor", "preflight", "status"])
     }
 
+    func testRunningHubPausesForDiagnosticsAndAlwaysResumes() {
+        let runner = CommandMapRunner(responses: [
+            "doctor": .success("{\"status\":\"ok\"}"),
+            "preflight": .success("{\"status\":\"ready\"}"),
+            "status": .success("{\"status\":\"ok\"}")
+        ])
+        let events = EventRecorder()
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: events, loadState: .loaded),
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "running Hub diagnostics finished")
+        controller.runFullDiagnostics { text in
+            XCTAssertTrue(text.contains("Hub collection resumed."))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values, ["service:stop", "service:start"])
+        XCTAssertEqual(runner.commands, ["doctor", "preflight", "status"])
+    }
+
+    func testStoppedHubRemainsStoppedAfterDiagnostics() {
+        let runner = CommandMapRunner(responses: [
+            "doctor": .success("{\"status\":\"ok\"}"),
+            "preflight": .success("{\"status\":\"ready\"}"),
+            "status": .success("{\"status\":\"ok\"}")
+        ])
+        let events = EventRecorder()
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: events, loadState: .unloaded),
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "stopped Hub diagnostics finished")
+        controller.runFullDiagnostics { _ in finished.fulfill() }
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(events.values, [])
+    }
+
     func testPreviewDiagnosticsDoNotInvokeHubCommands() {
         let runner = CountingRunner()
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"], commandRunner: runner)

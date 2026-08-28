@@ -426,7 +426,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         let rows = NSStackView(views: [
             rustFeatureRow("Written purely in Rust."),
             featureRow("No Docker.", "shippingbox.fill", color: .systemBlue),
-            featureRow("Open source and developed natively for macOS and Debian.",
+            featureRow("Developed natively for macOS and Debian.",
                        "desktopcomputer", color: .systemGreen),
             featureRow("Uses SQLite.", "cylinder.fill", color: .systemPurple)
         ])
@@ -1155,7 +1155,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func openFleetGuide() {
-        if let url = URL(string: "https://github.com/magrathean-uk/teslatlas-hub/blob/main/docs/FLEET_SETUP.md") {
+        if let url = URL(string: "https://developer.tesla.com") {
             NSWorkspace.shared.open(url)
         }
     }

@@ -4,9 +4,8 @@ final class DiagnosticsWindowController: NSWindowController {
     private let controller: HubController
     private let textView = NSTextView()
     private let statusIcon = NSImageView()
-    private let statusTitle = NSTextField(labelWithString: "Ready")
-    private let statusDetail = NSTextField(wrappingLabelWithString:
-        "Run a local database, credential, TLS, collector, and recent-log check when you need it.")
+    private let statusTitle = NSTextField(labelWithString: "Diagnostics")
+    private let statusDetail = NSTextField(wrappingLabelWithString: "")
     private let runButton = HubActionButton(title: "Run Diagnostics", target: nil, action: nil)
     private let copyButton = HubActionButton(title: "Copy Report", target: nil, action: nil)
     private let saveButton = HubActionButton(title: "Save Report…", target: nil, action: nil)
@@ -91,6 +90,7 @@ final class DiagnosticsWindowController: NSWindowController {
     }
 
     private func showInitialSummary() {
+        statusDetail.isHidden = true
         let summary = controller.diagnostics()
         let text = summary.isEmpty
             ? "No diagnostic report has been run."
@@ -101,13 +101,14 @@ final class DiagnosticsWindowController: NSWindowController {
     }
 
     @objc private func runPressed() {
+        statusDetail.isHidden = false
         runButton.isEnabled = false
         copyButton.isEnabled = false
         saveButton.isEnabled = false
         statusIcon.image = NSImage(systemSymbolName: "hourglass", accessibilityDescription: "Diagnostics running")
         statusIcon.contentTintColor = .controlAccentColor
         statusTitle.stringValue = "Running checks"
-        statusDetail.stringValue = "Hub stays installed. TeslaMate is not written and stored Tesla credentials are not deleted."
+        statusDetail.stringValue = "Collection pauses briefly while checks run, then resumes automatically."
         textView.string = "Running diagnostics…"
         controller.runFullDiagnostics { [weak self] text in
             guard let self else { return }

@@ -352,7 +352,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     };
     let collector_check = DoctorCheck {
         name: "collectorReadiness".to_owned(),
-        passed: !collector_required || (can_start && readiness == "ready"),
+        passed: collector_readiness_passes(collector_required, can_start, &readiness),
         detail: format!(
             "required={} initOnly={} canStart={} readiness={}",
             collector_required, init_only, can_start, readiness
@@ -435,6 +435,10 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             doctor_is_read_only: true,
         },
     })
+}
+
+fn collector_readiness_passes(required: bool, can_start: bool, readiness: &str) -> bool {
+    !required || (can_start && matches!(readiness, "ready" | "collector_absent"))
 }
 
 /// Cheap collector/serve startup log: inventory and credentials, not pack hashing.
@@ -526,6 +530,14 @@ mod tests {
     use super::*;
     use crate::config::HubConfig;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn stopped_collector_is_ready_to_start_not_a_doctor_failure() {
+        assert!(collector_readiness_passes(true, true, "collector_absent"));
+        assert!(collector_readiness_passes(true, true, "ready"));
+        assert!(!collector_readiness_passes(true, false, "collector_absent"));
+        assert!(!collector_readiness_passes(true, true, "collector_stale"));
+    }
 
     #[test]
     fn doctor_allows_explicit_empty_init_only_mode() {

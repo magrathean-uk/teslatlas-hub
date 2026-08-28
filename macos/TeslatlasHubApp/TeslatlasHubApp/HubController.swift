@@ -2045,6 +2045,52 @@ final class HubController {
                 + snapshot.diagnosticLines.joined(separator: "\n"))
             return
         }
+        serviceRunner.loadedState { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .loaded:
+                self.serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
+                    switch stopResult {
+                    case .success:
+                        self.runFullDiagnosticsWhileStopped { report in
+                            self.serviceRunner.run(arguments: ["service", "start"]) { startResult in
+                                completion(report + "\n\n" + Self.serviceResumeSection(startResult))
+                            }
+                        }
+                    case let .failure(error):
+                        self.runFullDiagnosticsWhileStopped { report in
+                            completion(Self.servicePauseFailureSection(error) + "\n\n" + report)
+                        }
+                    }
+                }
+            case .unloaded:
+                self.runFullDiagnosticsWhileStopped(completion: completion)
+            case let .unknown(error):
+                self.runFullDiagnosticsWhileStopped { report in
+                    completion(Self.serviceStateFailureSection(error) + "\n\n" + report)
+                }
+            }
+        }
+    }
+
+    private static func servicePauseFailureSection(_ error: Error) -> String {
+        "== service pause (failed) ==\n\(error.localizedDescription)"
+    }
+
+    private static func serviceStateFailureSection(_ error: Error) -> String {
+        "== service state check (failed) ==\n\(error.localizedDescription)"
+    }
+
+    private static func serviceResumeSection(_ result: Result<String, Error>) -> String {
+        switch result {
+        case .success:
+            return "== service resume ==\nHub collection resumed."
+        case let .failure(error):
+            return "== service resume (failed) ==\n\(error.localizedDescription)"
+        }
+    }
+
+    private func runFullDiagnosticsWhileStopped(completion: @escaping (String) -> Void) {
         let diagnosticsStarted = Date()
         HubAppLog.shared.record("checks.started", category: "diagnostics")
         let runner = isServiceInstalled ? installedCommandRunner : commandRunner
@@ -2078,7 +2124,6 @@ final class HubController {
                         }
                         let report = [
                             "Teslatlas Hub diagnostics",
-                            "Full database, credential, connection, and log check.",
                             "TeslaMate is not written. Stored Owner and Fleet tokens are not deleted.",
                             "",
                             self.supportMetadata(),
