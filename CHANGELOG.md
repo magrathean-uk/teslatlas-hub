@@ -21,7 +21,8 @@ the complete prerelease evidence set are published atomically.
 - native macOS diagnostics, bounded redacted logs, service controls, and
   uninstall flow;
 - release evidence, SBOM, dependency notices, provenance, packaging, and
-  exact-version admission gates.
+  exact-version admission gates;
+- a macOS release-key vault helper for a detached AES-256 encrypted APFS vault.
 
 ### Changed
 

@@ -60,10 +60,11 @@ Publish all of the following together:
 - top-level `SHA256SUMS` and detached `SHA256SUMS.asc`;
 - migration notes, release notes, and legal changelog.
 
-The full OpenPGP release fingerprint must be published through a separately
-authenticated, company-controlled channel. Repository, release-asset, and key
-server copies are not independent trust anchors. The current missing external
-publication blocks v1.0.0-beta.1.
+The full OpenPGP release fingerprint and both production public-key SHA-256
+digests must be published through a separately authenticated,
+company-controlled channel. Repository, release-asset, and key-server copies
+are not independent trust anchors. The current missing external publication
+blocks v1.0.0-beta.1.
 
 Immediately before the signed tag, commit the final status flip that removes
 candidate, draft, preparation, and unreleased wording from this version's

@@ -16,8 +16,10 @@ the GitHub release being checked:
 
 - OpenPGP release fingerprint
   `A43B517A25C59994654639ED9CB5BEA1F3D65EDD`;
-- SHA-256 of the provenance public key inside detailed evidence;
-- SHA-256 of `TeslatlasHubDebianAttestationPublicKey.pem`.
+- SHA-256 of the provenance public key inside detailed evidence:
+  `a787a55c4b93266453d86805a6cda1ba5b54c76ce31750a468c1dc76a7c18901`;
+- SHA-256 of `TeslatlasHubDebianAttestationPublicKey.pem`:
+  `7186087343ae93f3d9c5d02347f467a45937339118db1a5f043cb1f6d4e15fe7`.
 
 Keys downloaded beside their signatures are evidence inputs, not independent
 trust anchors.

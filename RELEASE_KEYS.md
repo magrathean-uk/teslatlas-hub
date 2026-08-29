@@ -70,14 +70,25 @@ release evidence bundle.
 
 ## Debian native-attestation key
 
-**No production Debian native-attestation private key or independently
-published public-key digest currently exists. This blocks publication of
-v1.0.0-beta.1.** This Ed25519 identity is separate from both the OpenPGP tag
-key and the P-256 provenance key.
+The production Ed25519 key was provisioned on 2026-08-29 under the custody of
+György Bolyki. Its public-key SHA-256 is
+`7186087343ae93f3d9c5d02347f467a45937339118db1a5f043cb1f6d4e15fe7`.
+That digest is recorded in the private release-key record but has not yet been
+published through the required separately authenticated company-controlled
+channel. This blocks publication of v1.0.0-beta.1. The identity is separate
+from both the OpenPGP tag key and the P-256 provenance key.
 
-An authorised custodian must create the key outside the repository on an
-encrypted volume. The native attestation generator accepts an unencrypted
-Ed25519 PEM key owned by the invoking user and mode `0600` or stricter:
+The archival key is held outside the repository in a dedicated AES-256
+encrypted APFS release vault that remains unmounted outside authorised release
+work. The native attestation generator accepts an unencrypted Ed25519 PEM key
+owned by the invoking user and mode `0600` or stricter only while that vault is
+mounted. Use the following process for an authorised rotation:
+
+On the authorised macOS release host, use `scripts/release-key-vault.sh status`,
+`mount`, `paths`, and `unmount` to operate the vault. The helper obtains the
+vault password from macOS Keychain, never prints it, refuses unsafe vault paths,
+and does not force an unmount. At-rest protection comes from the vault's own
+AES-256 encryption; FileVault is not a release prerequisite.
 
 ```sh
 : "${DEBIAN_ATTESTATION_SIGNING_KEY:?absolute path outside the repository required}"
@@ -114,17 +125,20 @@ suspected-compromised key breaks continuity and requires explicit disclosure.
 
 ## Provenance evidence key
 
-**No production provenance private key or independently published provenance
-trust anchor currently exists. This blocks publication of v1.0.0-beta.1.** The
-OpenPGP tag key above is a separate identity and must not be reused as the
-provenance key.
+The production P-256 key was provisioned on 2026-08-29 under the custody of
+György Bolyki. Its public-key SHA-256 is
+`a787a55c4b93266453d86805a6cda1ba5b54c76ce31750a468c1dc76a7c18901`.
+That digest is recorded in the private release-key record but has not yet been
+published through the required separately authenticated company-controlled
+channel. This blocks publication of v1.0.0-beta.1. The OpenPGP tag key above is
+a separate identity and must not be reused as the provenance key.
 
-An authorised release-key custodian must create the production provenance key
-on an encrypted offline volume. The current evidence tool accepts an
-unencrypted PEM private key owned by the invoking user and mode `0600` or
-stricter. It must be an ephemeral release-host copy, not the archival master.
-With `PROVENANCE_SIGNING_KEY` set to that copy's absolute path, create a P-256
-key and derive the exact public-key trust anchor as follows:
+The archival key is held outside the repository in the dedicated AES-256
+encrypted APFS release vault and remains unmounted outside authorised release
+work. The current evidence tool accepts an unencrypted PEM private key owned by
+the invoking user and mode `0600` or stricter only while that vault is mounted.
+Use the following process for an authorised rotation and derive the exact
+public-key trust anchor as follows:
 
 ```sh
 : "${PROVENANCE_SIGNING_KEY:?set an absolute private-key path on the encrypted volume}"
@@ -150,9 +164,9 @@ exists, but is not claimed as a current control.
 
 The private key must never enter Git, GitHub Actions, a release asset, the
 source archive, the Hub host, or the artifact backup set. Keep the archival key
-on the encrypted offline volume under named-custodian access. Mount or copy it
-to the isolated release host only for the signing operation, keep the temporary
-file owner-only, then remove that copy and revoke host access to the volume.
+inside the unmounted encrypted release vault under named-custodian access.
+Mount it only for the signing operation, keep any temporary release-host copy
+owner-only, then remove that copy and unmount the vault.
 
 ## Provenance key rotation
 

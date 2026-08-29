@@ -8,6 +8,9 @@ not evidence that a private instrument exists or remains sufficient.
 
 - assigned the release OpenPGP identity and public founder attribution to the
   exact name **György Bolyki**;
+- provisioned separate production P-256 provenance and Ed25519 Debian
+  attestation keys in a detached AES-256 encrypted release vault and recorded
+  their public-key digests without claiming external publication;
 - changed the prominent version-bound source route to a release landing page
   that identifies the tagged workspace and detailed evidence archives as the
   complete two-part Corresponding Source set;

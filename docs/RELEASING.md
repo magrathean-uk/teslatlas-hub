@@ -5,13 +5,12 @@ The repository's [release compliance gate](../RELEASE_COMPLIANCE.md) controls.
 
 > **Current status:** v1.0.0-beta.1 is an unpublished candidate. The Debian
 > native-attestation, Linux Go command-proxy clean-rebuild evidence, and Fleet
-> source/legal evidence paths are implemented, but native Debian 13 amd64 and
-> ARM64 package/runtime execution has not yet been recorded and no production
-> provenance key or independently pinned
-> Debian-attestation trust anchor has been provisioned.
-> The release OpenPGP fingerprint also lacks a separately authenticated
-> company-controlled publication. Publication remains blocked until every gate
-> below passes.
+> source/legal evidence paths are implemented and the production provenance
+> and Debian-attestation keys are provisioned. Final signed-tag Debian 13 amd64
+> and ARM64 release receipts have not yet been recorded. The release OpenPGP
+> fingerprint and both production public-key digests also lack separately
+> authenticated company-controlled publication. Publication remains blocked
+> until every gate below passes.
 
 ## Fixed version mapping
 
