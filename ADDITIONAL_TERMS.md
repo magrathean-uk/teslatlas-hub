@@ -6,7 +6,7 @@ These terms apply only to material for which MAGRATHEAN UK LTD owns or is author
 
 Under section 7(b), preserve this notice in source distributions of applicable material:
 
-> Teslatlas Hub — originally authored by Gyorgy Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
+> Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
 
 Where a covered work already provides an About, Legal, Credits, `--version`, `legal` or equivalent appropriate-legal-notices facility, preserve the notice in that facility.
 
@@ -23,7 +23,7 @@ A modified distribution must not describe itself as an official Magrathean relea
 Under sections 7(c) and 7(d):
 
 - do not misrepresent the origin of Magrathean-owned material; and
-- do not use `MAGRATHEAN UK LTD`, `Magrathean`, `Teslatlas`, `Teslatlas Hub` or `Gyorgy Bolyki` to imply sponsorship, certification or endorsement of a modified product without permission.
+- do not use `MAGRATHEAN UK LTD`, `Magrathean`, `Teslatlas`, `Teslatlas Hub` or `György Bolyki` to imply sponsorship, certification or endorsement of a modified product without permission.
 
 Truthful preservation of attribution, copyright and compatibility notices is permitted.
 

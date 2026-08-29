@@ -88,7 +88,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(legal.action, #selector(AppDelegate.showLegalNotice(_:)))
         XCTAssertTrue(AppDelegate.legalNoticeText.contains("AGPL-3.0-only"))
         XCTAssertTrue(AppDelegate.legalNoticeText.contains(
-            "Teslatlas Hub — originally authored by Gyorgy Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub"
+            "Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub"
         ))
         let source = try XCTUnwrap(application.items.first {
             $0.title == "Corresponding Source for v\(HubRelease.bundledVersion)…"

@@ -88,9 +88,9 @@ pub fn legal_notice() -> String {
     let corresponding_source = corresponding_source_url();
     format!(
         "Teslatlas Hub {BUILD_VERSION}\n\
-         Copyright © 2026 Gyorgy Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own\n\
+         Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own\n\
          License: AGPL-3.0-only\n\
-         Teslatlas Hub — originally authored by Gyorgy Bolyki and published by MAGRATHEAN UK LTD. Source: {SOURCE_URL}\n\
+         Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: {SOURCE_URL}\n\
          Corresponding Source for this version: {corresponding_source}\n\
          Unofficial; not affiliated with Tesla or TeslaMate; no warranty."
     )
@@ -128,11 +128,11 @@ mod legal_notice_tests {
             "notice must not offer or-later: {notice}"
         );
         assert!(
-            notice.contains("Copyright © 2026 Gyorgy Bolyki, MAGRATHEAN UK LTD"),
+            notice.contains("Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD"),
             "notice must name the company copyright: {notice}"
         );
         assert!(
-            notice.contains("originally authored by Gyorgy Bolyki")
+            notice.contains("originally authored by György Bolyki")
                 && notice.contains("published by MAGRATHEAN UK LTD"),
             "notice must carry the founder/company attribution: {notice}"
         );

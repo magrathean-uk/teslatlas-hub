@@ -218,7 +218,7 @@ references are factual and do not imply sponsorship.
 
 ## Licence and source
 
-Copyright © 2026 Gyorgy Bolyki, MAGRATHEAN UK LTD, and identified contributors,
+Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors,
 each as applicable to material they own.
 
 Teslatlas Hub is free software under the

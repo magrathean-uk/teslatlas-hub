@@ -6,6 +6,8 @@ not evidence that a private instrument exists or remains sufficient.
 
 ## 29 August 2026 — v1.0.0-beta.1 candidate hardening
 
+- assigned the release OpenPGP identity and public founder attribution to the
+  exact name **György Bolyki**;
 - changed the prominent version-bound source route to a release landing page
   that identifies the tagged workspace and detailed evidence archives as the
   complete two-part Corresponding Source set;
@@ -45,7 +47,7 @@ not evidence that a private instrument exists or remains sufficient.
 ## 17 August 2026 — complete Hub public pack
 
 - applied the public Teslatlas Hub legal pack to `main`;
-- fixed the public founder spelling as `Gyorgy Bolyki`;
+- fixed the public founder spelling as `György Bolyki`;
 - recorded a prior MAGRATHEAN UK LTD ownership assertion for original Company
   material, subject to verification of the private title record;
 - standardised `AGPL-3.0-only` while preserving prior `or-later` grants;
@@ -59,7 +61,7 @@ not evidence that a private instrument exists or remains sufficient.
 
 - recorded the prior assertion that original Hub material was owned by
   Magrathean UK Ltd, subject to current title verification;
-- recorded Gyorgy Bolyki as original project creator and lead developer;
+- recorded György Bolyki as original project creator and lead developer;
 - recorded that public Git identity for this repository is Magrathean UK Ltd;
 - added `ATTRIBUTION.md` and `SAFETY_AND_USE_LIMITS.md`.
 

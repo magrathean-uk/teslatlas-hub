@@ -211,7 +211,7 @@
         "RELEASE_SIGNING_KEY.asc"
       ],
       "exception": {
-        "origin": "Exported OpenPGP Ed25519 public key for Teslatlas Hub Release <release@teslatlas.local>, fingerprint F59A16DD7828D75D8DAB23C52C4FD42128152ACC; tracked export SHA-256 6e4e81106ff953fed527d428fdb41c91bfb14aa8f07d6615dbe552181f77f1ef.",
+        "origin": "Exported OpenPGP Ed25519 public key for György Bolyki <contact@magrathean.uk>, fingerprint A43B517A25C59994654639ED9CB5BEA1F3D65EDD; tracked export SHA-256 e650de97cf819e118cba9e6d6f5d24a61448445fa3d6565902a4282de90fa618.",
         "licensing": "Public verification material, not product source and not an independent trust assertion. No secret or private-key packet is included.",
         "release_treatment": "Ship for verification, publish the full fingerprint through a separately authenticated channel, and preserve retired public keys after documented rotation."
       }

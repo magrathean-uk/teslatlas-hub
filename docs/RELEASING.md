@@ -91,8 +91,8 @@ done
 ```
 
 ```sh
-EXPECTED_RELEASE_FINGERPRINT=F59A16DD7828D75D8DAB23C52C4FD42128152ACC
-git tag -u F59A16DD7828D75D8DAB23C52C4FD42128152ACC -s \
+EXPECTED_RELEASE_FINGERPRINT=A43B517A25C59994654639ED9CB5BEA1F3D65EDD
+git tag -u A43B517A25C59994654639ED9CB5BEA1F3D65EDD -s \
   v1.0.0-beta.1 -m 'Teslatlas Hub v1.0.0-beta.1'
 TAG_STATUS=$(git verify-tag --raw v1.0.0-beta.1 2>&1)
 TAG_SIGNER=$(
@@ -298,7 +298,7 @@ scripts/build-deb.sh \
 python3 scripts/debian-release-attestation.py generate \
   --repo . \
   --tag "$TAG" \
-  --tag-signer-fingerprint F59A16DD7828D75D8DAB23C52C4FD42128152ACC \
+  --tag-signer-fingerprint A43B517A25C59994654639ED9CB5BEA1F3D65EDD \
   --package "dist/teslatlas-hub_${VERSION}_${ARCH}.deb" \
   --architecture "$ARCH" \
   --signing-key "$DEBIAN_ATTESTATION_SIGNING_KEY" \
@@ -333,7 +333,7 @@ Verify each transferred package and receipt on Linux or macOS:
 python3 scripts/debian-release-attestation.py verify \
   --repo . \
   --tag v1.0.0-beta.1 \
-  --tag-signer-fingerprint F59A16DD7828D75D8DAB23C52C4FD42128152ACC \
+  --tag-signer-fingerprint A43B517A25C59994654639ED9CB5BEA1F3D65EDD \
   --package dist/teslatlas-hub_1.0.0-beta.1_amd64.deb \
   --architecture amd64 \
   --receipt dist/debian-native-attestation-amd64/debian-native-attestation.json \
@@ -360,7 +360,7 @@ mkdir -p dist/release
 python3 scripts/release-evidence.py \
   --repo . \
   --tag v1.0.0-beta.1 \
-  --tag-signer-fingerprint F59A16DD7828D75D8DAB23C52C4FD42128152ACC \
+  --tag-signer-fingerprint A43B517A25C59994654639ED9CB5BEA1F3D65EDD \
   --output-dir dist/release/v1.0.0-beta.1 \
   --signing-key "$PROVENANCE_SIGNING_KEY" \
   --public-key-sha256 "$PROVENANCE_PUBLIC_KEY_SHA256" \

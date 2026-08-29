@@ -1,6 +1,6 @@
 # Founder contribution policy
 
-The founder's public attribution name is **Gyorgy Bolyki**.
+The founder's public attribution name is **György Bolyki**.
 
 The founder does not execute a contributor agreement with himself or a new
 Company title instrument for each commit.

@@ -4,7 +4,7 @@ Section: utils
 Priority: optional
 Architecture: @ARCHITECTURE@
 Depends: adduser, ca-certificates, systemd (>= 254)@RUNTIME_DEPENDS@
-Maintainer: Magrathean UK Ltd <contact@magrathean.uk>
+Maintainer: György Bolyki <contact@magrathean.uk>
 Description: Self-hosted multi-car Tesla telemetry hub
  Teslatlas Hub is a local multi-car telemetry collector, migration tool,
  sync server, and command-line controller.

@@ -217,7 +217,7 @@ control_text = (
     "Priority: optional\n"
     f"Architecture: {architecture}\n"
     "Depends: adduser, ca-certificates, systemd (>= 254)\n"
-    "Maintainer: Magrathean UK Ltd <contact@magrathean.uk>\n"
+    "Maintainer: György Bolyki <contact@magrathean.uk>\n"
     "Description: Self-hosted multi-car Tesla telemetry hub\n"
     " Fixture package.\n"
 )

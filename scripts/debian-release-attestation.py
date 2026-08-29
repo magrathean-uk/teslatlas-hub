@@ -732,7 +732,7 @@ def validate_control_archive(
     if (
         fields["Section"] != "utils"
         or fields["Priority"] != "optional"
-        or fields["Maintainer"] != "Magrathean UK Ltd <contact@magrathean.uk>"
+        or fields["Maintainer"] != "György Bolyki <contact@magrathean.uk>"
         or not fields["Description"].startswith("Self-hosted multi-car Tesla telemetry hub")
         or not re.fullmatch(r"[A-Za-z0-9+().,:|<>=~\- ]{1,2048}", fields["Depends"])
         or not fields["Depends"].startswith("adduser, ca-certificates, systemd")

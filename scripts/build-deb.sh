@@ -277,7 +277,7 @@ printf '%s\n' \
     'Source: teslatlas-hub' \
     'Section: utils' \
     'Priority: optional' \
-    'Maintainer: Magrathean UK Ltd <contact@magrathean.uk>' \
+    'Maintainer: György Bolyki <contact@magrathean.uk>' \
     '' \
     'Package: teslatlas-hub' \
     "Architecture: $architecture" \

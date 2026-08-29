@@ -149,8 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     static let legalNoticeText = """
     Licence: AGPL-3.0-only
-    Copyright © 2026 Gyorgy Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own.
-    Teslatlas Hub — originally authored by Gyorgy Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
+    Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own.
+    Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
     Unofficial; not affiliated with Tesla or TeslaMate; no warranty.
     """
 

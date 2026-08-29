@@ -2,10 +2,10 @@
 
 ## Original material
 
-Copyright notices identify Gyorgy Bolyki, MAGRATHEAN UK LTD, and other
+Copyright notices identify György Bolyki, MAGRATHEAN UK LTD, and other
 contributors only for material each applicable rightsholder owns.
 
-The original project creator and lead developer is Gyorgy Bolyki. Founder-
+The original project creator and lead developer is György Bolyki. Founder-
 created Product material is treated as Company-owned only after an authorised
 maintainer verifies an executed Company title record. This repository does not
 prove that private record.

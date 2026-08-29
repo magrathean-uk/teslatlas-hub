@@ -15,7 +15,7 @@ Obtain these values through authenticated MAGRATHEAN UK LTD channels outside
 the GitHub release being checked:
 
 - OpenPGP release fingerprint
-  `F59A16DD7828D75D8DAB23C52C4FD42128152ACC`;
+  `A43B517A25C59994654639ED9CB5BEA1F3D65EDD`;
 - SHA-256 of the provenance public key inside detailed evidence;
 - SHA-256 of `TeslatlasHubDebianAttestationPublicKey.pem`.
 
@@ -35,7 +35,7 @@ trust.
 ```sh
 set -eu
 RELEASE=/absolute/path/to/downloaded-v1.0.0-beta.1
-EXPECTED_RELEASE_FINGERPRINT=F59A16DD7828D75D8DAB23C52C4FD42128152ACC
+EXPECTED_RELEASE_FINGERPRINT=A43B517A25C59994654639ED9CB5BEA1F3D65EDD
 VERIFY_TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-release-verify.XXXXXX")
 trap 'find "$VERIFY_TMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 SOURCE_CHECKOUT="$VERIFY_TMP/source"
@@ -206,7 +206,7 @@ From a clean checkout containing the verified signed tag, verify both receipts:
 python3 scripts/debian-release-attestation.py verify \
   --repo . \
   --tag v1.0.0-beta.1 \
-  --tag-signer-fingerprint F59A16DD7828D75D8DAB23C52C4FD42128152ACC \
+  --tag-signer-fingerprint A43B517A25C59994654639ED9CB5BEA1F3D65EDD \
   --package "$RELEASE/teslatlas-hub_1.0.0-beta.1_amd64.deb" \
   --architecture amd64 \
   --receipt "$DETAIL/debian-native-attestations/amd64/debian-native-attestation.json" \
@@ -217,7 +217,7 @@ python3 scripts/debian-release-attestation.py verify \
 python3 scripts/debian-release-attestation.py verify \
   --repo . \
   --tag v1.0.0-beta.1 \
-  --tag-signer-fingerprint F59A16DD7828D75D8DAB23C52C4FD42128152ACC \
+  --tag-signer-fingerprint A43B517A25C59994654639ED9CB5BEA1F3D65EDD \
   --package "$RELEASE/teslatlas-hub_1.0.0-beta.1_arm64.deb" \
   --architecture arm64 \
   --receipt "$DETAIL/debian-native-attestations/arm64/debian-native-attestation.json" \

@@ -4,9 +4,13 @@ Official release tags and checksum manifests are signed with the Teslatlas Hub
 release OpenPGP key.
 
 ```text
-Fingerprint: F59A 16DD 7828 D75D 8DAB 23C5 2C4F D421 2815 2ACC
-Identity:    Teslatlas Hub Release <release@teslatlas.local>
+Fingerprint: A43B 517A 25C5 9994 6546 39ED 9CB5 BEA1 F3D6 5EDD
+Identity:    György Bolyki <contact@magrathean.uk>
+GitHub UID:  György Bolyki <88115882+magrathean-uk@users.noreply.github.com>
 Algorithm:   Ed25519
+Created:     2026-08-29
+Expires:     2028-08-28
+Custodian:   György Bolyki
 ```
 
 The public key is stored in `RELEASE_SIGNING_KEY.asc` so verification remains
@@ -16,7 +20,7 @@ copy and verify its full fingerprint explicitly:
 
 ```sh
 RELEASE=/absolute/path/to/downloaded-v1.0.0-beta.1
-EXPECTED_RELEASE_FINGERPRINT=F59A16DD7828D75D8DAB23C52C4FD42128152ACC
+EXPECTED_RELEASE_FINGERPRINT=A43B517A25C59994654639ED9CB5BEA1F3D65EDD
 VERIFY_TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-key-verify.XXXXXX")
 trap 'find "$VERIFY_TMP" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
 SOURCE_CHECKOUT="$VERIFY_TMP/source"
@@ -48,6 +52,11 @@ authenticated Magrathean publication before trusting it.
 separately authenticated, company-controlled channel. This blocks an official
 v1.0.0-beta.1 release.** A Git repository, release asset, or key server alone
 does not satisfy that independent publication requirement.
+
+The earlier pre-publication candidate key
+`F59A16DD7828D75D8DAB23C52C4FD42128152ACC` was retired on 2026-08-29 before
+it authenticated an official release. It remains recoverable from Git history
+for audit purposes; no release-signing continuity claim is made from that key.
 
 ## Rotation
 

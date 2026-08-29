@@ -26,7 +26,7 @@ other current implementation and tooling files use `AGPL-3.0-only`.
 Where required, add:
 
 ```text
-SPDX-FileContributor: Gyorgy Bolyki
+SPDX-FileContributor: György Bolyki
 ```
 
 ## TeslaMate-derived or adapted files

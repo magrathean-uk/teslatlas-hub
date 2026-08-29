@@ -33,6 +33,8 @@ the complete prerelease evidence set are published atomically.
   command-proxy enrolment while Hub is stopped;
 - terrain and geocoding are disabled by default; geocoding has no implicit
   public provider and requires an operator-selected HTTPS endpoint;
+- release tags and checksum manifests use the protected Ed25519 OpenPGP
+  identity of György Bolyki;
 - Hub is a complete new-install collector and no longer depends on TeslaMate at
   runtime;
 - licence expression is `AGPL-3.0-only` for this release line.
