@@ -1070,6 +1070,65 @@ def executable_record(command: list[str], repo: Path, label: str) -> dict[str, s
     return {"executable_sha256": witness.sha256, "version": text}
 
 
+def linux_os_release(
+    etc_path: Path = Path("/etc/os-release"),
+    vendor_path: Path = Path("/usr/lib/os-release"),
+    *,
+    expected_owner_uid: int = 0,
+) -> FileWitness:
+    etc_path = Path(os.path.abspath(etc_path))
+    vendor_path = Path(os.path.abspath(vendor_path))
+    try:
+        before = os.lstat(etc_path)
+    except OSError as exc:
+        raise GateError(f"Linux os-release is missing: {etc_path}") from exc
+    if stat.S_ISLNK(before.st_mode):
+        if before.st_uid != expected_owner_uid:
+            fail("Linux os-release symlink is not owned by the expected system user")
+        try:
+            raw_target = os.readlink(etc_path)
+        except OSError as exc:
+            raise GateError("cannot safely inspect Linux os-release symlink") from exc
+        target = Path(raw_target)
+        if not target.is_absolute():
+            target = etc_path.parent / target
+        normalized_target = Path(os.path.abspath(target))
+        if normalized_target != vendor_path:
+            fail("Linux os-release symlink does not resolve to /usr/lib/os-release")
+        witness = read_regular(vendor_path, "Linux vendor os-release", 64 * 1024)
+        try:
+            after = os.lstat(etc_path)
+            after_target = os.readlink(etc_path)
+        except OSError as exc:
+            raise GateError("Linux os-release symlink changed while reading") from exc
+        if (
+            not stat.S_ISLNK(after.st_mode)
+            or (after.st_dev, after.st_ino) != (before.st_dev, before.st_ino)
+            or after.st_uid != before.st_uid
+            or after.st_mtime_ns != before.st_mtime_ns
+            or after.st_ctime_ns != before.st_ctime_ns
+            or after_target != raw_target
+        ):
+            fail("Linux os-release symlink changed while reading")
+    else:
+        witness = read_regular(etc_path, "Linux os-release", 64 * 1024)
+    try:
+        metadata = os.lstat(witness.path)
+    except OSError as exc:
+        raise GateError("Linux os-release changed after reading") from exc
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or (metadata.st_dev, metadata.st_ino) != (witness.device, witness.inode)
+        or metadata.st_size != witness.size
+        or metadata.st_mtime_ns != witness.mtime_ns
+        or metadata.st_ctime_ns != witness.ctime_ns
+    ):
+        fail("Linux os-release changed after reading")
+    if metadata.st_uid != expected_owner_uid or metadata.st_mode & 0o022:
+        fail("Linux os-release must be owner-controlled and not group/world writable")
+    return witness
+
+
 def native_host_and_toolchain(repo: Path, architecture: str) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
     if sys.platform != "linux" or os.uname().sysname != "Linux":
         fail("attestation generation requires native Linux")
@@ -1078,7 +1137,7 @@ def native_host_and_toolchain(repo: Path, architecture: str) -> tuple[dict[str, 
     dpkg_architecture = git_safe_command(["dpkg", "--print-architecture"], repo, "read native Debian architecture")
     if machine != expected_machine or dpkg_architecture != architecture:
         fail("package architecture does not match the native Linux host")
-    os_release = read_regular(Path("/etc/os-release"), "Linux os-release", 64 * 1024)
+    os_release = linux_os_release()
     facts: dict[str, str] = {}
     for line in safe_text(os_release.data, "Linux os-release").splitlines():
         if "=" not in line or line.startswith("#"):

@@ -374,6 +374,86 @@ bad.write_text("#!/bin/sh\nprintf 'unexpected stdout\\n'\n")
 for path in (proxy, receiver, bad):
     os.chmod(path, 0o700)
 
+os_release_root = directory / "os-release-root"
+etc_directory = os_release_root / "etc"
+vendor_directory = os_release_root / "usr" / "lib"
+etc_directory.mkdir(parents=True)
+vendor_directory.mkdir(parents=True)
+etc_release = etc_directory / "os-release"
+vendor_release = vendor_directory / "os-release"
+contents = b'ID=debian\nVERSION_ID="13"\n'
+etc_release.write_bytes(contents)
+os.chmod(etc_release, 0o644)
+assert module.linux_os_release(
+    etc_release,
+    vendor_release,
+    expected_owner_uid=os.geteuid(),
+).data == contents
+etc_release.unlink()
+vendor_release.write_bytes(contents)
+os.chmod(vendor_release, 0o644)
+etc_release.symlink_to("../usr/lib/os-release")
+assert module.linux_os_release(
+    etc_release,
+    vendor_release,
+    expected_owner_uid=os.geteuid(),
+).data == contents
+etc_release.unlink()
+etc_release.symlink_to("../tmp/untrusted-os-release")
+try:
+    module.linux_os_release(
+        etc_release,
+        vendor_release,
+        expected_owner_uid=os.geteuid(),
+    )
+except module.GateError as exc:
+    assert "does not resolve to /usr/lib/os-release" in str(exc)
+else:
+    raise AssertionError("non-canonical os-release symlink was accepted")
+etc_release.unlink()
+etc_release.symlink_to("../usr/lib/os-release")
+os.chmod(vendor_release, 0o666)
+try:
+    module.linux_os_release(
+        etc_release,
+        vendor_release,
+        expected_owner_uid=os.geteuid(),
+    )
+except module.GateError as exc:
+    assert "not group/world writable" in str(exc)
+else:
+    raise AssertionError("writable vendor os-release was accepted")
+os.chmod(vendor_release, 0o644)
+etc_release.unlink()
+etc_release.write_bytes(contents)
+os.chmod(etc_release, 0o644)
+original_read_regular = module.read_regular
+
+
+def swapping_read_regular(path, label, maximum):
+    witness = original_read_regular(path, label, maximum)
+    if Path(path) == etc_release:
+        replacement = etc_release.with_name("os-release-replacement")
+        replacement.write_bytes(contents)
+        os.chmod(replacement, 0o644)
+        replacement.replace(etc_release)
+    return witness
+
+
+module.read_regular = swapping_read_regular
+try:
+    module.linux_os_release(
+        etc_release,
+        vendor_release,
+        expected_owner_uid=os.geteuid(),
+    )
+except module.GateError as exc:
+    assert "changed after reading" in str(exc)
+else:
+    raise AssertionError("replaced os-release path was accepted")
+finally:
+    module.read_regular = original_read_regular
+
 assert module.normalized_sidecar_help(proxy, "go_proxy", directory) == {
     "arguments": ["--help"],
     "exit_code": 0,
