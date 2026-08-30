@@ -1,0 +1,74 @@
+{
+  "name": "@teslatlas/sdk",
+  "version": "0.0.0-development",
+  "description": "Private development foundation for the planned public Teslatlas browser and Node.js SDK",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "packageManager": "npm@11.19.0",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "26.7.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "11.19.0",
+      "onFail": "error"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js",
+      "default": "./dist/node.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "docs/api.md",
+    "docs/architecture.md",
+    "docs/protocol-dependency-gate.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "example:browser": "npm run build && node examples/browser/serve.mjs",
+    "example:node": "npm run build && node examples/node.mjs",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "pack:check": "npm run build && node scripts/check-pack.mjs",
+    "pretest:unit": "npm run build",
+    "test": "npm run test:unit && npm run test:conformance",
+    "test:browser": "vitest run --project browser-conformance",
+    "test:conformance": "vitest run --project node-conformance --project browser-conformance",
+    "test:unit": "vitest run --project unit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test && npm run example:node && npm run pack:check"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.11",
+    "@types/node": "26.4.0",
+    "@vitest/browser-playwright": "4.1.11",
+    "playwright": "1.62.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}
