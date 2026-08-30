@@ -49,8 +49,8 @@
         "docs/architecture/independence-and-interoperability.md",
         "docs/architecture/overview.md",
         "docs/architecture/security-model.md",
+        "docs/architecture/source-layout.md",
         "docs/brand/branding-guidelines.md",
-        "docs/engineering/dependency-upgrade-2026-08-18.md",
         "docs/governance/cla-policy.md",
         "docs/governance/contributor-agreement-process.md",
         "docs/governance/corporate-contributor-assignment-agreement.md",
@@ -99,19 +99,6 @@
         "docs/releases/releasing.md",
         "docs/releases/verification.md"
       ]
-    },
-    {
-      "id": "historical-review-output",
-      "class": "GENERATED",
-      "rationale": "Historical GPT-5.6 review records retained as evidence, not runtime source or a legal conclusion.",
-      "globs": [
-        "docs/audits/2026-08-18-gpt-5.6-hub/*.md"
-      ],
-      "exception": {
-        "origin": "Generated during the dated GPT-5.6 Hub review from the repository references recorded in baseline.md and inventory.md.",
-        "licensing": "Administrative review output; referenced third-party facts and rights remain with their respective sources. No separate chain-of-title conclusion is made.",
-        "release_treatment": "Retained as historical review evidence. Do not present it as current verification without rerunning its stated gates."
-      }
     },
     {
       "id": "canonical-agpl-text",
@@ -320,44 +307,43 @@
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Rust implementation and tests currently treated by the repository as project-created, excluding separately classified compatibility paths.",
       "paths": [
-        "src/collector.rs",
-        "src/config.rs",
-        "src/credential_recovery.rs",
-        "src/credentials.rs",
-        "src/crypto.rs",
-        "src/current_state.rs",
-        "src/data_recovery.rs",
-        "src/db.rs",
-        "src/diagnostics.rs",
-        "src/durability_fault.rs",
-        "src/fleet_api.rs",
-        "src/fleet_credentials.rs",
-        "src/fleet_telemetry.rs",
-        "src/geocoder.rs",
-        "src/gpx.rs",
-        "src/http_range.rs",
-        "src/hub_pack.rs",
-        "src/hub_user_process.rs",
-        "src/lib.rs",
-        "src/lifecycle.rs",
-        "src/linux_systemd.rs",
-        "src/location.rs",
-        "src/macos_launch_agent.rs",
-        "src/main.rs",
-        "src/manifest_signing.rs",
-        "src/owner_api.rs",
-        "src/performance_profile.rs",
-        "src/protocol.rs",
-        "src/server.rs",
-        "src/terrain.rs",
-        "src/terrain_cache.rs",
-        "src/tesla_stream.rs",
-        "src/transport.rs",
-        "src/updates_delivery.rs",
-        "src/updates_logical.rs",
-        "src/user_lifetime_lock.rs"
+        "src/auth/credential_recovery.rs",
+        "src/auth/credentials.rs",
+        "src/auth/crypto.rs",
+        "src/auth/fleet_credentials.rs",
+        "src/auth/mod.rs",
+        "src/collection/collector.rs",
+        "src/collection/current_state.rs",
+        "src/collection/fleet_telemetry.rs",
+        "src/collection/mod.rs",
+        "src/collection/tesla_stream.rs",
+        "src/import/mod.rs",
+        "src/lib.rs"
       ],
       "globs": [
+        "src/api/*.rs",
+        "src/api/*/*.rs",
+        "src/application/*.rs",
+        "src/application/*/*.rs",
+        "src/auth/credential_recovery/*.rs",
+        "src/auth/credentials/*.rs",
+        "src/auth/fleet_credentials/*.rs",
+        "src/collection/collector/*.rs",
+        "src/collection/collector/tests/*.rs",
+        "src/collection/fleet_telemetry/*.rs",
+        "src/collection/tesla_stream/*.rs",
+        "src/geo/*.rs",
+        "src/geo/*/*.rs",
+        "src/platform/*.rs",
+        "src/platform/*/*.rs",
+        "src/runtime/*.rs",
+        "src/runtime/*/*.rs",
+        "src/storage/*.rs",
+        "src/storage/*/*.rs",
+        "src/storage/*/*/*.rs",
+        "src/sync/*.rs",
+        "src/sync/*/*.rs",
+        "src/sync/*/*/*.rs",
         "tests/*.rs"
       ]
     },
@@ -366,11 +352,17 @@
       "class": "TESLAMATE-COMPATIBILITY",
       "rationale": "Compatibility, migration, schema, projection, token, and deterministic TeslaMate-behaviour paths reviewed against public TeslaMate material; classification is not a conclusion about protectable expression.",
       "paths": [
-        "src/fake_tesla.rs",
-        "src/legacy_auth.rs"
+        "src/auth/legacy_auth.rs",
+        "src/auth/teslamate_credentials.rs",
+        "src/auth/teslamate_token.rs",
+        "src/collection/fake_tesla.rs"
       ],
       "globs": [
-        "src/teslamate*.rs"
+        "src/auth/legacy_auth/*.rs",
+        "src/auth/teslamate_credentials/*.rs",
+        "src/collection/fake_tesla/*.rs",
+        "src/import/teslamate/*.rs",
+        "src/import/teslamate/*/*.rs"
       ]
     },
     {

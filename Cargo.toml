@@ -16,7 +16,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "teslatlas-hub"
-path = "src/main.rs"
+path = "src/application/main.rs"
 
 [dependencies]
 getrandom = "0.4.3"

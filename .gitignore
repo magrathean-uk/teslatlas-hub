@@ -16,8 +16,8 @@ __pycache__/
 *.pem
 *.p12
 *.pfx
-credentials/
-secrets/
+/credentials/
+/secrets/
 
 # Track committed golden pack fixtures used by M06/lineage tests.
 !fixtures/delta-v2/**/*.zst

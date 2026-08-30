@@ -24,6 +24,7 @@ or required asset means the download is incomplete and must not be installed.
 ## Understand the system
 
 - [Architecture](architecture/overview.md)
+- [Source layout](architecture/source-layout.md)
 - [HTTP and sync API](guides/api.md)
 - [Security model](architecture/security-model.md)
 - [Data and retention](operations/data-and-retention.md)
@@ -58,10 +59,6 @@ or required asset means the download is incomplete and must not be installed.
 - [Dependency policy](legal/dependency-policy.md)
 - [Branding guidelines](brand/branding-guidelines.md)
 - [Repository settings](maintainers/github-repository-settings.md)
-- [Historical engineering audits](audits/2026-08-18-gpt-5.6-hub/baseline.md)
 
 Tagged release documentation controls for that release. `main` may describe a
 newer development state.
-
-Files under `docs/audits/` are dated historical review records, not current
-build or release instructions. Use `docs/releases/releasing.md` for current gates.

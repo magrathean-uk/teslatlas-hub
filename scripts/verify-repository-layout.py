@@ -17,9 +17,7 @@ import sys
 DOC_CATEGORIES = {
     "architecture",
     "assets",
-    "audits",
     "brand",
-    "engineering",
     "governance",
     "guides",
     "legal",
@@ -35,7 +33,31 @@ REQUIRED_PATHS = {
     ".github/SUPPORT.md",
     "docs/index.md",
 }
+SOURCE_DOMAINS = {
+    "api",
+    "application",
+    "auth",
+    "collection",
+    "geo",
+    "import",
+    "platform",
+    "runtime",
+    "storage",
+    "sync",
+}
+FORBIDDEN_TOOL_ROOTS = {
+    ".agents",
+    ".claude",
+    ".codex",
+    ".cursor",
+    ".grok",
+    ".idea",
+    ".vscode",
+}
+FORBIDDEN_TOOL_FILES = {"AGENTS.md", "CLAUDE.md", "GROK.md"}
+MAX_RUST_SOURCE_LINES = 3_000
 DOC_NAME_RE = re.compile(r"^[a-z0-9]+(?:[.-][a-z0-9]+)*\.md$")
+RUST_NAME_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.rs$")
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 HTML_LINK_RE = re.compile(r'(?:href|src)="([^"]+)"')
 REMOTE_PREFIXES = ("#", "http://", "https://", "mailto:")
@@ -138,6 +160,48 @@ def verify(repo: Path) -> None:
     missing = sorted(REQUIRED_PATHS - paths)
     if missing:
         errors.append("required repository documents are missing: " + ", ".join(missing))
+    forbidden_tools = sorted(
+        path
+        for path in paths
+        if PurePosixPath(path).parts[0] in FORBIDDEN_TOOL_ROOTS
+        or path in FORBIDDEN_TOOL_FILES
+    )
+    if forbidden_tools:
+        errors.append("tool-specific repository metadata is forbidden: " + ", ".join(forbidden_tools))
+    source_domains = {
+        PurePosixPath(path).parts[1]
+        for path in paths
+        if path.startswith("src/") and len(PurePosixPath(path).parts) >= 3
+    }
+    missing_domains = sorted(SOURCE_DOMAINS - source_domains)
+    unknown_domains = sorted(source_domains - SOURCE_DOMAINS)
+    if missing_domains:
+        errors.append("required source domains are missing: " + ", ".join(missing_domains))
+    if unknown_domains:
+        errors.append("unknown source domains: " + ", ".join(unknown_domains))
+    flat_rust = sorted(
+        path for path in paths if path.startswith("src/") and path.count("/") == 1 and path != "src/lib.rs"
+    )
+    if flat_rust:
+        errors.append("flat source modules are forbidden: " + ", ".join(flat_rust))
+    for relative in sorted(path for path in paths if path.startswith("src/") and path.endswith(".rs")):
+        parts = PurePosixPath(relative).parts
+        if not RUST_NAME_RE.fullmatch(parts[-1]):
+            errors.append(f"Rust filename is not lowercase snake_case: {relative}")
+        for directory in parts[1:-1]:
+            if not re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", directory):
+                errors.append(f"Rust source directory is not lowercase snake_case: {relative}")
+                break
+        source = repo / relative
+        try:
+            line_count = len(source.read_text(encoding="utf-8", errors="strict").splitlines())
+        except (OSError, UnicodeError):
+            errors.append(f"Rust source is missing or not UTF-8: {relative}")
+            continue
+        if line_count > MAX_RUST_SOURCE_LINES:
+            errors.append(
+                f"Rust source exceeds {MAX_RUST_SOURCE_LINES} lines: {relative} ({line_count})"
+            )
     for relative in sorted(
         path for path in paths if path.startswith("docs/") and path.endswith(".md")
     ):
@@ -158,7 +222,8 @@ def verify(repo: Path) -> None:
     markdown_count = sum(path.endswith(".md") for path in paths)
     print(
         f"repository layout passed: {len(paths)} tracked files, "
-        f"{markdown_count} Markdown files, zero root Markdown"
+        f"{markdown_count} Markdown files, zero root Markdown, "
+        f"{len(SOURCE_DOMAINS)} source domains, Rust files <= {MAX_RUST_SOURCE_LINES} lines"
     )
 
 

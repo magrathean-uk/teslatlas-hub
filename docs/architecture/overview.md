@@ -4,6 +4,9 @@ Teslatlas Hub is one Rust process with a local SQLite catalogue, immutable
 compressed projection packs, supervised provider collection, and bounded HTTP
 sync delivery.
 
+Implementation ownership and file placement are defined in the
+[source layout](source-layout.md).
+
 ```mermaid
 flowchart TB
     subgraph Provider

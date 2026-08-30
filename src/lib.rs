@@ -5,60 +5,48 @@
 // closures are preferred over artificial parameter objects for now.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
-pub mod collector;
-pub mod config;
-pub mod credential_recovery;
-pub mod credentials;
-pub mod crypto;
-pub mod current_state;
-pub mod data_recovery;
-pub mod db;
-pub mod diagnostics;
-mod durability_fault;
+pub mod api;
+pub mod auth;
+pub mod collection;
+pub mod geo;
+pub mod import;
+pub mod platform;
+pub mod runtime;
+pub mod storage;
+pub mod sync;
+
+// Stable compatibility exports. New code should prefer the domain paths above.
+pub use api::{fleet_api, http_range, owner_api, protocol, server, transport};
+pub use auth::{
+    credential_recovery, credentials, crypto, fleet_credentials, legacy_auth,
+    teslamate_credentials, teslamate_token,
+};
 #[cfg(test)]
-pub mod fake_tesla;
-pub mod fleet_api;
-pub mod fleet_credentials;
-pub mod fleet_telemetry;
-pub mod geocoder;
-pub mod gpx;
-pub mod http_range;
-pub mod hub_pack;
+pub use collection::fake_tesla;
+pub use collection::{collector, current_state, fleet_telemetry, tesla_stream};
+pub use geo::{geocoder, gpx, location, terrain, terrain_cache};
+pub use import::teslamate::{
+    direct as teslamate_direct, fragments as teslamate_fragments, importer as teslamate_import,
+    parity as teslamate_parity, projection as teslamate_projection,
+    projection_state as teslamate_projection_state, reader as teslamate_reader,
+    schema as teslamate_schema, source as teslamate, stage as teslamate_stage,
+    writeback as teslamate_writeback,
+};
 #[cfg(unix)]
 #[doc(hidden)]
-pub mod hub_user_process;
-pub mod legacy_auth;
-pub mod lifecycle;
+pub use platform::hub_user_process;
 #[cfg(target_os = "linux")]
-pub mod linux_systemd;
-pub mod location;
+pub use platform::linux_systemd;
 #[cfg(target_os = "macos")]
-pub mod macos_launch_agent;
-mod manifest_signing;
-pub mod owner_api;
-pub mod protocol;
-pub mod server;
-pub mod terrain;
-pub mod terrain_cache;
-pub mod tesla_stream;
-pub mod teslamate;
-pub mod teslamate_credentials;
-pub mod teslamate_direct;
-pub mod teslamate_fragments;
-pub mod teslamate_import;
-pub mod teslamate_parity;
-pub mod teslamate_projection;
-pub mod teslamate_projection_state;
-pub mod teslamate_reader;
-pub mod teslamate_schema;
-pub mod teslamate_stage;
-pub mod teslamate_token;
-pub mod teslamate_writeback;
-pub mod transport;
-pub mod updates_delivery;
-pub mod updates_logical;
+pub use platform::macos_launch_agent;
+pub use runtime::{config, diagnostics, lifecycle};
+pub use storage::{data_recovery, db};
+pub use sync::{hub_pack, updates_delivery, updates_logical};
+
 #[cfg(unix)]
-pub(crate) mod user_lifetime_lock;
+pub(crate) use platform::user_lifetime_lock;
+pub(crate) use storage::durability_fault;
+pub(crate) use sync::manifest_signing;
 
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/teslatlas-hub";
