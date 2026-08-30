@@ -771,8 +771,10 @@ if any(not path.is_file() or path.is_symlink() for path in args.verify_dir.iterd
 PY
 chmod 0755 "$package_fixture/scripts/legal-bundle.py"
 cp -R "$root/packaging/linux" "$package_fixture/packaging/linux"
-for package_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md \
-    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
+mkdir -p "$package_fixture/docs/legal" "$package_fixture/docs/releases"
+for package_file in LICENSE NOTICE docs/legal/third-party-notices.md \
+    docs/legal/provenance.md docs/legal/additional-terms.md \
+    docs/legal/source-availability.md docs/releases/verification.md; do
     cp "$root/$package_file" "$package_fixture/$package_file"
 done
 package_proxy_sha=$(test_sha256 "$test_root/fake-command-proxy")
@@ -826,11 +828,11 @@ run_package() {
             FAKE_PROXY_ELF_MODE=$package_proxy_mode FAKE_FLEET_ELF_MODE=$package_fleet_mode \
             EXPECT_SIDECARS=$package_sidecars \
             CAPTURED_CONTROL="$captured_control" EXPECTED_LICENSE="$root/LICENSE" \
-            EXPECTED_NOTICE="$root/NOTICE" EXPECTED_THIRD_PARTY_NOTICES="$root/THIRD_PARTY_NOTICES.md" \
-            EXPECTED_PROVENANCE="$root/PROVENANCE.md" \
-            EXPECTED_ADDITIONAL_TERMS="$root/ADDITIONAL_TERMS.md" \
-            EXPECTED_SOURCE_AVAILABILITY="$root/SOURCE_AVAILABILITY.md" \
-            EXPECTED_RELEASE_VERIFICATION="$root/RELEASE_VERIFICATION.md" \
+            EXPECTED_NOTICE="$root/NOTICE" EXPECTED_THIRD_PARTY_NOTICES="$root/docs/legal/third-party-notices.md" \
+            EXPECTED_PROVENANCE="$root/docs/legal/provenance.md" \
+            EXPECTED_ADDITIONAL_TERMS="$root/docs/legal/additional-terms.md" \
+            EXPECTED_SOURCE_AVAILABILITY="$root/docs/legal/source-availability.md" \
+            EXPECTED_RELEASE_VERIFICATION="$root/docs/releases/verification.md" \
             EXPECTED_TERMINAL_FAILURE_TARGET="$root/packaging/linux/teslatlas-hub-terminal-failure.target" \
             EXPECTED_LEGAL_BUNDLE="$([ "$package_sidecars" = 1 ] && printf %s "$legal_bundle_sidecar" || printf %s "$legal_bundle_base")" \
             EXPECTED_PROXY="$test_root/fake-command-proxy" \

@@ -122,12 +122,13 @@ printf '%s\n' \
     >"$TMP/signed-repo/Cargo.toml"
 printf '%s\n' 'fn main() {}' >"$TMP/signed-repo/main.rs"
 printf '%s\n' 'MIT License' >"$TMP/signed-repo/LICENSE"
-printf '%s\n' '# notices' >"$TMP/signed-repo/THIRD_PARTY_NOTICES.md"
 printf '%s\n' '# notices' >"$TMP/signed-repo/NOTICE"
-printf '%s\n' '# provenance' >"$TMP/signed-repo/PROVENANCE.md"
-printf '%s\n' '# additional terms' >"$TMP/signed-repo/ADDITIONAL_TERMS.md"
-printf '%s\n' '# source availability' >"$TMP/signed-repo/SOURCE_AVAILABILITY.md"
-printf '%s\n' '# release verification' >"$TMP/signed-repo/RELEASE_VERIFICATION.md"
+mkdir -p "$TMP/signed-repo/docs/legal" "$TMP/signed-repo/docs/releases"
+printf '%s\n' '# notices' >"$TMP/signed-repo/docs/legal/third-party-notices.md"
+printf '%s\n' '# provenance' >"$TMP/signed-repo/docs/legal/provenance.md"
+printf '%s\n' '# additional terms' >"$TMP/signed-repo/docs/legal/additional-terms.md"
+printf '%s\n' '# source availability' >"$TMP/signed-repo/docs/legal/source-availability.md"
+printf '%s\n' '# release verification' >"$TMP/signed-repo/docs/releases/verification.md"
 (cd "$TMP/signed-repo" && cargo generate-lockfile --offline >/dev/null)
 mkdir "$TMP/signed-repo/scripts"
 cp "$ROOT/scripts/go-proxy-evidence.py" "$TMP/signed-repo/scripts/"
@@ -188,9 +189,8 @@ mkdir "$TMP/signed-repo/LICENSES"
 cp "$ROOT/LICENSES/Apache-2.0.txt" "$TMP/signed-repo/LICENSES/"
 GNUPGHOME="$GPG_TMP" gpg --batch --armor --export "$TAG_FINGERPRINT" \
     >"$TMP/signed-repo/RELEASE_SIGNING_KEY.asc"
-git -C "$TMP/signed-repo" add Cargo.toml main.rs LICENSE NOTICE PROVENANCE.md \
-    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md \
-    THIRD_PARTY_NOTICES.md RELEASE_SIGNING_KEY.asc Cargo.lock scripts packaging LICENSES
+git -C "$TMP/signed-repo" add Cargo.toml main.rs LICENSE NOTICE docs \
+    RELEASE_SIGNING_KEY.asc Cargo.lock scripts packaging LICENSES
 git -C "$TMP/signed-repo" commit -q -m fixture
 GNUPGHOME="$GPG_TMP" git -C "$TMP/signed-repo" tag -s -m fixture v1.0.0
 write_fixture_deb() {
@@ -232,11 +232,11 @@ struct.pack_into("<I", elf, 20, 1)
 legal = {
     "copyright": "LICENSE",
     "NOTICE": "NOTICE",
-    "THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
-    "PROVENANCE.md": "PROVENANCE.md",
-    "ADDITIONAL_TERMS.md": "ADDITIONAL_TERMS.md",
-    "SOURCE_AVAILABILITY.md": "SOURCE_AVAILABILITY.md",
-    "RELEASE_VERIFICATION.md": "RELEASE_VERIFICATION.md",
+    "THIRD_PARTY_NOTICES.md": "docs/legal/third-party-notices.md",
+    "PROVENANCE.md": "docs/legal/provenance.md",
+    "ADDITIONAL_TERMS.md": "docs/legal/additional-terms.md",
+    "SOURCE_AVAILABILITY.md": "docs/legal/source-availability.md",
+    "RELEASE_VERIFICATION.md": "docs/releases/verification.md",
 }
 payload = {"./usr/bin/teslatlas-hub": (bytes(elf), 0o755)}
 for packaged, source in legal.items():
@@ -648,10 +648,18 @@ printf '%s\n' '#!/bin/sh' \
 chmod 0755 "$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/teslatlas-hub"
 printf '%s\n' service-package \
     >"$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg"
-for release_legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md \
-    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
-    cp "$TMP/signed-repo/$release_legal_file" \
-        "$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/$release_legal_file"
+for legal_entry in \
+    'LICENSE|LICENSE' \
+    'NOTICE|NOTICE' \
+    'THIRD_PARTY_NOTICES.md|docs/legal/third-party-notices.md' \
+    'PROVENANCE.md|docs/legal/provenance.md' \
+    'ADDITIONAL_TERMS.md|docs/legal/additional-terms.md' \
+    'SOURCE_AVAILABILITY.md|docs/legal/source-availability.md' \
+    'RELEASE_VERIFICATION.md|docs/releases/verification.md'; do
+    legal_name=${legal_entry%%|*}
+    legal_source=${legal_entry#*|}
+    cp "$TMP/signed-repo/$legal_source" \
+        "$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/$legal_name"
 done
 /usr/bin/ditto --noextattr --norsrc "$TEST_LEGAL_BUNDLE" \
     "$TMP/mac-artifact/Teslatlas Hub.app/Contents/Resources/DependencyLegal"
@@ -742,10 +750,18 @@ case "$1" in
             "$3/Payload/Library/Application Support/Teslatlas Hub/bin/tesla-http-proxy"
         cp "$RELEASE_TEST_FLEET_TELEMETRY" \
             "$3/Payload/Library/Application Support/Teslatlas Hub/bin/fleet-telemetry"
-        for release_legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md \
-            ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
-            cp "$RELEASE_TEST_LEGAL_REPO/$release_legal_file" \
-                "$3/Payload/Library/Application Support/Teslatlas Hub/share/$release_legal_file"
+        for legal_entry in \
+            'LICENSE|LICENSE' \
+            'NOTICE|NOTICE' \
+            'THIRD_PARTY_NOTICES.md|docs/legal/third-party-notices.md' \
+            'PROVENANCE.md|docs/legal/provenance.md' \
+            'ADDITIONAL_TERMS.md|docs/legal/additional-terms.md' \
+            'SOURCE_AVAILABILITY.md|docs/legal/source-availability.md' \
+            'RELEASE_VERIFICATION.md|docs/releases/verification.md'; do
+            legal_name=${legal_entry%%|*}
+            legal_source=${legal_entry#*|}
+            cp "$RELEASE_TEST_LEGAL_REPO/$legal_source" \
+                "$3/Payload/Library/Application Support/Teslatlas Hub/share/$legal_name"
         done
         cp -R "$RELEASE_TEST_LEGAL_BUNDLE" \
             "$3/Payload/Library/Application Support/Teslatlas Hub/share/dependency-legal"
@@ -1439,7 +1455,8 @@ root_package = sbom_repo / "root-package"
 dependency = sbom_repo / "registry-dependency"
 root_package.mkdir(parents=True)
 dependency.mkdir()
-(sbom_repo / "THIRD_PARTY_NOTICES.md").write_text("# notices\n")
+(sbom_repo / "docs/legal").mkdir(parents=True)
+(sbom_repo / "docs/legal/third-party-notices.md").write_text("# notices\n")
 (root_package / "Cargo.toml").write_text(
     '[package]\nname = "fixture"\nversion = "1.0.0"\nlicense = "MIT"\n'
 )

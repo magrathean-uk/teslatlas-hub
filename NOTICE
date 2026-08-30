@@ -29,8 +29,11 @@ Copyright in TeslaMate belongs to its contributors and applicable rightsholders.
 
 ## Third-party material
 
-See `THIRD_PARTY_NOTICES.md` and the release-generated dependency notice bundle.
+Source checkouts provide `docs/legal/third-party-notices.md`; installed packages
+provide the same document as `THIRD_PARTY_NOTICES.md`. Also see the
+release-generated dependency notice bundle.
 
 ## Trade marks
 
-No trade mark licence is granted. See `TRADEMARKS.md`.
+No trade mark licence is granted. See `docs/legal/trademarks.md` in source or
+`TRADEMARKS.md` in an installed package.

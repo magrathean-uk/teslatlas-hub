@@ -94,20 +94,23 @@ MAX_CARGO_LOCK_BYTES = 32 * 1024 * 1024
 DEBIAN_LEGAL_FILES = {
     "usr/share/doc/teslatlas-hub/copyright": "LICENSE",
     "usr/share/doc/teslatlas-hub/NOTICE": "NOTICE",
-    "usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
-    "usr/share/doc/teslatlas-hub/PROVENANCE.md": "PROVENANCE.md",
-    "usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md": "ADDITIONAL_TERMS.md",
-    "usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md": "SOURCE_AVAILABILITY.md",
-    "usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md": "RELEASE_VERIFICATION.md",
+    "usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md":
+        "docs/legal/third-party-notices.md",
+    "usr/share/doc/teslatlas-hub/PROVENANCE.md": "docs/legal/provenance.md",
+    "usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md": "docs/legal/additional-terms.md",
+    "usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md":
+        "docs/legal/source-availability.md",
+    "usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md":
+        "docs/releases/verification.md",
 }
 MACOS_LEGAL_FILES = {
     "LICENSE": "LICENSE",
     "NOTICE": "NOTICE",
-    "THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
-    "PROVENANCE.md": "PROVENANCE.md",
-    "ADDITIONAL_TERMS.md": "ADDITIONAL_TERMS.md",
-    "SOURCE_AVAILABILITY.md": "SOURCE_AVAILABILITY.md",
-    "RELEASE_VERIFICATION.md": "RELEASE_VERIFICATION.md",
+    "THIRD_PARTY_NOTICES.md": "docs/legal/third-party-notices.md",
+    "PROVENANCE.md": "docs/legal/provenance.md",
+    "ADDITIONAL_TERMS.md": "docs/legal/additional-terms.md",
+    "SOURCE_AVAILABILITY.md": "docs/legal/source-availability.md",
+    "RELEASE_VERIFICATION.md": "docs/releases/verification.md",
 }
 
 
@@ -2522,7 +2525,7 @@ def dependency_legal_text(path: Path, package: dict, repo: Path) -> str:
 
 
 def sbom_and_notices(metadata: dict, repo: Path) -> tuple[dict, dict, str]:
-    project_notices = repo / "THIRD_PARTY_NOTICES.md"
+    project_notices = repo / "docs/legal/third-party-notices.md"
     regular_file(project_notices, "project notices")
     packages = sorted(metadata.get("packages", []), key=package_sort)
     if not packages:

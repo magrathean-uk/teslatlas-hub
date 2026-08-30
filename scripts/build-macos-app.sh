@@ -229,8 +229,9 @@ resources="$PRODUCT/Contents/Resources"
 /usr/bin/install -m 0755 "$PROXY_BINARY" "$resources/tesla-http-proxy"
 /usr/bin/install -m 0755 "$FLEET_TELEMETRY_BINARY" "$resources/fleet-telemetry"
 /usr/bin/install -m 0644 "$SERVICE_PACKAGE" "$resources/TeslatlasHubService.pkg"
-for required_release_legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md \
-    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
+for required_release_legal_file in LICENSE NOTICE docs/legal/third-party-notices.md \
+    docs/legal/provenance.md docs/legal/additional-terms.md \
+    docs/legal/source-availability.md docs/releases/verification.md; do
     [ -f "$ROOT/$required_release_legal_file" ] \
         && [ ! -L "$ROOT/$required_release_legal_file" ] \
         || die "required release legal file is missing or unsafe: $required_release_legal_file"
@@ -245,10 +246,21 @@ done
     --go-proxy-evidence "$GO_EVIDENCE" \
     --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" >/dev/null \
     || die "app dependency legal bundle is invalid"
-for legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md TRADEMARKS.md PRIVACY.md LEGAL.md \
-    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
-    if [ -f "$ROOT/$legal_file" ]; then
-        /usr/bin/install -m 0644 "$ROOT/$legal_file" "$resources/$legal_file"
+for legal_entry in \
+    'LICENSE|LICENSE' \
+    'NOTICE|NOTICE' \
+    'docs/legal/third-party-notices.md|THIRD_PARTY_NOTICES.md' \
+    'docs/legal/provenance.md|PROVENANCE.md' \
+    'docs/legal/trademarks.md|TRADEMARKS.md' \
+    'docs/legal/privacy.md|PRIVACY.md' \
+    'docs/legal/overview.md|LEGAL.md' \
+    'docs/legal/additional-terms.md|ADDITIONAL_TERMS.md' \
+    'docs/legal/source-availability.md|SOURCE_AVAILABILITY.md' \
+    'docs/releases/verification.md|RELEASE_VERIFICATION.md'; do
+    legal_source=${legal_entry%%|*}
+    legal_name=${legal_entry#*|}
+    if [ -f "$ROOT/$legal_source" ]; then
+        /usr/bin/install -m 0644 "$ROOT/$legal_source" "$resources/$legal_name"
     fi
 done
 /usr/bin/xattr -cr "$resources" >/dev/null 2>&1 \

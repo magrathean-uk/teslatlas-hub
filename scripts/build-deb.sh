@@ -346,15 +346,15 @@ if [ "$include_fleet_sidecars" = true ]; then
 fi
 install -D -m 0644 "$root/LICENSE" "$package_root/usr/share/doc/teslatlas-hub/copyright"
 install -D -m 0644 "$root/NOTICE" "$package_root/usr/share/doc/teslatlas-hub/NOTICE"
-install -D -m 0644 "$root/THIRD_PARTY_NOTICES.md" \
+install -D -m 0644 "$root/docs/legal/third-party-notices.md" \
     "$package_root/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md"
-install -D -m 0644 "$root/PROVENANCE.md" \
+install -D -m 0644 "$root/docs/legal/provenance.md" \
     "$package_root/usr/share/doc/teslatlas-hub/PROVENANCE.md"
-install -D -m 0644 "$root/ADDITIONAL_TERMS.md" \
+install -D -m 0644 "$root/docs/legal/additional-terms.md" \
     "$package_root/usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md"
-install -D -m 0644 "$root/SOURCE_AVAILABILITY.md" \
+install -D -m 0644 "$root/docs/legal/source-availability.md" \
     "$package_root/usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md"
-install -D -m 0644 "$root/RELEASE_VERIFICATION.md" \
+install -D -m 0644 "$root/docs/releases/verification.md" \
     "$package_root/usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md"
 dependency_legal="$package_root/usr/share/doc/teslatlas-hub/dependency-legal"
 mkdir -p "$dependency_legal"

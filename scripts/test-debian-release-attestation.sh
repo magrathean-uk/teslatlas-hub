@@ -40,7 +40,7 @@ TAG_FINGERPRINT=$(gpg --batch --fingerprint --with-colons "$KEY_ID" 2>/dev/null 
 }
 
 REPO="$TMP/repo"
-mkdir -p "$REPO/scripts" "$REPO/packaging/linux"
+mkdir -p "$REPO/scripts" "$REPO/packaging/linux" "$REPO/docs/legal" "$REPO/docs/releases"
 git -C "$REPO" init -q
 git -C "$REPO" config user.name Fixture
 git -C "$REPO" config user.email fixture@example.invalid
@@ -54,10 +54,13 @@ printf '%s\n' \
     'version = "1.0.0"' \
     'edition = "2024"' >"$REPO/Cargo.toml"
 printf '%s\n' '# fixture lock' >"$REPO/Cargo.lock"
-for name in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md \
-    ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
-    printf 'fixture %s\n' "$name" >"$REPO/$name"
-done
+printf '%s\n' 'fixture LICENSE' >"$REPO/LICENSE"
+printf '%s\n' 'fixture NOTICE' >"$REPO/NOTICE"
+printf '%s\n' 'fixture THIRD_PARTY_NOTICES.md' >"$REPO/docs/legal/third-party-notices.md"
+printf '%s\n' 'fixture PROVENANCE.md' >"$REPO/docs/legal/provenance.md"
+printf '%s\n' 'fixture ADDITIONAL_TERMS.md' >"$REPO/docs/legal/additional-terms.md"
+printf '%s\n' 'fixture SOURCE_AVAILABILITY.md' >"$REPO/docs/legal/source-availability.md"
+printf '%s\n' 'fixture RELEASE_VERIFICATION.md' >"$REPO/docs/releases/verification.md"
 printf '%s\n' '[Unit]' 'Description=fixture' \
     >"$REPO/packaging/linux/teslatlas-hub.service"
 printf '%s\n' '[Unit]' 'Description=failure target fixture' \
@@ -247,11 +250,11 @@ static = {
     "etc/teslatlas-hub/config.toml": "packaging/linux/config.toml",
     "usr/share/doc/teslatlas-hub/copyright": "LICENSE",
     "usr/share/doc/teslatlas-hub/NOTICE": "NOTICE",
-    "usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
-    "usr/share/doc/teslatlas-hub/PROVENANCE.md": "PROVENANCE.md",
-    "usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md": "ADDITIONAL_TERMS.md",
-    "usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md": "SOURCE_AVAILABILITY.md",
-    "usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md": "RELEASE_VERIFICATION.md",
+    "usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md": "docs/legal/third-party-notices.md",
+    "usr/share/doc/teslatlas-hub/PROVENANCE.md": "docs/legal/provenance.md",
+    "usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md": "docs/legal/additional-terms.md",
+    "usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md": "docs/legal/source-availability.md",
+    "usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md": "docs/releases/verification.md",
 }
 if fleet:
     static.update({

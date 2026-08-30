@@ -213,15 +213,16 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "service package does not use mapped prerelease identity"
 /usr/bin/grep -Fq 'require_hub_version "$binary" "$version"' "$SERVICE_BUILD" \
     || fail "service package does not bind package version to Hub binary"
-for release_legal_file in ADDITIONAL_TERMS.md SOURCE_AVAILABILITY.md RELEASE_VERIFICATION.md; do
+for release_legal_file in docs/legal/additional-terms.md docs/legal/source-availability.md \
+    docs/releases/verification.md; do
     /usr/bin/grep -Fq "$release_legal_file" "$APP_BUILD" \
         || fail "app bundle omits release legal file: $release_legal_file"
     /usr/bin/grep -Fq "$release_legal_file" "$SERVICE_BUILD" \
         || fail "service package omits release legal file: $release_legal_file"
 done
-/usr/bin/grep -Fq 'required_release_legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md' \
+/usr/bin/grep -Fq 'required_release_legal_file in LICENSE NOTICE docs/legal/third-party-notices.md' \
     "$APP_BUILD" || fail "app build does not require its release legal payload"
-/usr/bin/grep -Fq 'required_release_legal_file in LICENSE NOTICE THIRD_PARTY_NOTICES.md PROVENANCE.md' \
+/usr/bin/grep -Fq 'required_release_legal_file in LICENSE NOTICE docs/legal/third-party-notices.md' \
     "$SERVICE_BUILD" || fail "service package does not require its release legal payload"
 version_helper="$TEST_ROOT/version-helper.sh"
 /usr/bin/sed -n \

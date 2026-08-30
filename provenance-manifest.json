@@ -14,49 +14,11 @@
     {
       "id": "project-root-material",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Repository-maintained project, policy, legal, operational, and contributor documentation. This treatment does not prove chain of title.",
+      "rationale": "Repository-maintained root manifests and project notice. This treatment does not prove chain of title.",
       "paths": [
         ".gitignore",
-        "ADDITIONAL_TERMS.md",
-        "AGPL_COMPLIANCE.md",
-        "ATTRIBUTION.md",
-        "CHANGELOG.md",
-        "CLA_POLICY.md",
-        "CODE_OF_CONDUCT.md",
-        "CONTRIBUTING.md",
-        "COPYRIGHT.md",
-        "CORPORATE_CONTRIBUTOR_ASSIGNMENT_AGREEMENT.md",
         "Cargo.toml",
-        "DCO.md",
-        "DCO_AND_CONTRIBUTOR_ASSIGNMENT_PROCESS.md",
-        "DEPENDENCY_POLICY.md",
-        "ENFORCEMENT_POLICY.md",
-        "FOUNDER_CONTRIBUTION_POLICY.md",
-        "GITHUB_REPOSITORY_SETTINGS.md",
-        "GOVERNANCE.md",
-        "HISTORICAL_CONTRIBUTIONS.md",
-        "INDIVIDUAL_CONTRIBUTOR_ASSIGNMENT_AGREEMENT.md",
-        "LEGAL.md",
-        "LEGAL_CHANGELOG.md",
-        "LICENCE_VERSION_DECISION.md",
-        "LICENSE_CORPUS.md",
-        "LICENSING.md",
-        "MIGRATION.md",
-        "NAME_AND_BRAND_DECISION.md",
         "NOTICE",
-        "OWNER_CONTRIBUTIONS.md",
-        "PRIVACY.md",
-        "PROVENANCE.md",
-        "README.md",
-        "RELEASE_COMPLIANCE.md",
-        "RELEASE_KEYS.md",
-        "RELEASE_VERIFICATION.md",
-        "SAFETY_AND_USE_LIMITS.md",
-        "SECURITY.md",
-        "SOURCE_AVAILABILITY.md",
-        "SPDX_HEADER_POLICY.md",
-        "SUPPORT.md",
-        "TRADEMARKS.md",
         "provenance-manifest.json"
       ]
     },
@@ -66,11 +28,16 @@
       "rationale": "Repository-maintained contribution and issue workflow text.",
       "paths": [
         ".github/CODEOWNERS",
+        ".github/CODE_OF_CONDUCT.md",
+        ".github/CONTRIBUTING.md",
         ".github/ISSUE_TEMPLATE/bug_report.md",
         ".github/ISSUE_TEMPLATE/documentation.md",
         ".github/ISSUE_TEMPLATE/feature_request.md",
         ".github/ISSUE_TEMPLATE/config.yml",
         ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/README.md",
+        ".github/SECURITY.md",
+        ".github/SUPPORT.md",
         ".github/release.yml"
       ]
     },
@@ -78,8 +45,59 @@
       "id": "project-documentation",
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Repository-maintained user, operator, compliance, and architecture documentation.",
-      "globs": [
-        "docs/*.md"
+      "paths": [
+        "docs/architecture/independence-and-interoperability.md",
+        "docs/architecture/overview.md",
+        "docs/architecture/security-model.md",
+        "docs/brand/branding-guidelines.md",
+        "docs/engineering/dependency-upgrade-2026-08-18.md",
+        "docs/governance/cla-policy.md",
+        "docs/governance/contributor-agreement-process.md",
+        "docs/governance/corporate-contributor-assignment-agreement.md",
+        "docs/governance/developer-certificate-of-origin.md",
+        "docs/governance/founder-contribution-policy.md",
+        "docs/governance/governance.md",
+        "docs/governance/historical-contributions.md",
+        "docs/governance/individual-contributor-assignment-agreement.md",
+        "docs/governance/licence-version-decision.md",
+        "docs/governance/name-and-brand-decision.md",
+        "docs/governance/owner-contributions.md",
+        "docs/guides/api.md",
+        "docs/guides/cli.md",
+        "docs/guides/configuration.md",
+        "docs/guides/fleet-setup.md",
+        "docs/guides/install-debian.md",
+        "docs/guides/install-macos.md",
+        "docs/guides/troubleshooting.md",
+        "docs/index.md",
+        "docs/legal/additional-terms.md",
+        "docs/legal/agpl-compliance.md",
+        "docs/legal/attribution.md",
+        "docs/legal/changelog.md",
+        "docs/legal/copyright.md",
+        "docs/legal/dependency-policy.md",
+        "docs/legal/enforcement-policy.md",
+        "docs/legal/license-corpus.md",
+        "docs/legal/licensing.md",
+        "docs/legal/overview.md",
+        "docs/legal/privacy.md",
+        "docs/legal/provenance.md",
+        "docs/legal/safety-and-use-limits.md",
+        "docs/legal/source-availability.md",
+        "docs/legal/spdx-header-policy.md",
+        "docs/legal/trademarks.md",
+        "docs/maintainers/github-repository-settings.md",
+        "docs/operations/backup-and-recovery.md",
+        "docs/operations/data-and-retention.md",
+        "docs/operations/data-protection-for-deployers.md",
+        "docs/operations/runbook.md",
+        "docs/releases/changelog.md",
+        "docs/releases/compliance.md",
+        "docs/releases/migration.md",
+        "docs/releases/release-keys.md",
+        "docs/releases/release-notes-v1.0.0-beta.1.md",
+        "docs/releases/releasing.md",
+        "docs/releases/verification.md"
       ]
     },
     {
@@ -87,10 +105,10 @@
       "class": "GENERATED",
       "rationale": "Historical GPT-5.6 review records retained as evidence, not runtime source or a legal conclusion.",
       "globs": [
-        "docs/review/gpt56-hub-2026-08-18/*.md"
+        "docs/audits/2026-08-18-gpt-5.6-hub/*.md"
       ],
       "exception": {
-        "origin": "Generated during the dated GPT-5.6 Hub review from the repository references recorded in 00-BASELINE.md and 01-INVENTORY.md.",
+        "origin": "Generated during the dated GPT-5.6 Hub review from the repository references recorded in baseline.md and inventory.md.",
         "licensing": "Administrative review output; referenced third-party facts and rights remain with their respective sources. No separate chain-of-title conclusion is made.",
         "release_treatment": "Retained as historical review evidence. Do not present it as current verification without rerunning its stated gates."
       }
@@ -113,7 +131,7 @@
       "class": "THIRD-PARTY",
       "rationale": "Canonical Developer Certificate of Origin 1.1 text.",
       "paths": [
-        "DCO-1.1.md"
+        "docs/governance/developer-certificate-of-origin-1.1.md"
       ],
       "exception": {
         "origin": "The Linux Foundation and its contributors, Developer Certificate of Origin version 1.1.",
@@ -143,7 +161,7 @@
       "class": "THIRD-PARTY",
       "rationale": "Project-authored compilation that embeds third-party notices and the Tesla Auth MIT licence text.",
       "paths": [
-        "THIRD_PARTY_NOTICES.md"
+        "docs/legal/third-party-notices.md"
       ],
       "exception": {
         "origin": "Compilation of notices for TeslaMate, Tesla Auth, Tesla Vehicle Command, Tesla Fleet Telemetry, and release dependencies.",
@@ -160,7 +178,7 @@
       ],
       "exception": {
         "origin": "Tesla Auth v0.15.0, revision 68da1f850e9cb87ac0e54c608d5a2e90d3ad1608, by Adrian Kumpf.",
-        "licensing": "MIT, copyright 2021 Adrian Kumpf. The notice and licence text are retained in THIRD_PARTY_NOTICES.md.",
+        "licensing": "MIT, copyright 2021 Adrian Kumpf. The notice and licence text are retained in docs/legal/third-party-notices.md.",
         "release_treatment": "Preserve the modification notice, upstream revision, copyright, and MIT text in source and release notices."
       }
     },

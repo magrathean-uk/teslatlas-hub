@@ -57,11 +57,14 @@ ED25519_SPKI_PREFIX = bytes.fromhex("302a300506032b6570032100")
 LEGAL_FILES = {
     "usr/share/doc/teslatlas-hub/copyright": "LICENSE",
     "usr/share/doc/teslatlas-hub/NOTICE": "NOTICE",
-    "usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
-    "usr/share/doc/teslatlas-hub/PROVENANCE.md": "PROVENANCE.md",
-    "usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md": "ADDITIONAL_TERMS.md",
-    "usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md": "SOURCE_AVAILABILITY.md",
-    "usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md": "RELEASE_VERIFICATION.md",
+    "usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md":
+        "docs/legal/third-party-notices.md",
+    "usr/share/doc/teslatlas-hub/PROVENANCE.md": "docs/legal/provenance.md",
+    "usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md": "docs/legal/additional-terms.md",
+    "usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md":
+        "docs/legal/source-availability.md",
+    "usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md":
+        "docs/releases/verification.md",
 }
 BASE_STATIC_FILES = {
     "lib/systemd/system/teslatlas-hub.service": "packaging/linux/teslatlas-hub.service",

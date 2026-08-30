@@ -22,7 +22,8 @@ license = "MIT"
 EOF
 printf '%s\n' 'fn main() {}' >"$REPO/src/main.rs"
 printf '%s\n' 'exact fixture license' >"$REPO/LICENSE"
-printf '%s\n' '# exact fixture notices' >"$REPO/THIRD_PARTY_NOTICES.md"
+mkdir -p "$REPO/docs/legal"
+printf '%s\n' '# exact fixture notices' >"$REPO/docs/legal/third-party-notices.md"
 (cd "$REPO" && CARGO_NET_OFFLINE=true cargo generate-lockfile >/dev/null)
 
 python3 "$REPO/scripts/legal-bundle.py" --repo "$REPO" \
