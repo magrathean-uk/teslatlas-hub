@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>uk.co.magrathean.teslatlas-fleet-telemetry</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/libexec/teslatlas-edge/teslatlas-fleet-telemetry</string>
+    <string>-config=/Users/Shared/TeslatlasEdge/fleet-telemetry.json</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TESLATLAS_FLEET_TELEMETRY_BEARER_FILE</key>
+    <string>/Users/Shared/TeslatlasEdge/receiver-token</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>ExitTimeOut</key>
+  <integer>5</integer>
+  <key>Umask</key>
+  <integer>63</integer>
+</dict>
+</plist>

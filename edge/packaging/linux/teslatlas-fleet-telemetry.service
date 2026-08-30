@@ -1,0 +1,39 @@
+[Unit]
+Description=Teslatlas Edge pinned Tesla Fleet Telemetry receiver
+After=network-online.target teslatlas-edge.service
+Wants=network-online.target
+PartOf=teslatlas-edge.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+ConditionPathExists=/var/lib/teslatlas-edge/receiver-token
+ConditionPathExists=/etc/teslatlas-edge/vehicle-tls.crt
+ConditionPathExists=/etc/teslatlas-edge/vehicle-tls.key
+
+[Service]
+Type=simple
+User=teslatlas-edge
+Group=teslatlas-edge
+Environment=TESLATLAS_FLEET_TELEMETRY_BEARER_FILE=/var/lib/teslatlas-edge/receiver-token
+ExecStart=/usr/lib/teslatlas-edge/fleet-telemetry -config=/etc/teslatlas-edge/fleet-telemetry.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=5
+KillMode=mixed
+UMask=0077
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+InaccessiblePaths=/var/lib/teslatlas-edge/spool /var/lib/teslatlas-edge/spool-key /var/lib/teslatlas-edge/hub-credentials.json /etc/teslatlas-edge/hub-server.key
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
