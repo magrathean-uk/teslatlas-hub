@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
+
+cd "$repo_dir"
+uv sync --locked
+uv run python tools/build_openapi.py --check
+uv run python tools/build_fixtures.py --check
+uv run python tools/build_conformance.py --check
+uv run python -m unittest discover -s tests -v
+./conformance/run
