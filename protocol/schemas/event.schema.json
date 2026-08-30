@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:event:1.2.0",
+  "title": "Teslatlas event envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "occurred_at",
+    "vehicle_id",
+    "resource_id",
+    "revision",
+    "data"
+  ],
+  "properties": {
+    "event_id": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+    },
+    "event_type": {
+      "enum": [
+        "observation.admitted",
+        "vehicle.current.changed",
+        "drive.started",
+        "drive.updated",
+        "drive.ended",
+        "charge.started",
+        "charge.updated",
+        "charge.ended",
+        "state.changed",
+        "software_update.changed",
+        "data_quality.changed",
+        "command.changed",
+        "metadata.changed"
+      ]
+    },
+    "occurred_at": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+    },
+    "vehicle_id": {
+      "oneOf": [
+        {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "resource_id": {
+      "oneOf": [
+        {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revision": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/revision"
+    },
+    "data": {
+      "oneOf": [
+        {
+          "$ref": "urn:teslatlas:protocol:schema:observation:1.2.0"
+        },
+        {
+          "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0"
+        },
+        {
+          "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0"
+        },
+        {
+          "$ref": "urn:teslatlas:protocol:schema:command:1.2.0#/$defs/command_job"
+        },
+        {
+          "$ref": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_record"
+        }
+      ]
+    }
+  }
+}
+
