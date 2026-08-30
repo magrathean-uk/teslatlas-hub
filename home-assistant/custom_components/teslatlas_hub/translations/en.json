@@ -1,0 +1,84 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Teslatlas Hub",
+        "description": "Enter a public Teslatlas Hub endpoint.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "use_tls": "Use TLS"
+        },
+        "data_description": {
+          "host": "Hostname or IP address advertised by Teslatlas Hub.",
+          "port": "Public Hub service port.",
+          "use_tls": "Use the released public TLS transport."
+        }
+      },
+      "pair": {
+        "title": "Pair with Teslatlas Hub",
+        "description": "Enter the transient pairing secret shown by your Hub. It is not stored.",
+        "data": {
+          "pairing_secret": "Pairing secret"
+        }
+      },
+      "discovery": {
+        "title": "Confirm discovered Teslatlas Hub",
+        "description": "Confirm whether the discovered public endpoint uses TLS. Zeroconf TXT properties are ignored until the public contract is frozen.",
+        "data": {
+          "use_tls": "Use TLS"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Repair Teslatlas Hub authentication",
+        "description": "Enter a fresh transient pairing secret from the same Hub.",
+        "data": {
+          "pairing_secret": "Pairing secret"
+        }
+      },
+      "reconfigure_confirm": {
+        "title": "Change Teslatlas Hub endpoint",
+        "description": "The new endpoint must resolve to the same Hub identity.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "use_tls": "Use TLS"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to the Hub",
+      "invalid_auth": "The device credential is invalid",
+      "invalid_pairing_secret": "The pairing secret was rejected",
+      "protocol_not_ready": "The released Teslatlas public protocol is not available yet"
+    },
+    "abort": {
+      "already_configured": "This Hub is already configured",
+      "cannot_connect": "The discovered service has no usable endpoint",
+      "reauth_successful": "Authentication was repaired",
+      "reconfigure_successful": "The endpoint was updated",
+      "wrong_hub": "The endpoint resolved to a different Hub identity"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "access_state": {"name": "Access state"},
+      "activity_state": {"name": "Activity state"},
+      "backup_age": {"name": "Backup age"},
+      "charge_limit": {"name": "Charge limit"},
+      "charging_power": {"name": "Charging power"},
+      "charging_state": {"name": "Charging state"},
+      "collector_health": {"name": "Collector health"},
+      "data_quality": {"name": "Data quality"},
+      "estimated_range": {"name": "Estimated range"},
+      "fleet_cost": {"name": "Estimated Fleet API cost"},
+      "inside_temperature": {"name": "Inside temperature"},
+      "odometer": {"name": "Odometer"},
+      "outside_temperature": {"name": "Outside temperature"},
+      "software_update_state": {"name": "Software update state"},
+      "software_version": {"name": "Software version"},
+      "state_of_charge": {"name": "State of charge"},
+      "telemetry_age": {"name": "Telemetry age"}
+    }
+  }
+}

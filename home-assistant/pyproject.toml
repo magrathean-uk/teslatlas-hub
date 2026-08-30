@@ -1,0 +1,30 @@
+[project]
+name = "teslatlas-home-assistant"
+version = "0.1.0"
+description = "Home Assistant integration for the public Teslatlas Hub protocol"
+readme = "README.md"
+requires-python = ">=3.14.2"
+license = "Apache-2.0"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "homeassistant==2026.8.3",
+    "pytest-homeassistant-custom-component>=0.13,<0.14",
+    "ruff==0.16.5",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["ASYNC", "B", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[tool.uv]
+package = false
