@@ -1,0 +1,31 @@
+{
+  "fixture_set_version": "1.0.0",
+  "fixtures": [
+    {
+      "path": "fixtures/v1/normal.json",
+      "scenario_id": "normal",
+      "sha256": "cf720ac907358581d72450c14fbd50ec0c653def7aa171796d28c0876d60179f"
+    },
+    {
+      "path": "fixtures/v1/duplicate.json",
+      "scenario_id": "duplicate",
+      "sha256": "7ee38e4da925efa50f03d8192856bc0e324f1258bd5cb056ac1d8da2dd9666a4"
+    },
+    {
+      "path": "fixtures/v1/delayed.json",
+      "scenario_id": "delayed",
+      "sha256": "df77848828325abc5c761127a374c271c38542d066330b9c1f687f40cb616afd"
+    },
+    {
+      "path": "fixtures/v1/missing.json",
+      "scenario_id": "missing",
+      "sha256": "a1570d349dbf0fd3b2c5f215d291998e5679b5352a6ed8f2518aeb2bf27f3477"
+    },
+    {
+      "path": "fixtures/v1/reordered.json",
+      "scenario_id": "reordered",
+      "sha256": "e122486624a8f67f351e988c6cf172d0f231d8d79fdce41e9e20abf669baf69c"
+    }
+  ],
+  "schema": "urn:teslatlas:protocol:schema:fixture:1.2.0"
+}

@@ -1,0 +1,162 @@
+{
+  "description": "Out-of-order input is sorted by provider time, source sequence, and observation ID.",
+  "expected": {
+    "accepted_observation_ids": [
+      "obs_reordered_battery_0002",
+      "obs_reordered_battery_0001"
+    ],
+    "duplicate_observation_ids": [],
+    "ordered_observation_ids": [
+      "obs_reordered_battery_0001",
+      "obs_reordered_battery_0002"
+    ],
+    "projection": {
+      "computed_at": "2026-08-30T16:00:03.250Z",
+      "input_observation_ids": [
+        "obs_reordered_battery_0001",
+        "obs_reordered_battery_0002"
+      ],
+      "payload": {
+        "battery_level_percent": 75,
+        "charging_state": "unknown",
+        "climate_on": null,
+        "inside_temperature_c": null,
+        "location": null,
+        "locked": null,
+        "observed_at": "2026-08-30T16:00:02.000Z",
+        "odometer_km": null,
+        "outside_temperature_c": null,
+        "quality": {
+          "assessed_at": "2026-08-30T16:00:03.250Z",
+          "derived_fields": [],
+          "gap_count": 0,
+          "issues": [
+            {
+              "affected_fields": [
+                "battery.level_percent"
+              ],
+              "code": "reordered_observation",
+              "message": "Input arrival order differs from canonical provider order.",
+              "severity": "info"
+            }
+          ],
+          "largest_gap_seconds": 0,
+          "projection_version": "3.1.0",
+          "quality": "partial",
+          "sources": [
+            "fleet_telemetry"
+          ],
+          "subject_id": "vehicle_demo_alpha",
+          "subject_type": "vehicle"
+        },
+        "range_km": null,
+        "resource_type": "current_state",
+        "revision": 1,
+        "state": "online",
+        "vehicle_id": "vehicle_demo_alpha"
+      },
+      "projection_id": "projection_reordered_current_0001",
+      "projection_type": "current_state",
+      "projection_version": "3.1.0",
+      "quality": {
+        "assessed_at": "2026-08-30T16:00:03.250Z",
+        "derived_fields": [],
+        "gap_count": 0,
+        "issues": [
+          {
+            "affected_fields": [
+              "battery.level_percent"
+            ],
+            "code": "reordered_observation",
+            "message": "Input arrival order differs from canonical provider order.",
+            "severity": "info"
+          }
+        ],
+        "largest_gap_seconds": 0,
+        "projection_version": "3.1.0",
+        "quality": "partial",
+        "sources": [
+          "fleet_telemetry"
+        ],
+        "subject_id": "projection_reordered_current_0001",
+        "subject_type": "projection"
+      },
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    "quality": {
+      "assessed_at": "2026-08-30T16:00:03.250Z",
+      "derived_fields": [],
+      "gap_count": 0,
+      "issues": [
+        {
+          "affected_fields": [
+            "battery.level_percent"
+          ],
+          "code": "reordered_observation",
+          "message": "Input arrival order differs from canonical provider order.",
+          "severity": "info"
+        }
+      ],
+      "largest_gap_seconds": 0,
+      "projection_version": "3.1.0",
+      "quality": "partial",
+      "sources": [
+        "fleet_telemetry"
+      ],
+      "subject_id": "projection_reordered_current_0001",
+      "subject_type": "projection"
+    }
+  },
+  "fixture_version": "1.0.0",
+  "input_observations": [
+    {
+      "collector_version": "5.4.0",
+      "field": "battery.level_percent",
+      "observation_id": "obs_reordered_battery_0002",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T16:00:02.000Z",
+      "quality_flags": [
+        "reordered"
+      ],
+      "raw_payload_hash": "58346fa3191e21870fd91a297a9dbd26f82ea8cbf9d65c34236ba91d716b50bd",
+      "received_timestamp": "2026-08-30T16:00:02.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": "demo-reordered-0002",
+      "typed_value": {
+        "kind": "number",
+        "unit": "percent",
+        "value": 75
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    {
+      "collector_version": "5.4.0",
+      "field": "battery.level_percent",
+      "observation_id": "obs_reordered_battery_0001",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T16:00:01.000Z",
+      "quality_flags": [
+        "reordered"
+      ],
+      "raw_payload_hash": "5dbe86cf3a71bc3a03ce25096418459a2bdb232f465bde16686bfe45ef7c204c",
+      "received_timestamp": "2026-08-30T16:00:03.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": "demo-reordered-0001",
+      "typed_value": {
+        "kind": "number",
+        "unit": "percent",
+        "value": 76
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    }
+  ],
+  "redaction": {
+    "contains_precise_location": false,
+    "contains_real_identifiers": false,
+    "contains_secrets": false,
+    "maximum_coordinate_decimals": 2
+  },
+  "scenario_id": "reordered"
+}
