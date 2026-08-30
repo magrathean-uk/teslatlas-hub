@@ -61,10 +61,9 @@ Publish all of the following together:
 - migration notes, release notes, and legal changelog.
 
 The full OpenPGP release fingerprint and both production public-key SHA-256
-digests must be published through a separately authenticated,
-company-controlled channel. Repository, release-asset, and key-server copies
-are not independent trust anchors. The current missing external publication
-blocks v1.0.0-beta.1.
+digests are independently published through the company-controlled page at
+<https://teslatlas.eu/hub/release-keys/v1.0.0-beta.1.txt>. Repository,
+release-asset, and key-server copies are not independent trust anchors.
 
 Immediately before the signed tag, commit the final status flip that removes
 candidate, draft, preparation, and unreleased wording from this version's

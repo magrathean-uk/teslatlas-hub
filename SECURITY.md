@@ -4,8 +4,8 @@
 
 | Release line | Security support |
 |---|---|
-| v1.0.0-beta.1 | Supported only after the complete official beta release is published |
-| v1.0.0-alpha.1 and earlier | Unsupported; no supported upgrade exists until the official beta is published |
+| v1.0.0-beta.1 | Supported public beta |
+| v1.0.0-alpha.1 and earlier | Unsupported; upgrade by backup and fresh beta installation |
 | `main` and untagged builds | Reports accepted, but not a supported release channel |
 
 ## Private reporting

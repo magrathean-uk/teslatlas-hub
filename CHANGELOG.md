@@ -1,13 +1,12 @@
 # Changelog
 
-All notable released changes and current release-candidate changes are recorded
-here. The project follows Semantic Versioning for release identifiers; beta
-interfaces may still change.
+All notable released changes are recorded here. The project follows Semantic
+Versioning for release identifiers; beta interfaces may still change.
 
-## Unreleased — v1.0.0-beta.1 candidate
+## 1.0.0-beta.1 — 2026-08-30
 
-Prepared as the first public beta. It is not released until the signed tag and
-the complete prerelease evidence set are published atomically.
+First public beta. The signed tag, platform artifacts, exact source, and
+complete release evidence are published as one verified prerelease set.
 
 ### Added
 

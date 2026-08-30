@@ -3,9 +3,9 @@
 Teslatlas Hub v1.0.0-beta.1 supports Apple-silicon macOS 13 or later and
 Debian 13 on amd64 or ARM64.
 
-This version is an unpublished release candidate until its complete GitHub
-prerelease, signed tag, platform artifacts, and evidence set are published
-together. A missing tag page or asset means no official beta is available.
+This version is the first public beta. Its signed tag, platform artifacts, exact
+source, and evidence set form one atomic GitHub prerelease. A missing tag page
+or required asset means the download is incomplete and must not be installed.
 
 ## Start here
 

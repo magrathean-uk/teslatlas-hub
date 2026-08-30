@@ -3,14 +3,11 @@
 Only an authorised MAGRATHEAN UK LTD maintainer may publish an official release.
 The repository's [release compliance gate](../RELEASE_COMPLIANCE.md) controls.
 
-> **Current status:** v1.0.0-beta.1 is an unpublished candidate. The Debian
-> native-attestation, Linux Go command-proxy clean-rebuild evidence, and Fleet
-> source/legal evidence paths are implemented and the production provenance
-> and Debian-attestation keys are provisioned. Final signed-tag Debian 13 amd64
-> and ARM64 release receipts have not yet been recorded. The release OpenPGP
-> fingerprint and both production public-key digests also lack separately
-> authenticated company-controlled publication. Publication remains blocked
-> until every gate below passes.
+> **Current status:** v1.0.0-beta.1 is the first public beta. It is valid only as
+> the complete atomic GitHub prerelease: signed tag, notarised macOS artifacts,
+> native Debian 13 amd64 and ARM64 packages and receipts, exact source, detailed
+> evidence, checksums, and detached signature. The independent release trust
+> anchors are published at <https://teslatlas.eu/hub/release-keys/v1.0.0-beta.1.txt>.
 
 ## Fixed version mapping
 
@@ -62,7 +59,7 @@ The mandatory finalization check before step 8 is:
 ```sh
 : "${RELEASE_DATE:?set the actual release date as YYYY-MM-DD}"
 STATUS_RE=$(printf '%s' \
-  'unpub''lished|release can''didate|draft no''tes|release prepa''ration|^## Unrel''eased|external publication blocker|blocks an official v1\.0\.0-beta\.1 release|blocks publication of v1\.0\.0-beta\.1|current missing external publication blocks v1\.0\.0-beta\.1|until the official beta is published')
+  'unpub''lished|release can''didate|draft no''tes|release prepa''ration|^## Unrel''eased|external publication block''er|blocks an official v1\.0\.0-beta\.1 release|blocks publication of v1\.0\.0-beta\.1|current missing external publication blocks v1\.0\.0-beta\.1|until the official beta is pub''lished')
 STATUS_FILES=(
   README.md CHANGELOG.md LEGAL_CHANGELOG.md PRIVACY.md SECURITY.md
   docs/README.md docs/INSTALL_MACOS.md docs/INSTALL_DEBIAN.md

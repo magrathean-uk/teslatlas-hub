@@ -25,11 +25,10 @@
 </p>
 
 > [!WARNING]
-> **v1.0.0-beta.1 is an unpublished release candidate.** It becomes an official
-> public beta only when the complete GitHub prerelease and every required
-> artifact are published together. Until then, use `main` only for development.
-> Back up Hub data, test recovery, and expect interfaces or storage formats to
-> change before v1.0.0. Do not use Teslatlas Hub for safety-critical, emergency,
+> **v1.0.0-beta.1 is the first public beta.** Install only from the complete
+> signed GitHub prerelease and verify every required artifact. Back up Hub data,
+> test recovery, and expect interfaces or storage formats to change before
+> v1.0.0. Do not use Teslatlas Hub for safety-critical, emergency,
 > autonomous-driving, or vehicle-control decisions.
 
 Teslatlas Hub keeps telemetry under the operator's control. It collects every

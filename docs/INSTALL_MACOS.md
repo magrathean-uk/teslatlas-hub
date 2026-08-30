@@ -5,10 +5,9 @@ later.
 
 ## Verify the download
 
-The beta is still unpublished while its
-[release page](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1)
-or any required evidence asset is absent. After atomic publication, download
-the macOS ZIP and service package only from that page. Verify the signed tag,
+Download the macOS ZIP and service package only from the
+[v1.0.0-beta.1 release page](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1).
+Treat a missing required asset as an incomplete release. Verify the signed tag,
 `SHA256SUMS`, detached signature, notarisation receipts, and artifact digest
 before opening either file. Follow [Verify a release](../RELEASE_VERIFICATION.md).
 

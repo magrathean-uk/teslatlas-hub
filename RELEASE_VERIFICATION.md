@@ -4,15 +4,15 @@ Treat a download as an official Teslatlas Hub release only when the signed tag,
 flat release checksums, detailed evidence, provenance signature, native Debian
 receipts, platform signatures, exact source, and legal evidence all verify.
 
-> **Publication status:** v1.0.0-beta.1 is an unpublished candidate. No official
-> beta exists until every named asset and independent trust anchor below is
-> published. The full release OpenPGP fingerprint does not yet have the required
-> separately authenticated company-controlled publication.
+> **Publication status:** v1.0.0-beta.1 is the first public beta. Treat it as
+> official only when every named asset is present and the independent trust
+> anchors match the company-controlled publication below.
 
 ## Independent trust anchors
 
-Obtain these values through authenticated MAGRATHEAN UK LTD channels outside
-the GitHub release being checked:
+Obtain these values from the authenticated MAGRATHEAN UK LTD publication at
+<https://teslatlas.eu/hub/release-keys/v1.0.0-beta.1.txt>, outside the GitHub
+release being checked:
 
 - OpenPGP release fingerprint
   `A43B517A25C59994654639ED9CB5BEA1F3D65EDD`;

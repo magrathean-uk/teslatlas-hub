@@ -4,7 +4,15 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
-## 29 August 2026 — v1.0.0-beta.1 candidate hardening
+## 2026-08-30 — v1.0.0-beta.1 release
+
+- published the release OpenPGP fingerprint and the production provenance and
+  Debian-attestation public-key digests through the independently deployed
+  `teslatlas.eu` release-key page;
+- finalized the public beta status, release date, verification instructions,
+  platform support policy, and signed-release documentation.
+
+## 29 August 2026 — v1.0.0-beta.1 release hardening
 
 - assigned the release OpenPGP identity and public founder attribution to the
   exact name **György Bolyki**;
@@ -25,7 +33,7 @@ not evidence that a private instrument exists or remains sufficient.
 - aligned the GUI appropriate-legal-notices facility with the exact section
   7(b) attribution text and dated the Tesla Auth adaptation notice.
 
-## 28 August 2026 — v1.0.0-beta.1 release preparation
+## 28 August 2026 — v1.0.0-beta.1 release legal framework
 
 - Added a tracked, source-available Apache change notice and Go 1.27 runtime
   overlay for the separately executed Tesla command proxy.

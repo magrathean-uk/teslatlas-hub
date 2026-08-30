@@ -45,13 +45,10 @@ test "$TAG_SIGNER" = "$EXPECTED_RELEASE_FINGERPRINT"
 ```
 
 The copy in the same repository is not an independent trust anchor. Compare
-the full fingerprint with the official release notes and a separately
-authenticated Magrathean publication before trusting it.
-
-**The fingerprint above has not yet been published through the required
-separately authenticated, company-controlled channel. This blocks an official
-v1.0.0-beta.1 release.** A Git repository, release asset, or key server alone
-does not satisfy that independent publication requirement.
+the full fingerprint with the company-controlled publication at
+<https://teslatlas.eu/hub/release-keys/v1.0.0-beta.1.txt> before trusting it. A
+Git repository, release asset, or key server alone does not satisfy that
+independent publication requirement.
 
 The earlier pre-publication candidate key
 `F59A16DD7828D75D8DAB23C52C4FD42128152ACC` was retired on 2026-08-29 before
@@ -73,10 +70,10 @@ release evidence bundle.
 The production Ed25519 key was provisioned on 2026-08-29 under the custody of
 György Bolyki. Its public-key SHA-256 is
 `7186087343ae93f3d9c5d02347f467a45937339118db1a5f043cb1f6d4e15fe7`.
-That digest is recorded in the private release-key record but has not yet been
-published through the required separately authenticated company-controlled
-channel. This blocks publication of v1.0.0-beta.1. The identity is separate
-from both the OpenPGP tag key and the P-256 provenance key.
+That digest is recorded in the private release-key record and independently
+published at
+<https://teslatlas.eu/hub/release-keys/v1.0.0-beta.1.txt>. The identity is
+separate from both the OpenPGP tag key and the P-256 provenance key.
 
 The archival key is held outside the repository in a dedicated AES-256
 encrypted APFS release vault that remains unmounted outside authorised release
@@ -128,10 +125,10 @@ suspected-compromised key breaks continuity and requires explicit disclosure.
 The production P-256 key was provisioned on 2026-08-29 under the custody of
 György Bolyki. Its public-key SHA-256 is
 `a787a55c4b93266453d86805a6cda1ba5b54c76ce31750a468c1dc76a7c18901`.
-That digest is recorded in the private release-key record but has not yet been
-published through the required separately authenticated company-controlled
-channel. This blocks publication of v1.0.0-beta.1. The OpenPGP tag key above is
-a separate identity and must not be reused as the provenance key.
+That digest is recorded in the private release-key record and independently
+published at
+<https://teslatlas.eu/hub/release-keys/v1.0.0-beta.1.txt>. The OpenPGP tag key
+above is a separate identity and must not be reused as the provenance key.
 
 The archival key is held outside the repository in the dedicated AES-256
 encrypted APFS release vault and remains unmounted outside authorised release

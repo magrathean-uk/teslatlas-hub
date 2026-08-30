@@ -8,11 +8,10 @@ Teslatlas Hub v1.0.0-beta.1 supports Debian 13 on amd64 and ARM64.
 dpkg --print-architecture
 ```
 
-The beta is still unpublished while its
-[release page](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1)
-or any required evidence asset is absent. After atomic publication, download
-the matching `.deb` from that page and follow
-[Verify a release](../RELEASE_VERIFICATION.md). Do not install an artifact whose
+Download the matching `.deb` from the
+[v1.0.0-beta.1 release page](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1)
+and follow [Verify a release](../RELEASE_VERIFICATION.md). Treat a missing
+required asset as an incomplete release. Do not install an artifact whose
 architecture, checksum, signature, or package metadata differs from the release
 evidence.
 

@@ -1,8 +1,9 @@
-# Teslatlas Hub v1.0.0-beta.1 release candidate
+# Teslatlas Hub v1.0.0-beta.1
 
-These are draft notes for the candidate first public beta of the independent,
-self-hosted telemetry collector and local Teslatlas sync hub. The beta is not
-published while its complete signed prerelease and evidence set are absent.
+Released 2026-08-30.
+
+This is the first public beta of the independent, self-hosted telemetry
+collector and local Teslatlas sync hub.
 
 ## Highlights
 
@@ -47,11 +48,11 @@ Licensed under GNU AGPL version 3 only (`AGPL-3.0-only`) with the permitted
 section 7 notices in `ADDITIONAL_TERMS.md`. The project is unofficial and is
 not affiliated with, endorsed by, or supported by Tesla, Inc. or TeslaMate.
 
-The candidate becomes a release only when the GitHub prerelease contains the
-signed tag, platform artifacts, exact source, checksums and signature, SPDX
-SBOM, dependency notices, provenance, and notarisation evidence described in
-`RELEASE_VERIFICATION.md`. If any item is absent, v1.0.0-beta.1 remains
-unpublished. The Fleet notice embedded in the platform packages names
+The GitHub prerelease is complete only when it contains the signed tag,
+platform artifacts, exact source, checksums and signature, SPDX SBOM,
+dependency notices, provenance, and notarisation evidence described in
+`RELEASE_VERIFICATION.md`. If any item is absent, do not install it. The Fleet
+notice embedded in the platform packages names
 `fleet-telemetry-go-module-sources.tar.gz`; that exact archive is supplied in
 the detailed release evidence and contains the source ZIP plus `go.mod` for all
 45 locked runtime modules, including Eclipse Paho under EPL-2.0. This
