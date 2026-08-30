@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:teslatlas:protocol:schema:event:1.2.0",
-  "title": "Teslatlas event envelope",
+  "title": "Teslatlas v1 SSE data envelope",
+  "$comment": "JSON Schema validates structure and event-to-payload type. Cross-field identity equality is a required semantic rule enforced by the conformance runner.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -75,10 +76,126 @@
           "$ref": "urn:teslatlas:protocol:schema:command:1.2.0#/$defs/command_job"
         },
         {
-          "$ref": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_record"
+          "oneOf": [
+            {
+              "$ref": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_record"
+            },
+            {
+              "$ref": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_tombstone"
+            }
+          ]
         }
       ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "event_type": { "const": "observation.admitted" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "urn:teslatlas:protocol:schema:observation:1.2.0" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "vehicle.current.changed" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/current_state" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": { "enum": ["drive.started", "drive.updated", "drive.ended"] }
+        },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/drive" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": { "enum": ["charge.started", "charge.updated", "charge.ended"] }
+        },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/charge" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "state.changed" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/state_interval" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "software_update.changed" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/software_update" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "data_quality.changed" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "command.changed" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "data": { "$ref": "urn:teslatlas:protocol:schema:command:1.2.0#/$defs/command_job" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "event_type": { "const": "metadata.changed" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              { "$ref": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_record" },
+              { "$ref": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_tombstone" }
+            ]
+          }
+        }
+      }
+    }
+  ]
 }
-

@@ -17,15 +17,17 @@
             "path": "/body/items/0/drive_id"
           }
         ],
-        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0",
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/drive_page",
         "status": 200
       },
       "reference_response": {
         "body_file": "examples/drives-page.json",
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"drives-page-demo-r1\"",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "ETag": "\"fN4qL9sB2wH6cM8z\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 200
       },
@@ -52,7 +54,7 @@
             "ref": "initial.body.items.0.drive_id"
           }
         ],
-        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0",
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/drive_page",
         "status": 200
       },
       "reference_response": {
@@ -107,9 +109,11 @@
           "snapshot_revision": "snapshot_demo_0042"
         },
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"drives-page-demo-r2\"",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "ETag": "\"uC7pE3kR9xT5mV2d\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 200
       },

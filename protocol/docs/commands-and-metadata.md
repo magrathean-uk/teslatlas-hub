@@ -17,7 +17,10 @@ capability. Each descriptor supplies:
 The catalogue is the machine-readable command vocabulary. A command absent
 from it is unsupported even if another Hub exposes a similarly named action.
 Credential provisioning and scope assignment are deployment concerns; the
-public contract only declares the required scope.
+public contract only declares the required scope. The generic command schema
+validates common shape; the server also validates `parameters`,
+`expected_state`, and conditional confirmation against the advertised
+descriptor schemas.
 
 ## Asynchronous command jobs
 
@@ -67,14 +70,19 @@ are closed enums in `schemas/metadata.schema.json`.
   `201`, `Location`, and a strong ETag.
 - `GET /v1/metadata/{metadata_id}` returns the record and strong ETag.
 - `PUT /v1/metadata/{metadata_id}` replaces only the value.
-- `DELETE /v1/metadata/{metadata_id}` removes the record.
+- `DELETE /v1/metadata/{metadata_id}` returns `200` with a persistent deletion
+  tombstone and new strong ETag.
 
 PUT and DELETE require the exact current ETag in `If-Match`. Missing it returns
 `428` `precondition_required`. A stale value returns `409`
 `metadata_revision_conflict`. A successful replacement increments `revision`,
 changes the ETag, and appends an audit event.
 
-Audit entries contain revision, action, exact UTC time, actor identity, and
-previous/new canonical hashes. Deletion is represented in the audit history;
-it does not rewrite or erase prior entries. Metadata changes never mutate the
-provider observation log.
+Live audit entries contain revision, action, exact UTC time, actor identity,
+and previous/new canonical hashes. Created entries have no previous hash;
+updated entries have both. A tombstone retains identity and target, stores the
+unchanged live history in `audit.history`, and records the terminal revision,
+time, and actor once in `audit.deletion`. The final history hash identifies the
+deleted value. GET continues to return the tombstone, list operations exclude
+it, and `metadata.changed` distributes it. Deletion never rewrites prior
+entries or the provider observation log.

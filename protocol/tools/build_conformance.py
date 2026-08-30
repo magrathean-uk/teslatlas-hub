@@ -19,9 +19,29 @@ EVENT_SCHEMA = "urn:teslatlas:protocol:schema:event:1.2.0"
 COMMAND_SCHEMA = "urn:teslatlas:protocol:schema:command:1.2.0"
 METADATA_SCHEMA = "urn:teslatlas:protocol:schema:metadata:1.2.0"
 
+ETAG_DISCOVERY = '"y6Kk9pX2mV4qT7sN"'
+ETAG_MINIMUM_VERSION = '"sH4wQ8nC2kT6mP9x"'
+ETAG_VEHICLES = '"aP3xD8mQ5vR2nK7t"'
+ETAG_DRIVES_FIRST = '"fN4qL9sB2wH6cM8z"'
+ETAG_DRIVES_SECOND = '"uC7pE3kR9xT5mV2d"'
+ETAG_CURRENT_FIRST = '"bY8nJ4qW2sF7kL5p"'
+ETAG_CURRENT_SECOND = '"rM3vT9cX6gP2hK8w"'
+ETAG_COMMAND = '"zQ5dN8wL3pV7tC2m"'
+ETAG_NUISANCE = '"kF2sH6yR9nB4qX7v"'
+ETAG_METADATA_FIRST = '"mC7pL2xW9dR5tN8q"'
+ETAG_METADATA_SECOND = '"vT4kB8qM2yH6sP9n"'
+ETAG_METADATA_DELETED = '"hR9mX3cF7pL2wQ6d"'
+ETAG_DEPRECATED_DISCOVERY = '"dN6qV2tK8xC4mP7s"'
+
 
 def load_example(name: str) -> dict[str, Any]:
-    return json.loads((ROOT / "examples" / name).read_text(encoding="utf-8"))
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"non-finite JSON constant: {value}")
+
+    return json.loads(
+        (ROOT / "examples" / name).read_text(encoding="utf-8"),
+        parse_constant=reject_constant,
+    )
 
 
 def request(
@@ -32,11 +52,15 @@ def request(
     query: dict[str, Any] | None = None,
     body: Any = None,
     body_bytes: int | None = None,
+    omit_protocol_version: bool = False,
 ) -> dict[str, Any]:
+    request_headers = dict(headers or {})
+    if path.startswith("/v1/") and not omit_protocol_version:
+        request_headers.setdefault("Teslatlas-Protocol-Version", "${profile}")
     value: dict[str, Any] = {
         "method": method,
         "path": path,
-        "headers": headers or {},
+        "headers": request_headers,
         "query": query or {},
     }
     if body is not None:
@@ -46,14 +70,22 @@ def request(
     return value
 
 
-def json_headers(etag: str | None = None) -> dict[str, str]:
+def json_headers(
+    etag: str | None = None, *, protocol_version: str = "${profile}"
+) -> dict[str, str]:
     value = {
         "Content-Type": "application/json",
-        "Teslatlas-Protocol-Version": "${profile}",
+        "Teslatlas-Protocol-Version": protocol_version,
+        "Cache-Control": "private, max-age=0, must-revalidate",
+        "Vary": "Authorization, Teslatlas-Protocol-Version",
     }
     if etag is not None:
         value["ETag"] = etag
     return value
+
+
+def schema_definition(schema_id: str, name: str) -> str:
+    return f"{schema_id}#/$defs/{name}"
 
 
 def problem(
@@ -136,6 +168,7 @@ def case(
 
 def build_cases() -> list[dict[str, Any]]:
     discovery = load_example("discovery.json")
+    minimum_protocol_version = discovery["protocol"]["minimum_client_version"]
     vehicles = load_example("vehicles-page.json")
     drives_one = load_example("drives-page.json")
     drives_two = copy.deepcopy(drives_one)
@@ -183,6 +216,7 @@ def build_cases() -> list[dict[str, Any]]:
     nuisance_job["links"]["self"] = "/v1/commands/command_demo_nuisance_0001"
 
     metadata = load_example("metadata-record.json")
+    metadata_tombstone = load_example("metadata-tombstone.json")
     metadata_updated = copy.deepcopy(metadata)
     metadata_updated["revision"] = 2
     metadata_updated["value"] = {"text": "Updated redacted demonstration trip."}
@@ -197,23 +231,28 @@ def build_cases() -> list[dict[str, Any]]:
             "new_hash": "bc" * 32,
         }
     )
+    metadata_empty_page = load_example("metadata-page.json")
+    metadata_empty_page["items"] = []
+    metadata_empty_page["snapshot_revision"] = "snapshot_demo_metadata_deleted"
+    metadata_empty_page["generated_at"] = "2026-08-30T12:50:01.000Z"
+    metadata_deleted_event = {
+        "event_id": "event_demo_metadata_deleted_0001",
+        "event_type": "metadata.changed",
+        "occurred_at": metadata_tombstone["audit"]["deletion"]["at"],
+        "vehicle_id": metadata_tombstone["vehicle_id"],
+        "resource_id": metadata_tombstone["metadata_id"],
+        "revision": metadata_tombstone["audit"]["deletion"]["revision"],
+        "data": metadata_tombstone,
+    }
 
     deprecated_discovery = copy.deepcopy(discovery)
-    deprecated_discovery["capabilities"].append(
-        {
-            "id": "query.legacy",
-            "version": "1.0.0",
-            "introduced_in": "1.0.0",
-            "status": "deprecated",
-            "href": "/v1/legacy",
-            "deprecation": {
-                "deprecated_at": "2030-01-01T00:00:00.000Z",
-                "sunset_at": "2030-07-01T00:00:00.000Z",
-                "successor": "query.vehicles",
-                "documentation": "https://protocol.example.invalid/deprecations/query-legacy",
-            },
-        }
-    )
+    deprecated_discovery["capabilities"][0]["status"] = "deprecated"
+    deprecated_discovery["capabilities"][0]["deprecation"] = {
+        "deprecated_at": "2030-01-01T00:00:00.000Z",
+        "sunset_at": "2030-07-01T00:00:00.000Z",
+        "successor": "query.vehicles.next",
+        "documentation": "https://protocol.example.invalid/deprecations/query-vehicles",
+    }
 
     cases = [
         case(
@@ -239,8 +278,33 @@ def build_cases() -> list[dict[str, Any]]:
                     },
                     {
                         "status": 200,
-                        "headers": json_headers('"discovery-demo-r1"'),
+                        "headers": json_headers(ETAG_DISCOVERY),
                         "body_file": "examples/discovery.json",
+                    },
+                ),
+                step(
+                    "omitted-version-selects-minimum",
+                    request(
+                        "GET",
+                        "/v1/vehicles",
+                        omit_protocol_version=True,
+                    ),
+                    {
+                        "status": 200,
+                        "headers_equal": {
+                            "Teslatlas-Protocol-Version": "${discover.body.protocol.minimum_client_version}"
+                        },
+                        "body_schema": schema_definition(
+                            RESOURCE_SCHEMA, "vehicle_page"
+                        ),
+                    },
+                    {
+                        "status": 200,
+                        "headers": json_headers(
+                            ETAG_MINIMUM_VERSION,
+                            protocol_version=minimum_protocol_version,
+                        ),
+                        "body_file": "examples/vehicles-page.json",
                     },
                 ),
                 step(
@@ -253,11 +317,11 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 200,
                         "headers_equal": {"Teslatlas-Protocol-Version": "${profile}"},
-                        "body_schema": RESOURCE_SCHEMA,
+                        "body_schema": schema_definition(RESOURCE_SCHEMA, "vehicle_page"),
                     },
                     {
                         "status": 200,
-                        "headers": json_headers('"vehicles-demo-r1"'),
+                        "headers": json_headers(ETAG_VEHICLES),
                         "body_file": "examples/vehicles-page.json",
                     },
                 ),
@@ -295,7 +359,7 @@ def build_cases() -> list[dict[str, Any]]:
                     ),
                     {
                         "status": 200,
-                        "body_schema": RESOURCE_SCHEMA,
+                        "body_schema": schema_definition(RESOURCE_SCHEMA, "drive_page"),
                         "assertions": [
                             {"path": "/body/next_cursor", "op": "exists"},
                             {"path": "/body/items/0/drive_id", "op": "exists"},
@@ -303,7 +367,7 @@ def build_cases() -> list[dict[str, Any]]:
                     },
                     {
                         "status": 200,
-                        "headers": json_headers('"drives-page-demo-r1"'),
+                        "headers": json_headers(ETAG_DRIVES_FIRST),
                         "body_file": "examples/drives-page.json",
                     },
                 ),
@@ -322,7 +386,7 @@ def build_cases() -> list[dict[str, Any]]:
                     ),
                     {
                         "status": 200,
-                        "body_schema": RESOURCE_SCHEMA,
+                        "body_schema": schema_definition(RESOURCE_SCHEMA, "drive_page"),
                         "assertions": [
                             {
                                 "path": "/body/items/0/drive_id",
@@ -333,7 +397,7 @@ def build_cases() -> list[dict[str, Any]]:
                     },
                     {
                         "status": 200,
-                        "headers": json_headers('"drives-page-demo-r2"'),
+                        "headers": json_headers(ETAG_DRIVES_SECOND),
                         "body": drives_two,
                     },
                 ),
@@ -403,11 +467,11 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 200,
                         "headers_present": ["ETag"],
-                        "body_schema": RESOURCE_SCHEMA,
+                        "body_schema": schema_definition(RESOURCE_SCHEMA, "current_state"),
                     },
                     {
                         "status": 200,
-                        "headers": json_headers('"current-demo-r42"'),
+                        "headers": json_headers(ETAG_CURRENT_FIRST),
                         "body_file": "examples/current-state.json",
                     },
                 ),
@@ -426,9 +490,10 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 304,
                         "headers": {
-                            "ETag": '"current-demo-r42"',
+                            "ETag": ETAG_CURRENT_FIRST,
                             "Teslatlas-Protocol-Version": "${profile}",
                             "Cache-Control": "private, max-age=0, must-revalidate",
+                            "Vary": "Authorization, Teslatlas-Protocol-Version",
                         },
                     },
                 ),
@@ -442,7 +507,7 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 200,
                         "headers_present": ["ETag"],
-                        "body_schema": RESOURCE_SCHEMA,
+                        "body_schema": schema_definition(RESOURCE_SCHEMA, "current_state"),
                         "assertions": [
                             {
                                 "path": "/headers/ETag",
@@ -454,7 +519,7 @@ def build_cases() -> list[dict[str, Any]]:
                     },
                     {
                         "status": 200,
-                        "headers": json_headers('"current-demo-r43"'),
+                        "headers": json_headers(ETAG_CURRENT_SECOND),
                         "body": changed_current,
                     },
                 ),
@@ -731,7 +796,7 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 202,
                         "headers_present": ["Location", "ETag"],
-                        "body_schema": COMMAND_SCHEMA,
+                        "body_schema": schema_definition(COMMAND_SCHEMA, "command_job"),
                         "assertions": [
                             {"path": "/body/state", "op": "equals", "value": "accepted"}
                         ],
@@ -739,7 +804,7 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 202,
                         "headers": {
-                            **json_headers('"command-demo-r1"'),
+                            **json_headers(ETAG_COMMAND),
                             "Location": "/v1/commands/command_demo_0001",
                         },
                         "body_file": "examples/command-job.json",
@@ -755,7 +820,7 @@ def build_cases() -> list[dict[str, Any]]:
                     ),
                     {
                         "status": 202,
-                        "body_schema": COMMAND_SCHEMA,
+                        "body_schema": schema_definition(COMMAND_SCHEMA, "command_job"),
                         "assertions": [
                             {
                                 "path": "/body/command_id",
@@ -767,7 +832,7 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 202,
                         "headers": {
-                            **json_headers('"command-demo-r1"'),
+                            **json_headers(ETAG_COMMAND),
                             "Location": "/v1/commands/command_demo_0001",
                         },
                         "body_file": "examples/command-job.json",
@@ -789,6 +854,26 @@ def build_cases() -> list[dict[str, Any]]:
                     problem_response(409, "idempotency_conflict", "Idempotency conflict"),
                 ),
                 step(
+                    "missing-confirmation",
+                    request(
+                        "POST",
+                        "/v1/commands",
+                        headers={"Idempotency-Key": "33333333-3333-4333-8333-333333333333"},
+                        body={
+                            key: value
+                            for key, value in command_request.items()
+                            if key != "confirmation"
+                        },
+                    ),
+                    expected_problem(400, "invalid_request"),
+                    problem_response(
+                        400,
+                        "invalid_request",
+                        "Confirmation required",
+                        detail="The advertised command descriptor requires confirmation.",
+                    ),
+                ),
+                step(
                     "nuisance-no-retry",
                     request(
                         "POST",
@@ -798,7 +883,7 @@ def build_cases() -> list[dict[str, Any]]:
                     ),
                     {
                         "status": 202,
-                        "body_schema": COMMAND_SCHEMA,
+                        "body_schema": schema_definition(COMMAND_SCHEMA, "command_job"),
                         "assertions": [
                             {"path": "/body/retry_policy", "op": "equals", "value": "none"}
                         ],
@@ -806,7 +891,7 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 202,
                         "headers": {
-                            **json_headers('"command-nuisance-demo-r1"'),
+                            **json_headers(ETAG_NUISANCE),
                             "Location": "/v1/commands/command_demo_nuisance_0001",
                         },
                         "body": nuisance_job,
@@ -826,11 +911,11 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 200,
                         "headers_present": ["ETag"],
-                        "body_schema": METADATA_SCHEMA,
+                        "body_schema": schema_definition(METADATA_SCHEMA, "metadata_record"),
                     },
                     {
                         "status": 200,
-                        "headers": json_headers('"metadata-demo-r1"'),
+                        "headers": json_headers(ETAG_METADATA_FIRST),
                         "body_file": "examples/metadata-record.json",
                     },
                 ),
@@ -845,9 +930,24 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 200,
                         "headers_present": ["ETag"],
-                        "body_schema": METADATA_SCHEMA,
+                        "body_schema": schema_definition(METADATA_SCHEMA, "metadata_record"),
                         "assertions": [
                             {"path": "/body/revision", "op": "equals", "value": 2},
+                            {
+                                "path": "/body/audit/1/action",
+                                "op": "equals",
+                                "value": "updated",
+                            },
+                            {
+                                "path": "/body/audit/1/revision",
+                                "op": "equals",
+                                "value": 2,
+                            },
+                            {
+                                "path": "/body/audit/1/previous_hash",
+                                "op": "same_as",
+                                "ref": "read.body.audit.0.new_hash",
+                            },
                             {
                                 "path": "/headers/ETag",
                                 "op": "not_same_as",
@@ -857,7 +957,7 @@ def build_cases() -> list[dict[str, Any]]:
                     },
                     {
                         "status": 200,
-                        "headers": json_headers('"metadata-demo-r2"'),
+                        "headers": json_headers(ETAG_METADATA_SECOND),
                         "body": metadata_updated,
                     },
                 ),
@@ -884,6 +984,115 @@ def build_cases() -> list[dict[str, Any]]:
                     expected_problem(428, "precondition_required"),
                     problem_response(428, "precondition_required", "Precondition required"),
                 ),
+                step(
+                    "delete",
+                    request(
+                        "DELETE",
+                        "/v1/metadata/metadata_demo_note_0001",
+                        headers={"If-Match": "${update.headers.ETag}"},
+                    ),
+                    {
+                        "status": 200,
+                        "headers_present": ["ETag"],
+                        "body_schema": schema_definition(METADATA_SCHEMA, "metadata_tombstone"),
+                        "assertions": [
+                            {
+                                "path": "/body/audit/deletion/revision",
+                                "op": "equals",
+                                "value": 3,
+                            },
+                            {
+                                "path": "/body/audit/deletion/action",
+                                "op": "equals",
+                                "value": "deleted",
+                            },
+                        ],
+                    },
+                    {
+                        "status": 200,
+                        "headers": json_headers(ETAG_METADATA_DELETED),
+                        "body": metadata_tombstone,
+                    },
+                ),
+                step(
+                    "get-tombstone",
+                    request("GET", "/v1/metadata/metadata_demo_note_0001"),
+                    {
+                        "status": 200,
+                        "headers_equal": {"ETag": "${delete.headers.ETag}"},
+                        "body_schema": schema_definition(METADATA_SCHEMA, "metadata_tombstone"),
+                        "assertions": [
+                            {
+                                "path": "/body/audit/deletion/action",
+                                "op": "equals",
+                                "value": "deleted",
+                            }
+                        ],
+                    },
+                    {
+                        "status": 200,
+                        "headers": json_headers(ETAG_METADATA_DELETED),
+                        "body": metadata_tombstone,
+                    },
+                ),
+                step(
+                    "list-excludes-tombstone",
+                    request(
+                        "GET",
+                        "/v1/vehicles/vehicle_demo_alpha/metadata",
+                        query={"kind": "note"},
+                    ),
+                    {
+                        "status": 200,
+                        "body_schema": schema_definition(RESOURCE_SCHEMA, "metadata_page"),
+                        "assertions": [
+                            {"path": "/body/items", "op": "is_empty"}
+                        ],
+                    },
+                    {
+                        "status": 200,
+                        "headers": json_headers('"qB5nD9sK3xM7vT2p"'),
+                        "body": metadata_empty_page,
+                    },
+                ),
+                step(
+                    "event-tombstone",
+                    request(
+                        "GET",
+                        "/v1/events",
+                        headers={
+                            "Teslatlas-Conformance-Scenario": "metadata-deleted"
+                        },
+                        query={"event_type": ["metadata.changed"]},
+                    ),
+                    {
+                        "status": 200,
+                        "headers_equal": {"Content-Type": "text/event-stream"},
+                        "event_schema": EVENT_SCHEMA,
+                        "assertions": [
+                            {
+                                "path": "/events/0/data/data/audit/deletion/action",
+                                "op": "equals",
+                                "value": "deleted",
+                            }
+                        ],
+                    },
+                    {
+                        "status": 200,
+                        "headers": {
+                            "Content-Type": "text/event-stream",
+                            "Teslatlas-Protocol-Version": "${profile}",
+                            "Cache-Control": "no-cache",
+                        },
+                        "events": [
+                            {
+                                "id": metadata_deleted_event["event_id"],
+                                "event": metadata_deleted_event["event_type"],
+                                "data": metadata_deleted_event,
+                            }
+                        ],
+                    },
+                ),
             ],
         ),
         case(
@@ -904,20 +1113,20 @@ def build_cases() -> list[dict[str, Any]]:
                         "body_schema": DISCOVERY_SCHEMA,
                         "assertions": [
                             {
-                                "path": "/body/capabilities/6/status",
+                                "path": "/body/capabilities/0/status",
                                 "op": "equals",
                                 "value": "deprecated",
                             },
                             {
-                                "path": "/body/capabilities/6/deprecation/successor",
+                                "path": "/body/capabilities/0/deprecation/successor",
                                 "op": "equals",
-                                "value": "query.vehicles",
+                                "value": "query.vehicles.next",
                             },
                         ],
                     },
                     {
                         "status": 200,
-                        "headers": json_headers('"discovery-demo-deprecated-r1"'),
+                        "headers": json_headers(ETAG_DEPRECATED_DISCOVERY),
                         "body": deprecated_discovery,
                     },
                 ),
@@ -932,7 +1141,7 @@ def build_cases() -> list[dict[str, Any]]:
                         "status": 200,
                         "headers_present": ["Deprecation", "Link", "Sunset"],
                         "headers_equal": {"Deprecation": "@1893456000"},
-                        "body_schema": RESOURCE_SCHEMA,
+                        "body_schema": schema_definition(RESOURCE_SCHEMA, "vehicle_page"),
                         "assertions": [
                             {
                                 "path": "/headers/Link",
@@ -949,10 +1158,10 @@ def build_cases() -> list[dict[str, Any]]:
                     {
                         "status": 200,
                         "headers": {
-                            **json_headers('"vehicles-demo-r1"'),
+                            **json_headers(ETAG_VEHICLES),
                             "Deprecation": "@1893456000",
                             "Sunset": "Mon, 01 Jul 2030 00:00:00 GMT",
-                            "Link": "<https://protocol.example.invalid/deprecations/query-legacy>; rel=\"deprecation\"; type=\"text/html\"",
+                            "Link": "<https://protocol.example.invalid/deprecations/query-vehicles>; rel=\"deprecation\"; type=\"text/html\"",
                         },
                         "body_file": "examples/vehicles-page.json",
                     },
@@ -1033,9 +1242,12 @@ def build_outputs() -> dict[Path, bytes]:
 
 
 def render_bytes(value: Any) -> bytes:
-    return (json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode(
-        "utf-8"
-    )
+    return (
+        json.dumps(
+            value, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False
+        )
+        + "\n"
+    ).encode("utf-8")
 
 
 def check_outputs(outputs: dict[Path, bytes]) -> list[str]:

@@ -4,27 +4,27 @@
     {
       "path": "fixtures/v1/normal.json",
       "scenario_id": "normal",
-      "sha256": "cf720ac907358581d72450c14fbd50ec0c653def7aa171796d28c0876d60179f"
+      "sha256": "fb40a4025fecaa2fe4c8ec62629562c737a6fe651aa55ef8649974765480d3a5"
     },
     {
       "path": "fixtures/v1/duplicate.json",
       "scenario_id": "duplicate",
-      "sha256": "7ee38e4da925efa50f03d8192856bc0e324f1258bd5cb056ac1d8da2dd9666a4"
+      "sha256": "5be23af588f8a2d03f4c2fa77c625890b401728bb52c76e1a42e9f1156bc7da9"
     },
     {
       "path": "fixtures/v1/delayed.json",
       "scenario_id": "delayed",
-      "sha256": "df77848828325abc5c761127a374c271c38542d066330b9c1f687f40cb616afd"
+      "sha256": "9074a08534b06145d62fe2fb88bb92183796c41a0b728880ec863ba02ce0ca0f"
     },
     {
       "path": "fixtures/v1/missing.json",
       "scenario_id": "missing",
-      "sha256": "a1570d349dbf0fd3b2c5f215d291998e5679b5352a6ed8f2518aeb2bf27f3477"
+      "sha256": "9e1feb1caf931fe876374942abfdd265051287b3f347f43820d045d84d866fbd"
     },
     {
       "path": "fixtures/v1/reordered.json",
       "scenario_id": "reordered",
-      "sha256": "e122486624a8f67f351e988c6cf172d0f231d8d79fdce41e9e20abf669baf69c"
+      "sha256": "e9fa3a2bd791aea1dc862455a50fae6775d4812d1e7844708a65bbd402d35982"
     }
   ],
   "schema": "urn:teslatlas:protocol:schema:fixture:1.2.0"

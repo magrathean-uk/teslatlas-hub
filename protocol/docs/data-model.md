@@ -117,6 +117,12 @@ updates, and their cursor pages. IDs are opaque and stable within one Hub.
 Positions are valid live data, but repository fixtures contain no precise real
 locations. Redaction and live-data validity are separate concerns.
 
+Deleted metadata becomes a persistent tombstone. Tombstones remain available
+by ID and through change events so the deletion audit is consumable, but they
+are excluded from live metadata lists. Their immutable live audit history and
+single terminal deletion event are separate fields, so deletion identity is
+not duplicated on the wire.
+
 ## Deterministic fixtures
 
 `fixtures/v1/` covers normal, duplicate, delayed, missing, and reordered input.

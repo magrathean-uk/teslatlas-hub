@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 from typing import Any
@@ -154,6 +155,23 @@ class OpenAPIContractTests(unittest.TestCase):
         self.assertNotIn("200", operation["responses"])
         self.assertIn("409", operation["responses"])
 
+    def test_version_default_is_discovery_driven_and_metadata_etags_are_strong(self) -> None:
+        protocol = self.document["components"]["parameters"]["ProtocolVersion"]
+        self.assertNotIn("default", protocol["schema"])
+        self.assertIn("minimum supported version in discovery", protocol["description"])
+
+        if_match = self.document["components"]["parameters"]["IfMatch"]
+        pattern = if_match["schema"]["pattern"]
+        self.assertIsNotNone(re.fullmatch(pattern, '"opaque-strong"'))
+        self.assertIsNone(re.fullmatch(pattern, 'W/"weak"'))
+
+        for method, status in (("get", "200"), ("put", "200")):
+            response = self.response("/v1/metadata/{metadata_id}", method, status)
+            self.assertEqual(
+                "#/components/headers/StrongETag",
+                response["headers"]["ETag"]["$ref"],
+            )
+
     def test_metadata_writes_require_if_match_and_define_revision_conflict(self) -> None:
         for method in ("put", "delete"):
             with self.subTest(method=method):
@@ -163,9 +181,40 @@ class OpenAPIContractTests(unittest.TestCase):
                 self.assertIn("409", operation["responses"])
                 self.assertIn("428", operation["responses"])
 
+        delete = self.operation("/v1/metadata/{metadata_id}", "delete")
+        self.assertIn("200", delete["responses"])
+        self.assertNotIn("204", delete["responses"])
+        deleted = self.response("/v1/metadata/{metadata_id}", "delete", "200")
+        self.assertEqual(
+            "#/components/schemas/Metadata/$defs/metadata_tombstone",
+            deleted["content"]["application/json"]["schema"]["$ref"],
+        )
+
+        get_schema = self.response("/v1/metadata/{metadata_id}", "get", "200")["content"][
+            "application/json"
+        ]["schema"]
+        self.assertEqual(
+            {
+                "#/components/schemas/Metadata/$defs/metadata_record",
+                "#/components/schemas/Metadata/$defs/metadata_tombstone",
+            },
+            {item["$ref"] for item in get_schema["oneOf"]},
+        )
+
     def test_contract_limits_are_machine_readable_and_match_discovery(self) -> None:
         discovery_limits = load_json("examples/discovery.json")["limits"]
         self.assertEqual(discovery_limits, self.document["x-teslatlas-limits"])
+
+    def test_embedded_discovery_preserves_nested_command_schema_dialect(self) -> None:
+        command_descriptor = self.document["components"]["schemas"]["Discovery"]["$defs"][
+            "command_descriptor"
+        ]
+        for name in ("parameters_schema", "expected_state_schema"):
+            embedded = command_descriptor["properties"][name]
+            self.assertEqual(
+                "https://json-schema.org/draft/2020-12/schema",
+                embedded["properties"]["$schema"]["const"],
+            )
 
 
 if __name__ == "__main__":

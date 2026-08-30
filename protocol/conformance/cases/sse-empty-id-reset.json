@@ -28,7 +28,8 @@
       },
       "request": {
         "headers": {
-          "Teslatlas-Conformance-Scenario": "empty-id-reset"
+          "Teslatlas-Conformance-Scenario": "empty-id-reset",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "GET",
         "path": "/v1/events",

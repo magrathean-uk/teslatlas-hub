@@ -5,6 +5,7 @@ import unittest
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+from conformance.runner import validate_metadata_semantics
 from tests.support import load_json, load_schema_registry
 
 
@@ -98,6 +99,40 @@ class DomainSchemaTests(unittest.TestCase):
         anonymous = copy.deepcopy(record)
         anonymous.pop("updated_by")
         self.assertTrue(list(validator.iter_errors(anonymous)))
+
+    def test_metadata_tombstone_preserves_deletion_audit_and_hash_rules(self) -> None:
+        validator = self.validator("urn:teslatlas:protocol:schema:metadata:1.2.0")
+        tombstone = load_json("examples/metadata-tombstone.json")
+        validator.validate(tombstone)
+
+        self.assertNotIn("revision", tombstone)
+        self.assertNotIn("deleted_at", tombstone)
+        self.assertNotIn("deleted_by", tombstone)
+        self.assertEqual("deleted", tombstone["audit"]["deletion"]["action"])
+
+        deletion_in_history = copy.deepcopy(tombstone)
+        deletion_in_history["audit"]["history"].append(
+            copy.deepcopy(tombstone["audit"]["deletion"])
+        )
+        self.assertTrue(list(validator.iter_errors(deletion_in_history)))
+
+        non_deletion_terminal = copy.deepcopy(tombstone)
+        non_deletion_terminal["audit"]["deletion"]["action"] = "updated"
+        self.assertTrue(list(validator.iter_errors(non_deletion_terminal)))
+
+    def test_metadata_audit_chain_and_terminal_revision_are_semantic_contracts(self) -> None:
+        record = load_json("examples/metadata-record.json")
+        tombstone = load_json("examples/metadata-tombstone.json")
+        self.assertEqual([], validate_metadata_semantics(record))
+        self.assertEqual([], validate_metadata_semantics(tombstone))
+
+        broken_chain = copy.deepcopy(tombstone)
+        broken_chain["audit"]["history"][1]["previous_hash"] = "cd" * 32
+        self.assertTrue(validate_metadata_semantics(broken_chain))
+
+        broken_terminal = copy.deepcopy(tombstone)
+        broken_terminal["audit"]["deletion"]["revision"] = 99
+        self.assertTrue(validate_metadata_semantics(broken_terminal))
 
 
 if __name__ == "__main__":

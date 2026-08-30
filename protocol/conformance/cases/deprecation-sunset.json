@@ -10,13 +10,13 @@
         "assertions": [
           {
             "op": "equals",
-            "path": "/body/capabilities/6/status",
+            "path": "/body/capabilities/0/status",
             "value": "deprecated"
           },
           {
             "op": "equals",
-            "path": "/body/capabilities/6/deprecation/successor",
-            "value": "query.vehicles"
+            "path": "/body/capabilities/0/deprecation/successor",
+            "value": "query.vehicles.next"
           }
         ],
         "body_schema": "urn:teslatlas:protocol:schema:discovery:1.2.0",
@@ -26,10 +26,16 @@
         "body": {
           "capabilities": [
             {
+              "deprecation": {
+                "deprecated_at": "2030-01-01T00:00:00.000Z",
+                "documentation": "https://protocol.example.invalid/deprecations/query-vehicles",
+                "successor": "query.vehicles.next",
+                "sunset_at": "2030-07-01T00:00:00.000Z"
+              },
               "href": "/v1/vehicles",
               "id": "query.vehicles",
               "introduced_in": "1.0.0",
-              "status": "stable",
+              "status": "deprecated",
               "version": "1.0.0"
             },
             {
@@ -59,6 +65,7 @@
                   "command_class": "charging",
                   "confirmation_required": true,
                   "expected_state_schema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
                     "additionalProperties": false,
                     "properties": {
                       "charge_limit_percent": {
@@ -74,6 +81,7 @@
                   },
                   "name": "set_charge_limit",
                   "parameters_schema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
                     "additionalProperties": false,
                     "properties": {
                       "percent": {
@@ -94,6 +102,7 @@
                   "command_class": "nuisance",
                   "confirmation_required": true,
                   "expected_state_schema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
                     "additionalProperties": false,
                     "properties": {
                       "honk_sequence": {
@@ -107,6 +116,7 @@
                   },
                   "name": "honk_horn",
                   "parameters_schema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
                     "additionalProperties": false,
                     "type": "object"
                   },
@@ -125,19 +135,6 @@
               "id": "metadata.mutable",
               "introduced_in": "1.2.0",
               "status": "stable",
-              "version": "1.0.0"
-            },
-            {
-              "deprecation": {
-                "deprecated_at": "2030-01-01T00:00:00.000Z",
-                "documentation": "https://protocol.example.invalid/deprecations/query-legacy",
-                "successor": "query.vehicles",
-                "sunset_at": "2030-07-01T00:00:00.000Z"
-              },
-              "href": "/v1/legacy",
-              "id": "query.legacy",
-              "introduced_in": "1.0.0",
-              "status": "deprecated",
               "version": "1.0.0"
             }
           ],
@@ -172,9 +169,11 @@
           }
         },
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"discovery-demo-deprecated-r1\"",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "ETag": "\"dN6qV2tK8xC4mP7s\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 200
       },
@@ -202,7 +201,7 @@
             "value": "GMT$"
           }
         ],
-        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0",
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/vehicle_page",
         "headers_equal": {
           "Deprecation": "@1893456000"
         },
@@ -216,18 +215,21 @@
       "reference_response": {
         "body_file": "examples/vehicles-page.json",
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
           "Deprecation": "@1893456000",
-          "ETag": "\"vehicles-demo-r1\"",
-          "Link": "<https://protocol.example.invalid/deprecations/query-legacy>; rel=\"deprecation\"; type=\"text/html\"",
+          "ETag": "\"aP3xD8mQ5vR2nK7t\"",
+          "Link": "<https://protocol.example.invalid/deprecations/query-vehicles>; rel=\"deprecation\"; type=\"text/html\"",
           "Sunset": "Mon, 01 Jul 2030 00:00:00 GMT",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 200
       },
       "request": {
         "headers": {
-          "Teslatlas-Conformance-Scenario": "deprecated-capability"
+          "Teslatlas-Conformance-Scenario": "deprecated-capability",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "GET",
         "path": "/v1/vehicles",

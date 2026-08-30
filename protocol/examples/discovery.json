@@ -54,6 +54,7 @@
           "retry_policy": "state_verified",
           "confirmation_required": true,
           "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
             "additionalProperties": false,
             "required": [
@@ -68,6 +69,7 @@
             }
           },
           "expected_state_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
             "additionalProperties": false,
             "required": [
@@ -89,10 +91,12 @@
           "retry_policy": "none",
           "confirmation_required": true,
           "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
             "additionalProperties": false
           },
           "expected_state_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
             "additionalProperties": false,
             "required": [

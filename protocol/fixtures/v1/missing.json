@@ -124,7 +124,7 @@
       "quality_flags": [
         "gap_after"
       ],
-      "raw_payload_hash": "255d6b1f89217ef9a231927e10e322bd27ba2fa413572ef22c66619baf2c7e93",
+      "raw_payload_hash": "995c00c182e113e348660bfbce368471938f8a67c244186422e57aeb3bad9aef",
       "received_timestamp": "2026-08-30T15:00:00.250Z",
       "source": "fleet_telemetry",
       "source_sequence": "demo-missing-0001",
@@ -145,7 +145,7 @@
       "quality_flags": [
         "gap_before"
       ],
-      "raw_payload_hash": "ab8c15aab9fb45323e9ab0ce9d94906f11fe11feb1cbb3ff58b2a4a524e9ae43",
+      "raw_payload_hash": "5eb9f59b6a1e58cbbf99267e5fb951dc465ef73e87d35c647cfdf08cdd2bf318",
       "received_timestamp": "2026-08-30T15:10:00.250Z",
       "source": "fleet_telemetry",
       "source_sequence": "demo-missing-0002",

@@ -155,6 +155,72 @@
         }
       }
     },
+    "adapter_request_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "profile",
+        "case_id",
+        "step_id",
+        "capability",
+        "request"
+      ],
+      "properties": {
+        "protocol": {
+          "const": "teslatlas-conformance/1"
+        },
+        "profile": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/semver"
+        },
+        "case_id": {
+          "$ref": "#/$defs/case_id"
+        },
+        "step_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]+$"
+        },
+        "capability": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        }
+      }
+    },
+    "adapter_response_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "step_id",
+        "response"
+      ],
+      "properties": {
+        "case_id": {
+          "$ref": "#/$defs/case_id"
+        },
+        "step_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]+$"
+        },
+        "response": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/response"
+            },
+            {
+              "not": {
+                "required": [
+                  "body_file"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
     "step": {
       "type": "object",
       "additionalProperties": false,
@@ -323,7 +389,7 @@
         "body": {},
         "body_file": {
           "type": "string",
-          "pattern": "^(examples|fixtures)/"
+          "pattern": "^(examples|fixtures)/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$"
         },
         "events": {
           "type": "array",

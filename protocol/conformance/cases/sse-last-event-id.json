@@ -118,7 +118,9 @@
         "status": 200
       },
       "request": {
-        "headers": {},
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
         "method": "GET",
         "path": "/v1/events",
         "query": {}
@@ -191,7 +193,8 @@
       },
       "request": {
         "headers": {
-          "Last-Event-ID": "${initial.events.0.id}"
+          "Last-Event-ID": "${initial.events.0.id}",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "GET",
         "path": "/v1/events",
@@ -243,7 +246,8 @@
       },
       "request": {
         "headers": {
-          "Last-Event-ID": "event_demo_expired_0001"
+          "Last-Event-ID": "event_demo_expired_0001",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "GET",
         "path": "/v1/events",
@@ -295,7 +299,8 @@
       },
       "request": {
         "headers": {
-          "Last-Event-ID": "invalid event id"
+          "Last-Event-ID": "invalid event id",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "GET",
         "path": "/v1/events",

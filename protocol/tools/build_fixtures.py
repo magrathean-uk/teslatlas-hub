@@ -17,8 +17,30 @@ PROJECTION_VERSION = "3.1.0"
 
 
 def canonical_bytes(value: Any) -> bytes:
-    return (json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode(
-        "utf-8"
+    return (
+        json.dumps(
+            value, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def source_sequence_key(value: int | str | None) -> tuple[int, int | bytes]:
+    if type(value) is int:
+        return (0, value)
+    if isinstance(value, str):
+        return (1, value.encode("utf-8"))
+    if value is None:
+        return (2, b"")
+    raise TypeError(f"unsupported source sequence: {value!r}")
+
+
+def canonical_observation_key(value: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        value["provider_timestamp"],
+        value["source"].lower().encode("ascii"),
+        source_sequence_key(value["source_sequence"]),
+        value["observation_id"].lower().encode("ascii"),
     )
 
 
@@ -26,22 +48,25 @@ def observation(
     observation_id: str,
     provider_timestamp: str,
     received_timestamp: str,
-    source_sequence: str,
+    source_sequence: int | str | None,
     field: str,
     value: float,
     unit: str,
     quality_flags: list[str] | None = None,
+    *,
+    source: str = "fleet_telemetry",
 ) -> dict[str, Any]:
     redacted_source_value = {
         "field": field,
         "provider_timestamp": provider_timestamp,
         "source_sequence": source_sequence,
+        "source": source,
         "value": value,
     }
     return {
         "observation_id": observation_id,
         "vehicle_id": VEHICLE_ID,
-        "source": "fleet_telemetry",
+        "source": source,
         "provider_timestamp": provider_timestamp,
         "received_timestamp": received_timestamp,
         "source_sequence": source_sequence,
@@ -68,12 +93,13 @@ def assessment(
     gap_count: int = 0,
     largest_gap_seconds: int = 0,
     issues: list[dict[str, Any]] | None = None,
+    sources: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "subject_type": subject_type,
         "subject_id": subject_id,
         "quality": quality,
-        "sources": ["fleet_telemetry"],
+        "sources": sources or ["fleet_telemetry"],
         "gap_count": gap_count,
         "largest_gap_seconds": largest_gap_seconds,
         "derived_fields": [],
@@ -96,15 +122,9 @@ def build_fixture(
     issues: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     by_id = {item["observation_id"]: item for item in input_observations}
-    ordered_ids = sorted(
-        accepted_ids,
-        key=lambda item: (
-            by_id[item]["provider_timestamp"],
-            str(by_id[item]["source_sequence"]),
-            item,
-        ),
-    )
+    ordered_ids = sorted(accepted_ids, key=lambda item: canonical_observation_key(by_id[item]))
     accepted = [by_id[item] for item in ordered_ids]
+    sources = sorted({item["source"] for item in accepted}, key=str.lower)
     computed_at = max(item["received_timestamp"] for item in accepted)
     observed_at = max(item["provider_timestamp"] for item in accepted)
     latest_by_field: dict[str, dict[str, Any]] = {}
@@ -122,6 +142,7 @@ def build_fixture(
         gap_count=gap_count,
         largest_gap_seconds=largest_gap_seconds,
         issues=issues,
+        sources=sources,
     )
     payload_quality = assessment(
         "vehicle",
@@ -131,6 +152,7 @@ def build_fixture(
         gap_count=gap_count,
         largest_gap_seconds=largest_gap_seconds,
         issues=issues,
+        sources=sources,
     )
     projection = {
         "projection_id": projection_id,
@@ -297,24 +319,65 @@ def scenarios() -> list[dict[str, Any]]:
         issues=[missing_issue],
     )
 
-    reordered_late = observation(
-        "obs_reordered_battery_0002",
-        "2026-08-30T16:00:02.000Z",
-        "2026-08-30T16:00:02.250Z",
-        "demo-reordered-0002",
-        "battery.level_percent",
-        75,
-        "percent",
-        ["reordered"],
-    )
-    reordered_early = observation(
-        "obs_reordered_battery_0001",
+    reordered_source = observation(
+        "obs_reordered_source_0001",
         "2026-08-30T16:00:01.000Z",
-        "2026-08-30T16:00:03.250Z",
-        "demo-reordered-0001",
+        "2026-08-30T16:00:06.250Z",
+        99,
         "battery.level_percent",
         76,
         "percent",
+        ["reordered"],
+        source="fleet_api",
+    )
+    reordered_int_two = observation(
+        "obs_reordered_int_0002",
+        "2026-08-30T16:00:01.000Z",
+        "2026-08-30T16:00:05.250Z",
+        2,
+        "battery.range_km",
+        330.2,
+        "km",
+        ["reordered"],
+    )
+    reordered_int_ten = observation(
+        "obs_reordered_int_0010",
+        "2026-08-30T16:00:01.000Z",
+        "2026-08-30T16:00:04.250Z",
+        10,
+        "vehicle.odometer_km",
+        12001,
+        "km",
+        ["reordered"],
+    )
+    reordered_string = observation(
+        "obs_reordered_string_0010",
+        "2026-08-30T16:00:01.000Z",
+        "2026-08-30T16:00:03.250Z",
+        "10",
+        "climate.inside_temperature_c",
+        21,
+        "celsius",
+        ["reordered"],
+    )
+    reordered_null_b = observation(
+        "obs_reordered_null_0002",
+        "2026-08-30T16:00:01.000Z",
+        "2026-08-30T16:00:02.250Z",
+        None,
+        "charging.power_kw",
+        0,
+        "kw",
+        ["reordered"],
+    )
+    reordered_null_a = observation(
+        "obs_reordered_null_0001",
+        "2026-08-30T16:00:01.000Z",
+        "2026-08-30T16:00:01.250Z",
+        None,
+        "charging.energy_added_kwh",
+        0,
+        "kwh",
         ["reordered"],
     )
     reordered_issue = {
@@ -325,9 +388,23 @@ def scenarios() -> list[dict[str, Any]]:
     }
     reordered = build_fixture(
         "reordered",
-        "Out-of-order input is sorted by provider time, source sequence, and observation ID.",
-        [reordered_late, reordered_early],
-        [reordered_late["observation_id"], reordered_early["observation_id"]],
+        "A tied, out-of-order input set exercises source, typed sequence, and ID ordering.",
+        [
+            reordered_null_b,
+            reordered_string,
+            reordered_int_ten,
+            reordered_source,
+            reordered_null_a,
+            reordered_int_two,
+        ],
+        [
+            reordered_null_b["observation_id"],
+            reordered_string["observation_id"],
+            reordered_int_ten["observation_id"],
+            reordered_source["observation_id"],
+            reordered_null_a["observation_id"],
+            reordered_int_two["observation_id"],
+        ],
         [],
         "partial",
         issues=[reordered_issue],

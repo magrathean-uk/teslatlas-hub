@@ -26,6 +26,14 @@ SCHEMA_COMPONENTS = {
 }
 
 
+def reject_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant: {value}")
+
+
+def strict_loads(value: str) -> Any:
+    return json.loads(value, parse_constant=reject_constant)
+
+
 def component(kind: str, name: str) -> dict[str, str]:
     return {"$ref": f"#/components/{kind}/{name}"}
 
@@ -50,11 +58,11 @@ def embedded_schemas() -> dict[str, Any]:
     loaded: dict[str, dict[str, Any]] = {}
     id_to_component: dict[str, str] = {}
     for filename, name in SCHEMA_COMPONENTS.items():
-        schema = json.loads((ROOT / "schemas" / filename).read_text(encoding="utf-8"))
+        schema = strict_loads((ROOT / "schemas" / filename).read_text(encoding="utf-8"))
         loaded[name] = schema
         id_to_component[schema["$id"]] = name
 
-    def rewrite(value: Any, owner: str) -> Any:
+    def rewrite(value: Any, owner: str, *, strip_identity: bool = False) -> Any:
         if isinstance(value, list):
             return [rewrite(item, owner) for item in value]
         if not isinstance(value, dict):
@@ -62,7 +70,7 @@ def embedded_schemas() -> dict[str, Any]:
         rewritten = {
             key: rewrite(item, owner)
             for key, item in value.items()
-            if key not in {"$id", "$schema"}
+            if not (strip_identity and key in {"$id", "$schema"})
         }
         reference = value.get("$ref")
         if isinstance(reference, str):
@@ -76,13 +84,22 @@ def embedded_schemas() -> dict[str, Any]:
                     rewritten["$ref"] = schema_ref(target, suffix)
         return rewritten
 
-    return {name: rewrite(schema, name) for name, schema in loaded.items()}
+    return {
+        name: rewrite(schema, name, strip_identity=True)
+        for name, schema in loaded.items()
+    }
 
 
 def schema_response(
-    description: str, schema_ref: str, example_path: str | None = None
+    description: str,
+    schema_value: str | dict[str, Any],
+    example_path: str | None = None,
+    *,
+    strong_etag: bool = False,
 ) -> dict[str, Any]:
-    media: dict[str, Any] = {"schema": {"$ref": schema_ref}}
+    media: dict[str, Any] = {
+        "schema": {"$ref": schema_value} if isinstance(schema_value, str) else schema_value
+    }
     if example_path:
         media["examples"] = {
             "redacted": {"externalValue": f"../examples/{example_path}"}
@@ -90,7 +107,7 @@ def schema_response(
     return {
         "description": description,
         "headers": {
-            "ETag": header("ETag"),
+            "ETag": header("StrongETag" if strong_etag else "ETag"),
             "Teslatlas-Protocol-Version": header("ProtocolVersion"),
             "Cache-Control": header("CacheControl"),
             "Vary": header("Vary"),
@@ -119,6 +136,7 @@ def conditional_get(
     tag: str,
     extra_parameters: list[dict[str, str]] | None = None,
     public: bool = False,
+    not_modified_response: str = "NotModified",
 ) -> dict[str, Any]:
     parameters = [] if public else [parameter("ProtocolVersion")]
     parameters.append(parameter("IfNoneMatch"))
@@ -130,7 +148,7 @@ def conditional_get(
         "parameters": parameters,
         "responses": {
             "200": response(response_name),
-            "304": response("NotModified"),
+            "304": response(not_modified_response),
             **COMMON_ERRORS,
         },
     }
@@ -162,7 +180,7 @@ def paginated_get(
 
 
 def build_document() -> dict[str, Any]:
-    limits = json.loads(
+    limits = strict_loads(
         (ROOT / "examples" / "discovery.json").read_text(encoding="utf-8")
     )["limits"]
 
@@ -172,6 +190,13 @@ def build_document() -> dict[str, Any]:
             "schema": {
                 "type": "string",
                 "pattern": "^(?:W/)?\\\"[^\\\"]+\\\"$",
+            },
+        },
+        "StrongETag": {
+            "description": "Opaque strong validator for a mutable metadata revision.",
+            "schema": {
+                "type": "string",
+                "pattern": "^\"[^\"]+\"$",
             },
         },
         "ProtocolVersion": {
@@ -220,11 +245,10 @@ def build_document() -> dict[str, Any]:
             "name": "Teslatlas-Protocol-Version",
             "in": "header",
             "required": False,
-            "description": "Highest protocol version understood by the client.",
+            "description": "Highest protocol version understood by the client. Omission requests the minimum supported version in discovery.",
             "schema": {
                 "type": "string",
                 "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
-                "default": "1.0.0",
             },
         },
         "IfNoneMatch": {
@@ -239,7 +263,11 @@ def build_document() -> dict[str, Any]:
             "in": "header",
             "required": True,
             "description": "Strong ETag of the metadata revision being replaced or deleted.",
-            "schema": {"type": "string", "maxLength": 512},
+            "schema": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^\"[^\"]+\"$",
+            },
         },
         "IdempotencyKey": {
             "name": "Idempotency-Key",
@@ -382,6 +410,18 @@ def build_document() -> dict[str, Any]:
                 "Link": header("Link"),
             },
         },
+        "StrongNotModified": {
+            "description": "The selected mutable metadata representation matches If-None-Match.",
+            "headers": {
+                "ETag": header("StrongETag"),
+                "Teslatlas-Protocol-Version": header("ProtocolVersion"),
+                "Cache-Control": header("CacheControl"),
+                "Vary": header("Vary"),
+                "Deprecation": header("Deprecation"),
+                "Sunset": header("Sunset"),
+                "Link": header("Link"),
+            },
+        },
         "Discovery": schema_response(
             "Hub discovery metadata.", schema_ref("Discovery"), "discovery.json"
         ),
@@ -450,6 +490,24 @@ def build_document() -> dict[str, Any]:
             "Mutable metadata record.",
             schema_ref("Metadata", "/$defs/metadata_record"),
             "metadata-record.json",
+            strong_etag=True,
+        ),
+        "MetadataTombstone": schema_response(
+            "Persistent metadata deletion tombstone.",
+            schema_ref("Metadata", "/$defs/metadata_tombstone"),
+            "metadata-tombstone.json",
+            strong_etag=True,
+        ),
+        "MetadataEntity": schema_response(
+            "Live metadata record or persistent deletion tombstone.",
+            {
+                "oneOf": [
+                    {"$ref": schema_ref("Metadata", "/$defs/metadata_record")},
+                    {"$ref": schema_ref("Metadata", "/$defs/metadata_tombstone")},
+                ]
+            },
+            "metadata-record.json",
+            strong_etag=True,
         ),
     }
 
@@ -554,7 +612,7 @@ def build_document() -> dict[str, Any]:
                 ],
                 "responses": {
                     "200": {
-                        "description": "UTF-8 SSE stream. Each data value is an event envelope.",
+                        "description": "UTF-8 SSE stream. Each data value is a v1 event envelope; cross-field equality is enforced by conformance semantics.",
                         "headers": {
                             "Teslatlas-Protocol-Version": header("ProtocolVersion"),
                             "Cache-Control": header("CacheControl"),
@@ -674,7 +732,11 @@ def build_document() -> dict[str, Any]:
         "/v1/metadata/{metadata_id}": {
             "parameters": [parameter("MetadataId")],
             "get": conditional_get(
-                "getMetadata", "Get a mutable metadata record", "MetadataRecord", "Metadata"
+                "getMetadata",
+                "Get a metadata record or deletion tombstone",
+                "MetadataEntity",
+                "Metadata",
+                not_modified_response="StrongNotModified",
             ),
             "put": {
                 "tags": ["Metadata"],
@@ -710,12 +772,7 @@ def build_document() -> dict[str, Any]:
                 "operationId": "deleteMetadata",
                 "parameters": [parameter("ProtocolVersion"), parameter("IfMatch")],
                 "responses": {
-                    "204": {
-                        "description": "Metadata deleted.",
-                        "headers": {
-                            "Teslatlas-Protocol-Version": header("ProtocolVersion")
-                        },
-                    },
+                    "200": response("MetadataTombstone"),
                     "400": response("Problem"),
                     "401": response("Problem"),
                     "403": response("Problem"),
@@ -793,6 +850,7 @@ def build_document() -> dict[str, Any]:
             "if_none_match_comparison": "weak",
             "if_match_comparison": "strong",
             "not_modified_status": 304,
+            "metadata_validators_are_strong": True,
         },
         "x-teslatlas-versioning": {
             "current": "1.2.0",
@@ -809,7 +867,9 @@ def build_document() -> dict[str, Any]:
 
 
 def render() -> str:
-    return json.dumps(build_document(), indent=2, ensure_ascii=False) + "\n"
+    return json.dumps(
+        build_document(), indent=2, ensure_ascii=False, allow_nan=False
+    ) + "\n"
 
 
 def main() -> int:

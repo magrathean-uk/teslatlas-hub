@@ -76,6 +76,7 @@
         },
         "confirmation": {
           "type": "object",
+          "description": "Required when the discovered command descriptor sets confirmation_required to true.",
           "additionalProperties": false,
           "required": [
             "confirmed_at",
@@ -235,4 +236,3 @@
     }
   }
 }
-

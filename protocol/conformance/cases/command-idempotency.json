@@ -14,7 +14,7 @@
             "value": "accepted"
           }
         ],
-        "body_schema": "urn:teslatlas:protocol:schema:command:1.2.0",
+        "body_schema": "urn:teslatlas:protocol:schema:command:1.2.0#/$defs/command_job",
         "headers_present": [
           "Location",
           "ETag"
@@ -24,10 +24,12 @@
       "reference_response": {
         "body_file": "examples/command-job.json",
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"command-demo-r1\"",
+          "ETag": "\"zQ5dN8wL3pV7tC2m\"",
           "Location": "/v1/commands/command_demo_0001",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 202
       },
@@ -49,7 +51,8 @@
           "vehicle_id": "vehicle_demo_alpha"
         },
         "headers": {
-          "Idempotency-Key": "11111111-1111-4111-8111-111111111111"
+          "Idempotency-Key": "11111111-1111-4111-8111-111111111111",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "POST",
         "path": "/v1/commands",
@@ -66,16 +69,18 @@
             "ref": "create.body.command_id"
           }
         ],
-        "body_schema": "urn:teslatlas:protocol:schema:command:1.2.0",
+        "body_schema": "urn:teslatlas:protocol:schema:command:1.2.0#/$defs/command_job",
         "status": 202
       },
       "reference_response": {
         "body_file": "examples/command-job.json",
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"command-demo-r1\"",
+          "ETag": "\"zQ5dN8wL3pV7tC2m\"",
           "Location": "/v1/commands/command_demo_0001",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 202
       },
@@ -97,7 +102,8 @@
           "vehicle_id": "vehicle_demo_alpha"
         },
         "headers": {
-          "Idempotency-Key": "11111111-1111-4111-8111-111111111111"
+          "Idempotency-Key": "11111111-1111-4111-8111-111111111111",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "POST",
         "path": "/v1/commands",
@@ -165,7 +171,8 @@
           "vehicle_id": "vehicle_demo_alpha"
         },
         "headers": {
-          "Idempotency-Key": "11111111-1111-4111-8111-111111111111"
+          "Idempotency-Key": "11111111-1111-4111-8111-111111111111",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "POST",
         "path": "/v1/commands",
@@ -178,11 +185,77 @@
         "assertions": [
           {
             "op": "equals",
+            "path": "/body/status",
+            "value": 400
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "invalid_request"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 400
+      },
+      "reference_response": {
+        "body": {
+          "code": "invalid_request",
+          "detail": "The advertised command descriptor requires confirmation.",
+          "instance": "/requests/request_invalid_request",
+          "request_id": "request_invalid_request",
+          "retryable": false,
+          "status": 400,
+          "title": "Confirmation required",
+          "type": "urn:teslatlas:problem:invalid-request"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_invalid_request"
+        },
+        "status": 400
+      },
+      "request": {
+        "body": {
+          "command": "set_charge_limit",
+          "command_class": "charging",
+          "expected_state": {
+            "charge_limit_percent": 80
+          },
+          "expires_at": "2026-08-30T12:05:00.000Z",
+          "parameters": {
+            "percent": 80
+          },
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Idempotency-Key": "33333333-3333-4333-8333-333333333333",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "POST",
+        "path": "/v1/commands",
+        "query": {}
+      },
+      "step_id": "missing-confirmation"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
             "path": "/body/retry_policy",
             "value": "none"
           }
         ],
-        "body_schema": "urn:teslatlas:protocol:schema:command:1.2.0",
+        "body_schema": "urn:teslatlas:protocol:schema:command:1.2.0#/$defs/command_job",
         "status": 202
       },
       "reference_response": {
@@ -209,10 +282,12 @@
           "vehicle_id": "vehicle_demo_alpha"
         },
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"command-nuisance-demo-r1\"",
+          "ETag": "\"kF2sH6yR9nB4qX7v\"",
           "Location": "/v1/commands/command_demo_nuisance_0001",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 202
       },
@@ -232,7 +307,8 @@
           "vehicle_id": "vehicle_demo_alpha"
         },
         "headers": {
-          "Idempotency-Key": "22222222-2222-4222-8222-222222222222"
+          "Idempotency-Key": "22222222-2222-4222-8222-222222222222",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "POST",
         "path": "/v1/commands",

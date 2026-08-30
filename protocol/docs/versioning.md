@@ -27,13 +27,13 @@ The current foundation profile is `1.2.0`. Its compatibility window is
 `1.0.0`, `1.1.0`, and `1.2.0`. These are protocol profiles, not claims that a
 particular Hub or SDK release has shipped.
 
-Every versioned request sends `Teslatlas-Protocol-Version` with the highest
-version the client understands. The server selects the highest supported
-version with the same major number that is not newer than the client version,
-and returns that selection in the same response header. A server returns a
-`426` `unsupported_protocol_version` problem when no compatible version
-exists. Omitting the request header is equivalent to requesting the minimum
-version in discovery.
+Clients normally send `Teslatlas-Protocol-Version` on every versioned request,
+using the highest version they understand. The server selects the highest
+supported version with the same major number that is not newer than the client
+version, and returns that selection in the same response header. A server
+returns a `426` `unsupported_protocol_version` problem when no compatible
+version exists. A client may omit the request header; omission selects exactly
+the `minimum_client_version` published by discovery.
 
 ## Capabilities
 
@@ -49,9 +49,10 @@ forbids them. Unknown problem-detail extension members are always ignored.
 
 A stable capability can be deprecated only after a replacement or migration
 document exists. Discovery then marks it `deprecated` and supplies its
-deprecation instant, sunset instant, successor, and documentation URI.
-Affected HTTP responses also emit `Deprecation`, a `Link` with
-`rel="deprecation"`, and, when scheduled, `Sunset`.
+deprecation instant, nullable sunset instant, successor, and documentation
+URI. A null `sunset_at` means removal is not scheduled. Affected HTTP responses
+emit `Deprecation` and a `Link` with `rel="deprecation"`; they emit `Sunset`
+only when `sunset_at` is non-null.
 
 Removal occurs no earlier than both:
 

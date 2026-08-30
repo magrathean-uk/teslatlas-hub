@@ -55,7 +55,9 @@
         "status": 400
       },
       "request": {
-        "headers": {},
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
         "method": "GET",
         "path": "/v1/vehicles/vehicle_demo_alpha/drives",
         "query": {

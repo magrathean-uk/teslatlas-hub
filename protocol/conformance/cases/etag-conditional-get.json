@@ -7,7 +7,7 @@
   "steps": [
     {
       "expect": {
-        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0",
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/current_state",
         "headers_present": [
           "ETag"
         ],
@@ -16,14 +16,18 @@
       "reference_response": {
         "body_file": "examples/current-state.json",
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"current-demo-r42\"",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "ETag": "\"bY8nJ4qW2sF7kL5p\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 200
       },
       "request": {
-        "headers": {},
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
         "method": "GET",
         "path": "/v1/vehicles/vehicle_demo_alpha/current",
         "query": {}
@@ -41,14 +45,16 @@
       "reference_response": {
         "headers": {
           "Cache-Control": "private, max-age=0, must-revalidate",
-          "ETag": "\"current-demo-r42\"",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "ETag": "\"bY8nJ4qW2sF7kL5p\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 304
       },
       "request": {
         "headers": {
-          "If-None-Match": "${initial.headers.ETag}"
+          "If-None-Match": "${initial.headers.ETag}",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "GET",
         "path": "/v1/vehicles/vehicle_demo_alpha/current",
@@ -70,7 +76,7 @@
             "value": 43
           }
         ],
-        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0",
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/current_state",
         "headers_present": [
           "ETag"
         ],
@@ -108,15 +114,18 @@
           "vehicle_id": "vehicle_demo_alpha"
         },
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"current-demo-r43\"",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "ETag": "\"rM3vT9cX6gP2hK8w\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 200
       },
       "request": {
         "headers": {
-          "Teslatlas-Conformance-Revision": "43"
+          "Teslatlas-Conformance-Revision": "43",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "GET",
         "path": "/v1/vehicles/vehicle_demo_alpha/current",

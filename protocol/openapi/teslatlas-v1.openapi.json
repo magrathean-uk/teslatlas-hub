@@ -681,7 +681,7 @@
         ],
         "responses": {
           "200": {
-            "description": "UTF-8 SSE stream. Each data value is an event envelope.",
+            "description": "UTF-8 SSE stream. Each data value is a v1 event envelope; cross-field equality is enforced by conformance semantics.",
             "headers": {
               "Teslatlas-Protocol-Version": {
                 "$ref": "#/components/headers/ProtocolVersion"
@@ -1007,7 +1007,7 @@
             "description": "Mutable metadata record.",
             "headers": {
               "ETag": {
-                "$ref": "#/components/headers/ETag"
+                "$ref": "#/components/headers/StrongETag"
               },
               "Teslatlas-Protocol-Version": {
                 "$ref": "#/components/headers/ProtocolVersion"
@@ -1075,7 +1075,7 @@
         "tags": [
           "Metadata"
         ],
-        "summary": "Get a mutable metadata record",
+        "summary": "Get a metadata record or deletion tombstone",
         "operationId": "getMetadata",
         "parameters": [
           {
@@ -1087,10 +1087,10 @@
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/MetadataRecord"
+            "$ref": "#/components/responses/MetadataEntity"
           },
           "304": {
-            "$ref": "#/components/responses/NotModified"
+            "$ref": "#/components/responses/StrongNotModified"
           },
           "400": {
             "$ref": "#/components/responses/Problem"
@@ -1184,13 +1184,8 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Metadata deleted.",
-            "headers": {
-              "Teslatlas-Protocol-Version": {
-                "$ref": "#/components/headers/ProtocolVersion"
-              }
-            }
+          "200": {
+            "$ref": "#/components/responses/MetadataTombstone"
           },
           "400": {
             "$ref": "#/components/responses/Problem"
@@ -1235,6 +1230,13 @@
         "schema": {
           "type": "string",
           "pattern": "^(?:W/)?\\\"[^\\\"]+\\\"$"
+        }
+      },
+      "StrongETag": {
+        "description": "Opaque strong validator for a mutable metadata revision.",
+        "schema": {
+          "type": "string",
+          "pattern": "^\"[^\"]+\"$"
         }
       },
       "ProtocolVersion": {
@@ -1303,11 +1305,10 @@
         "name": "Teslatlas-Protocol-Version",
         "in": "header",
         "required": false,
-        "description": "Highest protocol version understood by the client.",
+        "description": "Highest protocol version understood by the client. Omission requests the minimum supported version in discovery.",
         "schema": {
           "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
-          "default": "1.0.0"
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
         }
       },
       "IfNoneMatch": {
@@ -1327,7 +1328,8 @@
         "description": "Strong ETag of the metadata revision being replaced or deleted.",
         "schema": {
           "type": "string",
-          "maxLength": 512
+          "maxLength": 512,
+          "pattern": "^\"[^\"]+\"$"
         }
       },
       "IdempotencyKey": {
@@ -1512,6 +1514,32 @@
         "headers": {
           "ETag": {
             "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        }
+      },
+      "StrongNotModified": {
+        "description": "The selected mutable metadata representation matches If-None-Match.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/StrongETag"
           },
           "Teslatlas-Protocol-Version": {
             "$ref": "#/components/headers/ProtocolVersion"
@@ -2059,7 +2087,7 @@
         "description": "Mutable metadata record.",
         "headers": {
           "ETag": {
-            "$ref": "#/components/headers/ETag"
+            "$ref": "#/components/headers/StrongETag"
           },
           "Teslatlas-Protocol-Version": {
             "$ref": "#/components/headers/ProtocolVersion"
@@ -2084,6 +2112,89 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/metadata-record.json"
+              }
+            }
+          }
+        }
+      },
+      "MetadataTombstone": {
+        "description": "Persistent metadata deletion tombstone.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/StrongETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/metadata-tombstone.json"
+              }
+            }
+          }
+        }
+      },
+      "MetadataEntity": {
+        "description": "Live metadata record or persistent deletion tombstone.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/StrongETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+                },
+                {
+                  "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+                }
+              ]
             },
             "examples": {
               "redacted": {
@@ -2411,9 +2522,13 @@
               "parameters_schema": {
                 "type": "object",
                 "required": [
+                  "$schema",
                   "type"
                 ],
                 "properties": {
+                  "$schema": {
+                    "const": "https://json-schema.org/draft/2020-12/schema"
+                  },
                   "type": {
                     "const": "object"
                   }
@@ -2422,9 +2537,13 @@
               "expected_state_schema": {
                 "type": "object",
                 "required": [
+                  "$schema",
                   "type"
                 ],
                 "properties": {
+                  "$schema": {
+                    "const": "https://json-schema.org/draft/2020-12/schema"
+                  },
                   "type": {
                     "const": "object"
                   }
@@ -2446,7 +2565,14 @@
                 "$ref": "#/components/schemas/Discovery/$defs/utc_timestamp"
               },
               "sunset_at": {
-                "$ref": "#/components/schemas/Discovery/$defs/utc_timestamp"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Discovery/$defs/utc_timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "successor": {
                 "type": "string",
@@ -4159,6 +4285,7 @@
               },
               "confirmation": {
                 "type": "object",
+                "description": "Required when the discovered command descriptor sets confirmation_required to true.",
                 "additionalProperties": false,
                 "required": [
                   "confirmed_at",
@@ -4325,6 +4452,9 @@
             "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
           },
           {
+            "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+          },
+          {
             "$ref": "#/components/schemas/Metadata/$defs/metadata_create"
           },
           {
@@ -4332,6 +4462,9 @@
           },
           {
             "$ref": "#/components/schemas/Metadata/$defs/metadata_audit_event"
+          },
+          {
+            "$ref": "#/components/schemas/Metadata/$defs/metadata_deletion_event"
           }
         ],
         "$defs": {
@@ -4427,6 +4560,51 @@
               }
             }
           },
+          "metadata_tombstone": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "metadata_id",
+              "vehicle_id",
+              "kind",
+              "target",
+              "audit"
+            ],
+            "properties": {
+              "metadata_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_kind"
+              },
+              "target": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_target"
+              },
+              "audit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "history",
+                  "deletion"
+                ],
+                "properties": {
+                  "history": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/components/schemas/Metadata/$defs/metadata_audit_event"
+                    }
+                  },
+                  "deletion": {
+                    "$ref": "#/components/schemas/Metadata/$defs/metadata_deletion_event"
+                  }
+                }
+              }
+            }
+          },
           "metadata_create": {
             "type": "object",
             "additionalProperties": false,
@@ -4473,6 +4651,7 @@
               "action",
               "at",
               "actor_id",
+              "previous_hash",
               "new_hash"
             ],
             "properties": {
@@ -4482,8 +4661,7 @@
               "action": {
                 "enum": [
                   "created",
-                  "updated",
-                  "deleted"
+                  "updated"
                 ]
               },
               "at": {
@@ -4512,12 +4690,83 @@
                   }
                 ]
               }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "action": {
+                      "const": "created"
+                    }
+                  },
+                  "required": [
+                    "action"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "previous_hash": {
+                      "type": "null"
+                    },
+                    "new_hash": {
+                      "$ref": "#/components/schemas/Common/$defs/sha256"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "action": {
+                      "const": "updated"
+                    }
+                  },
+                  "required": [
+                    "action"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "previous_hash": {
+                      "$ref": "#/components/schemas/Common/$defs/sha256"
+                    },
+                    "new_hash": {
+                      "$ref": "#/components/schemas/Common/$defs/sha256"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "metadata_deletion_event": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "revision",
+              "action",
+              "at",
+              "actor_id"
+            ],
+            "properties": {
+              "revision": {
+                "$ref": "#/components/schemas/Common/$defs/revision"
+              },
+              "action": {
+                "const": "deleted"
+              },
+              "at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "actor_id": {
+                "$ref": "#/components/schemas/Common/$defs/actor_id"
+              }
             }
           }
         }
       },
       "Event": {
-        "title": "Teslatlas event envelope",
+        "title": "Teslatlas v1 SSE data envelope",
+        "$comment": "JSON Schema validates structure and event-to-payload type. Cross-field identity equality is a required semantic rule enforced by the conformance runner.",
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -4591,11 +4840,206 @@
                 "$ref": "#/components/schemas/Command/$defs/command_job"
               },
               {
-                "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+                  }
+                ]
               }
             ]
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "observation.admitted"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Observation"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "vehicle.current.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/current_state"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "enum": [
+                    "drive.started",
+                    "drive.updated",
+                    "drive.ended"
+                  ]
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/drive"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "enum": [
+                    "charge.started",
+                    "charge.updated",
+                    "charge.ended"
+                  ]
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/charge"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "state.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/state_interval"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "software_update.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/software_update"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "data_quality.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/DataQuality"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "command.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Command/$defs/command_job"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "metadata.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
       },
       "Fixture": {
         "title": "Teslatlas deterministic compatibility fixture",
@@ -5047,6 +5491,72 @@
               }
             }
           },
+          "adapter_request_envelope": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "protocol",
+              "profile",
+              "case_id",
+              "step_id",
+              "capability",
+              "request"
+            ],
+            "properties": {
+              "protocol": {
+                "const": "teslatlas-conformance/1"
+              },
+              "profile": {
+                "$ref": "#/components/schemas/Common/$defs/semver"
+              },
+              "case_id": {
+                "$ref": "#/components/schemas/Conformance/$defs/case_id"
+              },
+              "step_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]+$"
+              },
+              "capability": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+              },
+              "request": {
+                "$ref": "#/components/schemas/Conformance/$defs/request"
+              }
+            }
+          },
+          "adapter_response_envelope": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "case_id",
+              "step_id",
+              "response"
+            ],
+            "properties": {
+              "case_id": {
+                "$ref": "#/components/schemas/Conformance/$defs/case_id"
+              },
+              "step_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]+$"
+              },
+              "response": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Conformance/$defs/response"
+                  },
+                  {
+                    "not": {
+                      "required": [
+                        "body_file"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
           "step": {
             "type": "object",
             "additionalProperties": false,
@@ -5215,7 +5725,7 @@
               "body": {},
               "body_file": {
                 "type": "string",
-                "pattern": "^(examples|fixtures)/"
+                "pattern": "^(examples|fixtures)/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$"
               },
               "events": {
                 "type": "array",
@@ -5296,7 +5806,8 @@
     "validator_of": "representation",
     "if_none_match_comparison": "weak",
     "if_match_comparison": "strong",
-    "not_modified_status": 304
+    "not_modified_status": 304,
+    "metadata_validators_are_strong": true
   },
   "x-teslatlas-versioning": {
     "current": "1.2.0",

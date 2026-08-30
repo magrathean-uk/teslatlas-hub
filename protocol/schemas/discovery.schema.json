@@ -217,9 +217,13 @@
         "parameters_schema": {
           "type": "object",
           "required": [
+            "$schema",
             "type"
           ],
           "properties": {
+            "$schema": {
+              "const": "https://json-schema.org/draft/2020-12/schema"
+            },
             "type": {
               "const": "object"
             }
@@ -228,9 +232,13 @@
         "expected_state_schema": {
           "type": "object",
           "required": [
+            "$schema",
             "type"
           ],
           "properties": {
+            "$schema": {
+              "const": "https://json-schema.org/draft/2020-12/schema"
+            },
             "type": {
               "const": "object"
             }
@@ -252,7 +260,14 @@
           "$ref": "#/$defs/utc_timestamp"
         },
         "sunset_at": {
-          "$ref": "#/$defs/utc_timestamp"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/utc_timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "successor": {
           "type": "string",

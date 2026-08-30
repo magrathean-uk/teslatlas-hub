@@ -85,7 +85,7 @@ curl -i \
   -H 'Authorization: Bearer REDACTED' \
   -H 'Content-Type: application/json' \
   -H 'Teslatlas-Protocol-Version: 1.2.0' \
-  -H 'If-Match: "metadata-demo-r1"' \
+  -H 'If-Match: "mC7pL2xW9dR5tN8q"' \
   --data '{"value":{"text":"Redacted client note."}}' \
   https://hub.example.invalid/v1/metadata/metadata_demo_note_0001
 ```

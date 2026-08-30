@@ -27,6 +27,25 @@ FORBIDDEN_TEXT = (
 VIN_PATTERN = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b")
 
 
+def sequence_key(value: Any) -> tuple[int, Any]:
+    if type(value) is int:
+        return (0, value)
+    if isinstance(value, str):
+        return (1, value.encode("utf-8"))
+    if value is None:
+        return (2, b"")
+    raise AssertionError(f"unexpected source sequence: {value!r}")
+
+
+def canonical_key(observation: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        observation["provider_timestamp"],
+        observation["source"].lower().encode("ascii"),
+        sequence_key(observation["source_sequence"]),
+        observation["observation_id"].lower().encode("ascii"),
+    )
+
+
 def walk(value: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str, ...], Any]]:
     yield path, value
     if isinstance(value, dict):
@@ -90,11 +109,7 @@ class FixtureContractTests(unittest.TestCase):
                 }
                 canonical = sorted(
                     expected["accepted_observation_ids"],
-                    key=lambda item: (
-                        by_id[item]["provider_timestamp"],
-                        str(by_id[item]["source_sequence"]),
-                        item,
-                    ),
+                    key=lambda item: canonical_key(by_id[item]),
                 )
                 self.assertEqual(canonical, expected["ordered_observation_ids"])
                 self.assertEqual(
@@ -102,6 +117,23 @@ class FixtureContractTests(unittest.TestCase):
                     expected["projection"]["input_observation_ids"],
                 )
                 self.assertEqual(expected["quality"], expected["projection"]["quality"])
+
+    def test_reordered_fixture_exercises_every_canonical_tie_break(self) -> None:
+        reordered = next(
+            fixture for fixture in self.fixtures() if fixture["scenario_id"] == "reordered"
+        )
+        observations = reordered["input_observations"]
+        self.assertEqual(1, len({item["provider_timestamp"] for item in observations}))
+        self.assertGreaterEqual(len({item["source"] for item in observations}), 2)
+        self.assertEqual(
+            {int, str, type(None)},
+            {type(item["source_sequence"]) for item in observations},
+        )
+        expected = sorted(observations, key=canonical_key)
+        self.assertEqual(
+            [item["observation_id"] for item in expected],
+            reordered["expected"]["ordered_observation_ids"],
+        )
 
     def test_fixtures_contain_no_secrets_vins_real_ids_or_precise_locations(self) -> None:
         for fixture in self.fixtures():

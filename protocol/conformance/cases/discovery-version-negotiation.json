@@ -24,9 +24,11 @@
       "reference_response": {
         "body_file": "examples/discovery.json",
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"discovery-demo-r1\"",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "ETag": "\"y6Kk9pX2mV4qT7sN\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 200
       },
@@ -40,7 +42,34 @@
     },
     {
       "expect": {
-        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0",
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/vehicle_page",
+        "headers_equal": {
+          "Teslatlas-Protocol-Version": "${discover.body.protocol.minimum_client_version}"
+        },
+        "status": 200
+      },
+      "reference_response": {
+        "body_file": "examples/vehicles-page.json",
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"sH4wQ8nC2kT6mP9x\"",
+          "Teslatlas-Protocol-Version": "1.0.0",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {},
+        "method": "GET",
+        "path": "/v1/vehicles",
+        "query": {}
+      },
+      "step_id": "omitted-version-selects-minimum"
+    },
+    {
+      "expect": {
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/vehicle_page",
         "headers_equal": {
           "Teslatlas-Protocol-Version": "${profile}"
         },
@@ -49,9 +78,11 @@
       "reference_response": {
         "body_file": "examples/vehicles-page.json",
         "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
           "Content-Type": "application/json",
-          "ETag": "\"vehicles-demo-r1\"",
-          "Teslatlas-Protocol-Version": "${profile}"
+          "ETag": "\"aP3xD8mQ5vR2nK7t\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
         },
         "status": 200
       },

@@ -48,7 +48,9 @@
         "status": 400
       },
       "request": {
-        "headers": {},
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
         "method": "GET",
         "path": "/v1/vehicles",
         "query": {
@@ -100,7 +102,9 @@
         "status": 400
       },
       "request": {
-        "headers": {},
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
         "method": "GET",
         "path": "/v1/drives/drive_demo_0001/positions",
         "query": {
@@ -170,7 +174,9 @@
           "vehicle_id": "vehicle_demo_alpha"
         },
         "body_bytes": 262145,
-        "headers": {},
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
         "method": "POST",
         "path": "/v1/commands",
         "query": {}
@@ -223,7 +229,8 @@
       },
       "request": {
         "headers": {
-          "Teslatlas-Conformance-Scenario": "concurrency-limit"
+          "Teslatlas-Conformance-Scenario": "concurrency-limit",
+          "Teslatlas-Protocol-Version": "${profile}"
         },
         "method": "GET",
         "path": "/v1/vehicles",

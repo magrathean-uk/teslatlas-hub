@@ -121,7 +121,7 @@
       "quality_flags": [
         "delayed"
       ],
-      "raw_payload_hash": "2b4a3c7e76d6859a718244b371b74c97f945f70dbb245b8dfddeddde84f2d1f1",
+      "raw_payload_hash": "b47e2d652d08cee3260c6d38f2c68bddc511b6b62268d2f2206c04acb846308b",
       "received_timestamp": "2026-08-30T14:10:00.000Z",
       "source": "fleet_telemetry",
       "source_sequence": "demo-delayed-0001",

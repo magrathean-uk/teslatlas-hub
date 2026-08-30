@@ -13,4 +13,3 @@ dev = [
 
 [tool.uv]
 package = false
-

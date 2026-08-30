@@ -2,7 +2,7 @@
 
 `GET /v1/events` is the ordered live-notification surface. OpenAPI defines the
 HTTP operation. `events/teslatlas-v1.sse.json` defines SSE framing, replay, and
-the event catalogue. Event bodies validate against
+the event catalogue. JSON formed from SSE `data` lines validates against
 `schemas/event.schema.json`.
 
 ## Connection
@@ -22,16 +22,25 @@ client must stop reconnecting.
 Every dispatched event has `id`, `event`, and `data` fields. The normalized
 values obey:
 
+- event IDs are opaque and unique in one Hub stream;
 - SSE `id` equals `data.event_id`;
 - SSE `event` equals `data.event_type`;
-- event IDs are opaque and unique in one Hub stream;
 - `occurred_at` is an exact-millisecond UTC timestamp;
 - `vehicle_id`, `resource_id`, and `revision` identify the visible change;
 - `data` contains the full current public resource or command/metadata record.
 
+The event schema binds each recognized event name to its exact payload schema.
+Standard JSON Schema cannot compare arbitrary sibling values, so equality
+between the envelope identity/revision and its payload is a separate normative
+semantic check in the language-neutral conformance runner. Schema validation
+alone is insufficient for event conformance. `metadata.changed` carries either
+a live record or a persistent deletion tombstone.
+
 Consumers use the named event catalogue, then retrieve the canonical resource
 when they need a representation not carried by the event. Unknown event names
-are ignored and do not terminate the stream.
+are ignored before JSON data decoding or schema validation and do not terminate
+the stream. Servers emit only event names defined by the negotiated profile;
+the strict event schema is the server-conformance contract for those names.
 
 ## Replay
 

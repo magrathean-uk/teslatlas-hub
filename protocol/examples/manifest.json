@@ -73,6 +73,10 @@
       "schema": "urn:teslatlas:protocol:schema:metadata:1.2.0"
     },
     {
+      "path": "examples/metadata-tombstone.json",
+      "schema": "urn:teslatlas:protocol:schema:metadata:1.2.0"
+    },
+    {
       "path": "examples/event-envelope.json",
       "schema": "urn:teslatlas:protocol:schema:event:1.2.0"
     }
