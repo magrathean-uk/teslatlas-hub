@@ -290,11 +290,36 @@ app_binary="$PRODUCT/Contents/MacOS/Teslatlas Hub"
 is_executable_macho "$app_binary" || die "App binary is not a Mach-O executable"
 require_macos_13_or_earlier "$app_binary"
 
-/usr/bin/codesign --force --sign - --timestamp=none "$resources/teslatlas-hub" >/dev/null
-/usr/bin/codesign --force --sign - --timestamp=none "$resources/tesla-http-proxy" >/dev/null
-/usr/bin/codesign --force --sign - --timestamp=none "$resources/fleet-telemetry" >/dev/null
-/usr/bin/codesign --force --deep --sign - --timestamp=none "$PRODUCT" >/dev/null
+# Rust and Go already emit valid ad-hoc signatures for these Apple-silicon
+# Mach-O binaries. Preserve their exact evidence-bound bytes here. Re-signing
+# nested resources would change the subjects before the release script can bind
+# them to the clean-build evidence.
+for evidence_bound_binary in \
+    "$resources/teslatlas-hub" \
+    "$resources/tesla-http-proxy" \
+    "$resources/fleet-telemetry"; do
+    /usr/bin/codesign --verify --strict "$evidence_bound_binary" \
+        || die "embedded release binary lacks its build-time ad-hoc signature"
+done
+/usr/bin/codesign --force --sign - --timestamp=none "$PRODUCT" >/dev/null
 /usr/bin/codesign --verify --deep --strict "$PRODUCT"
+
+evidence_proxy_sha256=$(python3 -c \
+    'import json,sys; print(json.load(open(sys.argv[1]))["subject"]["sha256"])' \
+    "$GO_EVIDENCE/go-component-manifest.json") \
+    || die "cannot read Go proxy evidence subject"
+embedded_proxy_sha256=$(/usr/bin/shasum -a 256 \
+    "$resources/tesla-http-proxy" | /usr/bin/awk '{print $1}')
+[ "$evidence_proxy_sha256" = "$embedded_proxy_sha256" ] \
+    || die "app proxy changed after evidence generation"
+evidence_fleet_telemetry_sha256=$(python3 -c \
+    'import json,sys; print(json.load(open(sys.argv[1]))["subject"]["sha256"])' \
+    "$FLEET_TELEMETRY_EVIDENCE/fleet-telemetry-component-manifest.json") \
+    || die "cannot read Fleet Telemetry evidence subject"
+embedded_fleet_telemetry_sha256=$(/usr/bin/shasum -a 256 \
+    "$resources/fleet-telemetry" | /usr/bin/awk '{print $1}')
+[ "$evidence_fleet_telemetry_sha256" = "$embedded_fleet_telemetry_sha256" ] \
+    || die "app Fleet Telemetry receiver changed after evidence generation"
 
 case "$DIST_APP" in
     "$ROOT/dist/Teslatlas Hub.app") ;;

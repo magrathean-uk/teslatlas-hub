@@ -278,6 +278,13 @@ if /usr/bin/grep -Fq -- '--app "$DIST_APP"' "$APP_BUILD" \
 fi
 /usr/bin/grep -Fq 'external service package does not match the app' "$APP_BUILD" \
     || fail "app build does not bind external and embedded service packages"
+/usr/bin/grep -Fq 'app proxy changed after evidence generation' "$APP_BUILD" \
+    || fail "app build does not preserve the evidence-bound command proxy"
+/usr/bin/grep -Fq 'app Fleet Telemetry receiver changed after evidence generation' "$APP_BUILD" \
+    || fail "app build does not preserve the evidence-bound Fleet receiver"
+if /usr/bin/grep -Fq -- '--force --deep --sign -' "$APP_BUILD"; then
+    fail "local app signing still rewrites evidence-bound nested binaries"
+fi
 /usr/bin/grep -Fq -- '--legal-bundle "$LEGAL_BUNDLE"' "$APP_BUILD" \
     || fail "app build does not pass the exact dependency legal bundle"
 /usr/bin/grep -Fq 'share/dependency-legal' "$SERVICE_BUILD" \
