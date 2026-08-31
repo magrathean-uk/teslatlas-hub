@@ -130,9 +130,17 @@ JSON payload members remain exactly as defined by the protocol.
 
 Runtime response validators are generated from the vendored schemas into
 browser-safe standalone code. A success body is returned only after validation.
-Malformed JSON, a schema mismatch, a missing required response header, or an
-operation/status combination absent from OpenAPI becomes a safe
-`ProtocolValidationError` without exposing the raw body.
+Malformed JSON, a schema mismatch, a missing required success-response header,
+or an undeclared success status becomes a safe `ProtocolValidationError`
+without exposing the raw body. Any non-success response with a valid RFC 9457
+problem document whose body status matches HTTP status becomes a safe
+`ProtocolHttpError`; this preserves documented cursor errors that are generic
+protocol problems but not individually enumerated on every OpenAPI operation.
+
+Ajv standalone generation uses its ESM mode. Its fixed CommonJS runtime-helper
+expressions are deterministically rewritten to static ESM imports, and
+generation fails if any `require(` remains, so the locked validators load in
+both Node.js and Chromium.
 
 Fixture and JSON-module imports are treated as untrusted values too. Tests
 obtain exact public protocol types only by passing them through the same named

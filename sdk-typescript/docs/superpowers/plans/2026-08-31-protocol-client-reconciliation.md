@@ -246,6 +246,12 @@ const validatorRefs = {
 };
 ```
 
+Use Ajv `code: { esm: true, source: true }`. Ajv 8 still emits its three
+runtime helper expressions as CommonJS `require(...)` calls; deterministically
+replace only those fixed expressions with static ESM imports and fail generation
+if any `require(` remains. This keeps validators browser-loadable while the
+exact Ajv package and resulting bytes stay locked.
+
 Generate `src/generated/protocol-cases.ts` as a frozen JSON-compatible array
 containing compatibility manifests, case documents, and referenced valid
 examples. The generated module must contain no absolute path or timestamp.
@@ -652,11 +658,15 @@ export interface WriteResult<T> {
 ```
 
 For JSON success, require `application/json`, parse once, validate with the
-operation validator, and discard raw text after parsing. For `304`, require no
-body and a valid ETag. For non-success, accept only
-`application/problem+json`, validate `ProtocolProblem`, cross-check body status
-against HTTP status, and build `ProtocolHttpError` from safe fields. Malformed
-error bodies become `ProtocolValidationError`; neither error retains the body.
+operation validator, and discard raw text after parsing. Reject an undeclared
+success status. For `304`, require no body and a valid ETag. For any
+non-success response, accept only `application/problem+json`, validate
+`ProtocolProblem`, cross-check body status against HTTP status, and build
+`ProtocolHttpError` from safe fields. This includes documented generic cursor
+problems (`cursor_scope_changed`, `cursor_query_mismatch`, `cursor_expired`)
+even where an operation response list omits their 403/409/410 statuses.
+Malformed error bodies become `ProtocolValidationError`; neither error retains
+the body.
 
 - [ ] **Step 5: Implement the typed read methods and page iterator**
 
@@ -679,8 +689,9 @@ listDataQuality(options?: DataQualityPageOptions): Promise<ReadResult<DataQualit
 
 `PageReadOptions` contains `cursor?: OpaqueCursor`, `limit?: number`,
 `ifNoneMatch?: EntityTag`, `signal?: AbortSignal`. `HistoryPageOptions` adds
-`from?: string` and `to?: string`. Validate finite integer limits against
-descriptor limits and validate exact-millisecond UTC `from < to` before Fetch.
+`from?: string` and `to?: string`; `DataQualityPageOptions` also adds
+`vehicleId?: string`. Validate finite integer limits against descriptor limits
+and validate exact-millisecond UTC `from < to` before Fetch.
 
 `iteratePages(load, firstOptions)` yields modified pages, forwards
 `next_cursor` unchanged, and throws `ProtocolValidationError` on a repeated
