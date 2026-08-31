@@ -57,7 +57,15 @@ async function discoverJsonFilesInDirectory(root, directory) {
 
 export async function discoverJsonFiles(root) {
   const files = [];
-  for (const directory of ["openapi", "events", "schemas", "examples", "fixtures", "compatibility", "conformance/cases"]) {
+  for (const directory of [
+    "openapi",
+    "events",
+    "schemas",
+    "examples",
+    "fixtures",
+    "compatibility",
+    "conformance/cases",
+  ]) {
     const absolutePath = assertContained(root, resolve(root, directory));
     const stat = await lstat(absolutePath);
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
@@ -69,7 +77,9 @@ export async function discoverJsonFiles(root) {
 }
 
 export async function sha256File(path) {
-  return createHash("sha256").update(await readFile(path)).digest("hex");
+  return createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex");
 }
 
 export function stableJson(value) {

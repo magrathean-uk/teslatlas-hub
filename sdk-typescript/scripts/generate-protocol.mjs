@@ -8,7 +8,9 @@ import standaloneCode from "ajv/dist/standalone/index.js";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = join(repositoryRoot, "protocol/source");
-const outputRoot = resolve(process.env.TESLATLAS_PROTOCOL_OUTPUT_DIR ?? join(repositoryRoot, "src/generated"));
+const outputRoot = resolve(
+  process.env.TESLATLAS_PROTOCOL_OUTPUT_DIR ?? join(repositoryRoot, "src/generated"),
+);
 const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
 
 const validatorRefs = {
@@ -21,7 +23,8 @@ const validatorRefs = {
   validatePositionPage: "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/position_page",
   validateChargePage: "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/charge_page",
   validateCharge: "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/charge",
-  validateChargeSamplePage: "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/charge_sample_page",
+  validateChargeSamplePage:
+    "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/charge_sample_page",
   validateStatePage: "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/state_page",
   validateUpdatePage: "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/update_page",
   validateDataQualityPage: "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/data_quality_page",
@@ -31,7 +34,8 @@ const validatorRefs = {
   validateMetadataCreate: "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_create",
   validateMetadataReplace: "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_replace",
   validateMetadataRecord: "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_record",
-  validateMetadataTombstone: "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_tombstone",
+  validateMetadataTombstone:
+    "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_tombstone",
   validateEvent: "urn:teslatlas:protocol:schema:event:1.2.0",
 };
 
@@ -51,14 +55,19 @@ async function generateValidators() {
 }
 
 function collectExamplePaths(value, paths = new Set()) {
-  if (Array.isArray(value)) value.forEach((child) => collectExamplePaths(child, paths));
-  else if (value !== null && typeof value === "object") Object.values(value).forEach((child) => collectExamplePaths(child, paths));
+  if (Array.isArray(value)) {
+    value.forEach((child) => {
+      collectExamplePaths(child, paths);
+    });
+  } else if (value !== null && typeof value === "object")
+    Object.values(value).forEach((child) => {
+      collectExamplePaths(child, paths);
+    });
   else if (typeof value === "string" && /^examples\/.+\.json$/.test(value)) paths.add(value);
   return paths;
 }
 
 async function generateCases() {
-  const compatibilityDirectory = join(sourceRoot, "compatibility");
   const caseDirectory = join(sourceRoot, "conformance/cases");
   const compatibilityPaths = [
     "compatibility/manifest.json",
@@ -81,11 +90,22 @@ async function generateCases() {
 
 await mkdir(outputRoot, { recursive: true });
 const protocolOutput = join(outputRoot, "protocol.ts");
-execFileSync(npmExecutable, [
-  "exec", "--offline", "--", "openapi-typescript",
-  "protocol/source/openapi/teslatlas-v1.openapi.json",
-  "--output", protocolOutput,
-], { cwd: repositoryRoot, stdio: "inherit" });
-await writeFile(protocolOutput, `// @ts-nocheck\n// @generated\n${await readFile(protocolOutput, "utf8")}`);
+execFileSync(
+  npmExecutable,
+  [
+    "exec",
+    "--offline",
+    "--",
+    "openapi-typescript",
+    "protocol/source/openapi/teslatlas-v1.openapi.json",
+    "--output",
+    protocolOutput,
+  ],
+  { cwd: repositoryRoot, stdio: "inherit" },
+);
+await writeFile(
+  protocolOutput,
+  `// @ts-nocheck\n// @generated\n${await readFile(protocolOutput, "utf8")}`,
+);
 await writeFile(join(outputRoot, "validators.ts"), await generateValidators());
 await writeFile(join(outputRoot, "protocol-cases.ts"), await generateCases());
