@@ -1,6 +1,6 @@
 import { ProtocolValidationError } from "../core/errors.js";
 import { validateDiscovery } from "../generated/validators.js";
-import { FetchTransport } from "../http/fetch-transport.js";
+import { FetchTransport, InvalidBaseUrlError } from "../http/fetch-transport.js";
 import type { HubDescriptor } from "../protocol/models.js";
 import { negotiateProtocolVersion } from "../protocol/negotiation.js";
 import { decodeProtocolValue } from "../protocol/validate.js";
@@ -12,15 +12,22 @@ const currentProtocolVersion = "1.2.0";
 export type { ClientSession, CreateClientOptions } from "./types.js";
 
 export async function createClientSession(options: CreateClientOptions): Promise<ClientSession> {
+  if (!isSecureEndpointUrl(options.baseUrl)) {
+    throw new InvalidBaseUrlError();
+  }
   const discoveryTransport = new FetchTransport({
     baseUrl: options.baseUrl,
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });
   const response = await discoveryTransport.request(discoveryPath, {
+    redirect: "error",
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
+  if (response.status !== 200) {
+    throw new ProtocolValidationError("Discovery.status");
+  }
   const descriptor = decodeProtocolValue<HubDescriptor>(
-    await readDiscoveryBody(response),
+    await readDiscoveryBody(response, options.signal),
     validateDiscovery,
     "validateDiscovery",
   );
@@ -50,10 +57,16 @@ export async function createClientSession(options: CreateClientOptions): Promise
   });
 }
 
-async function readDiscoveryBody(response: Response): Promise<unknown> {
+async function readDiscoveryBody(
+  response: Response,
+  signal: AbortSignal | undefined,
+): Promise<unknown> {
   try {
     return await response.json();
-  } catch {
+  } catch (error) {
+    if (signal?.aborted === true) {
+      throw signal.reason ?? error;
+    }
     throw new ProtocolValidationError("validateDiscovery");
   }
 }
@@ -66,10 +79,10 @@ function validateEndpointUrls(descriptor: HubDescriptor): void {
   }
 }
 
-function isSecureEndpointUrl(value: string): boolean {
+function isSecureEndpointUrl(value: string | URL): boolean {
   let url: URL;
   try {
-    url = new URL(value);
+    url = new URL(value instanceof URL ? value.href : value);
   } catch {
     return false;
   }

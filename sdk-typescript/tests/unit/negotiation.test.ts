@@ -43,6 +43,19 @@ describe("protocol negotiation", () => {
     expect(negotiateProtocolVersion(descriptor, "1.2.0")).toBe("1.2.0");
   });
 
+  it("rejects advertised versions older than the descriptor minimum", () => {
+    const descriptor = {
+      ...canonicalDescriptor,
+      protocol: {
+        ...canonicalDescriptor.protocol,
+        minimum_client_version: "1.2.0",
+        supported_versions: ["1.0.0", "1.1.0", "2.0.0"],
+      },
+    };
+
+    expect(() => negotiateProtocolVersion(descriptor, "1.2.0")).toThrow(IncompatibleProtocolError);
+  });
+
   it("returns an advertised capability and rejects an absent one", () => {
     expect(requireCapability(canonicalDescriptor, "commands.async").id).toBe("commands.async");
 

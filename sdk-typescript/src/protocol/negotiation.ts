@@ -25,7 +25,12 @@ export function negotiateProtocolVersion(
 
   const advertised = new Set(descriptor.protocol.supported_versions);
   for (const version of lockedProtocolVersions.toReversed()) {
-    if (advertised.has(version) && compareVersions(parseProtocolVersion(version), requested) <= 0) {
+    const candidate = parseProtocolVersion(version);
+    if (
+      advertised.has(version) &&
+      compareVersions(candidate, requested) <= 0 &&
+      compareVersions(candidate, minimumClient) >= 0
+    ) {
       return version;
     }
   }

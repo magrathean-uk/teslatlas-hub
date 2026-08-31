@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createClientSession } from "../../src/client/session.js";
 import { ProtocolValidationError } from "../../src/core/errors.js";
 import { validateDiscovery } from "../../src/generated/validators.js";
-import type { FetchImplementation } from "../../src/http/fetch-transport.js";
+import { InvalidBaseUrlError, type FetchImplementation } from "../../src/http/fetch-transport.js";
 import type { HubDescriptor } from "../../src/protocol/models.js";
 import { decodeProtocolValue } from "../../src/protocol/validate.js";
 
@@ -78,6 +78,76 @@ describe("client session", () => {
     });
 
     expect(observedSignal).toBe(controller.signal);
+  });
+
+  it.each(["http://hub.example.invalid", "http://user:secret@127.0.0.1:8787"])(
+    "rejects unsafe bootstrap URL %s before fetching",
+    async (baseUrl) => {
+      let calls = 0;
+      const error = await captureError(
+        createClientSession({
+          baseUrl,
+          authorization: () => undefined,
+          fetch: async () => {
+            calls += 1;
+            return Response.json(discovery);
+          },
+        }),
+      );
+
+      expect(error).toBeInstanceOf(InvalidBaseUrlError);
+      expect(calls).toBe(0);
+    },
+  );
+
+  it("rejects redirects for discovery", async () => {
+    let observedRedirect: RequestRedirect | undefined;
+
+    await createClientSession({
+      baseUrl: "https://hub.example.invalid",
+      authorization: () => undefined,
+      fetch: async (_input, init) => {
+        observedRedirect = init?.redirect;
+        return Response.json(discovery);
+      },
+    });
+
+    expect(observedRedirect).toBe("error");
+  });
+
+  it.each([404, 500])("rejects schema-valid discovery with HTTP status %i", async (status) => {
+    const error = await captureError(
+      createClientSession({
+        baseUrl: "https://hub.example.invalid",
+        authorization: () => undefined,
+        fetch: async () => Response.json(discovery, { status }),
+      }),
+    );
+
+    expect(error).toBeInstanceOf(ProtocolValidationError);
+    expect(error).toMatchObject({ validator: "Discovery.status" });
+    expect(error).not.toHaveProperty("body");
+    expect(error).not.toHaveProperty("response");
+  });
+
+  it("preserves caller abort while reading the discovery body", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("Stopped", "AbortError");
+    const body = new ReadableStream({
+      start(streamController) {
+        controller.abort(reason);
+        streamController.error(reason);
+      },
+    });
+
+    const session = createClientSession({
+      baseUrl: "https://hub.example.invalid",
+      authorization: () => undefined,
+      fetch: async () => new Response(body, { status: 200 }),
+      signal: controller.signal,
+    });
+
+    await expect(session).rejects.toBe(reason);
   });
 
   it("rejects malformed discovery without retaining payload fragments", async () => {
