@@ -9,6 +9,7 @@ import metadataTombstone from "../../protocol/source/examples/metadata-tombstone
 import { describe, expect, it } from "vitest";
 import { TeslatlasClient } from "../../src/client/client.js";
 import type { ClientSession } from "../../src/client/types.js";
+import { InvalidReadOptionsError } from "../../src/client/operations.js";
 import { MissingCapabilityError, ProtocolValidationError } from "../../src/core/errors.js";
 import { asEntityTag, asOpaqueCursor } from "../../src/core/opaque-values.js";
 import {
@@ -309,6 +310,51 @@ describe("typed metadata operations", () => {
 
     expect(authorizationCalls).toBe(0);
     expect(fetchCalls).toBe(0);
+  });
+
+  it("rejects null create metadata options before authorization while omission remains valid", async () => {
+    let authorizationCalls = 0;
+    let fetchCalls = 0;
+    const client = createClient(
+      [],
+      async () => {
+        fetchCalls += 1;
+        return Response.json(metadataRecord, {
+          status: 201,
+          headers: {
+            ETag: '"metadata-created-1"',
+            Location: "/v1/metadata/metadata_demo_note_0001",
+          },
+        });
+      },
+      descriptor,
+      () => {
+        authorizationCalls += 1;
+        return "Bearer caller-owned";
+      },
+    );
+    const createMetadata = client.createMetadata.bind(client) as unknown as (
+      vehicleId: string,
+      body: MetadataCreate,
+      options?: unknown,
+    ) => Promise<unknown>;
+
+    const error = await captureError(createMetadata("vehicle_demo_alpha", metadataCreate, null));
+
+    expect(error).toBeInstanceOf(InvalidReadOptionsError);
+    expect(error).toMatchObject({ code: "invalid_read_options" });
+    expect(error).not.toBeInstanceOf(TypeError);
+    expect(error).not.toHaveProperty("cause");
+    expect(authorizationCalls).toBe(0);
+    expect(fetchCalls).toBe(0);
+
+    await expect(
+      client.createMetadata("vehicle_demo_alpha", metadataCreate),
+    ).resolves.toMatchObject({
+      value: { metadata_id: "metadata_demo_note_0001" },
+    });
+    expect(authorizationCalls).toBe(1);
+    expect(fetchCalls).toBe(1);
   });
 
   it("rejects lossy JSON metadata bodies before authorization and Fetch", async () => {

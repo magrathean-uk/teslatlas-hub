@@ -173,3 +173,39 @@ git diff --check
 # lock passed; unit 22 files / 166 tests; conformance 2 files / 23 tests;
 # Chromium 12/12 passed
 ```
+
+## P2 follow-up — nullable create-metadata options
+
+Root cause: TypeScript's `RequestOptions = {}` default applies only to omitted
+or `undefined` arguments. JavaScript `null` reached the direct
+`options.signal` dereference in `createMetadata`, producing a raw `TypeError`.
+
+The RED regression bound the public method as JavaScript, passed `null`, and
+proved the raw error. It also proved that an omitted options argument still
+reaches the valid `201` response path.
+
+```text
+npm run test:unit -- --run tests/unit/metadata-operations.test.ts
+# 1 expected failure: raw TypeError instead of invalid_read_options
+```
+
+`createMetadata` now normalizes its request-options object before field access:
+runtime `null` and non-object values raise cause-free `InvalidReadOptionsError`
+(`invalid_read_options`) before authorization or Fetch, while the existing
+TypeScript `RequestOptions = {}` signature and omitted-call behavior stay
+unchanged. The green test asserts null calls have zero authorization/Fetch
+calls and omitted calls have exactly one successful `201` dispatch.
+
+```text
+npm run test:unit -- --run tests/unit/metadata-operations.test.ts
+# 13 tests passed
+
+npm run protocol:check
+npm run verify
+npm run typecheck
+npx vitest --clearCache
+npm run test:browser
+git diff --check
+# lock passed; unit 22 files / 167 tests; conformance 2 files / 23 tests;
+# Chromium 12/12 passed
+```

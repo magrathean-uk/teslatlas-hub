@@ -303,6 +303,7 @@ export class TeslatlasClient {
     options: RequestOptions = {},
   ): Promise<WriteResult<MetadataRecord>> {
     requireCapability(this.#session.descriptor, "metadata.mutable");
+    const normalizedOptions = normalizeRequestOptions(options);
     const validatedVehicleId = validateId(vehicleId);
     const value = decodeProtocolValue<MetadataCreate>(
       body,
@@ -317,7 +318,10 @@ export class TeslatlasClient {
       validateMetadataRecord,
       "validateMetadataRecord",
       { vehicle_id: validatedVehicleId },
-      { body: value, ...(options.signal === undefined ? {} : { signal: options.signal }) },
+      {
+        body: value,
+        ...(normalizedOptions.signal === undefined ? {} : { signal: normalizedOptions.signal }),
+      },
       { successStatus: 201, requireStrongEntityTag: true, requireLocation: true },
     );
   }
@@ -592,6 +596,13 @@ function normalizeConditionalOptions(options: ConditionalReadOptions): Condition
     ...(ifNoneMatch === undefined ? {} : { ifNoneMatch }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   };
+}
+
+function normalizeRequestOptions(options: RequestOptions): RequestOptions {
+  if (options === null || typeof options !== "object") {
+    throw new InvalidReadOptionsError();
+  }
+  return options;
 }
 
 function normalizeEntityTag(value: EntityTag | undefined): EntityTag | undefined {
