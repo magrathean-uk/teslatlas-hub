@@ -15,8 +15,8 @@ This design reconciles two concurrent SDK efforts:
 
 The protocol authority is now
 `/Users/bolyki/dev/source/teslatlas-protocol` at
-`1fec948ee0df4eb5bb542f29c976889e4dbaf4a3`. Its local `./tools/check` gate
-passes 51 artifact tests and 28 conformance profile/case runs across protocol
+`79ced4c7fdc79520ad31d72a0280bf5f3f19f407`. Its local `./tools/check` gate
+passes 54 artifact tests and 31 conformance profile/case runs across protocol
 profiles `1.0.0`, `1.1.0`, and `1.2.0`.
 
 The SDK stays private during reconciliation. This work does not publish a
@@ -240,6 +240,11 @@ the consumer advances after applying that event. Returning early leaves it
 uncommitted so replay remains at-least-once. Checkpoint load/save failures stop
 the stream with a safe storage error.
 
+The SDK does not identify authorization principals. Callers must scope each
+checkpoint store to its authorization principal and stable event filters;
+reusing one across principals or filters can correctly yield the protocol's
+terminal `event_id_invalid` response and is never retried by the SDK.
+
 Reconnect occurs only after accidental EOF or a retryable transport failure.
 Authentication, capability, validation, terminal status, and replay-gap
 failures do not reconnect. Replay-gap recovery requires explicit caller query
@@ -277,15 +282,17 @@ The existing foundation tests remain as regression coverage. New gates add:
 - conditional GET, cursor, metadata `If-Match`, command uncertainty, and SSE
   terminal/replay tests;
 - the same typed-client suite through Node.js and real Chromium;
-- a language-neutral protocol conformance adapter, with its normalized results
-  kept separate from the protocol repository's reference-adapter self-test.
+- an SDK consumer harness that loads the language-neutral protocol cases,
+  drives their reference responses through the matching typed SDK methods, and
+  compares safe normalized client results. This is reported separately from
+  the protocol repository's server/reference-adapter self-test.
 
 No test uses a live Hub, Tesla account, credential, VIN, identifying location,
 wall clock, hosted CI, or registry publication. Fetch, sleeps, and response
 streams are deterministic and injected.
 
 `npm run verify` performs format, lint, typecheck, generation check, build,
-unit tests, browser/Node conformance, examples, protocol adapter checks, and
+unit tests, browser/Node conformance, examples, protocol case checks, and
 packed-content inspection. The packed package contains only runtime output,
 public documentation, licence, README, and package metadata.
 
