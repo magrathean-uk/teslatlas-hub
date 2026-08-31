@@ -55,6 +55,7 @@ import {
 type QueryValue = string | number | OpaqueCursor | undefined;
 type QueryValues = Readonly<Record<string, QueryValue>>;
 type RangeLimit = "history" | "dense";
+const maximumIfNoneMatchLength = 512;
 
 export class TeslatlasClient {
   readonly #session: ClientSession;
@@ -335,7 +336,9 @@ function normalizeConditionalOptions(options: ConditionalReadOptions): Condition
 
 function normalizeEntityTag(value: EntityTag | undefined): EntityTag | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string") throw new InvalidReadOptionsError();
+  if (typeof value !== "string" || value.length > maximumIfNoneMatchLength) {
+    throw new InvalidReadOptionsError();
+  }
   try {
     return asEntityTag(value);
   } catch {

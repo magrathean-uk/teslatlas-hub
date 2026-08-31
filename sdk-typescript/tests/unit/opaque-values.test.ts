@@ -26,14 +26,16 @@ describe("opaque protocol values", () => {
     expect(asEntityTag(value)).toBe(value);
   });
 
-  it.each([
-    "",
-    "not-an-etag",
-    "W/not-quoted",
-    'W/""',
-    '"revision-7"\r\nAuthorization: secret',
-    `"${"x".repeat(511)}"`,
-  ])("rejects malformed entity tag %j", (value) => {
-    expect(() => asEntityTag(value)).toThrow(InvalidEntityTagError);
+  it("accepts a protocol-valid response ETag beyond the request header limit", () => {
+    const value = `"${"x".repeat(512)}"`;
+
+    expect(asEntityTag(value)).toBe(value);
   });
+
+  it.each(["", "not-an-etag", "W/not-quoted", 'W/""', '"revision-7"\r\nAuthorization: secret'])(
+    "rejects malformed entity tag %j",
+    (value) => {
+      expect(() => asEntityTag(value)).toThrow(InvalidEntityTagError);
+    },
+  );
 });

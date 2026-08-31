@@ -2,7 +2,6 @@ import { containsControlCharacters, TeslatlasError } from "./errors.js";
 
 const opaqueCursorBrand: unique symbol = Symbol("OpaqueCursor");
 const entityTagBrand: unique symbol = Symbol("EntityTag");
-const maximumEntityTagLength = 512;
 const entityTagPattern = /^(?:W\/)?"[^"]+"$/u;
 
 export type OpaqueCursor = string & {
@@ -37,11 +36,7 @@ export function asOpaqueCursor(value: string): OpaqueCursor {
 }
 
 export function asEntityTag(value: string): EntityTag {
-  if (
-    value.length > maximumEntityTagLength ||
-    containsControlCharacters(value) ||
-    !entityTagPattern.test(value)
-  ) {
+  if (containsControlCharacters(value) || !entityTagPattern.test(value)) {
     throw new InvalidEntityTagError();
   }
   return value as EntityTag;

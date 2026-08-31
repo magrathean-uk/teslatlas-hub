@@ -141,6 +141,30 @@ describe("typed read operations", () => {
     ).rejects.toMatchObject({ code: "invalid_read_options" });
     expect(calls).toBe(0);
   });
+
+  it("rejects an oversized If-None-Match before authorization and Fetch", async () => {
+    let authorizationCalls = 0;
+    let fetchCalls = 0;
+    const client = createClient(
+      [],
+      descriptor,
+      async () => {
+        fetchCalls += 1;
+        return Response.json(vehicles);
+      },
+      () => {
+        authorizationCalls += 1;
+        return "Bearer caller-owned";
+      },
+    );
+    const oversized = `"${"x".repeat(511)}"` as EntityTag;
+
+    await expect(client.listVehicles({ ifNoneMatch: oversized })).rejects.toMatchObject({
+      code: "invalid_read_options",
+    });
+    expect(authorizationCalls).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
 });
 
 interface ObservedRequest {
@@ -153,6 +177,7 @@ function createClient(
   observed: ObservedRequest[],
   sessionDescriptor: HubDescriptor = descriptor,
   overrideFetch?: FetchImplementation,
+  authorization: () => string = () => "Bearer caller-owned",
 ): TeslatlasClient {
   const fetch: FetchImplementation =
     overrideFetch ??
@@ -173,7 +198,7 @@ function createClient(
     discoveryTransport: new FetchTransport({ baseUrl: "https://hub.example.invalid", fetch }),
     apiTransport: new FetchTransport({
       baseUrl: "https://api.example.invalid",
-      authorization: () => "Bearer caller-owned",
+      authorization,
       fetch,
     }),
     eventTransport: new FetchTransport({ baseUrl: "https://events.example.invalid", fetch }),

@@ -64,6 +64,21 @@ describe("read response decoder", () => {
     ).rejects.toBeInstanceOf(ProtocolValidationError);
   });
 
+  it.each([200, 304])(
+    "accepts a long protocol-valid response ETag on status %i",
+    async (status) => {
+      const etag = `"${"x".repeat(512)}"`;
+      const response =
+        status === 200
+          ? Response.json(currentState, { headers: { ETag: etag } })
+          : new Response(null, { status, headers: { ETag: etag } });
+
+      await expect(
+        decodeReadResponse<CurrentState>(response, validateCurrentState, "validateCurrentState"),
+      ).resolves.toMatchObject({ metadata: { status, etag } });
+    },
+  );
+
   it("decodes safe problem fields without retaining sensitive detail or response", async () => {
     const sensitiveProblem = {
       ...problem,
