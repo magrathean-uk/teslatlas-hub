@@ -62,6 +62,10 @@ let client = try await TeslatlasClient.connect(
 An unapproved origin fails before the bearer credential can be sent. A later
 discovery refresh must also retain the pinned Hub identity.
 
+The default transport uses an ephemeral session with cookies, credential
+storage, and caching disabled. It stops reading a response above 16 MiB; use
+`URLSessionTeslatlasTransport(maximumResponseBytes:)` to choose a lower cap.
+
 ## Query released resources
 
 `TeslatlasClient` provides typed conditional GETs for:
@@ -72,8 +76,8 @@ discovery refresh must also retain the pinned Hub identity.
 - state intervals and software updates;
 - data-quality assessments.
 
-Cursors and ETags stay opaque. Page and history bounds are checked against the
-discovered limits before network I/O.
+Cursors and ETags stay opaque. Cursor descriptions are redacted. Page and
+history bounds are checked against the discovered limits before network I/O.
 
 ## Consume event bytes
 
@@ -118,8 +122,9 @@ swift run TeslatlasHubSDKExample
 ```
 
 Tests include copies of the released protocol examples with an exact authority
-SHA. Protocol artifact validation is a separate gate in `teslatlas-protocol`;
-fixture decoding is not a substitute for an SDK conformance adapter.
+SHA and per-file byte hashes. Protocol artifact validation is a separate gate
+in `teslatlas-protocol`; fixture decoding is not a substitute for an SDK
+conformance adapter.
 
 ## Documentation
 

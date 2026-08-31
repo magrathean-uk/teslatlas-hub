@@ -8,7 +8,8 @@ public actor TeslatlasClient {
   private let maximumProtocolVersion: TeslatlasProtocolVersion
   private let authorization: any TeslatlasAuthorization
   private let transport: any TeslatlasHTTPTransport
-  private let maximumResponseBytes = 16 * 1_024 * 1_024
+  private let maximumResponseBytes =
+    URLSessionTeslatlasTransport.defaultMaximumResponseBytes
 
   private init(
     discovery: HubDiscoveryDocument,

@@ -10,7 +10,7 @@ The authority now contains committed OpenAPI, JSON Schemas, SSE contract,
 examples, deterministic fixtures, compatibility profiles, and the
 language-neutral conformance runner. Copies of the released examples used by
 XCTest are pinned under `Tests/TeslatlasHubSDKTests/Fixtures` with the exact
-authority SHA.
+authority SHA and per-file SHA-256 digests.
 
 ## Activated slices
 
@@ -19,7 +19,7 @@ authority SHA.
 | Discovery | discovery schema and versioning rules | strict versions, capabilities, limits, HTTPS, forbidden private fields |
 | Endpoint trust | stable Hub identity plus advertised endpoints | fixed trusted-origin set and fail-closed identity refresh |
 | Errors | RFC 9457 schema and stable codes | typed problem details preserving request IDs and retryability |
-| Queries | OpenAPI resources, cursors, limits, ETags | typed read routes, opaque cursors/ETags, bounded history and response bytes |
+| Queries | OpenAPI resources, cursors, limits, ETags | typed read routes, redacted opaque cursors, bounded history and streamed response bytes |
 | Events | SSE contract and event envelope | request construction, bounded framing, retry cap, identity semantics |
 | Commands | command schema and catalogue | separate product, confirmation gate, UUID idempotency, one network attempt |
 

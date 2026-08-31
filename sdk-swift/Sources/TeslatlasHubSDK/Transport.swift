@@ -21,14 +21,42 @@ public protocol TeslatlasHTTPTransport: Sendable {
 }
 
 public struct URLSessionTeslatlasTransport: TeslatlasHTTPTransport {
-  private let session: URLSession
+  public static let defaultMaximumResponseBytes = 16 * 1_024 * 1_024
 
-  public init(session: URLSession = .shared) {
+  private let session: URLSession
+  private let maximumResponseBytes: Int
+
+  public init(
+    maximumResponseBytes: Int = Self.defaultMaximumResponseBytes
+  ) {
+    self.init(
+      session: URLSession(configuration: Self.isolatedConfiguration()),
+      maximumResponseBytes: maximumResponseBytes
+    )
+  }
+
+  public init(
+    session: URLSession,
+    maximumResponseBytes: Int = Self.defaultMaximumResponseBytes
+  ) {
+    precondition(maximumResponseBytes > 0)
     self.session = session
+    self.maximumResponseBytes = maximumResponseBytes
+  }
+
+  static func isolatedConfiguration() -> URLSessionConfiguration {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.httpShouldSetCookies = false
+    configuration.httpCookieAcceptPolicy = .never
+    configuration.httpCookieStorage = nil
+    configuration.urlCredentialStorage = nil
+    configuration.urlCache = nil
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    return configuration
   }
 
   public func send(_ request: URLRequest) async throws -> TeslatlasHTTPResponse {
-    let (data, response) = try await session.data(for: request)
+    let (bytes, response) = try await session.bytes(for: request)
     guard let httpResponse = response as? HTTPURLResponse else {
       throw TeslatlasSDKError.invalidResponse(
         statusCode: 0,
@@ -36,6 +64,28 @@ public struct URLSessionTeslatlasTransport: TeslatlasHTTPTransport {
         reason: "transport returned a non-HTTP response"
       )
     }
+    let requestID = httpResponse.value(forHTTPHeaderField: "X-Request-ID")
+    if httpResponse.expectedContentLength > maximumResponseBytes {
+      throw responseTooLarge(
+        statusCode: httpResponse.statusCode,
+        requestID: requestID
+      )
+    }
+
+    var data = Data()
+    if httpResponse.expectedContentLength > 0 {
+      data.reserveCapacity(Int(httpResponse.expectedContentLength))
+    }
+    for try await byte in bytes {
+      guard data.count < maximumResponseBytes else {
+        throw responseTooLarge(
+          statusCode: httpResponse.statusCode,
+          requestID: requestID
+        )
+      }
+      data.append(byte)
+    }
+
     var headers: [String: String] = [:]
     for (key, value) in httpResponse.allHeaderFields {
       headers[String(describing: key)] = String(describing: value)
@@ -44,6 +94,16 @@ public struct URLSessionTeslatlasTransport: TeslatlasHTTPTransport {
       statusCode: httpResponse.statusCode,
       headers: headers,
       body: data
+    )
+  }
+
+  private func responseTooLarge(statusCode: Int, requestID: String?)
+    -> TeslatlasSDKError
+  {
+    .invalidResponse(
+      statusCode: statusCode,
+      requestID: requestID,
+      reason: "response body exceeds \(maximumResponseBytes) bytes"
     )
   }
 }

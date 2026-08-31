@@ -105,7 +105,7 @@ public struct TeslatlasTimestamp: RawRepresentable, Codable, Hashable, Sendable,
 }
 
 public struct OpaqueCursor: RawRepresentable, Codable, Hashable, Sendable,
-  CustomStringConvertible
+  CustomStringConvertible, CustomDebugStringConvertible
 {
   public let rawValue: String
 
@@ -117,7 +117,8 @@ public struct OpaqueCursor: RawRepresentable, Codable, Hashable, Sendable,
     self.init(rawValue)
   }
 
-  public var description: String { rawValue }
+  public var description: String { "OpaqueCursor(<redacted>)" }
+  public var debugDescription: String { description }
 }
 
 public struct EntityTag: RawRepresentable, Codable, Hashable, Sendable,

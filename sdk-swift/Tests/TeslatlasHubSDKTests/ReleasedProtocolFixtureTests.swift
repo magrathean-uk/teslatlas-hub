@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 
@@ -13,6 +14,21 @@ final class ReleasedProtocolFixtureTests: XCTestCase {
       authority,
       "teslatlas-protocol 79ced4c7fdc79520ad31d72a0280bf5f3f19f407 profile 1.2.0"
     )
+  }
+
+  func testFixtureBytesMatchReleasedAuthorityHashes() throws {
+    let expected = try JSONDecoder().decode(
+      [String: String].self,
+      from: ReleasedFixture.data("FIXTURE-SHA256.json")
+    )
+
+    XCTAssertEqual(Set(expected.keys), Set(ReleasedFixture.protocolFixtureNames))
+    for name in ReleasedFixture.protocolFixtureNames {
+      let digest = SHA256.hash(data: try ReleasedFixture.data(name))
+        .map { String(format: "%02x", $0) }
+        .joined()
+      XCTAssertEqual(digest, expected[name], "Fixture drift: \(name)")
+    }
   }
 
   func testReleasedDiscoveryAndQueryExamplesDecodeThroughPublicModels() throws {
@@ -163,6 +179,25 @@ final class ReleasedProtocolFixtureTests: XCTestCase {
 }
 
 enum ReleasedFixture {
+  static let protocolFixtureNames = [
+    "charge-samples-page.json",
+    "charges-page.json",
+    "command-job.json",
+    "command-request.json",
+    "current-state.json",
+    "data-quality-page.json",
+    "data-quality.json",
+    "discovery.json",
+    "drives-page.json",
+    "error.json",
+    "event-envelope.json",
+    "positions-page.json",
+    "sse-contract.json",
+    "states-page.json",
+    "updates-page.json",
+    "vehicles-page.json",
+  ]
+
   static func data(_ name: String) throws -> Data {
     guard
       let url = Bundle.module.url(

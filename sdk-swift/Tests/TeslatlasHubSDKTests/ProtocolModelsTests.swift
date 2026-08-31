@@ -128,4 +128,11 @@ final class ProtocolModelsTests: XCTestCase {
   func testBearerCredentialRejectsHeaderControlCharacters() {
     XCTAssertThrowsError(try BearerCredential("secret\nInjected: value"))
   }
+
+  func testOpaqueCursorDescriptionNeverContainsCursorValue() {
+    let cursor = OpaqueCursor("private-pagination-position")
+
+    XCTAssertEqual(String(describing: cursor), "OpaqueCursor(<redacted>)")
+    XCTAssertFalse(String(reflecting: cursor).contains(cursor.rawValue))
+  }
 }
