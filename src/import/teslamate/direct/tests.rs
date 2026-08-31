@@ -12,9 +12,57 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::{
-    credentials::TeslaMatePostgresPassword, teslamate::ReadOnlySource,
-    teslamate_projection_state::TeslaMateProjectionState,
+    credentials::TeslaMatePostgresPassword,
+    teslamate::ReadOnlySource,
+    teslamate_projection_state::{
+        PriorProjectionStateLookup, TeslaMateProjectionState, TeslaMateProjectionStateCursor,
+        TeslaMateProjectionStateDigestPage, TeslaMateProjectionStateDigestRow,
+        TeslaMateProjectionStateEntity,
+    },
 };
+
+struct DirectTestPrior {
+    rows: Vec<TeslaMateProjectionStateDigestRow>,
+}
+
+impl PriorProjectionStateLookup for DirectTestPrior {
+    fn digest(
+        &mut self,
+        entity: TeslaMateProjectionStateEntity,
+        id: i64,
+    ) -> Result<Option<Sha256Digest>, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(self
+            .rows
+            .iter()
+            .find(|row| row.entity == entity && row.id == id)
+            .map(|row| row.digest))
+    }
+
+    fn page_after(
+        &mut self,
+        after: Option<TeslaMateProjectionStateCursor>,
+        limit: u32,
+    ) -> Result<TeslaMateProjectionStateDigestPage, Box<dyn std::error::Error + Send + Sync>> {
+        let after = after.map(|cursor| (cursor.entity.ordinal(), cursor.id));
+        let mut rows = self
+            .rows
+            .iter()
+            .filter(|row| after.is_none_or(|after| (row.entity.ordinal(), row.id) > after))
+            .cloned()
+            .collect::<Vec<_>>();
+        let limit = usize::try_from(limit).expect("page limit fits usize");
+        let next_after = if rows.len() > limit {
+            rows.truncate(limit);
+            rows.last().map(|row| TeslaMateProjectionStateCursor {
+                entity: row.entity,
+                id: row.id,
+            })
+        } else {
+            None
+        };
+        Ok(TeslaMateProjectionStateDigestPage { rows, next_after })
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -320,6 +368,212 @@ fn direct_retention_test_counts() -> TeslaMateSourceCounts {
         geofences: 0,
         updates: 0,
     }
+}
+
+#[test]
+fn direct_geofence_count_joins_one_related_id_union() {
+    let after_addresses = direct_source_count_sql()
+        .split_once(") AS \"addresses\",")
+        .expect("address count boundary")
+        .1;
+    let geofence_count = after_addresses
+        .split_once(") AS \"geofences\",")
+        .expect("geofence count boundary")
+        .0;
+
+    assert!(geofence_count.contains("JOIN ("));
+    assert_eq!(geofence_count.matches("UNION").count(), 2);
+    assert!(geofence_count.contains("\"drive\".\"start_geofence_id\" AS \"id\""));
+    assert!(geofence_count.contains("\"drive\".\"end_geofence_id\" AS \"id\""));
+    assert!(geofence_count.contains("\"process\".\"geofence_id\" AS \"id\""));
+    assert!(geofence_count.contains("ON \"related\".\"id\" = \"source\".\"id\""));
+    assert!(!geofence_count.contains("EXISTS"));
+}
+
+#[test]
+fn successor_position_capture_bypasses_fragment_work_but_keeps_state_and_fingerprint() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let writer = ProjectionPackWriter::new(temporary.path());
+    let car = crate::hub_pack::ProjectionCar {
+        id: 1,
+        name: "Road car".into(),
+        model: "3".into(),
+        vin: None,
+        source_eid: None,
+        source_vid: None,
+        trim_badging: None,
+        marketing_name: None,
+        exterior_color: None,
+        wheel_type: None,
+        spoiler_type: None,
+        firmware_version: None,
+        efficiency_wh_per_km: None,
+        settings: Default::default(),
+    };
+    let position = crate::hub_pack::ProjectionPosition {
+        id: 30,
+        drive_id: Some(20),
+        car_id: 1,
+        date_ms: 1_700_000_030_000,
+        latitude: 51.505,
+        longitude: -0.105,
+        speed: Some(40),
+        power: Some(3.0),
+        battery_level: Some(78),
+        usable_battery_level: Some(77),
+        elevation: Some(25),
+        odometer: Some(10_000.5),
+        ideal_battery_range_km: Some(390.0),
+        est_battery_range_km: Some(385.0),
+        rated_battery_range_km: Some(388.0),
+        fan_status: None,
+        driver_temp_setting: None,
+        passenger_temp_setting: None,
+        is_climate_on: None,
+        is_rear_defroster_on: None,
+        is_front_defroster_on: None,
+        inside_temp: None,
+        outside_temp: None,
+        battery_heater: None,
+        battery_heater_on: None,
+        battery_heater_no_power: None,
+        tpms_pressure_fl: None,
+        tpms_pressure_fr: None,
+        tpms_pressure_rl: None,
+        tpms_pressure_rr: None,
+    };
+    let drive = ProjectionDrive {
+        id: 20,
+        car_id: 1,
+        optimized_at_ms: None,
+        start_date_ms: 1_700_000_000_000,
+        end_date_ms: 1_700_000_060_000,
+        distance_km: Some(12.5),
+        duration_min: Some(10),
+        efficiency: Some(145.0),
+        outside_temp_avg: Some(18.5),
+        inside_temp_avg: Some(20.0),
+        speed_max: Some(80),
+        power_max: Some(36.0),
+        power_min: Some(-7.0),
+        start_ideal_range_km: Some(390.0),
+        end_ideal_range_km: Some(385.0),
+        start_address: None,
+        end_address: None,
+        start_geofence: None,
+        end_geofence: None,
+        start_latitude: None,
+        start_longitude: None,
+        end_latitude: None,
+        end_longitude: None,
+        start_soc: Some(80),
+        end_soc: Some(75),
+        start_rated_range_km: Some(400.0),
+        end_rated_range_km: Some(375.0),
+        ascent: Some(60),
+        descent: Some(30),
+    };
+    let mut removed_position = position.clone();
+    removed_position.id += 1;
+    let state_limits = TeslaMateProjectionStateLimits {
+        max_rows: 4,
+        max_state_bytes: 128 * 1024,
+        max_changed_payload_bytes: 128 * 1024,
+        minimum_free_bytes: 0,
+    };
+    let mut prior_state =
+        TeslaMateProjectionState::create(temporary.path(), state_limits).expect("prior state");
+    prior_state
+        .record_position(&position)
+        .expect("current prior position");
+    prior_state
+        .record_position(&removed_position)
+        .expect("removed prior position");
+    prior_state.seal().expect("seal prior state");
+    let prior_rows = prior_state.page(None, 10).expect("prior rows").rows;
+    drop(prior_state);
+    let state =
+        TeslaMateProjectionState::create(temporary.path(), state_limits).expect("successor state");
+    let mut sink = PackSink::new_with_schema_2_1(
+        &writer,
+        ProjectionBinding {
+            installation_id: Uuid::from_u128(1),
+            account_id: Uuid::from_u128(2),
+            vehicle_id: Uuid::from_u128(3),
+            generation: 1,
+            selected_car_id: 1,
+        },
+        Uuid::from_u128(47),
+        SequenceRange {
+            from_exclusive: 1,
+            to_inclusive: 2,
+        },
+        Vec::new(),
+        true,
+    )
+    .capture_state_only()
+    .with_projection_state_capture(TeslaMateProjectionStateCapture::for_successor(
+        state,
+        Box::new(DirectTestPrior { rows: prior_rows }),
+    ));
+    let mut fragments =
+        direct_position_fragment_accumulator(&car, TeslaMateFragmentLimits::default(), &sink)
+            .expect("position capture");
+    assert!(
+        fragments.is_none(),
+        "state-only successors must not create a position fragment accumulator"
+    );
+    let mut logical_fingerprint = DirectProjectionFingerprint::new();
+    let mut expected_fingerprint = DirectProjectionFingerprint::new();
+    expected_fingerprint
+        .record(DirectProjectionFingerprintFact::Position, &position)
+        .expect("expected fingerprint");
+    let mut report = ProjectionReport::default();
+
+    append_direct_position(
+        position.clone(),
+        Some(&drive),
+        &mut fragments,
+        &mut sink,
+        &mut logical_fingerprint,
+        &mut report,
+    )
+    .expect("capture state-only position");
+
+    assert_eq!(report.projected_positions, 1);
+    assert_eq!(
+        logical_fingerprint.finish(),
+        expected_fingerprint.finish(),
+        "state-only capture keeps the exact logical position fingerprint"
+    );
+    assert!(
+        !sink.has_written_fragments(),
+        "direct state capture must not submit even a disposable fragment"
+    );
+    let (chunks, capture, selected_car) = sink.into_parts();
+    assert!(chunks.is_empty());
+    assert!(
+        selected_car.is_none(),
+        "position-only state capture must not clone a car through a snapshot"
+    );
+    let mut capture = capture.expect("successor capture");
+    capture.seal().expect("seal successor capture");
+    let current = capture.page(None, 10).expect("current page");
+    assert_eq!(current.rows.len(), 1);
+    assert_eq!(current.rows[0].id, position.id);
+    let changed = capture.changed_page(None, 10).expect("changed page");
+    assert!(
+        changed.rows.is_empty(),
+        "the prior digest still suppresses an unchanged position payload"
+    );
+    let (tombstones, next_after) = capture.tombstone_page(None, 10).expect("tombstone page");
+    assert!(next_after.is_none());
+    assert_eq!(tombstones.len(), 1);
+    assert_eq!(tombstones[0].id, removed_position.id);
+    assert_eq!(
+        tombstones[0].entity,
+        crate::hub_pack::ProjectionDeltaEntity::Position
+    );
 }
 
 #[test]
@@ -1058,6 +1312,7 @@ async fn native_ten_million_corpus_direct_import_meets_target_when_enabled() {
                 to_inclusive: 1,
             },
             false,
+            TeslaMateMigrationProgressReporter::default(),
             |state_limits| {
                 TeslaMateProjectionState::create(packs.path(), state_limits)
                     .map(TeslaMateProjectionStateCapture::for_initial_base)

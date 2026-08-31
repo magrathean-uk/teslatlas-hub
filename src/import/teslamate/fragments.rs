@@ -621,18 +621,13 @@ fn append_projected_positions(
                 .ok_or(TeslaMateFragmentError::ReportOverflow)?;
             continue;
         };
-        accumulator.prepare(sink, |current| {
-            let drive_is_new = !current.drive_ids.contains(&drive.id);
-            let added_rows = 1 + u64::from(drive_is_new);
-            let added_bytes = serialized_bytes(&position)?
-                .checked_add(if drive_is_new {
-                    serialized_bytes(&drive)?
-                } else {
-                    0
-                })
-                .ok_or(TeslaMateFragmentError::FragmentSizeOverflow)?;
-            Ok((added_rows, added_bytes))
-        })?;
+        let drive_is_present = accumulator.drive_ids.contains(&drive.id);
+        accumulator.prepare_with_parent(
+            sink,
+            drive_is_present,
+            || Ok((1, serialized_bytes(&position)?)),
+            || Ok((1, serialized_bytes(&drive)?)),
+        )?;
         if accumulator.drive_ids.insert(drive.id) {
             accumulator.drives.push(drive);
         }
@@ -704,18 +699,13 @@ fn append_charge_samples(
                 });
             }
             let projected = project_charge_sample(&row.value);
-            accumulator.prepare(sink, |current| {
-                let charge_is_new = !current.charge_ids.contains(&charge.id);
-                let added_rows = 1 + u64::from(charge_is_new);
-                let added_bytes = serialized_bytes(&projected)?
-                    .checked_add(if charge_is_new {
-                        serialized_bytes(charge)?
-                    } else {
-                        0
-                    })
-                    .ok_or(TeslaMateFragmentError::FragmentSizeOverflow)?;
-                Ok((added_rows, added_bytes))
-            })?;
+            let charge_is_present = accumulator.charge_ids.contains(&charge.id);
+            accumulator.prepare_with_parent(
+                sink,
+                charge_is_present,
+                || Ok((1, serialized_bytes(&projected)?)),
+                || Ok((1, serialized_bytes(charge)?)),
+            )?;
             if accumulator.charge_ids.insert(charge.id) {
                 accumulator.charges.push(charge.clone());
             }
@@ -1368,6 +1358,25 @@ impl<'a> PackSink<'a> {
         self.written_fragments != 0
     }
 
+    pub(crate) fn captures_state_only(&self) -> bool {
+        self.capture_state_only
+    }
+
+    /// Record a streamed position directly into a successor comparison spool.
+    /// Returning `false` tells a full-pack caller to use its fragment path.
+    pub(crate) fn capture_state_only_position(
+        &mut self,
+        position: &ProjectionPosition,
+    ) -> Result<bool, TeslaMateFragmentError> {
+        if !self.capture_state_only {
+            return Ok(false);
+        }
+        if let Some(capture) = self.projection_state.as_mut() {
+            capture.record_position(position)?;
+        }
+        Ok(true)
+    }
+
     pub(crate) fn into_parts(
         mut self,
     ) -> (
@@ -1726,6 +1735,27 @@ pub(crate) struct FragmentAccumulator {
     pub(crate) charge_ids: HashSet<i64>,
 }
 
+#[derive(Clone, Copy)]
+struct PreparedFragmentAddition {
+    rows: u64,
+    bytes: u64,
+}
+
+impl PreparedFragmentAddition {
+    fn combine(self, other: Self) -> Result<Self, TeslaMateFragmentError> {
+        Ok(Self {
+            rows: self
+                .rows
+                .checked_add(other.rows)
+                .ok_or(TeslaMateFragmentError::FragmentSizeOverflow)?,
+            bytes: self
+                .bytes
+                .checked_add(other.bytes)
+                .ok_or(TeslaMateFragmentError::FragmentSizeOverflow)?,
+        })
+    }
+}
+
 impl FragmentAccumulator {
     pub(crate) fn new(
         car: ProjectionCar,
@@ -1750,21 +1780,73 @@ impl FragmentAccumulator {
         addition: F,
     ) -> Result<(), TeslaMateFragmentError>
     where
-        F: Fn(&Self) -> Result<(u64, u64), TeslaMateFragmentError>,
+        F: FnOnce(&Self) -> Result<(u64, u64), TeslaMateFragmentError>,
     {
         let (additional_rows, additional_bytes) = addition(self)?;
-        if self.exceeds(additional_rows, additional_bytes)? && self.has_data() {
-            self.flush(sink)?;
+        let addition = PreparedFragmentAddition {
+            rows: additional_rows,
+            bytes: additional_bytes,
+        };
+        self.prepare_sized(sink, addition, || Ok(addition))
+    }
+
+    /// Prepare one child row whose parent is repeated only when absent from
+    /// the active fragment. Child and parent JSON sizing closures are each
+    /// evaluated at most once, including when the child forces a flush.
+    pub(crate) fn prepare_with_parent<C, P>(
+        &mut self,
+        sink: &mut PackSink<'_>,
+        parent_is_present: bool,
+        child: C,
+        parent: P,
+    ) -> Result<(), TeslaMateFragmentError>
+    where
+        C: FnOnce() -> Result<(u64, u64), TeslaMateFragmentError>,
+        P: FnOnce() -> Result<(u64, u64), TeslaMateFragmentError>,
+    {
+        let (child_rows, child_bytes) = child()?;
+        let child = PreparedFragmentAddition {
+            rows: child_rows,
+            bytes: child_bytes,
+        };
+        if parent_is_present {
+            return self.prepare_sized(sink, child, || {
+                let (parent_rows, parent_bytes) = parent()?;
+                child.combine(PreparedFragmentAddition {
+                    rows: parent_rows,
+                    bytes: parent_bytes,
+                })
+            });
         }
-        // Parent rows are repeated after a flush, so calculate the unit again
-        // against the new fragment rather than reusing a stale dedup result.
-        let (additional_rows, additional_bytes) = addition(self)?;
-        if self.exceeds(additional_rows, additional_bytes)? {
+        let (parent_rows, parent_bytes) = parent()?;
+        let with_parent = child.combine(PreparedFragmentAddition {
+            rows: parent_rows,
+            bytes: parent_bytes,
+        })?;
+        self.prepare_sized(sink, with_parent, || Ok(with_parent))
+    }
+
+    fn prepare_sized<F>(
+        &mut self,
+        sink: &mut PackSink<'_>,
+        current: PreparedFragmentAddition,
+        after_flush: F,
+    ) -> Result<(), TeslaMateFragmentError>
+    where
+        F: FnOnce() -> Result<PreparedFragmentAddition, TeslaMateFragmentError>,
+    {
+        let addition = if self.exceeds(current.rows, current.bytes)? && self.has_data() {
+            self.flush(sink)?;
+            after_flush()?
+        } else {
+            current
+        };
+        if self.exceeds(addition.rows, addition.bytes)? {
             return Err(TeslaMateFragmentError::SingleFragmentValueExceedsTarget);
         }
         self.payload_bytes = self
             .payload_bytes
-            .checked_add(additional_bytes)
+            .checked_add(addition.bytes)
             .ok_or(TeslaMateFragmentError::FragmentSizeOverflow)?;
         Ok(())
     }

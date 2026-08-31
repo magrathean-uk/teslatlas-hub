@@ -610,12 +610,21 @@ fn binary_copy_statements_are_fixed_streaming_projection_queries() {
 }
 
 #[test]
-fn related_position_copy_statement_wraps_the_reviewed_positions_projection() {
+fn related_position_copy_statement_filters_before_the_reviewed_ordering() {
     let sql = related_positions_binary_copy_sql(7, &[3, 11]);
-    assert!(sql.starts_with("COPY (SELECT \"related\".* FROM (\nSELECT"));
+    let filter = sql
+        .find("\"source\".\"id\" = ANY(ARRAY[3,11]::int4[])")
+        .expect("related position filter");
+    let ordering = sql
+        .find("ORDER BY \"source\".\"id\" ASC")
+        .expect("canonical position ordering");
+    assert!(sql.starts_with("COPY (\nSELECT"));
     assert!(sql.contains("FROM \"public\".\"positions\" AS \"source\""));
     assert!(sql.contains("\"source\".\"car_id\" = 7"));
-    assert!(sql.contains("\"related\".\"id\" = ANY(ARRAY[3,11]::int4[])"));
+    assert!(filter < ordering, "ID predicate must run before ORDER BY");
+    assert_eq!(sql.matches("ORDER BY \"source\".\"id\" ASC").count(), 1);
+    assert!(!sql.contains("SELECT \"related\".* FROM ("));
+    assert!(!sql.contains("\"related\"."));
     assert!(sql.ends_with("TO STDOUT WITH (FORMAT BINARY)"));
     assert!(!sql.contains('$'));
     assert!(!sql.contains(';'));
@@ -765,6 +774,23 @@ fn geofence_geometry_projection_contains_required_columns() {
     assert!(GEOFENCE_GEOMETRY_SQL.contains("latitude"));
     assert!(GEOFENCE_GEOMETRY_SQL.contains("longitude"));
     assert!(GEOFENCE_GEOMETRY_SQL.contains("radius_m"));
+    assert!(GEOFENCE_GEOMETRY_SQL.contains("UNION"));
+    assert!(GEOFENCE_GEOMETRY_SQL.contains("start_geofence_id"));
+    assert!(GEOFENCE_GEOMETRY_SQL.contains("end_geofence_id"));
+    assert!(GEOFENCE_GEOMETRY_SQL.contains("process.geofence_id"));
+    assert!(!GEOFENCE_GEOMETRY_SQL.contains("EXISTS"));
+}
+
+#[test]
+fn geofence_page_projection_joins_one_related_id_union() {
+    let sql = projection(SourceTable::Geofences).sql;
+    assert!(sql.contains("JOIN ("));
+    assert_eq!(sql.matches("\n  UNION\n").count(), 2);
+    assert!(sql.contains("\"drive\".\"start_geofence_id\" AS \"id\""));
+    assert!(sql.contains("\"drive\".\"end_geofence_id\" AS \"id\""));
+    assert!(sql.contains("\"process\".\"geofence_id\" AS \"id\""));
+    assert!(sql.contains("ON \"related\".\"id\" = \"source\".\"id\""));
+    assert!(!sql.contains("EXISTS"));
 }
 
 #[test]

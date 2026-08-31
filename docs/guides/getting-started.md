@@ -4,12 +4,6 @@ Teslatlas Hub runs on one operator-controlled host, keeps provider credentials
 resident there, stores telemetry locally, and synchronises history to paired
 Teslatlas clients.
 
-> [!WARNING]
-> Install v1.0.0-beta.2 only after its complete signed prerelease is published.
-> If the release page or any required asset is absent, do not install it. Back
-> up before migration or upgrade, and test recovery. Do not use Hub for
-> safety-critical or autonomous-driving decisions.
-
 ## 1. Choose the host
 
 | Host | Supported beta deployment |

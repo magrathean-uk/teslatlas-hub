@@ -337,6 +337,9 @@ enum Command {
         /// Take one live read-only snapshot, never prompt for cutover, and leave Hub stopped.
         #[arg(long)]
         online_snapshot: bool,
+        /// Preserve an existing Hub account while importing TeslaMate history.
+        #[arg(long, requires = "online_snapshot", hide = true)]
+        preserve_existing_credentials: bool,
         /// Confirm TeslaMate 4.2.0+ and accept that its database schema alone cannot prove the app version.
         #[arg(long, required = true)]
         acknowledge_v4_2_compatible_schema: bool,

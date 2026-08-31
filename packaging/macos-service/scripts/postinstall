@@ -20,6 +20,8 @@ STDOUT="$LOG_DIRECTORY/hub.out.log"
 STDERR="$LOG_DIRECTORY/hub.err.log"
 TEMPLATE="$SCRIPT_DIR/com.teslatlas.hub.plist.in"
 STATE_DIRECTORY=$(upgrade_state_directory)
+SERVICE_PAYLOAD_SNAPSHOT="$STATE_DIRECTORY/service-payload"
+SERVICE_PAYLOAD_MARKER="$STATE_DIRECTORY/service-payload-existed"
 rendered_plist=
 temporary_plist=
 service_stopped=0
@@ -196,10 +198,9 @@ finish() {
         /bin/launchctl bootout "$(service_target)" >/dev/null 2>&1 || true
     fi
     if [ "$completed" -ne 1 ] && [ "$forward_only" -eq 0 ]; then
-        if [ -f "$STATE_DIRECTORY/teslatlas-hub" ] && [ ! -L "$STATE_DIRECTORY/teslatlas-hub" ]; then
-            /usr/bin/install -o root -g wheel -m 0755 "$STATE_DIRECTORY/teslatlas-hub" "$BINARY" \
-                || { status=1; rollback_failed=1; }
-        fi
+        restore_service_payload "$BINARY_ROOT" "$SERVICE_PAYLOAD_SNAPSHOT" \
+            "$SERVICE_PAYLOAD_MARKER" 0 \
+            || { status=1; rollback_failed=1; }
         if [ -f "$STATE_DIRECTORY/launch-agent.plist" ] && [ ! -L "$STATE_DIRECTORY/launch-agent.plist" ]; then
             install_launch_agent_atomically "$STATE_DIRECTORY/launch-agent.plist" \
                 || { status=1; rollback_failed=1; }
@@ -267,7 +268,7 @@ rendered_plist="$STATE_DIRECTORY/launch-agent.rendered"
     || installer_error "rendered LaunchAgent plist is invalid"
 
 previously_installed=0
-if [ -f "$STATE_DIRECTORY/teslatlas-hub" ] || [ -f "$STATE_DIRECTORY/launch-agent.plist" ]; then
+if [ -f "$SERVICE_PAYLOAD_MARKER" ] || [ -f "$STATE_DIRECTORY/launch-agent.plist" ]; then
     previously_installed=1
 fi
 

@@ -5,7 +5,7 @@ import Darwin
 import Foundation
 
 enum HubRelease {
-    static let fallbackVersion = "1.0.0-beta.2"
+    static let fallbackVersion = "1.0.0"
     static let sourceRepository = "https://github.com/magrathean-uk/teslatlas-hub"
     static let licenceExpression = "AGPL-3.0-only"
     static var bundledVersion: String {
@@ -21,7 +21,7 @@ enum HubRelease {
             options: .regularExpression
         ) != nil else { return nil }
         if version == fallbackVersion {
-            return URL(string: sourceRepository)
+            return URL(string: "\(sourceRepository)/tree/v\(version)")
         }
         return URL(string: "\(sourceRepository)/releases/tag/v\(version)")
     }
@@ -31,9 +31,6 @@ enum HubRelease {
             of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
             options: .regularExpression
         ) != nil else { return nil }
-        if version == fallbackVersion {
-            return URL(string: "\(sourceRepository)/blob/main/LICENSE")
-        }
         return URL(string: "\(sourceRepository)/blob/v\(version)/LICENSE")
     }
 }
@@ -133,6 +130,101 @@ struct HubTeslaMateCompatibility: Equatable {
     let message: String
     let reasonCode: String
     let requiredVersion: String
+}
+
+struct HubMigrationProgress: Equatable {
+    let completedRows: UInt64
+    let totalRows: UInt64
+    let phase: String?
+}
+
+private struct HubMigrationProgressPayload: Decodable {
+    let event: String
+    let completedRows: UInt64
+    let totalRows: UInt64
+    let phase: String?
+}
+
+private final class HubMigrationProgressDiagnostics {
+    private let processStartedAt = Date()
+    private let lock = NSLock()
+    private var activePhase: String?
+    private var phaseStartedAt: Date?
+    private var finished = false
+
+    func received(_ progress: HubMigrationProgress) {
+        guard let nextPhase = progress.phase else { return }
+        let now = Date()
+        var completedPhase: (name: String, duration: TimeInterval)?
+        var startedPhase: String?
+        lock.lock()
+        if !finished, nextPhase != activePhase {
+            if let activePhase, let phaseStartedAt {
+                completedPhase = (activePhase, now.timeIntervalSince(phaseStartedAt))
+            }
+            activePhase = nextPhase
+            phaseStartedAt = now
+            startedPhase = nextPhase
+        }
+        lock.unlock()
+        if let completedPhase {
+            Self.logPhaseCompleted(completedPhase.name, duration: completedPhase.duration)
+        }
+        if let startedPhase {
+            HubAppLog.shared.record("import.phase.started", category: "teslamate_import",
+                                    fields: ["phase": startedPhase])
+        }
+    }
+
+    func finish() -> [String: String] {
+        let now = Date()
+        var completedPhase: (name: String, duration: TimeInterval)?
+        lock.lock()
+        if !finished {
+            finished = true
+            if let activePhase, let phaseStartedAt {
+                completedPhase = (activePhase, now.timeIntervalSince(phaseStartedAt))
+            }
+            activePhase = nil
+            phaseStartedAt = nil
+        }
+        lock.unlock()
+        if let completedPhase {
+            Self.logPhaseCompleted(completedPhase.name, duration: completedPhase.duration)
+        }
+        return ["duration_ms": String(Int(now.timeIntervalSince(processStartedAt) * 1_000))]
+    }
+
+    private static func logPhaseCompleted(_ phase: String, duration: TimeInterval) {
+        HubAppLog.shared.record("import.phase.completed", category: "teslamate_import", fields: [
+            "phase": phase,
+            "duration_ms": String(Int(duration * 1_000))
+        ])
+    }
+}
+
+private final class HubMigrationProgressDelivery {
+    private let lock = NSLock()
+    private var active = true
+
+    func cancel() {
+        lock.lock()
+        active = false
+        lock.unlock()
+    }
+
+    func deliver(_ progress: HubMigrationProgress,
+                 to callback: @escaping (HubMigrationProgress) -> Void) {
+        lock.lock()
+        guard active else {
+            lock.unlock()
+            return
+        }
+        DispatchQueue.main.async {
+            callback(progress)
+        }
+        lock.unlock()
+    }
 }
 
 struct HubOnboardingCheck: Equatable {
@@ -302,10 +394,19 @@ enum HubActionError: LocalizedError {
 protocol HubCommandRunning {
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void)
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void)
+    func run(arguments: [String],
+             onOutputLine: @escaping (String) -> Void,
+             completion: @escaping (Result<String, Error>) -> Void)
 }
 
 extension HubCommandRunning {
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+
+    func run(arguments: [String],
+             onOutputLine: @escaping (String) -> Void,
+             completion: @escaping (Result<String, Error>) -> Void) {
         run(arguments: arguments, completion: completion)
     }
 }
@@ -341,6 +442,76 @@ final class BoundedProcessOutput {
     }
 }
 
+private final class ProcessOutputLineCallbackGate {
+    private let lock = NSLock()
+    private var callback: ((String) -> Void)?
+
+    init(callback: ((String) -> Void)?) {
+        self.callback = callback
+    }
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return callback != nil
+    }
+
+    func emit(_ line: String) {
+        lock.lock()
+        let callback = callback
+        lock.unlock()
+        callback?(line)
+    }
+
+    func cancel() {
+        lock.lock()
+        callback = nil
+        lock.unlock()
+    }
+}
+
+private final class ProcessOutputLineDecoder {
+    private static let maximumLineBytes = 64 * 1024
+
+    private var bytes: [UInt8] = []
+    private var discardingOversizedLine = false
+    private let callbackGate: ProcessOutputLineCallbackGate
+
+    init(callbackGate: ProcessOutputLineCallbackGate) {
+        self.callbackGate = callbackGate
+        bytes.reserveCapacity(1_024)
+    }
+
+    func append(_ chunk: Data) {
+        guard callbackGate.isActive else { return }
+        for byte in chunk {
+            if discardingOversizedLine {
+                if byte == 0x0A { discardingOversizedLine = false }
+                continue
+            }
+            if byte == 0x0A {
+                emitBufferedLine()
+            } else if bytes.count < Self.maximumLineBytes {
+                bytes.append(byte)
+            } else {
+                bytes.removeAll(keepingCapacity: true)
+                discardingOversizedLine = true
+            }
+        }
+    }
+
+    func finish() {
+        guard !discardingOversizedLine, !bytes.isEmpty else { return }
+        emitBufferedLine()
+    }
+
+    private func emitBufferedLine() {
+        if bytes.last == 0x0D { bytes.removeLast() }
+        callbackGate.emit(String(decoding: bytes, as: UTF8.self))
+        bytes.removeAll(keepingCapacity: true)
+    }
+}
+
 enum HubProcessExecutor {
     static let defaultMaximumOutputBytes = 256 * 1024
     static let defaultTimeout: TimeInterval = 5 * 60
@@ -355,11 +526,14 @@ enum HubProcessExecutor {
                     timeout: TimeInterval = defaultTimeout,
                     terminationGrace: TimeInterval = defaultTerminationGrace,
                     outputDrainTimeout: TimeInterval = defaultOutputDrainTimeout,
+                    onOutputLine: ((String) -> Void)? = nil,
                     completion: @escaping (Result<String, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
             let output = Pipe()
             let retained = BoundedProcessOutput(maximumBytes: maximumOutputBytes)
+            let callbackGate = ProcessOutputLineCallbackGate(callback: onOutputLine)
+            let lineDecoder = ProcessOutputLineDecoder(callbackGate: callbackGate)
             let reader = DispatchGroup()
             let terminated = DispatchSemaphore(value: 0)
             process.executableURL = executable
@@ -376,10 +550,12 @@ enum HubProcessExecutor {
                 reader.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
                     while true {
-                        let chunk = output.fileHandleForReading.readData(ofLength: 16 * 1024)
-                        if chunk.isEmpty { break }
+                        let chunk = output.fileHandleForReading.availableData
+                        guard !chunk.isEmpty else { break }
                         retained.append(chunk)
+                        lineDecoder.append(chunk)
                     }
+                    lineDecoder.finish()
                     reader.leave()
                 }
                 if let stdin, let input = process.standardInput as? Pipe {
@@ -387,20 +563,29 @@ enum HubProcessExecutor {
                     input.fileHandleForWriting.closeFile()
                 }
                 if terminated.wait(timeout: .now() + max(0.001, timeout)) == .timedOut {
+                    callbackGate.cancel()
                     let pid = process.processIdentifier
                     if process.isRunning { process.terminate() }
                     if terminated.wait(timeout: .now() + max(0.001, terminationGrace)) == .timedOut {
                         if process.isRunning { Darwin.kill(pid, SIGKILL) }
                         _ = terminated.wait(timeout: .now() + max(0.001, terminationGrace))
                     }
-                    _ = reader.wait(timeout: .now() + max(0.001, outputDrainTimeout))
+                    if reader.wait(timeout: .now() + max(0.001, outputDrainTimeout)) == .timedOut {
+                        try? output.fileHandleForReading.close()
+                        _ = reader.wait(timeout: .now() + max(0.001, outputDrainTimeout))
+                    }
                     completion(.failure(HubActionError.commandTimedOut))
                     return
                 }
                 guard reader.wait(timeout: .now() + max(0.001, outputDrainTimeout)) == .success else {
+                    callbackGate.cancel()
+                    try? output.fileHandleForReading.close()
+                    _ = reader.wait(timeout: .now() + max(0.001, outputDrainTimeout))
                     completion(.failure(HubActionError.commandFailed("Hub command output did not close.")))
                     return
                 }
+                callbackGate.cancel()
+                try? output.fileHandleForReading.close()
                 let text = String(decoding: retained.snapshot(), as: UTF8.self)
                 if process.terminationStatus == 0 {
                     completion(.success(text))
@@ -411,6 +596,8 @@ enum HubProcessExecutor {
                     )))
                 }
             } catch {
+                callbackGate.cancel()
+                try? output.fileHandleForReading.close()
                 completion(.failure(error))
             }
         }
@@ -419,14 +606,23 @@ enum HubProcessExecutor {
 
 final class EmbeddedHubCommandRunner: HubCommandRunning {
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
-        runProcess(arguments: arguments, stdin: nil, completion: completion)
+        runProcess(arguments: arguments, stdin: nil, onOutputLine: nil, completion: completion)
     }
 
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
-        runProcess(arguments: arguments, stdin: stdin, completion: completion)
+        runProcess(arguments: arguments, stdin: stdin, onOutputLine: nil, completion: completion)
     }
 
-    private func runProcess(arguments: [String], stdin: String?, completion: @escaping (Result<String, Error>) -> Void) {
+    func run(arguments: [String],
+             onOutputLine: @escaping (String) -> Void,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        runProcess(arguments: arguments, stdin: nil, onOutputLine: onOutputLine, completion: completion)
+    }
+
+    private func runProcess(arguments: [String],
+                            stdin: String?,
+                            onOutputLine: ((String) -> Void)?,
+                            completion: @escaping (Result<String, Error>) -> Void) {
         guard let executable = Bundle.main.url(forResource: "teslatlas-hub", withExtension: nil) else {
             completion(.failure(HubActionError.missingResource("teslatlas-hub")))
             return
@@ -436,6 +632,7 @@ final class EmbeddedHubCommandRunner: HubCommandRunning {
                                stdin: stdin,
                                maximumOutputBytes: Self.maximumOutputBytes(for: arguments),
                                timeout: Self.timeout(for: arguments),
+                               onOutputLine: onOutputLine,
                                completion: completion)
     }
 
@@ -458,14 +655,23 @@ final class InstalledHubCommandRunner: HubCommandRunning {
     private let executable = URL(fileURLWithPath: "/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub")
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
-        runProcess(arguments: arguments, stdin: nil, completion: completion)
+        runProcess(arguments: arguments, stdin: nil, onOutputLine: nil, completion: completion)
     }
 
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
-        runProcess(arguments: arguments, stdin: stdin, completion: completion)
+        runProcess(arguments: arguments, stdin: stdin, onOutputLine: nil, completion: completion)
     }
 
-    private func runProcess(arguments: [String], stdin: String?, completion: @escaping (Result<String, Error>) -> Void) {
+    func run(arguments: [String],
+             onOutputLine: @escaping (String) -> Void,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        runProcess(arguments: arguments, stdin: nil, onOutputLine: onOutputLine, completion: completion)
+    }
+
+    private func runProcess(arguments: [String],
+                            stdin: String?,
+                            onOutputLine: ((String) -> Void)?,
+                            completion: @escaping (Result<String, Error>) -> Void) {
         let timeout: TimeInterval
         if arguments.contains("migrate") {
             timeout = 24 * 60 * 60
@@ -486,6 +692,7 @@ final class InstalledHubCommandRunner: HubCommandRunning {
                                stdin: stdin,
                                maximumOutputBytes: maximumOutputBytes,
                                timeout: timeout,
+                               onOutputLine: onOutputLine,
                                completion: completion)
     }
 }
@@ -547,28 +754,28 @@ final class EmbeddedInstaller: HubInstalling {
             "app=\(shellQuote(appPath)); package=\(shellQuote(packagePath)); " +
             "expected_sha=\(shellQuote(expectedSHA256)); expected_team=\(shellQuote(expectedTeamID)); " +
             "staged=\"$staging/TeslatlasHubService.pkg\"; " +
-            "/usr/bin/test \"$(/usr/bin/stat -f '%u:%g:%Lp' \"$staging\")\" = 0:0:700" +
-            " && /usr/bin/test -d \"$app\" && /usr/bin/test ! -L \"$app\"" +
-            " && /usr/bin/test \"$package\" = \"$app/Contents/Resources/TeslatlasHubService.pkg\"" +
-            " && /usr/bin/test -f \"$package\" && /usr/bin/test ! -L \"$package\"" +
+            "/bin/test \"$(/usr/bin/stat -f '%u:%g:%Lp' \"$staging\")\" = 0:0:700" +
+            " && /bin/test -d \"$app\" && /bin/test ! -L \"$app\"" +
+            " && /bin/test \"$package\" = \"$app/Contents/Resources/TeslatlasHubService.pkg\"" +
+            " && /bin/test -f \"$package\" && /bin/test ! -L \"$package\"" +
             " && /usr/bin/codesign --verify --deep --strict --verbose=2 \"$app\" >/dev/null 2>&1" +
             " && /usr/sbin/spctl --assess --type execute --verbose=4 \"$app\" >/dev/null 2>&1" +
             " && app_team=$(/usr/bin/codesign -dv --verbose=4 \"$app\" 2>&1" +
             " | /usr/bin/awk -F= '$1 == \"TeamIdentifier\" { print $2; exit }')" +
-            " && /usr/bin/test \"$app_team\" = \"$expected_team\"" +
-            " && /usr/bin/test \"$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasServicePackageSHA256' \"$app/Contents/Info.plist\")\" = \"$expected_sha\"" +
-            " && /usr/bin/test \"$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasReleaseTeamIdentifier' \"$app/Contents/Info.plist\")\" = \"$expected_team\"" +
-            " && /usr/bin/test \"$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasOfficialRelease' \"$app/Contents/Info.plist\")\" = true" +
+            " && /bin/test \"$app_team\" = \"$expected_team\"" +
+            " && /bin/test \"$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasServicePackageSHA256' \"$app/Contents/Info.plist\")\" = \"$expected_sha\"" +
+            " && /bin/test \"$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasReleaseTeamIdentifier' \"$app/Contents/Info.plist\")\" = \"$expected_team\"" +
+            " && /bin/test \"$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasOfficialRelease' \"$app/Contents/Info.plist\")\" = true" +
             " && /usr/bin/install -o root -g wheel -m 0600 \"$package\" \"$staged\"" +
-            " && /usr/bin/test -f \"$staged\" && /usr/bin/test ! -L \"$staged\"" +
-            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g:%Lp' \"$staged\")\" = 0:0:600" +
+            " && /bin/test -f \"$staged\" && /bin/test ! -L \"$staged\"" +
+            " && /bin/test \"$(/usr/bin/stat -f '%u:%g:%Lp' \"$staged\")\" = 0:0:600" +
             " && actual_sha=$(/usr/bin/shasum -a 256 \"$staged\" | /usr/bin/awk '{ print $1 }')" +
-            " && /usr/bin/test \"$actual_sha\" = \"$expected_sha\"" +
+            " && /bin/test \"$actual_sha\" = \"$expected_sha\"" +
             " && /usr/sbin/pkgutil --check-signature \"$staged\" >/dev/null 2>&1" +
             " && /usr/sbin/spctl --assess --type install \"$staged\" >/dev/null 2>&1" +
             " && package_team=$(/usr/sbin/spctl --assess --type install --verbose=4 \"$staged\" 2>&1" +
             " | /usr/bin/sed -nE 's/^origin=.*\\(([A-Z0-9]{10})\\)$/\\1/p')" +
-            " && /usr/bin/test \"$package_team\" = \"$expected_team\"" +
+            " && /bin/test \"$package_team\" = \"$expected_team\"" +
             " && /usr/sbin/installer -pkg \"$staged\" -target /"
     }
 
@@ -577,18 +784,18 @@ final class EmbeddedInstaller: HubInstalling {
         let root = "/Library/Application Support/Teslatlas Hub"
         return "root=\(shellQuote(root)); libexec=\"$root/libexec\"; " +
             "uninstaller=\"$libexec/uninstall-macos-service.sh\"; common=\"$libexec/common.sh\"; " +
-            "/usr/bin/test -d \"$root\" && /usr/bin/test ! -L \"$root\"" +
-            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g' \"$root\")\" = 0:0" +
-            " && /usr/bin/test -z \"$(/usr/bin/find \"$root\" -prune -perm +022 -print)\"" +
-            " && /usr/bin/test -d \"$libexec\" && /usr/bin/test ! -L \"$libexec\"" +
-            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g' \"$libexec\")\" = 0:0" +
-            " && /usr/bin/test -z \"$(/usr/bin/find \"$libexec\" -prune -perm +022 -print)\"" +
-            " && /usr/bin/test -f \"$uninstaller\" && /usr/bin/test ! -L \"$uninstaller\"" +
-            " && /usr/bin/test -x \"$uninstaller\"" +
-            " && /usr/bin/test -f \"$common\" && /usr/bin/test ! -L \"$common\"" +
-            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g' \"$uninstaller\")\" = 0:0" +
-            " && /usr/bin/test \"$(/usr/bin/stat -f '%u:%g' \"$common\")\" = 0:0" +
-            " && /usr/bin/test -z \"$(/usr/bin/find \"$uninstaller\" \"$common\" -prune -perm +022 -print)\"" +
+            "/bin/test -d \"$root\" && /bin/test ! -L \"$root\"" +
+            " && /bin/test \"$(/usr/bin/stat -f '%u:%g' \"$root\")\" = 0:0" +
+            " && /bin/test -z \"$(/usr/bin/find \"$root\" -prune -perm +022 -print)\"" +
+            " && /bin/test -d \"$libexec\" && /bin/test ! -L \"$libexec\"" +
+            " && /bin/test \"$(/usr/bin/stat -f '%u:%g' \"$libexec\")\" = 0:0" +
+            " && /bin/test -z \"$(/usr/bin/find \"$libexec\" -prune -perm +022 -print)\"" +
+            " && /bin/test -f \"$uninstaller\" && /bin/test ! -L \"$uninstaller\"" +
+            " && /bin/test -x \"$uninstaller\"" +
+            " && /bin/test -f \"$common\" && /bin/test ! -L \"$common\"" +
+            " && /bin/test \"$(/usr/bin/stat -f '%u:%g' \"$uninstaller\")\" = 0:0" +
+            " && /bin/test \"$(/usr/bin/stat -f '%u:%g' \"$common\")\" = 0:0" +
+            " && /bin/test -z \"$(/usr/bin/find \"$uninstaller\" \"$common\" -prune -perm +022 -print)\"" +
             " && /bin/sh \"$uninstaller\"\(option)"
     }
 
@@ -764,6 +971,8 @@ final class HubController {
     private let serviceInstalledOverride: Bool?
     private(set) var snapshot: HubSnapshot
     private var lastStatusFailureCode: String?
+    private let refreshRequestLock = NSLock()
+    private var newestRefreshRequest: UInt64 = 0
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment,
          commandRunner: HubCommandRunning = EmbeddedHubCommandRunner(),
@@ -831,12 +1040,17 @@ final class HubController {
             completion(snapshot)
             return
         }
+        let request = beginRefreshRequest()
         serviceRunner.loadedState { [weak self] loaded in
             guard let self else { return }
             let installed = self.isServiceInstalled
             let runner = installed ? self.installedCommandRunner : self.commandRunner
             runner.run(arguments: ["--config", self.configPath.path, "status"]) { result in
                 DispatchQueue.main.async {
+                    guard self.isNewestRefreshRequest(request) else {
+                        completion(self.snapshot)
+                        return
+                    }
                     switch result {
                     case let .success(output):
                         if let status = self.parseStatus(output) {
@@ -859,6 +1073,19 @@ final class HubController {
                 }
             }
         }
+    }
+
+    private func beginRefreshRequest() -> UInt64 {
+        refreshRequestLock.lock()
+        defer { refreshRequestLock.unlock() }
+        newestRefreshRequest &+= 1
+        return newestRefreshRequest
+    }
+
+    private func isNewestRefreshRequest(_ request: UInt64) -> Bool {
+        refreshRequestLock.lock()
+        defer { refreshRequestLock.unlock() }
+        return request == newestRefreshRequest
     }
 
     private func recordStatusFailure(_ code: String, installed: Bool) {
@@ -993,7 +1220,9 @@ final class HubController {
                         if let report = Self.parseTeslaMateCompatibility(error.localizedDescription) {
                             completion(.success(report))
                         } else {
-                            completion(.failure(error))
+                            completion(.failure(HubActionError.commandFailed(
+                                "Could not verify TeslaMate. Check the server connection and try again."
+                            )))
                         }
                     }
                 }
@@ -1008,6 +1237,7 @@ final class HubController {
                                passwordFile: String,
                                encryptionKeyFile: String,
                                acknowledgeV42CompatibleSchema: Bool,
+                               progress: @escaping (HubMigrationProgress) -> Void = { _ in },
                                completion: @escaping (Result<Void, Error>) -> Void) {
         HubAppLog.shared.record("import.requested", category: "teslamate_import",
                                 fields: ["capture_mode": "online_snapshot"])
@@ -1047,6 +1277,7 @@ final class HubController {
                                             carID: carID,
                                             passwordFile: passwordFile,
                                             encryptionKeyFile: encryptionKeyFile,
+                                            progress: progress,
                                             completion: completion)
             }
         }
@@ -1056,6 +1287,7 @@ final class HubController {
                                         carID: String,
                                         passwordFile: String,
                                         encryptionKeyFile: String,
+                                        progress: @escaping (HubMigrationProgress) -> Void,
                                         completion: @escaping (Result<Void, Error>) -> Void) {
         let previousInterval = migrationHandoverState?.previousIntervalSeconds
             ?? configuredCollectorIntervalSeconds()
@@ -1084,6 +1316,7 @@ final class HubController {
                          "--postgres-password-file", passwordFile,
                          "--encryption-key-file", encryptionKeyFile,
                          "--online-snapshot",
+                         "--preserve-existing-credentials",
                          "--acknowledge-v4-2-compatible-schema"]
         let finish: (Result<Void, Error>) -> Void = { result in
             DispatchQueue.main.async { completion(result) }
@@ -1097,14 +1330,23 @@ final class HubController {
         }
         let runImport = { [weak self] in
             guard let self else { return }
+            let diagnostics = HubMigrationProgressDiagnostics()
+            let progressDelivery = HubMigrationProgressDelivery()
             HubAppLog.shared.record("import.process.started", category: "teslamate_import",
                                     fields: ["capture_mode": "online_snapshot"])
-            self.commandRunner.run(arguments: arguments) { result in
+            self.commandRunner.run(arguments: arguments, onOutputLine: { line in
+                guard let update = Self.parseMigrationProgress(line) else { return }
+                diagnostics.received(update)
+                progressDelivery.deliver(update, to: progress)
+            }) { result in
+                progressDelivery.cancel()
+                let durationFields = diagnostics.finish()
                 switch result {
                 case let .success(output):
                     guard Self.containsOnlineMigrationReport(output) else {
                         HubAppLog.shared.record("import.process.invalid_report",
-                                                category: "teslamate_import", level: "ERROR")
+                                                category: "teslamate_import", level: "ERROR",
+                                                fields: durationFields)
                         failStartedImport(HubActionError.commandFailed(
                             "TeslaMate import returned no valid completion report. Hub remains stopped."
                         ))
@@ -1117,12 +1359,16 @@ final class HubController {
                                                       previousProvider: previousProvider)
                         )
                         HubAppLog.shared.record("import.completed", category: "teslamate_import",
-                                                fields: ["handover": "awaiting_verification"])
+                                                fields: durationFields.merging(
+                                                    ["handover": "awaiting_verification"]
+                                                ) { _, new in new })
                         finish(.success(()))
                     } catch {
                         HubAppLog.shared.record("import.handover.failed", category: "teslamate_import",
                                                 level: "ERROR",
-                                                fields: ["error_code": HubAppLog.errorCode(error)])
+                                                fields: durationFields.merging(
+                                                    ["error_code": HubAppLog.errorCode(error)]
+                                                ) { _, new in new })
                         finish(.failure(HubActionError.commandFailed(
                             "Import completed, but Hub could not record the safe handover gate: \(error.localizedDescription). Hub remains stopped."
                         )))
@@ -1130,7 +1376,12 @@ final class HubController {
                 case let .failure(error):
                     HubAppLog.shared.record("import.process.failed", category: "teslamate_import",
                                             level: "ERROR",
-                                            fields: ["error_code": HubAppLog.errorCode(error)])
+                                            fields: durationFields.merging(
+                                                [
+                                                    "error_code": HubAppLog.errorCode(error),
+                                                    "reason_code": Self.migrationFailureReasonCode(error)
+                                                ]
+                                            ) { _, new in new })
                     failStartedImport(error)
                 }
             }
@@ -1172,6 +1423,21 @@ final class HubController {
             )
         }
         return nil
+    }
+
+    static func parseMigrationProgress(_ line: String) -> HubMigrationProgress? {
+        guard let data = line.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(HubMigrationProgressPayload.self, from: data),
+              payload.event == "migration_progress",
+              payload.totalRows > 0 else { return nil }
+        let safePhase = payload.phase.flatMap { phase in
+            phase.range(of: #"^[a-z0-9_-]{1,64}$"#, options: .regularExpression) == nil
+                ? nil
+                : phase
+        }
+        return HubMigrationProgress(completedRows: min(payload.completedRows, payload.totalRows),
+                                    totalRows: payload.totalRows,
+                                    phase: safePhase)
     }
 
     static func containsOnlineMigrationReport(_ output: String) -> Bool {
@@ -1728,9 +1994,69 @@ final class HubController {
     }
 
     static func migrationStoppedError(_ error: Error) -> Error {
-        HubActionError.commandFailed(
-            "TeslaMate migration outcome needs verification. The handover gate remains and Hub remains stopped; reopen migration and run the checks again. \(error.localizedDescription)"
+        let diagnostic = error.localizedDescription.lowercased()
+        if diagnostic.contains("legacy refresh outcome is unresolved")
+            || (diagnostic.contains("legacy")
+                && diagnostic.contains("credential")
+                && diagnostic.contains("consum")) {
+            return HubActionError.commandFailed(
+                "Sign in to Tesla again in TeslaMate, then retry the import."
+            )
+        }
+        return HubActionError.commandFailed(
+            "TeslaMate import failed; retry the import."
         )
+    }
+
+    static func migrationFailureReasonCode(_ error: Error) -> String {
+        if HubAppLog.errorCode(error) == "command_timed_out" { return "timeout" }
+
+        let diagnostic = error.localizedDescription.lowercased()
+        if diagnostic.contains("timed out")
+            || diagnostic.contains("timeout")
+            || diagnostic.contains("deadline exceeded") {
+            return "timeout"
+        }
+        if diagnostic.contains("no space left on device")
+            || diagnostic.contains("database or disk is full")
+            || diagnostic.contains("disk full")
+            || diagnostic.contains("sqlite_full")
+            || diagnostic.contains("storage full") {
+            return "disk_space"
+        }
+        if diagnostic.contains("schema mismatch")
+            || diagnostic.contains("schema version")
+            || diagnostic.contains("incompatible schema")
+            || diagnostic.contains("unsupported schema")
+            || diagnostic.contains("migration version")
+            || diagnostic.contains("teslamate version")
+            || diagnostic.contains("requires teslamate")
+            || diagnostic.contains("update teslamate") {
+            return "schema_version"
+        }
+        if diagnostic.contains("ssh ")
+            || diagnostic.contains("ssh:")
+            || diagnostic.contains("ssh_")
+            || diagnostic.contains("tunnel")
+            || diagnostic.contains("port forwarding")
+            || diagnostic.contains("could not resolve hostname") {
+            return "ssh_tunnel"
+        }
+        if diagnostic.contains("legacy refresh")
+            || diagnostic.contains("token pair")
+            || diagnostic.contains("refresh token")
+            || diagnostic.contains("credential")
+            || diagnostic.contains("re-login") {
+            return "credentials"
+        }
+        if diagnostic.contains("sqlite")
+            || diagnostic.contains("database")
+            || diagnostic.contains("postgres")
+            || diagnostic.contains("catalogue")
+            || diagnostic.contains("sqlx") {
+            return "sqlite_database"
+        }
+        return "generic"
     }
 
     static func isAllVehiclesUnsupported(_ error: Error) -> Bool {

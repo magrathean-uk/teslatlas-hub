@@ -4,14 +4,14 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
-## 2026-08-31 — v1.0.0-beta.2 untagged source candidate
+## 2026-08-31 — v1.0.0 source release
 
-- added an untagged beta.2 candidate while retaining the historic
-  "v1.0.0-beta.1" release record;
-- changed candidate source links to the public repository, avoiding a claim
-  that an uncreated beta.2 release page is immutable Corresponding Source;
-- deferred signing, package attestation, notarisation, and publication. No
-  release asset or complete object-code source offer is claimed.
+- promoted the package and documentation version to v1.0.0;
+- established the annotated `v1.0.0` tag as the immutable source boundary;
+- documented that no GitHub Release or downloadable release asset is
+  published;
+- documented the locally built combined macOS app-and-service installer;
+- retained the historic `v1.0.0-beta.1` and `v1.0.0-alpha.1` records.
 
 ## 2026-08-30 — v1.0.0-beta.1 release
 

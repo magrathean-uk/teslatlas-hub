@@ -159,11 +159,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller: hubController,
             resumeMigrationHandoverPhase: hubController.pendingMigrationHandoverPhase,
             previewRoute: hubController.onboardingPreviewRoute
-        ) { [weak self] in
+        ) { [weak self] completion in
             guard let self else { return }
             let finishedOnboarding = self.onboardingWindowController
             self.onboardingWindowController = nil
             self.showDashboard()
+            if completion == .hubStarted {
+                self.mainWindowController?.settleStartedHubFromOnboarding()
+            }
             finishedOnboarding?.close()
         }
         onboardingWindowController = onboarding

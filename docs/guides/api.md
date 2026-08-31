@@ -27,7 +27,7 @@ not complete in this release.
 |---|---|---|
 | `GET` | `/healthz` | Process and store health. |
 | `GET` | `/readyz` | Collector and serving readiness. |
-| `GET` | `/.well-known/teslatlas-hub` | Stable Hub identity, API versions, capabilities, build, sync protocol, and source route. Untagged candidates expose the public repository; published binaries expose a version-bound source offer. |
+| `GET` | `/.well-known/teslatlas-hub` | Stable Hub identity, API versions, capabilities, build, sync protocol, and source route. Tagged builds expose their version-bound source; development builds expose the repository. |
 | `POST` | `/v1/pairings/{pairing_id}/claim` | Claim one pairing invitation. |
 | `POST` | `/v1/device/rotate` | Rotate the current device bearer. |
 | `GET` | `/v1/vehicles` | List vehicles visible to the paired device. |

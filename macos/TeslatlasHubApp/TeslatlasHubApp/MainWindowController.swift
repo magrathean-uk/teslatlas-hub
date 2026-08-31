@@ -120,13 +120,37 @@ final class MainWindowController: NSWindowController {
     private var onboardingWindow: OnboardingWindowController?
     private var onInitialRefresh: ((HubSnapshot) -> Void)?
     private var refreshTimer: Timer?
-    private var refreshInFlight = false
+    private var dashboardRefreshToken: UUID?
     private var refreshPending = false
+    private var presentationGeneration: UInt64 = 0
     private var serviceTransition: HubServiceTransition?
+    private var serviceTransitionToken: UUID?
+    private var serviceTransitionDeadlineWorkItem: DispatchWorkItem?
+    private let serviceTransitionTimeout: TimeInterval
+    private let serviceTransitionPollInterval: TimeInterval
+    private let errorPresenter: (Error) -> Void
 
-    init(controller: HubController, onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
+    convenience init(controller: HubController,
+                     onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
+        self.init(controller: controller,
+                  serviceTransitionTimeout: 60,
+                  serviceTransitionPollInterval: 0.2,
+                  errorPresenter: { error in
+                      _ = NSAlert(error: error).runModal()
+                  },
+                  onInitialRefresh: onInitialRefresh)
+    }
+
+    init(controller: HubController,
+         serviceTransitionTimeout: TimeInterval,
+         serviceTransitionPollInterval: TimeInterval,
+         errorPresenter: @escaping (Error) -> Void,
+         onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
         self.controller = controller
         self.onInitialRefresh = onInitialRefresh
+        self.serviceTransitionTimeout = max(0.001, serviceTransitionTimeout)
+        self.serviceTransitionPollInterval = max(0.001, serviceTransitionPollInterval)
+        self.errorPresenter = errorPresenter
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 630),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
@@ -141,6 +165,7 @@ final class MainWindowController: NSWindowController {
             guard let self,
                   NSApp.isActive,
                   self.window?.isVisible == true,
+                  self.serviceTransition == nil,
                   !self.accountWorkflowActive,
                   !self.serviceDetailsMutationPending else { return }
             self.update()
@@ -149,7 +174,10 @@ final class MainWindowController: NSWindowController {
         self.refreshTimer = refreshTimer
     }
 
-    deinit { refreshTimer?.invalidate() }
+    deinit {
+        refreshTimer?.invalidate()
+        serviceTransitionDeadlineWorkItem?.cancel()
+    }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -492,164 +520,188 @@ final class MainWindowController: NSWindowController {
     }
 
     private func update() {
-        guard !refreshInFlight else {
+        guard serviceTransition == nil else {
             refreshPending = true
             return
         }
-        refreshInFlight = true
+        guard dashboardRefreshToken == nil else {
+            refreshPending = true
+            return
+        }
+        let refreshToken = UUID()
+        dashboardRefreshToken = refreshToken
+        let refreshGeneration = presentationGeneration
         controller.refresh { [weak self] snapshot in
             guard let self else { return }
             defer {
-                self.refreshInFlight = false
-                if self.refreshPending {
-                    self.refreshPending = false
-                    DispatchQueue.main.async { [weak self] in self?.update() }
-                }
-            }
-            self.heroDot.image = NSApplication.shared.applicationIconImage
-            self.heroDot.isHidden = false
-            self.heroProgress.stopAnimation(nil)
-            self.heroProgress.isHidden = true
-            self.heroStateIcon.isHidden = false
-            self.heroTitle.stringValue = snapshot.health.title
-            switch snapshot.health {
-            case .running:
-                self.heroStateIcon.image = NSImage(systemSymbolName: "checkmark.shield", accessibilityDescription: "Running")
-                self.heroStateIcon.contentTintColor = .secondaryLabelColor
-                self.heroSubtitle.stringValue = "Hub runs in the background. You can close this window."
-            case .stopped:
-                self.heroStateIcon.image = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: "Stopped")
-                self.heroStateIcon.contentTintColor = .secondaryLabelColor
-                self.heroSubtitle.stringValue = "Vehicle data is not being collected."
-            case .needsInstall:
-                self.heroStateIcon.image = NSImage(systemSymbolName: "person.badge.key", accessibilityDescription: "Setup required")
-                self.heroStateIcon.contentTintColor = .secondaryLabelColor
-                self.heroSubtitle.stringValue = "Choose how Hub connects to Tesla."
-            case .degraded:
-                self.heroStateIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Attention needed")
-                self.heroStateIcon.contentTintColor = .systemOrange
-                self.heroSubtitle.stringValue = "Open diagnostics for details."
-            }
-            self.serviceValue.stringValue = snapshot.service
-            self.accountValue.stringValue = snapshot.accountDisplay
-            self.updateVehicleSelection(snapshot)
-            self.databaseValue.stringValue = snapshot.database
-            self.versionLabel.stringValue = snapshot.version
-            self.serviceDot.contentTintColor = snapshot.health.color
-
-            self.stopButton.isHidden = snapshot.health == .needsInstall
-            self.installButton.isHidden = snapshot.health != .needsInstall
-            self.restartButton.isHidden = snapshot.health != .degraded
-            self.heroDiagnosticsButton.isHidden = snapshot.health != .degraded
-            let mutableActionsAvailable = self.serviceTransition == nil
-                && !self.accountWorkflowActive
-                && !self.serviceDetailsMutationPending
-            let accountActionsAvailable = mutableActionsAvailable
-                && !self.vehicleControlPending
-            self.stopButton.isEnabled = mutableActionsAvailable
-            self.installButton.isEnabled = mutableActionsAvailable
-            self.restartButton.isEnabled = mutableActionsAvailable
-            self.heroDiagnosticsButton.isEnabled = mutableActionsAvailable
-            self.connectButton.isEnabled = accountActionsAvailable
-            self.importButton.isEnabled = accountActionsAvailable
-            self.detailsButton.isEnabled = !self.accountWorkflowActive
-            self.connectButton.isHidden = false
-            if snapshot.account == "Connected" {
-                self.connectButton.title = "Manage Tesla"
-                self.connectButton.image = NSImage(systemSymbolName: "person.crop.circle.badge.checkmark",
-                                                   accessibilityDescription: "Manage Tesla")
-                self.connectButton.action = #selector(self.manageTeslaPressed(_:))
-            } else {
-                self.connectButton.title = "Connect Tesla"
-                self.connectButton.image = NSImage(systemSymbolName: "person.badge.key",
-                                                   accessibilityDescription: "Connect Tesla")
-                self.connectButton.action = #selector(self.connectTeslaPressed)
-            }
-            let controlsAvailable = !self.controller.previewMode
-                && snapshot.health == .running
-                && snapshot.account == "Connected"
-                && self.selectedControlVehicleID != nil
-                && !self.vehicleControlPending
-                && !self.vehicleControlOutcomeUnknown
-                && !self.accountWorkflowActive
-                && !self.serviceDetailsMutationPending
-            let controlsVisible = snapshot.provider == .fleet
-            if controlsVisible {
-                NSLayoutConstraint.activate(self.vehicleControlSectionHeightConstraints)
-            } else {
-                NSLayoutConstraint.deactivate(self.vehicleControlSectionHeightConstraints)
-            }
-            self.vehicleControlSectionViews.forEach { $0.isHidden = !controlsVisible }
-            self.vehicleCardHeightConstraint?.constant = controlsVisible ? 174 : 72
-            self.vehicleActionButtons.forEach {
-                $0.isHidden = !controlsVisible
-                $0.isEnabled = controlsVisible && (controlsAvailable || self.controller.previewMode)
-            }
-            self.stopButton.keyEquivalent = snapshot.health == .stopped ? "\r" : ""
-            self.installButton.keyEquivalent = snapshot.health == .needsInstall ? "\r" : ""
-            self.heroDiagnosticsButton.keyEquivalent = snapshot.health == .degraded ? "\r" : ""
-            switch snapshot.health {
-            case .needsInstall:
-                self.window?.defaultButtonCell = self.installButton.cell as? NSButtonCell
-            case .stopped:
-                self.window?.defaultButtonCell = self.stopButton.cell as? NSButtonCell
-            case .degraded:
-                self.window?.defaultButtonCell = self.heroDiagnosticsButton.cell as? NSButtonCell
-            case .running:
-                self.window?.defaultButtonCell = nil
-            }
-            if snapshot.health == .stopped {
-                self.stopButton.title = "Start Hub"
-                self.stopButton.action = #selector(self.startPressed)
-                self.configurePrimaryButton(self.stopButton, symbol: "play.fill")
-            } else {
-                self.stopButton.title = "Stop Hub…"
-                self.stopButton.action = #selector(self.stopPressed)
-                self.configureFlatButton(self.stopButton, symbol: "stop.fill", tint: .systemRed)
-            }
-            self.restartButton.title = "Restart Hub"
-            self.configureFlatButton(self.restartButton, symbol: "arrow.clockwise",
-                                     tint: .controlAccentColor)
-            self.heroDiagnosticsButton.title = "Run Diagnostics"
-            self.configureFlatButton(self.heroDiagnosticsButton,
-                                     symbol: "waveform.path.ecg")
-            self.installButton.title = "Set Up Hub"
-            self.configurePrimaryButton(self.installButton, symbol: "person.badge.key")
-
-            self.activityStack.arrangedSubviews.forEach {
-                self.activityStack.removeArrangedSubview($0)
-                $0.removeFromSuperview()
-            }
-            if snapshot.activity.isEmpty {
-                let empty = NSTextField(labelWithString: "No activity yet.")
-                empty.textColor = .secondaryLabelColor
-                empty.heightAnchor.constraint(equalToConstant: 30).isActive = true
-                self.activityStack.addArrangedSubview(empty)
-            } else {
-                for (index, entry) in snapshot.activity.prefix(3).enumerated() {
-                    if index > 0 {
-                        let line = self.separator()
-                        self.activityStack.addArrangedSubview(line)
-                        line.widthAnchor.constraint(equalTo: self.activityStack.widthAnchor).isActive = true
+                if self.dashboardRefreshToken == refreshToken {
+                    self.dashboardRefreshToken = nil
+                    if self.refreshPending {
+                        self.refreshPending = false
+                        DispatchQueue.main.async { [weak self] in self?.update() }
                     }
-                    let message = NSTextField(labelWithString: entry.message)
-                    let age = NSTextField(labelWithString: entry.age)
-                    age.textColor = .secondaryLabelColor
-                    let row = NSStackView(views: [message, self.spacer(), age])
-                    row.spacing = 9
-                    row.alignment = .centerY
-                    row.heightAnchor.constraint(equalToConstant: 30).isActive = true
-                    self.activityStack.addArrangedSubview(row)
-                    row.widthAnchor.constraint(equalTo: self.activityStack.widthAnchor).isActive = true
                 }
             }
-            if let transition = self.serviceTransition {
-                self.applyServiceTransitionPresentation(transition)
+            if refreshGeneration != self.presentationGeneration
+                || self.serviceTransition != nil {
+                if let transition = self.serviceTransition {
+                    self.applyServiceTransitionPresentation(transition)
+                }
+                let callback = self.onInitialRefresh
+                self.onInitialRefresh = nil
+                if let callback {
+                    DispatchQueue.main.async { callback(snapshot) }
+                }
+                return
             }
+            self.applySnapshotPresentation(snapshot)
             let callback = self.onInitialRefresh
             self.onInitialRefresh = nil
             if let callback {
                 DispatchQueue.main.async { callback(snapshot) }
+            }
+        }
+    }
+
+    private func applySnapshotPresentation(_ snapshot: HubSnapshot) {
+        heroDot.image = NSApplication.shared.applicationIconImage
+        heroDot.isHidden = false
+        heroProgress.stopAnimation(nil)
+        heroProgress.isHidden = true
+        heroStateIcon.isHidden = false
+        heroTitle.stringValue = snapshot.health.title
+        switch snapshot.health {
+        case .running:
+            heroStateIcon.image = NSImage(systemSymbolName: "checkmark.shield",
+                                          accessibilityDescription: "Running")
+            heroStateIcon.contentTintColor = .secondaryLabelColor
+            heroSubtitle.stringValue = "Hub runs in the background. You can close this window."
+        case .stopped:
+            heroStateIcon.image = NSImage(systemSymbolName: "pause.circle",
+                                          accessibilityDescription: "Stopped")
+            heroStateIcon.contentTintColor = .secondaryLabelColor
+            heroSubtitle.stringValue = "Vehicle data is not being collected."
+        case .needsInstall:
+            heroStateIcon.image = NSImage(systemSymbolName: "person.badge.key",
+                                          accessibilityDescription: "Setup required")
+            heroStateIcon.contentTintColor = .secondaryLabelColor
+            heroSubtitle.stringValue = "Choose how Hub connects to Tesla."
+        case .degraded:
+            heroStateIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle",
+                                          accessibilityDescription: "Attention needed")
+            heroStateIcon.contentTintColor = .systemOrange
+            heroSubtitle.stringValue = "Open diagnostics for details."
+        }
+        serviceValue.stringValue = snapshot.service
+        accountValue.stringValue = snapshot.accountDisplay
+        updateVehicleSelection(snapshot)
+        databaseValue.stringValue = snapshot.database
+        versionLabel.stringValue = snapshot.version
+        serviceDot.contentTintColor = snapshot.health.color
+
+        stopButton.isHidden = snapshot.health == .needsInstall
+        installButton.isHidden = snapshot.health != .needsInstall
+        restartButton.isHidden = snapshot.health != .degraded
+        heroDiagnosticsButton.isHidden = snapshot.health != .degraded
+        let mutableActionsAvailable = serviceTransition == nil
+            && !accountWorkflowActive
+            && !serviceDetailsMutationPending
+        let accountActionsAvailable = mutableActionsAvailable
+            && !vehicleControlPending
+        stopButton.isEnabled = mutableActionsAvailable
+        installButton.isEnabled = mutableActionsAvailable
+        restartButton.isEnabled = mutableActionsAvailable
+        heroDiagnosticsButton.isEnabled = mutableActionsAvailable
+        connectButton.isEnabled = accountActionsAvailable
+        importButton.isEnabled = accountActionsAvailable
+        detailsButton.isEnabled = !accountWorkflowActive
+        connectButton.isHidden = false
+        if snapshot.account == "Connected" {
+            connectButton.title = "Manage Tesla"
+            connectButton.image = NSImage(systemSymbolName: "person.crop.circle.badge.checkmark",
+                                          accessibilityDescription: "Manage Tesla")
+            connectButton.action = #selector(manageTeslaPressed(_:))
+        } else {
+            connectButton.title = "Connect Tesla"
+            connectButton.image = NSImage(systemSymbolName: "person.badge.key",
+                                          accessibilityDescription: "Connect Tesla")
+            connectButton.action = #selector(connectTeslaPressed)
+        }
+        let controlsAvailable = !controller.previewMode
+            && snapshot.health == .running
+            && snapshot.account == "Connected"
+            && selectedControlVehicleID != nil
+            && !vehicleControlPending
+            && !vehicleControlOutcomeUnknown
+            && !accountWorkflowActive
+            && !serviceDetailsMutationPending
+        let controlsVisible = snapshot.provider == .fleet
+        if controlsVisible {
+            NSLayoutConstraint.activate(vehicleControlSectionHeightConstraints)
+        } else {
+            NSLayoutConstraint.deactivate(vehicleControlSectionHeightConstraints)
+        }
+        vehicleControlSectionViews.forEach { $0.isHidden = !controlsVisible }
+        vehicleCardHeightConstraint?.constant = controlsVisible ? 174 : 72
+        vehicleActionButtons.forEach {
+            $0.isHidden = !controlsVisible
+            $0.isEnabled = controlsVisible && (controlsAvailable || controller.previewMode)
+        }
+        stopButton.keyEquivalent = snapshot.health == .stopped ? "\r" : ""
+        installButton.keyEquivalent = snapshot.health == .needsInstall ? "\r" : ""
+        heroDiagnosticsButton.keyEquivalent = snapshot.health == .degraded ? "\r" : ""
+        switch snapshot.health {
+        case .needsInstall:
+            window?.defaultButtonCell = installButton.cell as? NSButtonCell
+        case .stopped:
+            window?.defaultButtonCell = stopButton.cell as? NSButtonCell
+        case .degraded:
+            window?.defaultButtonCell = heroDiagnosticsButton.cell as? NSButtonCell
+        case .running:
+            window?.defaultButtonCell = nil
+        }
+        if snapshot.health == .stopped {
+            stopButton.title = "Start Hub"
+            stopButton.action = #selector(startPressed)
+            configurePrimaryButton(stopButton, symbol: "play.fill")
+        } else {
+            stopButton.title = "Stop Hub…"
+            stopButton.action = #selector(stopPressed)
+            configureFlatButton(stopButton, symbol: "stop.fill", tint: .systemRed)
+        }
+        restartButton.title = "Restart Hub"
+        configureFlatButton(restartButton, symbol: "arrow.clockwise",
+                            tint: .controlAccentColor)
+        heroDiagnosticsButton.title = "Run Diagnostics"
+        configureFlatButton(heroDiagnosticsButton, symbol: "waveform.path.ecg")
+        installButton.title = "Set Up Hub"
+        configurePrimaryButton(installButton, symbol: "person.badge.key")
+
+        activityStack.arrangedSubviews.forEach {
+            activityStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        if snapshot.activity.isEmpty {
+            let empty = NSTextField(labelWithString: "No activity yet.")
+            empty.textColor = .secondaryLabelColor
+            empty.heightAnchor.constraint(equalToConstant: 30).isActive = true
+            activityStack.addArrangedSubview(empty)
+        } else {
+            for (index, entry) in snapshot.activity.prefix(3).enumerated() {
+                if index > 0 {
+                    let line = separator()
+                    activityStack.addArrangedSubview(line)
+                    line.widthAnchor.constraint(equalTo: activityStack.widthAnchor).isActive = true
+                }
+                let message = NSTextField(labelWithString: entry.message)
+                let age = NSTextField(labelWithString: entry.age)
+                age.textColor = .secondaryLabelColor
+                let row = NSStackView(views: [message, spacer(), age])
+                row.spacing = 9
+                row.alignment = .centerY
+                row.heightAnchor.constraint(equalToConstant: 30).isActive = true
+                activityStack.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: activityStack.widthAnchor).isActive = true
             }
         }
     }
@@ -781,7 +833,7 @@ final class MainWindowController: NSWindowController {
         return view
     }
 
-    private func showError(_ error: Error) { NSAlert(error: error).runModal() }
+    private func showError(_ error: Error) { errorPresenter(error) }
 
     static func stopHubConfirmation() -> NSAlert {
         let alert = NSAlert()
@@ -795,11 +847,22 @@ final class MainWindowController: NSWindowController {
         return alert
     }
 
-    private func beginServiceTransition(_ transition: HubServiceTransition) {
-        guard serviceTransition == nil else { return }
+    private func beginServiceTransition(_ transition: HubServiceTransition) -> UUID? {
+        guard serviceTransition == nil else { return nil }
+        presentationGeneration &+= 1
         serviceTransition = transition
+        let token = UUID()
+        serviceTransitionToken = token
+        serviceTransitionDeadlineWorkItem?.cancel()
+        let deadline = DispatchWorkItem { [weak self] in
+            self?.serviceTransitionExpired(transition, token: token)
+        }
+        serviceTransitionDeadlineWorkItem = deadline
+        DispatchQueue.main.asyncAfter(deadline: .now() + serviceTransitionTimeout,
+                                      execute: deadline)
         detailsWindow?.setMutationsEnabled(false)
         applyServiceTransitionPresentation(transition)
+        return token
     }
 
     private func applyServiceTransitionPresentation(_ transition: HubServiceTransition) {
@@ -829,44 +892,84 @@ final class MainWindowController: NSWindowController {
         vehicleActionButtons.forEach { $0.isEnabled = false }
     }
 
-    private func serviceCommandFailed(_ error: Error) {
-        serviceTransition = nil
-        detailsWindow?.setMutationsEnabled(!accountWorkflowActive
-                                           && !serviceDetailsMutationPending)
-        update()
+    private func serviceCommandFailed(_ error: Error,
+                                      transition: HubServiceTransition,
+                                      token: UUID) {
+        guard serviceTransition == transition,
+              serviceTransitionToken == token else { return }
+        finishServiceTransition(with: controller.snapshot,
+                                transition: transition,
+                                token: token)
         showError(error)
     }
 
     private func settleServiceTransition(_ transition: HubServiceTransition,
                                          expectedHealth: HubHealth,
-                                         attemptsRemaining: Int = 50) {
-        guard serviceTransition == transition else { return }
+                                         token: UUID) {
+        guard serviceTransition == transition,
+              serviceTransitionToken == token else { return }
+        probeServiceTransition(transition, expectedHealth: expectedHealth, token: token)
+    }
+
+    private func probeServiceTransition(_ transition: HubServiceTransition,
+                                        expectedHealth: HubHealth,
+                                        token: UUID) {
+        guard serviceTransition == transition,
+              serviceTransitionToken == token else { return }
         controller.refresh { [weak self] snapshot in
-            guard let self, self.serviceTransition == transition else { return }
+            guard let self,
+                  self.serviceTransition == transition,
+                  self.serviceTransitionToken == token else { return }
             if snapshot.health == expectedHealth {
-                self.serviceTransition = nil
-                self.detailsWindow?.setMutationsEnabled(!self.accountWorkflowActive
-                                                        && !self.serviceDetailsMutationPending)
-                self.update()
-                return
-            }
-            guard attemptsRemaining > 1 else {
-                self.serviceTransition = nil
-                self.detailsWindow?.setMutationsEnabled(!self.accountWorkflowActive
-                                                        && !self.serviceDetailsMutationPending)
-                self.update()
-                let action = transition == .stopping ? "stop" : "start"
-                self.showError(HubActionError.commandFailed(
-                    "Hub did not finish the \(action) operation. Its current status is shown; open diagnostics for details."
-                ))
+                self.finishServiceTransition(with: snapshot,
+                                             transition: transition,
+                                             token: token)
                 return
             }
             self.applyServiceTransitionPresentation(transition)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                self?.settleServiceTransition(transition,
-                                              expectedHealth: expectedHealth,
-                                              attemptsRemaining: attemptsRemaining - 1)
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.serviceTransitionPollInterval) {
+                [weak self] in
+                self?.probeServiceTransition(transition,
+                                             expectedHealth: expectedHealth,
+                                             token: token)
             }
+        }
+    }
+
+    private func serviceTransitionExpired(_ transition: HubServiceTransition, token: UUID) {
+        guard serviceTransition == transition,
+              serviceTransitionToken == token else { return }
+        finishServiceTransition(with: controller.snapshot,
+                                transition: transition,
+                                token: token)
+        let action = transition == .stopping ? "stop" : "start"
+        showError(HubActionError.commandFailed(
+            "Hub did not finish the \(action) operation. Its current status is shown; open diagnostics for details."
+        ))
+    }
+
+    private func finishServiceTransition(with snapshot: HubSnapshot,
+                                         transition: HubServiceTransition,
+                                         token: UUID) {
+        guard serviceTransition == transition,
+              serviceTransitionToken == token else { return }
+        serviceTransitionDeadlineWorkItem?.cancel()
+        serviceTransitionDeadlineWorkItem = nil
+        serviceTransitionToken = nil
+        serviceTransition = nil
+        dashboardRefreshToken = nil
+        refreshPending = false
+        detailsWindow?.setMutationsEnabled(!accountWorkflowActive
+                                           && !serviceDetailsMutationPending)
+        applySnapshotPresentation(snapshot)
+    }
+
+    func settleStartedHubFromOnboarding() {
+        guard serviceTransition == nil else { return }
+        guard let token = beginServiceTransition(.starting) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + serviceTransitionPollInterval) {
+            [weak self] in
+            self?.settleServiceTransition(.starting, expectedHealth: .running, token: token)
         }
     }
 
@@ -1011,8 +1114,12 @@ final class MainWindowController: NSWindowController {
                 self.onboardingWindow = nil
                 self.setAccountWorkflowActive(false)
             }
-        ) { [weak self] in
-            self?.onboardingWindow?.close()
+        ) { [weak self] completion in
+            guard let self else { return }
+            self.onboardingWindow?.close()
+            if completion == .hubStarted {
+                self.settleStartedHubFromOnboarding()
+            }
         }
         onboardingWindow = onboarding
         setAccountWorkflowActive(true)
@@ -1073,13 +1180,13 @@ final class MainWindowController: NSWindowController {
     @objc private func startPressed() {
         guard serviceTransition == nil, !accountWorkflowActive,
               !serviceDetailsMutationPending else { return }
-        beginServiceTransition(.starting)
+        guard let token = beginServiceTransition(.starting) else { return }
         controller.startHub { [weak self] result in
             switch result {
             case .success:
-                self?.settleServiceTransition(.starting, expectedHealth: .running)
+                self?.settleServiceTransition(.starting, expectedHealth: .running, token: token)
             case let .failure(error):
-                self?.serviceCommandFailed(error)
+                self?.serviceCommandFailed(error, transition: .starting, token: token)
             }
         }
     }
@@ -1096,13 +1203,13 @@ final class MainWindowController: NSWindowController {
 
     private func stopHubAfterConfirmation() {
         guard serviceTransition == nil else { return }
-        beginServiceTransition(.stopping)
+        guard let token = beginServiceTransition(.stopping) else { return }
         controller.stopHub { [weak self] result in
             switch result {
             case .success:
-                self?.settleServiceTransition(.stopping, expectedHealth: .stopped)
+                self?.settleServiceTransition(.stopping, expectedHealth: .stopped, token: token)
             case let .failure(error):
-                self?.serviceCommandFailed(error)
+                self?.serviceCommandFailed(error, transition: .stopping, token: token)
             }
         }
     }
@@ -1110,13 +1217,13 @@ final class MainWindowController: NSWindowController {
     @objc private func restartPressed() {
         guard serviceTransition == nil, !accountWorkflowActive,
               !serviceDetailsMutationPending else { return }
-        beginServiceTransition(.restarting)
+        guard let token = beginServiceTransition(.restarting) else { return }
         controller.restartHub { [weak self] result in
             switch result {
             case .success:
-                self?.settleServiceTransition(.restarting, expectedHealth: .running)
+                self?.settleServiceTransition(.restarting, expectedHealth: .running, token: token)
             case let .failure(error):
-                self?.serviceCommandFailed(error)
+                self?.serviceCommandFailed(error, transition: .restarting, token: token)
             }
         }
     }

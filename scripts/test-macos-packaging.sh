@@ -100,8 +100,6 @@ printf '%s\n' "$loaded_service_block" | /usr/bin/grep -Fq 'require_safe_regular_
 if printf '%s\n' "$loaded_service_block" | /usr/bin/grep -Fq 'require_safe_regular_file "$BINARY"'; then
     fail "preinstall rejects a loaded legacy per-user Hub without a root binary"
 fi
-/usr/bin/grep -q 'STATE_DIRECTORY/teslatlas-hub' "$PREINSTALL" \
-    || fail "preinstall does not preserve the old binary"
 /usr/bin/grep -q 'STATE_DIRECTORY/launch-agent.plist' "$PREINSTALL" \
     || fail "preinstall does not preserve the old LaunchAgent"
 /usr/bin/grep -Fq 'refuse_other_user_launch_agents' "$PREINSTALL" \
@@ -266,19 +264,66 @@ fi
     || fail "app build does not package Tesla command proxy"
 /usr/bin/grep -Fq -- '--fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY"' "$APP_BUILD" \
     || fail "app build does not package the Fleet Telemetry receiver"
-/usr/bin/grep -Fq 'DIST_PACKAGE="$DIST/TeslatlasHubService.pkg"' "$APP_BUILD" \
-    || fail "app build does not produce the requested final package name"
+/usr/bin/grep -Fq 'APP_COMPONENT_PACKAGE="$GENERATED/TeslatlasHubApp.pkg"' "$APP_BUILD" \
+    || fail "app build does not stage an app component package"
+/usr/bin/grep -Fq 'PRODUCT_EXPANSION="$GENERATED/expanded-product"' "$APP_BUILD" \
+    || fail "app build does not reserve product inspection output"
+/usr/bin/grep -Fq 'DIST_PACKAGE="$DIST/TeslatlasHub.pkg"' "$APP_BUILD" \
+    || fail "app build does not produce the combined installer name"
+/usr/bin/grep -Fq 'STALE_DIST_SERVICE_PACKAGE="$DIST/TeslatlasHubService.pkg"' "$APP_BUILD" \
+    || fail "app build does not identify the stale public service-only installer"
 /usr/bin/grep -Fq '"$ROOT/target/macos-app") ;;' "$APP_BUILD" \
     || fail "app build does not scope Xcode staging cleanup"
 /usr/bin/grep -Fq '/usr/bin/find "$DERIVED" -depth -delete' "$APP_BUILD" \
     || fail "app build does not clean successful Xcode staging"
-assert_before_fixed 'final installer package is missing' '/usr/bin/find "$DERIVED" -depth -delete' "$APP_BUILD"
+assert_before_fixed 'final combined installer is missing' '/usr/bin/find "$DERIVED" -depth -delete' "$APP_BUILD"
 if /usr/bin/grep -Fq -- '--app "$DIST_APP"' "$APP_BUILD" \
     || /usr/bin/grep -Fq '"$payload/Applications/Teslatlas Hub.app"' "$SERVICE_BUILD"; then
     fail "service-only package still contains the app"
 fi
-/usr/bin/grep -Fq 'external service package does not match the app' "$APP_BUILD" \
-    || fail "app build does not bind external and embedded service packages"
+/usr/bin/grep -Fq -- '--component "$DIST_APP"' "$APP_BUILD" \
+    || fail "combined installer does not package the app component"
+/usr/bin/grep -Fq -- '--install-location /Applications' "$APP_BUILD" \
+    || fail "combined installer does not install the app in /Applications"
+/usr/bin/grep -Fq -- 'productbuild --synthesize' "$APP_BUILD" \
+    || fail "combined installer does not synthesize a product distribution"
+/usr/bin/grep -Fq 'combined installer distribution is not arm64-only' "$APP_BUILD" \
+    || fail "combined installer does not constrain its architecture to arm64"
+/usr/bin/grep -Fq 'combined installer distribution supports a non-arm64 architecture' "$APP_BUILD" \
+    || fail "combined installer does not reject non-arm64 architectures"
+/usr/bin/grep -Fq -- '--package "$APP_COMPONENT_PACKAGE"' "$APP_BUILD" \
+    || fail "combined installer does not include the app component"
+/usr/bin/grep -Fq -- '--package "$SERVICE_PACKAGE"' "$APP_BUILD" \
+    || fail "combined installer does not include the service component"
+/usr/bin/grep -Fq -- '--distribution "$PRODUCT_DISTRIBUTION"' "$APP_BUILD" \
+    || fail "combined installer does not build the product distribution"
+/usr/bin/grep -Fq 'generated combined installer cannot be inspected' "$APP_BUILD" \
+    || fail "combined installer is not inspected after assembly"
+/usr/bin/grep -Fq 'expanded combined installer is not arm64-only' "$APP_BUILD" \
+    || fail "combined installer does not verify arm64-only output"
+/usr/bin/grep -Fq 'combined installer does not contain its app component' "$APP_BUILD" \
+    || fail "combined installer does not verify its app component"
+/usr/bin/grep -Fq 'combined installer app component has wrong install location' "$APP_BUILD" \
+    || fail "combined installer does not verify /Applications installation"
+/usr/bin/grep -Fq 'combined installer does not contain its service component' "$APP_BUILD" \
+    || fail "combined installer does not verify its service component"
+/usr/bin/grep -Fq 'combined installer service component contains an Applications payload' "$APP_BUILD" \
+    || fail "combined installer does not preserve service-only payload isolation"
+/usr/bin/grep -Fq 'combined installer app component lacks its embedded service package' "$APP_BUILD" \
+    || fail "combined installer does not preserve in-app service management"
+/usr/bin/grep -Fq 'embedded service package does not match combined installer service component' "$APP_BUILD" \
+    || fail "app build does not bind embedded and combined service components"
+/usr/bin/grep -Fq 'pkgutil --expand-full "$embedded_service_package" "$embedded_service_expansion"' "$APP_BUILD" \
+    || fail "combined installer does not expand its final embedded service package"
+/usr/bin/grep -Fq 'diff -qr "$outer_service_component" "$embedded_service_expansion"' "$APP_BUILD" \
+    || fail "combined installer does not compare final service component contents"
+/usr/bin/grep -Fq 'app must not embed its outer installer' "$APP_BUILD" \
+    || fail "combined installer recursion is not rejected"
+/usr/bin/grep -Fq 'stale public service-only installer was not removed' "$APP_BUILD" \
+    || fail "stale public service-only installer is not removed"
+if /usr/bin/grep -Fq '/usr/bin/install -m 0644 "$SERVICE_PACKAGE" "$DIST_PACKAGE"' "$APP_BUILD"; then
+    fail "app build still publishes a service-only installer"
+fi
 /usr/bin/grep -Fq 'app proxy changed after evidence generation' "$APP_BUILD" \
     || fail "app build does not preserve the evidence-bound command proxy"
 /usr/bin/grep -Fq 'app Fleet Telemetry receiver changed after evidence generation' "$APP_BUILD" \
@@ -416,6 +461,64 @@ migration_helper="$TEST_ROOT/migration-install-helper.sh"
     "$POSTINSTALL" > "$migration_helper"
 # shellcheck source=/dev/null
 . "$COMMON"
+
+payload_fixture="$TEST_ROOT/installed-service-payload"
+payload_expected="$TEST_ROOT/expected-service-payload"
+payload_snapshot="$TEST_ROOT/service-payload-snapshot"
+payload_marker="$TEST_ROOT/service-payload-existed"
+/bin/mkdir -p "$payload_fixture/bin" "$payload_fixture/libexec" \
+    "$payload_fixture/share/dependency-legal"
+/usr/bin/printf '%s\n' old-hub > "$payload_fixture/bin/teslatlas-hub"
+/usr/bin/printf '%s\n' old-proxy > "$payload_fixture/bin/tesla-http-proxy"
+/usr/bin/printf '%s\n' old-receiver > "$payload_fixture/bin/fleet-telemetry"
+/usr/bin/printf '%s\n' old-supervisor > "$payload_fixture/libexec/run-hub-service.sh"
+/usr/bin/printf '%s\n' old-common > "$payload_fixture/libexec/common.sh"
+/usr/bin/printf '%s\n' old-uninstaller > "$payload_fixture/libexec/uninstall-macos-service.sh"
+/usr/bin/printf '%s\n' old-example > "$payload_fixture/share/fleet-telemetry.json.example"
+/usr/bin/printf '%s\n' old-license > "$payload_fixture/share/dependency-legal/LICENSE"
+/bin/chmod 0755 "$payload_fixture/bin/teslatlas-hub" \
+    "$payload_fixture/bin/tesla-http-proxy" "$payload_fixture/bin/fleet-telemetry" \
+    "$payload_fixture/libexec/run-hub-service.sh" \
+    "$payload_fixture/libexec/uninstall-macos-service.sh"
+/bin/chmod 0644 "$payload_fixture/libexec/common.sh" \
+    "$payload_fixture/share/fleet-telemetry.json.example" \
+    "$payload_fixture/share/dependency-legal/LICENSE"
+/bin/cp -pR "$payload_fixture" "$payload_expected"
+test_uid=$(/usr/bin/id -u)
+preserve_service_payload "$payload_fixture" "$payload_snapshot" "$payload_marker" "$test_uid" \
+    || fail "complete service payload could not be preserved"
+[ -f "$payload_marker" ] && [ ! -L "$payload_marker" ] \
+    || fail "existing service payload was not recorded"
+/usr/bin/printf '%s\n' new-hub > "$payload_fixture/bin/teslatlas-hub"
+/usr/bin/printf '%s\n' new-proxy > "$payload_fixture/bin/tesla-http-proxy"
+/usr/bin/printf '%s\n' new-receiver > "$payload_fixture/bin/fleet-telemetry"
+/usr/bin/printf '%s\n' new-supervisor > "$payload_fixture/libexec/run-hub-service.sh"
+/usr/bin/printf '%s\n' new-example > "$payload_fixture/share/fleet-telemetry.json.example"
+/usr/bin/printf '%s\n' package-added > "$payload_fixture/bin/new-sidecar"
+/usr/bin/printf '%s\n' package-added > "$payload_fixture/libexec/new-supervisor.sh"
+/usr/bin/printf '%s\n' package-added > "$payload_fixture/share/new-example"
+/usr/bin/find "$payload_fixture/share/dependency-legal" -depth -delete
+restore_service_payload "$payload_fixture" "$payload_snapshot" "$payload_marker" "$test_uid" \
+    || fail "complete service payload could not be restored"
+/usr/bin/diff -qr "$payload_expected" "$payload_fixture" >/dev/null \
+    || fail "service payload rollback did not restore the exact pre-upgrade tree"
+
+fresh_payload="$TEST_ROOT/fresh-service-payload"
+fresh_snapshot="$TEST_ROOT/fresh-service-payload-snapshot"
+fresh_marker="$TEST_ROOT/fresh-service-payload-existed"
+preserve_service_payload "$fresh_payload" "$fresh_snapshot" "$fresh_marker" "$test_uid" \
+    || fail "absent service payload could not be recorded"
+/bin/mkdir -p "$fresh_payload/bin" "$fresh_payload/libexec" "$fresh_payload/share"
+/usr/bin/printf '%s\n' package-added > "$fresh_payload/bin/teslatlas-hub"
+/usr/bin/printf '%s\n' package-added > "$fresh_payload/bin/tesla-http-proxy"
+/usr/bin/printf '%s\n' package-added > "$fresh_payload/bin/fleet-telemetry"
+/usr/bin/printf '%s\n' package-added > "$fresh_payload/libexec/run-hub-service.sh"
+/usr/bin/printf '%s\n' package-added > "$fresh_payload/share/fleet-telemetry.json.example"
+restore_service_payload "$fresh_payload" "$fresh_snapshot" "$fresh_marker" "$test_uid" \
+    || fail "new service payload could not be removed during rollback"
+[ ! -e "$fresh_payload" ] && [ ! -L "$fresh_payload" ] \
+    || fail "rollback retained package files when no service payload existed before upgrade"
+
 # shellcheck source=/dev/null
 . "$migration_helper"
 
@@ -448,7 +551,6 @@ migration_marker="$migration_home/.teslamate-handover-pending"
 /usr/bin/printf '%s\n' \
     '{"phase":"awaiting_verification","previousIntervalSeconds":60}' > "$migration_marker"
 /bin/chmod 0600 "$migration_config" "$migration_marker"
-test_uid=$(/usr/bin/id -u)
 migration_handover_install_is_paused "$migration_marker" "$migration_config" "$test_uid" \
     || fail "fresh TeslaMate migration was not admitted as install-stopped"
 hub_should_start_after_install 1 0 0 1 \

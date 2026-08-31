@@ -125,6 +125,10 @@ impl TeslaMateProjectionState {
             write_failed: false,
             sealed: false,
             cleanup_on_drop: true,
+            #[cfg(test)]
+            tombstone_membership_queries: Cell::new(0),
+            #[cfg(test)]
+            existing_change_queries: Cell::new(0),
         })
     }
 
@@ -313,9 +317,6 @@ impl TeslaMateProjectionState {
     ) -> Result<TeslaMateProjectionStateChange, TeslaMateProjectionStateError> {
         self.require_open()?;
         let (payload, digest) = canonical_payload_and_digest(entity, id, car_id, value)?;
-        if let Some(change) = self.existing_change(entity, id, car_id, digest)? {
-            return Ok(change);
-        }
         let prior_digest = prior
             .digest(entity, id)
             .map_err(TeslaMateProjectionStateError::PriorLookup)?;
@@ -673,13 +674,16 @@ impl TeslaMateProjectionState {
         let page = prior
             .page_after(after, limit)
             .map_err(TeslaMateProjectionStateError::PriorLookup)?;
-        let mut tombstones = Vec::new();
         for row in &page.rows {
             validate_row_identity(row.id, row.car_id)?;
+        }
+        let missing = self.missing_current_identities(&page.rows)?;
+        let mut tombstones = Vec::new();
+        for row in &page.rows {
             if !row.entity.tombstone_allowed() {
                 continue;
             }
-            if !self.contains(row.entity, row.id)? {
+            if missing.contains(&(row.entity, row.id)) {
                 tombstones.push(ProjectionTombstone {
                     entity: projection_delta_entity(row.entity),
                     id: row.id,
@@ -688,6 +692,67 @@ impl TeslaMateProjectionState {
             }
         }
         Ok((tombstones, page.next_after))
+    }
+
+    fn missing_current_identities(
+        &self,
+        rows: &[TeslaMateProjectionStateDigestRow],
+    ) -> Result<HashSet<(TeslaMateProjectionStateEntity, i64)>, TeslaMateProjectionStateError> {
+        let mut ids_by_entity = TeslaMateProjectionStateEntity::ALL.map(|_| Vec::new());
+        for row in rows {
+            if row.entity.tombstone_allowed() {
+                ids_by_entity[usize::from(row.entity.ordinal())].push(row.id);
+            }
+        }
+
+        let mut missing = HashSet::with_capacity(rows.len());
+        for (entity, ids) in TeslaMateProjectionStateEntity::ALL
+            .into_iter()
+            .zip(ids_by_entity)
+        {
+            for requested in ids.chunks(TOMBSTONE_MEMBERSHIP_LOOKUP_ROWS) {
+                let mut query = String::from("WITH requested(entity_id) AS (VALUES ");
+                for index in 0..requested.len() {
+                    if index != 0 {
+                        query.push_str(", ");
+                    }
+                    query.push_str("(?)");
+                }
+                query.push_str(
+                    ") \
+                     SELECT requested.entity_id \
+                       FROM requested \
+                      WHERE NOT EXISTS ( \
+                            SELECT 1 FROM current_rows \
+                             WHERE current_rows.entity_ordinal = ? \
+                               AND current_rows.entity_id = requested.entity_id \
+                      )",
+                );
+                let mut values = Vec::with_capacity(requested.len() + 1);
+                values.extend_from_slice(requested);
+                values.push(i64::from(entity.ordinal()));
+                #[cfg(test)]
+                self.tombstone_membership_queries.set(
+                    self.tombstone_membership_queries
+                        .get()
+                        .saturating_add(1),
+                );
+                let mut statement = self
+                    .connection
+                    .prepare_cached(&query)
+                    .map_err(TeslaMateProjectionStateError::Sqlite)?;
+                let missing_ids = statement
+                    .query_map(params_from_iter(values.iter()), |row| row.get::<_, i64>(0))
+                    .map_err(TeslaMateProjectionStateError::Sqlite)?;
+                for missing_id in missing_ids {
+                    missing.insert((
+                        entity,
+                        missing_id.map_err(TeslaMateProjectionStateError::Sqlite)?,
+                    ));
+                }
+            }
+        }
+        Ok(missing)
     }
 
     /// Explicitly remove this exact private state file.  Dropping without a
@@ -797,9 +862,6 @@ impl TeslaMateProjectionState {
     ) -> Result<(), TeslaMateProjectionStateError> {
         self.require_open()?;
         validate_row_identity(id, car_id)?;
-        if self.existing_change(entity, id, car_id, digest)?.is_some() {
-            return Ok(());
-        }
         let payload = std::str::from_utf8(payload)
             .map_err(TeslaMateProjectionStateError::CanonicalPayloadUtf8)?;
         let payload_bytes = u64::try_from(payload.len()).expect("usize fits u64");
@@ -817,12 +879,20 @@ impl TeslaMateProjectionState {
             .ok_or(TeslaMateProjectionStateError::ChangedPayloadLimitExceeded {
                 maximum: self.limits.max_changed_payload_bytes,
             })?;
-        if next_payload_bytes > self.limits.max_changed_payload_bytes {
+        let changed_payload_limit_exceeded =
+            next_payload_bytes > self.limits.max_changed_payload_bytes;
+        let row_limit_exceeded = self.total_row_count() >= self.limits.max_rows;
+        if (changed_payload_limit_exceeded || row_limit_exceeded)
+            && self.existing_change(entity, id, car_id, digest)?.is_some()
+        {
+            return Ok(());
+        }
+        if changed_payload_limit_exceeded {
             return Err(TeslaMateProjectionStateError::ChangedPayloadLimitExceeded {
                 maximum: self.limits.max_changed_payload_bytes,
             });
         }
-        if self.total_row_count() >= self.limits.max_rows {
+        if row_limit_exceeded {
             return Err(TeslaMateProjectionStateError::RowLimitExceeded {
                 maximum: self.limits.max_rows,
             });
@@ -839,7 +909,8 @@ impl TeslaMateProjectionState {
         let result = (|| {
             let current = self.connection.execute(
                 "INSERT INTO current_rows(entity_ordinal, entity_id, car_id, projection_sha256) \
-                 VALUES (?1, ?2, ?3, ?4)",
+                 VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT(entity_ordinal, entity_id) DO NOTHING",
                 params![
                     i64::from(entity.ordinal()),
                     id,
@@ -849,10 +920,17 @@ impl TeslaMateProjectionState {
             );
             match current {
                 Ok(1) => {}
-                Ok(_) => return Err(TeslaMateProjectionStateError::InvalidStoredAccounting),
-                Err(error) if is_unique_violation(&error) => {
-                    return Err(TeslaMateProjectionStateError::ConcurrentWrite { entity, id });
+                Ok(0) => {
+                    let existing = self.existing_change(entity, id, car_id, digest)?;
+                    self.connection
+                        .execute_batch("RELEASE SAVEPOINT projection_state_row")
+                        .map_err(TeslaMateProjectionStateError::Sqlite)?;
+                    return match existing {
+                        Some(_) => Ok(false),
+                        None => Err(TeslaMateProjectionStateError::InvalidStoredAccounting),
+                    };
                 }
+                Ok(_) => return Err(TeslaMateProjectionStateError::InvalidStoredAccounting),
                 Err(error) => return Err(TeslaMateProjectionStateError::Sqlite(error)),
             }
             let changed = self.connection.execute(
@@ -881,12 +959,20 @@ impl TeslaMateProjectionState {
             }
             self.connection
                 .execute_batch("RELEASE SAVEPOINT projection_state_row")
-                .map_err(TeslaMateProjectionStateError::Sqlite)
+                .map_err(TeslaMateProjectionStateError::Sqlite)?;
+            Ok(true)
         })();
-        if let Err(error) = result {
-            self.rollback_pending_row_savepoint();
-            self.close_empty_pending_write_transaction();
-            return Err(error);
+        match result {
+            Ok(true) => {}
+            Ok(false) => {
+                self.close_empty_pending_write_transaction();
+                return Ok(());
+            }
+            Err(error) => {
+                self.rollback_pending_row_savepoint();
+                self.close_empty_pending_write_transaction();
+                return Err(error);
+            }
         }
         debug_assert_eq!(
             next_payload_bytes,
@@ -1083,23 +1169,6 @@ impl TeslaMateProjectionState {
         self.write_transaction_open = false;
     }
 
-    fn contains(
-        &self,
-        entity: TeslaMateProjectionStateEntity,
-        id: i64,
-    ) -> Result<bool, TeslaMateProjectionStateError> {
-        self.connection
-            .query_row(
-                "SELECT EXISTS( \
-                    SELECT 1 FROM current_rows \
-                     WHERE entity_ordinal = ?1 AND entity_id = ?2
-                 )",
-                params![i64::from(entity.ordinal()), id],
-                |row| row.get(0),
-            )
-            .map_err(TeslaMateProjectionStateError::Sqlite)
-    }
-
     /// Return the stored classification for an exact repeat and reject reuse
     /// of an entity/id with a different selected car or digest. TeslaMate
     /// fragments legitimately repeat parent rows, so exact repeats consume
@@ -1111,6 +1180,9 @@ impl TeslaMateProjectionState {
         car_id: i64,
         digest: Sha256Digest,
     ) -> Result<Option<TeslaMateProjectionStateChange>, TeslaMateProjectionStateError> {
+        #[cfg(test)]
+        self.existing_change_queries
+            .set(self.existing_change_queries.get().saturating_add(1));
         let existing = {
             let mut statement = self
                 .connection

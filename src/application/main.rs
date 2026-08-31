@@ -6,7 +6,7 @@ use std::{
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     process::{ExitCode, Stdio},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(unix)]
@@ -48,8 +48,12 @@ use teslatlas_hub::{
     },
     teslamate_import::{
         TeslaMateImportReport, TeslaMateImportRequest, TeslaMateImportScope,
-        import_selected_from_postgres_with_schema_22,
-        import_selected_from_postgres_with_schema_22_and_legacy_token,
+        import_selected_from_postgres_with_schema_22_and_legacy_token_and_progress,
+        import_selected_from_postgres_with_schema_22_and_progress,
+    },
+    teslamate_progress::{
+        TeslaMateMigrationPhase, TeslaMateMigrationProgressEvent,
+        TeslaMateMigrationProgressReporter,
     },
     teslamate_reader::{
         TeslaMateCheckSnapshot, TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits,

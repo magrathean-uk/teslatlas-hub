@@ -1234,22 +1234,24 @@ SELECT
   "source"."id" AS "id",
   "source"."name" AS "name"
 FROM "public"."geofences" AS "source"
+JOIN (
+  SELECT "drive"."start_geofence_id" AS "id"
+  FROM "public"."drives" AS "drive"
+  WHERE "drive"."car_id" = $3
+    AND "drive"."start_geofence_id" IS NOT NULL
+  UNION
+  SELECT "drive"."end_geofence_id" AS "id"
+  FROM "public"."drives" AS "drive"
+  WHERE "drive"."car_id" = $3
+    AND "drive"."end_geofence_id" IS NOT NULL
+  UNION
+  SELECT "process"."geofence_id" AS "id"
+  FROM "public"."charging_processes" AS "process"
+  WHERE "process"."car_id" = $3
+    AND "process"."geofence_id" IS NOT NULL
+) AS "related"
+  ON "related"."id" = "source"."id"
 WHERE "source"."id" > $1
-  AND (
-    EXISTS (
-      SELECT 1
-      FROM "public"."drives" AS "drive"
-      WHERE "drive"."car_id" = $3
-        AND ("drive"."start_geofence_id" = "source"."id"
-          OR "drive"."end_geofence_id" = "source"."id")
-    )
-    OR EXISTS (
-      SELECT 1
-      FROM "public"."charging_processes" AS "charging_process"
-      WHERE "charging_process"."car_id" = $3
-        AND "charging_process"."geofence_id" = "source"."id"
-    )
-  )
 ORDER BY "source"."id" ASC
 LIMIT $2
 "#;

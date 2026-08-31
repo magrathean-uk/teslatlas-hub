@@ -51,6 +51,7 @@ use crate::{
         StagedProjectionPacks, TeslaMateFragmentLimits,
         write_staged_full_snapshot_with_projection_state,
     },
+    teslamate_progress::TeslaMateMigrationProgressReporter,
     teslamate_projection::{
         ProjectionReport, TeslaMateCar, TeslaMateHistory, TeslaMateProjection, project_car,
         project_vehicle,
@@ -477,6 +478,7 @@ async fn capture_direct_import_snapshot(
     successor: bool,
     legacy_bridge: bool,
     capture_legacy_token: bool,
+    progress: TeslaMateMigrationProgressReporter,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError> {
     let writer = ProjectionPackWriter::new(store.packs_dir())
         .with_minimum_free_bytes(limits.minimum_free_bytes);
@@ -491,6 +493,7 @@ async fn capture_direct_import_snapshot(
             capture_snapshot_id,
             capture_range,
             capture_legacy_token,
+            progress,
             |state_limits| {
                 direct_projection_state_capture(
                     store,
@@ -530,6 +533,7 @@ async fn capture_direct_import_snapshot(
             capture_snapshot_id,
             capture_range,
             capture_legacy_token,
+            progress,
             capture_factory,
         )
         .await
@@ -544,6 +548,7 @@ async fn capture_direct_import_snapshot(
             capture_snapshot_id,
             capture_range,
             capture_legacy_token,
+            progress,
             capture_factory,
         )
         .await
@@ -571,7 +576,15 @@ pub async fn import_from_postgres(
     limits: TeslaMateReadLimits,
 ) -> Result<TeslaMateImportReport, TeslaMateImportError> {
     Ok(import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits, false, false,
+        store,
+        source,
+        password,
+        cursor_key,
+        request,
+        limits,
+        false,
+        false,
+        TeslaMateMigrationProgressReporter::default(),
     )
     .await?
     .report)
@@ -590,7 +603,32 @@ pub async fn import_selected_from_postgres_with_schema_22(
     limits: TeslaMateReadLimits,
 ) -> Result<TeslaMateSelectedImportReport, TeslaMateImportError> {
     let captured = import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits, false, true,
+        store,
+        source,
+        password,
+        cursor_key,
+        request,
+        limits,
+        false,
+        true,
+        TeslaMateMigrationProgressReporter::default(),
+    )
+    .await?;
+    finish_selected_schema_22_publication(store, cursor_key, captured)
+}
+
+/// Selected-car schema-2.2 import with optional machine-readable progress.
+pub async fn import_selected_from_postgres_with_schema_22_and_progress(
+    store: &HubStore,
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    cursor_key: &CursorKey,
+    request: &TeslaMateImportRequest,
+    limits: TeslaMateReadLimits,
+    progress: TeslaMateMigrationProgressReporter,
+) -> Result<TeslaMateSelectedImportReport, TeslaMateImportError> {
+    let captured = import_from_postgres_with_updates_capture(
+        store, source, password, cursor_key, request, limits, false, true, progress,
     )
     .await?;
     finish_selected_schema_22_publication(store, cursor_key, captured)
@@ -614,7 +652,43 @@ pub async fn import_selected_from_postgres_with_schema_22_and_legacy_token(
     TeslaMateImportError,
 > {
     let mut captured = import_from_postgres_with_updates_capture(
-        store, source, password, cursor_key, request, limits, true, true,
+        store,
+        source,
+        password,
+        cursor_key,
+        request,
+        limits,
+        true,
+        true,
+        TeslaMateMigrationProgressReporter::default(),
+    )
+    .await?;
+    let legacy_tokens = captured
+        .legacy_tokens
+        .take()
+        .ok_or(TeslaMateImportError::LegacyTokenCaptureMissing)?;
+    let report = finish_selected_schema_22_publication(store, cursor_key, captured)?;
+    Ok((report, legacy_tokens))
+}
+
+/// Token-retaining selected-car import with optional machine-readable progress.
+pub async fn import_selected_from_postgres_with_schema_22_and_legacy_token_and_progress(
+    store: &HubStore,
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    cursor_key: &CursorKey,
+    request: &TeslaMateImportRequest,
+    limits: TeslaMateReadLimits,
+    progress: TeslaMateMigrationProgressReporter,
+) -> Result<
+    (
+        TeslaMateSelectedImportReport,
+        TeslaMateLegacyTokenCiphertexts,
+    ),
+    TeslaMateImportError,
+> {
+    let mut captured = import_from_postgres_with_updates_capture(
+        store, source, password, cursor_key, request, limits, true, true, progress,
     )
     .await?;
     let legacy_tokens = captured
@@ -701,6 +775,7 @@ async fn import_from_postgres_with_updates_capture(
     limits: TeslaMateReadLimits,
     capture_legacy_token: bool,
     prepare_schema_22: bool,
+    progress: TeslaMateMigrationProgressReporter,
 ) -> Result<CapturedTeslaMateImport, TeslaMateImportError> {
     tracing::info!(
         host = source.host(),
@@ -807,6 +882,7 @@ async fn import_from_postgres_with_updates_capture(
         successor,
         legacy_bridge,
         capture_legacy_token,
+        progress,
     )
     .await
     {

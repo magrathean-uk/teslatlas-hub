@@ -43,14 +43,17 @@ use super::{
     persist_legacy_setup_and_drop_fleet, persist_migrated_legacy_tokens,
     read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
     read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
+    should_emit_migration_progress, should_preserve_existing_migration_credentials,
     teslamate_check_failure_details, teslamate_version_confirmation,
-    validate_legacy_setup_provider, validate_streaming_setting,
+    validate_legacy_setup_provider, validate_streaming_setting, write_migration_progress_event,
 };
 use teslatlas_hub::db::HubStore;
 #[cfg(target_os = "macos")]
 use teslatlas_hub::protocol::{
     CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor, PROTOCOL_V1,
 };
+#[cfg(target_os = "macos")]
+use teslatlas_hub::teslamate_progress::{TeslaMateMigrationPhase, TeslaMateMigrationProgressEvent};
 #[cfg(target_os = "macos")]
 use teslatlas_hub::{
     teslamate_reader::TeslaMateReaderError, teslamate_schema::SchemaCompatibilityError,
@@ -135,6 +138,54 @@ fn migration_stop_and_start_prompts_are_independent_and_default_to_no() {
     assert!(!migration_start_requested(""));
     assert!(!migration_start_requested("N"));
     assert!(migration_start_requested("y"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn migration_progress_is_online_snapshot_only() {
+    assert!(should_emit_migration_progress(true));
+    assert!(!should_emit_migration_progress(false));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn online_snapshot_preserves_existing_hub_credentials() {
+    assert!(should_preserve_existing_migration_credentials(true, true));
+    assert!(!should_preserve_existing_migration_credentials(true, false));
+    assert!(!should_preserve_existing_migration_credentials(false, true));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn migration_progress_writer_emits_and_flushes_one_ndjson_line() {
+    #[derive(Default)]
+    struct FlushProbe {
+        bytes: Vec<u8>,
+        flushes: usize,
+    }
+
+    impl Write for FlushProbe {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushes += 1;
+            Ok(())
+        }
+    }
+
+    let event = TeslaMateMigrationProgressEvent::new(TeslaMateMigrationPhase::Positions, 123, 456);
+    let mut output = FlushProbe::default();
+    write_migration_progress_event(&mut output, &event).expect("write progress");
+
+    assert_eq!(
+        output.bytes,
+        br#"{"event":"migration_progress","completedRows":123,"totalRows":456,"phase":"positions"}
+"#
+    );
+    assert_eq!(output.flushes, 1);
 }
 
 #[cfg(target_os = "macos")]
@@ -246,6 +297,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         "--encryption-key-file",
         "key",
         "--online-snapshot",
+        "--preserve-existing-credentials",
         "--acknowledge-v4-2-compatible-schema",
     ])
     .expect("online migration CLI");
@@ -253,6 +305,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         migration.command,
         Command::Migrate {
             online_snapshot: true,
+            preserve_existing_credentials: true,
             acknowledge_v4_2_compatible_schema: true,
             ..
         }
@@ -299,6 +352,7 @@ async fn migration_without_version_confirmation_does_not_create_hub_target() {
             access_token_file: None,
             refresh_token_file: None,
             online_snapshot: true,
+            preserve_existing_credentials: false,
             acknowledge_v4_2_compatible_schema: false,
         },
     };
@@ -1982,6 +2036,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         access_token_file: None,
         refresh_token_file: None,
         online_snapshot: false,
+        preserve_existing_credentials: false,
         acknowledge_v4_2_compatible_schema: true,
     }));
     assert!(command_requires_user_hub_admission(&Command::Pair {

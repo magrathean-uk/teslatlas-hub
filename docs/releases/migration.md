@@ -112,7 +112,7 @@ policy is applied:
 Completed history and the open tail are first captured from one exported,
 repeatable-read snapshot. Immediately before publication, Hub performs a second
 bounded open-tail read. Direct publication succeeds only when both reads are
-identical; movement, a changed parent, or new child rows aborts the unpublished
+identical; movement, a changed parent, or new child rows aborts that import
 generation and requires a retry.
 
 When exactly one drive or charge is open, Hub seeds it and its children as

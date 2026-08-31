@@ -1,13 +1,12 @@
 # Teslatlas Hub documentation
 
-Teslatlas Hub v1.0.0-beta.2 supports Apple-silicon macOS 13 or later and
+Teslatlas Hub v1.0.0 supports Apple-silicon macOS 13 or later and
 Debian 13 on amd64 or ARM64.
 
 Created by György Bolyki. Published and maintained by MAGRATHEAN UK LTD.
 
-This is an unpublished beta candidate. Install only after its signed tag,
-platform artifacts, exact source, and evidence set form one complete GitHub
-prerelease.
+The release is published as the immutable `v1.0.0` source tag. It has no
+GitHub Release page or downloadable release assets; build packages locally.
 
 ## Start here
 
@@ -35,11 +34,11 @@ prerelease.
 
 ## Verify or reproduce a release
 
-- [v1.0.0-beta.2 candidate notes](releases/release-notes-v1.0.0-beta.2.md)
+- [v1.0.0 release notes](releases/release-notes-v1.0.0.md)
 - [v1.0.0-beta.1 historical notes](releases/release-notes-v1.0.0-beta.1.md)
 - [Changelog](releases/changelog.md)
 - [Verify a release](releases/verification.md)
-- [Release signing keys](releases/release-keys.md)
+- [Historical release-key notes](releases/release-keys.md)
 - [Release process](releases/releasing.md)
 - [Corresponding Source](legal/source-availability.md)
 - [Release compliance gate](releases/compliance.md)

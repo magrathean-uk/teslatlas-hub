@@ -16,6 +16,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(test)]
+use std::cell::Cell;
+
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
@@ -81,6 +84,10 @@ const WRITE_BATCH_HEADROOM_BYTES: u64 = 32 * 1024 * 1024;
 // Keep dynamic `VALUES` lookups well below SQLite's conservative 999-bind
 // build-time limit.  Each requested changed row consumes two bind values.
 const CHANGED_PAGE_PAYLOAD_LOOKUP_ROWS: usize = 250;
+// One fixed entity bind plus 900 identity binds remains below SQLite's
+// conservative 999-parameter limit while collapsing a maximum tombstone page
+// to at most twelve membership statements for its normal single-entity shape.
+const TOMBSTONE_MEMBERSHIP_LOOKUP_ROWS: usize = 900;
 const MAX_OWNER_MARKER_BYTES: u64 = 1_024;
 
 include!("projection_state/model.rs");

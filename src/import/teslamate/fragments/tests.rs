@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::{fs::File, path::Path};
+use std::{cell::Cell, fs::File, path::Path};
 
 use rusqlite::Connection;
 
@@ -39,6 +39,111 @@ fn position_projection_pool_returns_pages_in_source_order() {
     assert_eq!(
         pages.iter().map(|page| page.ordinal).collect::<Vec<_>>(),
         vec![0, 1, 2, 3]
+    );
+}
+
+#[test]
+fn fragment_prepare_sizes_each_candidate_once() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let writer = ProjectionPackWriter::new(temporary.path());
+    let (_stage_directory, stage) = stage();
+    let (snapshot, states) = capturable_snapshot(&stage);
+    let car = snapshot.cars[0].clone();
+    let position = &snapshot.positions[0];
+    let mut sink = PackSink::new_with_schema_2_1(
+        &writer,
+        binding(),
+        Uuid::from_u128(45),
+        SequenceRange {
+            from_exclusive: 0,
+            to_inclusive: 1,
+        },
+        states,
+        true,
+    );
+    let mut accumulator = FragmentAccumulator::new(car, TeslaMateFragmentLimits::default())
+        .expect("fragment accumulator");
+    let sizing_calls = Cell::new(0_u32);
+
+    accumulator
+        .prepare(&mut sink, |_| {
+            sizing_calls.set(sizing_calls.get() + 1);
+            Ok((1, serialized_bytes(position)?))
+        })
+        .expect("prepare position");
+
+    assert_eq!(
+        sizing_calls.get(),
+        1,
+        "candidate JSON sizing must not be repeated when no flush occurs"
+    );
+}
+
+#[test]
+fn fragment_prepare_reuses_child_size_and_resizes_parent_exactly_after_flush() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let writer = ProjectionPackWriter::new(temporary.path());
+    let (_stage_directory, stage) = stage();
+    let (snapshot, states) = capturable_snapshot(&stage);
+    let car = snapshot.cars[0].clone();
+    let drive = snapshot.drives[0].clone();
+    let first = snapshot.positions[0].clone();
+    let mut second = first.clone();
+    second.id += 1;
+    let car_bytes = serialized_bytes(&car).expect("car size");
+    let drive_bytes = serialized_bytes(&drive).expect("drive size");
+    let second_bytes = serialized_bytes(&second).expect("second position size");
+    let mut sink = PackSink::new_with_schema_2_1(
+        &writer,
+        binding(),
+        Uuid::from_u128(46),
+        SequenceRange {
+            from_exclusive: 0,
+            to_inclusive: 1,
+        },
+        states,
+        true,
+    );
+    let mut accumulator = FragmentAccumulator::new(
+        car,
+        TeslaMateFragmentLimits {
+            max_rows_per_fragment: 3,
+            max_projected_json_bytes: TeslaMateFragmentLimits::default().max_projected_json_bytes,
+        },
+    )
+    .expect("fragment accumulator");
+    let child_sizing_calls = Cell::new(0_u32);
+    let parent_sizing_calls = Cell::new(0_u32);
+
+    for position in [&first, &second] {
+        let parent_is_present = accumulator.drive_ids.contains(&drive.id);
+        accumulator
+            .prepare_with_parent(
+                &mut sink,
+                parent_is_present,
+                || {
+                    child_sizing_calls.set(child_sizing_calls.get() + 1);
+                    Ok((1, serialized_bytes(position)?))
+                },
+                || {
+                    parent_sizing_calls.set(parent_sizing_calls.get() + 1);
+                    Ok((1, serialized_bytes(&drive)?))
+                },
+            )
+            .expect("prepare parent and child");
+        if accumulator.drive_ids.insert(drive.id) {
+            accumulator.drives.push(drive.clone());
+        }
+        accumulator.positions.push(position.clone());
+    }
+
+    assert_eq!(child_sizing_calls.get(), 2);
+    assert_eq!(parent_sizing_calls.get(), 2);
+    assert_eq!(sink.submitted_fragments, 1, "second child forces one flush");
+    assert_eq!(
+        accumulator.payload_bytes,
+        car_bytes + drive_bytes + second_bytes,
+        "post-flush accounting repeats the parent without resizing the child"
     );
 }
 use crate::{

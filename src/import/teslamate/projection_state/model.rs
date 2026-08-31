@@ -364,6 +364,10 @@ pub struct TeslaMateProjectionState {
     write_failed: bool,
     sealed: bool,
     cleanup_on_drop: bool,
+    #[cfg(test)]
+    tombstone_membership_queries: Cell<u64>,
+    #[cfg(test)]
+    existing_change_queries: Cell<u64>,
 }
 
 impl std::fmt::Debug for TeslaMateProjectionState {

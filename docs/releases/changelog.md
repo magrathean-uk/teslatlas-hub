@@ -1,26 +1,40 @@
 # Changelog
 
 All notable released changes are recorded here. The project follows Semantic
-Versioning for release identifiers; beta interfaces may still change.
+Versioning for release identifiers.
 
-## 1.0.0-beta.2 — unpublished source candidate (prepared 2026-08-31)
+## 1.0.0 — 2026-08-31
 
-No GitHub release assets, signed publication, or notarised package are claimed
-for this candidate.
+First stable source release. The immutable source boundary is the annotated
+`v1.0.0` tag. No GitHub Release or release assets are published.
+
+### Added
+
+- a determinate progress flow for read-only TeslaMate 4.2.0+ migration;
+- a combined macOS product installer containing the app and service;
+- import phase diagnostics and bounded service-transition diagnostics.
 
 ### Changed
 
 - requires a trusted OpenSSH known-host entry before guided TeslaMate migration
   sends SSH authentication or reads TeslaMate database credentials;
 - requires TeslaMate 4.2.0 or newer for guided migration;
-- identifies the untagged candidate source as the repository rather than
-  claiming a nonexistent beta.2 release page;
-- retains the existing "v1.0.0-beta.1" tag and its release records as history.
+- substantially reduces repeated serialization and database lookups during
+  large imports and repeat imports;
+- preserves existing Hub credentials during repeat imports;
+- installs the macOS app and service together from `TeslatlasHub.pkg`;
+- retains the existing `v1.0.0-beta.1` tag as history.
+
+### Fixed
+
+- service start, stop, restart, dashboard refresh, and import completion races;
+- false dashboard attention state while the service is starting;
+- shutdown ownership for streaming, listeners, tunnels, and companion tasks;
+- macOS application-data deletion on systems without `/usr/bin/test`.
 
 ## 1.0.0-beta.1 — 2026-08-30
 
-First public beta. The signed tag, platform artifacts, exact source, and
-complete release evidence are published as one verified prerelease set.
+Historical beta source tag.
 
 ### Added
 
@@ -47,8 +61,6 @@ complete release evidence are published as one verified prerelease set.
   command-proxy enrolment while Hub is stopped;
 - terrain and geocoding are disabled by default; geocoding has no implicit
   public provider and requires an operator-selected HTTPS endpoint;
-- release tags and checksum manifests use the protected Ed25519 OpenPGP
-  identity of György Bolyki;
 - Hub is a complete new-install collector and no longer depends on TeslaMate at
   runtime;
 - licence expression is `AGPL-3.0-only` for this release line.
@@ -67,5 +79,4 @@ complete release evidence are published as one verified prerelease set.
 - Apple-silicon macOS alpha with one vehicle, legacy credentials, Owner API
   polling, Tesla streaming, local persistence, AppKit control, and read-only
   TeslaMate history import.
-- No Fleet API, Fleet Telemetry, Linux package, multi-vehicle operation, or
-  signed/notarised public installer.
+- No Fleet API, Fleet Telemetry, Linux package, or multi-vehicle operation.

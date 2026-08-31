@@ -227,6 +227,199 @@ fn lookup_unchanged_omits_payload_and_missing_old_rows_become_tombstones() {
 }
 
 #[test]
+fn successor_unique_rows_query_current_spool_only_after_a_key_collision() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let unchanged = drive(7, Some(10.0));
+    let changed = drive(8, Some(20.0));
+    let (_, unchanged_digest) = canonical_payload_and_digest(
+        TeslaMateProjectionStateEntity::Drive,
+        unchanged.id,
+        unchanged.car_id,
+        &unchanged,
+    )
+    .expect("unchanged digest");
+    let mut prior = MemoryPrior::default();
+    prior.rows.insert(
+        (
+            TeslaMateProjectionStateEntity::Drive.ordinal(),
+            unchanged.id,
+        ),
+        TeslaMateProjectionStateDigestRow {
+            entity: TeslaMateProjectionStateEntity::Drive,
+            id: unchanged.id,
+            car_id: unchanged.car_id,
+            digest: unchanged_digest,
+        },
+    );
+    prior.rows.insert(
+        (TeslaMateProjectionStateEntity::Drive.ordinal(), changed.id),
+        TeslaMateProjectionStateDigestRow {
+            entity: TeslaMateProjectionStateEntity::Drive,
+            id: changed.id,
+            car_id: changed.car_id,
+            digest: Sha256Digest::of_bytes(b"older-drive"),
+        },
+    );
+    let mut state = TeslaMateProjectionState::create(
+        temporary.path(),
+        TeslaMateProjectionStateLimits {
+            max_rows: 2,
+            max_state_bytes: 128 * 1024,
+            max_changed_payload_bytes: 128 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("state");
+
+    assert_eq!(
+        state
+            .record_if_changed(
+                &mut prior,
+                TeslaMateProjectionStateEntity::Drive,
+                unchanged.id,
+                unchanged.car_id,
+                &unchanged,
+            )
+            .expect("unique unchanged row"),
+        TeslaMateProjectionStateChange::Unchanged
+    );
+    assert_eq!(
+        state
+            .record_if_changed(
+                &mut prior,
+                TeslaMateProjectionStateEntity::Drive,
+                changed.id,
+                changed.car_id,
+                &changed,
+            )
+            .expect("unique changed row"),
+        TeslaMateProjectionStateChange::NewOrChanged
+    );
+    assert_eq!(
+        state.existing_change_queries.get(),
+        0,
+        "source-ordered unique rows must not query the current spool before insert"
+    );
+
+    assert_eq!(
+        state
+            .record_if_changed(
+                &mut prior,
+                TeslaMateProjectionStateEntity::Drive,
+                unchanged.id,
+                unchanged.car_id,
+                &unchanged,
+            )
+            .expect("exact unchanged duplicate"),
+        TeslaMateProjectionStateChange::Unchanged
+    );
+    assert_eq!(
+        state
+            .record_if_changed(
+                &mut prior,
+                TeslaMateProjectionStateEntity::Drive,
+                changed.id,
+                changed.car_id,
+                &changed,
+            )
+            .expect("exact changed duplicate"),
+        TeslaMateProjectionStateChange::NewOrChanged
+    );
+    assert_eq!(
+        state.existing_change_queries.get(),
+        2,
+        "only the two insert collisions require stored-row classification"
+    );
+
+    let conflicting = drive(7, Some(999.0));
+    assert!(matches!(
+        state.record_if_changed(
+            &mut prior,
+            TeslaMateProjectionStateEntity::Drive,
+            conflicting.id,
+            conflicting.car_id,
+            &conflicting,
+        ),
+        Err(TeslaMateProjectionStateError::ConflictingRow { .. })
+    ));
+    assert_eq!(state.existing_change_queries.get(), 3);
+
+    state.seal().expect("seal state");
+    let changed_rows = state.changed_page(None, 10).expect("changed rows").rows;
+    assert_eq!(changed_rows.len(), 1);
+    assert_eq!(changed_rows[0].state.id, changed.id);
+}
+
+#[test]
+fn maximum_tombstone_page_uses_bounded_membership_queries_and_stays_exact() {
+    const PAGE_ROWS: i64 = 10_000;
+    const MAXIMUM_MEMBERSHIP_QUERIES: u64 = 12;
+
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let mut state = TeslaMateProjectionState::create(
+        temporary.path(),
+        TeslaMateProjectionStateLimits {
+            max_rows: u64::try_from(PAGE_ROWS).expect("page rows fit u64"),
+            max_state_bytes: 64 * 1024 * 1024,
+            max_changed_payload_bytes: 64 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("state");
+    let mut prior = MemoryPrior::default();
+    let prior_digest = Sha256Digest::of_bytes(b"prior");
+    for id in 1..=PAGE_ROWS {
+        prior.rows.insert(
+            (TeslaMateProjectionStateEntity::Position.ordinal(), id),
+            TeslaMateProjectionStateDigestRow {
+                entity: TeslaMateProjectionStateEntity::Position,
+                id,
+                car_id: 1,
+                digest: prior_digest,
+            },
+        );
+        if id % 10 != 0 {
+            state
+                .record(
+                    TeslaMateProjectionStateEntity::Position,
+                    id,
+                    1,
+                    &serde_json::json!({"id": id}),
+                )
+                .expect("current row");
+        }
+    }
+    state.seal().expect("seal");
+
+    let query_count_before = state.tombstone_membership_queries.get();
+    let (tombstones, next) = state
+        .tombstone_page(&mut prior, None, 10_000)
+        .expect("maximum tombstone page");
+    let membership_queries = state
+        .tombstone_membership_queries
+        .get()
+        .saturating_sub(query_count_before);
+
+    assert!(next.is_none());
+    assert_eq!(tombstones.len(), 1_000);
+    for (index, tombstone) in tombstones.iter().enumerate() {
+        assert_eq!(
+            tombstone.entity,
+            crate::hub_pack::ProjectionDeltaEntity::Position
+        );
+        assert_eq!(
+            tombstone.id,
+            i64::try_from(index + 1).expect("index fits i64") * 10
+        );
+        assert_eq!(tombstone.car_id, 1);
+    }
+    assert!(
+        membership_queries <= MAXIMUM_MEMBERSHIP_QUERIES,
+        "a 10,000-row page used {membership_queries} membership queries; expected at most {MAXIMUM_MEMBERSHIP_QUERIES}"
+    );
+}
+
+#[test]
 fn initial_base_capture_keeps_only_digests_even_for_repeated_fragment_rows() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let state = TeslaMateProjectionState::create(

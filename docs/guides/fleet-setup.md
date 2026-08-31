@@ -214,10 +214,10 @@ scripts/build-deb.sh \
   --go-proxy-evidence dist/go-proxy-evidence-amd64 \
   --fleet-telemetry-evidence dist/fleet-telemetry-evidence-amd64 \
   --legal-bundle dist/dependency-legal \
-  --version 1.0.0-beta.2 \
+  --version 1.0.0 \
   --architecture amd64 \
-  --output dist/teslatlas-hub_1.0.0-beta.2_amd64.deb
-sudo dpkg -i dist/teslatlas-hub_1.0.0-beta.2_amd64.deb
+  --output dist/teslatlas-hub_1.0.0_amd64.deb
+sudo dpkg -i dist/teslatlas-hub_1.0.0_amd64.deb
 ```
 
 `fleet-telemetry-evidence/fleet-telemetry-upstream-source.tar.gz` is the exact
@@ -227,10 +227,8 @@ manifest or URL is not a substitute for those bytes.
 `go.mod` for all 45 locked runtime modules, including Eclipse Paho under
 EPL-2.0. This Fleet Go source/legal corpus is platform-invariant; it is not a
 native Linux reproducibility receipt. The notice installed with the package
-points to that file in detailed release evidence. Official release builds must
-also follow the
-native-attestation procedure in
-[release runbook](../releases/releasing.md).
+points to that file in the generated evidence directory. Keep the evidence
+beside locally distributed packages.
 
 The package installs both sidecar units disabled. Supply the command-signing
 private key, loopback proxy certificate/key, public receiver certificate/key,

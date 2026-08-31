@@ -23,12 +23,8 @@
   <sub>Created by <strong>György Bolyki</strong> · Published and maintained by <strong>MAGRATHEAN UK LTD</strong></sub>
 </p>
 
-> [!WARNING]
-> **v1.0.0-beta.2 is an unpublished beta candidate.** Install only after the complete
-> signed GitHub prerelease is published, and verify every required artifact. Back up Hub data,
-> test recovery, and expect interfaces or storage formats to change before
-> v1.0.0. Do not use Teslatlas Hub for safety-critical, emergency,
-> autonomous-driving, or vehicle-control decisions.
+The current source release is **v1.0.0**. GitHub hosts its immutable source tag;
+the project does not publish a GitHub Release or downloadable release assets.
 
 Teslatlas Hub keeps telemetry under the operator's control. It collects every
 configured vehicle, stores history in local SQLite-backed packs, and exposes a
@@ -73,26 +69,24 @@ through the same resident credential owner. See
 | Debian 13 | `amd64` | Hardened systemd units | CLI |
 | Debian 13 | `arm64` | Hardened systemd units | CLI |
 
-Other operating systems and CPU architectures are not part of the beta support
+Other operating systems and CPU architectures are not part of the v1 support
 contract. Linux support is intentionally native and does not depend on AppKit,
 MapKit, or another Apple framework.
 
 ## Install
 
-Download only from the
-[GitHub releases page](https://github.com/magrathean-uk/teslatlas-hub/releases).
-The beta is not published if its tag page or any required evidence asset is
-absent. Verify the tag, checksums, signatures, SBOM, and platform artifact
-before installation; see [Verify a release](../docs/releases/verification.md).
+Teslatlas Hub v1.0.0 is published as source at the
+[`v1.0.0` tag](https://github.com/magrathean-uk/teslatlas-hub/tree/v1.0.0).
+Build platform packages from that checkout. No installer or package is attached
+to a GitHub Release.
 
 ### macOS
 
-When the complete beta is published, expand `Teslatlas Hub.zip`, move
-**Teslatlas Hub.app** to `/Applications`, and open it. The app verifies and
-installs its embedded service package under
-`/Library/Application Support/Teslatlas Hub`. The separately downloadable
-`TeslatlasHubService.pkg` installs only the service payload; it does not install
-the control app.
+Run `./scripts/build-macos-app.sh`, then open `dist/TeslatlasHub.pkg`. The installer
+places **Teslatlas Hub.app** in `/Applications` and the service payload under
+`/Library/Application Support/Teslatlas Hub`; then open the app. The app retains
+an embedded service-only package for in-app service management, not as a
+separate public download.
 
 Open **Teslatlas Hub**, choose a new Fleet or legacy installation, or select
 the guided TeslaMate migration path. The app keeps Hub stopped until setup and
@@ -103,7 +97,7 @@ diagnostics succeed.
 Choose the `.deb` matching `dpkg --print-architecture`, then:
 
 ```sh
-sudo dpkg -i teslatlas-hub_1.0.0-beta.2_$(dpkg --print-architecture).deb
+sudo dpkg -i teslatlas-hub_1.0.0_$(dpkg --print-architecture).deb
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml bootstrap
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
@@ -123,13 +117,13 @@ Xcode 27 and XcodeGen.
 ```sh
 git clone https://github.com/magrathean-uk/teslatlas-hub.git
 cd teslatlas-hub
+git checkout --detach v1.0.0
 cargo build --locked --release
 ./target/release/teslatlas-hub --version
 ```
 
-This untagged candidate can be evaluated from main; it is not an official
-release build. For a published artifact, verify its immutable tag before
-building or installing it.
+The tag is the version boundary. Build and package from that detached checkout
+to keep the source and displayed version aligned.
 
 ## Quick CLI start
 
@@ -240,8 +234,8 @@ its identified licence. See [Legal framework](../docs/legal/overview.md),
 [Licensing](../docs/legal/licensing.md), [Notices](../NOTICE), and
 [Third-party notices](../docs/legal/third-party-notices.md).
 
-Official artifacts are complete only when published with their exact source,
-checksums, signatures, SBOM, dependency notices, and verification material.
+The v1.0.0 source is the immutable tagged tree. Locally built packages include
+the applicable licence and dependency notices.
 
 ## Contributing and support
 

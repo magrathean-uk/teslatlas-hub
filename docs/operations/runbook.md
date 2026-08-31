@@ -57,7 +57,7 @@ for all network-owning processes.
 ## Upgrade
 
 1. Verify and retain a data backup.
-2. Verify the new release tag, signatures, checksums, SBOM, notices, and package.
+2. Verify the new source tag, exact version, notices, and locally built package.
 3. Stop collection if the installer does not own the upgrade transaction.
 4. Install the new package.
 5. Run `doctor` and `status` before resuming collection.

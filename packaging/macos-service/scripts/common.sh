@@ -137,6 +137,74 @@ require_safe_upgrade_state() {
         || installer_error "upgrade state has unsafe ownership or permissions"
 }
 
+service_payload_directory_is_safe() {
+    directory=$1
+    expected_uid=$2
+    [ -d "$directory" ] && [ ! -L "$directory" ] || return 1
+    [ "$(/usr/bin/stat -f '%u' "$directory")" = "$expected_uid" ] || return 1
+    mode=$(/usr/bin/stat -f '%Lp' "$directory") || return 1
+    case "$mode" in
+        *[2367][0-7]|*[0-7][2367]) return 1 ;;
+    esac
+}
+
+preserve_service_payload() {
+    source=$1
+    snapshot=$2
+    existed_marker=$3
+    expected_uid=$4
+
+    if [ ! -e "$source" ] && [ ! -L "$source" ]; then
+        return 0
+    fi
+    service_payload_directory_is_safe "$source" "$expected_uid" || return 1
+    if [ -e "$snapshot" ] || [ -L "$snapshot" ] \
+        || [ -e "$existed_marker" ] || [ -L "$existed_marker" ]; then
+        return 1
+    fi
+    /bin/cp -pR "$source" "$snapshot" || return 1
+    source_gid=$(/usr/bin/stat -f '%g' "$source") || return 1
+    if ! /usr/bin/install -o "$expected_uid" -g "$source_gid" -m 0600 \
+        /dev/null "$existed_marker"; then
+        /usr/bin/find -x "$snapshot" -depth -delete >/dev/null 2>&1 || true
+        return 1
+    fi
+}
+
+restore_service_payload() {
+    destination=$1
+    snapshot=$2
+    existed_marker=$3
+    expected_uid=$4
+
+    if [ -e "$existed_marker" ] || [ -L "$existed_marker" ]; then
+        [ -f "$existed_marker" ] && [ ! -L "$existed_marker" ] || return 1
+        [ "$(/usr/bin/stat -f '%u' "$existed_marker")" = "$expected_uid" ] || return 1
+        service_payload_directory_is_safe "$snapshot" "$expected_uid" || return 1
+        restoring="$destination.rollback-installing.$$"
+        [ ! -e "$restoring" ] && [ ! -L "$restoring" ] || return 1
+        /bin/cp -pR "$snapshot" "$restoring" || return 1
+        if [ -e "$destination" ] || [ -L "$destination" ]; then
+            if ! service_payload_directory_is_safe "$destination" "$expected_uid" \
+                || ! /usr/bin/find -x "$destination" -depth -delete; then
+                /usr/bin/find -x "$restoring" -depth -delete >/dev/null 2>&1 || true
+                return 1
+            fi
+        fi
+        if ! /bin/mv "$restoring" "$destination"; then
+            /usr/bin/find -x "$restoring" -depth -delete >/dev/null 2>&1 || true
+            return 1
+        fi
+        return 0
+    fi
+
+    [ ! -e "$snapshot" ] && [ ! -L "$snapshot" ] || return 1
+    if [ -e "$destination" ] || [ -L "$destination" ]; then
+        service_payload_directory_is_safe "$destination" "$expected_uid" || return 1
+        /usr/bin/find -x "$destination" -depth -delete || return 1
+    fi
+}
+
 remove_upgrade_state() {
     directory=$1
     case "$directory" in

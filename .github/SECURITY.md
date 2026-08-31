@@ -4,9 +4,8 @@
 
 | Release line | Security support |
 |---|---|
-| v1.0.0-beta.2 | Unpublished candidate; not a supported release |
-| v1.0.0-beta.1 | Historical untagged-release documentation; not a supported release |
-| v1.0.0-alpha.1 and earlier | Unsupported; upgrade by backup and fresh beta installation |
+| v1.0.0 | Supported |
+| v1.0.0-beta.1 and earlier | Unsupported; upgrade to v1.0.0 |
 | `main` and untagged builds | Reports accepted, but not a supported release channel |
 
 ## Private reporting
@@ -52,4 +51,5 @@ No safe harbour covers vehicle commands, phishing, credential stuffing, access t
 
 ## Release integrity
 
-Official releases should provide signed checksums, exact source, SBOM, dependency notices and verification instructions.
+The supported source boundary is the immutable `v1.0.0` tag. GitHub Release
+assets are not part of this release.

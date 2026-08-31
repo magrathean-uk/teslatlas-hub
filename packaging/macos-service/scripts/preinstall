@@ -43,6 +43,8 @@ STATE_DIRECTORY=$(upgrade_state_directory)
 remove_upgrade_state "$STATE_DIRECTORY"
 /usr/bin/install -d -o root -g wheel -m 0700 "$STATE_DIRECTORY" \
     || installer_error "cannot create upgrade state"
+SERVICE_PAYLOAD_SNAPSHOT="$STATE_DIRECTORY/service-payload"
+SERVICE_PAYLOAD_MARKER="$STATE_DIRECTORY/service-payload-existed"
 
 if [ -e "$BINARY_ROOT" ] || [ -L "$BINARY_ROOT" ]; then
     require_safe_owned_tree "$BINARY_ROOT" 0 "existing Hub service payload"
@@ -58,9 +60,11 @@ fi
 if [ -e "$BINARY" ] || [ -L "$BINARY" ]; then
     require_safe_regular_file "$BINARY" 0 "existing Hub binary"
     [ -x "$BINARY" ] || installer_error "existing Hub binary is not executable"
-    /usr/bin/install -o root -g wheel -m 0755 "$BINARY" "$STATE_DIRECTORY/teslatlas-hub" \
-        || installer_error "cannot preserve existing Hub binary"
 fi
+
+preserve_service_payload "$BINARY_ROOT" "$SERVICE_PAYLOAD_SNAPSHOT" \
+    "$SERVICE_PAYLOAD_MARKER" 0 \
+    || installer_error "cannot preserve existing Hub service payload"
 
 if [ -e "$PLIST" ] || [ -L "$PLIST" ]; then
     require_safe_regular_file "$PLIST" "$CONSOLE_UID" "existing LaunchAgent"

@@ -97,14 +97,14 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(source.action, #selector(AppDelegate.openCorrespondingSource(_:)))
     }
 
-    func testCorrespondingSourceURLPreservesPublishedTagsAndKeepsCandidatesUntagged() throws {
+    func testCorrespondingSourceURLPreservesPublishedTagsAndPinsStableSource() throws {
         XCTAssertEqual(
             HubRelease.correspondingSourceURL(for: "1.0.0-beta.1")?.absoluteString,
             "https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1"
         )
         XCTAssertEqual(
-            HubRelease.correspondingSourceURL(for: "1.0.0-beta.2")?.absoluteString,
-            "https://github.com/magrathean-uk/teslatlas-hub"
+            HubRelease.correspondingSourceURL(for: "1.0.0")?.absoluteString,
+            "https://github.com/magrathean-uk/teslatlas-hub/tree/v1.0.0"
         )
         XCTAssertNil(HubRelease.correspondingSourceURL(for: "1.0.0/../../main"))
         XCTAssertNil(HubRelease.correspondingSourceURL(for: "$(TESLATLAS_HUB_VERSION)"))
@@ -113,8 +113,8 @@ final class OnboardingWindowControllerTests: XCTestCase {
             "https://github.com/magrathean-uk/teslatlas-hub/blob/v1.0.0-beta.1/LICENSE"
         )
         XCTAssertEqual(
-            HubRelease.licenceURL(for: "1.0.0-beta.2")?.absoluteString,
-            "https://github.com/magrathean-uk/teslatlas-hub/blob/main/LICENSE"
+            HubRelease.licenceURL(for: "1.0.0")?.absoluteString,
+            "https://github.com/magrathean-uk/teslatlas-hub/blob/v1.0.0/LICENSE"
         )
         XCTAssertNil(HubRelease.licenceURL(for: "1.0.0/../../main"))
     }
@@ -318,7 +318,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,
                                                      resumeMigrationHandoverPhase: .importing,
-                                                     onComplete: {})
+                                                     onComplete: { _ in })
 
         XCTAssertTrue(buttons(in: onboarding.window?.contentView)
             .contains { $0.title == "Connect to Server" })
@@ -332,7 +332,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,
                                                      initialRoute: .provider,
-                                                     onComplete: {})
+                                                     onComplete: { _ in })
         XCTAssertEqual(onboarding.currentRoute, .provider)
 
         onboarding.navigate(to: .legacy)
@@ -350,7 +350,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,
                                                      initialRoute: .legacy,
-                                                     onComplete: {})
+                                                     onComplete: { _ in })
         let window = try XCTUnwrap(onboarding.window)
 
         onboarding.setBusy(true)
@@ -430,7 +430,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
     func testChoosePageShowsMigrationCopyAndIconWhenSelected() throws {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
-        let onboarding = OnboardingWindowController(controller: controller, onComplete: {})
+        let onboarding = OnboardingWindowController(controller: controller, onComplete: { _ in })
         let continueButton = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "Continue" })
         continueButton.performClick(nil)
@@ -460,7 +460,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,
                                                      previewRoute: "welcome",
-                                                     onComplete: {})
+                                                     onComplete: { _ in })
         let text = labels(in: onboarding.window?.contentView).map(\.stringValue)
         XCTAssertTrue(text.contains("Teslatlas Hub"))
         XCTAssertTrue(text.contains(
@@ -484,19 +484,18 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,
                                                      previewRoute: "migration",
-                                                     onComplete: {})
+                                                     onComplete: { _ in })
         let view = onboarding.window?.contentView
         let text = labels(in: view).map(\.stringValue)
         let migrationRequirement = text.joined(separator: " ")
-        for fragment in ["back up TeslaMate", "update to 4.2.0 or newer", "start it once",
-                         "wait for its database migrations to finish"] {
-            XCTAssertTrue(migrationRequirement.contains(fragment))
-        }
-        XCTAssertTrue(migrationRequirement.contains("database schema alone cannot prove"))
+        XCTAssertTrue(migrationRequirement.contains("TeslaMate 4.2 or later"))
+        XCTAssertTrue(migrationRequirement.contains("read-only"))
+        XCTAssertFalse(migrationRequirement.contains("back up TeslaMate"))
+        XCTAssertFalse(migrationRequirement.contains("database schema alone cannot prove"))
         XCTAssertTrue(text.contains("user"))
-        XCTAssertTrue(text.contains(
-            "Use a normal server account. It must access the TeslaMate containers directly or through passwordless sudo."
-        ))
+        XCTAssertFalse(text.contains {
+            $0.localizedCaseInsensitiveContains("normal server account")
+        })
         XCTAssertTrue(buttons(in: view).contains { $0.title == "Choose Key…" })
         let sudo = try XCTUnwrap(buttons(in: view)
             .first { $0.title == "Use passwordless sudo for Docker access" })
@@ -518,11 +517,72 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(buttons(in: updatedView).contains { $0.title == "Choose Key…" })
     }
 
+    func testImportBusyStateShowsOnlyOneHeadingAndDeterminateProgress() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller,
+                                                     previewRoute: "migration",
+                                                     onComplete: { _ in })
+
+        onboarding.setBusy(true, message: "Importing data…")
+
+        let view = onboarding.window?.contentView
+        let text = labels(in: view).map(\.stringValue)
+        XCTAssertEqual(text.filter { $0 == "Importing data…" }.count, 1)
+        XCTAssertFalse(text.contains("Import from TeslaMate"))
+        XCTAssertFalse(text.contains { $0.hasPrefix("Step ") })
+        XCTAssertFalse(text.contains {
+            $0.localizedCaseInsensitiveContains("Enter your TeslaMate")
+                || $0.localizedCaseInsensitiveContains("Elapsed")
+                || $0.localizedCaseInsensitiveContains("Hub stays stopped")
+        })
+        let bars = progressIndicators(in: view).filter { $0.style == .bar }
+        XCTAssertEqual(bars.count, 1)
+        let progressBar = try XCTUnwrap(bars.first)
+        XCTAssertFalse(progressBar.isIndeterminate)
+        let progress = try XCTUnwrap(HubController.parseMigrationProgress(
+            #"{"event":"migration_progress","completedRows":25,"totalRows":100}"#
+        ))
+        onboarding.updateMigrationProgress(progress)
+        XCTAssertEqual(progressBar.maxValue, 100)
+        XCTAssertEqual(progressBar.doubleValue, 25)
+        onboarding.updateMigrationProgress(HubMigrationProgress(
+            completedRows: 125,
+            totalRows: 100,
+            phase: nil
+        ))
+        XCTAssertEqual(progressBar.doubleValue, 100)
+        onboarding.updateMigrationProgress(HubMigrationProgress(
+            completedRows: 10,
+            totalRows: 100,
+            phase: nil
+        ))
+        XCTAssertEqual(progressBar.doubleValue, 100)
+        XCTAssertFalse(text.contains("Server"))
+        XCTAssertFalse(buttons(in: view).contains { $0.title == "Connect to Server" })
+    }
+
+    func testNewInstallationBusyStateShowsOnlyCleanSetupFlow() {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller,
+                                                     initialRoute: .legacy,
+                                                     onComplete: { _ in })
+
+        onboarding.setBusy(true, message: "Setting up Hub…")
+
+        let view = onboarding.window?.contentView
+        let text = labels(in: view).map(\.stringValue)
+        XCTAssertEqual(text.filter { $0 == "Setting up Hub…" }.count, 1)
+        XCTAssertFalse(text.contains("Connect with a Legacy Token"))
+        XCTAssertFalse(text.contains("Access token"))
+        XCTAssertFalse(text.contains { $0.hasPrefix("Step ") })
+        XCTAssertEqual(progressIndicators(in: view).filter { $0.style == .spinning }.count, 1)
+    }
+
     func testMigrationUsesExplicitKeyboardNavigationOrder() throws {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,
                                                      previewRoute: "migration",
-                                                     onComplete: {})
+                                                     onComplete: { _ in })
         let view = onboarding.window?.contentView
         let server = try XCTUnwrap(labels(in: view).first {
             $0.placeholderString == "Server name or IP address"
@@ -548,7 +608,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,
                                                      previewRoute: "migration",
-                                                     onComplete: {})
+                                                     onComplete: { _ in })
         let view = onboarding.window?.contentView
         let server = try XCTUnwrap(labels(in: view).first {
             $0.placeholderString == "Server name or IP address"
@@ -798,13 +858,13 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let dashboard = MainWindowController(controller: controller)
         let onboarding = OnboardingWindowController(controller: controller,
                                                      previewRoute: "choose-migration",
-                                                     onComplete: {})
+                                                     onComplete: { _ in })
         let welcome = OnboardingWindowController(controller: controller,
                                                  previewRoute: "welcome",
-                                                 onComplete: {})
+                                                 onComplete: { _ in })
         let migration = OnboardingWindowController(controller: controller,
                                                     previewRoute: "migration",
-                                                    onComplete: {})
+                                                    onComplete: { _ in })
         XCTAssertEqual(dashboard.window?.contentView?.bounds.size, NSSize(width: 900, height: 630))
         XCTAssertEqual(onboarding.window?.contentView?.bounds.size, NSSize(width: 900, height: 630))
 
@@ -859,6 +919,11 @@ final class OnboardingWindowControllerTests: XCTestCase {
     private func labels(in view: NSView?) -> [NSTextField] {
         guard let view else { return [] }
         return (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap { labels(in: $0) }
+    }
+
+    private func progressIndicators(in view: NSView?) -> [NSProgressIndicator] {
+        guard let view else { return [] }
+        return (view as? NSProgressIndicator).map { [$0] } ?? view.subviews.flatMap(progressIndicators)
     }
 
     private func popups(in view: NSView?) -> [NSPopUpButton] {

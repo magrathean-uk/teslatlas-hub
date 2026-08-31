@@ -184,7 +184,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(text.contains("TeslaMate is not written"))
             XCTAssertTrue(text.contains("tokens are not deleted") || text.contains("Tokens are not deleted") || text.contains("Owner and Fleet tokens"))
             XCTAssertTrue(text.contains("== support metadata =="))
-            XCTAssertTrue(text.contains("Expected Hub: 1.0.0-beta.2"))
+            XCTAssertTrue(text.contains("Expected Hub: 1.0.0"))
             XCTAssertTrue(text.contains("Service: not installed"))
             XCTAssertTrue(text.contains("Provider: Not configured"))
             XCTAssertTrue(text.contains("macOS:"))
@@ -397,7 +397,7 @@ final class HubControllerTests: XCTestCase {
 
     func testStoppedDashboardSaysStoppedWithoutRequestingSetup() {
         let installed = RecordingCommandRunner(result: .success("""
-        {"status":"ok","version":"1.0.0-beta.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """))
         let controller = HubController(installedCommandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .unloaded),
@@ -427,7 +427,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let installed = RecordingCommandRunner(result: .success("""
-        {"status":"ok","version":"1.0.0-beta.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
         """))
         let controller = HubController(installedCommandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
@@ -452,7 +452,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let status = """
-        {"status":"ok","version":"1.0.0-beta.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let controller = HubController(installedCommandRunner: installed,
@@ -481,7 +481,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let status = """
-        {"status":"ok","version":"1.0.0-beta.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let controller = HubController(installedCommandRunner: installed,
@@ -522,7 +522,7 @@ final class HubControllerTests: XCTestCase {
         let installed = CommandMapRunner(responses: [
             "sign-out": .success("{\"status\":\"signed_out\"}"),
             "status": .success("""
-            {"status":"ok","version":"1.0.0-beta.2","ready":false,"provider":"fleet","credentials":{"present":false}}
+            {"status":"ok","version":"1.0.0","ready":false,"provider":"fleet","credentials":{"present":false}}
             """)
         ])
         let controller = HubController(commandRunner: embedded,
@@ -587,7 +587,7 @@ final class HubControllerTests: XCTestCase {
         let installed = CommandMapRunner(responses: [
             "sign-out": .failure(HubActionError.commandFailed("checkpoint failed")),
             "status": .success("""
-            {"status":"ok","version":"1.0.0-beta.2","ready":false,"provider":"fleet","credentials":{"present":false},"legacyCredentials":{"present":true},"fleetCredentials":{"present":false}}
+            {"status":"ok","version":"1.0.0","ready":false,"provider":"fleet","credentials":{"present":false},"legacyCredentials":{"present":true},"fleetCredentials":{"present":false}}
             """)
         ])
         let controller = HubController(installedCommandRunner: installed,
@@ -615,7 +615,7 @@ final class HubControllerTests: XCTestCase {
     func testSingleVehicleControlsUseInstalledBinaryExactlyOnce() {
         let vehicleID = UUID(uuidString: "7A5D69AB-8EA8-4056-8B2F-42C41C28AE36")!
         let status = """
-        {"status":"ok","version":"1.0.0-beta.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(vehicleID.uuidString)","displayName":"One"}],"credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(vehicleID.uuidString)","displayName":"One"}],"credentials":{"present":true}}
         """
         let embedded = RecordingCommandRunner(result: .failure(HubActionError.commandFailed("unused")))
         let installed = RecordingCommandRunner(result: .success(status))
@@ -703,7 +703,7 @@ final class HubControllerTests: XCTestCase {
         try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let status = """
-        {"status":"ok","version":"1.0.0-beta.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let service = PendingServiceRunner(loadState: .unloaded)
@@ -739,6 +739,218 @@ final class HubControllerTests: XCTestCase {
         }
         wait(for: [running], timeout: 1)
         withExtendedLifetime(dashboard) {}
+    }
+
+    func testCompletedMigrationShowsStartingInsteadOfAttentionDuringCollectorWarmup() {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let dashboard = MainWindowController(controller: controller)
+
+        dashboard.settleStartedHubFromOnboarding()
+
+        XCTAssertTrue(labels(in: dashboard.window?.contentView)
+            .contains { $0.stringValue == "Starting Hub…" })
+        XCTAssertFalse(labels(in: dashboard.window?.contentView)
+            .contains { $0.stringValue == "Attention needed" })
+    }
+
+    func testInFlightRefreshDoesNotRepaintDashboardDuringServiceTransition() {
+        let runner = PendingCommandRunner()
+        let controller = HubController(installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder(),
+                                                                      loadState: .loaded),
+                                       serviceInstalledOverride: true)
+        let refreshed = expectation(description: "in-flight refresh returned")
+        let dashboard = MainWindowController(controller: controller) { _ in
+            refreshed.fulfill()
+        }
+
+        dashboard.settleStartedHubFromOnboarding()
+        runner.complete(.success("""
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"provider":"legacy","credentials":{"present":true}}
+        """))
+
+        wait(for: [refreshed], timeout: 1)
+        let visibleText = labels(in: dashboard.window?.contentView).map(\.stringValue)
+        XCTAssertTrue(visibleText.contains("Starting Hub…"))
+        XCTAssertFalse(visibleText.contains("Attention needed"))
+        XCTAssertFalse(visibleText.contains("Connected · Legacy token"))
+        XCTAssertFalse(visibleText.contains("Healthy · 1 MB"))
+    }
+
+    func testServiceTransitionHasHardDeadlineWhenStatusProbeNeverReturns() {
+        let runner = PendingCommandRunner()
+        let controller = HubController(installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder(),
+                                                                      loadState: .loaded),
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: .previewRunning)
+        let timedOut = expectation(description: "transition deadline fired")
+        let started = Date()
+        let dashboard = MainWindowController(
+            controller: controller,
+            serviceTransitionTimeout: 0.1,
+            serviceTransitionPollInterval: 0.01,
+            errorPresenter: { error in
+                XCTAssertTrue(error.localizedDescription.contains("did not finish"))
+                XCTAssertLessThan(Date().timeIntervalSince(started), 0.4)
+                timedOut.fulfill()
+            }
+        )
+
+        dashboard.settleStartedHubFromOnboarding()
+        XCTAssertTrue(labels(in: dashboard.window?.contentView)
+            .contains { $0.stringValue == "Starting Hub…" })
+
+        wait(for: [timedOut], timeout: 0.5)
+        let visibleText = labels(in: dashboard.window?.contentView).map(\.stringValue)
+        XCTAssertFalse(visibleText.contains("Starting Hub…"))
+        XCTAssertTrue(visibleText.contains("Collecting vehicle data"))
+        XCTAssertTrue(dashboard.connectButton.isEnabled)
+        XCTAssertTrue(dashboard.importButton.isEnabled)
+    }
+
+    func testServiceTransitionDeadlineIncludesPendingServiceCommand() throws {
+        let status = """
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        """
+        let runner = RecordingCommandRunner(result: .success(status))
+        let service = PendingServiceRunner(loadState: .unloaded)
+        let controller = HubController(installedCommandRunner: runner,
+                                       serviceRunner: service,
+                                       serviceInstalledOverride: true)
+        let loaded = expectation(description: "stopped dashboard loaded")
+        let timedOut = expectation(description: "pending service command timed out in UI")
+        let dashboard = MainWindowController(
+            controller: controller,
+            serviceTransitionTimeout: 0.1,
+            serviceTransitionPollInterval: 0.01,
+            errorPresenter: { _ in timedOut.fulfill() },
+            onInitialRefresh: { _ in loaded.fulfill() }
+        )
+        wait(for: [loaded], timeout: 1)
+
+        let start = try XCTUnwrap(buttons(in: dashboard.window?.contentView)
+            .first { $0.title == "Start Hub" })
+        start.performClick(nil)
+        wait(for: [timedOut], timeout: 0.5)
+
+        XCTAssertFalse(labels(in: dashboard.window?.contentView)
+            .contains { $0.stringValue == "Starting Hub…" })
+        XCTAssertTrue(dashboard.connectButton.isEnabled)
+        XCTAssertTrue(dashboard.importButton.isEnabled)
+    }
+
+    func testExpiredServiceCommandFailureCannotCancelNewTransition() throws {
+        let status = """
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        """
+        let runner = RecordingCommandRunner(result: .success(status))
+        let service = PendingServiceRunner(loadState: .unloaded)
+        let controller = HubController(installedCommandRunner: runner,
+                                       serviceRunner: service,
+                                       serviceInstalledOverride: true)
+        let loaded = expectation(description: "stopped dashboard loaded")
+        let firstTimeout = expectation(description: "first transition expired")
+        var errors: [Error] = []
+        let dashboard = MainWindowController(
+            controller: controller,
+            serviceTransitionTimeout: 0.08,
+            serviceTransitionPollInterval: 0.01,
+            errorPresenter: { error in
+                errors.append(error)
+                if errors.count == 1 { firstTimeout.fulfill() }
+            },
+            onInitialRefresh: { _ in loaded.fulfill() }
+        )
+        wait(for: [loaded], timeout: 1)
+
+        try XCTUnwrap(buttons(in: dashboard.window?.contentView)
+            .first { $0.title == "Start Hub" }).performClick(nil)
+        wait(for: [firstTimeout], timeout: 0.5)
+        try XCTUnwrap(buttons(in: dashboard.window?.contentView)
+            .first { $0.title == "Start Hub" }).performClick(nil)
+
+        service.complete(at: 0, .failure(HubActionError.commandFailed("expired failure")))
+        let checked = expectation(description: "late failure ignored")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            XCTAssertTrue(self.labels(in: dashboard.window?.contentView)
+                .contains { $0.stringValue == "Starting Hub…" })
+            XCTAssertFalse(dashboard.connectButton.isEnabled)
+            XCTAssertEqual(errors.count, 1)
+            checked.fulfill()
+        }
+        wait(for: [checked], timeout: 0.2)
+    }
+
+    func testExpiredServiceCommandSuccessCannotSettleNewTransition() throws {
+        let status = """
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        """
+        let runner = RecordingCommandRunner(result: .success(status))
+        let service = PendingServiceRunner(loadState: .unloaded)
+        let controller = HubController(installedCommandRunner: runner,
+                                       serviceRunner: service,
+                                       serviceInstalledOverride: true)
+        let loaded = expectation(description: "stopped dashboard loaded")
+        let firstTimeout = expectation(description: "first transition expired")
+        var errorCount = 0
+        let dashboard = MainWindowController(
+            controller: controller,
+            serviceTransitionTimeout: 0.08,
+            serviceTransitionPollInterval: 0.01,
+            errorPresenter: { _ in
+                errorCount += 1
+                if errorCount == 1 { firstTimeout.fulfill() }
+            },
+            onInitialRefresh: { _ in loaded.fulfill() }
+        )
+        wait(for: [loaded], timeout: 1)
+
+        try XCTUnwrap(buttons(in: dashboard.window?.contentView)
+            .first { $0.title == "Start Hub" }).performClick(nil)
+        wait(for: [firstTimeout], timeout: 0.5)
+        try XCTUnwrap(buttons(in: dashboard.window?.contentView)
+            .first { $0.title == "Start Hub" }).performClick(nil)
+
+        service.loadState = .loaded
+        service.complete(at: 0, .success(""))
+        let checked = expectation(description: "late success ignored")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            XCTAssertTrue(self.labels(in: dashboard.window?.contentView)
+                .contains { $0.stringValue == "Starting Hub…" })
+            XCTAssertFalse(dashboard.connectButton.isEnabled)
+            XCTAssertEqual(errorCount, 1)
+            checked.fulfill()
+        }
+        wait(for: [checked], timeout: 0.2)
+    }
+
+    func testNewestRefreshOwnsSnapshotWhenStatusResponsesCompleteOutOfOrder() {
+        let runner = OutOfOrderCommandRunner()
+        let controller = HubController(installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder(),
+                                                                      loadState: .loaded),
+                                       serviceInstalledOverride: true)
+        let older = expectation(description: "older refresh returned latest snapshot")
+        let newer = expectation(description: "newer refresh completed")
+
+        controller.refresh { snapshot in
+            XCTAssertEqual(snapshot.health, .running)
+            older.fulfill()
+        }
+        controller.refresh { snapshot in
+            XCTAssertEqual(snapshot.health, .running)
+            newer.fulfill()
+        }
+        runner.complete(at: 1, with: .success("""
+        {"status":"ok","version":"1.0.0","ready":true,"provider":"legacy","credentials":{"present":true}}
+        """))
+        runner.complete(at: 0, with: .success("""
+        {"status":"ok","version":"1.0.0","ready":false,"provider":"legacy","credentials":{"present":true}}
+        """))
+
+        wait(for: [newer, older], timeout: 1)
+        XCTAssertEqual(controller.snapshot.health, .running)
     }
 
     func testDegradedDashboardLeadsWithDiagnosticsAndKeepsRecoverySecondary() {
@@ -994,6 +1206,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
         XCTAssertNil(runner.stdin)
         XCTAssertTrue(runner.arguments.joined().contains("--online-snapshot"))
+        XCTAssertTrue(runner.arguments.joined().contains("--preserve-existing-credentials"))
         let versionAcknowledgedCommands = runner.arguments.filter {
             $0.contains("teslamate-check") || $0.contains("migrate")
         }
@@ -1105,7 +1318,10 @@ final class HubControllerTests: XCTestCase {
                                    encryptionKeyFile: "/tmp/key",
                                    acknowledgeV42CompatibleSchema: true) { result in
             guard case let .failure(error) = result else { return XCTFail("expected migration timeout") }
-            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            XCTAssertEqual(
+                error.localizedDescription,
+                "TeslaMate import failed; retry the import."
+            )
             finished.fulfill()
         }
 
@@ -1145,7 +1361,10 @@ final class HubControllerTests: XCTestCase {
             guard case let .failure(error) = result else {
                 return XCTFail("expected ambiguous migration failure")
             }
-            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            XCTAssertEqual(
+                error.localizedDescription,
+                "TeslaMate import failed; retry the import."
+            )
             finished.fulfill()
         }
 
@@ -1184,8 +1403,10 @@ final class HubControllerTests: XCTestCase {
             guard case let .failure(error) = result else {
                 return XCTFail("expected import failure")
             }
-            XCTAssertTrue(error.localizedDescription.contains("copy failed"))
-            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            XCTAssertEqual(
+                error.localizedDescription,
+                "TeslaMate import failed; retry the import."
+            )
             finished.fulfill()
         }
 
@@ -1434,7 +1655,7 @@ final class HubControllerTests: XCTestCase {
         let events = EventRecorder()
         let embedded = VersionAwareRunner(
             events: events,
-            versionResult: .success("teslatlas-hub 1.0.0-beta.2\n"),
+            versionResult: .success("teslatlas-hub 1.0.0\n"),
             commandResult: .success("ok")
         )
         let installed = VersionAwareRunner(
@@ -1568,12 +1789,12 @@ final class HubControllerTests: XCTestCase {
         let events = EventRecorder()
         let embedded = VersionAwareRunner(
             events: events,
-            versionResult: .success("teslatlas-hub 1.0.0-beta.2\n"),
+            versionResult: .success("teslatlas-hub 1.0.0\n"),
             commandResult: .success("configured")
         )
         let installed = VersionAwareRunner(
             events: events,
-            versionResult: .success("teslatlas-hub 1.0.0-beta.2\n")
+            versionResult: .success("teslatlas-hub 1.0.0\n")
         )
         let installer = RecordingInstaller()
         let home = try temporaryHome()
@@ -1604,16 +1825,16 @@ final class HubControllerTests: XCTestCase {
 
     func testBundledServiceVersionMatchIsExact() {
         XCTAssertTrue(HubController.isBundledServiceVersionOutput(
-            "teslatlas-hub 1.0.0-beta.2\n"
+            "teslatlas-hub 1.0.0\n"
         ))
         XCTAssertFalse(HubController.isBundledServiceVersionOutput(
             "teslatlas-hub 1.0.0-alpha.0"
         ))
         XCTAssertFalse(HubController.isBundledServiceVersionOutput(
-            "prefix teslatlas-hub 1.0.0-beta.2"
+            "prefix teslatlas-hub 1.0.0"
         ))
         XCTAssertFalse(HubController.isBundledServiceVersionOutput(
-            "teslatlas-hub 1.0.0-beta.2\nextra"
+            "teslatlas-hub 1.0.0\nextra"
         ))
     }
 
@@ -1732,6 +1953,161 @@ final class HubControllerTests: XCTestCase {
         wait(for: [finished], timeout: 5)
     }
 
+    func testProcessExecutorDeliversLineBeforeChildExit() {
+        let releaseFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-process-output-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: releaseFile) }
+        let lineDelivered = expectation(description: "line delivered while child is running")
+        let finished = expectation(description: "process completed")
+
+        HubProcessExecutor.run(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: [
+                "-c",
+                """
+                /usr/bin/printf 'progress\\n'
+                attempt=0
+                while [ "$attempt" -lt 40 ]; do
+                    /bin/test -e "$TESLATLAS_TEST_RELEASE_FILE" && exit 0
+                    /bin/sleep 0.025
+                    attempt=$((attempt + 1))
+                done
+                exit 23
+                """
+            ],
+            environment: ["TESLATLAS_TEST_RELEASE_FILE": releaseFile.path],
+            onOutputLine: { line in
+                guard line == "progress" else { return }
+                XCTAssertTrue(FileManager.default.createFile(atPath: releaseFile.path, contents: Data()))
+                lineDelivered.fulfill()
+            }
+        ) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [lineDelivered, finished], timeout: 3)
+    }
+
+    func testProcessExecutorStreamsLinesAndRetainsSuccessfulOutput() {
+        let finished = expectation(description: "streamed process completed")
+        var lines: [String] = []
+        var events: [String] = []
+        HubProcessExecutor.run(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: [
+                "-c",
+                "/usr/bin/printf 'fi'; /bin/sleep 0.05; "
+                    + "/usr/bin/printf 'rst\\n'; /usr/bin/printf 'last-without-newline'"
+            ],
+            onOutputLine: {
+                lines.append($0)
+                events.append("line:\($0)")
+            }
+        ) { result in
+            events.append("completion")
+            switch result {
+            case let .success(output):
+                XCTAssertEqual(output, "first\nlast-without-newline")
+                XCTAssertEqual(lines, ["first", "last-without-newline"])
+                XCTAssertEqual(events, [
+                    "line:first",
+                    "line:last-without-newline",
+                    "completion"
+                ])
+            case let .failure(error):
+                XCTFail(error.localizedDescription)
+            }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 5)
+    }
+
+    func testProcessExecutorStreamingRetainsFailureOutput() {
+        let finished = expectation(description: "streamed process failure completed")
+        let progress = #"{"event":"migration_progress","completedRows":2,"totalRows":4}"#
+        var lines: [String] = []
+        HubProcessExecutor.run(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "/usr/bin/printf '%s\\n' '\(progress)'; /usr/bin/printf 'failure-detail' >&2; exit 7"],
+            onOutputLine: { lines.append($0) }
+        ) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("failing process unexpectedly succeeded")
+            }
+            XCTAssertTrue(lines.contains(progress))
+            XCTAssertTrue(error.localizedDescription.contains(progress))
+            XCTAssertTrue(error.localizedDescription.contains("failure-detail"))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 5)
+    }
+
+    func testProcessExecutorStopsStreamingWhenDescendantKeepsOutputPipeOpen() {
+        let finished = expectation(description: "process completion is not blocked by descendant pipe")
+        let lateLine = expectation(description: "no output arrives after completion")
+        lateLine.isInverted = true
+        let events = EventRecorder()
+        HubProcessExecutor.run(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: [
+                "-c",
+                "( /bin/sleep 0.25; /usr/bin/printf 'late\\n' ) & /usr/bin/printf 'early\\n'"
+            ],
+            outputDrainTimeout: 0.03,
+            onOutputLine: { line in
+                events.append("line:\(line)")
+                if line == "late" { lateLine.fulfill() }
+            }
+        ) { result in
+            events.append("completion")
+            guard case let .failure(error) = result else {
+                return XCTFail("open descendant pipe unexpectedly succeeded")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub command output did not close.")
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        wait(for: [lateLine], timeout: 0.5)
+        XCTAssertFalse(events.values.contains("line:late"))
+        XCTAssertEqual(events.values.last, "completion")
+    }
+
+    func testProcessExecutorTimeoutDoesNotWaitForBlockedOutputCallback() {
+        let callbackStarted = expectation(description: "output callback started")
+        let finished = expectation(description: "timeout completed independently")
+        let releaseCallback = DispatchSemaphore(value: 0)
+        let started = Date()
+
+        HubProcessExecutor.run(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: [
+                "-c",
+                "/usr/bin/printf 'progress\\n'; trap '' TERM; while :; do /bin/sleep 1; done"
+            ],
+            timeout: 0.05,
+            terminationGrace: 0.05,
+            outputDrainTimeout: 0.05,
+            onOutputLine: { line in
+                guard line == "progress" else { return }
+                callbackStarted.fulfill()
+                _ = releaseCallback.wait(timeout: .now() + 0.75)
+            }
+        ) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("hung process unexpectedly succeeded")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub command timed out.")
+            XCTAssertLessThan(Date().timeIntervalSince(started), 0.4)
+            finished.fulfill()
+        }
+
+        wait(for: [callbackStarted], timeout: 1)
+        wait(for: [finished], timeout: 0.4)
+        releaseCallback.signal()
+    }
+
     func testBoundedProcessOutputRetainsOnlyNewestBytes() {
         let output = BoundedProcessOutput(maximumBytes: 8)
         output.append(Data("12345".utf8))
@@ -1797,6 +2173,9 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(command.contains("/usr/bin/codesign --verify --deep --strict"))
         XCTAssertTrue(command.contains("/usr/sbin/spctl --assess --type execute"))
         XCTAssertTrue(command.contains("/usr/bin/install -o root -g wheel -m 0600"))
+        XCTAssertTrue(command.contains("/bin/test"))
+        XCTAssertFalse(command.contains("/usr/bin/test"))
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: "/bin/test"))
         XCTAssertTrue(command.contains("/usr/bin/shasum -a 256 \"$staged\""))
         XCTAssertTrue(command.contains("/usr/sbin/pkgutil --check-signature \"$staged\""))
         XCTAssertTrue(command.contains("/usr/sbin/spctl --assess --type install"))
@@ -1827,6 +2206,9 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(command.contains("/Library/Application Support/Teslatlas Hub"))
         XCTAssertTrue(command.contains("$libexec/uninstall-macos-service.sh"))
         XCTAssertTrue(command.contains("/usr/bin/stat -f '%u:%g'"))
+        XCTAssertTrue(command.contains("/bin/test"))
+        XCTAssertFalse(command.contains("/usr/bin/test"))
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: "/bin/test"))
         XCTAssertTrue(command.contains("-perm +022"))
         XCTAssertTrue(command.hasSuffix("/bin/sh \"$uninstaller\" --delete-data"))
         XCTAssertFalse(command.contains("pkgutil --expand"))
@@ -2015,12 +2397,41 @@ private final class RecordingCommandRunner: HubCommandRunning {
 
 private final class PendingServiceRunner: HubServiceControlling {
     var loadState: HubServiceLoadState
-    private var completion: ((Result<String, Error>) -> Void)?
-    private var pendingResult: Result<String, Error>?
+    private var completions: [(Result<String, Error>) -> Void] = []
+    private var pendingResults: [Result<String, Error>] = []
 
     init(loadState: HubServiceLoadState) {
         self.loadState = loadState
     }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        if pendingResults.isEmpty {
+            completions.append(completion)
+        } else {
+            completion(pendingResults.removeFirst())
+        }
+    }
+
+    func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
+        completion(loadState)
+    }
+
+    func complete(_ result: Result<String, Error>) {
+        guard !completions.isEmpty else {
+            pendingResults.append(result)
+            return
+        }
+        completions.removeFirst()(result)
+    }
+
+    func complete(at index: Int, _ result: Result<String, Error>) {
+        completions.remove(at: index)(result)
+    }
+}
+
+private final class PendingCommandRunner: HubCommandRunning {
+    private var completion: ((Result<String, Error>) -> Void)?
+    private var pendingResult: Result<String, Error>?
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         self.completion = completion
@@ -2030,10 +2441,6 @@ private final class PendingServiceRunner: HubServiceControlling {
         }
     }
 
-    func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
-        completion(loadState)
-    }
-
     func complete(_ result: Result<String, Error>) {
         guard let completion else {
             pendingResult = result
@@ -2041,6 +2448,18 @@ private final class PendingServiceRunner: HubServiceControlling {
         }
         self.completion = nil
         completion(result)
+    }
+}
+
+private final class OutOfOrderCommandRunner: HubCommandRunning {
+    private var completions: [(Result<String, Error>) -> Void] = []
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        completions.append(completion)
+    }
+
+    func complete(at index: Int, with result: Result<String, Error>) {
+        completions[index](result)
     }
 }
 

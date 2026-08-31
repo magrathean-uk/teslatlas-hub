@@ -35,12 +35,10 @@ migration.
 - signal loss at the vehicle can create genuine live-route gaps;
 - TeslaFi import, Grafana, MQTT, and App Store delivery are not included.
 
-## Safety
+## Operation
 
-Back up and test recovery. Keep plaintext HTTP on loopback. Run only one owner
-of a legacy refresh-token pair. Do not use Hub for safety-critical or autonomous
-decisions. Vehicle commands affect physical property and require deliberate
-confirmation.
+Keep plaintext HTTP on loopback. Run only one owner of a legacy refresh-token
+pair. Vehicle commands require deliberate confirmation.
 
 ## Legal
 
@@ -51,8 +49,7 @@ not affiliated with, endorsed by, or supported by Tesla, Inc. or TeslaMate.
 The GitHub prerelease is complete only when it contains the signed tag,
 platform artifacts, exact source, checksums and signature, SPDX SBOM,
 dependency notices, provenance, and notarisation evidence described in
-`docs/releases/verification.md`. If any item is absent, do not install it. The Fleet
-notice embedded in the platform packages names
+`docs/releases/verification.md`. The Fleet notice embedded in the platform packages names
 `fleet-telemetry-go-module-sources.tar.gz`; that exact archive is supplied in
 the detailed release evidence and contains the source ZIP plus `go.mod` for all
 45 locked runtime modules, including Eclipse Paho under EPL-2.0. This

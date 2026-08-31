@@ -96,6 +96,5 @@ teslatlas-hub source
 ```
 
 These commands identify the exact version, licence, notices, and source route
-for the running binary. An untagged source candidate prints the public
-repository route; a published binary must instead identify its complete,
-version-bound Corresponding Source offer.
+for the running binary. The v1.0.0 build identifies its immutable tagged source;
+development builds identify the public repository.

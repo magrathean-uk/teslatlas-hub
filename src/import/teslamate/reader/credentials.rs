@@ -25,8 +25,9 @@ pub async fn read_legacy_token_ciphertexts(
     }
 }
 
-/// Read the opaque exact-4.1.1 legacy pair without changing the caller's
-/// transaction. `private.tokens` is part of the pinned source contract.
+/// Read the opaque legacy pair from the reviewed v4.2-compatible schema without
+/// changing the caller's transaction. `private.tokens` is part of the pinned
+/// source contract.
 pub(crate) async fn read_legacy_token_ciphertexts_in_client(
     client: &Client,
 ) -> Result<TeslaMateLegacyTokenCiphertexts, TeslaMateReaderError> {
@@ -331,10 +332,17 @@ pub(crate) fn related_positions_binary_copy_sql(
         .collect::<Vec<_>>()
         .join(",");
     let positions = render_streaming_projection_query(SourceTable::Positions, selected_car_id);
+    const ORDERING: &str = "ORDER BY \"source\".\"id\" ASC";
+    let (before_ordering, after_ordering) = positions
+        .split_once(ORDERING)
+        .expect("reviewed positions projection must retain its fixed ordering");
+    assert!(
+        !after_ordering.contains(ORDERING),
+        "reviewed positions projection must contain one fixed ordering"
+    );
     let query = format!(
-        "SELECT \"related\".* FROM ({positions}) AS \"related\" \
-         WHERE \"related\".\"id\" = ANY(ARRAY[{ids}]::int4[]) \
-         ORDER BY \"related\".\"id\" ASC"
+        "{before_ordering}  AND \"source\".\"id\" = ANY(ARRAY[{ids}]::int4[])\n\
+         {ORDERING}{after_ordering}"
     );
     format!("COPY ({query}) TO STDOUT WITH (FORMAT BINARY)")
 }

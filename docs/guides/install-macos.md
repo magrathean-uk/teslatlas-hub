@@ -1,29 +1,30 @@
 # Install on macOS
 
-Teslatlas Hub v1.0.0-beta.2 supports Apple-silicon Macs running macOS 13 or
+Teslatlas Hub v1.0.0 supports Apple-silicon Macs running macOS 13 or
 later.
 
-## Verify the download
+Build the combined installer from the `v1.0.0` source tag:
 
-No binary release is published yet. The installation instructions below apply
-only after the complete signed prerelease is published and passes
-[release verification](../releases/verification.md).
+```sh
+git checkout --detach v1.0.0
+./scripts/build-macos-app.sh
+```
 
 ## Install
 
-1. Expand `Teslatlas Hub.zip`.
-2. Move **Teslatlas Hub.app** to `/Applications`.
+1. Open `dist/TeslatlasHub.pkg`.
+2. Complete the macOS Installer flow. It installs **Teslatlas Hub.app** in
+   `/Applications` and the service payload in
+   `/Library/Application Support/Teslatlas Hub`.
 3. Open `/Applications/Teslatlas Hub.app`.
 4. Choose Fleet API, legacy login, or TeslaMate migration.
 5. Complete account setup and diagnostics.
-6. Approve the embedded privileged service installation when macOS asks.
-7. Confirm the dashboard reports **Running** and **Ready**.
+6. Confirm the dashboard reports **Running** and **Ready**.
 
-The app installs its embedded, independently signed service package at
-`/Library/Application Support/Teslatlas Hub`. A per-user LaunchAgent owns the
-running Hub service for the signed-in user. The separately downloadable
-`TeslatlasHubService.pkg` installs only this service payload; it does not install
-or move **Teslatlas Hub.app**.
+The product installer includes both the app and a service-only component. The
+app also carries `Contents/Resources/TeslatlasHubService.pkg` solely for in-app
+service management; it is not a separately downloadable app installer. A
+per-user LaunchAgent owns the running Hub service for the signed-in user.
 
 The app keeps Hub stopped when setup, version admission, package verification,
 or diagnostics fail. It never silently starts an unconfigured collector.

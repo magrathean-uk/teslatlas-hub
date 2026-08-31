@@ -10,6 +10,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     pin::pin,
+    time::Instant,
 };
 
 use futures_util::TryStreamExt;
@@ -25,7 +26,7 @@ use crate::{
     db::StoreError,
     hub_pack::{
         ProjectionBinding, ProjectionCharge, ProjectionDrive, ProjectionPackError,
-        ProjectionPackWriter, ProjectionSnapshot,
+        ProjectionPackWriter, ProjectionPosition, ProjectionSnapshot,
     },
     protocol::{SequenceRange, Sha256Digest},
     teslamate::ReadOnlySource,
@@ -34,6 +35,7 @@ use crate::{
         TeslaMateFragmentLimits, UpdateFragmentAccumulator, next_fragment_limits, serialized_bytes,
     },
     teslamate_parity::{TeslaMateSourceEvidenceError, TeslaMateSourceEvidenceFingerprint},
+    teslamate_progress::{TeslaMateMigrationPhase, TeslaMateMigrationProgressReporter},
     teslamate_projection::{
         ChargeProjectionFacts, DriveRelations, ProjectionReport, TeslaMateAddress,
         TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateChargingProcess,
@@ -132,6 +134,7 @@ pub async fn write_direct_full_snapshot(
         binding,
         snapshot_id,
         sequence,
+        TeslaMateMigrationProgressReporter::default(),
         |_| Ok(None),
         false,
         DirectCaptureMode::PublishPacks,
@@ -156,6 +159,7 @@ pub(crate) async fn write_direct_full_snapshot_with_projection_state<F>(
     snapshot_id: Uuid,
     sequence: SequenceRange,
     capture_legacy_token: bool,
+    progress: TeslaMateMigrationProgressReporter,
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
@@ -172,6 +176,7 @@ where
         binding,
         snapshot_id,
         sequence,
+        progress,
         |limits| capture_factory(limits).map(Some),
         capture_legacy_token,
         DirectCaptureMode::PublishPacks,
@@ -193,6 +198,7 @@ pub(crate) async fn capture_direct_successor_diff_with_projection_state<F>(
     snapshot_id: Uuid,
     sequence: SequenceRange,
     capture_legacy_token: bool,
+    progress: TeslaMateMigrationProgressReporter,
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
@@ -209,6 +215,7 @@ where
         binding,
         snapshot_id,
         sequence,
+        progress,
         |limits| capture_factory(limits).map(Some),
         capture_legacy_token,
         DirectCaptureMode::SuccessorDiff,
@@ -232,6 +239,7 @@ pub(crate) async fn capture_direct_snapshot_for_legacy_bridge<F>(
     snapshot_id: Uuid,
     sequence: SequenceRange,
     capture_legacy_token: bool,
+    progress: TeslaMateMigrationProgressReporter,
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
@@ -248,6 +256,7 @@ where
         binding,
         snapshot_id,
         sequence,
+        progress,
         |limits| capture_factory(limits).map(Some),
         capture_legacy_token,
         DirectCaptureMode::LegacyBridgeCapture,
@@ -266,6 +275,7 @@ async fn write_direct_full_snapshot_with_capture_factory<F>(
     binding: ProjectionBinding,
     snapshot_id: Uuid,
     sequence: SequenceRange,
+    progress: TeslaMateMigrationProgressReporter,
     mut capture_factory: F,
     capture_legacy_token: bool,
     capture_mode: DirectCaptureMode,
@@ -276,6 +286,7 @@ where
         TeslaMateProjectionStateLimits,
     ) -> Result<Option<TeslaMateProjectionStateCapture>, TeslaMateDirectError>,
 {
+    let capture_started = Instant::now();
     ensure_direct_capture_capacity(writer, read_limits.minimum_free_bytes)?;
     let (lease, selected_car_id_i16, schema) =
         open_exported_snapshot_lease(source, password, selected_car_id, read_limits).await?;
@@ -284,6 +295,7 @@ where
         // Read the authoritative counters through a lane imported from this
         // lease's snapshot. It is therefore safe both to select an initial
         // encoder target and to reconcile every later retry against it.
+        let source_count_started = Instant::now();
         let source_counts = read_direct_source_counts_from_exported_snapshot(
             source,
             password,
@@ -292,6 +304,14 @@ where
             read_limits,
         )
         .await?;
+        let total_rows = direct_source_row_count(source_counts)?;
+        progress.report(TeslaMateMigrationPhase::Counting, 0, total_rows);
+        tracing::info!(
+            selected_car_id,
+            total_rows,
+            duration_ms = elapsed_millis(source_count_started),
+            "counted TeslaMate migration source rows"
+        );
         // The count lane is imported from this exact exported source
         // snapshot. Admit every history-sized in-memory relation before the
         // metadata lanes can decode or allocate one of them.
@@ -352,6 +372,7 @@ where
                 projection_state,
                 capture_mode,
                 schema.clone(),
+                progress.clone(),
             )
             .await
             {
@@ -377,6 +398,11 @@ where
             capture.legacy_tokens =
                 Some(read_legacy_token_ciphertexts_in_client(lease.client()).await?);
         }
+        tracing::info!(
+            selected_car_id,
+            duration_ms = elapsed_millis(capture_started),
+            "finished TeslaMate direct capture"
+        );
         Ok(capture)
     }
     .await;
@@ -406,7 +432,11 @@ async fn write_direct_full_snapshot_once(
     projection_state: Option<TeslaMateProjectionStateCapture>,
     capture_mode: DirectCaptureMode,
     schema: TeslaMateSchemaInfo,
+    progress: TeslaMateMigrationProgressReporter,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError> {
+    let total_rows = direct_source_row_count(source_counts)?;
+    progress.report(TeslaMateMigrationPhase::Metadata, 0, total_rows);
+    let metadata_started = Instant::now();
     tracing::debug!(
         snapshot_id = %snapshot_id,
         direct_retained_row_units = retention.retained_row_units,
@@ -477,6 +507,22 @@ async fn write_direct_full_snapshot_once(
         u64::try_from(geofences.len())
             .map_err(|_| TeslaMateDirectError::DirectRetentionAccountingOverflow)?,
     )?;
+    let metadata_completed = source_counts
+        .addresses
+        .checked_add(source_counts.geofences)
+        .ok_or(TeslaMateDirectError::DirectRetentionAccountingOverflow)?;
+    progress.report(
+        TeslaMateMigrationPhase::Metadata,
+        metadata_completed,
+        total_rows,
+    );
+    tracing::info!(
+        selected_car_id,
+        address_rows = source_counts.addresses,
+        geofence_rows = source_counts.geofences,
+        duration_ms = elapsed_millis(metadata_started),
+        "captured TeslaMate migration metadata"
+    );
     let metadata_rows = addresses.len().checked_add(geofences.len()).ok_or(
         TeslaMateDirectError::MaximumRowsExceeded {
             maximum: read_limits.maximum_rows,
@@ -525,6 +571,7 @@ async fn write_direct_full_snapshot_once(
         capture_mode,
         Sha256Digest::of_bytes(snapshot_token.as_bytes()).to_string(),
         schema,
+        progress,
     )
     .await;
     #[cfg(test)]
@@ -1157,6 +1204,7 @@ async fn write_from_session(
     capture_mode: DirectCaptureMode,
     postgres_snapshot_sha256: String,
     schema: TeslaMateSchemaInfo,
+    progress: TeslaMateMigrationProgressReporter,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError> {
     let open_session =
         read_open_session_in_client(client, selected_car_id_i16, read_limits).await?;
@@ -1279,6 +1327,17 @@ async fn write_from_session(
         projected_states: projected_state_count,
         ..ProjectionReport::default()
     };
+    let total_rows = direct_source_row_count(source_counts)?;
+    let completed_before_positions = total_rows
+        .checked_sub(source_counts.positions)
+        .and_then(|completed| completed.checked_sub(source_counts.charges))
+        .ok_or(TeslaMateDirectError::DirectRetentionAccountingOverflow)?;
+    progress.report(
+        TeslaMateMigrationPhase::RelatedPositions,
+        completed_before_positions,
+        total_rows,
+    );
+    let related_positions_started = Instant::now();
     let mut related_positions = HashMap::new();
     prefetch_related_positions(
         client,
@@ -1289,6 +1348,12 @@ async fn write_from_session(
         retention.related_position_cache_ids,
     )
     .await?;
+    tracing::info!(
+        selected_car_id,
+        related_position_rows = related_positions.len(),
+        duration_ms = elapsed_millis(related_positions_started),
+        "prefetched TeslaMate related positions"
+    );
 
     let projected_drives = write_drives(
         selected_car_id,
@@ -1315,8 +1380,14 @@ async fn write_from_session(
         &mut sink,
         &mut logical_fingerprint,
         &mut report,
+        &progress,
+        completed_before_positions,
+        total_rows,
     )
     .await?;
+    let completed_before_charges = completed_before_positions
+        .checked_add(source_counts.positions)
+        .ok_or(TeslaMateDirectError::DirectRetentionAccountingOverflow)?;
     write_charges(
         client,
         selected_car_id,
@@ -1333,6 +1404,9 @@ async fn write_from_session(
         &mut logical_fingerprint,
         &mut report,
         DIRECT_MAX_RETAINED_CHARGING_PROCESS_ROWS,
+        &progress,
+        completed_before_charges,
+        total_rows,
     )
     .await?;
     let updates_accounted = match capture_mode {
@@ -1363,6 +1437,7 @@ async fn write_from_session(
         DirectCaptureMode::LegacyBridgeCapture => update_summary.observed_rows,
     };
     validate_direct_source_counts(source_counts, report, updates_accounted)?;
+    progress.transition(TeslaMateMigrationPhase::Finalizing);
 
     if !sink.has_written_fragments() {
         sink.write(ProjectionSnapshot {
@@ -1505,11 +1580,8 @@ fn initial_direct_fragment_limits(source_counts: TeslaMateSourceCounts) -> Tesla
     }
 }
 
-async fn read_direct_source_counts(
-    client: &Client,
-    selected_car_id: i16,
-) -> Result<TeslaMateSourceCounts, TeslaMateDirectError> {
-    const DIRECT_SOURCE_COUNT_SQL: &str = r#"
+fn direct_source_count_sql() -> &'static str {
+    r#"
 SELECT
   (SELECT COUNT(*)::bigint FROM "public"."cars" WHERE "id" = $1) AS "cars",
   (SELECT COUNT(*)::bigint FROM "public"."drives" WHERE "car_id" = $1) AS "drives",
@@ -1546,26 +1618,34 @@ SELECT
   (
     SELECT COUNT(*)::bigint
     FROM "public"."geofences" AS "source"
-    WHERE EXISTS (
-      SELECT 1
+    JOIN (
+      SELECT "drive"."start_geofence_id" AS "id"
       FROM "public"."drives" AS "drive"
       WHERE "drive"."car_id" = $1
-        AND (
-          "drive"."start_geofence_id" = "source"."id"
-          OR "drive"."end_geofence_id" = "source"."id"
-        )
-    )
-    OR EXISTS (
-      SELECT 1
+        AND "drive"."start_geofence_id" IS NOT NULL
+      UNION
+      SELECT "drive"."end_geofence_id" AS "id"
+      FROM "public"."drives" AS "drive"
+      WHERE "drive"."car_id" = $1
+        AND "drive"."end_geofence_id" IS NOT NULL
+      UNION
+      SELECT "process"."geofence_id" AS "id"
       FROM "public"."charging_processes" AS "process"
       WHERE "process"."car_id" = $1
-        AND "process"."geofence_id" = "source"."id"
-    )
+        AND "process"."geofence_id" IS NOT NULL
+    ) AS "related"
+      ON "related"."id" = "source"."id"
   ) AS "geofences",
   (SELECT COUNT(*)::bigint FROM "public"."updates" WHERE "car_id" = $1) AS "updates"
-"#;
+"#
+}
+
+async fn read_direct_source_counts(
+    client: &Client,
+    selected_car_id: i16,
+) -> Result<TeslaMateSourceCounts, TeslaMateDirectError> {
     let row = client
-        .query_one(DIRECT_SOURCE_COUNT_SQL, &[&selected_car_id])
+        .query_one(direct_source_count_sql(), &[&selected_car_id])
         .await?;
     Ok(TeslaMateSourceCounts {
         cars: source_count(&row, "cars")?,
@@ -1687,6 +1767,10 @@ fn direct_source_row_count(source: TeslaMateSourceCounts) -> Result<u64, TeslaMa
         source.geofences,
         source.updates,
     ])
+}
+
+fn elapsed_millis(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 fn direct_retention_preflight_reason(error: &TeslaMateDirectError) -> Option<&'static str> {
@@ -1899,6 +1983,57 @@ async fn write_drives(
     Ok(projected_by_id)
 }
 
+fn direct_position_fragment_accumulator(
+    car: &crate::hub_pack::ProjectionCar,
+    limits: TeslaMateFragmentLimits,
+    sink: &PackSink<'_>,
+) -> Result<Option<FragmentAccumulator>, TeslaMateFragmentError> {
+    if sink.captures_state_only() {
+        Ok(None)
+    } else {
+        FragmentAccumulator::new(car.clone(), limits).map(Some)
+    }
+}
+
+fn append_direct_position(
+    projected: ProjectionPosition,
+    drive: Option<&ProjectionDrive>,
+    accumulator: &mut Option<FragmentAccumulator>,
+    sink: &mut PackSink<'_>,
+    logical_fingerprint: &mut DirectProjectionFingerprint,
+    report: &mut ProjectionReport,
+) -> Result<(), TeslaMateDirectError> {
+    logical_fingerprint.record(DirectProjectionFingerprintFact::Position, &projected)?;
+    if sink.capture_state_only_position(&projected)? {
+        report.projected_positions = checked_increment(report.projected_positions)?;
+        return Ok(());
+    }
+
+    let accumulator = accumulator
+        .as_mut()
+        .expect("full position capture owns a fragment accumulator");
+    match drive {
+        None => {
+            accumulator.prepare(sink, |_| Ok((1, serialized_bytes(&projected)?)))?;
+        }
+        Some(drive) => {
+            let parent_is_present = accumulator.drive_ids.contains(&drive.id);
+            accumulator.prepare_with_parent(
+                sink,
+                parent_is_present,
+                || Ok((1, serialized_bytes(&projected)?)),
+                || Ok((1, serialized_bytes(drive)?)),
+            )?;
+            if accumulator.drive_ids.insert(drive.id) {
+                accumulator.drives.push(drive.clone());
+            }
+        }
+    }
+    accumulator.positions.push(projected);
+    report.projected_positions = checked_increment(report.projected_positions)?;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn write_positions(
     client: &Client,
@@ -1912,9 +2047,18 @@ async fn write_positions(
     sink: &mut PackSink<'_>,
     logical_fingerprint: &mut DirectProjectionFingerprint,
     report: &mut ProjectionReport,
+    progress: &TeslaMateMigrationProgressReporter,
+    progress_base_rows: u64,
+    progress_total_rows: u64,
 ) -> Result<(), TeslaMateDirectError> {
-    let mut accumulator = FragmentAccumulator::new(car.clone(), limits)?;
-    let mut source_position_rows = 0usize;
+    let mut accumulator = direct_position_fragment_accumulator(car, limits, sink)?;
+    let mut source_position_rows = 0_u64;
+    progress.report(
+        TeslaMateMigrationPhase::Positions,
+        progress_base_rows,
+        progress_total_rows,
+    );
+    let phase_started = Instant::now();
     tracing::info!(
         selected_car_id,
         "starting TeslaMate position history capture"
@@ -1948,6 +2092,14 @@ async fn write_positions(
             });
         }
         if source_position_rows.is_multiple_of(250_000) {
+            let completed_rows = progress_base_rows
+                .checked_add(source_position_rows)
+                .ok_or(TeslaMateDirectError::DirectRetentionAccountingOverflow)?;
+            progress.report(
+                TeslaMateMigrationPhase::Positions,
+                completed_rows,
+                progress_total_rows,
+            );
             tracing::info!(
                 selected_car_id,
                 source_position_rows,
@@ -1958,10 +2110,14 @@ async fn write_positions(
         let position = decode_binary_position(&row)?;
         let Some(drive_id) = position.drive_id else {
             let projected = crate::lifecycle::imported_position(&position);
-            logical_fingerprint.record(DirectProjectionFingerprintFact::Position, &projected)?;
-            accumulator.prepare(sink, |_| Ok((1, serialized_bytes(&projected)?)))?;
-            accumulator.positions.push(projected);
-            report.projected_positions = checked_increment(report.projected_positions)?;
+            append_direct_position(
+                projected,
+                None,
+                &mut accumulator,
+                sink,
+                logical_fingerprint,
+                report,
+            )?;
             continue;
         };
         let Some(drive) = drives.get(&drive_id) else {
@@ -1971,31 +2127,31 @@ async fn write_positions(
         };
         let projected = project_position(&position, selected_car_id, true)?
             .expect("completed drive position projects");
-        logical_fingerprint.record(DirectProjectionFingerprintFact::Position, &projected)?;
-        accumulator.prepare(sink, |current| {
-            let parent_is_new = !current.drive_ids.contains(&drive.id);
-            Ok((
-                1 + u64::from(parent_is_new),
-                serialized_bytes(&projected)?
-                    .checked_add(if parent_is_new {
-                        serialized_bytes(drive)?
-                    } else {
-                        0
-                    })
-                    .ok_or(TeslaMateFragmentError::FragmentSizeOverflow)?,
-            ))
-        })?;
-        if accumulator.drive_ids.insert(drive.id) {
-            accumulator.drives.push(drive.clone());
-        }
-        accumulator.positions.push(projected);
-        report.projected_positions = checked_increment(report.projected_positions)?;
+        append_direct_position(
+            projected,
+            Some(drive),
+            &mut accumulator,
+            sink,
+            logical_fingerprint,
+            report,
+        )?;
     }
-    accumulator.flush(sink)?;
+    if let Some(accumulator) = accumulator.as_mut() {
+        accumulator.flush(sink)?;
+    }
+    let completed_rows = progress_base_rows
+        .checked_add(source_position_rows)
+        .ok_or(TeslaMateDirectError::DirectRetentionAccountingOverflow)?;
+    progress.report(
+        TeslaMateMigrationPhase::Positions,
+        completed_rows,
+        progress_total_rows,
+    );
     tracing::info!(
         selected_car_id,
         source_position_rows,
         projected_positions = report.projected_positions,
+        duration_ms = elapsed_millis(phase_started),
         "finished TeslaMate position history capture"
     );
     Ok(())
@@ -2018,7 +2174,16 @@ async fn write_charges(
     logical_fingerprint: &mut DirectProjectionFingerprint,
     report: &mut ProjectionReport,
     maximum_retained_processes: u64,
+    progress: &TeslaMateMigrationProgressReporter,
+    progress_base_rows: u64,
+    progress_total_rows: u64,
 ) -> Result<(), TeslaMateDirectError> {
+    progress.report(
+        TeslaMateMigrationPhase::Charges,
+        progress_base_rows,
+        progress_total_rows,
+    );
+    let phase_started = Instant::now();
     ensure_direct_retained_table_rows(
         "charging_processes",
         processes.len(),
@@ -2145,6 +2310,18 @@ async fn write_charges(
                 maximum: read_limits.maximum_rows,
             });
         }
+        if second_pass_rows.is_multiple_of(100_000) {
+            let charge_rows = u64::try_from(second_pass_rows)
+                .map_err(|_| TeslaMateDirectError::DirectRetentionAccountingOverflow)?;
+            let completed_rows = progress_base_rows
+                .checked_add(charge_rows)
+                .ok_or(TeslaMateDirectError::DirectRetentionAccountingOverflow)?;
+            progress.report(
+                TeslaMateMigrationPhase::Charges,
+                completed_rows,
+                progress_total_rows,
+            );
+        }
         let sample = decode_binary_charge(&row)?;
         let parent = projected_by_id.get(&sample.charging_process_id).ok_or(
             TeslaMateDirectError::MissingChargingProcess {
@@ -2153,19 +2330,13 @@ async fn write_charges(
         )?;
         let projected = project_charge_sample(&sample);
         logical_fingerprint.record(DirectProjectionFingerprintFact::ChargeSample, &projected)?;
-        samples.prepare(sink, |current| {
-            let parent_is_new = !current.charge_ids.contains(&parent.id);
-            Ok((
-                1 + u64::from(parent_is_new),
-                serialized_bytes(&projected)?
-                    .checked_add(if parent_is_new {
-                        serialized_bytes(parent)?
-                    } else {
-                        0
-                    })
-                    .ok_or(TeslaMateFragmentError::FragmentSizeOverflow)?,
-            ))
-        })?;
+        let parent_is_present = samples.charge_ids.contains(&parent.id);
+        samples.prepare_with_parent(
+            sink,
+            parent_is_present,
+            || Ok((1, serialized_bytes(&projected)?)),
+            || Ok((1, serialized_bytes(parent)?)),
+        )?;
         if samples.charge_ids.insert(parent.id) {
             samples.charges.push(parent.clone());
         }
@@ -2173,6 +2344,23 @@ async fn write_charges(
         report.projected_charge_samples = checked_increment(report.projected_charge_samples)?;
     }
     samples.flush(sink)?;
+    let charge_rows = u64::try_from(second_pass_rows)
+        .map_err(|_| TeslaMateDirectError::DirectRetentionAccountingOverflow)?;
+    let completed_rows = progress_base_rows
+        .checked_add(charge_rows)
+        .ok_or(TeslaMateDirectError::DirectRetentionAccountingOverflow)?;
+    progress.report(
+        TeslaMateMigrationPhase::Charges,
+        completed_rows,
+        progress_total_rows,
+    );
+    tracing::info!(
+        selected_car_id,
+        source_charge_rows = charge_rows,
+        projected_charge_samples = report.projected_charge_samples,
+        duration_ms = elapsed_millis(phase_started),
+        "finished TeslaMate charging history capture"
+    );
     Ok(())
 }
 

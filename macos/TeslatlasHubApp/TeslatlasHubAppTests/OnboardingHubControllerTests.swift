@@ -5,6 +5,153 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class OnboardingHubControllerTests: XCTestCase {
+    func testMigrationPreflightFailureHidesCommandOutput() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let secret = "preflight-secret-\(UUID().uuidString)"
+        let runner = OnboardingRunner(compatibilityResult: .failure(
+            HubActionError.commandExited(1, "SSH failed: \(secret)")
+        ))
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "preflight failure presented safely")
+
+        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         encryptionKeyFile: "/private/encryption",
+                                         acknowledgeV42CompatibleSchema: true) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("failed preflight unexpectedly imported")
+            }
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Could not verify TeslaMate. Check the server connection and try again."
+            )
+            XCTAssertFalse(error.localizedDescription.contains(secret))
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertFalse(HubAppLog.shared.recentText().contains(secret))
+    }
+
+    func testMigrationFailurePresentsOnlyActionableCredentialRecovery() {
+        let rawDiagnostic = """
+        {"event":"migration_progress","completedRows":11000000,"totalRows":11063752,"phase":"copy_positions"}
+        INFO imported position batch 10999
+        ERROR legacy refresh outcome is unresolved; explicit re-login is required
+        """
+        let commandError = HubActionError.commandExited(1, rawDiagnostic)
+
+        let presented = HubController.migrationStoppedError(commandError).localizedDescription
+
+        XCTAssertEqual(
+            presented,
+            "Sign in to Tesla again in TeslaMate, then retry the import."
+        )
+        XCTAssertFalse(presented.contains("migration_progress"))
+        XCTAssertFalse(presented.contains("11000000"))
+        XCTAssertEqual(commandError.localizedDescription, rawDiagnostic)
+    }
+
+    func testMigrationFailureReasonCodesAreBoundedAndDeterministic() {
+        let cases: [(Error, String)] = [
+            (HubActionError.commandTimedOut, "timeout"),
+            (HubActionError.commandExited(1, "SQLite error: database or disk is full"),
+             "disk_space"),
+            (HubActionError.commandExited(1, "TeslaMate schema version is incompatible"),
+             "schema_version"),
+            (HubActionError.commandExited(255, "ssh tunnel: connection refused"),
+             "ssh_tunnel"),
+            (HubActionError.commandExited(
+                1,
+                "cannot store TeslaMate token pair: legacy refresh outcome is unresolved"
+            ), "credentials"),
+            (HubActionError.commandExited(1, "SQLite database is locked"), "sqlite_database"),
+            (HubActionError.commandExited(1, "unexpected secret-passphrase=do-not-log"),
+             "generic")
+        ]
+
+        for (error, expected) in cases {
+            XCTAssertEqual(HubController.migrationFailureReasonCode(error), expected)
+            XCTAssertLessThanOrEqual(expected.utf8.count, 32)
+        }
+    }
+
+    func testMigrationProcessFailureLogsOnlyBoundedReasonCode() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let secret = "migration-secret-\(UUID().uuidString)"
+        let runner = OnboardingRunner(migrationResult: .failure(
+            HubActionError.commandExited(
+                1,
+                "cannot store TeslaMate token pair: legacy refresh outcome is unresolved \(secret)"
+            )
+        ))
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "migration failure recorded")
+
+        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         encryptionKeyFile: "/private/encryption",
+                                         acknowledgeV42CompatibleSchema: true) { result in
+            guard case .failure = result else { return XCTFail("expected migration failure") }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        let diagnostics = HubAppLog.shared.recentText()
+        XCTAssertTrue(diagnostics.contains("teslamate_import import.process.failed"))
+        XCTAssertTrue(diagnostics.contains("reason_code=credentials"))
+        XCTAssertFalse(diagnostics.contains(secret))
+    }
+
+    func testMigrationFailureHidesGenericCommandOutput() {
+        let rawDiagnostic = """
+        {"event":"migration_progress","completedRows":42,"totalRows":100,"phase":"copy_positions"}
+        INFO internal import detail
+        ERROR unexpected private diagnostic
+        """
+        let commandError = HubActionError.commandExited(1, rawDiagnostic)
+
+        let presented = HubController.migrationStoppedError(commandError).localizedDescription
+
+        XCTAssertEqual(presented, "TeslaMate import failed; retry the import.")
+        XCTAssertFalse(presented.contains("migration_progress"))
+        XCTAssertFalse(presented.contains("private diagnostic"))
+        XCTAssertEqual(commandError.localizedDescription, rawDiagnostic)
+    }
+
+    func testMigrationProgressParsingAcceptsOnlyStructuredEvents() throws {
+        let progress = try XCTUnwrap(HubController.parseMigrationProgress(
+            #"{"event":"migration_progress","completedRows":123,"totalRows":456,"phase":"copy_positions"}"#
+        ))
+        XCTAssertEqual(progress.completedRows, 123)
+        XCTAssertEqual(progress.totalRows, 456)
+        XCTAssertEqual(progress.phase, "copy_positions")
+
+        let clamped = try XCTUnwrap(HubController.parseMigrationProgress(
+            #"{"event":"migration_progress","completedRows":5,"totalRows":4}"#
+        ))
+        XCTAssertEqual(clamped.completedRows, 4)
+        XCTAssertNil(HubController.parseMigrationProgress(
+            #"{"event":"other","completedRows":1,"totalRows":2}"#
+        ))
+        XCTAssertNil(HubController.parseMigrationProgress(
+            #"{"event":"migration_progress","completedRows":0,"totalRows":0}"#
+        ))
+        XCTAssertNil(HubController.parseMigrationProgress("not json"))
+    }
+
     func testTeslaMateCompatibilityParsingAcceptsOnlyAcknowledged42CompatibleSchema() throws {
         let compatible = try XCTUnwrap(HubController.parseTeslaMateCompatibility("""
         progress line
@@ -168,6 +315,70 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
     }
 
+    func testOnlineMigrationForwardsStructuredProgressOnMainThread() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let runner = OnboardingRunner(progressLines: [
+            #"{"event":"migration_progress","completedRows":0,"totalRows":10,"phase":"preparing"}"#,
+            "unrelated output",
+            #"{"event":"migration_progress","completedRows":7,"totalRows":10,"phase":"copy_positions"}"#
+        ])
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "progress import completes")
+        var updates: [HubMigrationProgress] = []
+
+        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         encryptionKeyFile: "/private/encryption",
+                                         acknowledgeV42CompatibleSchema: true,
+                                         progress: {
+                                             XCTAssertTrue(Thread.isMainThread)
+                                             updates.append($0)
+                                         }) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(updates.map(\.completedRows), [0, 7])
+        XCTAssertEqual(updates.map(\.totalRows), [10, 10])
+        XCTAssertEqual(updates.compactMap(\.phase), ["preparing", "copy_positions"])
+    }
+
+    func testOnlineMigrationSuppressesProgressDeliveredAfterCompletion() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let lateProgress = expectation(description: "no progress after terminal completion")
+        lateProgress.isInverted = true
+        let runner = OnboardingRunner(lateProgressLines: [
+            #"{"event":"migration_progress","completedRows":9,"totalRows":10,"phase":"copy_positions"}"#
+        ])
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: OnboardingService(),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        let finished = expectation(description: "import completed")
+
+        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         encryptionKeyFile: "/private/encryption",
+                                         acknowledgeV42CompatibleSchema: true,
+                                         progress: { _ in lateProgress.fulfill() }) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 2)
+        wait(for: [lateProgress], timeout: 0.2)
+    }
+
     func testOnlineMigrationRejectsMissingVersionAcknowledgementBeforeCommands() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -220,7 +431,10 @@ final class OnboardingHubControllerTests: XCTestCase {
             guard case let .failure(error) = result else {
                 return XCTFail("expected missing report failure")
             }
-            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            XCTAssertEqual(
+                error.localizedDescription,
+                "TeslaMate import failed; retry the import."
+            )
             migration.fulfill()
         }
 
@@ -251,31 +465,40 @@ private final class OnboardingEvents {
 
 private final class OnboardingRunner: HubCommandRunning {
     private let events: OnboardingEvents?
+    private let compatibilityResult: Result<String, Error>
     private let migrationResult: Result<String, Error>
+    private let progressLines: [String]
+    private let lateProgressLines: [String]
     private(set) var argumentCalls: [[String]] = []
 
     init(events: OnboardingEvents? = nil,
+         compatibilityResult: Result<String, Error> = .success(
+             #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready."}"#
+         ),
          migrationResult: Result<String, Error> = .success(
              "{\"status\":\"imported\",\"captureMode\":\"online-snapshot\"}"
-         )) {
+         ),
+         progressLines: [String] = [],
+         lateProgressLines: [String] = []) {
         self.events = events
+        self.compatibilityResult = compatibilityResult
         self.migrationResult = migrationResult
+        self.progressLines = progressLines
+        self.lateProgressLines = lateProgressLines
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         argumentCalls.append(arguments)
         if arguments.contains("teslamate-check") {
             events?.append("check")
-            completion(.success("""
-            {"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready."}
-            """))
+            completion(compatibilityResult)
         } else if arguments.contains("migrate") {
             events?.append("migrate")
             completion(migrationResult)
         } else if arguments.contains("status") {
             events?.append("status")
             completion(.success("""
-            {"status":"ok","version":"1.0.0-beta.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
+            {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
             """))
         } else if arguments.contains("doctor") {
             events?.append("doctor")
@@ -287,6 +510,20 @@ private final class OnboardingRunner: HubCommandRunning {
 
     func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
         run(arguments: arguments, completion: completion)
+    }
+
+    func run(arguments: [String],
+             onOutputLine: @escaping (String) -> Void,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        if arguments.contains("migrate") {
+            progressLines.forEach(onOutputLine)
+        }
+        run(arguments: arguments, completion: completion)
+        if arguments.contains("migrate") {
+            DispatchQueue.main.async {
+                self.lateProgressLines.forEach(onOutputLine)
+            }
+        }
     }
 }
 

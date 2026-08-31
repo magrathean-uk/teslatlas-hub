@@ -1,98 +1,55 @@
 # Corresponding Source availability
 
-For every binary/package, publish:
-
-- exact source archive;
-- commit and signed tag;
-- build/install scripts;
-- lockfiles and vendored source;
-- generated-source inputs;
-- interface definitions;
-- dependency notices and SBOM;
-- checksums/signatures;
-- installation information where GNU AGPL section 6 requires it.
-
-Keep source access available for the period required by the distribution method.
-
-A modified network deployment must offer the source of the version actually running, not stale upstream source.
-
-## Current untagged candidate
-
-"v1.0.0-beta.2" is source-only and untagged. No binary or package is
-distributed for it, and no release asset or complete object-code source offer
-is claimed. Its candidate source is the public repository main branch. A
-future object-code release must satisfy the full requirements above with an
-exact immutable source reference.
-
-## Planned v1 source assets
-
-When the release is published, its version-bound GitHub release page will be the
-prominent source landing page. The complete Corresponding Source offer will
-comprise both the exact tagged workspace
-archive `teslatlas-hub-v1.0.0-beta.1-source.tar.gz` and the source components
-inside `teslatlas-hub-v1.0.0-beta.1-evidence.tar.gz`; neither asset alone is
-represented as complete. Locked Rust registry source is a deterministic
-component of the latter. Generate and verify it with the actual helper contract:
+Teslatlas Hub v1.0.0 is published as source under `AGPL-3.0-only`. The
+immutable source boundary is the annotated Git tag `v1.0.0`:
 
 ```sh
-RUST_CARGO=$(rustup which --toolchain 1.98.0 cargo)
-PATH="$(dirname "$RUST_CARGO"):$PATH"
-export PATH
-python3 scripts/rust-source-evidence.py \
-  --repo . \
-  --cargo "$RUST_CARGO" \
-  --cargo-home "${CARGO_HOME:-$HOME/.cargo}" \
-  --bin teslatlas-hub \
-  --output-dir dist/release/rust-source-evidence
-python3 scripts/rust-source-evidence.py \
-  --repo . \
-  --verify-dir dist/release/rust-source-evidence \
-  --rebuild
+git clone https://github.com/magrathean-uk/teslatlas-hub.git
+cd teslatlas-hub
+git checkout --detach v1.0.0
+git status --short
 ```
 
-The output directory contains only `rust-vendored-sources.tar.gz`,
-`rust-source-inventory.json`, and `rust-source-evidence-manifest.json`. The
-archive carries the Cargo offline source-replacement configuration, exact
-Cargo.lock registry `.crate` archives, and independently reconstructed package
-trees; the tagged workspace source remains in the separate workspace archive.
-`release-evidence.py --rust-source-evidence` stages
-all three files inside the deterministic detailed evidence tarball; they are
-not separate top-level publication assets.
+The final command should print nothing. The tag contains the Hub source,
+platform packaging, lockfiles, interface definitions, licence texts, notices,
+and the inputs needed by the documented build helpers.
 
-The complete Fleet Telemetry evidence directory must also be included inside
-the detailed evidence tarball. Its `fleet-telemetry-upstream-source.tar.gz`
-file is the exact pinned upstream source used by the bridge build.
-`fleet-telemetry-go-module-sources.tar.gz` contains the exact source ZIP and
-`go.mod` for every one of the 45 locked runtime modules, including the Eclipse
-Paho EPL-2.0 source. The generated Fleet notice embedded in the app and Debian
-packages points to that archive in detailed release evidence; the archive is
-not part of the smaller dependency legal bundle installed with the package.
-This Fleet Go source/legal corpus is platform-invariant and does not by itself
-prove a native Linux rebuild.
-The Go command-proxy evidence similarly contains
-`tesla-http-proxy-go-sources.tar.gz`, including the exact upstream module
-archives and the tracked, dated `go.mod` overlay applied to the private build
-copy. Publish the actual detailed archive, not
-only source URLs, locks, manifests, or hashes.
+## Distribution status
 
-The command-proxy evidence helper supports `darwin-arm64`, `linux-amd64`, and
-`linux-arm64`. Its v2 manifest binds the selected target and binary subject,
-captures the 20-module cross-platform source lock and 21 source packages, and
-records a byte-identical clean target rebuild performed during generation on
-the locked Apple-silicon macOS host. `--verify-dir` validates that record and
-the complete evidence but does not rerun the rebuild. Official Debian evidence must include the
-matching per-architecture Go and Fleet directories as well as the native
-receipt that binds the tagged `packaging/linux/sidecar-sha256.lock` and packaged
-`SIDECAR_SHA256SUMS`. Darwin evidence is never a substitute for Linux evidence.
+There is no GitHub Release page and no downloadable GitHub release asset for
+v1.0.0. The repository distributes source. A combined macOS package can be
+built locally as `dist/TeslatlasHub.pkg`; Debian packages can be built locally
+for their target architecture.
 
-The preferred editable source for the raster application icon is the tracked
-`macos/TeslatlasHubApp/Artwork/AppIcon.iconset/`. On macOS,
-`scripts/build-app-icon.sh` regenerates the distributed `AppIcon.icns` and the
-README preview from those inputs. Private creator/assignment and brand-clearance
-records remain a separate release-authority gate; their absence is not repaired
-by source availability.
+Anyone who distributes those packages or another object-code build must make
+the complete corresponding source for the exact distributed version available
+under the GNU AGPL. That offer must include the build and installation material
+required by the chosen distribution method.
 
-Recommended CLI:
+## Dependency source material
+
+The build helpers generate exact dependency inventories and source evidence
+from the locked inputs:
+
+```sh
+python3 scripts/go-proxy-evidence.py --repo . \
+  --verify-dir dist/go-proxy-evidence
+python3 scripts/fleet-telemetry-evidence.py --repo . \
+  --verify-dir dist/fleet-telemetry-evidence
+python3 scripts/legal-bundle.py --repo . \
+  --go-proxy-evidence dist/go-proxy-evidence \
+  --fleet-telemetry-evidence dist/fleet-telemetry-evidence \
+  --verify-dir dist/dependency-legal
+```
+
+Fleet evidence includes the pinned upstream source and the source ZIP plus
+`go.mod` for each locked runtime module. Go command-proxy evidence includes the
+locked upstream module sources and tracked overlay. Rust dependency evidence is
+generated with `scripts/rust-source-evidence.py` from `Cargo.lock`.
+
+## Runtime source route
+
+The CLI exposes the licence and source information used by the running build:
 
 ```text
 teslatlas-hub legal
@@ -100,13 +57,8 @@ teslatlas-hub licence
 teslatlas-hub source
 ```
 
-An untagged candidate prints the public repository route; it has no
-version-bound release page or complete object-code source offer. A published
-binary prints the version-bound GitHub release-page URL that lists both required
-source assets. `/.well-known/teslatlas-hub` exposes the same source route. The
-macOS app provides a source menu item bound to its embedded Hub version.
-Published-release notes must identify the workspace archive and detailed
-evidence archive as the complete two-part source set.
+The macOS app exposes the same source information through its application menu,
+and `/.well-known/teslatlas-hub` includes the source route for paired clients.
 
-An operator distributing a modified build must replace that route with the
-complete Corresponding Source for the version actually served.
+An operator who modifies or hosts Hub must offer the source of the version
+actually running, not an unrelated tag or a newer `main` checkout.

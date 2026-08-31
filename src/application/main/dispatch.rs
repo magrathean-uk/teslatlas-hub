@@ -180,6 +180,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         access_token_file,
         refresh_token_file,
         online_snapshot,
+        preserve_existing_credentials,
         acknowledge_v4_2_compatible_schema: _,
     } = &cli.command
     {
@@ -196,6 +197,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 access_token_file: access_token_file.as_deref(),
                 refresh_token_file: refresh_token_file.as_deref(),
                 online_snapshot: *online_snapshot,
+                preserve_existing_credentials: *preserve_existing_credentials,
             },
         )
         .await?;

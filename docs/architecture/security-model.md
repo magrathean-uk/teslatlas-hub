@@ -6,8 +6,7 @@
 - Fleet virtual-key and command-proxy material;
 - device pairing bearers and cursor-signing keys;
 - exact vehicle identity, location, and travel history;
-- backup and recovery keys;
-- release signing and notarisation identities.
+- backup and recovery keys.
 
 ## Trust boundaries
 
@@ -20,7 +19,7 @@
 | Provider credentials | Resident collector is the sole refresh owner. |
 | TeslaMate migration | Read-only PostgreSQL transaction and exact schema admission. |
 | Vehicle command | Explicit action, confirmation, selected vehicle, bounded proxy. |
-| Release | Exact signed tag, checksums, signatures, notarisation, SBOM, and source. |
+| Source release | Immutable annotated tag, exact version, clean tree, provenance classification, and licence material. |
 
 ## Defensive defaults
 
@@ -37,8 +36,7 @@
 
 ## Out of scope
 
-Hub is not a safety system, vehicle security boundary, autonomous-driving
-component, emergency service, or authorization to test Tesla, TeslaMate, Apple,
-GitHub, another vehicle, or another person's system.
+This security model does not authorize testing Tesla, TeslaMate, Apple, GitHub,
+another vehicle, or another person's system.
 
 Report product vulnerabilities privately under the [security policy](../../.github/SECURITY.md).

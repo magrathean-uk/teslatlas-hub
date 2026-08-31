@@ -27,7 +27,7 @@ pub use collection::{collector, current_state, fleet_telemetry, tesla_stream};
 pub use geo::{geocoder, gpx, location, terrain, terrain_cache};
 pub use import::teslamate::{
     direct as teslamate_direct, fragments as teslamate_fragments, importer as teslamate_import,
-    parity as teslamate_parity, projection as teslamate_projection,
+    parity as teslamate_parity, progress as teslamate_progress, projection as teslamate_projection,
     projection_state as teslamate_projection_state, reader as teslamate_reader,
     schema as teslamate_schema, source as teslamate, stage as teslamate_stage,
     writeback as teslamate_writeback,
@@ -50,10 +50,12 @@ pub(crate) use sync::manifest_signing;
 
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/teslatlas-hub";
+pub const CORRESPONDING_SOURCE_URL: &str =
+    "https://github.com/magrathean-uk/teslatlas-hub/tree/v1.0.0";
 
-/// Source repository for the current unpublished candidate.
+/// Immutable Corresponding Source for this release.
 pub fn corresponding_source_url() -> String {
-    SOURCE_URL.to_owned()
+    CORRESPONDING_SOURCE_URL.to_owned()
 }
 
 #[cfg(test)]
@@ -73,19 +75,21 @@ pub fn legal_notice() -> String {
          Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own\n\
          License: AGPL-3.0-only\n\
          Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: {SOURCE_URL}\n\
-         Candidate source: {corresponding_source}\n\
+         Corresponding Source: {corresponding_source}\n\
          Unofficial; not affiliated with Tesla or TeslaMate; no warranty."
     )
 }
 
 #[cfg(test)]
 mod legal_notice_tests {
-    use super::{BUILD_VERSION, SOURCE_URL, corresponding_source_url, legal_notice};
+    use super::{
+        BUILD_VERSION, CORRESPONDING_SOURCE_URL, SOURCE_URL, corresponding_source_url, legal_notice,
+    };
 
     #[test]
-    fn unpublished_candidate_uses_repository_source_until_a_tag_is_published() {
-        assert_eq!(BUILD_VERSION, "1.0.0-beta.2");
-        assert_eq!(corresponding_source_url(), SOURCE_URL);
+    fn stable_release_uses_immutable_tagged_source() {
+        assert_eq!(BUILD_VERSION, "1.0.0");
+        assert_eq!(corresponding_source_url(), CORRESPONDING_SOURCE_URL);
     }
 
     #[test]
