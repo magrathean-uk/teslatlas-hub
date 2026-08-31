@@ -164,9 +164,10 @@ Add these package scripts:
 }
 ```
 
-Exclude `src/generated/**` from Biome so formatting cannot alter generator-locked
-bytes. Prefix generated validator output with `// @ts-nocheck` and
-`// @generated`; the checked public wrapper supplies its narrow typed surface.
+Exclude `src/generated/**` and `protocol/**` from Biome so formatting cannot
+alter generator-locked or authority-locked bytes. Prefix generated validator
+output with `// @ts-nocheck` and `// @generated`; the checked public wrapper
+supplies its narrow typed surface.
 
 In `scripts/protocol-files.mjs`, export immutable allowlists:
 
@@ -306,15 +307,19 @@ git commit -m "feat: pin and generate Teslatlas protocol contracts"
 
 - [ ] **Step 1: Write failing model, negotiation, and session tests**
 
-Use generated types in compile-time assignments and runtime examples:
+Treat JSON imports as untrusted runtime data. Validate them before obtaining
+the exact generated-derived types; do not widen protocol literal fields merely
+to make unchecked JSON imports assignable:
 
 ```ts
 import type { HubDescriptor, VehiclePage } from "../../src/protocol/models.js";
 import discovery from "../../protocol/source/examples/discovery.json" with { type: "json" };
 import vehicles from "../../protocol/source/examples/vehicles-page.json" with { type: "json" };
+import { decodeProtocolValue } from "../../src/protocol/validate.js";
+import { validateDiscovery, validateVehiclePage } from "../../src/generated/validators.js";
 
-const descriptor: HubDescriptor = discovery;
-const page: VehiclePage = vehicles;
+const descriptor: HubDescriptor = decodeProtocolValue<HubDescriptor>(discovery, validateDiscovery, "discovery");
+const page: VehiclePage = decodeProtocolValue<VehiclePage>(vehicles, validateVehiclePage, "vehicle_page");
 expect(descriptor.protocol.current_version).toBe("1.2.0");
 expect(page.items.length).toBeGreaterThan(0);
 ```
@@ -322,11 +327,12 @@ expect(page.items.length).toBeGreaterThan(0);
 In `tests/unit/negotiation.test.ts`, cover exact selection and failure:
 
 ```ts
-expect(negotiateProtocolVersion(discovery, "1.2.0")).toBe("1.2.0");
-expect(negotiateProtocolVersion(discovery, "1.1.0")).toBe("1.1.0");
-expect(() => negotiateProtocolVersion(discovery, "2.0.0")).toThrow(IncompatibleProtocolError);
-expect(requireCapability(discovery, "commands.async").id).toBe("commands.async");
-expect(() => requireCapability(discovery, "missing.capability")).toThrow(MissingCapabilityError);
+const descriptor = decodeProtocolValue<HubDescriptor>(discovery, validateDiscovery, "discovery");
+expect(negotiateProtocolVersion(descriptor, "1.2.0")).toBe("1.2.0");
+expect(negotiateProtocolVersion(descriptor, "1.1.0")).toBe("1.1.0");
+expect(() => negotiateProtocolVersion(descriptor, "2.0.0")).toThrow(IncompatibleProtocolError);
+expect(requireCapability(descriptor, "commands.async").id).toBe("commands.async");
+expect(() => requireCapability(descriptor, "missing.capability")).toThrow(MissingCapabilityError);
 ```
 
 In `tests/unit/client-session.test.ts`, inject Fetch and assert:
@@ -346,6 +352,11 @@ expect(observed[0]).toMatchObject({
 });
 ```
 
+Also prove that a non-loopback `http:` bootstrap URL fails before any Fetch,
+discovery uses `redirect: "error"`, a schema-valid non-`200` discovery response
+does not create a session, and an abort while reading discovery body propagates
+the supplied signal reason unchanged.
+
 Add malformed JavaScript checkpoint values to the SSE test using a cast and
 assert `InvalidSseCheckpointError`, never raw `TypeError`.
 
@@ -359,12 +370,15 @@ Expected: FAIL because protocol facade/session modules and new errors do not exi
 
 - [ ] **Step 3: Export protocol-derived aliases without duplicating fields**
 
-`src/protocol/models.ts` must alias generated declarations exactly:
+`src/protocol/models.ts` must derive public aliases from generated declarations
+without repeating wire fields. `openapi-typescript` emits JSON Schema `$defs`
+as a required type-level property on a schema root even though it is not a
+runtime payload member; omit that generator-only property at affected roots:
 
 ```ts
 import type { components } from "../generated/protocol.js";
 
-export type HubDescriptor = components["schemas"]["Discovery"];
+export type HubDescriptor = Omit<components["schemas"]["Discovery"], "$defs">;
 export type VehiclePage = components["schemas"]["Resources"]["$defs"]["vehicle_page"];
 export type CurrentState = components["schemas"]["Resources"]["$defs"]["current_state"];
 export type DrivePage = components["schemas"]["Resources"]["$defs"]["drive_page"];
@@ -384,8 +398,13 @@ export type MetadataTombstone = components["schemas"]["Metadata"]["$defs"]["meta
 export type CommandRequest = components["schemas"]["Command"]["$defs"]["command_request"];
 export type CommandJob = components["schemas"]["Command"]["$defs"]["command_job"];
 export type ProtocolEvent = components["schemas"]["Event"];
-export type ProtocolProblem = components["schemas"]["Problem"];
+export type ProtocolProblem = Omit<components["schemas"]["Problem"], "$defs">;
 ```
+
+Do not copy or transform payload fields at runtime. If a later exposed alias
+contains another generated root `$defs` artifact, apply the same narrow
+`Omit<T, "$defs">` helper only to that alias and add a direct canonical-example
+assignment test before doing so.
 
 Wrap generated boolean validators in `decodeProtocolValue<T>()`; on failure
 throw `ProtocolValidationError` with validator name only. Never expose Ajv
@@ -471,8 +490,10 @@ function validateCheckpoint(value: unknown): asserts value is string | undefined
 
 `negotiateProtocolVersion()` parses the requested version, intersects it with
 the locked profiles and descriptor `supported_versions`, rejects incompatible
-major/minimum-client constraints, then selects the highest compatible version
-not newer than the request.
+major/minimum-client constraints, then selects the highest candidate that is
+both not newer than the request and not older than
+`minimum_client_version`. If no candidate meets both bounds, it throws
+`IncompatibleProtocolError`.
 
 `createClientSession()` has this exact shape:
 
@@ -494,10 +515,13 @@ export interface ClientSession {
 }
 ```
 
-It creates an unauthenticated `discoveryTransport`, fetches
-`/.well-known/teslatlas-hub` without Authorization, validates the body and
+Before any discovery Fetch, it rejects credential-bearing or non-loopback
+`http:` bootstrap URLs. It creates an unauthenticated `discoveryTransport`,
+fetches `/.well-known/teslatlas-hub` with Authorization absent and
+`redirect: "error"`, requires a `200` response, validates the body and
 HTTPS/loopback endpoint URLs, negotiates the profile, then creates authenticated
-API/event transports using descriptor endpoints. `discoveryTransport` remains
+API/event transports using descriptor endpoints. An abort during body reading
+propagates the caller signal reason unchanged. `discoveryTransport` remains
 available only to implement the public unauthenticated `discoverHub` operation.
 It does not persist or assert trust in `hub_id`.
 

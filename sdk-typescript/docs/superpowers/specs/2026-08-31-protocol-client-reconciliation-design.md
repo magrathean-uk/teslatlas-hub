@@ -119,7 +119,9 @@ The hand-written public surface refers to generated operation and schema types
 instead of repeating resource fields. Public resource aliases cover the
 released vehicle, current state, drive, position, charge, sample, state,
 software-update, data-quality, metadata, event, problem, discovery, and command
-job shapes.
+job shapes. Where the generator represents a JSON Schema root `$defs` block as
+a required type property, the facade omits that generator-only metadata from
+the affected public alias; it never remaps runtime payload fields.
 
 Wire names remain protocol names. The SDK does not add a second camelCase data
 model because that would create another mapping authority and increase
@@ -132,11 +134,19 @@ Malformed JSON, a schema mismatch, a missing required response header, or an
 operation/status combination absent from OpenAPI becomes a safe
 `ProtocolValidationError` without exposing the raw body.
 
+Fixture and JSON-module imports are treated as untrusted values too. Tests
+obtain exact public protocol types only by passing them through the same named
+validator/decoder path; the facade does not weaken protocol literal fields to
+accommodate TypeScript's widened JSON-import inference.
+
 ## Client lifecycle and capability negotiation
 
-`createClient` performs public discovery, validates the descriptor, and
-negotiates the highest mutually supported profile from the locked set. The
-created client exposes the validated descriptor and selected protocol version.
+`createClient` accepts only an HTTPS bootstrap URL or loopback HTTP URL without
+embedded credentials. It performs public discovery without authorization and
+with redirects rejected, requires a 200 response, validates the descriptor,
+and negotiates the highest mutually supported profile from the locked set that
+is not older than the descriptor's minimum client version. The created client
+exposes the validated descriptor and selected protocol version.
 
 The SDK does not persist or establish trust in `hub_id`; the protocol defines
 the identifier but no identity-proof or trust-store lifecycle. Callers may
