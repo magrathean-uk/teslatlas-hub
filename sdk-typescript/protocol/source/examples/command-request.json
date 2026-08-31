@@ -1,0 +1,16 @@
+{
+  "vehicle_id": "vehicle_demo_alpha",
+  "command": "set_charge_limit",
+  "command_class": "charging",
+  "parameters": {
+    "percent": 80
+  },
+  "expected_state": {
+    "charge_limit_percent": 80
+  },
+  "expires_at": "2026-08-30T12:05:00.000Z",
+  "confirmation": {
+    "confirmed_at": "2026-08-30T12:00:00.000Z",
+    "confirmed_by": "user_demo_owner"
+  }
+}

@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:observation:1.2.0",
+  "title": "Teslatlas canonical observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "observation_id",
+    "vehicle_id",
+    "source",
+    "provider_timestamp",
+    "received_timestamp",
+    "source_sequence",
+    "field",
+    "typed_value",
+    "validity",
+    "quality_flags",
+    "raw_payload_hash",
+    "collector_version",
+    "projection_version"
+  ],
+  "properties": {
+    "observation_id": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+    },
+    "vehicle_id": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+    },
+    "source": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/source"
+    },
+    "provider_timestamp": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+    },
+    "received_timestamp": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+    },
+    "source_sequence": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "field": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+      "maxLength": 256
+    },
+    "typed_value": {
+      "$ref": "#/$defs/typed_value"
+    },
+    "validity": {
+      "enum": [
+        "valid",
+        "suspect",
+        "invalid"
+      ]
+    },
+    "quality_flags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/quality_flag"
+      }
+    },
+    "raw_payload_hash": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/sha256"
+    },
+    "collector_version": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/semver"
+    },
+    "projection_version": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/semver"
+    }
+  },
+  "$defs": {
+    "typed_value": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/null_value"
+        },
+        {
+          "$ref": "#/$defs/boolean_value"
+        },
+        {
+          "$ref": "#/$defs/integer_value"
+        },
+        {
+          "$ref": "#/$defs/number_value"
+        },
+        {
+          "$ref": "#/$defs/string_value"
+        },
+        {
+          "$ref": "#/$defs/object_value"
+        },
+        {
+          "$ref": "#/$defs/array_value"
+        }
+      ]
+    },
+    "unit": {
+      "enum": [
+        "percent",
+        "km",
+        "km_h",
+        "celsius",
+        "kwh",
+        "kw",
+        "volts",
+        "amps",
+        "degrees",
+        "seconds",
+        "boolean",
+        "text",
+        "none"
+      ]
+    },
+    "null_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "null"
+        },
+        "value": {
+          "type": "null"
+        }
+      }
+    },
+    "boolean_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value",
+        "unit"
+      ],
+      "properties": {
+        "kind": {
+          "const": "boolean"
+        },
+        "value": {
+          "type": "boolean"
+        },
+        "unit": {
+          "const": "boolean"
+        }
+      }
+    },
+    "integer_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value",
+        "unit"
+      ],
+      "properties": {
+        "kind": {
+          "const": "integer"
+        },
+        "value": {
+          "type": "integer"
+        },
+        "unit": {
+          "$ref": "#/$defs/unit"
+        }
+      }
+    },
+    "number_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value",
+        "unit"
+      ],
+      "properties": {
+        "kind": {
+          "const": "number"
+        },
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "$ref": "#/$defs/unit"
+        }
+      }
+    },
+    "string_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value",
+        "unit"
+      ],
+      "properties": {
+        "kind": {
+          "const": "string"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "unit": {
+          "$ref": "#/$defs/unit"
+        }
+      }
+    },
+    "object_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "object"
+        },
+        "value": {
+          "type": "object"
+        }
+      }
+    },
+    "array_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "array"
+        },
+        "value": {
+          "type": "array"
+        }
+      }
+    }
+  }
+}

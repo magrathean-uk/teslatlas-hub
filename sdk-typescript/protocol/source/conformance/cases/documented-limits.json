@@ -1,0 +1,242 @@
+{
+  "capability": "query.history",
+  "case_id": "documented-limits",
+  "description": "Page, dense-range, request-body, and concurrency limits fail with stable bounded errors.",
+  "introduced_in": "1.0.0",
+  "kind": "case",
+  "steps": [
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 400
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "invalid_request"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 400
+      },
+      "reference_response": {
+        "body": {
+          "code": "invalid_request",
+          "instance": "/requests/request_invalid_request",
+          "request_id": "request_invalid_request",
+          "retryable": false,
+          "status": 400,
+          "title": "Invalid page limit",
+          "type": "urn:teslatlas:problem:invalid-request"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_invalid_request"
+        },
+        "status": 400
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles",
+        "query": {
+          "limit": 501
+        }
+      },
+      "step_id": "page-size"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 400
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "range_too_large"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 400
+      },
+      "reference_response": {
+        "body": {
+          "code": "range_too_large",
+          "instance": "/requests/request_range_too_large",
+          "request_id": "request_range_too_large",
+          "retryable": false,
+          "status": 400,
+          "title": "Range too large",
+          "type": "urn:teslatlas:problem:range-too-large"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_range_too_large"
+        },
+        "status": 400
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/drives/drive_demo_0001/positions",
+        "query": {
+          "from": "2026-01-01T00:00:00.000Z",
+          "to": "2026-02-02T00:00:00.000Z"
+        }
+      },
+      "step_id": "dense-range"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 413
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "request_too_large"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 413
+      },
+      "reference_response": {
+        "body": {
+          "code": "request_too_large",
+          "instance": "/requests/request_request_too_large",
+          "request_id": "request_request_too_large",
+          "retryable": false,
+          "status": 413,
+          "title": "Request too large",
+          "type": "urn:teslatlas:problem:request-too-large"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_request_too_large"
+        },
+        "status": 413
+      },
+      "request": {
+        "body": {
+          "command": "set_charge_limit",
+          "command_class": "charging",
+          "confirmation": {
+            "confirmed_at": "2026-08-30T12:00:00.000Z",
+            "confirmed_by": "user_demo_owner"
+          },
+          "expected_state": {
+            "charge_limit_percent": 80
+          },
+          "expires_at": "2026-08-30T12:05:00.000Z",
+          "parameters": {
+            "percent": 80
+          },
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "body_bytes": 262145,
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "POST",
+        "path": "/v1/commands",
+        "query": {}
+      },
+      "step_id": "request-body"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 429
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "concurrency_limit"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID",
+          "Retry-After"
+        ],
+        "status": 429
+      },
+      "reference_response": {
+        "body": {
+          "code": "concurrency_limit",
+          "instance": "/requests/request_concurrency_limit",
+          "request_id": "request_concurrency_limit",
+          "retryable": true,
+          "status": 429,
+          "title": "Concurrency limit",
+          "type": "urn:teslatlas:problem:concurrency-limit"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Retry-After": "1",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_concurrency_limit"
+        },
+        "status": 429
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Conformance-Scenario": "concurrency-limit",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles",
+        "query": {}
+      },
+      "step_id": "concurrency"
+    }
+  ]
+}

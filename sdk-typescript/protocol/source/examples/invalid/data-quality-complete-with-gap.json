@@ -1,0 +1,14 @@
+{
+  "subject_type": "drive",
+  "subject_id": "drive_demo_0001",
+  "quality": "complete",
+  "sources": [
+    "fleet_telemetry"
+  ],
+  "gap_count": 1,
+  "largest_gap_seconds": 47,
+  "derived_fields": [],
+  "projection_version": "3.1.0",
+  "assessed_at": "2026-08-30T12:30:00.000Z",
+  "issues": []
+}

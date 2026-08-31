@@ -1,0 +1,126 @@
+{
+  "valid": [
+    {
+      "path": "examples/discovery.json",
+      "schema": "urn:teslatlas:protocol:schema:discovery:1.2.0"
+    },
+    {
+      "path": "examples/observation.json",
+      "schema": "urn:teslatlas:protocol:schema:observation:1.2.0"
+    },
+    {
+      "path": "examples/data-quality.json",
+      "schema": "urn:teslatlas:protocol:schema:data-quality:1.2.0"
+    },
+    {
+      "path": "examples/current-state.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/vehicles-page.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/drives-page.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/positions-page.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/charges-page.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/charge-samples-page.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/states-page.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/updates-page.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/data-quality-page.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/metadata-page.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0"
+    },
+    {
+      "path": "examples/projection.json",
+      "schema": "urn:teslatlas:protocol:schema:projection:1.2.0"
+    },
+    {
+      "path": "examples/error.json",
+      "schema": "urn:teslatlas:protocol:schema:error:1.2.0"
+    },
+    {
+      "path": "examples/command-request.json",
+      "schema": "urn:teslatlas:protocol:schema:command:1.2.0"
+    },
+    {
+      "path": "examples/command-job.json",
+      "schema": "urn:teslatlas:protocol:schema:command:1.2.0"
+    },
+    {
+      "path": "examples/metadata-record.json",
+      "schema": "urn:teslatlas:protocol:schema:metadata:1.2.0"
+    },
+    {
+      "path": "examples/metadata-tombstone.json",
+      "schema": "urn:teslatlas:protocol:schema:metadata:1.2.0"
+    },
+    {
+      "path": "examples/event-envelope.json",
+      "schema": "urn:teslatlas:protocol:schema:event:1.2.0"
+    }
+  ],
+  "invalid": [
+    {
+      "path": "examples/invalid/observation-non-utc.json",
+      "schema": "urn:teslatlas:protocol:schema:observation:1.2.0",
+      "message_contains": "does not match"
+    },
+    {
+      "path": "examples/invalid/observation-missing-hash.json",
+      "schema": "urn:teslatlas:protocol:schema:observation:1.2.0",
+      "message_contains": "raw_payload_hash"
+    },
+    {
+      "path": "examples/invalid/data-quality-complete-with-gap.json",
+      "schema": "urn:teslatlas:protocol:schema:data-quality:1.2.0",
+      "message_contains": "0 was expected"
+    },
+    {
+      "path": "examples/invalid/error-success-status.json",
+      "schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+      "message_contains": "minimum of 400"
+    },
+    {
+      "path": "examples/invalid/command-unknown-state.json",
+      "schema": "urn:teslatlas:protocol:schema:command:1.2.0",
+      "message_contains": "not valid under any"
+    },
+    {
+      "path": "examples/invalid/metadata-zero-revision.json",
+      "schema": "urn:teslatlas:protocol:schema:metadata:1.2.0",
+      "message_contains": "not valid under any"
+    },
+    {
+      "path": "examples/invalid/resource-short-cursor.json",
+      "schema": "urn:teslatlas:protocol:schema:resources:1.2.0",
+      "message_contains": "not valid under any"
+    },
+    {
+      "path": "examples/invalid/event-unknown-type.json",
+      "schema": "urn:teslatlas:protocol:schema:event:1.2.0",
+      "message_contains": "is not one of"
+    }
+  ]
+}

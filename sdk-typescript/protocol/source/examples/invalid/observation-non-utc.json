@@ -1,0 +1,19 @@
+{
+  "observation_id": "obs_demo_battery_0001",
+  "vehicle_id": "vehicle_demo_alpha",
+  "source": "fleet_telemetry",
+  "provider_timestamp": "2026-08-30T12:00:00.000+01:00",
+  "received_timestamp": "2026-08-30T12:00:01.250Z",
+  "source_sequence": "demo-batch-0042:17",
+  "field": "battery.level_percent",
+  "typed_value": {
+    "kind": "number",
+    "value": 78,
+    "unit": "percent"
+  },
+  "validity": "valid",
+  "quality_flags": [],
+  "raw_payload_hash": "1e6f5c6bd01e7f3a4b2d997f0d7f8b865ede7f0b72d3e4c5a6b7c8d9e0f12345",
+  "collector_version": "5.4.0",
+  "projection_version": "3.1.0"
+}

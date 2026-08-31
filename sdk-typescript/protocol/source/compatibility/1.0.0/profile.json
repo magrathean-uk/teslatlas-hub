@@ -1,0 +1,22 @@
+{
+  "capabilities": [
+    "query.vehicles",
+    "query.history",
+    "events.sse",
+    "data-quality"
+  ],
+  "cases": [
+    "discovery-version-negotiation",
+    "cursor-pagination",
+    "etag-conditional-get",
+    "problem-details",
+    "sse-last-event-id",
+    "sse-principal-visibility",
+    "sse-empty-id-reset",
+    "sse-terminal-204",
+    "documented-limits"
+  ],
+  "extends": null,
+  "kind": "profile",
+  "protocol_version": "1.0.0"
+}

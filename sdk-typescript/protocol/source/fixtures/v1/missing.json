@@ -1,0 +1,168 @@
+{
+  "description": "A missing interval is explicit in quality metadata and no value is interpolated.",
+  "expected": {
+    "accepted_observation_ids": [
+      "obs_missing_battery_0001",
+      "obs_missing_battery_0002"
+    ],
+    "duplicate_observation_ids": [],
+    "ordered_observation_ids": [
+      "obs_missing_battery_0001",
+      "obs_missing_battery_0002"
+    ],
+    "projection": {
+      "computed_at": "2026-08-30T15:10:00.250Z",
+      "input_observation_ids": [
+        "obs_missing_battery_0001",
+        "obs_missing_battery_0002"
+      ],
+      "payload": {
+        "battery_level_percent": 76,
+        "charging_state": "unknown",
+        "climate_on": null,
+        "inside_temperature_c": null,
+        "location": null,
+        "locked": null,
+        "observed_at": "2026-08-30T15:10:00.000Z",
+        "odometer_km": null,
+        "outside_temperature_c": null,
+        "quality": {
+          "assessed_at": "2026-08-30T15:10:00.250Z",
+          "derived_fields": [],
+          "gap_count": 1,
+          "issues": [
+            {
+              "affected_fields": [
+                "battery.level_percent"
+              ],
+              "code": "missing_interval",
+              "from": "2026-08-30T15:00:00.000Z",
+              "message": "A redacted ten-minute interval is unavailable and is not interpolated.",
+              "severity": "warning",
+              "to": "2026-08-30T15:10:00.000Z"
+            }
+          ],
+          "largest_gap_seconds": 600,
+          "projection_version": "3.1.0",
+          "quality": "partial",
+          "sources": [
+            "fleet_telemetry"
+          ],
+          "subject_id": "vehicle_demo_alpha",
+          "subject_type": "vehicle"
+        },
+        "range_km": null,
+        "resource_type": "current_state",
+        "revision": 1,
+        "state": "online",
+        "vehicle_id": "vehicle_demo_alpha"
+      },
+      "projection_id": "projection_missing_current_0001",
+      "projection_type": "current_state",
+      "projection_version": "3.1.0",
+      "quality": {
+        "assessed_at": "2026-08-30T15:10:00.250Z",
+        "derived_fields": [],
+        "gap_count": 1,
+        "issues": [
+          {
+            "affected_fields": [
+              "battery.level_percent"
+            ],
+            "code": "missing_interval",
+            "from": "2026-08-30T15:00:00.000Z",
+            "message": "A redacted ten-minute interval is unavailable and is not interpolated.",
+            "severity": "warning",
+            "to": "2026-08-30T15:10:00.000Z"
+          }
+        ],
+        "largest_gap_seconds": 600,
+        "projection_version": "3.1.0",
+        "quality": "partial",
+        "sources": [
+          "fleet_telemetry"
+        ],
+        "subject_id": "projection_missing_current_0001",
+        "subject_type": "projection"
+      },
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    "quality": {
+      "assessed_at": "2026-08-30T15:10:00.250Z",
+      "derived_fields": [],
+      "gap_count": 1,
+      "issues": [
+        {
+          "affected_fields": [
+            "battery.level_percent"
+          ],
+          "code": "missing_interval",
+          "from": "2026-08-30T15:00:00.000Z",
+          "message": "A redacted ten-minute interval is unavailable and is not interpolated.",
+          "severity": "warning",
+          "to": "2026-08-30T15:10:00.000Z"
+        }
+      ],
+      "largest_gap_seconds": 600,
+      "projection_version": "3.1.0",
+      "quality": "partial",
+      "sources": [
+        "fleet_telemetry"
+      ],
+      "subject_id": "projection_missing_current_0001",
+      "subject_type": "projection"
+    }
+  },
+  "fixture_version": "1.0.0",
+  "input_observations": [
+    {
+      "collector_version": "5.4.0",
+      "field": "battery.level_percent",
+      "observation_id": "obs_missing_battery_0001",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T15:00:00.000Z",
+      "quality_flags": [
+        "gap_after"
+      ],
+      "raw_payload_hash": "995c00c182e113e348660bfbce368471938f8a67c244186422e57aeb3bad9aef",
+      "received_timestamp": "2026-08-30T15:00:00.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": "demo-missing-0001",
+      "typed_value": {
+        "kind": "number",
+        "unit": "percent",
+        "value": 78
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    {
+      "collector_version": "5.4.0",
+      "field": "battery.level_percent",
+      "observation_id": "obs_missing_battery_0002",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T15:10:00.000Z",
+      "quality_flags": [
+        "gap_before"
+      ],
+      "raw_payload_hash": "5eb9f59b6a1e58cbbf99267e5fb951dc465ef73e87d35c647cfdf08cdd2bf318",
+      "received_timestamp": "2026-08-30T15:10:00.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": "demo-missing-0002",
+      "typed_value": {
+        "kind": "number",
+        "unit": "percent",
+        "value": 76
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    }
+  ],
+  "redaction": {
+    "contains_precise_location": false,
+    "contains_real_identifiers": false,
+    "contains_secrets": false,
+    "maximum_coordinate_decimals": 2
+  },
+  "scenario_id": "missing"
+}

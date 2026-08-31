@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:projection:1.2.0",
+  "title": "Teslatlas deterministic projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "projection_id",
+    "projection_type",
+    "vehicle_id",
+    "input_observation_ids",
+    "computed_at",
+    "projection_version",
+    "quality",
+    "payload"
+  ],
+  "properties": {
+    "projection_id": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+    },
+    "projection_type": {
+      "enum": [
+        "current_state",
+        "drive",
+        "charge",
+        "state_interval",
+        "software_update"
+      ]
+    },
+    "vehicle_id": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+    },
+    "input_observation_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+      }
+    },
+    "computed_at": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+    },
+    "projection_version": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/semver"
+    },
+    "quality": {
+      "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0"
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/current_state"
+        },
+        {
+          "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/drive"
+        },
+        {
+          "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/charge"
+        },
+        {
+          "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/state_interval"
+        },
+        {
+          "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/software_update"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "projection_type": { "const": "current_state" } },
+        "required": ["projection_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/current_state"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "projection_type": { "const": "drive" } },
+        "required": ["projection_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/drive"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "projection_type": { "const": "charge" } },
+        "required": ["projection_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/charge"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "projection_type": { "const": "state_interval" } },
+        "required": ["projection_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/state_interval"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "projection_type": { "const": "software_update" } },
+        "required": ["projection_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/software_update"
+          }
+        }
+      }
+    }
+  ]
+}

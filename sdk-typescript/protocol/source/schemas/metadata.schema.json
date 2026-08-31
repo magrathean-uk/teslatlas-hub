@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:metadata:1.2.0",
+  "title": "Teslatlas mutable metadata contract",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/metadata_record"
+    },
+    {
+      "$ref": "#/$defs/metadata_tombstone"
+    },
+    {
+      "$ref": "#/$defs/metadata_create"
+    },
+    {
+      "$ref": "#/$defs/metadata_replace"
+    },
+    {
+      "$ref": "#/$defs/metadata_audit_event"
+    },
+    {
+      "$ref": "#/$defs/metadata_deletion_event"
+    }
+  ],
+  "$defs": {
+    "metadata_kind": {
+      "enum": [
+        "geofence",
+        "location_name",
+        "tag",
+        "note",
+        "trip_group",
+        "charge_cost_correction",
+        "electricity_tariff",
+        "favourite_location",
+        "session_override"
+      ]
+    },
+    "metadata_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "resource_id"
+      ],
+      "properties": {
+        "resource_type": {
+          "enum": [
+            "vehicle",
+            "drive",
+            "charge",
+            "location",
+            "installation"
+          ]
+        },
+        "resource_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        }
+      }
+    },
+    "metadata_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metadata_id",
+        "vehicle_id",
+        "kind",
+        "target",
+        "value",
+        "revision",
+        "created_at",
+        "created_by",
+        "updated_at",
+        "updated_by",
+        "audit"
+      ],
+      "properties": {
+        "metadata_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "kind": {
+          "$ref": "#/$defs/metadata_kind"
+        },
+        "target": {
+          "$ref": "#/$defs/metadata_target"
+        },
+        "value": {
+          "type": "object",
+          "maxProperties": 64
+        },
+        "revision": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/revision"
+        },
+        "created_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "created_by": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/actor_id"
+        },
+        "updated_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "updated_by": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/actor_id"
+        },
+        "audit": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/metadata_audit_event"
+          }
+        }
+      }
+    },
+    "metadata_tombstone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metadata_id",
+        "vehicle_id",
+        "kind",
+        "target",
+        "audit"
+      ],
+      "properties": {
+        "metadata_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "kind": {
+          "$ref": "#/$defs/metadata_kind"
+        },
+        "target": {
+          "$ref": "#/$defs/metadata_target"
+        },
+        "audit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "history",
+            "deletion"
+          ],
+          "properties": {
+            "history": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/metadata_audit_event"
+              }
+            },
+            "deletion": {
+              "$ref": "#/$defs/metadata_deletion_event"
+            }
+          }
+        }
+      }
+    },
+    "metadata_create": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vehicle_id",
+        "kind",
+        "target",
+        "value"
+      ],
+      "properties": {
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "kind": {
+          "$ref": "#/$defs/metadata_kind"
+        },
+        "target": {
+          "$ref": "#/$defs/metadata_target"
+        },
+        "value": {
+          "type": "object",
+          "maxProperties": 64
+        }
+      }
+    },
+    "metadata_replace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "object",
+          "maxProperties": 64
+        }
+      }
+    },
+    "metadata_audit_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "action",
+        "at",
+        "actor_id",
+        "previous_hash",
+        "new_hash"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/revision"
+        },
+        "action": {
+          "enum": [
+            "created",
+            "updated"
+          ]
+        },
+        "at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "actor_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/actor_id"
+        },
+        "previous_hash": {
+          "oneOf": [
+            {
+              "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "new_hash": {
+          "oneOf": [
+            {
+              "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "action": { "const": "created" } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": {
+              "previous_hash": { "type": "null" },
+              "new_hash": {
+                "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/sha256"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "action": { "const": "updated" } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": {
+              "previous_hash": {
+                "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/sha256"
+              },
+              "new_hash": {
+                "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/sha256"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "metadata_deletion_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "action",
+        "at",
+        "actor_id"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "deleted"
+        },
+        "at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "actor_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/actor_id"
+        }
+      }
+    }
+  }
+}

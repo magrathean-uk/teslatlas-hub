@@ -1,0 +1,30 @@
+{
+  "resource_type": "state_page",
+  "items": [
+    {
+      "resource_type": "state_interval",
+      "state_id": "state_demo_0001",
+      "vehicle_id": "vehicle_demo_alpha",
+      "state": "asleep",
+      "start_at": "2026-08-29T22:00:00.000Z",
+      "end_at": "2026-08-30T07:55:00.000Z",
+      "quality": {
+        "subject_type": "state",
+        "subject_id": "state_demo_0001",
+        "quality": "complete",
+        "sources": [
+          "fleet_api"
+        ],
+        "gap_count": 0,
+        "largest_gap_seconds": 0,
+        "derived_fields": [],
+        "projection_version": "3.1.0",
+        "assessed_at": "2026-08-30T07:55:01.000Z",
+        "issues": []
+      }
+    }
+  ],
+  "next_cursor": null,
+  "snapshot_revision": "snapshot_demo_0042",
+  "generated_at": "2026-08-30T12:31:00.000Z"
+}

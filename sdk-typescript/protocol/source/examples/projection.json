@@ -1,0 +1,54 @@
+{
+  "projection_id": "projection_demo_current_0042",
+  "projection_type": "current_state",
+  "vehicle_id": "vehicle_demo_alpha",
+  "input_observation_ids": [
+    "obs_demo_battery_0001"
+  ],
+  "computed_at": "2026-08-30T12:00:01.250Z",
+  "projection_version": "3.1.0",
+  "quality": {
+    "subject_type": "projection",
+    "subject_id": "projection_demo_current_0042",
+    "quality": "complete",
+    "sources": [
+      "fleet_telemetry"
+    ],
+    "gap_count": 0,
+    "largest_gap_seconds": 0,
+    "derived_fields": [],
+    "projection_version": "3.1.0",
+    "assessed_at": "2026-08-30T12:00:01.250Z",
+    "issues": []
+  },
+  "payload": {
+    "resource_type": "current_state",
+    "vehicle_id": "vehicle_demo_alpha",
+    "observed_at": "2026-08-30T12:00:00.000Z",
+    "revision": 42,
+    "state": "online",
+    "battery_level_percent": 78,
+    "range_km": 338.4,
+    "odometer_km": 12000.5,
+    "inside_temperature_c": 21.5,
+    "outside_temperature_c": 17,
+    "locked": true,
+    "climate_on": false,
+    "charging_state": "disconnected",
+    "location": null,
+    "quality": {
+      "subject_type": "vehicle",
+      "subject_id": "vehicle_demo_alpha",
+      "quality": "complete",
+      "sources": [
+        "fleet_telemetry"
+      ],
+      "gap_count": 0,
+      "largest_gap_seconds": 0,
+      "derived_fields": [],
+      "projection_version": "3.1.0",
+      "assessed_at": "2026-08-30T12:00:01.250Z",
+      "issues": []
+    }
+  }
+}

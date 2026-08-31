@@ -1,0 +1,356 @@
+{
+  "capability": "query.history",
+  "case_id": "cursor-pagination",
+  "description": "Cursors are opaque, query-bound, permission-bound, and explicitly expire.",
+  "introduced_in": "1.0.0",
+  "kind": "case",
+  "steps": [
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "exists",
+            "path": "/body/next_cursor"
+          },
+          {
+            "op": "exists",
+            "path": "/body/items/0/drive_id"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/drive_page",
+        "status": 200
+      },
+      "reference_response": {
+        "body_file": "examples/drives-page.json",
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"fN4qL9sB2wH6cM8z\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/drives",
+        "query": {
+          "from": "2026-08-01T00:00:00.000Z",
+          "limit": 1,
+          "to": "2026-09-01T00:00:00.000Z"
+        }
+      },
+      "step_id": "initial"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "not_same_as",
+            "path": "/body/items/0/drive_id",
+            "ref": "initial.body.items.0.drive_id"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/drive_page",
+        "status": 200
+      },
+      "reference_response": {
+        "body": {
+          "generated_at": "2026-08-31T12:31:00.000Z",
+          "items": [
+            {
+              "distance_km": 24.2,
+              "drive_id": "drive_demo_0002",
+              "duration_seconds": 1800,
+              "efficiency_wh_per_km": 169.4,
+              "end_at": "2026-08-31T12:30:00.000Z",
+              "end_odometer_km": 12024.7,
+              "energy_used_kwh": 4.1,
+              "quality": {
+                "assessed_at": "2026-08-31T12:30:00.000Z",
+                "derived_fields": [
+                  "energy_used_kwh"
+                ],
+                "gap_count": 1,
+                "issues": [
+                  {
+                    "affected_fields": [
+                      "location",
+                      "speed_km_h"
+                    ],
+                    "code": "missing_interval",
+                    "from": "2026-08-30T12:14:00.000Z",
+                    "message": "A redacted 47-second telemetry interval is unavailable.",
+                    "severity": "warning",
+                    "to": "2026-08-30T12:14:47.000Z"
+                  }
+                ],
+                "largest_gap_seconds": 47,
+                "projection_version": "3.1.0",
+                "quality": "partial",
+                "sources": [
+                  "fleet_telemetry",
+                  "fleet_api"
+                ],
+                "subject_id": "drive_demo_0002",
+                "subject_type": "drive"
+              },
+              "resource_type": "drive",
+              "start_at": "2026-08-31T12:00:00.000Z",
+              "start_odometer_km": 12000.5,
+              "vehicle_id": "vehicle_demo_alpha"
+            }
+          ],
+          "next_cursor": null,
+          "resource_type": "drive_page",
+          "snapshot_revision": "snapshot_demo_0042"
+        },
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"uC7pE3kR9xT5mV2d\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/drives",
+        "query": {
+          "cursor": "${initial.body.next_cursor}",
+          "from": "2026-08-01T00:00:00.000Z",
+          "limit": 1,
+          "to": "2026-09-01T00:00:00.000Z"
+        }
+      },
+      "step_id": "next"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 409
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "cursor_query_mismatch"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 409
+      },
+      "reference_response": {
+        "body": {
+          "code": "cursor_query_mismatch",
+          "instance": "/requests/request_cursor_query_mismatch",
+          "request_id": "request_cursor_query_mismatch",
+          "retryable": false,
+          "status": 409,
+          "title": "Cursor query mismatch",
+          "type": "urn:teslatlas:problem:cursor-query-mismatch"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_cursor_query_mismatch"
+        },
+        "status": 409
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/drives",
+        "query": {
+          "cursor": "${initial.body.next_cursor}",
+          "from": "2026-08-02T00:00:00.000Z",
+          "limit": 1,
+          "to": "2026-09-01T00:00:00.000Z"
+        }
+      },
+      "step_id": "query-mismatch"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 410
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "cursor_expired"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 410
+      },
+      "reference_response": {
+        "body": {
+          "code": "cursor_expired",
+          "instance": "/requests/request_cursor_expired",
+          "request_id": "request_cursor_expired",
+          "retryable": false,
+          "status": 410,
+          "title": "Cursor expired",
+          "type": "urn:teslatlas:problem:cursor-expired"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_cursor_expired"
+        },
+        "status": 410
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/drives",
+        "query": {
+          "cursor": "cursor_demo_expired_0001"
+        }
+      },
+      "step_id": "expired"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 403
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "cursor_scope_changed"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 403
+      },
+      "reference_response": {
+        "body": {
+          "code": "cursor_scope_changed",
+          "instance": "/requests/request_cursor_scope_changed",
+          "request_id": "request_cursor_scope_changed",
+          "retryable": false,
+          "status": 403,
+          "title": "Cursor scope changed",
+          "type": "urn:teslatlas:problem:cursor-scope-changed"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_cursor_scope_changed"
+        },
+        "status": 403
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Conformance-Authorization-Revision": "2",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/drives",
+        "query": {
+          "cursor": "${initial.body.next_cursor}"
+        }
+      },
+      "step_id": "scope-changed"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 400
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "invalid_cursor"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 400
+      },
+      "reference_response": {
+        "body": {
+          "code": "invalid_cursor",
+          "instance": "/requests/request_invalid_cursor",
+          "request_id": "request_invalid_cursor",
+          "retryable": false,
+          "status": 400,
+          "title": "Invalid cursor",
+          "type": "urn:teslatlas:problem:invalid-cursor"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_invalid_cursor"
+        },
+        "status": 400
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/drives",
+        "query": {
+          "cursor": "not-a-valid-token?"
+        }
+      },
+      "step_id": "invalid"
+    }
+  ]
+}
