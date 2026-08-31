@@ -19,6 +19,8 @@ export interface FetchTransportOptions {
 export interface ProtocolRequestInit extends Omit<RequestInit, "headers"> {
   readonly headers?: HeadersInit;
   readonly ifNoneMatch?: EntityTag;
+  /** @internal */
+  readonly onDispatch?: () => void;
 }
 
 export class InvalidBaseUrlError extends TeslatlasError<"invalid_base_url"> {
@@ -72,7 +74,13 @@ export class FetchTransport {
 
   async request(path: string, init: ProtocolRequestInit = {}): Promise<Response> {
     const url = resolveRequestUrl(this.#baseUrl, path);
-    const { headers: inputHeaders, ifNoneMatch, method: requestedMethod, ...remainingInit } = init;
+    const {
+      headers: inputHeaders,
+      ifNoneMatch,
+      method: requestedMethod,
+      onDispatch,
+      ...remainingInit
+    } = init;
     const method = (requestedMethod ?? "GET").toUpperCase();
     let headers = new Headers(inputHeaders);
 
@@ -92,6 +100,7 @@ export class FetchTransport {
         headers.set("Authorization", authorization);
       }
 
+      onDispatch?.();
       return await this.#fetch(url, {
         ...remainingInit,
         method,

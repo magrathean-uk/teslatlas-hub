@@ -1,5 +1,7 @@
 import { ProtocolValidationError, TeslatlasError, type SafeRequestId } from "../core/errors.js";
 import type { EntityTag, OpaqueCursor } from "../core/opaque-values.js";
+import type { IdempotencyKey } from "../commands/idempotency.js";
+import type { StrongEntityTag } from "../http/strong-etag.js";
 
 export interface ResponseMetadata {
   readonly status: number;
@@ -38,6 +40,18 @@ export interface HistoryPageOptions extends PageReadOptions {
 
 export interface DataQualityPageOptions extends HistoryPageOptions {
   readonly vehicleId?: string;
+}
+
+export interface MetadataPageOptions extends PageReadOptions {
+  readonly kind?: string;
+}
+
+export interface IfMatchOptions extends RequestOptions {
+  readonly ifMatch: StrongEntityTag;
+}
+
+export interface CommandCreateOptions extends RequestOptions {
+  readonly idempotencyKey: IdempotencyKey;
 }
 
 export class InvalidReadOptionsError extends TeslatlasError<"invalid_read_options"> {

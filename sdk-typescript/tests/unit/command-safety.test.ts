@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { asIdempotencyKey, InvalidIdempotencyKeyError } from "../../src/commands/idempotency.js";
 import { CommandSafetyError, assertCommandSafety } from "../../src/commands/safety.js";
 
 describe("command submission safety", () => {
@@ -20,5 +21,21 @@ describe("command submission safety", () => {
     { idempotencyKey: "request-7", retry: "automatic" },
   ])("rejects unsafe command options %#", (safety) => {
     expect(() => assertCommandSafety(safety)).toThrow(CommandSafetyError);
+  });
+
+  it("accepts only a protocol UUID idempotency key", () => {
+    expect(asIdempotencyKey("11111111-1111-4111-8111-111111111111")).toBe(
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(() => asIdempotencyKey("request-7")).toThrow(InvalidIdempotencyKeyError);
+    expect(() => asIdempotencyKey("11111111-1111-4111-8111-111111111111\r\nX: y")).toThrow(
+      InvalidIdempotencyKeyError,
+    );
+  });
+
+  it("rejects a forged non-string idempotency key with the protocol error", () => {
+    expect(() => asIdempotencyKey(Symbol("idempotency") as never)).toThrow(
+      InvalidIdempotencyKeyError,
+    );
   });
 });

@@ -1,5 +1,7 @@
 import type { EntityTag } from "../core/opaque-values.js";
+import type { IdempotencyKey } from "../commands/idempotency.js";
 import type { SupportedProtocolVersion } from "../protocol/negotiation.js";
+import type { StrongEntityTag } from "./strong-etag.js";
 import { InvalidRequestPathError, type ProtocolRequestInit } from "./fetch-transport.js";
 
 export type ReadOperationName =
@@ -23,6 +25,18 @@ export interface ReadOperationDescriptor {
   readonly pathTemplate: string;
   readonly queryNames: readonly string[];
   readonly versioned: boolean;
+}
+
+export type WriteOperationName =
+  | "createMetadata"
+  | "replaceMetadata"
+  | "deleteMetadata"
+  | "createCommand";
+
+export interface WriteOperationDescriptor {
+  readonly pathTemplate: string;
+  readonly method: "POST" | "PUT" | "DELETE";
+  readonly hasJsonBody: boolean;
 }
 
 type QueryValue = string | number | readonly string[] | undefined;
@@ -85,6 +99,13 @@ export const readOperationDescriptors = {
   getCommand: descriptor("/v1/commands/{command_id}", []),
 } as const satisfies Readonly<Record<ReadOperationName, ReadOperationDescriptor>>;
 
+export const writeOperationDescriptors = {
+  createMetadata: writeDescriptor("/v1/vehicles/{vehicle_id}/metadata", "POST", true),
+  replaceMetadata: writeDescriptor("/v1/metadata/{metadata_id}", "PUT", true),
+  deleteMetadata: writeDescriptor("/v1/metadata/{metadata_id}", "DELETE", false),
+  createCommand: writeDescriptor("/v1/commands", "POST", true),
+} as const satisfies Readonly<Record<WriteOperationName, WriteOperationDescriptor>>;
+
 export function interpolatePath(
   template: string,
   values: Readonly<Record<string, string>>,
@@ -142,10 +163,77 @@ export function buildReadRequest(
   };
 }
 
+export interface WriteRequestOptions {
+  readonly body?: unknown;
+  readonly ifMatch?: StrongEntityTag;
+  readonly idempotencyKey?: IdempotencyKey;
+  readonly signal?: AbortSignal;
+  readonly onDispatch?: () => void;
+}
+
+export function buildWriteRequest(
+  operation: WriteOperationDescriptor,
+  pathValues: Readonly<Record<string, string>>,
+  protocolVersion: SupportedProtocolVersion,
+  options: WriteRequestOptions,
+): BuiltReadRequest {
+  const path = interpolatePath(operation.pathTemplate, pathValues);
+  const headers = new Headers({ "Teslatlas-Protocol-Version": protocolVersion });
+  if (options.ifMatch !== undefined) headers.set("If-Match", options.ifMatch);
+  if (options.idempotencyKey !== undefined) headers.set("Idempotency-Key", options.idempotencyKey);
+
+  let body: string | undefined;
+  if (operation.hasJsonBody) {
+    if (options.body === undefined) throw new InvalidRequestBodyError();
+    headers.set("Content-Type", "application/json");
+    body = stringifyJsonBody(options.body);
+  } else if (options.body !== undefined) {
+    throw new InvalidRequestBodyError();
+  }
+
+  return {
+    path,
+    init: {
+      method: operation.method,
+      headers,
+      redirect: "error",
+      ...(body === undefined ? {} : { body }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(options.onDispatch === undefined ? {} : { onDispatch: options.onDispatch }),
+    },
+  };
+}
+
+export class InvalidRequestBodyError extends Error {
+  constructor() {
+    super("Protocol request body must be JSON serializable");
+    this.name = "InvalidRequestBodyError";
+  }
+}
+
 function descriptor(
   pathTemplate: string,
   queryNames: readonly string[],
   versioned = true,
 ): ReadOperationDescriptor {
   return Object.freeze({ pathTemplate, queryNames: Object.freeze(queryNames), versioned });
+}
+
+function writeDescriptor(
+  pathTemplate: string,
+  method: WriteOperationDescriptor["method"],
+  hasJsonBody: boolean,
+): WriteOperationDescriptor {
+  return Object.freeze({ pathTemplate, method, hasJsonBody });
+}
+
+function stringifyJsonBody(value: unknown): string {
+  try {
+    const body = JSON.stringify(value);
+    if (body === undefined) throw new InvalidRequestBodyError();
+    return body;
+  } catch (error) {
+    if (error instanceof InvalidRequestBodyError) throw error;
+    throw new InvalidRequestBodyError();
+  }
 }

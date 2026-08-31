@@ -1,13 +1,28 @@
+import commandJob from "../../protocol/source/examples/command-job.json" with { type: "json" };
+import commandRequest from "../../protocol/source/examples/command-request.json" with {
+  type: "json",
+};
 import currentState from "../../protocol/source/examples/current-state.json" with { type: "json" };
 import discovery from "../../protocol/source/examples/discovery.json" with { type: "json" };
 import drives from "../../protocol/source/examples/drives-page.json" with { type: "json" };
+import metadataRecord from "../../protocol/source/examples/metadata-record.json" with {
+  type: "json",
+};
+import metadataTombstone from "../../protocol/source/examples/metadata-tombstone.json" with {
+  type: "json",
+};
 import problem from "../../protocol/source/examples/error.json" with { type: "json" };
 import vehicles from "../../protocol/source/examples/vehicles-page.json" with { type: "json" };
 import { describe, expect, it } from "vitest";
 import type { TeslatlasClient } from "../../src/client/client.js";
 import type { CreateClientOptions } from "../../src/client/types.js";
+import { asIdempotencyKey } from "../../src/commands/idempotency.js";
 import { asEntityTag } from "../../src/core/opaque-values.js";
+import { validateCommandRequest, validateMetadataReplace } from "../../src/generated/validators.js";
+import { asStrongEntityTag } from "../../src/http/strong-etag.js";
 import type { FetchImplementation } from "../../src/http/fetch-transport.js";
+import type { CommandRequest, MetadataReplace } from "../../src/protocol/models.js";
+import { decodeProtocolValue } from "../../src/protocol/validate.js";
 
 interface RuntimeClientSdk {
   readonly createClient: (options: CreateClientOptions) => Promise<TeslatlasClient>;
@@ -115,14 +130,93 @@ export function defineTypedClientConformanceSuite(
         status: 400,
       });
     });
+
+    it("runs the 1.1 command-idempotency receipt through the typed method", async () => {
+      const observed: Array<{ method: string; path: string; version: string | null }> = [];
+      const client = await sdk.createClient(
+        options(async (input, init) => {
+          const url = new URL(String(input));
+          if (url.pathname === "/.well-known/teslatlas-hub") return Response.json(discovery);
+          observed.push({
+            method: init?.method ?? "GET",
+            path: `${url.pathname}${url.search}`,
+            version: new Headers(init?.headers).get("teslatlas-protocol-version"),
+          });
+          return Response.json(commandJob, {
+            status: 202,
+            headers: {
+              ETag: '"command-1"',
+              Location: "/v1/commands/command_demo_0001",
+            },
+          });
+        }, "1.1.0"),
+      );
+
+      const result = await client.createCommand(
+        decodeProtocolValue<CommandRequest>(
+          commandRequest,
+          validateCommandRequest,
+          "validateCommandRequest",
+        ),
+        { idempotencyKey: asIdempotencyKey("11111111-1111-4111-8111-111111111111") },
+      );
+
+      expect(result).toMatchObject({
+        value: { command_id: "command_demo_0001" },
+        metadata: { status: 202, etag: '"command-1"' },
+      });
+      expect(observed).toEqual([{ method: "POST", path: "/v1/commands", version: "1.1.0" }]);
+    });
+
+    it("runs the 1.2 metadata If-Match transcript through typed methods", async () => {
+      const observed: Array<{ method: string; path: string; ifMatch: string | null }> = [];
+      const client = await sdk.createClient(
+        options(async (input, init) => {
+          const url = new URL(String(input));
+          if (url.pathname === "/.well-known/teslatlas-hub") return Response.json(discovery);
+          observed.push({
+            method: init?.method ?? "GET",
+            path: `${url.pathname}${url.search}`,
+            ifMatch: new Headers(init?.headers).get("if-match"),
+          });
+          if (init?.method === "DELETE") {
+            return Response.json(metadataTombstone, { headers: { ETag: '"metadata-3"' } });
+          }
+          return Response.json(metadataRecord, { headers: { ETag: '"metadata-1"' } });
+        }),
+      );
+      const replacement = decodeProtocolValue<MetadataReplace>(
+        { value: { text: "Updated redacted demonstration trip." } },
+        validateMetadataReplace,
+        "validateMetadataReplace",
+      );
+
+      await client.getMetadata("metadata_demo_note_0001");
+      await client.replaceMetadata("metadata_demo_note_0001", replacement, {
+        ifMatch: asStrongEntityTag('"metadata-1"'),
+      });
+      const deleted = await client.deleteMetadata("metadata_demo_note_0001", {
+        ifMatch: asStrongEntityTag('"metadata-2"'),
+      });
+
+      expect(deleted).toMatchObject({ value: { metadata_id: "metadata_demo_note_0001" } });
+      expect(observed).toEqual([
+        { method: "GET", path: "/v1/metadata/metadata_demo_note_0001", ifMatch: null },
+        { method: "PUT", path: "/v1/metadata/metadata_demo_note_0001", ifMatch: '"metadata-1"' },
+        { method: "DELETE", path: "/v1/metadata/metadata_demo_note_0001", ifMatch: '"metadata-2"' },
+      ]);
+    });
   });
 }
 
-function options(fetch: FetchImplementation): CreateClientOptions {
+function options(
+  fetch: FetchImplementation,
+  requestedProtocolVersion: "1.0.0" | "1.1.0" | "1.2.0" = "1.2.0",
+): CreateClientOptions {
   return {
     baseUrl: "https://hub.example.invalid",
     authorization: () => "Bearer runtime",
-    requestedProtocolVersion: "1.2.0",
+    requestedProtocolVersion,
     fetch,
   };
 }
