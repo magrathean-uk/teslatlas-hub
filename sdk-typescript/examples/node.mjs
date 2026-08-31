@@ -1,22 +1,27 @@
-import { asEntityTag, createNodeTransport, readEntityTag } from "@teslatlas/sdk/node";
+import { createClient } from "@teslatlas/sdk/node";
+import discovery from "../protocol/source/examples/discovery.json" with { type: "json" };
+import vehicles from "../protocol/source/examples/vehicles-page.json" with { type: "json" };
 
-const transport = createNodeTransport({
+const client = await createClient({
   baseUrl: "https://fixture.invalid",
-  fetch: async (_input, init) => {
-    const headers = new Headers(init?.headers);
-    if (headers.get("If-None-Match") !== '"fixture-1"') {
-      throw new Error("Example expected its conditional request tag");
+  authorization: () => undefined,
+  fetch: async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/.well-known/teslatlas-hub") {
+      return Response.json(discovery, { headers: { ETag: 'W/"fixture-discovery-1"' } });
     }
-    return new Response(null, {
-      status: 304,
-      headers: { ETag: '"fixture-2"' },
-    });
+    if (path === "/v1/vehicles") {
+      return Response.json(vehicles, { headers: { ETag: 'W/"fixture-vehicles-1"' } });
+    }
+    throw new Error(`Unexpected fixture path ${path}`);
   },
 });
+const result = await client.listVehicles();
 
-const response = await transport.request("/transport-example", {
-  ifNoneMatch: asEntityTag('"fixture-1"'),
-});
-const entityTag = readEntityTag(response.headers);
+if (result.kind !== "modified") {
+  throw new Error("Fixture vehicle response was unexpectedly not modified");
+}
 
-console.log(`Teslatlas SDK transport example: ${response.status} ${entityTag}`);
+console.log(
+  `Teslatlas SDK Node client: ${result.value.items.length} vehicle, protocol ${client.protocolVersion}`,
+);

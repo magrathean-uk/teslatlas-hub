@@ -1,60 +1,54 @@
 # TypeScript SDK architecture
 
-## Responsibility
+## Boundary
 
-Provide the contract-neutral browser and Node.js foundation for future released Teslatlas
-protocol clients without embedding Hub implementation or viewer product logic.
+`TeslatlasClient` is the closed public client surface. It exposes one named
+method for each released protocol operation and has no arbitrary-path executor.
+The root package exports public models, options, results, errors, opaque-value
+constructors, and caller-owned interfaces; browser and Node.js subpaths add an
+asynchronous `createClient` factory.
 
-## Package boundaries
+The implementation retains private request construction, response decoding,
+generated validators, and incremental SSE framing inside the package. Those
+files are emitted because the public client needs them at runtime, but the
+package export map does not expose them as consumer subpaths.
 
-| Unit | Responsibility |
-| --- | --- |
-| Core | Safe errors, opaque capabilities, version checks |
-| HTTP | Fetch transport, opaque query values, conditional headers |
-| Events | SSE parsing, reconnect, Last-Event-ID persistence hooks |
-| Auth | Generic caller-owned credential interfaces |
-| Node | Node-named factory over the shared fetch transport |
-| Browser | Browser-named factory over the shared fetch transport |
+## Lifecycle
 
-The current implementation provides the contract-neutral part of these units. Resource
-clients and payload decoders remain generated-layer work because the protocol authority
-has not released its schemas.
+1. `createClient` validates the bootstrap origin and fetches public discovery
+   without authorization or redirect following.
+2. The descriptor is schema-validated, its endpoints are safety-checked, and a
+   supported protocol profile is negotiated.
+3. Every authenticated named method validates its local inputs and advertised
+   capability before asking the caller for authorization.
+4. Fixed request templates encode only declared path/query/header/body inputs.
+5. Response values, metadata, and problem documents are decoded into safe typed
+   results or errors. Raw bodies, credentials, and arbitrary causes are not
+   retained.
 
-## Runtime flow
+## Runtime parity
 
-1. A caller creates the browser or Node.js adapter with a base URL and optional
-   authorization provider.
-2. A future generated protocol layer supplies approved relative paths, query names, and
-   payload decoders.
-3. The shared fetch transport resolves only root-relative targets, loads authorization for
-   that request, applies conditional headers, and makes one fetch attempt.
-4. Ordinary responses remain native `Response` objects for the generated decoder.
-5. SSE subscriptions parse raw standard events, checkpoint only after consumer progress,
-   and reconnect only when the caller policy authorizes it.
+`@teslatlas/sdk/browser` and `@teslatlas/sdk/node` call the same session and
+client implementation. Both accept an injected Fetch implementation for
+deterministic tests and embedding-specific network policy. The examples and
+cross-runtime suites use fixture responses only.
 
-Browser and Node.js entry points export the same core. Their only difference is the named
-adapter factory, and both default to their runtime's `globalThis.fetch`.
+## Event and command boundaries
 
-## Security rules
+Typed event streaming validates known events, preserves caller-owned replay
+checkpoints, and treats terminal replay outcomes as typed failures. The caller
+must scope a checkpoint store to its own authorization principal and stable
+filters.
 
-- Consumers supply credential storage; the SDK never invents browser persistence policy.
-- The low-level transport accepts a caller-supplied authorization value but defines no
-  credential format, scope, or endpoint policy.
-- Errors preserve only validated safe request IDs; arbitrary underlying causes are not
-  retained.
-- The command safety guard requires an idempotency key and retry mode `never`; submission
-  and polling wait for the released command-job contract.
+Command submission is one-shot. After Fetch dispatch begins, an abort or
+transport failure without a conforming response becomes
+`CommandUncertainError`; the client never reissues that command.
 
-## Boundaries
+## Protocol dependency
 
-The SDK is transport and contract code. It does not own access-control policy, operator configuration, dashboard UI, or Hub data projection.
-
-The low-level transport is infrastructure for released protocol clients. It does not
-declare candidate product-brief routes public and must not be used to institutionalise a
-Hub-private route.
-
-## Dependency boundary
-
-`teslatlas-protocol` is the only authority for discovery, routes, resource fields, event
-payloads, authentication, error codes, and command jobs. See
-[Protocol dependency gate](protocol-dependency-gate.md) for the precise blocked surface.
+The vendored protocol snapshot and generated validators are locked at
+`79ced4c7fdc79520ad31d72a0280bf5f3f19f407`. The lock and generated bytes are
+checked locally by `npm run protocol:check`. See
+[compatibility](compatibility.md) for profiles and regeneration, and
+[the dependency gate](protocol-dependency-gate.md) for remaining external
+evidence boundaries.

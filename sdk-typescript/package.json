@@ -1,7 +1,7 @@
 {
   "name": "@teslatlas/sdk",
   "version": "0.0.0-development",
-  "description": "Private development foundation for the planned public Teslatlas browser and Node.js SDK",
+  "description": "Private protocol-derived Teslatlas client for browser and Node.js development",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -43,12 +43,13 @@
     "dist",
     "docs/api.md",
     "docs/architecture.md",
+    "docs/compatibility.md",
     "docs/protocol-dependency-gate.md",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node scripts/build.mjs",
     "example:browser": "npm run build && node examples/browser/serve.mjs",
     "example:node": "npm run build && node examples/node.mjs",
     "format": "biome format --write .",
@@ -74,6 +75,7 @@
     "openapi-typescript": "7.13.0",
     "playwright": "1.62.1",
     "typescript": "5.9.3",
+    "vite": "8.2.2",
     "vitest": "4.1.11"
   },
   "dependencies": {

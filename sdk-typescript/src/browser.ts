@@ -1,7 +1,8 @@
-import { FetchTransport, type FetchTransportOptions } from "./http/fetch-transport.js";
+import { TeslatlasClient } from "./client/client.js";
+import { createClientSession, type CreateClientOptions } from "./client/session.js";
 
 export * from "./index.js";
 
-export function createBrowserTransport(options: FetchTransportOptions): FetchTransport {
-  return new FetchTransport(options);
+export async function createClient(options: CreateClientOptions): Promise<TeslatlasClient> {
+  return new TeslatlasClient(await createClientSession(options));
 }

@@ -9,17 +9,17 @@ const execFileAsync = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 describe("runnable examples", () => {
-  it("runs the deterministic Node.js transport example", async () => {
+  it("runs the deterministic Node.js typed client example", async () => {
     const result = await execFileAsync(process.execPath, ["examples/node.mjs"], {
       cwd: repositoryRoot,
       encoding: "utf8",
     });
 
     expect(result.stderr).toBe("");
-    expect(result.stdout).toBe('Teslatlas SDK transport example: 304 "fixture-2"\n');
+    expect(result.stdout).toBe("Teslatlas SDK Node client: 1 vehicle, protocol 1.2.0\n");
   });
 
-  it("loads the built browser example in Chromium", async () => {
+  it("loads the self-contained browser client and validators through the raw Node static server", async () => {
     const server = spawn(process.execPath, ["examples/browser/serve.mjs"], {
       cwd: repositoryRoot,
       env: { ...process.env, TESLATLAS_EXAMPLE_PORT: "0" },
@@ -39,7 +39,7 @@ describe("runnable examples", () => {
       expect(response?.status()).toBe(200);
       await expect
         .poll(() => page.locator("#output").textContent())
-        .toBe('Teslatlas SDK browser transport: 304 "fixture-2"');
+        .toBe("Teslatlas SDK browser client: 1 vehicle, protocol 1.2.0");
       expect(pageErrors).toEqual([]);
     } finally {
       await browser?.close();

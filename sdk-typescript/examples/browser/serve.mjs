@@ -6,6 +6,13 @@ import { fileURLToPath } from "node:url";
 const exampleDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(exampleDirectory, "../..");
 const distDirectory = resolve(repositoryRoot, "dist");
+const fixturePaths = new Map([
+  ["/fixtures/discovery.json", resolve(repositoryRoot, "protocol/source/examples/discovery.json")],
+  [
+    "/fixtures/vehicles-page.json",
+    resolve(repositoryRoot, "protocol/source/examples/vehicles-page.json"),
+  ],
+]);
 const port = Number.parseInt(process.env.TESLATLAS_EXAMPLE_PORT ?? "4173", 10);
 
 if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) {
@@ -48,6 +55,10 @@ function resolveAsset(pathname) {
   if (pathname === "/app.js") {
     return resolve(exampleDirectory, "app.js");
   }
+  const fixture = fixturePaths.get(pathname);
+  if (fixture !== undefined) {
+    return fixture;
+  }
   if (!pathname.startsWith("/dist/")) {
     return undefined;
   }
@@ -67,6 +78,7 @@ function contentType(file) {
     case ".js":
       return "text/javascript; charset=utf-8";
     case ".map":
+    case ".json":
       return "application/json; charset=utf-8";
     default:
       return "application/octet-stream";

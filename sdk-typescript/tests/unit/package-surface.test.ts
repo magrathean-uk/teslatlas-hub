@@ -16,16 +16,28 @@ describe("package surface", () => {
     expect(manifest.exports["."].import).toBe(manifest.exports["."].default);
     expect(manifest.exports["./browser"].import).toBe(manifest.exports["./browser"].default);
     expect(manifest.exports["./node"].import).toBe(manifest.exports["./node"].default);
+    expect(Object.keys(manifest.exports).sort()).toEqual([
+      ".",
+      "./browser",
+      "./node",
+      "./package.json",
+    ]);
+    expect(manifest.files).toContain("docs/compatibility.md");
   });
 
-  it("runtime-imports every built package entry point", async () => {
+  it("runtime-imports only the closed package entry points", async () => {
     const script = `
       const root = await import("@teslatlas/sdk");
       const browser = await import("@teslatlas/sdk/browser");
       const node = await import("@teslatlas/sdk/node");
-      if (typeof root.FetchTransport !== "function" || typeof root.parseProtocolVersion !== "function") throw new Error("root exports missing");
-      if (typeof browser.createBrowserTransport !== "function") throw new Error("browser export missing");
-      if (typeof node.createNodeTransport !== "function") throw new Error("node export missing");
+      if (typeof root.TeslatlasError !== "function" || typeof root.asOpaqueCursor !== "function") throw new Error("root exports missing");
+      if (typeof root.createClient !== "undefined") throw new Error("root factory leaked");
+      for (const api of [root, browser, node]) {
+        for (const name of ["FetchTransport", "parseSseStream", "subscribeToSse"]) {
+          if (typeof api[name] !== "undefined") throw new Error("internal export leaked: " + name);
+        }
+      }
+      if (typeof browser.createClient !== "function" || typeof node.createClient !== "function") throw new Error("runtime factory missing");
       const paths = [
         import.meta.resolve("@teslatlas/sdk"),
         import.meta.resolve("@teslatlas/sdk/browser"),
@@ -51,4 +63,31 @@ describe("package surface", () => {
       expect.stringMatching(/\/dist\/node\.js$/u),
     ]);
   });
+
+  it("packs public documentation and runtime internals without source maps or source inputs", async () => {
+    const result = await execFileAsync(npmExecutable, ["pack", "--dry-run", "--json"], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+    });
+    const reports = JSON.parse(result.stdout) as Array<{ files?: Array<{ path?: string }> }>;
+    const files = new Set(reports[0]?.files?.map((entry) => entry.path).filter(isString));
+
+    expect(files.has("docs/compatibility.md")).toBe(true);
+    expect(files.has("dist/generated/validators.js")).toBe(true);
+    expect(files.has("dist/generated/validators.d.ts")).toBe(true);
+    expect([...files].filter((path) => path.endsWith(".map"))).toEqual([]);
+    expect(
+      [...files].filter((path) =>
+        [".github/", "docs/superpowers/", "protocol/", "scripts/", "src/", "tests/"].some(
+          (prefix) => path.startsWith(prefix),
+        ),
+      ),
+    ).toEqual([]);
+  });
 });
+
+const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
+
+function isString(value: string | undefined): value is string {
+  return typeof value === "string";
+}

@@ -4,94 +4,88 @@ export type {
   CredentialStore,
   MaybePromise,
 } from "./auth/credential-store.js";
+export type { IdempotencyKey } from "./commands/idempotency.js";
+export { InvalidIdempotencyKeyError, asIdempotencyKey } from "./commands/idempotency.js";
+export type { TeslatlasClient } from "./client/client.js";
+export type { CreateClientOptions } from "./client/types.js";
 export {
-  CommandSafetyError,
-  assertCommandSafety,
-} from "./commands/safety.js";
-export type {
-  CommandSafety,
-  CommandSafetyFailure,
-  UncheckedCommandSafety,
-} from "./commands/safety.js";
+  InvalidReadOptionsError,
+  type CommandCreateOptions,
+  type ConditionalReadOptions,
+  type DataQualityPageOptions,
+  type HistoryPageOptions,
+  type IfMatchOptions,
+  type MetadataPageOptions,
+  type PageReadOptions,
+  type ReadResult,
+  type RequestOptions,
+  type ResponseMetadata,
+  type WriteResult,
+} from "./client/operations.js";
 export {
-  InvalidCapabilityError,
-  MissingCapabilitiesError,
-  asCapabilityId,
-  createCapabilitySet,
-  findMissingCapabilities,
-  requireCapabilities,
-} from "./core/capabilities.js";
-export type { CapabilityId, CapabilitySet } from "./core/capabilities.js";
-export {
-  InvalidProtocolErrorCodeError,
-  InvalidSafeRequestIdError,
+  CommandUncertainError,
+  IncompatibleProtocolError,
+  MissingCapabilityError,
   ProtocolError,
+  ProtocolHttpError,
+  ProtocolValidationError,
+  ReplayGapError,
   TeslatlasError,
   TransportError,
-  asProtocolErrorCode,
-  asSafeRequestId,
-} from "./core/errors.js";
-export type {
-  ProtocolErrorCode,
-  ProtocolErrorOptions,
-  SafeRequestId,
+  type ProtocolErrorCode,
+  type ProtocolErrorOptions,
+  type SafeRequestId,
 } from "./core/errors.js";
 export {
   InvalidEntityTagError,
   InvalidOpaqueCursorError,
   asEntityTag,
   asOpaqueCursor,
+  type EntityTag,
+  type OpaqueCursor,
 } from "./core/opaque-values.js";
-export type { EntityTag, OpaqueCursor } from "./core/opaque-values.js";
 export {
-  InvalidCompatibilityWindowError,
-  InvalidProtocolVersionError,
-  checkProtocolVersion,
-  parseProtocolVersion,
-} from "./core/version.js";
-export type {
-  ProtocolCompatibility,
-  ProtocolCompatibilityWindow,
-  ProtocolVersion,
-} from "./core/version.js";
-export {
-  InvalidQueryParameterNameError,
-  appendOpaqueQueryValue,
-  applyIfNoneMatch,
-  isNotModified,
-  readEntityTag,
-} from "./http/conditional.js";
-export {
-  FetchTransport,
-  InvalidAuthorizationValueError,
-  InvalidBaseUrlError,
-  InvalidRequestPathError,
-  MissingFetchError,
-  ReservedAuthorizationHeaderError,
-} from "./http/fetch-transport.js";
-export type {
-  FetchImplementation,
-  FetchTransportOptions,
-  ProtocolRequestInit,
-} from "./http/fetch-transport.js";
-export { parseSseStream } from "./events/sse-parser.js";
-export type {
-  ParseSseStreamOptions,
-  SseEvent,
-  SseStreamItem,
-} from "./events/sse-parser.js";
+  InvalidStreamEventsOptionsError,
+  UnsupportedStreamEventTypeError,
+  type StreamEventsOptions,
+} from "./events/protocol-subscription.js";
 export {
   InvalidSseCheckpointError,
-  InvalidSseRetryConfigurationError,
   SseBodyError,
   SseContentTypeError,
-  SseHttpError,
-  subscribeToSse,
+  type SseCheckpointStore,
+  type SseSleep,
 } from "./events/sse-subscription.js";
+export {
+  InvalidAuthorizationValueError,
+  InvalidBaseUrlError,
+  MissingFetchError,
+} from "./http/fetch-transport.js";
+export {
+  InvalidStrongEntityTagError,
+  asStrongEntityTag,
+  type StrongEntityTag,
+} from "./http/strong-etag.js";
 export type {
-  SseCheckpointStore,
-  SseReconnectContext,
-  SseReconnectPolicy,
-  SseSleep,
-  SseSubscriptionOptions,
-} from "./events/sse-subscription.js";
+  Charge,
+  ChargePage,
+  ChargeSamplePage,
+  CommandJob,
+  CommandRequest,
+  CurrentState,
+  DataQualityPage,
+  Drive,
+  DrivePage,
+  HubDescriptor,
+  MetadataCreate,
+  MetadataPage,
+  MetadataRecord,
+  MetadataReplace,
+  MetadataTombstone,
+  PositionPage,
+  ProtocolEvent,
+  ProtocolProblem,
+  StatePage,
+  UpdatePage,
+  VehiclePage,
+} from "./protocol/models.js";

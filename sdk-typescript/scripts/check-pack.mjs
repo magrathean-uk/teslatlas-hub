@@ -16,6 +16,7 @@ const required = [
   "README.md",
   "docs/api.md",
   "docs/architecture.md",
+  "docs/compatibility.md",
   "docs/protocol-dependency-gate.md",
   "dist/browser.d.ts",
   "dist/browser.js",
@@ -23,12 +24,21 @@ const required = [
   "dist/index.js",
   "dist/node.d.ts",
   "dist/node.js",
+  "dist/generated/validators.d.ts",
+  "dist/generated/validators.js",
   "package.json",
 ];
-const forbiddenPrefixes = [".github/", "docs/superpowers/", "src/", "tests/"];
+const forbiddenPrefixes = [
+  ".github/",
+  "docs/superpowers/",
+  "protocol/",
+  "scripts/",
+  "src/",
+  "tests/",
+];
 const missing = required.filter((path) => !files.has(path));
-const forbidden = [...files].filter((path) =>
-  forbiddenPrefixes.some((prefix) => path.startsWith(prefix)),
+const forbidden = [...files].filter(
+  (path) => path.endsWith(".map") || forbiddenPrefixes.some((prefix) => path.startsWith(prefix)),
 );
 
 if (missing.length > 0 || forbidden.length > 0) {

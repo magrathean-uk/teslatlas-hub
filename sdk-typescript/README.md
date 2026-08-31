@@ -1,19 +1,41 @@
 # Teslatlas TypeScript SDK
 
-Private development foundation for the planned public Teslatlas browser and Node.js SDK.
+Private, protocol-derived Teslatlas client for browser and Node.js development.
 
 ## Status
 
-Transport foundation under development. It provides locked tooling, protocol-rule
-primitives, browser and Node.js fetch adapters, conditional HTTP helpers, caller-owned
-credential interfaces, and raw SSE replay/reconnect mechanics.
+The SDK implements the 20 named operations in the pinned Teslatlas protocol
+snapshot. It validates discovery, responses, errors, metadata, command jobs,
+and typed event streams before returning protocol data.
 
-The pinned protocol authority revision does not publish OpenAPI, JSON Schema, event,
-authentication, error, command-job, or conformance artifacts. This package therefore has
-no resource methods or generated payload types and is deliberately private. See the
-[protocol dependency gate](docs/protocol-dependency-gate.md).
+The package is private. Local protocol-case checks exercise SDK behavior against
+vendored fixtures; they do not establish the behavior of a remote deployment.
 
-## Run the SDK locally
+## Use a runtime factory
+
+The root entry point exports public types, errors, and opaque constructors. Use
+a runtime-specific factory to create a client:
+
+```ts
+import { createClient } from "@teslatlas/sdk/node";
+
+const client = await createClient({
+  baseUrl: "https://hub.example.invalid",
+  authorization: async () => loadCallerCredential(),
+});
+
+const result = await client.listVehicles();
+if (result.kind === "modified") {
+  console.log(result.value.items);
+}
+```
+
+Callers provide complete authorization values and own any credential or event
+checkpoint persistence. See the [API reference](docs/api.md) and
+[compatibility guide](docs/compatibility.md) for the result, error, ETag, and
+replay contracts.
+
+## Local verification
 
 ```bash
 npm ci
@@ -21,9 +43,9 @@ npx playwright install chromium
 npm run verify
 ```
 
-The repository pins Node.js `26.7.0`, npm `11.19.0`, and every development dependency.
+The locked toolchain uses Node.js `26.7.0` and npm `11.19.0`.
 
-## Try the Node.js example
+## Examples
 
 ```bash
 npm run example:node
@@ -32,60 +54,25 @@ npm run example:node
 Expected output:
 
 ```text
-Teslatlas SDK transport example: 304 "fixture-2"
+Teslatlas SDK Node client: 1 vehicle, protocol 1.2.0
 ```
-
-The example uses a deterministic injected fetch response. It does not rely on an
-unreleased Hub route.
-
-## Try the browser example
 
 ```bash
 npm run example:browser
 ```
 
-Open `http://127.0.0.1:4173`. This also uses a deterministic local response.
+The browser example runs only local fixture responses and renders:
 
-## Use the current foundation
-
-```typescript
-import { asEntityTag, createNodeTransport } from "@teslatlas/sdk/node";
-
-const transport = createNodeTransport({
-  baseUrl: "https://hub.example",
-  authorization: async () => credentialStore.load(),
-});
-
-const response = await transport.request(protocolGeneratedPath, {
-  ifNoneMatch: asEntityTag(previousEntityTag),
-});
+```text
+Teslatlas SDK browser client: 1 vehicle, protocol 1.2.0
 ```
-
-`protocolGeneratedPath` and `credentialStore` must come from the caller. The SDK does not
-ship candidate routes or choose credential persistence.
 
 ## Read next
 
 - [Architecture](docs/architecture.md)
 - [API reference](docs/api.md)
+- [Compatibility](docs/compatibility.md)
 - [Protocol dependency gate](docs/protocol-dependency-gate.md)
-
-## Verification
-
-```bash
-npm run format:check
-npm run lint
-npm run typecheck
-npm run build
-npm run test:unit
-npm run test:browser
-npm run test:conformance
-npm run pack:check
-```
-
-The shared conformance fixtures cover this SDK transport foundation in Node.js and real
-Chromium. Unit verification also loads the built browser example and runtime-imports every
-package entry point. These are not Teslatlas protocol conformance fixtures.
 
 ## Licence
 
