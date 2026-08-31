@@ -1,5 +1,6 @@
 import { ProtocolValidationError } from "../core/errors.js";
 import { validateDiscovery } from "../generated/validators.js";
+import { readEntityTag } from "../http/conditional.js";
 import { FetchTransport, InvalidBaseUrlError } from "../http/fetch-transport.js";
 import type { HubDescriptor } from "../protocol/models.js";
 import { negotiateProtocolVersion } from "../protocol/negotiation.js";
@@ -26,6 +27,7 @@ export async function createClientSession(options: CreateClientOptions): Promise
   if (response.status !== 200) {
     throw new ProtocolValidationError("Discovery.status");
   }
+  requireDiscoveryEntityTag(response);
   const descriptor = decodeProtocolValue<HubDescriptor>(
     await readDiscoveryBody(response, options.signal),
     validateDiscovery,
@@ -55,6 +57,16 @@ export async function createClientSession(options: CreateClientOptions): Promise
       baseUrl: descriptor.endpoints.events,
     }),
   });
+}
+
+function requireDiscoveryEntityTag(response: Response): void {
+  try {
+    if (readEntityTag(response.headers) === undefined) {
+      throw new ProtocolValidationError("Discovery.etag");
+    }
+  } catch {
+    throw new ProtocolValidationError("Discovery.etag");
+  }
 }
 
 async function readDiscoveryBody(

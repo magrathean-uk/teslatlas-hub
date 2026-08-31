@@ -135,3 +135,41 @@ The first clean-cache browser run correctly exposed old conformance fixtures
 that returned JSON GET responses without the now-required ETag. Updating those
 fixtures to valid ETag-bearing protocol responses made the fresh browser gate
 pass; no browser runtime workaround or validator design change was needed.
+
+## P2 follow-up — bootstrap discovery ETag
+
+The same pinned `docs/http.md` JSON-GET ETag requirement applies to the initial
+`/.well-known/teslatlas-hub` discovery request. Root-cause trace: the session
+bootstrap path checked only `200` and decoded the response body directly, so it
+bypassed `decodeReadResponse`'s ordinary ETag validation.
+
+### RED / green
+
+The session test first showed that both absent and malformed discovery ETags
+resolved successfully:
+
+```text
+npm run test:unit -- --run tests/unit/client-session.test.ts
+# 2 expected failures: missing and malformed ETags accepted
+```
+
+The minimal fix calls the existing shared ordinary `readEntityTag` helper after
+the discovery `200` status guard and before reading its body, mapping absent or
+invalid values to cause-free `ProtocolValidationError("Discovery.etag")`.
+This retains redirect, status, and abort behavior. The regression test accepts
+an ordinary weak ETag longer than the request-header limit, rejects absent and
+malformed tags, and asserts no body/header/response/cause or secret leakage.
+
+```text
+npm run test:unit -- --run tests/unit/client-session.test.ts
+# 13 tests passed
+
+npm run protocol:check
+npm run verify
+npm run typecheck
+npx vitest --clearCache
+npm run test:browser
+git diff --check
+# lock passed; unit 22 files / 166 tests; conformance 2 files / 23 tests;
+# Chromium 12/12 passed
+```

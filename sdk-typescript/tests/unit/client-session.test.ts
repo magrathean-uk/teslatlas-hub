@@ -28,7 +28,7 @@ describe("client session", () => {
         authorization: new Headers(init?.headers).get("authorization"),
       });
       if (url.endsWith("/.well-known/teslatlas-hub")) {
-        return Response.json(discovery);
+        return discoveryResponse();
       }
       return new Response(null, { status: 204 });
     };
@@ -67,7 +67,7 @@ describe("client session", () => {
     let observedSignal: AbortSignal | null | undefined;
     const fetch: FetchImplementation = async (_input, init) => {
       observedSignal = init?.signal;
-      return Response.json(discovery);
+      return discoveryResponse();
     };
 
     await createClientSession({
@@ -108,7 +108,7 @@ describe("client session", () => {
       authorization: () => undefined,
       fetch: async (_input, init) => {
         observedRedirect = init?.redirect;
-        return Response.json(discovery);
+        return discoveryResponse();
       },
     });
 
@@ -130,6 +130,49 @@ describe("client session", () => {
     expect(error).not.toHaveProperty("response");
   });
 
+  it("requires a valid ordinary ETag on discovery 200", async () => {
+    const longEtag = `W/"${"x".repeat(513)}"`;
+    const valid = await createClientSession({
+      baseUrl: "https://hub.example.invalid",
+      authorization: () => undefined,
+      fetch: async () => Response.json(discovery, { headers: { ETag: longEtag } }),
+    });
+
+    expect(valid.descriptor).toEqual(canonicalDescriptor);
+
+    const error = await captureError(
+      createClientSession({
+        baseUrl: "https://hub.example.invalid",
+        authorization: () => undefined,
+        fetch: async () =>
+          Response.json(discovery, { headers: { "X-Debug-Secret": "Bearer must-not-leak" } }),
+      }),
+    );
+
+    expect(error).toBeInstanceOf(ProtocolValidationError);
+    expect(error).toMatchObject({ code: "protocol_validation", validator: "Discovery.etag" });
+    expect(error).not.toHaveProperty("cause");
+    expect(error).not.toHaveProperty("body");
+    expect(error).not.toHaveProperty("response");
+    expect(String(error)).not.toContain("must-not-leak");
+  });
+
+  it("rejects malformed discovery ETags without exposing the header", async () => {
+    const error = await captureError(
+      createClientSession({
+        baseUrl: "https://hub.example.invalid",
+        authorization: () => undefined,
+        fetch: async () => Response.json(discovery, { headers: { ETag: "Bearer must-not-leak" } }),
+      }),
+    );
+
+    expect(error).toBeInstanceOf(ProtocolValidationError);
+    expect(error).toMatchObject({ code: "protocol_validation", validator: "Discovery.etag" });
+    expect(error).not.toHaveProperty("cause");
+    expect(error).not.toHaveProperty("headers");
+    expect(String(error)).not.toContain("must-not-leak");
+  });
+
   it("preserves caller abort while reading the discovery body", async () => {
     const controller = new AbortController();
     const reason = new DOMException("Stopped", "AbortError");
@@ -143,7 +186,7 @@ describe("client session", () => {
     const session = createClientSession({
       baseUrl: "https://hub.example.invalid",
       authorization: () => undefined,
-      fetch: async () => new Response(body, { status: 200 }),
+      fetch: async () => new Response(body, { status: 200, headers: { ETag: 'W/"discovery-1"' } }),
       signal: controller.signal,
     });
 
@@ -155,7 +198,11 @@ describe("client session", () => {
       createClientSession({
         baseUrl: "https://hub.example.invalid",
         authorization: () => undefined,
-        fetch: async () => Response.json({ secret: "Bearer must-not-leak" }),
+        fetch: async () =>
+          Response.json(
+            { secret: "Bearer must-not-leak" },
+            { headers: { ETag: 'W/"discovery-1"' } },
+          ),
       }),
     );
 
@@ -178,7 +225,7 @@ describe("client session", () => {
       createClientSession({
         baseUrl: "https://hub.example.invalid",
         authorization: () => undefined,
-        fetch: async () => Response.json(descriptor),
+        fetch: async () => discoveryResponse(descriptor),
       }),
     ).rejects.toMatchObject({
       name: "ProtocolValidationError",
@@ -200,7 +247,7 @@ describe("client session", () => {
     const session = await createClientSession({
       baseUrl: "http://127.0.0.1:8787",
       authorization: () => undefined,
-      fetch: async () => Response.json(descriptor),
+      fetch: async () => discoveryResponse(descriptor),
     });
 
     expect(session.descriptor.endpoints.api).toBe("http://127.0.0.1:8787/v1");
@@ -214,4 +261,8 @@ async function captureError(promise: Promise<unknown>): Promise<unknown> {
   } catch (error) {
     return error;
   }
+}
+
+function discoveryResponse(value: unknown = discovery): Response {
+  return Response.json(value, { headers: { ETag: 'W/"discovery-1"' } });
 }
