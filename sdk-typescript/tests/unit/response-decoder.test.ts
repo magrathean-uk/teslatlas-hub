@@ -53,6 +53,17 @@ describe("read response decoder", () => {
     ).rejects.toBeInstanceOf(ProtocolValidationError);
   });
 
+  it.each([200, 304])("rejects malformed ETag metadata on status %i", async (status) => {
+    const response =
+      status === 200
+        ? Response.json(currentState, { headers: { ETag: "not-an-etag" } })
+        : new Response(null, { status, headers: { ETag: "not-an-etag" } });
+
+    await expect(
+      decodeReadResponse<CurrentState>(response, validateCurrentState, "validateCurrentState"),
+    ).rejects.toBeInstanceOf(ProtocolValidationError);
+  });
+
   it("decodes safe problem fields without retaining sensitive detail or response", async () => {
     const sensitiveProblem = {
       ...problem,

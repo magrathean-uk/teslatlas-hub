@@ -2,6 +2,8 @@ import { containsControlCharacters, TeslatlasError } from "./errors.js";
 
 const opaqueCursorBrand: unique symbol = Symbol("OpaqueCursor");
 const entityTagBrand: unique symbol = Symbol("EntityTag");
+const maximumEntityTagLength = 512;
+const entityTagPattern = /^(?:W\/)?"[^"]+"$/u;
 
 export type OpaqueCursor = string & {
   readonly [opaqueCursorBrand]: true;
@@ -21,7 +23,7 @@ export class InvalidOpaqueCursorError extends TeslatlasError<"invalid_opaque_cur
 
 export class InvalidEntityTagError extends TeslatlasError<"invalid_entity_tag"> {
   constructor() {
-    super("Entity tag must be non-empty and contain no control characters", {
+    super("Entity tag must use the protocol ETag syntax", {
       code: "invalid_entity_tag",
     });
   }
@@ -35,7 +37,11 @@ export function asOpaqueCursor(value: string): OpaqueCursor {
 }
 
 export function asEntityTag(value: string): EntityTag {
-  if (value.length === 0 || containsControlCharacters(value)) {
+  if (
+    value.length > maximumEntityTagLength ||
+    containsControlCharacters(value) ||
+    !entityTagPattern.test(value)
+  ) {
     throw new InvalidEntityTagError();
   }
   return value as EntityTag;

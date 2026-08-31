@@ -20,16 +20,20 @@ describe("opaque protocol values", () => {
     );
   });
 
-  it("preserves weak entity tags without interpreting them", () => {
-    const value = 'W/"revision-7"';
+  it("preserves protocol-valid opaque weak entity tags without interpreting them", () => {
+    const value = 'W/"opaque+/= revision-7"';
 
     expect(asEntityTag(value)).toBe(value);
   });
 
-  it("rejects empty or header-injecting entity tags", () => {
-    expect(() => asEntityTag("")).toThrow(InvalidEntityTagError);
-    expect(() => asEntityTag('"revision-7"\r\nAuthorization: secret')).toThrow(
-      InvalidEntityTagError,
-    );
+  it.each([
+    "",
+    "not-an-etag",
+    "W/not-quoted",
+    'W/""',
+    '"revision-7"\r\nAuthorization: secret',
+    `"${"x".repeat(511)}"`,
+  ])("rejects malformed entity tag %j", (value) => {
+    expect(() => asEntityTag(value)).toThrow(InvalidEntityTagError);
   });
 });

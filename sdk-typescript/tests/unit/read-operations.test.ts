@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import { TeslatlasClient } from "../../src/client/client.js";
 import type { ClientSession } from "../../src/client/types.js";
 import { MissingCapabilityError } from "../../src/core/errors.js";
-import { asOpaqueCursor } from "../../src/core/opaque-values.js";
+import { asOpaqueCursor, type EntityTag } from "../../src/core/opaque-values.js";
 import { FetchTransport, type FetchImplementation } from "../../src/http/fetch-transport.js";
 import type { HubDescriptor } from "../../src/protocol/models.js";
 import { decodeProtocolValue } from "../../src/protocol/validate.js";
@@ -126,6 +126,19 @@ describe("typed read operations", () => {
     await expect(client.listVehicleDrives("vehicle_demo")).rejects.toBeInstanceOf(
       MissingCapabilityError,
     );
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a forged malformed If-None-Match before Fetch", async () => {
+    let calls = 0;
+    const client = createClient([], descriptor, async () => {
+      calls += 1;
+      return Response.json(vehicles);
+    });
+
+    await expect(
+      client.listVehicles({ ifNoneMatch: "not-an-etag" as EntityTag }),
+    ).rejects.toMatchObject({ code: "invalid_read_options" });
     expect(calls).toBe(0);
   });
 });
