@@ -1,48 +1,46 @@
-# Protocol dependency gate
+# Protocol activation record
 
 ## Current authority
 
-Checked `teslatlas-protocol` `main` at commit `b7b48a86a7705e8ab016f1debd25cecd20ebbb89` after refreshing `origin` on 2026-08-30.
+This batch consumes `teslatlas-protocol` commit
+`79ced4c7fdc79520ad31d72a0280bf5f3f19f407`, profile `1.2.0`, with compatibility
+profiles `1.0.0`, `1.1.0`, and `1.2.0`.
 
-That revision explicitly says it is foundation-only and has no deployed protocol implementation, generated SDK, or compatibility promise. Its architecture identifies intended artifact classes but says the exact v1 resource schemas are not frozen. The tracked tree contains only:
+The authority now contains committed OpenAPI, JSON Schemas, SSE contract,
+examples, deterministic fixtures, compatibility profiles, and the
+language-neutral conformance runner. Copies of the released examples used by
+XCTest are pinned under `Tests/TeslatlasHubSDKTests/Fixtures` with the exact
+authority SHA.
 
-```text
-AGENTS.md
-LICENSE
-README.md
-docs/architecture.md
-docs/plans/2026-08-30-foundation.md
-```
+## Activated slices
 
-Untracked schema, example, and test work appeared in the local protocol checkout after this SDK batch began. It is not part of the pinned commit, has no released compatibility status, and was not consumed. This SDK activates contract work only from committed, released protocol artifacts.
+| Slice | Authority | SDK behavior |
+| --- | --- | --- |
+| Discovery | discovery schema and versioning rules | strict versions, capabilities, limits, HTTPS, forbidden private fields |
+| Endpoint trust | stable Hub identity plus advertised endpoints | fixed trusted-origin set and fail-closed identity refresh |
+| Errors | RFC 9457 schema and stable codes | typed problem details preserving request IDs and retryability |
+| Queries | OpenAPI resources, cursors, limits, ETags | typed read routes, opaque cursors/ETags, bounded history and response bytes |
+| Events | SSE contract and event envelope | request construction, bounded framing, retry cap, identity semantics |
+| Commands | command schema and catalogue | separate product, confirmation gate, UUID idempotency, one network attempt |
 
-## Blocked public work
+## Still gated or incomplete
 
-| SDK slice | Required released protocol artifacts that are absent |
+| Slice | Reason |
 | --- | --- |
-| Core types and capabilities | Version/capability schema, feature identifiers, negotiation rules, deprecation rules, compatibility fixtures |
-| Typed errors | Error envelope schema, stable code registry, HTTP mapping, retryability rules, request-ID header/field |
-| Discovery and identity | Well-known schema, Hub identity representation, endpoint fields, trust material, pinning and identity-change rules |
-| Pairing and bearer rotation | Invitation/claim schemas, state machine, expiry/cancellation rules, persisted resume fields, token issuance/rotation/revocation rules |
-| Paginated queries and ETags | OpenAPI paths and models, opaque-cursor semantics, UTC filter encoding, bounds, ETag and conditional-request rules |
-| SSE replay/reconnect | Stream endpoint, event names and payload schemas, ID semantics, replay retention, reset/gap response, reconnect bounds and fixtures |
-| Signed manifests | Manifest schema, canonical byte representation, key distribution, signature algorithm, rotation rules and verification vectors |
-| Pack downloads | Pack endpoint, byte-range/validator rules, length and integrity fields, transfer bounds, restart and corruption fixtures |
-| Conformance | Deterministic redacted fixtures, runner interface, expected outputs and previous-two-minor-version corpus |
+| Pairing and bearer rotation | Deployment contract is explicitly outside the released query protocol |
+| Certificate pin material | No public key/certificate pin distribution contract exists |
+| Signed manifests and packs | No manifest schema, signature vectors, pack endpoint, or integrity contract exists |
+| Mutable metadata | Protocol exists; SDK API and conditional-write tests are not implemented in this batch |
+| Managed SSE reconnect | Request and decoder exist; terminal/replay/reconnect orchestration remains caller-owned |
+| Full conformance | No independently implemented SDK JSONL adapter runs all 31 profile/case combinations yet |
 
-The SDK does not infer any of those fields, names, paths, algorithms, limits, or errors from the product brief, proprietary App, or AGPL Hub implementation.
+## Proof boundary
 
-## Safe foundation present
+Passing XCTest proves the Swift behavior and decoding of the pinned released
+examples. Running `teslatlas-protocol` validation proves the authority corpus
+is internally valid. Neither result alone proves end-to-end Hub interoperability
+or full SDK conformance.
 
-The package currently contains only internal, contract-neutral mechanics:
-
-- incremental standard SSE line framing with configurable internal caps (64 KiB per line and 8 MiB per event by default);
-- actor-isolated atomic persistence for caller-defined Codable state;
-- strict validation of a resumed HTTP 206 response, byte range, and caller-supplied opaque ETag;
-- deterministic XCTest coverage and a build-only standalone example.
-
-These declarations are internal. Importing `TeslatlasHubSDK` does not expose a speculative public Hub API.
-
-## Activation rule
-
-Implement one public slice only after its schema/specification and deterministic fixtures land in a released protocol revision. Pin that revision, write fixture-derived failing tests, implement protocol-derived Swift types and behaviour, then run the language-neutral conformance runner. Do not activate a slice from prose candidates alone.
+Remaining external gates are live Hub testing, Xcode/iOS build validation,
+device Keychain/local-network behavior, forced termination around checkpoints,
+and the protocol JSONL adapter.

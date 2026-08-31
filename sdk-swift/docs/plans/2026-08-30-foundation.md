@@ -1,5 +1,8 @@
 # Swift SDK foundation plan
 
+> Historical roadmap. Current implemented and gated scope is recorded in
+> `docs/protocol-dependency-gate.md`.
+
 ## Goal
 
 Deliver a public Swift package that proves Teslatlas has no private Hub transport privilege.

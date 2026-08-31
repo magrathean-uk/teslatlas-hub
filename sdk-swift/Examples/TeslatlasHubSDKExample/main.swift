@@ -1,8 +1,9 @@
 import TeslatlasHubSDK
 
-let protocolCommit = "b7b48a86a7705e8ab016f1debd25cecd20ebbb89"
+let protocolCommit = "79ced4c7fdc79520ad31d72a0280bf5f3f19f407"
+let profile = TeslatlasProtocolVersion("1.2.0")!
 
-print("TeslatlasHubSDK package foundation")
+print("TeslatlasHubSDK")
 print("Protocol authority: teslatlas-protocol@\(protocolCommit)")
-print("Status: blocked pending released schemas, fixtures, and conformance rules")
-print("No Hub connection was attempted")
+print("Maximum profile: \(profile)")
+print("Products: TeslatlasHubSDK, TeslatlasCommands")

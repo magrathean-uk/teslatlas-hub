@@ -1,0 +1,32 @@
+{
+  "resource_type": "update_page",
+  "items": [
+    {
+      "resource_type": "software_update",
+      "update_id": "update_demo_0001",
+      "vehicle_id": "vehicle_demo_alpha",
+      "status": "succeeded",
+      "version": "demo-2026.30",
+      "first_seen_at": "2026-08-29T10:00:00.000Z",
+      "last_seen_at": "2026-08-30T02:15:00.000Z",
+      "installed_at": "2026-08-30T02:15:00.000Z",
+      "quality": {
+        "subject_type": "update",
+        "subject_id": "update_demo_0001",
+        "quality": "complete",
+        "sources": [
+          "fleet_api"
+        ],
+        "gap_count": 0,
+        "largest_gap_seconds": 0,
+        "derived_fields": [],
+        "projection_version": "3.1.0",
+        "assessed_at": "2026-08-30T02:15:01.000Z",
+        "issues": []
+      }
+    }
+  ],
+  "next_cursor": null,
+  "snapshot_revision": "snapshot_demo_0042",
+  "generated_at": "2026-08-30T12:31:00.000Z"
+}

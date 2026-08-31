@@ -1,5 +1,8 @@
 # Protocol-gated Swift SDK foundation design
 
+> Historical record. Superseded by the activation record after protocol
+> artifacts landed at `1fec948ee0df4eb5bb542f29c976889e4dbaf4a3`.
+
 ## Status
 
 Approved by the request to start the public package now while making only safe harness progress when released protocol artifacts are unavailable.

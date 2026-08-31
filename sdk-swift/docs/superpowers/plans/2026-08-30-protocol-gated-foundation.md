@@ -1,5 +1,8 @@
 # Protocol-gated Swift SDK Foundation Implementation Plan
 
+> Historical completed foundation plan. Superseded by
+> `docs/protocol-dependency-gate.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. One main-session writer owns all edits; subagents are read-only reviewers.
 
 **Goal:** Create a tested, importable Swift package with contract-neutral SSE, persistence, and range-resume mechanics while recording the exact released-protocol dependency gate.
