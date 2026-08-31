@@ -6,7 +6,7 @@
 
 **Architecture:** Pin and vendor the validated protocol revision, generate private OpenAPI types and standalone runtime validators, then layer a closed `TeslatlasClient` over the existing safe Fetch and SSE cores. Browser and Node.js factories share one implementation; credentials and checkpoints remain caller-owned; generated internals and arbitrary-path transport APIs are removed from package exports.
 
-**Tech Stack:** Node.js 26.7.0, npm 11.19.0, TypeScript 7.0.2, ESM/ES2022, OpenAPI 3.1.1, JSON Schema 2020-12, `openapi-typescript` 7.13.0, Ajv 8.20.0, `ajv-formats` 3.0.1, Vitest 4.1.11, Playwright 1.62.1, Biome 2.5.11.
+**Tech Stack:** Node.js 26.7.0, npm 11.19.0, TypeScript 5.9.3, ESM/ES2022, OpenAPI 3.1.1, JSON Schema 2020-12, `openapi-typescript` 7.13.0, Ajv 8.20.0, `ajv-formats` 3.0.1, Vitest 4.1.11, Playwright 1.62.1, Biome 2.5.11.
 
 **Spec:** `docs/superpowers/specs/2026-08-31-protocol-client-reconciliation-design.md`
 
@@ -149,6 +149,10 @@ Run:
 npm install --save-dev --save-exact openapi-typescript@7.13.0
 npm install --save --save-exact ajv@8.20.0 ajv-formats@3.0.1
 ```
+
+Pin TypeScript to `5.9.3`. `openapi-typescript@7.13.0` declares
+`typescript: ^5.x` and uses the TypeScript factory API; do not retain the
+baseline TypeScript 7 pin because generation crashes under it.
 
 Add these package scripts:
 
