@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
@@ -26,5 +26,18 @@ describe("protocol lock", () => {
     });
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Protocol lock verified");
+  });
+
+  it("rejects a tampered committed generated file", async () => {
+    const generated = new URL("../../src/generated/protocol.ts", import.meta.url);
+    const original = await readFile(generated);
+    try {
+      await writeFile(generated, Buffer.concat([original, Buffer.from("\n// tampered\n")]));
+      await expect(
+        execFileAsync(process.execPath, ["scripts/check-protocol.mjs"], { cwd: root, encoding: "utf8" }),
+      ).rejects.toThrow("Protocol generated hash mismatch: src/generated/protocol.ts");
+    } finally {
+      await writeFile(generated, original);
+    }
   });
 });

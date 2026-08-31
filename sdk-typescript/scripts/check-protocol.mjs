@@ -23,6 +23,11 @@ if (JSON.stringify(files) !== JSON.stringify(Object.keys(lock.files).sort())) {
 for (const path of files) {
   if ((await sha256File(join(sourceRoot, path))) !== lock.files[path]) throw new Error(`Protocol source hash mismatch: ${path}`);
 }
+for (const path of generatedPaths) {
+  if ((await sha256File(join(repositoryRoot, path))) !== lock.generated?.[path]) {
+    throw new Error(`Protocol generated hash mismatch: ${path}`);
+  }
+}
 
 const temporaryOutput = await mkdtemp(join(tmpdir(), "teslatlas-sdk-protocol-"));
 try {
