@@ -116,10 +116,18 @@ test('fixture discovery pairs in memory and device management updates the view',
 
   await page.getByRole('button', { name: 'Paired devices' }).click();
   await page.getByRole('button', { name: 'Remove Home automation' }).click();
+  await page
+    .getByRole('button', { name: 'Confirm remove Home automation' })
+    .click();
   await expect(page.getByText('Home automation removed.')).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Home automation' }),
   ).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Clear local session' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Pair with a Hub' }),
+  ).toBeVisible();
 
   expect(externalRequests).toEqual([]);
 });

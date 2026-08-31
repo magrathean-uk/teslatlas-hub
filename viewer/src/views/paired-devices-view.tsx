@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { DataState } from '../components/data-state';
 import { StatusPill, type ViewState } from '../components/status-pill';
@@ -19,13 +19,48 @@ export function PairedDevicesView({
 }: PairedDevicesViewProps) {
   const [busyDevice, setBusyDevice] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
+  const [pendingDevice, setPendingDevice] = useState<PairedDevice | null>(null);
+  const [removalError, setRemovalError] = useState<Error | null>(null);
+  const confirmButton = useRef<HTMLButtonElement>(null);
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>());
+  const restoreFocusDevice = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (pendingDevice) {
+      confirmButton.current?.focus();
+      return;
+    }
+
+    if (restoreFocusDevice.current) {
+      removeButtons.current.get(restoreFocusDevice.current)?.focus();
+      restoreFocusDevice.current = null;
+    }
+  }, [pendingDevice]);
+
+  function requestRemoval(device: PairedDevice) {
+    setNotice('');
+    setRemovalError(null);
+    setPendingDevice(device);
+  }
+
+  function cancelRemoval() {
+    restoreFocusDevice.current = pendingDevice?.id ?? null;
+    setRemovalError(null);
+    setPendingDevice(null);
+  }
 
   async function remove(device: PairedDevice) {
     setBusyDevice(device.id);
     setNotice('');
+    setRemovalError(null);
     try {
       await onRemove(device.id);
       setNotice(`${device.displayName} removed.`);
+      setPendingDevice(null);
+    } catch (error) {
+      setRemovalError(
+        error instanceof Error ? error : new Error('Device removal failed.'),
+      );
     } finally {
       setBusyDevice(null);
     }
@@ -80,16 +115,56 @@ export function PairedDevicesView({
                 </ul>
                 {isCurrent ? (
                   <p className="current-device">Current fixture device</p>
+                ) : pendingDevice?.id === device.id ? (
+                  <div
+                    role="group"
+                    className="confirmation-panel"
+                    aria-label={`Confirm removal of ${device.displayName}`}
+                  >
+                    <p>
+                      Remove <strong>{device.displayName}</strong>?
+                    </p>
+                    <p>This removes only the fixture pairing shown here.</p>
+                    {removalError && (
+                      <p role="alert" className="inline-error">
+                        Could not remove {device.displayName}.{' '}
+                        {removalError.message}
+                      </p>
+                    )}
+                    <div className="confirmation-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={cancelRemoval}
+                        disabled={busyDevice === device.id}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        ref={confirmButton}
+                        onClick={() => remove(device)}
+                        disabled={busyDevice === device.id}
+                      >
+                        {busyDevice === device.id
+                          ? `Removing ${device.displayName}…`
+                          : removalError
+                            ? `Try removal again for ${device.displayName}`
+                            : `Confirm remove ${device.displayName}`}
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <button
                     type="button"
                     className="secondary-button"
-                    onClick={() => remove(device)}
-                    disabled={busyDevice === device.id}
+                    ref={(node) => {
+                      if (node) removeButtons.current.set(device.id, node);
+                      else removeButtons.current.delete(device.id);
+                    }}
+                    onClick={() => requestRemoval(device)}
                   >
-                    {busyDevice === device.id
-                      ? `Removing ${device.displayName}…`
-                      : `Remove ${device.displayName}`}
+                    Remove {device.displayName}
                   </button>
                 )}
               </article>

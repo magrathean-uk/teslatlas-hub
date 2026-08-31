@@ -174,6 +174,31 @@ describe('App discovery and pairing', () => {
     ).toBeInTheDocument();
   });
 
+  it('clears the in-memory viewer session and returns to discovery', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        dataSource={new FixtureDataSource()}
+        mode="fixture"
+        initialPaired
+      />,
+    );
+
+    expect(
+      await screen.findByRole('region', { name: 'Hub health' }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Clear local session' }),
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Pair with a Hub' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('navigation', { name: 'Viewer sections' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('explains unavailable live mode without making a network request', async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);

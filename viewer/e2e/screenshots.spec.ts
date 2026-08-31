@@ -58,5 +58,24 @@ test('captures deterministic reference screenshots', async ({ page }) => {
     '.discovered-hub',
   );
 
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/?scenario=complete');
+  await page.getByRole('button', { name: 'Paired devices' }).click();
+  await page.getByRole('button', { name: 'Remove Home automation' }).click();
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    window.scrollTo(0, 0);
+  });
+  await page.addStyleTag({
+    content:
+      '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}',
+  });
+  await page.screenshot({
+    path: resolve(outputDirectory, 'removal-confirmation-mobile.png'),
+    fullPage: true,
+  });
+
   await expect(page.locator('body')).toBeVisible();
 });

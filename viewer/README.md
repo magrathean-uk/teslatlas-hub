@@ -61,8 +61,8 @@ npm run test:e2e
 ```
 
 Browser verification covers the seven views, all data states, no fixture API
-requests, pairing, paired-device removal, axe checks, keyboard entry, reduced
-motion, and 400% equivalent reflow.
+requests, pairing, confirmed paired-device removal, clearing the local session,
+axe checks, keyboard entry, reduced motion, and 400% equivalent reflow.
 
 ## Screenshots
 
@@ -76,6 +76,7 @@ More captured states are under `output/playwright/screenshots/`.
 
 - [Architecture](docs/architecture.md)
 - [Protocol learning guide](docs/protocol-learning-guide.md)
+- [Public SDK integration roadmap](docs/public-sdk-integration-roadmap.md)
 - [Privacy](docs/privacy.md)
 - [Browser support](docs/browser-support.md)
 - [Foundation plan](docs/plans/2026-08-30-foundation.md)

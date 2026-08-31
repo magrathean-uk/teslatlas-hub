@@ -30,6 +30,9 @@ ViewerDataSource
 It is dependency inversion for this app, not a replacement SDK. Transport
 details such as cursors, conditional requests, typed public errors, event
 replay, and caller-owned credential storage remain the future SDK's job.
+The released SDK adapter will be the only network boundary. Views must not
+construct URLs, call transport primitives, retain raw pairing material, merge
+records across sources, or calculate private analytics.
 
 ## Product surface
 
@@ -59,6 +62,12 @@ Every active view owns one text-labelled state marker:
 - **Complete:** the fixture reports no unresolved problem for that view.
 
 Colour supports these labels but never carries the meaning alone.
+Session records may also carry **Partial** quality. They keep that exact label
+and use a non-complete status cue.
+
+Fixture states use explicit viewer-owned markers. A future SDK adapter may mark
+data stale or inferred only from released metadata or a released public policy;
+request timing alone is never evidence. A missing timestamp means unknown age.
 
 ## Data flow
 
@@ -71,6 +80,16 @@ Colour supports these labels but never carries the meaning alone.
 
 Fixture reads return structured clones. A view cannot mutate future reads.
 Paired-device removal updates only the current in-memory snapshot.
+
+## Interaction safety
+
+- Removing another fixture device requires a confirmation naming that device.
+- A failed removal keeps the device visible, explains the failure, and permits
+  retry; cancel restores focus to the initiating control.
+- Clearing the local session removes viewer-held in-memory pairing state and
+  returns to discovery. It does not claim to revoke a Hub device.
+- Future cursor handling, capability denial, and resource-scoped retries remain
+  release-gated; the viewer does not invent them from fixture fields.
 
 ## Accessibility and responsive layout
 
@@ -89,3 +108,6 @@ Paired-device removal updates only the current in-memory snapshot.
 The viewer uses public protocol concepts only. It cannot call an undocumented
 Hub route. It contains no Hub implementation, proprietary Teslatlas source,
 command dashboard, cloud deployment, or persisted credential policy.
+
+See the [public SDK integration roadmap](public-sdk-integration-roadmap.md) for
+the release-backed catalogue, fixture, and evidence gates.

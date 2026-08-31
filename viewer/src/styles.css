@@ -506,6 +506,26 @@ select {
   line-height: 1.4;
 }
 
+.session-control {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.session-control .secondary-button {
+  width: 100%;
+  margin-top: 0;
+}
+
+.session-control p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .viewer-content {
   min-width: 0;
 }
@@ -942,6 +962,44 @@ select {
   font-weight: 800;
 }
 
+.confirmation-panel {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.1rem;
+  padding: 1rem;
+  border: 1px solid #d8aaa6;
+  border-radius: 0.7rem;
+  background: var(--red-soft);
+}
+
+.confirmation-panel p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.confirmation-actions button {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--red);
+  border-radius: 0.6rem;
+  color: white;
+  background: var(--red);
+  font-weight: 750;
+}
+
+.confirmation-actions .secondary-button {
+  margin-top: 0;
+  color: var(--ink);
+  border-color: var(--line-strong);
+  background: transparent;
+}
+
 .secondary-button {
   min-height: 2.5rem;
   margin-top: 1.1rem;
@@ -999,6 +1057,11 @@ select {
     align-items: center;
     margin-top: 0;
     padding-top: 1rem;
+  }
+
+  .session-control {
+    grid-column: 1 / -1;
+    margin-top: 0;
   }
 }
 

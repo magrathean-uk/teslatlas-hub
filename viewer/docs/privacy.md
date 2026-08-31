@@ -6,11 +6,15 @@
   precise location is required.
 - Fixture identifiers and names are synthetic and redacted.
 - Discovery, pairing, reads, and paired-device removal happen in memory.
+- A visible clear-session action drops viewer-held pairing state and returns to
+  discovery; it does not revoke a Hub device.
 - The app does not write a credential to local storage, session storage,
   IndexedDB, a cookie, or a service worker.
 - Fixture mode makes no Hub API request.
 - The repository contains no analytics, advertising, telemetry, or hosted
   deployment configuration.
+- The client loads no external font, tracker, embedded map, remote error
+  reporter, or third-party analytics script.
 
 The six-digit fixture invitation is public example data. It grants no access to
 anything.
@@ -29,4 +33,6 @@ chosen browser credential policy and its threat model.
 ## Logs and screenshots
 
 Automated screenshots show only deterministic fixture data. Tests do not log a
-secret, real identifier, or precise coordinate.
+secret, real identifier, precise coordinate, or resource payload. Pairing
+material must never enter a URL, browser history, console log, copied error,
+support bundle, or screenshot.

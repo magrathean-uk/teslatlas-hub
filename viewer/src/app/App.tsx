@@ -151,6 +151,13 @@ export function App({
     setScenario('complete');
   }
 
+  function clearLocalSession() {
+    setPairedHub(null);
+    setActiveView('health');
+    setScenario('complete');
+    setIsPaired(false);
+  }
+
   return (
     <div className="app-root">
       <a href="#main-content" className="skip-link">
@@ -277,6 +284,17 @@ export function App({
                 <p>Deterministic, local, and redacted.</p>
               </div>
             )}
+
+            <div className="session-control">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={clearLocalSession}
+              >
+                Clear local session
+              </button>
+              <p>Clears viewer memory only. It does not revoke a Hub device.</p>
+            </div>
           </aside>
 
           <div className="viewer-content">

@@ -42,6 +42,28 @@ test('keyboard entry exposes skip navigation and all section controls', async ({
   await expect(page.getByRole('region', { name: 'Vehicles' })).toBeVisible();
 });
 
+test('device-removal confirmation is accessible and restores focus on cancel', async ({
+  page,
+}) => {
+  await page.goto('/?scenario=complete');
+  await page.getByRole('button', { name: 'Paired devices' }).click();
+
+  const removeButton = page.getByRole('button', {
+    name: 'Remove Home automation',
+  });
+  await removeButton.focus();
+  await page.keyboard.press('Enter');
+
+  await expect(
+    page.getByRole('button', { name: 'Confirm remove Home automation' }),
+  ).toBeFocused();
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(removeButton).toBeFocused();
+});
+
 test('400 percent equivalent reflow does not overflow the document', async ({
   page,
 }) => {

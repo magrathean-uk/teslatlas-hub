@@ -152,6 +152,17 @@ describe('reference views', () => {
     ).toBeInTheDocument();
   });
 
+  it('does not present partial session quality as complete', async () => {
+    renderScenario('complete');
+
+    const sessions = await openView('Recent sessions');
+    const partialPills = within(sessions).getAllByText('Partial');
+    expect(partialPills).toHaveLength(2);
+    partialPills.forEach((pill) => {
+      expect(pill).toHaveAttribute('data-status', 'degraded');
+    });
+  });
+
   it('surfaces degraded quality and every unresolved gap', async () => {
     renderScenario('degraded');
 
@@ -228,6 +239,30 @@ describe('reference views', () => {
     ).toHaveAttribute('data-view-state', 'complete');
   });
 
+  it('requires named device-removal confirmation and restores focus on cancel', async () => {
+    const user = userEvent.setup();
+    renderScenario();
+
+    const devices = await openView('Paired devices');
+    await user.click(
+      within(devices).getByRole('button', { name: 'Remove Home automation' }),
+    );
+
+    expect(
+      within(devices).getByRole('heading', { name: 'Home automation' }),
+    ).toBeInTheDocument();
+    expect(
+      within(devices).getByRole('button', {
+        name: 'Confirm remove Home automation',
+      }),
+    ).toHaveFocus();
+
+    await user.click(within(devices).getByRole('button', { name: 'Cancel' }));
+    expect(
+      within(devices).getByRole('button', { name: 'Remove Home automation' }),
+    ).toHaveFocus();
+  });
+
   it('removes a non-current paired device and announces the result', async () => {
     const user = userEvent.setup();
     renderScenario();
@@ -235,6 +270,11 @@ describe('reference views', () => {
     const devices = await openView('Paired devices');
     await user.click(
       within(devices).getByRole('button', { name: 'Remove Home automation' }),
+    );
+    await user.click(
+      within(devices).getByRole('button', {
+        name: 'Confirm remove Home automation',
+      }),
     );
 
     expect(
@@ -248,6 +288,50 @@ describe('reference views', () => {
     ).toBeInTheDocument();
   });
 
+  it('preserves a device after removal failure and allows retry', async () => {
+    const user = userEvent.setup();
+    const source = new FixtureDataSource();
+    const removeDevice = source.removePairedDevice.bind(source);
+    vi.spyOn(source, 'removePairedDevice')
+      .mockImplementation(removeDevice)
+      .mockRejectedValueOnce(new Error('Fixture removal denied.'));
+
+    render(
+      <App
+        dataSource={source}
+        mode="fixture"
+        initialPaired
+        initialScenario="complete"
+      />,
+    );
+
+    const devices = await openView('Paired devices');
+    await user.click(
+      within(devices).getByRole('button', { name: 'Remove Home automation' }),
+    );
+    await user.click(
+      within(devices).getByRole('button', {
+        name: 'Confirm remove Home automation',
+      }),
+    );
+
+    expect(await within(devices).findByRole('alert')).toHaveTextContent(
+      'Fixture removal denied.',
+    );
+    expect(
+      within(devices).getByRole('heading', { name: 'Home automation' }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(devices).getByRole('button', {
+        name: 'Try removal again for Home automation',
+      }),
+    );
+    expect(
+      await within(devices).findByText('Home automation removed.'),
+    ).toBeInTheDocument();
+  });
+
   it('preserves the active fixture scenario after removing a device', async () => {
     const user = userEvent.setup();
     renderScenario('stale');
@@ -255,6 +339,11 @@ describe('reference views', () => {
     const devices = await openView('Paired devices');
     await user.click(
       within(devices).getByRole('button', { name: 'Remove Home automation' }),
+    );
+    await user.click(
+      within(devices).getByRole('button', {
+        name: 'Confirm remove Home automation',
+      }),
     );
     await within(devices).findByText('Home automation removed.');
 

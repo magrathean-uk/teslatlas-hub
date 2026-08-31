@@ -42,6 +42,9 @@ When released artifacts exist, add one adapter that:
 Do not retrofit fixture property names into that adapter. The released SDK is
 authoritative even when its names differ.
 
+Before live implementation, build the release-derived contract catalogue and
+fixture matrix in the [public SDK integration roadmap](public-sdk-integration-roadmap.md).
+
 ## Fixture scenarios
 
 The state selector and query input expose:

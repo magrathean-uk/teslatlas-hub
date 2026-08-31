@@ -9,7 +9,7 @@ locked Playwright package on macOS. It verifies:
 - all seven reference views;
 - complete, empty, stale, inferred, degraded, offline, loading, and error
   states;
-- paired-device removal;
+- paired-device confirmation, removal, and clear-session flow;
 - no fixture API requests;
 - axe accessibility scans;
 - keyboard entry and focus order;

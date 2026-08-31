@@ -35,7 +35,7 @@ export function valueOrAbsent(
 }
 
 export function qualityState(level: QualityLevel): ViewState {
-  if (level === 'degraded') return 'degraded';
+  if (level === 'degraded' || level === 'partial') return 'degraded';
   if (level === 'unknown') return 'empty';
   return 'complete';
 }
