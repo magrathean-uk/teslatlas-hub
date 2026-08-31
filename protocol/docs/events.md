@@ -36,6 +36,17 @@ semantic check in the language-neutral conformance runner. Schema validation
 alone is insufficient for event conformance. `metadata.changed` carries either
 a live record or a persistent deletion tombstone.
 
+Event visibility is bound to the authenticated principal and normalized stream
+filters. An event carrying a full representation MUST contain only IDs and
+fields inside that principal's authorized public view. When v1 exposes a
+corresponding canonical query resource, the same principal MUST be able to
+retrieve it. `observation.admitted` has no singleton query operation in v1, but
+its carried observation remains subject to the same authorization and field
+visibility rules. A resource reference MUST likewise identify a resource
+readable by that principal; servers MUST NOT disclose hidden resource IDs,
+fields, or existence through live or replayed events. Replay applies the same
+visibility and binding rules as live delivery.
+
 Consumers use the named event catalogue, then retrieve the canonical resource
 when they need a representation not carried by the event. Unknown event names
 are ignored before JSON data decoding or schema validation and do not terminate

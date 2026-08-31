@@ -131,5 +131,8 @@ projection, exact quality, and explicit redaction metadata.
 
 Fixture JSON is emitted with sorted keys and fixed formatting. SHA-256 values in
 `fixtures/manifest.json` protect exact bytes. The builder and tests reject real
-identifiers, secrets, VIN-shaped values, and coordinates with more than two
-decimal places.
+identifiers; listed account, credential, key, secret, token, VIN, and raw
+provider-payload fields; email addresses; VIN-shaped values; real home/work
+labels; bearer credentials; and coordinates with more than two decimal places.
+Each prohibited-data class has a negative scanner case; adding a prohibited
+value makes the local gate fail.

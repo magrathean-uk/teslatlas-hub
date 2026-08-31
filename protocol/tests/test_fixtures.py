@@ -5,14 +5,17 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterator
+from unittest.mock import patch
 
 from jsonschema import Draft202012Validator, FormatChecker
 
 from tests.support import ROOT, load_json, load_schema_registry
+from tools import build_fixtures
 
 
 SCENARIOS = {"normal", "duplicate", "delayed", "missing", "reordered"}
@@ -22,8 +25,8 @@ FORBIDDEN_TEXT = (
     "api_key",
     "private_key",
     "bearer ",
-    "@example.com",
 )
+EMAIL_PATTERN = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
 VIN_PATTERN = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b")
 
 
@@ -141,6 +144,7 @@ class FixtureContractTests(unittest.TestCase):
                 rendered = json.dumps(fixture, sort_keys=True).lower()
                 for forbidden in FORBIDDEN_TEXT:
                     self.assertNotIn(forbidden, rendered)
+                self.assertIsNone(EMAIL_PATTERN.search(rendered))
                 self.assertIsNone(VIN_PATTERN.search(rendered.upper()))
                 self.assertEqual(
                     {
@@ -155,6 +159,69 @@ class FixtureContractTests(unittest.TestCase):
                     if path and path[-1] in {"latitude", "longitude"} and isinstance(value, (int, float)):
                         decimals = max(0, -Decimal(str(value)).as_tuple().exponent)
                         self.assertLessEqual(decimals, 2, ".".join(path))
+
+    def test_fixture_output_check_rejects_prohibited_private_data(self) -> None:
+        prohibited_values = {
+            "access token": {"access_token": "access-secret-123"},
+            "account identifier": {"account_id": "account-real-123"},
+            "account identifier alias": {"account_identifier": "account-real-123"},
+            "API key": {"api_key": "api-secret-123"},
+            "auth token": {"auth_token": "auth-secret-123"},
+            "client secret": {"client_secret": "client-secret-123"},
+            "credential": {"credential": "credential-secret-123"},
+            "credentials": {"credentials": {"opaque": "secret-123"}},
+            "password": {"password": "password-secret-123"},
+            "private key": {"private_key": "private-secret-123"},
+            "provider payload": {"provider_payload": {"state": "online"}},
+            "provider token": {"provider_token": "provider-secret-123"},
+            "raw payload": {"raw_payload": {"state": "online"}},
+            "session token": {"session_token": "session-secret-123"},
+            "secret": {"secret": "secret-123"},
+            "token": {"token": "token-secret-123"},
+            "raw provider payload": {"raw_provider_payload": {"state": "online"}},
+            "refresh token": {"refresh_token": "refresh-secret-123"},
+            "VIN key": {"vin": "synthetic-redacted"},
+            "email address": {"contact": "driver@example.net"},
+            "bearer credential": {"authorization": "Bearer secret-token"},
+            "real location label": {"location": {"label": "home"}},
+            "precise coordinate": {"location": {"latitude": 51.507351}},
+            "VIN": {"vehicle": "5YJ3E1EA7KF000001"},
+        }
+        for name, value in prohibited_values.items():
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    fixture_dir = Path(temporary_directory)
+                    with patch.object(build_fixtures, "FIXTURE_DIR", fixture_dir):
+                        path = fixture_dir / f"{name.replace(' ', '-')}.json"
+                        payload = (json.dumps(value, sort_keys=True) + "\n").encode("utf-8")
+                        path.write_bytes(payload)
+                        errors = build_fixtures.check_outputs({path: payload})
+                        self.assertTrue(
+                            any("prohibited fixture data" in error for error in errors),
+                            errors,
+                        )
+
+    def test_fixture_output_check_reports_invalid_json(self) -> None:
+        invalid_payloads = {
+            "duplicate-key": b'{"latitude": 51.507351, "latitude": 51.5}\n',
+            "malformed": b'{"broken": }\n',
+            "non-finite": b'{"location": {"latitude": NaN}}\n',
+        }
+        for name, payload in invalid_payloads.items():
+            with self.subTest(name=name):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    fixture_dir = Path(temporary_directory)
+                    with patch.object(build_fixtures, "FIXTURE_DIR", fixture_dir):
+                        path = fixture_dir / f"{name}.json"
+                        path.write_bytes(payload)
+                        try:
+                            errors = build_fixtures.check_outputs({path: payload})
+                        except (json.JSONDecodeError, TypeError, ValueError) as error:
+                            self.fail(f"fixture check raised {type(error).__name__}: {error}")
+                        self.assertTrue(
+                            any("invalid fixture JSON" in error for error in errors),
+                            errors,
+                        )
 
     def test_fixture_generator_is_byte_deterministic(self) -> None:
         script = ROOT / "tools" / "build_fixtures.py"

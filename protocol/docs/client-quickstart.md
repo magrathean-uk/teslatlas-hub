@@ -92,7 +92,7 @@ curl -i \
 
 On `409`, fetch the current record and reconcile. Never overwrite blindly.
 
-## 6. Prove the client
+## 6. Test the client adapter
 
 Implement the JSONL adapter in `docs/conformance.md`, then run:
 

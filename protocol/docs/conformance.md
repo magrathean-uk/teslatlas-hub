@@ -4,6 +4,11 @@ The conformance suite is a data-driven public behaviour contract. Any server,
 SDK, proxy, or test double can participate by implementing one JSON Lines
 adapter. No Hub Rust or proprietary application source is required.
 
+Conformance is black-box: cases observe only the adapter's public requests,
+responses, state transitions, and SSE sequence. Passing proves the documented
+public behaviour for the exercised cases; it does not prove code similarity,
+security, product readiness, or correctness outside the tested contract.
+
 ## Run
 
 Run all supported profiles against the bundled harness self-test adapter:
@@ -24,8 +29,8 @@ Select profiles or request one machine-readable result:
 ./conformance/run --profile 1.2.0 --adapter ./adapter --json
 ```
 
-The current gate executes 28 profile/case runs: eight for `1.0.0`, nine for
-`1.1.0`, and eleven for `1.2.0`. A profile contains every case whose
+The current gate executes 31 profile/case runs: nine for `1.0.0`, ten for
+`1.1.0`, and twelve for `1.2.0`. A profile contains every case whose
 `introduced_in` version is not newer than that profile.
 
 ## Adapter protocol
@@ -82,6 +87,9 @@ headers.
 Headers beginning `Teslatlas-Conformance-` select deterministic test scenarios
 inside an adapter. They exist only at the adapter boundary. They are not public
 Teslatlas HTTP headers and a production server must not expose them.
+`Teslatlas-Conformance-Principal` asks the adapter to use a separately
+provisioned test principal; an adapter maps it to credentials locally and never
+forwards the conformance header to its subject.
 
 `conformance/adapters/reference_adapter.py` replays the embedded reference
 responses to prove the runner and vectors are internally consistent. Passing

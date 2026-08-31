@@ -11,6 +11,7 @@
     "etag-conditional-get",
     "problem-details",
     "sse-last-event-id",
+    "sse-principal-visibility",
     "sse-empty-id-reset",
     "sse-terminal-204",
     "documented-limits"

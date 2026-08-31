@@ -13,10 +13,32 @@ Teslatlas source.
 
 ## Purpose
 
-This repository will own the stable public boundary between Teslatlas Hub and Teslatlas, public SDKs, open reference clients, Home Assistant, user-operated edge receivers, and future third-party integrations.
+This repository owns the stable public boundary between Teslatlas Hub and Teslatlas, public SDKs, open reference clients, Home Assistant, user-operated edge receivers, and future third-party integrations.
 
 The protocol is implementable from this repository alone. A client does not
 need Hub Rust or proprietary Teslatlas source.
+
+## Contract discipline
+
+This repository is source-neutral. Public files must be sufficient for an
+unaffiliated client to implement the contract without Hub Rust, proprietary App
+source, or private deployment knowledge. `MUST`, `MUST NOT`, `REQUIRED`,
+`SHOULD`, `SHOULD NOT`, and `MAY` are normative terms as defined by RFC 2119
+and RFC 8174 when written in uppercase.
+
+Machine-readable artifacts are the wire authority. Prose explains intent but
+must not contradict schemas, OpenAPI, the SSE JSON contract, profiles, or
+conformance cases; an unresolved conflict blocks release. A contract change
+updates every affected artifact, example, fixture, profile, generated output,
+and test, with the local gate as the release check.
+
+## Goals and non-goals
+
+Goal: publish stable, versioned, implementation-neutral contracts and
+executable evidence for independent clients.
+
+Non-goals: Hub internals, proprietary App behavior, generated SDK
+implementations, hosted automation, or deployment instructions.
 
 ## Validate locally
 

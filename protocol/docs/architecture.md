@@ -4,6 +4,31 @@
 
 Own versioned, implementation-neutral public contracts. Hub is the authoritative server implementation; this repository is the public compatibility authority.
 
+## Goals and non-goals
+
+The goal is a stable, versioned, source-neutral boundary that an unaffiliated
+client can implement from public files alone, with executable evidence for
+compatibility.
+
+This repository does not define Hub internals, proprietary Teslatlas App
+behavior, generated SDK implementations, hosted automation, or deployment
+instructions.
+
+## Normative language and change discipline
+
+Uppercase `MUST`, `MUST NOT`, `REQUIRED`, `SHOULD`, `SHOULD NOT`, and `MAY` have
+the meanings assigned by RFC 2119 and RFC 8174. Lowercase uses are descriptive.
+
+Changes MUST remain implementation-neutral and MUST update every affected
+schema, OpenAPI document, SSE JSON contract, example, fixture, compatibility
+profile, conformance case, generated artifact, and test. The current profile
+and previous two minor profiles remain the compatibility target unless an
+approved compatibility change says otherwise.
+
+Machine-readable artifacts are the wire authority. Prose explains intent and
+cannot override them. Any artifact/prose conflict blocks release until the
+conflict is resolved and the local validation gate passes.
+
 ## Contract layers
 
 | Layer | Artifact | Purpose |

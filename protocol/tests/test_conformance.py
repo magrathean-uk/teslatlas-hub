@@ -31,6 +31,7 @@ EXPECTED_CASES = {
     "etag-conditional-get",
     "problem-details",
     "sse-last-event-id",
+    "sse-principal-visibility",
     "sse-empty-id-reset",
     "sse-terminal-204",
     "documented-limits",
@@ -244,8 +245,8 @@ class ConformanceContractTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         summary = json.loads(completed.stdout)
         self.assertEqual(["1.0.0", "1.1.0", "1.2.0"], summary["profiles"])
-        self.assertEqual(28, summary["runs"])
-        self.assertEqual(28, summary["passed"])
+        self.assertEqual(31, summary["runs"])
+        self.assertEqual(31, summary["passed"])
         self.assertEqual(0, summary["failed"])
 
     def test_runner_rejects_a_nonconforming_language_neutral_adapter(self) -> None:
@@ -320,7 +321,58 @@ class ConformanceContractTests(unittest.TestCase):
         completed = self.run_fixture_adapter("isolation_adapter.py")
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         summary = json.loads(completed.stdout)
-        self.assertEqual(8, summary["passed"])
+        self.assertEqual(9, summary["passed"])
+
+    def test_event_visibility_is_bound_to_principal(self) -> None:
+        steps = {
+            step["step_id"]: step
+            for step in self.load_cases()["sse-principal-visibility"]["steps"]
+        }
+        self.assertEqual(
+            {
+                "principal-a-resource",
+                "principal-a-live",
+                "principal-b-resource",
+                "principal-b-live",
+                "cross-principal-replay",
+            },
+            steps.keys(),
+        )
+
+        visible_resource = steps["principal-a-resource"]
+        visible_live = steps["principal-a-live"]
+        self.assertEqual(200, visible_resource["expect"]["status"])
+        self.assertIn(
+            {
+                "path": "/events/0/data/data",
+                "op": "same_as",
+                "ref": "principal-a-resource.body",
+            },
+            visible_live["expect"]["assertions"],
+        )
+
+        hidden_resource = steps["principal-b-resource"]
+        hidden_live = steps["principal-b-live"]
+        self.assertEqual(404, hidden_resource["expect"]["status"])
+        self.assertIn(
+            {"path": "/events", "op": "is_empty"},
+            hidden_live["expect"]["assertions"],
+        )
+
+        replay = steps["cross-principal-replay"]
+        self.assertEqual(
+            "${principal-a-live.events.0.id}",
+            replay["request"]["headers"]["Last-Event-ID"],
+        )
+        self.assertEqual(400, replay["expect"]["status"])
+        self.assertIn(
+            {"path": "/body/code", "op": "equals", "value": "event_id_invalid"},
+            replay["expect"]["assertions"],
+        )
+        self.assertEqual(
+            "principal-b",
+            replay["request"]["headers"]["Teslatlas-Conformance-Principal"],
+        )
 
     def test_metadata_entity_etags_must_be_strong(self) -> None:
         expectation = {"status": 200, "headers_present": ["ETag"]}

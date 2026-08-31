@@ -6,6 +6,7 @@ contract applies to Teslatlas implementations.
 
 | Area | Specification | Teslatlas use |
 | --- | --- | --- |
+| Requirement words | [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html) and [RFC 8174](https://www.rfc-editor.org/rfc/rfc8174.html) | uppercase normative terms in prose contracts |
 | Well-known discovery | [RFC 8615](https://www.rfc-editor.org/rfc/rfc8615.html) | `/.well-known/teslatlas-hub` shape and deployment considerations |
 | HTTP semantics, validators | [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) | ETag, `If-None-Match`, `If-Match`, and `304` |
 | Server-Sent Events | [WHATWG HTML](https://html.spec.whatwg.org/multipage/server-sent-events.html) | framing, event IDs, reconnect, and terminal `204` |

@@ -657,6 +657,138 @@ def build_cases() -> list[dict[str, Any]]:
             ],
         ),
         case(
+            "sse-principal-visibility",
+            "1.0.0",
+            "events.sse",
+            "Live events, resource visibility, and replay IDs remain bound to one authenticated principal.",
+            [
+                step(
+                    "principal-a-resource",
+                    request(
+                        "GET",
+                        "/v1/vehicles/vehicle_demo_alpha/current",
+                        headers={
+                            "Teslatlas-Conformance-Principal": "principal-a",
+                            "Teslatlas-Conformance-Scenario": "principal-visibility",
+                        },
+                    ),
+                    {
+                        "status": 200,
+                        "body_schema": schema_definition(RESOURCE_SCHEMA, "current_state"),
+                        "assertions": [
+                            {
+                                "path": "/body/vehicle_id",
+                                "op": "equals",
+                                "value": "vehicle_demo_alpha",
+                            }
+                        ],
+                    },
+                    {
+                        "status": 200,
+                        "headers": json_headers(ETAG_CURRENT_FIRST),
+                        "body": current,
+                    },
+                ),
+                step(
+                    "principal-a-live",
+                    request(
+                        "GET",
+                        "/v1/events",
+                        headers={
+                            "Teslatlas-Conformance-Principal": "principal-a",
+                            "Teslatlas-Conformance-Scenario": "principal-visibility",
+                        },
+                        query={"vehicle_id": "vehicle_demo_alpha"},
+                    ),
+                    {
+                        "status": 200,
+                        "headers_equal": {"Content-Type": "text/event-stream"},
+                        "event_schema": EVENT_SCHEMA,
+                        "assertions": [
+                            {
+                                "path": "/events/0/data/data",
+                                "op": "same_as",
+                                "ref": "principal-a-resource.body",
+                            }
+                        ],
+                    },
+                    {
+                        "status": 200,
+                        "headers": {
+                            "Content-Type": "text/event-stream",
+                            "Teslatlas-Protocol-Version": "${profile}",
+                            "Cache-Control": "no-cache",
+                        },
+                        "events": [
+                            {
+                                "id": event_one["event_id"],
+                                "event": event_one["event_type"],
+                                "data": event_one,
+                            }
+                        ],
+                        "last_event_id_after": event_one["event_id"],
+                    },
+                ),
+                step(
+                    "principal-b-resource",
+                    request(
+                        "GET",
+                        "/v1/vehicles/vehicle_demo_alpha/current",
+                        headers={
+                            "Teslatlas-Conformance-Principal": "principal-b",
+                            "Teslatlas-Conformance-Scenario": "principal-visibility",
+                        },
+                    ),
+                    expected_problem(404, "not_found"),
+                    problem_response(404, "not_found", "Not found"),
+                ),
+                step(
+                    "principal-b-live",
+                    request(
+                        "GET",
+                        "/v1/events",
+                        headers={
+                            "Teslatlas-Conformance-Principal": "principal-b",
+                            "Teslatlas-Conformance-Scenario": "principal-visibility",
+                        },
+                        query={"vehicle_id": "vehicle_demo_alpha"},
+                    ),
+                    {
+                        "status": 200,
+                        "headers_equal": {"Content-Type": "text/event-stream"},
+                        "event_schema": EVENT_SCHEMA,
+                        "assertions": [
+                            {"path": "/events", "op": "is_empty"}
+                        ],
+                    },
+                    {
+                        "status": 200,
+                        "headers": {
+                            "Content-Type": "text/event-stream",
+                            "Teslatlas-Protocol-Version": "${profile}",
+                            "Cache-Control": "no-cache",
+                        },
+                        "events": [],
+                    },
+                ),
+                step(
+                    "cross-principal-replay",
+                    request(
+                        "GET",
+                        "/v1/events",
+                        headers={
+                            "Last-Event-ID": "${principal-a-live.events.0.id}",
+                            "Teslatlas-Conformance-Principal": "principal-b",
+                            "Teslatlas-Conformance-Scenario": "principal-visibility",
+                        },
+                        query={"vehicle_id": "vehicle_demo_alpha"},
+                    ),
+                    expected_problem(400, "event_id_invalid"),
+                    problem_response(400, "event_id_invalid", "Invalid event ID"),
+                ),
+            ],
+        ),
+        case(
             "sse-empty-id-reset",
             "1.0.0",
             "events.sse",
@@ -1269,17 +1401,18 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="fail if committed vectors differ")
     args = parser.parse_args()
     outputs = build_outputs()
+    case_count = sum(path.parent == CASE_DIR for path in outputs)
     if args.check:
         errors = check_outputs(outputs)
         if errors:
             print("\n".join(errors))
             return 1
-        print("up to date: 11 cases and 3 compatibility profiles")
+        print(f"up to date: {case_count} cases and 3 compatibility profiles")
         return 0
     for path, payload in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(payload)
-    print("wrote 11 cases and 3 compatibility profiles")
+    print(f"wrote {case_count} cases and 3 compatibility profiles")
     return 0
 
 

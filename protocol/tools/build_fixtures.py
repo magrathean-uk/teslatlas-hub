@@ -5,8 +5,10 @@ import argparse
 import copy
 import hashlib
 import json
+import re
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +16,31 @@ FIXTURE_DIR = ROOT / "fixtures" / "v1"
 MANIFEST_PATH = ROOT / "fixtures" / "manifest.json"
 VEHICLE_ID = "vehicle_demo_alpha"
 PROJECTION_VERSION = "3.1.0"
+PROHIBITED_FIXTURE_KEYS = {
+    "access_token",
+    "account_id",
+    "account_identifier",
+    "api_key",
+    "auth_token",
+    "client_secret",
+    "credential",
+    "credentials",
+    "password",
+    "private_key",
+    "provider_payload",
+    "provider_token",
+    "raw_payload",
+    "raw_provider_payload",
+    "refresh_token",
+    "secret",
+    "session_token",
+    "token",
+    "vin",
+}
+LOCATION_LABEL_KEYS = {"label", "location_label", "location_name", "place_name"}
+REAL_LOCATION_LABELS = {"home", "work"}
+EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+VIN_PATTERN = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b")
 
 
 def canonical_bytes(value: Any) -> bytes:
@@ -23,6 +50,60 @@ def canonical_bytes(value: Any) -> bytes:
         )
         + "\n"
     ).encode("utf-8")
+
+
+def reject_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant: {value}")
+
+
+def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON object key: {key}")
+        value[key] = item
+    return value
+
+
+def strict_loads(value: bytes) -> Any:
+    return json.loads(
+        value,
+        object_pairs_hook=reject_duplicate_keys,
+        parse_constant=reject_constant,
+    )
+
+
+def walk(value: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str, ...], Any]]:
+    yield path, value
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from walk(item, (*path, key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from walk(item, (*path, str(index)))
+
+
+def fixture_privacy_errors(value: Any) -> list[str]:
+    errors: list[str] = []
+    for path, item in walk(value):
+        key = path[-1].lower() if path else ""
+        location = ".".join(path) or "$"
+        if key in PROHIBITED_FIXTURE_KEYS:
+            errors.append(f"prohibited key at {location}")
+        if isinstance(item, str):
+            if EMAIL_PATTERN.search(item):
+                errors.append(f"email address at {location}")
+            if VIN_PATTERN.search(item.upper()):
+                errors.append(f"VIN-shaped value at {location}")
+            if "bearer " in item.casefold():
+                errors.append(f"bearer credential at {location}")
+            if key in LOCATION_LABEL_KEYS and item.casefold() in REAL_LOCATION_LABELS:
+                errors.append(f"real location label at {location}")
+        if key in {"latitude", "longitude"} and type(item) in {int, float}:
+            decimals = max(0, -Decimal(str(item)).as_tuple().exponent)
+            if decimals > 2:
+                errors.append(f"precise coordinate at {location}")
+    return errors
 
 
 def source_sequence_key(value: int | str | None) -> tuple[int, int | bytes]:
@@ -439,6 +520,21 @@ def build_outputs() -> dict[Path, bytes]:
 def check_outputs(outputs: dict[Path, bytes]) -> list[str]:
     errors = []
     for path, expected in outputs.items():
+        if path.parent == FIXTURE_DIR:
+            try:
+                fixture = strict_loads(expected)
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as error:
+                display_path = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path.name
+                errors.append(f"invalid fixture JSON: {display_path}: {error}")
+                fixture = None
+            for privacy_error in fixture_privacy_errors(fixture):
+                try:
+                    display_path = path.relative_to(ROOT)
+                except ValueError:
+                    display_path = path.name
+                errors.append(
+                    f"prohibited fixture data: {display_path}: {privacy_error}"
+                )
         if not path.is_file():
             errors.append(f"missing: {path.relative_to(ROOT)}")
         elif path.read_bytes() != expected:
