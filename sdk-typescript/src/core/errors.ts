@@ -1,3 +1,5 @@
+import type { CapabilityId } from "./capabilities.js";
+
 const protocolErrorCodeBrand: unique symbol = Symbol("ProtocolErrorCode");
 const safeRequestIdBrand: unique symbol = Symbol("SafeRequestId");
 const maximumSafeRequestIdLength = 256;
@@ -80,6 +82,72 @@ export class ProtocolError extends TeslatlasError<ProtocolErrorCode> {
       code: options.code,
       status: options.status,
       ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
+    });
+  }
+}
+
+export class IncompatibleProtocolError extends TeslatlasError<"incompatible_protocol"> {
+  constructor() {
+    super("Teslatlas protocol versions are incompatible", {
+      code: "incompatible_protocol",
+    });
+  }
+}
+
+export class MissingCapabilityError extends TeslatlasError<"missing_capability"> {
+  readonly capability: CapabilityId;
+
+  constructor(capability: CapabilityId) {
+    super("Teslatlas capability is unavailable", { code: "missing_capability" });
+    this.capability = capability;
+  }
+}
+
+export class ProtocolValidationError extends TeslatlasError<"protocol_validation"> {
+  readonly validator: string;
+
+  constructor(validator: string) {
+    super("Teslatlas protocol response is invalid", { code: "protocol_validation" });
+    this.validator = validator;
+  }
+}
+
+export class ProtocolHttpError extends TeslatlasError<ProtocolErrorCode> {
+  readonly retryable: boolean;
+  readonly retryAfterSeconds?: number;
+
+  constructor(
+    options: ProtocolErrorOptions & {
+      readonly retryable: boolean;
+      readonly retryAfterSeconds?: number;
+    },
+  ) {
+    super("Teslatlas protocol request failed", {
+      code: options.code,
+      status: options.status,
+      ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
+    });
+    this.retryable = options.retryable;
+    if (options.retryAfterSeconds !== undefined) {
+      this.retryAfterSeconds = options.retryAfterSeconds;
+    }
+  }
+}
+
+export class ReplayGapError extends TeslatlasError<"event_replay_expired"> {
+  constructor(status: number, requestId?: SafeRequestId) {
+    super("Teslatlas event replay point expired", {
+      code: "event_replay_expired",
+      status,
+      ...(requestId === undefined ? {} : { requestId }),
+    });
+  }
+}
+
+export class CommandUncertainError extends TeslatlasError<"command_uncertain"> {
+  constructor() {
+    super("Teslatlas command submission outcome is uncertain", {
+      code: "command_uncertain",
     });
   }
 }

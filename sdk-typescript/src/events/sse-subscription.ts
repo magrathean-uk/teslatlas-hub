@@ -203,8 +203,8 @@ function normalizeCheckpoint(value: string): string | undefined {
   return value.length === 0 ? undefined : value;
 }
 
-function validateCheckpoint(value: string | undefined): void {
-  if (value !== undefined && containsControlCharacters(value)) {
+function validateCheckpoint(value: unknown): asserts value is string | undefined {
+  if (value !== undefined && (typeof value !== "string" || containsControlCharacters(value))) {
     throw new InvalidSseCheckpointError();
   }
 }

@@ -261,6 +261,26 @@ describe("SSE subscription", () => {
     expect(calls).toBe(0);
   });
 
+  it.each([null, 42, {}, []])(
+    "rejects malformed JavaScript checkpoint value %j with a typed error",
+    async (value) => {
+      let calls = 0;
+      const checkpoint: SseCheckpointStore = {
+        load: () => value as unknown as string | undefined,
+        save: () => undefined,
+      };
+      const transport = transportWith(async () => {
+        calls += 1;
+        return eventStreamResponse("");
+      });
+
+      await expect(
+        collect(subscribeToSse({ transport, path: "/events", checkpoint })),
+      ).rejects.toThrow(InvalidSseCheckpointError);
+      expect(calls).toBe(0);
+    },
+  );
+
   it("does not expose a credential-bearing checkpoint-store failure", async () => {
     const checkpoint: SseCheckpointStore = {
       load: () => {
