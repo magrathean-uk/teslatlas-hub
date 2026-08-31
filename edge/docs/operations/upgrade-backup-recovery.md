@@ -57,16 +57,25 @@ launchctl bootout "gui/$UID/uk.co.magrathean.teslatlas-edge"
 8. Confirm intended listeners and prove one test record in a separate staging
    installation; never inject invented telemetry into a live user's Hub.
 
-Version 1 has no state migration. If a future release introduces one, its
-release notes must state the last rollback-compatible spool version. Do not run
-an older binary against state already migrated by a newer one.
+This release atomically wraps pending v1 records with stable v2 identity and a
+persistent spool sequence on first open. It preserves each v1 delivery ID but
+renames pending files, writes encrypted sequence state, and creates a plain
+`spool/FORMAT` marker containing `2`. Backup before first start. Wire v1 remains
+available, but storage rollback is not compatible: do not run an older binary
+against a spool once that marker exists. The supplied systemd unit and macOS
+LaunchAgent execute `run-with-spool-format-guard.sh`; it compares the marker to
+the candidate binary's `storage-format` output before launching Edge.
 
 ## Roll back a failed upgrade
 
 Stop sidecar then Edge. Restore the previous binaries. Restore the pre-upgrade
 state only into a new empty directory; never merge two live spool directories.
-Run `doctor`, start Edge, verify readiness, then start the sidecar. Preserve the
-failed upgrade state until delivery and record counts have been reconciled.
+For rollback to a pre-v2 binary, verify that the restored spool has no `FORMAT`
+marker. Pre-v2 binaries do not understand the marker themselves, so never
+restore a legacy unit or plist that bypasses the supplied launch guard. The
+guard rejects a pre-v2 binary before it can open a v2 spool. Run `doctor`, start
+Edge, verify readiness, then start the sidecar. Preserve the failed upgrade
+state until delivery and record counts have been reconciled.
 
 ## Restore onto an empty host
 
@@ -86,9 +95,13 @@ replace the key while pending files exist.
 
 ## Handle corruption or degraded readiness
 
-On startup, invalid ciphertext and orphan temporary files move to the
-`spool/quarantine` directory. Edge increments aggregate corruption state and
-`/readyz` returns 503. Valid pending files remain deliverable.
+On startup, orphan temporary files move to `spool/quarantine` and block delivery
+because their sequence outcome cannot be proven. Invalid v2 ciphertext with a
+recoverable sequence first creates an encrypted payload-free gap notice, then
+moves to quarantine. Later v2 records remain deliverable with that notice.
+Invalid pending data without a recoverable sequence, corrupt gap state,
+wrong-key state, or full auxiliary storage blocks delivery and keeps `/readyz`
+at 503.
 
 1. Stop the sidecar to halt admission.
 2. Preserve a private copy of the full spool, key, and quarantine directory.
@@ -98,6 +111,10 @@ On startup, invalid ciphertext and orphan temporary files move to the
 5. If no valid key/backup exists, record the loss boundary and retain evidence;
    do not fabricate replacement records or silently clear degradation.
 
-Retention expiry is also degraded and irreversible. Increase capacity or repair
-connectivity before the configured retention boundary instead of relying on
-expiry as queue management.
+Retention loss is irreversible and increments a durable historical counter.
+Edge persists one gap notice before deleting each expired record; readiness is
+degraded until an exact v2 Hub acknowledgement removes that active notice. V1
+delivery returns 409 while any notice is pending. Increase capacity or repair
+connectivity before the stored retention deadline instead of relying on expiry
+as queue management. Changing configuration never changes deadlines already
+stored with pending records.

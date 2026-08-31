@@ -9,11 +9,15 @@
     "timeout_ms": 2000
   },
   "reliable_ack_sources": {
-    "V": "teslatlas"
+    "V": "teslatlas",
+    "alerts": "teslatlas",
+    "errors": "teslatlas"
   },
   "records": {
     "V": ["teslatlas"],
-    "connectivity": ["teslatlas"]
+    "connectivity": ["teslatlas"],
+    "alerts": ["teslatlas"],
+    "errors": ["teslatlas"]
   },
   "tls": {
     "server_cert": "/etc/teslatlas-edge/vehicle-tls.crt",

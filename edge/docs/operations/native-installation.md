@@ -26,7 +26,10 @@ scripts/build-fleet-telemetry-bridge.sh \
 
 For Linux, replace `darwin-arm64` with `linux-amd64` or `linux-arm64`. The
 bridge build verifies the pinned source archive, patch digest, Go version,
-CGO-disabled build, architecture, and reliable-ack behavior tests.
+CGO-disabled build, architecture, reliable-ack behavior, and the privacy patch
+that removes raw telemetry from debug dispatch logs. The supplied config routes
+`V`, `connectivity`, `alerts`, and `errors`; connectivity remains outside
+reliable acknowledgement because upstream forbids that combination.
 
 ## Install on Debian or Ubuntu
 
@@ -41,6 +44,7 @@ sudo install -d -o teslatlas-edge -g teslatlas-edge -m 0700 /var/lib/teslatlas-e
 sudo install -d -o root -g root -m 0755 /usr/lib/teslatlas-edge
 sudo install -o root -g root -m 0755 target/release/teslatlas-edge /usr/bin/teslatlas-edge
 sudo install -o root -g root -m 0755 target/release/teslatlas-fleet-telemetry /usr/lib/teslatlas-edge/fleet-telemetry
+sudo install -o root -g root -m 0755 scripts/run-with-spool-format-guard.sh /usr/lib/teslatlas-edge/
 sudo install -o root -g teslatlas-edge -m 0640 packaging/config.toml.example /etc/teslatlas-edge/config.toml
 sudo install -o root -g teslatlas-edge -m 0640 packaging/fleet-telemetry.json.example /etc/teslatlas-edge/fleet-telemetry.json
 ```
@@ -53,8 +57,10 @@ Install three Hub-link TLS files and two vehicle-receiver TLS files:
 - `vehicle-tls.crt`: public Tesla receiver certificate, mode 0644.
 - `vehicle-tls.key`: matching Tesla receiver private key, mode 0600.
 
-Use certificates from your chosen private PKI. Do not reuse the vehicle key as
-the Hub listener key. Then initialize Edge-owned secrets:
+Use certificates from your chosen private PKI. `hub-client-ca.crt` must be a
+dedicated CA for this one Hub installation; do not reuse a broad organizational
+client CA. Do not reuse the vehicle key as the Hub listener key. Then initialize
+Edge-owned secrets:
 
 ```bash
 sudo -u teslatlas-edge /usr/bin/teslatlas-edge \
@@ -80,6 +86,11 @@ non-privileged sidecar port. Restrict TCP 8443 to the home Hub address or VPN.
 
 ## Install on macOS
 
+> **Development only:** the supplied LaunchAgents share the signed-in user
+> identity and do not provide the Linux service's process-to-file isolation.
+> Use Linux for a production boundary until separate macOS service identities
+> or an equivalent sandbox are implemented and independently verified.
+
 Use `/Users/Shared/TeslatlasEdge` as the mode-0700 state directory and adjust
 the copied config paths accordingly. Install binaries and launch agents:
 
@@ -87,6 +98,7 @@ the copied config paths accordingly. Install binaries and launch agents:
 sudo install -d -m 0755 /usr/local/libexec/teslatlas-edge
 sudo install -m 0755 target/release/teslatlas-edge /usr/local/libexec/teslatlas-edge/
 sudo install -m 0755 target/release/teslatlas-fleet-telemetry /usr/local/libexec/teslatlas-edge/
+sudo install -m 0755 scripts/run-with-spool-format-guard.sh /usr/local/libexec/teslatlas-edge/
 sudo install -d -o "$USER" -g staff -m 0700 /Users/Shared/TeslatlasEdge
 install -m 0600 packaging/config.toml.example /Users/Shared/TeslatlasEdge/config.toml
 install -m 0600 packaging/fleet-telemetry.json.example /Users/Shared/TeslatlasEdge/fleet-telemetry.json
@@ -119,8 +131,9 @@ teslatlas-edge --config /etc/teslatlas-edge/config.toml \
 
 Transfer the one-time bearer and Hub client identity through a separate secure
 channel. Configure Hub to trust `hub-server.crt`, present a client certificate
-rooted in `hub-client-ca.crt`, deduplicate by `record_id`, and connect outbound
-to Edge. See the [delivery contract](../hub-delivery-contract.md).
+rooted in the dedicated `hub-client-ca.crt`, store both v1 and v2 record IDs,
+and connect outbound to Edge. Current bearer grants cover the complete queue.
+See the [delivery contract](../hub-delivery-contract.md).
 
 ## Rotate the receiver bearer
 
@@ -150,3 +163,7 @@ ss -ltnp
 Only the Tesla receiver and mTLS Hub ports should be public. Receiver admission,
 health, readiness, and metrics must appear only on loopback. Health output and
 logs must contain no VIN, coordinates, bearer, or payload.
+
+These checks prove local process and listener behavior only. They do not prove
+Tesla vehicle delivery, router TCP pass-through, Hub durable commit ordering,
+physical host isolation, certificate enrollment, or release readiness.

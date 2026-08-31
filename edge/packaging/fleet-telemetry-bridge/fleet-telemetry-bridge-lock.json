@@ -9,7 +9,7 @@
   },
   "overlay": {
     "patch": "0001-teslatlas-http-dispatcher.patch",
-    "patch_sha256": "cfc6831c9686af759781edd647d7c6e10c56b567af4eadf569c14586c2cfbec3"
+    "patch_sha256": "828a98fe3b36bf07c3d2d32041be45efad7594c6c580a982b588875a10898b98"
   },
   "bridge": {
     "endpoint": "http://127.0.0.1:8080/v1/internal/fleet-telemetry",

@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 use teslatlas_edge::config::{EdgeConfig, initialize, rotate_receiver_token};
 use teslatlas_edge::credentials::CredentialStore;
 use teslatlas_edge::runtime::{doctor, run_until_shutdown};
+use teslatlas_edge::spool::SPOOL_FORMAT_VERSION;
 
 const DEFAULT_CREDENTIAL_TTL_SECONDS: u64 = 90 * 24 * 60 * 60;
 
@@ -26,6 +27,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Print the maximum supported on-disk spool format for launch guards.
+    StorageFormat,
     /// Create the Edge spool key, receiver bearer, and empty Hub credential store.
     Init,
     /// Validate configured files without opening listeners.
@@ -77,8 +80,13 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
+    if matches!(&cli.command, Command::StorageFormat) {
+        println!("{SPOOL_FORMAT_VERSION}");
+        return Ok(());
+    }
     let config = EdgeConfig::load(&cli.config)?;
     match cli.command {
+        Command::StorageFormat => unreachable!(),
         Command::Init => {
             initialize(&config)?;
             println!("initialized");

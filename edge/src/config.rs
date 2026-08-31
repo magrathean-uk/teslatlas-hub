@@ -277,11 +277,38 @@ fn validate_regular_file(path: &Path, private: bool) -> Result<(), ConfigError> 
 }
 
 fn path_contains_symlink(path: &Path) -> Result<bool, ConfigError> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => Ok(metadata.file_type().is_symlink()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(_) => Err(ConfigError::Io),
+    use std::path::Component;
+
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        if matches!(component, Component::ParentDir) {
+            return Ok(true);
+        }
+        current.push(component.as_os_str());
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+
+                    let parent = current.parent().ok_or(ConfigError::InvalidPath)?;
+                    let parent_metadata = fs::metadata(parent).map_err(|_| ConfigError::Io)?;
+                    let trusted_system_link = metadata.uid() == 0
+                        && parent_metadata.uid() == 0
+                        && parent_metadata.mode() & 0o022 == 0;
+                    if !trusted_system_link {
+                        return Ok(true);
+                    }
+                }
+                #[cfg(not(unix))]
+                return Ok(true);
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(ConfigError::Io),
+        }
     }
+    Ok(false)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]

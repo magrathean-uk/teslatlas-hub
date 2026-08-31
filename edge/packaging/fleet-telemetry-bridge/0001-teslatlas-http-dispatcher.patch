@@ -784,3 +784,13 @@ index ef30578..0d0fec1 100644
  )
  
  // BuildTopicName creates a topic from a namespace and a recordName
+diff --git a/telemetry/record.go b/telemetry/record.go
+--- a/telemetry/record.go
++++ b/telemetry/record.go
+@@ -0,0 +1,3 @@
++// Modified by MAGRATHEAN UK LTD for Teslatlas Hub on 2026-08-31.
++// Based on Tesla Fleet Telemetry revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b.
++
+@@ -130 +133 @@ func (record *Record) Dispatch() {
+-	logger.Log(logrus.DEBUG, "dispatching_message", logrus.LogInfo{"socket_id": record.SocketID, "payload": record.Raw()})
++	logger.Log(logrus.DEBUG, "dispatching_message", logrus.LogInfo{"record_type": record.TxType})

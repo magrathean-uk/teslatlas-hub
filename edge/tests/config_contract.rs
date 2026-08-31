@@ -122,6 +122,20 @@ fn configuration_rejects_relative_and_symlinked_secret_paths() {
                 .unwrap_err(),
             ConfigError::InvalidPath
         );
+
+        let linked_parent = temp.path().join("linked-parent");
+        symlink(temp.path(), &linked_parent).unwrap();
+        let parent_linked = config_text(&temp).replace(
+            &temp.path().join("receiver-token").display().to_string(),
+            &linked_parent.join("receiver-token").display().to_string(),
+        );
+        assert_eq!(
+            EdgeConfig::from_toml(parent_linked.as_bytes())
+                .unwrap()
+                .validate_runtime_files()
+                .unwrap_err(),
+            ConfigError::InvalidPath
+        );
     }
 }
 

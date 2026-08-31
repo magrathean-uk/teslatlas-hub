@@ -122,7 +122,8 @@ async fn admit_receiver_envelope(
         state.metrics.rejected_internal();
         return error_response(StatusCode::SERVICE_UNAVAILABLE, "receiver_busy");
     };
-    let envelope = match ReceiverEnvelope::parse(&body) {
+    let now_ms = state.clock.now_ms();
+    let envelope = match ReceiverEnvelope::parse_at(&body, now_ms) {
         Ok(envelope) => envelope,
         Err(ProtocolError::InputTooLarge) => {
             state.metrics.rejected_invalid();
@@ -133,7 +134,7 @@ async fn admit_receiver_envelope(
             return error_response(StatusCode::BAD_REQUEST, "invalid_receiver_envelope");
         }
     };
-    match state.spool.enqueue(envelope, state.clock.now_ms()) {
+    match state.spool.enqueue(envelope, now_ms) {
         Ok(EnqueueOutcome::Stored(_)) => {
             state.metrics.admitted();
             StatusCode::NO_CONTENT.into_response()

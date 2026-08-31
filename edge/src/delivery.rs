@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::admission::Clock;
 use crate::credentials::CredentialStore;
-use crate::protocol::{HubAckV1, MAX_HUB_ACK_BODY_BYTES};
+use crate::protocol::{HubAckV1, HubAckV2, MAX_HUB_ACK_BODY_BYTES};
 use crate::spool::Spool;
 
 #[derive(Clone)]
@@ -40,6 +40,8 @@ impl DeliveryService {
         Router::new()
             .route("/v1/hub/batches/next", get(next_batch))
             .route("/v1/hub/acks", post(acknowledge))
+            .route("/v2/hub/batches/next", get(next_batch_v2))
+            .route("/v2/hub/acks", post(acknowledge_v2))
             .layer(DefaultBodyLimit::max(MAX_HUB_ACK_BODY_BYTES))
             .with_state(self.state.clone())
     }
@@ -59,6 +61,19 @@ async fn next_batch(State(state): State<Arc<DeliveryState>>, headers: HeaderMap)
     }
     match state.spool.next_batch(state.clock.now_ms()) {
         Ok(batch) => axum::Json(batch).into_response(),
+        Err(crate::spool::SpoolError::ProtocolUpgradeRequired) => {
+            error_response(StatusCode::CONFLICT, "protocol_upgrade_required")
+        }
+        Err(_) => error_response(StatusCode::SERVICE_UNAVAILABLE, "spool_unavailable"),
+    }
+}
+
+async fn next_batch_v2(State(state): State<Arc<DeliveryState>>, headers: HeaderMap) -> Response {
+    if let Err(failure) = authorize(&state, &headers) {
+        return authorization_error(failure);
+    }
+    match state.spool.next_batch_v2(state.clock.now_ms()) {
+        Ok(batch) => axum::Json(batch).into_response(),
         Err(_) => error_response(StatusCode::SERVICE_UNAVAILABLE, "spool_unavailable"),
     }
 }
@@ -76,6 +91,27 @@ async fn acknowledge(
         _ => return error_response(StatusCode::BAD_REQUEST, "invalid_acknowledgement"),
     };
     match state.spool.acknowledge(&acknowledgement) {
+        Ok(result) => axum::Json(result).into_response(),
+        Err(crate::spool::SpoolError::InvalidAcknowledgement) => {
+            error_response(StatusCode::BAD_REQUEST, "invalid_acknowledgement")
+        }
+        Err(_) => error_response(StatusCode::SERVICE_UNAVAILABLE, "spool_unavailable"),
+    }
+}
+
+async fn acknowledge_v2(
+    State(state): State<Arc<DeliveryState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Err(failure) = authorize(&state, &headers) {
+        return authorization_error(failure);
+    }
+    let acknowledgement = match HubAckV2::parse(&body) {
+        Ok(acknowledgement) => acknowledgement,
+        _ => return error_response(StatusCode::BAD_REQUEST, "invalid_acknowledgement"),
+    };
+    match state.spool.acknowledge_v2(&acknowledgement) {
         Ok(result) => axum::Json(result).into_response(),
         Err(crate::spool::SpoolError::InvalidAcknowledgement) => {
             error_response(StatusCode::BAD_REQUEST, "invalid_acknowledgement")

@@ -2,9 +2,11 @@
 
 Optional user-operated Tesla Fleet Telemetry ingress for a Teslatlas home Hub.
 
-> **Beta:** Wire version 1 is implemented, but Edge and Hub must be upgraded
-> together for any future incompatible contract change. Edge is not a hosted
-> Magrathean relay and stores no Tesla account or vehicle-command credentials.
+> **Beta:** Wire version 1 remains compatible. The on-disk v2 spool format is a
+> forward-only upgrade. Wire version 2 adds stable retry identity, monotonic
+> spool sequence, and durable loss notices. Hub-side v2 integration and live
+> vehicle proof are separate work. Edge is not a hosted relay and stores no
+> Tesla account or vehicle-command credentials.
 
 ## Build and inspect
 
@@ -16,8 +18,8 @@ scripts/test-fleet-telemetry-bridge.sh
 
 The service accepts decoded receiver envelopes on loopback, durably writes an
 encrypted bounded spool, and exposes batches to a home Hub over mTLS plus a
-scoped bearer. Delivery is at-least-once. The Hub must deduplicate and commit
-before acknowledging records.
+rotating bearer. Delivery is at-least-once. The Hub must deduplicate and commit
+records and gap evidence before acknowledging them.
 
 ## Documentation
 

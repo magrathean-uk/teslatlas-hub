@@ -13,6 +13,7 @@ pub const MAX_RECEIVER_BODY_BYTES: usize = 256 * 1024;
 pub const MAX_HUB_ACK_BODY_BYTES: usize = 128 * 1024;
 const MIN_TIMESTAMP_MS: i64 = 946_684_800_000;
 const MAX_EVENT_CLOCK_LEAD_MS: i64 = 5 * 60 * 1_000;
+const MAX_RECEIVER_CLOCK_LEAD_MS: i64 = 5 * 60 * 1_000;
 const DUPLICATE_KEY_MARKER: &str = "teslatlas_duplicate_json_key";
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -75,6 +76,14 @@ impl ReceiverEnvelope {
         Ok(envelope)
     }
 
+    pub fn parse_at(input: &[u8], now_ms: i64) -> Result<Self, ProtocolError> {
+        let envelope = Self::parse(input)?;
+        if envelope.received_at_ms > now_ms.saturating_add(MAX_RECEIVER_CLOCK_LEAD_MS) {
+            return Err(ProtocolError::InvalidTimestamp);
+        }
+        Ok(envelope)
+    }
+
     pub fn record_id(&self) -> RecordId {
         let value =
             serde_json::to_value(self).expect("receiver envelope serialization cannot fail");
@@ -82,6 +91,39 @@ impl ReceiverEnvelope {
             serde_jcs::to_vec(&value).expect("receiver envelope serialization cannot fail");
         let mut digest = Sha256::new();
         digest.update(b"teslatlas-edge-record-v1\0");
+        digest.update(canonical);
+        RecordId(hex::encode(digest.finalize()))
+    }
+
+    pub fn stable_record_id(&self) -> RecordId {
+        #[derive(Serialize)]
+        struct StableIdentity<'a> {
+            version: u16,
+            vin: &'a str,
+            txid: &'a str,
+            tx_type: &'a str,
+            timestamp_ms: i64,
+            payload: &'a Value,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            device_client_version: &'a Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            firmware_version: &'a Option<String>,
+        }
+
+        let identity = StableIdentity {
+            version: 2,
+            vin: &self.vin,
+            txid: &self.txid,
+            tx_type: &self.tx_type,
+            timestamp_ms: self.timestamp_ms,
+            payload: &self.payload,
+            device_client_version: &self.device_client_version,
+            firmware_version: &self.firmware_version,
+        };
+        let canonical =
+            serde_jcs::to_vec(&identity).expect("receiver identity serialization cannot fail");
+        let mut digest = Sha256::new();
+        digest.update(b"teslatlas-edge-record-v2\0");
         digest.update(canonical);
         RecordId(hex::encode(digest.finalize()))
     }
@@ -107,7 +149,7 @@ impl ReceiverEnvelope {
             .collect::<String>();
         if !matches!(
             normalized_type.as_str(),
-            "v" | "data" | "vehicledata" | "connectivity"
+            "v" | "data" | "vehicledata" | "connectivity" | "alerts" | "errors"
         ) {
             return Err(ProtocolError::InvalidTransactionType);
         }
@@ -164,6 +206,10 @@ impl RecordId {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub(crate) fn from_sha256(digest: impl AsRef<[u8]>) -> Self {
+        Self(hex::encode(digest))
     }
 }
 
@@ -242,6 +288,96 @@ pub struct HubAckResultV1 {
     pub version: u16,
     pub acknowledged_record_ids: Vec<RecordId>,
     pub unknown_record_ids: Vec<RecordId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HubBatchRecordV2 {
+    pub record_id: RecordId,
+    pub legacy_record_id: RecordId,
+    pub spool_seq: u64,
+    pub received_at_ms: i64,
+    pub envelope: ReceiverEnvelope,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GapReasonV2 {
+    RetentionExpired,
+    IntegrityQuarantine,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GapNoticeV2 {
+    pub notice_id: RecordId,
+    pub spool_seq: u64,
+    pub occurred_at_ms: i64,
+    pub reason: GapReasonV2,
+    pub evidence_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HubBatchV2 {
+    pub version: u16,
+    pub batch_id: String,
+    pub records: Vec<HubBatchRecordV2>,
+    pub gaps: Vec<GapNoticeV2>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HubAckV2 {
+    pub version: u16,
+    pub batch_id: String,
+    pub accepted_record_ids: Vec<RecordId>,
+    pub accepted_gap_notice_ids: Vec<RecordId>,
+}
+
+impl HubAckV2 {
+    pub fn parse(input: &[u8]) -> Result<Self, ProtocolError> {
+        if input.len() > MAX_HUB_ACK_BODY_BYTES {
+            return Err(ProtocolError::InputTooLarge);
+        }
+        let unique = serde_json::from_slice::<UniqueValue>(input).map_err(|error| {
+            if error.to_string().contains(DUPLICATE_KEY_MARKER) {
+                ProtocolError::DuplicateJsonKey
+            } else {
+                ProtocolError::InvalidJson
+            }
+        })?;
+        let acknowledgement: Self =
+            serde_json::from_value(unique.0).map_err(|_| ProtocolError::InvalidAcknowledgement)?;
+        let record_ids = acknowledgement
+            .accepted_record_ids
+            .iter()
+            .collect::<HashSet<_>>();
+        let gap_ids = acknowledgement
+            .accepted_gap_notice_ids
+            .iter()
+            .collect::<HashSet<_>>();
+        if acknowledgement.version != 2
+            || !valid_lower_hex_digest(&acknowledgement.batch_id)
+            || acknowledgement.accepted_record_ids.len() > 256
+            || acknowledgement.accepted_gap_notice_ids.len() > 256
+            || record_ids.len() != acknowledgement.accepted_record_ids.len()
+            || gap_ids.len() != acknowledgement.accepted_gap_notice_ids.len()
+        {
+            return Err(ProtocolError::InvalidAcknowledgement);
+        }
+        Ok(acknowledgement)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HubAckResultV2 {
+    pub version: u16,
+    pub acknowledged_record_ids: Vec<RecordId>,
+    pub acknowledged_gap_notice_ids: Vec<RecordId>,
+    pub unknown_record_ids: Vec<RecordId>,
+    pub unknown_gap_notice_ids: Vec<RecordId>,
 }
 
 struct UniqueValue(Value);

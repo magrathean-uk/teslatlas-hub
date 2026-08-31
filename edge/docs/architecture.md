@@ -23,9 +23,11 @@ posts a decoded envelope only to
 record only after Edge returns an HTTP 2xx response.
 
 Edge acknowledges that loopback request only after an encrypted file has been
-written, synced, and atomically renamed into the pending spool. A home Hub then
-pulls a deterministic batch, commits each new `record_id`, and posts an exact
-acknowledgement. Edge deletes only accepted records from the current batch.
+written, synced, and atomically renamed into the pending spool. New records
+carry the unchanged v1 ID, a stable v2 ID that excludes receiver arrival time,
+and a persistent monotonic `spool_seq`. A home Hub pulls a deterministic batch,
+commits each new identity, and posts an exact acknowledgement. Edge persists an
+encrypted acknowledgement receipt before deleting accepted records.
 
 ## Trust boundaries
 
@@ -34,7 +36,7 @@ acknowledgement. Edge deletes only accepted records from the current batch.
 | Vehicle to sidecar | Tesla vehicle mTLS | Fleet Telemetry only |
 | Sidecar to Edge | Loopback plus private bearer | Strict envelope, 256 KiB maximum |
 | Hub to Edge | Trusted Hub client certificate plus rotating bearer | Batch pull and acknowledgement only |
-| Edge disk | Mode-0600 key plus XChaCha20-Poly1305 | Retention-limited pending envelopes |
+| Edge disk | Mode-0600 key plus XChaCha20-Poly1305 | Pending envelopes, sequence state, receipts, payload-free gaps |
 
 The public Hub listener never serves plaintext HTTP. The loopback listener
 contains receiver admission, liveness, readiness, and privacy-safe aggregate
@@ -42,7 +44,8 @@ metrics. It must not be exposed by a reverse proxy or firewall rule.
 
 ## Reliability model
 
-- Receiver duplicate admission is idempotent by deterministic `record_id`.
+- Receiver retries are idempotent by a stable v2 ID that excludes only the
+  sidecar-local arrival time. The v1 ID remains unchanged for compatibility.
 - Pending records survive process and host restart when the spool and key
   survive.
 - Disconnect before acknowledgement returns the same oldest-first batch.
@@ -51,17 +54,43 @@ metrics. It must not be exposed by a reverse proxy or firewall rule.
   current batch.
 - Capacity or storage-full admission fails with 507; Edge never evicts an
   unexpired pending record to make space.
-- Retention expiry and corrupt ciphertext are counted and make readiness
-  degraded. They are never silent success paths.
+- Before deleting an expired or sequenced-corrupt record, Edge durably writes a
+  payload-free gap notice. V1 delivery returns 409 while a gap awaits v2 Hub
+  acknowledgement. The cumulative expiry counter survives acknowledgement, but
+  readiness recovers after the active gap is committed and acknowledged.
+- Records and gaps share one globally unique sequence. A durable gap is
+  authoritative if its source file reappears after a crash.
+- Corruption without a recoverable v2 sequence, including an orphan atomic-write
+  temporary file, blocks delivery and readiness.
+- V2 acknowledgements may advance only through a contiguous prefix of the merged
+  record-and-gap sequence.
+- Pending records, gaps, acknowledgement receipts, and quarantine are all
+  independently bounded. Full auxiliary storage fails closed.
 - Shutdown asks both listeners to drain for at most five seconds, aborts any
   remaining task, then syncs spool directories.
 
+The spool root contains a `FORMAT` marker with value `2`. This makes the
+forward-only storage transition visible to the supplied launch guard. The guard
+queries the candidate binary's supported format before allowing it to open the
+spool. An older binary must use a restored pre-upgrade state directory, never
+the v2 directory.
+
 ## Privacy boundary
 
-Spool file names contain admission time and a content digest, never VIN or
-payload text. Metrics and health expose only numeric queue, corruption, expiry,
-and fixed-reason counters. Logs and errors must not include VIN, transaction
-ID, bearer, certificate material, coordinates, or raw payload.
+Spool file names contain sequence and a content digest, never VIN or payload
+text. Gap notices contain sequence, fixed reason, time, and one-way evidence
+only. Metrics and health expose only numeric queue, gap, corruption, expiry,
+and fixed-reason values. The pinned sidecar overlay removes upstream raw-payload
+debug logging. Logs and errors must not include VIN, transaction ID, bearer,
+certificate material, coordinates, or raw payload.
+
+## Platform boundary
+
+The Linux service policy makes the vehicle private key and sidecar config
+inaccessible to the Rust Edge process, and makes Edge spool, key, Hub identity,
+and credentials inaccessible to the sidecar. macOS LaunchAgents share the
+interactive user identity and are therefore a development deployment, not a
+production process-isolation boundary.
 
 ## Explicit exclusions
 

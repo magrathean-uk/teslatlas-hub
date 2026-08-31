@@ -45,63 +45,73 @@ impl Metrics {
 
     pub(crate) fn render(&self, spool: &SpoolSnapshot) -> String {
         let mut output = String::with_capacity(2_048);
-        metric(&mut output, "teslatlas_edge_build_info", 1);
-        metric(
+        gauge(&mut output, "teslatlas_edge_build_info", 1);
+        gauge(
             &mut output,
             "teslatlas_edge_spool_records",
             u64::try_from(spool.pending_records).unwrap_or(u64::MAX),
         );
-        metric(
+        gauge(
             &mut output,
             "teslatlas_edge_spool_bytes",
             spool.pending_bytes,
         );
-        metric(
+        gauge(
             &mut output,
             "teslatlas_edge_spool_oldest_age_seconds",
             spool.oldest_age_seconds,
         );
-        metric(
+        gauge(
             &mut output,
             "teslatlas_edge_spool_corrupt_records",
             spool.corrupt_records,
         );
-        metric(
+        counter(
             &mut output,
             "teslatlas_edge_spool_expired_records_total",
             spool.expired_records,
         );
-        metric(
+        gauge(
+            &mut output,
+            "teslatlas_edge_spool_gap_notices",
+            u64::try_from(spool.pending_gap_notices).unwrap_or(u64::MAX),
+        );
+        gauge(
+            &mut output,
+            "teslatlas_edge_spool_gap_bytes",
+            spool.pending_gap_bytes,
+        );
+        counter(
             &mut output,
             "teslatlas_edge_receiver_admitted_total",
             self.admitted.load(Ordering::Relaxed),
         );
-        metric(
+        counter(
             &mut output,
             "teslatlas_edge_receiver_duplicates_total",
             self.duplicates.load(Ordering::Relaxed),
         );
-        metric(
+        counter(
             &mut output,
             "teslatlas_edge_receiver_rejected_auth_total",
             self.rejected_auth.load(Ordering::Relaxed),
         );
-        metric(
+        counter(
             &mut output,
             "teslatlas_edge_receiver_rejected_invalid_total",
             self.rejected_invalid.load(Ordering::Relaxed),
         );
-        metric(
+        counter(
             &mut output,
             "teslatlas_edge_receiver_rejected_capacity_total",
             self.rejected_capacity.load(Ordering::Relaxed),
         );
-        metric(
+        counter(
             &mut output,
             "teslatlas_edge_receiver_rejected_storage_total",
             self.rejected_storage.load(Ordering::Relaxed),
         );
-        metric(
+        counter(
             &mut output,
             "teslatlas_edge_receiver_rejected_internal_total",
             self.rejected_internal.load(Ordering::Relaxed),
@@ -110,7 +120,15 @@ impl Metrics {
     }
 }
 
-fn metric(output: &mut String, name: &str, value: u64) {
-    let _ = writeln!(output, "# TYPE {name} gauge");
+fn gauge(output: &mut String, name: &str, value: u64) {
+    typed_metric(output, name, "gauge", value);
+}
+
+fn counter(output: &mut String, name: &str, value: u64) {
+    typed_metric(output, name, "counter", value);
+}
+
+fn typed_metric(output: &mut String, name: &str, metric_type: &str, value: u64) {
+    let _ = writeln!(output, "# TYPE {name} {metric_type}");
     let _ = writeln!(output, "{name} {value}");
 }

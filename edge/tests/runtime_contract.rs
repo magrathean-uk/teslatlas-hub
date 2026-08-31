@@ -152,13 +152,14 @@ async fn bounded_shutdown_closes_idle_connection_and_keeps_admitted_record() {
         .await
         .unwrap();
 
+    let timestamp_ms = now_ms();
     let envelope = serde_json::json!({
         "version": 1,
         "vin": "5YJ3E1EA7KF000001",
         "txid": "runtime-1",
         "tx_type": "V",
-        "received_at_ms": 1_800_000_000_000_i64,
-        "timestamp_ms": 1_800_000_000_000_i64,
+        "received_at_ms": timestamp_ms,
+        "timestamp_ms": timestamp_ms,
         "payload": {"Soc": 71}
     });
     assert_eq!(

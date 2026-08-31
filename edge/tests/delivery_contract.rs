@@ -10,7 +10,9 @@ use tempfile::TempDir;
 use teslatlas_edge::admission::Clock;
 use teslatlas_edge::credentials::CredentialStore;
 use teslatlas_edge::delivery::DeliveryService;
-use teslatlas_edge::protocol::{HubAckResultV1, HubAckV1, HubBatchV1};
+use teslatlas_edge::protocol::{
+    HubAckResultV1, HubAckResultV2, HubAckV1, HubAckV2, HubBatchV1, HubBatchV2,
+};
 use teslatlas_edge::spool::{Spool, SpoolConfig, SpoolKey};
 use tower::ServiceExt;
 
@@ -52,6 +54,13 @@ fn setup(temp: &TempDir) -> (DeliveryService, String) {
 
 fn authorized_get(token: &str) -> Request<Body> {
     Request::get("/v1/hub/batches/next")
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+fn authorized_get_v2(token: &str) -> Request<Body> {
+    Request::get("/v2/hub/batches/next")
         .header("authorization", format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap()
@@ -125,6 +134,86 @@ async fn reordered_acknowledgements_delete_exact_records_after_hub_commit() {
     let empty: HubBatchV1 =
         serde_json::from_slice(&to_bytes(empty.into_body(), 1_048_576).await.unwrap()).unwrap();
     assert!(empty.records.is_empty());
+}
+
+#[tokio::test]
+async fn v2_delivers_stable_ids_sequences_and_exact_acknowledgements() {
+    let temp = TempDir::new().unwrap();
+    let (service, token) = setup(&temp);
+    let router = service.router();
+    let response = router
+        .clone()
+        .oneshot(authorized_get_v2(&token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let batch: HubBatchV2 =
+        serde_json::from_slice(&to_bytes(response.into_body(), 1_048_576).await.unwrap()).unwrap();
+    assert_eq!(
+        batch
+            .records
+            .iter()
+            .map(|record| record.spool_seq)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    assert!(
+        batch
+            .records
+            .iter()
+            .all(|record| record.record_id != record.legacy_record_id)
+    );
+    let accepted = batch.records[0].record_id.clone();
+    let acknowledgement = HubAckV2 {
+        version: 2,
+        batch_id: batch.batch_id,
+        accepted_record_ids: vec![accepted.clone()],
+        accepted_gap_notice_ids: Vec::new(),
+    };
+    let response = router
+        .clone()
+        .oneshot(
+            Request::post("/v2/hub/acks")
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&acknowledgement).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let result: HubAckResultV2 =
+        serde_json::from_slice(&to_bytes(response.into_body(), 1_048_576).await.unwrap()).unwrap();
+    assert_eq!(result.acknowledged_record_ids, vec![accepted]);
+
+    let remaining = router.oneshot(authorized_get_v2(&token)).await.unwrap();
+    let remaining: HubBatchV2 =
+        serde_json::from_slice(&to_bytes(remaining.into_body(), 1_048_576).await.unwrap()).unwrap();
+    assert_eq!(remaining.records.len(), 1);
+    assert_eq!(remaining.records[0].spool_seq, 2);
+}
+
+#[tokio::test]
+async fn v1_refuses_silent_delivery_when_v2_gap_is_pending() {
+    let temp = TempDir::new().unwrap();
+    let (service, token) = setup(&temp);
+    service.spool().expire_due(T0 + 61_001).unwrap();
+    let router = service.router();
+
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(authorized_get(&token))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let response = router.oneshot(authorized_get_v2(&token)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let batch: HubBatchV2 =
+        serde_json::from_slice(&to_bytes(response.into_body(), 1_048_576).await.unwrap()).unwrap();
+    assert_eq!(batch.gaps.len(), 2);
 }
 
 #[tokio::test]

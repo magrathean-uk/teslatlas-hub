@@ -125,6 +125,24 @@ async fn durable_and_duplicate_admission_return_204_but_store_once() {
 }
 
 #[tokio::test]
+async fn receiver_rejects_arrival_time_beyond_clock_skew() {
+    let temp = TempDir::new().unwrap();
+    let service = service(&temp, 8);
+    let router = service.router();
+    let body = serde_json::to_vec(&receiver_envelope("tx-future", T0 + 300_001)).unwrap();
+
+    assert_eq!(
+        router
+            .oneshot(post(body, Some("receiver-secret-123")))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(service.spool().snapshot(T0).pending_records, 0);
+}
+
+#[tokio::test]
 async fn full_spool_returns_507_without_acknowledging_second_record() {
     let temp = TempDir::new().unwrap();
     let service = service(&temp, 1);
@@ -221,6 +239,10 @@ async fn metrics_expose_only_bounded_aggregate_values() {
 
     assert!(text.contains("teslatlas_edge_spool_records 1"));
     assert!(text.contains("teslatlas_edge_receiver_admitted_total 1"));
+    assert!(text.contains("# TYPE teslatlas_edge_spool_records gauge"));
+    assert!(text.contains("# TYPE teslatlas_edge_receiver_admitted_total counter"));
+    assert!(text.contains("# TYPE teslatlas_edge_spool_expired_records_total counter"));
+    assert!(text.contains("teslatlas_edge_spool_gap_notices 0"));
     for private in [VIN, "tx-private-id", secret, "Soc", "createdAt"] {
         assert!(!text.contains(private), "metrics leaked {private}");
     }

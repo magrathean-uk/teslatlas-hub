@@ -103,3 +103,39 @@ fn record_id_is_stable_across_payload_key_order() {
         "c189e16bf371ef87954f09e1f76130cff73b38ea29590b0de28c5e0e304e76f2"
     );
 }
+
+#[test]
+fn stable_record_id_ignores_receiver_arrival_time_only() {
+    let first = ReceiverEnvelope::parse(&envelope(json!({"value": 1}))).unwrap();
+    let mut later_value: Value = serde_json::from_slice(&envelope(json!({"value": 1}))).unwrap();
+    later_value["received_at_ms"] = json!(T0 + 5_000);
+    let later = ReceiverEnvelope::parse(&serde_json::to_vec(&later_value).unwrap()).unwrap();
+
+    assert_ne!(first.record_id(), later.record_id());
+    assert_eq!(first.stable_record_id(), later.stable_record_id());
+
+    later_value["payload"] = json!({"value": 2});
+    let changed = ReceiverEnvelope::parse(&serde_json::to_vec(&later_value).unwrap()).unwrap();
+    assert_ne!(first.stable_record_id(), changed.stable_record_id());
+}
+
+#[test]
+fn accepts_every_pinned_sidecar_transaction_type() {
+    for tx_type in ["V", "connectivity", "alerts", "errors"] {
+        let mut value: Value = serde_json::from_slice(&envelope(json!({}))).unwrap();
+        value["tx_type"] = json!(tx_type);
+        ReceiverEnvelope::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    }
+}
+
+#[test]
+fn clock_bounded_parse_rejects_far_future_arrival_time() {
+    let mut value: Value = serde_json::from_slice(&envelope(json!({}))).unwrap();
+    value["received_at_ms"] = json!(T0 + 300_001);
+    value["timestamp_ms"] = json!(T0 + 300_001);
+
+    assert_eq!(
+        ReceiverEnvelope::parse_at(&serde_json::to_vec(&value).unwrap(), T0).unwrap_err(),
+        ProtocolError::InvalidTimestamp
+    );
+}

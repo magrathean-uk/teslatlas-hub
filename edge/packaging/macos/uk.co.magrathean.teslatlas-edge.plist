@@ -6,7 +6,10 @@
   <string>uk.co.magrathean.teslatlas-edge</string>
   <key>ProgramArguments</key>
   <array>
+    <string>/usr/local/libexec/teslatlas-edge/run-with-spool-format-guard.sh</string>
     <string>/usr/local/libexec/teslatlas-edge/teslatlas-edge</string>
+    <string>/Users/Shared/TeslatlasEdge/spool</string>
+    <string>--</string>
     <string>--config</string>
     <string>/Users/Shared/TeslatlasEdge/config.toml</string>
     <string>serve</string>
