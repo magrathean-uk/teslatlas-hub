@@ -30,6 +30,13 @@ export default defineConfig({
           },
         },
       },
+      {
+        test: {
+          name: "protocol-cases",
+          include: ["tests/protocol/**/*.test.ts"],
+          environment: "node",
+        },
+      },
     ],
   },
 });

@@ -68,16 +68,26 @@ const ajvUcs2LengthRuntime = typeof ajvUcs2Length === "function" ? ajvUcs2Length
 ${standalone}`;
 }
 
-function collectExamplePaths(value, paths = new Set()) {
+const bodyFilePattern =
+  /^(?:examples|fixtures)\/(?:[A-Za-z0-9][A-Za-z0-9._-]*\/)*[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function collectBodyPaths(value, paths = new Set()) {
   if (Array.isArray(value)) {
     value.forEach((child) => {
-      collectExamplePaths(child, paths);
+      collectBodyPaths(child, paths);
     });
-  } else if (value !== null && typeof value === "object")
+  } else if (value !== null && typeof value === "object") {
+    if (Object.hasOwn(value, "body_file")) {
+      const path = value.body_file;
+      if (typeof path !== "string" || !bodyFilePattern.test(path)) {
+        throw new Error("Protocol case body path is invalid");
+      }
+      paths.add(path);
+    }
     Object.values(value).forEach((child) => {
-      collectExamplePaths(child, paths);
+      collectBodyPaths(child, paths);
     });
-  else if (typeof value === "string" && /^examples\/.+\.json$/.test(value)) paths.add(value);
+  }
   return paths;
 }
 
@@ -93,13 +103,42 @@ async function generateCases() {
     .filter((file) => file.endsWith(".json"))
     .sort();
   const cases = await Promise.all(caseFiles.map((file) => readJson(join(caseDirectory, file))));
-  const examplePaths = [...collectExamplePaths(cases)].sort();
+  const bodyPaths = [...collectBodyPaths(cases)].sort();
+  const bodies = Object.fromEntries(
+    await Promise.all(
+      bodyPaths.map(async (path) => [path, await readJson(join(sourceRoot, path))]),
+    ),
+  );
+  const eventCatalog = eventCatalogFromContract(
+    await readJson(join(sourceRoot, "events/teslatlas-v1.sse.json")),
+  );
   const documents = [
     ...(await Promise.all(compatibilityPaths.map((path) => readJson(join(sourceRoot, path))))),
     ...cases,
-    ...(await Promise.all(examplePaths.map((path) => readJson(join(sourceRoot, path))))),
   ];
-  return `// @generated\nexport const protocolCases: readonly unknown[] = Object.freeze(${JSON.stringify(documents, null, 2)});\n`;
+  return `// @generated\nexport const protocolCases: readonly unknown[] = Object.freeze(${JSON.stringify(documents, null, 2)});\nexport const protocolCaseBodies: Readonly<Record<string, unknown>> = Object.freeze(${JSON.stringify(bodies, null, 2)});\nexport const protocolEventCatalog: readonly unknown[] = Object.freeze(${JSON.stringify(eventCatalog, null, 2)});\n`;
+}
+
+function eventCatalogFromContract(contract) {
+  if (contract === null || typeof contract !== "object" || !Array.isArray(contract.events)) {
+    throw new Error("Protocol event contract is invalid");
+  }
+  const names = new Set();
+  return contract.events.map((entry) => {
+    if (
+      entry === null ||
+      typeof entry !== "object" ||
+      typeof entry.name !== "string" ||
+      entry.name.length === 0 ||
+      typeof entry.introduced_in !== "string" ||
+      entry.introduced_in.length === 0 ||
+      names.has(entry.name)
+    ) {
+      throw new Error("Protocol event contract is invalid");
+    }
+    names.add(entry.name);
+    return { name: entry.name, introduced_in: entry.introduced_in };
+  });
 }
 
 await mkdir(outputRoot, { recursive: true });

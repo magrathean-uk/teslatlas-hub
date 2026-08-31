@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { FetchTransport, type FetchImplementation } from "../../src/http/fetch-transport.js";
 import {
   InvalidSseCheckpointError,
+  InvalidSseProtocolVersionError,
   SseContentTypeError,
   SseHttpError,
   subscribeToSse,
@@ -76,6 +77,29 @@ describe("SSE subscription", () => {
     await iterator.return?.();
 
     expect(saved).toEqual([]);
+  });
+
+  it("does not leak a reader-cancel failure when the consumer returns early", async () => {
+    let fetchCalls = 0;
+    let reconnects = 0;
+    const transport = transportWith(async () => {
+      fetchCalls += 1;
+      return cancelFailingEventStreamResponse();
+    });
+    const iterator = subscribeToSse({
+      transport,
+      path: "/events",
+      reconnect: () => {
+        reconnects += 1;
+        return 0;
+      },
+      sleep: async () => undefined,
+    })[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({ value: { data: "first" }, done: false });
+    await expect(iterator.return?.()).resolves.toMatchObject({ done: true });
+    expect(fetchCalls).toBe(1);
+    expect(reconnects).toBe(0);
   });
 
   it("commits an ID-only block because it has no consumer event", async () => {
@@ -281,6 +305,75 @@ describe("SSE subscription", () => {
     },
   );
 
+  it("rejects a non-ByteString checkpoint before Header construction or Fetch", async () => {
+    let calls = 0;
+    const checkpoint: SseCheckpointStore = {
+      load: () => "event-Ā",
+      save: () => undefined,
+    };
+    const transport = transportWith(async () => {
+      calls += 1;
+      return eventStreamResponse("");
+    });
+
+    const error = await collectError(subscribeToSse({ transport, path: "/events", checkpoint }));
+
+    expect(error).toBeInstanceOf(InvalidSseCheckpointError);
+    expect(error).not.toHaveProperty("cause");
+    expect(String(error)).not.toContain("event-Ā");
+    expect(calls).toBe(0);
+  });
+
+  it.each(["1.Ā.0", Symbol("protocol-version-secret")])(
+    "rejects a forged non-ByteString protocol version %s before Header construction or Fetch",
+    async (protocolVersion) => {
+      let calls = 0;
+      const transport = transportWith(async () => {
+        calls += 1;
+        return eventStreamResponse("");
+      });
+
+      const error = await collectError(
+        subscribeToSse({
+          transport,
+          path: "/events",
+          protocolVersion: protocolVersion as unknown as string,
+        }),
+      );
+
+      expect(error).toBeInstanceOf(InvalidSseProtocolVersionError);
+      expect(error).not.toHaveProperty("cause");
+      expect(String(error)).not.toContain("secret");
+      expect(calls).toBe(0);
+    },
+  );
+
+  it("accepts safe ByteString checkpoint and protocol-version values", async () => {
+    let seenHeaders = new Headers();
+    const checkpoint: SseCheckpointStore = {
+      load: () => "event-é",
+      save: () => undefined,
+    };
+    const transport = transportWith(async (_input, init) => {
+      seenHeaders = new Headers(init?.headers);
+      return eventStreamResponse("data: ok\n\n");
+    });
+
+    await expect(
+      take(
+        subscribeToSse({
+          transport,
+          path: "/events",
+          checkpoint,
+          protocolVersion: "1.2.0",
+        }),
+        1,
+      ),
+    ).resolves.toHaveLength(1);
+    expect(seenHeaders.get("last-event-id")).toBe("event-é");
+    expect(seenHeaders.get("teslatlas-protocol-version")).toBe("1.2.0");
+  });
+
   it("does not expose a credential-bearing checkpoint-store failure", async () => {
     const checkpoint: SseCheckpointStore = {
       load: () => {
@@ -313,6 +406,21 @@ function eventStreamResponse(
     headers.set("Content-Type", "text/event-stream");
   }
   return new Response(body, { status: 200, headers });
+}
+
+function cancelFailingEventStreamResponse(): Response {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("data: first\n\n"));
+      },
+      cancel() {
+        return Promise.reject(new Error("Bearer cancel-secret"));
+      },
+    }),
+    { headers: { "Content-Type": "text/event-stream" } },
+  );
 }
 
 async function collect(events: AsyncIterable<SseEvent>): Promise<SseEvent[]> {

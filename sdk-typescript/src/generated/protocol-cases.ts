@@ -2824,8 +2824,10 @@ export const protocolCases: readonly unknown[] = Object.freeze([
         "step_id": "terminal"
       }
     ]
-  },
-  {
+  }
+]);
+export const protocolCaseBodies: Readonly<Record<string, unknown>> = Object.freeze({
+  "examples/command-job.json": {
     "command_id": "command_demo_0001",
     "vehicle_id": "vehicle_demo_alpha",
     "command": "set_charge_limit",
@@ -2847,7 +2849,7 @@ export const protocolCases: readonly unknown[] = Object.freeze([
       "self": "/v1/commands/command_demo_0001"
     }
   },
-  {
+  "examples/current-state.json": {
     "resource_type": "current_state",
     "vehicle_id": "vehicle_demo_alpha",
     "observed_at": "2026-08-30T12:00:00.000Z",
@@ -2877,7 +2879,7 @@ export const protocolCases: readonly unknown[] = Object.freeze([
       "issues": []
     }
   },
-  {
+  "examples/discovery.json": {
     "hub_id": "urn:uuid:018f18d2-6f45-7b3c-8a91-3c7286a10d42",
     "protocol": {
       "current_version": "1.2.0",
@@ -3016,7 +3018,7 @@ export const protocolCases: readonly unknown[] = Object.freeze([
       "idempotency_retention_seconds": 86400
     }
   },
-  {
+  "examples/drives-page.json": {
     "resource_type": "drive_page",
     "items": [
       {
@@ -3066,7 +3068,7 @@ export const protocolCases: readonly unknown[] = Object.freeze([
     "snapshot_revision": "snapshot_demo_0042",
     "generated_at": "2026-08-30T12:31:00.000Z"
   },
-  {
+  "examples/metadata-record.json": {
     "metadata_id": "metadata_demo_note_0001",
     "vehicle_id": "vehicle_demo_alpha",
     "kind": "note",
@@ -3093,7 +3095,7 @@ export const protocolCases: readonly unknown[] = Object.freeze([
       }
     ]
   },
-  {
+  "examples/vehicles-page.json": {
     "resource_type": "vehicle_page",
     "items": [
       {
@@ -3108,5 +3110,59 @@ export const protocolCases: readonly unknown[] = Object.freeze([
     "next_cursor": null,
     "snapshot_revision": "snapshot_demo_0042",
     "generated_at": "2026-08-30T12:00:01.250Z"
+  }
+});
+export const protocolEventCatalog: readonly unknown[] = Object.freeze([
+  {
+    "name": "observation.admitted",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "vehicle.current.changed",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "drive.started",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "drive.updated",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "drive.ended",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "charge.started",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "charge.updated",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "charge.ended",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "state.changed",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "software_update.changed",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "data_quality.changed",
+    "introduced_in": "1.0.0"
+  },
+  {
+    "name": "command.changed",
+    "introduced_in": "1.1.0"
+  },
+  {
+    "name": "metadata.changed",
+    "introduced_in": "1.2.0"
   }
 ]);

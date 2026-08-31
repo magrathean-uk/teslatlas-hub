@@ -70,7 +70,7 @@
     "schemas/sse-contract.schema.json": "16def7c35263fb52339369130b618a2e626f909362f3be8542fd60b4845df4e8"
   },
   "generated": {
-    "src/generated/protocol-cases.ts": "d6d8407fe4b083a0cca4d56f1bf1d0a75daaafe9d49ecc9bc2c5313d910f9951",
+    "src/generated/protocol-cases.ts": "5cb96f66f9d441da12cf64f695ef088e0866596c9fcf9f20ac0378fac34eedb0",
     "src/generated/protocol.ts": "658b521763cafa7bfbe3c147c080feb092dda23aecf4b19dce83e7f716d65782",
     "src/generated/validators.ts": "4f2d41ffb15b6fcb67768d8afaf16c0e0d765af2754aa4c2f0c013f31f802146"
   },

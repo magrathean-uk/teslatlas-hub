@@ -126,6 +126,41 @@ describe("read response decoder", () => {
     expect(String(error)).not.toContain("must-not-leak");
   });
 
+  it("derives retry fields from a retryable problem and declared Retry-After header only", async () => {
+    const retryableProblem = {
+      ...problem,
+      status: 429,
+      code: "concurrency_limit",
+      retryable: true,
+    };
+    const retryable = await captureError(
+      decodeReadResponse<CurrentState>(
+        Response.json(retryableProblem, {
+          status: 429,
+          headers: {
+            "Content-Type": "application/problem+json",
+            "Retry-After": "1",
+          },
+        }),
+        validateCurrentState,
+        "validateCurrentState",
+      ),
+    );
+    const nonRetryable = await captureError(
+      decodeReadResponse<CurrentState>(
+        Response.json(problem, {
+          status: 400,
+          headers: { "Content-Type": "application/problem+json" },
+        }),
+        validateCurrentState,
+        "validateCurrentState",
+      ),
+    );
+
+    expect(retryable).toMatchObject({ retryable: true, retryAfterSeconds: 1 });
+    expect(nonRetryable).toMatchObject({ retryable: false, retryAfterSeconds: undefined });
+  });
+
   it("rejects wrong media types, malformed JSON, and mismatched problem status", async () => {
     await expect(
       decodeReadResponse<CurrentState>(

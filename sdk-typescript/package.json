@@ -59,12 +59,13 @@
     "protocol:generate": "node scripts/generate-protocol.mjs",
     "protocol:sync": "node scripts/sync-protocol.mjs",
     "pretest:unit": "npm run build",
-    "test": "npm run test:unit && npm run test:conformance",
+    "test": "npm run test:unit && npm run test:conformance && npm run test:protocol",
     "test:browser": "vitest run --project browser-conformance",
     "test:conformance": "vitest run --project node-conformance --project browser-conformance",
+    "test:protocol": "vitest run --project protocol-cases",
     "test:unit": "vitest run --project unit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test && npm run example:node && npm run pack:check"
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run protocol:check && npm run build && npm run test && npm run example:node && npm run pack:check"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",

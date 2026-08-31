@@ -165,6 +165,38 @@ describe("typed command operations", () => {
     expect(fetchCalls).toBe(0);
   });
 
+  it("uses descriptor-advertised command capabilities across negotiated profiles", async () => {
+    let authorizationCalls = 0;
+    let fetchCalls = 0;
+    const client = createClient(
+      [],
+      async () => {
+        fetchCalls += 1;
+        return Response.json(commandJob, {
+          status: 202,
+          headers: {
+            ETag: 'W/"command-1"',
+            Location: "/v1/commands/command_demo_0001",
+          },
+        });
+      },
+      descriptor,
+      () => {
+        authorizationCalls += 1;
+        return "Bearer caller-owned";
+      },
+      "1.0.0",
+    );
+
+    await expect(
+      client.createCommand(commandRequest, {
+        idempotencyKey: asIdempotencyKey("77777777-7777-4777-8777-777777777777"),
+      }),
+    ).resolves.toMatchObject({ metadata: { status: 202 } });
+    expect(authorizationCalls).toBe(1);
+    expect(fetchCalls).toBe(1);
+  });
+
   it("rejects omitted or null command options before authorization and Fetch", async () => {
     let authorizationCalls = 0;
     let fetchCalls = 0;
@@ -369,10 +401,11 @@ function createClient(
   },
   sessionDescriptor: HubDescriptor = descriptor,
   authorization: () => string = () => "Bearer caller-owned",
+  protocolVersion: ClientSession["protocolVersion"] = "1.2.0",
 ): TeslatlasClient {
   const session: ClientSession = {
     descriptor: sessionDescriptor,
-    protocolVersion: "1.2.0",
+    protocolVersion,
     discoveryTransport: new FetchTransport({ baseUrl: "https://hub.example.invalid", fetch }),
     apiTransport: new FetchTransport({
       baseUrl: "https://api.example.invalid",

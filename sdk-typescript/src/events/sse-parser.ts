@@ -4,6 +4,14 @@ export interface SseEvent {
   readonly lastEventId: string;
 }
 
+/** @internal */
+export class SseStreamReadError extends Error {
+  constructor() {
+    super("SSE stream read failed");
+    this.name = "SseStreamReadError";
+  }
+}
+
 export type SseStreamItem =
   | ({ readonly type: "event" } & SseEvent)
   | { readonly type: "retry"; readonly milliseconds: number }
@@ -19,12 +27,22 @@ export async function* parseSseStream(
 ): AsyncIterable<SseStreamItem> {
   const parser = new IncrementalSseParser(options.initialLastEventId ?? "");
   const decoder = new TextDecoder();
-  const reader = stream.getReader();
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = stream.getReader();
+  } catch {
+    throw new SseStreamReadError();
+  }
   let completed = false;
 
   try {
     while (true) {
-      const result = await reader.read();
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch {
+        throw new SseStreamReadError();
+      }
       if (result.done) {
         completed = true;
         break;
@@ -37,7 +55,9 @@ export async function* parseSseStream(
     yield* parser.takeItems();
   } finally {
     if (!completed) {
-      await reader.cancel();
+      try {
+        await reader.cancel();
+      } catch {}
     }
     reader.releaseLock();
   }

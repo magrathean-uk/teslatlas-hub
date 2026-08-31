@@ -87,6 +87,7 @@ import {
   type RequestOptions,
   type WriteResult,
 } from "./operations.js";
+import { streamProtocolEvents, type StreamEventsOptions } from "../events/protocol-subscription.js";
 
 type QueryValue = string | number | OpaqueCursor | undefined;
 type QueryValues = Readonly<Record<string, QueryValue>>;
@@ -106,6 +107,12 @@ export class TeslatlasClient {
 
   get protocolVersion(): SupportedProtocolVersion {
     return this.#session.protocolVersion;
+  }
+
+  streamEvents(
+    options: StreamEventsOptions = {},
+  ): AsyncIterable<import("../protocol/models.js").ProtocolEvent> {
+    return streamProtocolEvents(this.#session, options);
   }
 
   async discoverHub(options: ConditionalReadOptions = {}): Promise<ReadResult<HubDescriptor>> {

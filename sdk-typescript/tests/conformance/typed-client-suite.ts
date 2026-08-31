@@ -5,6 +5,9 @@ import commandRequest from "../../protocol/source/examples/command-request.json"
 import currentState from "../../protocol/source/examples/current-state.json" with { type: "json" };
 import discovery from "../../protocol/source/examples/discovery.json" with { type: "json" };
 import drives from "../../protocol/source/examples/drives-page.json" with { type: "json" };
+import eventEnvelope from "../../protocol/source/examples/event-envelope.json" with {
+  type: "json",
+};
 import metadataRecord from "../../protocol/source/examples/metadata-record.json" with {
   type: "json",
 };
@@ -134,6 +137,48 @@ export function defineTypedClientConformanceSuite(
         code: "invalid_cursor",
         status: 400,
       });
+    });
+
+    it("streams the same validated protocol event with the closed wire request", async () => {
+      const observed: Array<{
+        path: string;
+        authorization: string | null;
+        version: string | null;
+      }> = [];
+      const client = await sdk.createClient(
+        options(async (input, init) => {
+          const url = new URL(String(input));
+          if (url.pathname === "/.well-known/teslatlas-hub") {
+            return jsonGet(discovery, 'W/"discovery-1"');
+          }
+          observed.push({
+            path: `${url.pathname}${url.search}`,
+            authorization: new Headers(init?.headers).get("authorization"),
+            version: new Headers(init?.headers).get("teslatlas-protocol-version"),
+          });
+          return new Response(
+            `id: ${eventEnvelope.event_id}\nevent: ${eventEnvelope.event_type}\ndata: ${JSON.stringify(eventEnvelope)}\n\n`,
+            { headers: { "Content-Type": "text/event-stream" } },
+          );
+        }),
+      );
+
+      const iterator = client
+        .streamEvents({
+          vehicleId: "vehicle_demo_alpha",
+          eventTypes: ["vehicle.current.changed"],
+        })
+        [Symbol.asyncIterator]();
+      await expect(iterator.next()).resolves.toMatchObject({ value: eventEnvelope, done: false });
+      await iterator.return?.();
+
+      expect(observed).toEqual([
+        {
+          path: "/v1/events?vehicle_id=vehicle_demo_alpha&event_type=vehicle.current.changed",
+          authorization: "Bearer runtime",
+          version: "1.2.0",
+        },
+      ]);
     });
 
     it("runs the 1.1 command-idempotency receipt through the typed method", async () => {

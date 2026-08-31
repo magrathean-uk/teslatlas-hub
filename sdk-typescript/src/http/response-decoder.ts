@@ -14,6 +14,8 @@ import { isStrongEntityTag } from "./strong-etag.js";
 
 const protocolVersionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
 const safeLocationBase = "https://teslatlas-location.invalid";
+const retryAfterPattern = /^(0|[1-9][0-9]*)$/u;
+const maximumRetryAfterSeconds = 86_400;
 
 interface ResponseMetadataRequirements {
   readonly requireEntityTag?: boolean;
@@ -61,7 +63,7 @@ export async function decodeReadResponse<T>(
     };
   }
 
-  return decodeProblemResponse(response, signal);
+  return decodeProtocolProblemResponse(response, signal);
 }
 
 export async function decodeWriteResponse<T>(
@@ -74,7 +76,7 @@ export async function decodeWriteResponse<T>(
   if (response.status === requirements.successStatus) {
     return decodeJsonSuccess(response, validator, validatorName, signal, requirements);
   }
-  return decodeProblemResponse(response, signal);
+  return decodeProtocolProblemResponse(response, signal);
 }
 
 async function decodeJsonSuccess<T>(
@@ -96,7 +98,8 @@ async function decodeJsonSuccess<T>(
   };
 }
 
-async function decodeProblemResponse(
+/** @internal */
+export async function decodeProtocolProblemResponse(
   response: Response,
   signal: AbortSignal | undefined,
 ): Promise<never> {
@@ -121,19 +124,41 @@ async function decodeProblemResponse(
   }
 
   try {
+    const retryAfterSeconds = readRetryAfterSeconds(
+      response,
+      problem.retryable,
+      problem.retry_after_seconds,
+    );
     throw new ProtocolHttpError({
       code: asProtocolErrorCode(problem.code),
       status: problem.status,
       requestId: asSafeRequestId(problem.request_id),
       retryable: problem.retryable,
-      ...(problem.retry_after_seconds === undefined
-        ? {}
-        : { retryAfterSeconds: problem.retry_after_seconds }),
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
     });
   } catch (error) {
     if (error instanceof ProtocolHttpError) throw error;
     throw new ProtocolValidationError("validateProblem.safeFields");
   }
+}
+
+function readRetryAfterSeconds(
+  response: Response,
+  retryable: boolean,
+  fallback: number | undefined,
+): number | undefined {
+  if (!retryable) return undefined;
+  const header = response.headers.get("Retry-After");
+  if (header !== null) {
+    if (!retryAfterPattern.test(header))
+      throw new ProtocolValidationError("validateProblem.retryAfter");
+    const parsed = Number(header);
+    if (!Number.isSafeInteger(parsed) || parsed > maximumRetryAfterSeconds) {
+      throw new ProtocolValidationError("validateProblem.retryAfter");
+    }
+    return parsed;
+  }
+  return fallback;
 }
 
 function readResponseMetadata(
