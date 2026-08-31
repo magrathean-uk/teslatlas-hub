@@ -15,7 +15,7 @@ import vehicles from "../../protocol/source/examples/vehicles-page.json" with { 
 import { describe, expect, it } from "vitest";
 import { TeslatlasClient } from "../../src/client/client.js";
 import type { ClientSession } from "../../src/client/types.js";
-import { MissingCapabilityError } from "../../src/core/errors.js";
+import { MissingCapabilityError, ProtocolValidationError } from "../../src/core/errors.js";
 import { asOpaqueCursor, type EntityTag } from "../../src/core/opaque-values.js";
 import { FetchTransport, type FetchImplementation } from "../../src/http/fetch-transport.js";
 import type { HubDescriptor } from "../../src/protocol/models.js";
@@ -62,6 +62,23 @@ describe("typed read operations", () => {
         authorization: "Bearer caller-owned",
         protocolVersion: "1.2.0",
       });
+    }
+  });
+
+  it("requires an ordinary ETag on every Task 3 JSON read", async () => {
+    const validClient = createClient([]);
+    for (const [method] of reads) {
+      await expect(invokeRead(validClient, method)).resolves.toBeUndefined();
+    }
+
+    const clientWithoutEtags = createClient([], descriptor, async (input) => {
+      const url = new URL(String(input));
+      return Response.json(bodyForPath(url.pathname));
+    });
+    for (const [method] of reads) {
+      await expect(invokeRead(clientWithoutEtags, method)).rejects.toBeInstanceOf(
+        ProtocolValidationError,
+      );
     }
   });
 

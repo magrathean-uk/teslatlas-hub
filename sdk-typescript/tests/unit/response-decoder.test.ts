@@ -32,6 +32,24 @@ describe("read response decoder", () => {
     }
   });
 
+  it("requires an ordinary ETag on every JSON 200 response", async () => {
+    await expect(
+      decodeReadResponse<CurrentState>(
+        Response.json(currentState, { headers: { ETag: 'W/"revision-8"' } }),
+        validateCurrentState,
+        "validateCurrentState",
+      ),
+    ).resolves.toMatchObject({ kind: "modified", metadata: { etag: 'W/"revision-8"' } });
+
+    await expect(
+      decodeReadResponse<CurrentState>(
+        Response.json(currentState),
+        validateCurrentState,
+        "validateCurrentState",
+      ),
+    ).rejects.toBeInstanceOf(ProtocolValidationError);
+  });
+
   it("maps an empty 304 only when it carries a valid ETag", async () => {
     await expect(
       decodeReadResponse<CurrentState>(

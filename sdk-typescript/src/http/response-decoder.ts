@@ -56,9 +56,7 @@ export async function decodeReadResponse<T>(
         validator,
         validatorName,
         signal,
-        requirements.requireStrongEntityTag === true
-          ? { requireEntityTag: true, requireStrongEntityTag: true }
-          : {},
+        metadataRequirements,
       )),
     };
   }

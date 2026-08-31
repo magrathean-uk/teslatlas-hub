@@ -349,6 +349,8 @@ export class TeslatlasClient {
       validateMetadataReplace,
       "validateMetadataReplace",
     );
+    const ifMatch = asStrongEntityTag(options?.ifMatch as string);
+    const signal = options?.signal;
     return this.#write(
       "replaceMetadata",
       validateMetadataRecord,
@@ -356,8 +358,8 @@ export class TeslatlasClient {
       { metadata_id: validateId(metadataId) },
       {
         body: value,
-        ifMatch: asStrongEntityTag(options.ifMatch),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ifMatch,
+        ...(signal === undefined ? {} : { signal }),
       },
       { successStatus: 200, requireStrongEntityTag: true },
     );
@@ -368,14 +370,16 @@ export class TeslatlasClient {
     options: IfMatchOptions,
   ): Promise<WriteResult<MetadataTombstone>> {
     requireCapability(this.#session.descriptor, "metadata.mutable");
+    const ifMatch = asStrongEntityTag(options?.ifMatch as string);
+    const signal = options?.signal;
     return this.#write(
       "deleteMetadata",
       validateMetadataTombstone,
       "validateMetadataTombstone",
       { metadata_id: validateId(metadataId) },
       {
-        ifMatch: asStrongEntityTag(options.ifMatch),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ifMatch,
+        ...(signal === undefined ? {} : { signal }),
       },
       { successStatus: 200, requireStrongEntityTag: true },
     );
@@ -392,8 +396,9 @@ export class TeslatlasClient {
       "validateCommandRequest",
     );
     validateAdvertisedCommand(this.#session.descriptor, value);
-    const idempotencyKey = asIdempotencyKey(options.idempotencyKey);
-    throwIfAlreadyAborted(options.signal);
+    const idempotencyKey = asIdempotencyKey(options?.idempotencyKey as string);
+    const signal = options?.signal;
+    throwIfAlreadyAborted(signal);
     return this.#writeCommand(
       "createCommand",
       validateCommandJob,
@@ -402,7 +407,7 @@ export class TeslatlasClient {
       {
         body: value,
         idempotencyKey,
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(signal === undefined ? {} : { signal }),
       },
       { successStatus: 202, requireEntityTag: true, requireLocation: true },
     );

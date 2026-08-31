@@ -16,6 +16,7 @@ import {
   validateMetadataCreate,
   validateMetadataReplace,
 } from "../../src/generated/validators.js";
+import { InvalidRequestBodyError } from "../../src/http/request-builder.js";
 import { asStrongEntityTag, type StrongEntityTag } from "../../src/http/strong-etag.js";
 import { FetchTransport, type FetchImplementation } from "../../src/http/fetch-transport.js";
 import type { HubDescriptor, MetadataCreate, MetadataReplace } from "../../src/protocol/models.js";
@@ -191,6 +192,21 @@ describe("typed metadata operations", () => {
     expect(observed[0]?.path).toBe(`/v1/vehicles/vehicle_demo_alpha/metadata?kind=${kind}`);
   });
 
+  it("requires an ordinary ETag on a metadata list 200", async () => {
+    const clientWithEtag = createClient([], async () =>
+      Response.json(metadataPage, { headers: { ETag: 'W/"metadata-page-1"' } }),
+    );
+    await expect(clientWithEtag.listVehicleMetadata("vehicle_demo_alpha")).resolves.toMatchObject({
+      kind: "modified",
+      metadata: { etag: 'W/"metadata-page-1"' },
+    });
+
+    const clientWithoutEtag = createClient([], async () => Response.json(metadataPage));
+    await expect(
+      clientWithoutEtag.listVehicleMetadata("vehicle_demo_alpha"),
+    ).rejects.toBeInstanceOf(ProtocolValidationError);
+  });
+
   it.each([
     [200, 'W/"metadata-weak-1"'],
     [304, 'W/"metadata-weak-1"'],
@@ -246,6 +262,102 @@ describe("typed metadata operations", () => {
     await expect(
       client.createMetadata("vehicle_demo_alpha", metadataCreate),
     ).rejects.toBeInstanceOf(ProtocolValidationError);
+  });
+
+  it("rejects omitted or null metadata write options before authorization and Fetch", async () => {
+    let authorizationCalls = 0;
+    let fetchCalls = 0;
+    const client = createClient(
+      [],
+      async () => {
+        fetchCalls += 1;
+        return Response.json(metadataRecord, {
+          status: 201,
+          headers: {
+            ETag: '"metadata-created-1"',
+            Location: "/v1/metadata/metadata_demo_note_0001",
+          },
+        });
+      },
+      descriptor,
+      () => {
+        authorizationCalls += 1;
+        return "Bearer caller-owned";
+      },
+    );
+    const replaceMetadata = client.replaceMetadata.bind(client) as unknown as (
+      metadataId: string,
+      body: MetadataReplace,
+      options?: unknown,
+    ) => Promise<unknown>;
+    const deleteMetadata = client.deleteMetadata.bind(client) as unknown as (
+      metadataId: string,
+      options?: unknown,
+    ) => Promise<unknown>;
+
+    for (const invoke of [
+      () => replaceMetadata("metadata_demo_note_0001", metadataReplace),
+      () => replaceMetadata("metadata_demo_note_0001", metadataReplace, null),
+      () => deleteMetadata("metadata_demo_note_0001"),
+      () => deleteMetadata("metadata_demo_note_0001", null),
+    ]) {
+      const error = await captureError(invoke());
+      expect(error).toMatchObject({ code: "invalid_strong_entity_tag" });
+      expect(error).not.toBeInstanceOf(TypeError);
+      expect(error).not.toHaveProperty("cause");
+    }
+
+    expect(authorizationCalls).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
+  it("rejects lossy JSON metadata bodies before authorization and Fetch", async () => {
+    let authorizationCalls = 0;
+    let fetchCalls = 0;
+    const client = createClient(
+      [],
+      async () => {
+        fetchCalls += 1;
+        return Response.json(metadataRecord, {
+          status: 201,
+          headers: {
+            ETag: '"metadata-created-1"',
+            Location: "/v1/metadata/metadata_demo_note_0001",
+          },
+        });
+      },
+      descriptor,
+      () => {
+        authorizationCalls += 1;
+        return "Bearer caller-owned";
+      },
+    );
+    const cycle: { self?: unknown } = {};
+    cycle.self = cycle;
+    const symbolKey = Symbol("metadata");
+    const values: readonly unknown[] = [
+      { nested: Number.NaN },
+      { nested: Number.POSITIVE_INFINITY },
+      { nested: Number.NEGATIVE_INFINITY },
+      { nested: undefined },
+      { nested: () => undefined },
+      { nested: Symbol("metadata") },
+      { [symbolKey]: "metadata" },
+      { nested: 1n },
+      cycle,
+    ];
+
+    for (const value of values) {
+      const error = await captureError(
+        client.createMetadata("vehicle_demo_alpha", { ...metadataCreate, value } as MetadataCreate),
+      );
+      expect(error).toBeInstanceOf(InvalidRequestBodyError);
+      expect(error).toMatchObject({ code: "invalid_request_body" });
+      expect(error).not.toHaveProperty("cause");
+    }
+
+    expect(authorizationCalls).toBe(0);
+    expect(fetchCalls).toBe(0);
   });
 
   it("rejects invalid metadata inputs and absent capability before authorization or Fetch", async () => {
@@ -324,4 +436,13 @@ function observe(
   };
   observed.push(request);
   return request;
+}
+
+async function captureError(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+    return undefined;
+  } catch (error) {
+    return error;
+  }
 }

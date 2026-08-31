@@ -60,7 +60,7 @@ export function defineTypedClientConformanceSuite(
       const client = await sdk.createClient(
         options(async (input) => {
           const path = new URL(String(input)).pathname;
-          if (path === "/.well-known/teslatlas-hub") return Response.json(discovery);
+          if (path === "/.well-known/teslatlas-hub") return jsonGet(discovery, 'W/"discovery-1"');
           currentCalls += 1;
           if (currentCalls === 1) {
             return Response.json(currentState, { headers: { ETag: 'W/"current-1"' } });
@@ -88,14 +88,19 @@ export function defineTypedClientConformanceSuite(
       const client = await sdk.createClient(
         options(async (input) => {
           const url = new URL(String(input));
-          if (url.pathname === "/.well-known/teslatlas-hub") return Response.json(discovery);
+          if (url.pathname === "/.well-known/teslatlas-hub") {
+            return jsonGet(discovery, 'W/"discovery-1"');
+          }
           paths.push(`${url.pathname}${url.search}`);
           historyCalls += 1;
-          return Response.json({
-            ...drives,
-            items: historyCalls === 1 ? drives.items : [],
-            next_cursor: historyCalls === 1 ? "opaque_cursor_0002" : null,
-          });
+          return jsonGet(
+            {
+              ...drives,
+              items: historyCalls === 1 ? drives.items : [],
+              next_cursor: historyCalls === 1 ? "opaque_cursor_0002" : null,
+            },
+            'W/"history-1"',
+          );
         }),
       );
 
@@ -116,7 +121,7 @@ export function defineTypedClientConformanceSuite(
       const client = await sdk.createClient(
         options(async (input) => {
           const path = new URL(String(input)).pathname;
-          if (path === "/.well-known/teslatlas-hub") return Response.json(discovery);
+          if (path === "/.well-known/teslatlas-hub") return jsonGet(discovery, 'W/"discovery-1"');
           return Response.json(problem, {
             status: 400,
             headers: { "Content-Type": "application/problem+json" },
@@ -136,7 +141,9 @@ export function defineTypedClientConformanceSuite(
       const client = await sdk.createClient(
         options(async (input, init) => {
           const url = new URL(String(input));
-          if (url.pathname === "/.well-known/teslatlas-hub") return Response.json(discovery);
+          if (url.pathname === "/.well-known/teslatlas-hub") {
+            return jsonGet(discovery, 'W/"discovery-1"');
+          }
           observed.push({
             method: init?.method ?? "GET",
             path: `${url.pathname}${url.search}`,
@@ -173,7 +180,9 @@ export function defineTypedClientConformanceSuite(
       const client = await sdk.createClient(
         options(async (input, init) => {
           const url = new URL(String(input));
-          if (url.pathname === "/.well-known/teslatlas-hub") return Response.json(discovery);
+          if (url.pathname === "/.well-known/teslatlas-hub") {
+            return jsonGet(discovery, 'W/"discovery-1"');
+          }
           observed.push({
             method: init?.method ?? "GET",
             path: `${url.pathname}${url.search}`,
@@ -231,8 +240,14 @@ function router(
       authorization: new Headers(init?.headers).get("authorization"),
       version: new Headers(init?.headers).get("teslatlas-protocol-version"),
     });
-    if (url.pathname === "/.well-known/teslatlas-hub") return Response.json(discovery);
-    if (url.pathname === "/v1/vehicles") return Response.json(vehicles);
+    if (url.pathname === "/.well-known/teslatlas-hub") {
+      return jsonGet(discovery, 'W/"discovery-1"');
+    }
+    if (url.pathname === "/v1/vehicles") return jsonGet(vehicles, 'W/"vehicles-1"');
     throw new Error(`Unhandled conformance path ${url.pathname}`);
   };
+}
+
+function jsonGet(value: unknown, etag: string): Response {
+  return Response.json(value, { headers: { ETag: etag } });
 }

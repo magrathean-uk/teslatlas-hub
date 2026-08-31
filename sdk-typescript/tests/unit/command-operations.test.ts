@@ -104,6 +104,21 @@ describe("typed command operations", () => {
     ]);
   });
 
+  it("requires an ordinary ETag on a command status 200", async () => {
+    const clientWithEtag = createClient([], async () =>
+      Response.json(commandJob, { headers: { ETag: 'W/"command-1"' } }),
+    );
+    await expect(clientWithEtag.getCommand("command_demo_0001")).resolves.toMatchObject({
+      kind: "modified",
+      metadata: { etag: 'W/"command-1"' },
+    });
+
+    const clientWithoutEtag = createClient([], async () => Response.json(commandJob));
+    await expect(clientWithoutEtag.getCommand("command_demo_0001")).rejects.toBeInstanceOf(
+      ProtocolValidationError,
+    );
+  });
+
   it("preflights malformed command data, descriptor semantics, keys, and capability", async () => {
     let authorizationCalls = 0;
     let fetchCalls = 0;
@@ -145,6 +160,40 @@ describe("typed command operations", () => {
         idempotencyKey: asIdempotencyKey("44444444-4444-4444-8444-444444444444"),
       }),
     ).rejects.toBeInstanceOf(MissingCapabilityError);
+
+    expect(authorizationCalls).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
+  it("rejects omitted or null command options before authorization and Fetch", async () => {
+    let authorizationCalls = 0;
+    let fetchCalls = 0;
+    const client = createClient(
+      [],
+      async () => {
+        fetchCalls += 1;
+        return Response.json(commandJob);
+      },
+      descriptor,
+      () => {
+        authorizationCalls += 1;
+        return "Bearer caller-owned";
+      },
+    );
+    const createCommand = client.createCommand.bind(client) as unknown as (
+      body: CommandRequest,
+      options?: unknown,
+    ) => Promise<unknown>;
+
+    for (const invoke of [
+      () => createCommand(commandRequest),
+      () => createCommand(commandRequest, null),
+    ]) {
+      const error = await captureError(invoke());
+      expect(error).toMatchObject({ code: "invalid_idempotency_key" });
+      expect(error).not.toBeInstanceOf(TypeError);
+      expect(error).not.toHaveProperty("cause");
+    }
 
     expect(authorizationCalls).toBe(0);
     expect(fetchCalls).toBe(0);
