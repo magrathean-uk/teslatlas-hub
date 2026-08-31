@@ -51,7 +51,21 @@ async function generateValidators() {
   const ajv = new Ajv2020({ allErrors: true, code: { esm: true, source: true }, strict: false });
   addFormats(ajv);
   for (const file of schemaFiles) ajv.addSchema(await readJson(join(schemaDirectory, file)));
-  return `// @ts-nocheck\n// @generated\n${standaloneCode(ajv, validatorRefs)}`;
+  const standalone = standaloneCode(ajv, validatorRefs)
+    .replaceAll('require("ajv-formats/dist/formats").fullFormats', "ajvFormats.fullFormats")
+    .replaceAll('require("ajv/dist/runtime/equal").default', "ajvEqualRuntime")
+    .replaceAll('require("ajv/dist/runtime/ucs2length").default', "ajvUcs2LengthRuntime");
+  if (standalone.includes("require(")) {
+    throw new Error("Generated validators must not contain CommonJS runtime helpers");
+  }
+  return `// @ts-nocheck
+// @generated
+import ajvFormats from "ajv-formats/dist/formats.js";
+import ajvEqual from "ajv/dist/runtime/equal.js";
+import ajvUcs2Length from "ajv/dist/runtime/ucs2length.js";
+const ajvEqualRuntime = typeof ajvEqual === "function" ? ajvEqual : ajvEqual.default;
+const ajvUcs2LengthRuntime = typeof ajvUcs2Length === "function" ? ajvUcs2Length : ajvUcs2Length.default;
+${standalone}`;
 }
 
 function collectExamplePaths(value, paths = new Set()) {

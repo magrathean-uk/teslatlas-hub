@@ -72,7 +72,7 @@
   "generated": {
     "src/generated/protocol-cases.ts": "d6d8407fe4b083a0cca4d56f1bf1d0a75daaafe9d49ecc9bc2c5313d910f9951",
     "src/generated/protocol.ts": "658b521763cafa7bfbe3c147c080feb092dda23aecf4b19dce83e7f716d65782",
-    "src/generated/validators.ts": "0e57b25a2b96facd83e2536301122a6fa922b9a35d2ecc1d84f362a726f7ab73"
+    "src/generated/validators.ts": "4f2d41ffb15b6fcb67768d8afaf16c0e0d765af2754aa4c2f0c013f31f802146"
   },
   "generator": {
     "package": "openapi-typescript",
