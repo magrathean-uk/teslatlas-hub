@@ -5,6 +5,8 @@ fn owner_api_model_codes_are_normalized_like_teslamate() {
     assert_eq!(normalize_tesla_model_code("model3"), "3");
     assert_eq!(normalize_tesla_model_code("models2"), "S");
     assert_eq!(normalize_tesla_model_code("modely"), "Y");
+    assert_eq!(normalize_tesla_model_code("cybertruck"), "Cybertruck");
+    assert_eq!(normalize_tesla_model_code("cybertruckpremium"), "Cybertruck");
     assert_eq!(normalize_tesla_model_code("Model 3"), "3");
 }
 
@@ -48,7 +50,7 @@ fn teslamate_suspend_default_matches_creation_conditions() {
     );
     assert_eq!(
         teslamate_suspend_min_default(Some("Cybertruck"), None, None),
-        None
+        Some(12)
     );
 }
 

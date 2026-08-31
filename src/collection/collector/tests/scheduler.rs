@@ -393,7 +393,7 @@ fn safe_idle_vehicle_enters_and_leaves_suspended_cadence() {
             .get(&vehicle_id)
             .expect("scheduled vehicle")
             .next_poll,
-        now + Duration::from_secs(45 * 60)
+        now + Duration::from_secs(25 * 60)
     );
 
     let resumed = scheduler
@@ -401,7 +401,7 @@ fn safe_idle_vehicle_enters_and_leaves_suspended_cadence() {
             vehicle_id,
             PollPhase::Online,
             false,
-            now + Duration::from_secs(45 * 60),
+            now + Duration::from_secs(25 * 60),
         )
         .expect("online transition");
     assert_eq!(resumed.state, "online");
@@ -454,7 +454,7 @@ fn stream_health_switches_between_streaming_and_fallback_sleep_cadence() {
     assert_eq!(suspended.state, "suspended");
     assert_eq!(
         scheduler.vehicles[&vehicle_id].next_poll,
-        streaming_idle + Duration::from_secs(30 * 60)
+        streaming_idle + Duration::from_secs(10 * 60)
     );
 
     let fallback_at = streaming_idle + Duration::from_secs(1);

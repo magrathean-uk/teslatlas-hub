@@ -50,6 +50,7 @@ Fleet locks, and byte-compare every packaged component.
 
 When a package declares a standard SPDX expression but its archive omits the
 licence text, release evidence may use only the pinned canonical SPDX corpus in
-`LICENSES/`, as documented by `docs/legal/license-corpus.md`. A missing identifier or text
-blocks release. The fallback does not choose a licence alternative or replace
-package-specific notices.
+`LICENSES/`, as documented by
+[Canonical dependency licence texts](license-corpus.md). A missing identifier
+or text blocks release. The fallback does not choose a licence alternative or
+replace package-specific notices.

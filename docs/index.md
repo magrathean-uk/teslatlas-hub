@@ -1,16 +1,19 @@
 # Teslatlas Hub documentation
 
-Teslatlas Hub v1.0.0-beta.1 supports Apple-silicon macOS 13 or later and
+Teslatlas Hub v1.0.0-beta.2 supports Apple-silicon macOS 13 or later and
 Debian 13 on amd64 or ARM64.
 
-This version is the first public beta. Its signed tag, platform artifacts, exact
-source, and evidence set form one atomic GitHub prerelease. A missing tag page
-or required asset means the download is incomplete and must not be installed.
+Created by György Bolyki. Published and maintained by MAGRATHEAN UK LTD.
+
+This is an unpublished beta candidate. Install only after its signed tag,
+platform artifacts, exact source, and evidence set form one complete GitHub
+prerelease.
 
 ## Start here
 
 | Task | Guide |
 |---|---|
+| Choose a host, credential path, network boundary, and recovery plan | [Getting started](guides/getting-started.md) |
 | Install the Mac app and service | [Install on macOS](guides/install-macos.md) |
 | Install the Debian package | [Install on Debian](guides/install-debian.md) |
 | Configure collection, TLS, geocoding, or terrain | [Configuration](guides/configuration.md) |
@@ -32,6 +35,9 @@ or required asset means the download is incomplete and must not be installed.
 
 ## Verify or reproduce a release
 
+- [v1.0.0-beta.2 candidate notes](releases/release-notes-v1.0.0-beta.2.md)
+- [v1.0.0-beta.1 historical notes](releases/release-notes-v1.0.0-beta.1.md)
+- [Changelog](releases/changelog.md)
 - [Verify a release](releases/verification.md)
 - [Release signing keys](releases/release-keys.md)
 - [Release process](releases/releasing.md)
@@ -41,6 +47,8 @@ or required asset means the download is incomplete and must not be installed.
 
 ## Legal and project policies
 
+- [Authorship and stewardship](governance/authorship-and-stewardship.md)
+- [Citation metadata](../CITATION.cff)
 - [Legal framework](legal/overview.md)
 - [Licence](../LICENSE)
 - [Additional terms](legal/additional-terms.md)
@@ -59,6 +67,7 @@ or required asset means the download is incomplete and must not be installed.
 - [Dependency policy](legal/dependency-policy.md)
 - [Branding guidelines](brand/branding-guidelines.md)
 - [Repository settings](maintainers/github-repository-settings.md)
+- [Documentation style](maintainers/documentation-style.md)
 
 Tagged release documentation controls for that release. `main` may describe a
 newer development state.

@@ -784,6 +784,78 @@ impl HubStore {
             .map_err(StoreError::DeserializeLifecycleRow)
     }
 
+    /// One bounded newest-first page of completed drives in a half-open UTC
+    /// millisecond range. The extra row lets the HTTP layer issue a cursor
+    /// without a second count query.
+    pub fn materialised_drives_page(
+        &self,
+        vehicle_id: Uuid,
+        from_ms: i64,
+        to_ms: i64,
+        before: Option<(i64, i64)>,
+        limit: u32,
+    ) -> Result<Vec<crate::hub_pack::ProjectionDrive>, StoreError> {
+        const MAXIMUM_FETCH: u32 = 501;
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if from_ms < 0 || to_ms < 0 || from_ms >= to_ms {
+            return Err(StoreError::InvalidDriveQueryRange);
+        }
+        if limit == 0 || limit > MAXIMUM_FETCH {
+            return Err(StoreError::InvalidDriveQueryLimit(limit));
+        }
+        if before.is_some_and(|(before_start_ms, before_drive_id)| {
+            before_start_ms < from_ms || before_start_ms >= to_ms || before_drive_id <= 0
+        }) {
+            return Err(StoreError::InvalidDriveQueryCursor);
+        }
+        let (before_start_ms, before_drive_id) = before.unwrap_or((i64::MAX, i64::MAX));
+        let connection = self.open_read_only_connection()?;
+        let exists = connection
+            .query_row(
+                "SELECT 1 FROM vehicles
+                 WHERE vehicle_id = ?1
+                   AND EXISTS (
+                       SELECT 1 FROM sync_manifests
+                       WHERE sync_manifests.vehicle_id = vehicles.vehicle_id
+                   )",
+                params![vehicle_id.to_string()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        if exists.is_none() {
+            return Err(StoreError::UnknownVehicle(vehicle_id));
+        }
+        let mut statement = connection
+            .prepare(PUBLIC_DRIVES_PAGE_SQL)
+            .map_err(StoreError::Query)?;
+        statement
+            .query_map(
+                params![
+                    vehicle_id.to_string(),
+                    from_ms,
+                    to_ms,
+                    before_start_ms,
+                    before_drive_id,
+                    i64::from(limit)
+                ],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(StoreError::Query)?
+            .map(|value| {
+                let (stored_drive_id, value) = value.map_err(StoreError::Query)?;
+                let drive: crate::hub_pack::ProjectionDrive = serde_json::from_str(&value)
+                    .map_err(StoreError::DeserializeLifecycleRow)?;
+                if drive.id != stored_drive_id {
+                    return Err(StoreError::InvalidDriveProjectionIdentity);
+                }
+                Ok(drive)
+            })
+            .collect()
+    }
+
     /// One bounded page of a drive's positions in TeslaMate GPX order.
     pub fn drive_positions_page(
         &self,

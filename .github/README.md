@@ -9,24 +9,23 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/magrathean-uk/teslatlas-hub/releases"><img alt="GitHub release" src="https://img.shields.io/github/v/release/magrathean-uk/teslatlas-hub?include_prereleases&sort=semver"></a>
-  <a href="../LICENSE"><img alt="AGPL-3.0-only" src="https://img.shields.io/badge/licence-AGPL--3.0--only-b31b1b"></a>
-  <img alt="Rust 1.98" src="https://img.shields.io/badge/Rust-1.98-000000">
-  <img alt="macOS 13+ and Debian 13" src="https://img.shields.io/badge/platforms-macOS%2013%2B%20%7C%20Debian%2013-2563eb">
-</p>
-
-<p align="center">
   <a href="#install">Install</a> ·
+  <a href="../docs/guides/getting-started.md">Getting started</a> ·
   <a href="../docs/index.md">Documentation</a> ·
   <a href="../docs/guides/fleet-setup.md">Fleet setup</a> ·
   <a href="../docs/releases/migration.md">TeslaMate migration</a> ·
   <a href="SECURITY.md">Security</a> ·
-  <a href="../docs/releases/changelog.md">Changelog</a>
+  <a href="../docs/releases/changelog.md">Changelog</a> ·
+  <a href="../CITATION.cff">Cite</a>
+</p>
+
+<p align="center">
+  <sub>Created by <strong>György Bolyki</strong> · Published and maintained by <strong>MAGRATHEAN UK LTD</strong></sub>
 </p>
 
 > [!WARNING]
-> **v1.0.0-beta.1 is the first public beta.** Install only from the complete
-> signed GitHub prerelease and verify every required artifact. Back up Hub data,
+> **v1.0.0-beta.2 is an unpublished beta candidate.** Install only after the complete
+> signed GitHub prerelease is published, and verify every required artifact. Back up Hub data,
 > test recovery, and expect interfaces or storage formats to change before
 > v1.0.0. Do not use Teslatlas Hub for safety-critical, emergency,
 > autonomous-driving, or vehicle-control decisions.
@@ -44,7 +43,7 @@ installations do not need TeslaMate, Grafana, or MQTT.
 | **Two collection paths** | Legacy Owner API polling and streaming, or official Fleet API with native Fleet Telemetry push. |
 | **Multi-vehicle** | Independent identity, collection, state, history, and commands for every configured vehicle. |
 | **Native operation** | AppKit control app and LaunchAgent on Apple silicon; hardened systemd service on Debian amd64 and ARM64. |
-| **Safe migration** | Optional read-only TeslaMate 4.1.1 import with an explicit stopped cutover. |
+| **Safe migration** | Optional read-only TeslaMate 4.2.0+ import with an explicit compatibility acknowledgement and stopped cutover. |
 | **Built for recovery** | Integrity checks, repair, data-only backups, and separately encrypted credential recovery. |
 
 ## Architecture
@@ -56,7 +55,7 @@ flowchart LR
     H --> D[(Local SQLite + immutable packs)]
     D --> S[Authenticated local sync]
     S --> A[Teslatlas client]
-    T[(Optional TeslaMate 4.1.1)] -. read-only migration .-> H
+    T[(Optional TeslaMate 4.2.0+)] -. read-only migration .-> H
 ```
 
 The resident Hub process is the only provider-token owner. Fleet Telemetry is
@@ -104,7 +103,7 @@ diagnostics succeed.
 Choose the `.deb` matching `dpkg --print-architecture`, then:
 
 ```sh
-sudo dpkg -i teslatlas-hub_1.0.0-beta.1_$(dpkg --print-architecture).deb
+sudo dpkg -i teslatlas-hub_1.0.0-beta.2_$(dpkg --print-architecture).deb
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml bootstrap
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
@@ -124,13 +123,13 @@ Xcode 27 and XcodeGen.
 ```sh
 git clone https://github.com/magrathean-uk/teslatlas-hub.git
 cd teslatlas-hub
-git checkout v1.0.0-beta.1 # only after the signed tag is published
 cargo build --locked --release
 ./target/release/teslatlas-hub --version
 ```
 
-Do not build a release from a moving branch. The tag is the immutable source
-identity for published artifacts.
+This untagged candidate can be evaluated from main; it is not an official
+release build. For a published artifact, verify its immutable tag before
+building or installing it.
 
 ## Quick CLI start
 
@@ -188,9 +187,15 @@ See [Operations](../docs/operations/runbook.md),
 
 ## TeslaMate migration
 
-Migration is optional. It reads one operator-controlled TeslaMate 4.1.1
-PostgreSQL snapshot in a read-only transaction and converts supported history
-into Hub storage. It does not start, stop, remove, or modify TeslaMate.
+Migration is optional. It requires a running TeslaMate 4.2.0 or newer whose
+database matches the reviewed v4.2-compatible schema, then reads one
+operator-controlled PostgreSQL snapshot in a read-only transaction and
+converts supported history into Hub storage. Database evidence alone cannot
+prove the running app version, so the operator must confirm it explicitly. Hub
+does not start, stop, remove, or modify TeslaMate.
+
+Before connecting Hub, back up TeslaMate, update it to 4.2.0 or newer, start it
+once, and wait for its database migrations to finish.
 
 At final cutover, stop TeslaMate before granting Hub ownership of the same
 legacy token pair. Never run two services that can refresh those credentials.
@@ -214,6 +219,13 @@ unofficial community tool and is not affiliated with, endorsed by, or supported
 by Tesla, Inc. or the official TeslaMate project. Tesla, TeslaMate, Apple, and
 other names and marks belong to their respective owners. Compatibility
 references are factual and do not imply sponsorship.
+
+## Project leadership
+
+György Bolyki created Teslatlas Hub and leads its architecture and development.
+MAGRATHEAN UK LTD publishes and maintains the official project. See
+[authorship and stewardship](../docs/governance/authorship-and-stewardship.md)
+and [citation metadata](../CITATION.cff).
 
 ## Licence and source
 

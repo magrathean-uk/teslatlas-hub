@@ -1,9 +1,15 @@
 # Release process
 
+> **Historical reference:** the detailed procedure below documents
+> v1.0.0-beta.1. The current v1.0.0-beta.2 source candidate is untagged and
+> unpublished. Signing, notarisation, and publication work are deferred; do
+> not use this procedure to publish beta.2 without a fresh approved release
+> review.
+
 Only an authorised MAGRATHEAN UK LTD maintainer may publish an official release.
 The repository's [release compliance gate](compliance.md) controls.
 
-> **Current status:** v1.0.0-beta.1 is the first public beta. It is valid only as
+> **Historical beta.1 status:** v1.0.0-beta.1 is the first public beta. It is valid only as
 > the complete atomic GitHub prerelease: signed tag, notarised macOS artifacts,
 > native Debian 13 amd64 and ARM64 packages and receipts, exact source, detailed
 > evidence, checksums, and detached signature. The independent release trust

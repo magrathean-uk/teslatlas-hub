@@ -1,10 +1,14 @@
 # Release verification
 
+> **Historical reference:** this verifies a v1.0.0-beta.1 publication set. The
+> current v1.0.0-beta.2 source candidate has no release assets. Signing,
+> notarisation, and publication work are deferred.
+
 Treat a download as an official Teslatlas Hub release only when the signed tag,
 flat release checksums, detailed evidence, provenance signature, native Debian
 receipts, platform signatures, exact source, and legal evidence all verify.
 
-> **Publication status:** v1.0.0-beta.1 is the first public beta. Treat it as
+> **Historical beta.1 publication status:** v1.0.0-beta.1 is the first public beta. Treat it as
 > official only when every named asset is present and the independent trust
 > anchors match the company-controlled publication below.
 

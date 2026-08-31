@@ -5,7 +5,7 @@ import Darwin
 import Foundation
 
 enum HubRelease {
-    static let fallbackVersion = "1.0.0-beta.1"
+    static let fallbackVersion = "1.0.0-beta.2"
     static let sourceRepository = "https://github.com/magrathean-uk/teslatlas-hub"
     static let licenceExpression = "AGPL-3.0-only"
     static var bundledVersion: String {
@@ -20,8 +20,10 @@ enum HubRelease {
             of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
             options: .regularExpression
         ) != nil else { return nil }
-        let tag = "v\(version)"
-        return URL(string: "\(sourceRepository)/releases/tag/\(tag)")
+        if version == fallbackVersion {
+            return URL(string: sourceRepository)
+        }
+        return URL(string: "\(sourceRepository)/releases/tag/v\(version)")
     }
 
     static func licenceURL(for version: String = bundledVersion) -> URL? {
@@ -29,6 +31,9 @@ enum HubRelease {
             of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
             options: .regularExpression
         ) != nil else { return nil }
+        if version == fallbackVersion {
+            return URL(string: "\(sourceRepository)/blob/main/LICENSE")
+        }
         return URL(string: "\(sourceRepository)/blob/v\(version)/LICENSE")
     }
 }
@@ -952,8 +957,15 @@ final class HubController {
     func checkTeslaMateCompatibility(source: String,
                                      carID: String,
                                      passwordFile: String,
+                                     acknowledgeV42CompatibleSchema: Bool,
                                      completion: @escaping (Result<HubTeslaMateCompatibility, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard acknowledgeV42CompatibleSchema else {
+            completion(.failure(HubActionError.commandFailed(
+                "Confirm TeslaMate 4.2.0 or newer before checking compatibility."
+            )))
+            return
+        }
         do {
             try Self.validateMigrationSource(source)
             guard let selectedCarID = Int64(carID), selectedCarID > 0 else {
@@ -964,7 +976,8 @@ final class HubController {
             }
             let arguments = ["--config", configPath.path, "teslamate-check",
                              "--source", source, "--car-id", String(selectedCarID),
-                             "--postgres-password-file", passwordFile]
+                             "--postgres-password-file", passwordFile,
+                             "--acknowledge-v4-2-compatible-schema"]
             commandRunner.run(arguments: arguments) { result in
                 DispatchQueue.main.async {
                     switch result {
@@ -994,10 +1007,17 @@ final class HubController {
                                carID: String,
                                passwordFile: String,
                                encryptionKeyFile: String,
+                               acknowledgeV42CompatibleSchema: Bool,
                                completion: @escaping (Result<Void, Error>) -> Void) {
         HubAppLog.shared.record("import.requested", category: "teslamate_import",
                                 fields: ["capture_mode": "online_snapshot"])
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard acknowledgeV42CompatibleSchema else {
+            completion(.failure(HubActionError.commandFailed(
+                "Confirm TeslaMate 4.2.0 or newer before importing."
+            )))
+            return
+        }
         guard !encryptionKeyFile.isEmpty else {
             completion(.failure(HubActionError.commandFailed(
                 "Choose the TeslaMate ENCRYPTION_KEY file."
@@ -1006,7 +1026,8 @@ final class HubController {
         }
         checkTeslaMateCompatibility(source: source,
                                     carID: carID,
-                                    passwordFile: passwordFile) { [weak self] checkResult in
+                                    passwordFile: passwordFile,
+                                    acknowledgeV42CompatibleSchema: acknowledgeV42CompatibleSchema) { [weak self] checkResult in
             guard let self else { return }
             switch checkResult {
             case let .failure(error):
@@ -1062,7 +1083,8 @@ final class HubController {
                          "--source", source, "--car-id", carID,
                          "--postgres-password-file", passwordFile,
                          "--encryption-key-file", encryptionKeyFile,
-                         "--online-snapshot"]
+                         "--online-snapshot",
+                         "--acknowledge-v4-2-compatible-schema"]
         let finish: (Result<Void, Error>) -> Void = { result in
             DispatchQueue.main.async { completion(result) }
         }
@@ -1142,8 +1164,8 @@ final class HubController {
                   let guidance = root["guidance"] as? String else { continue }
             return HubTeslaMateCompatibility(
                 compatible: status == "compatible"
-                    && reason == "exact_4_1_1"
-                    && required == "4.1.1",
+                    && reason == "v4_2_compatible_schema"
+                    && required == "4.2.0",
                 message: guidance,
                 reasonCode: reason,
                 requiredVersion: required
@@ -1163,19 +1185,25 @@ final class HubController {
         }
     }
 
-    func importTeslaMate(source: String, carID: String, passwordFile: String, encryptionKeyFile: String, completion: @escaping (Result<Void, Error>) -> Void) {
+    func importTeslaMate(source: String,
+                         carID: String,
+                         passwordFile: String,
+                         encryptionKeyFile: String,
+                         acknowledgeV42CompatibleSchema: Bool,
+                         completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
-        do {
-            try Self.validateMigrationSource(source)
-        } catch {
-            completion(.failure(error))
+        guard acknowledgeV42CompatibleSchema else {
+            completion(.failure(HubActionError.commandFailed(
+                "Confirm TeslaMate 4.2.0 or newer before importing from a direct PostgreSQL source."
+            )))
             return
         }
-        prepareOnlineMigration(source: source,
-                               carID: carID,
-                               passwordFile: passwordFile,
-                               encryptionKeyFile: encryptionKeyFile,
-                               completion: completion)
+        importTeslaMateOnline(source: source,
+                              carID: carID,
+                              passwordFile: passwordFile,
+                              encryptionKeyFile: encryptionKeyFile,
+                              acknowledgeV42CompatibleSchema: acknowledgeV42CompatibleSchema,
+                              completion: completion)
     }
 
     static func validateMigrationSource(_ source: String) throws {

@@ -115,6 +115,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         target: nil,
         action: nil
     )
+    private let migrationVersionAcknowledgement = NSButton(
+        checkboxWithTitle: "I confirm this server runs TeslaMate 4.2.0 or newer",
+        target: nil,
+        action: nil
+    )
     private var migrationConnectButton: NSButton?
     private var migrationKeyViews: [NSView] = []
     private let migrationSource = NSTextField(string: "")
@@ -247,6 +252,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         state = Self.initialState(route: route)
         errorMessage = nil
         compatibility = nil
+        migrationVersionAcknowledgement.state = .off
+        migrationSession?.close()
+        migrationSession = nil
+        connectedMigrationIdentity = nil
         checks = []
         verificationFinished = false
         handoverAcknowledged = false
@@ -277,6 +286,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         migrationAuthentication.action = #selector(migrationAuthenticationChanged)
         migrationAuthentication.controlSize = .large
         migrationUseSudo.state = .on
+        migrationVersionAcknowledgement.target = self
+        migrationVersionAcknowledgement.action = #selector(migrationVersionAcknowledgementChanged)
         for field in [fleetClientID, fleetAccessToken, fleetRefreshToken, fleetExpiry,
                       legacyAccessToken, legacyRefreshToken,
                       migrationServer, migrationUser, migrationPort,
@@ -525,8 +536,15 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         guidance.maximumNumberOfLines = 2
         guidance.widthAnchor.constraint(equalToConstant: 650).isActive = true
 
+        let versionRequirement = NSTextField(wrappingLabelWithString:
+            "Before migration: back up TeslaMate, update to 4.2.0 or newer, start it once, and wait for its database migrations to finish.")
+        versionRequirement.font = .systemFont(ofSize: 13, weight: .semibold)
+        versionRequirement.textColor = .systemOrange
+        versionRequirement.maximumNumberOfLines = 3
+        versionRequirement.widthAnchor.constraint(equalToConstant: 650).isActive = true
+
         var views: [NSView] = [
-            guidance,
+            versionRequirement, guidance,
             formRow("Server", migrationServer),
             formRow("SSH user (optional)", migrationUser),
             formRow("SSH port", migrationPort),
@@ -548,6 +566,21 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             migrationKeyViews.append(migrationSSHPassword)
         }
         views.append(migrationUseSudo)
+        if let migrationSession {
+            if let version = migrationSession.teslaMateVersion {
+                views.append(featureRow("Docker image reports TeslaMate \(version)",
+                                        "info.circle.fill", color: .systemBlue))
+            }
+            views.append(migrationVersionAcknowledgement)
+            migrationKeyViews.append(migrationVersionAcknowledgement)
+        } else {
+            let detection = NSTextField(wrappingLabelWithString:
+                "Hub reads Docker version metadata to block known-old sources. Every source still requires confirmation because image metadata is not authoritative, and the database schema alone cannot prove the running app version.")
+            detection.textColor = .secondaryLabelColor
+            detection.maximumNumberOfLines = 2
+            detection.widthAnchor.constraint(equalToConstant: 650).isActive = true
+            views.append(detection)
+        }
         migrationKeyViews += [migrationUseSudo, check]
         let connectRow = NSView()
         check.translatesAutoresizingMaskIntoConstraints = false
@@ -991,6 +1024,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         compatibility = nil
         migrationDiagnostic = nil
         errorMessage = nil
+        migrationVersionAcknowledgement.state = .off
         migrationSession?.close()
         migrationSession = nil
         connectedMigrationIdentity = nil
@@ -1017,35 +1051,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
                 self.migrationCarID.stringValue = session.carID
                 self.migrationPasswordFile.stringValue = session.passwordFile.path
                 self.migrationKeyFile.stringValue = session.encryptionKeyFile.path
-                self.controller.checkTeslaMateCompatibility(source: session.source,
-                                                             carID: session.carID,
-                                                             passwordFile: session.passwordFile.path) { [weak self] check in
-                    guard let self else { return }
-                    self.setBusy(false)
-                    switch check {
-                    case let .success(report):
-                        HubAppLog.shared.record("compatibility.completed",
-                                                category: "teslamate_import",
-                                                fields: [
-                                                    "compatible": report.compatible ? "true" : "false",
-                                                    "reason": report.reasonCode
-                                                ])
-                        self.compatibility = report
-                        self.errorMessage = nil
-                    case let .failure(error):
-                        HubAppLog.shared.record("compatibility.failed", category: "teslamate_import",
-                                                level: "ERROR",
-                                                fields: ["error_code": HubAppLog.errorCode(error)])
-                        session.close()
-                        self.migrationSession = nil
-                        self.connectedMigrationIdentity = nil
-                        self.compatibility = HubTeslaMateCompatibility(compatible: false,
-                                                                       message: error.localizedDescription,
-                                                                       reasonCode: "unavailable",
-                                                                       requiredVersion: "4.1.1")
-                    }
-                    self.render()
-                }
+                self.checkConnectedMigrationSession(session)
             case let .failure(error):
                 HubAppLog.shared.record("connection.failed", category: "teslamate_import",
                                         level: "ERROR",
@@ -1062,9 +1068,60 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    private func checkConnectedMigrationSession(_ session: TeslaMateServerImportSession) {
+        guard session === migrationSession else { return }
+        let versionAccepted = migrationVersionAcknowledgement.state == .on
+        guard versionAccepted else {
+            setBusy(false)
+            compatibility = HubTeslaMateCompatibility(
+                compatible: false,
+                message: "The database schema cannot distinguish TeslaMate 4.1.1 from 4.2.0. Confirm the running server is 4.2.0 or newer, then continue.",
+                reasonCode: "v4_2_version_unconfirmed",
+                requiredVersion: "4.2.0"
+            )
+            render()
+            return
+        }
+        controller.checkTeslaMateCompatibility(
+            source: session.source,
+            carID: session.carID,
+            passwordFile: session.passwordFile.path,
+            acknowledgeV42CompatibleSchema: versionAccepted
+        ) { [weak self] check in
+            guard let self else { return }
+            self.setBusy(false)
+            switch check {
+            case let .success(report):
+                HubAppLog.shared.record("compatibility.completed",
+                                        category: "teslamate_import",
+                                        fields: [
+                                            "compatible": report.compatible ? "true" : "false",
+                                            "reason": report.reasonCode
+                                        ])
+                self.compatibility = report
+                self.errorMessage = nil
+            case let .failure(error):
+                HubAppLog.shared.record("compatibility.failed", category: "teslamate_import",
+                                        level: "ERROR",
+                                        fields: ["error_code": HubAppLog.errorCode(error)])
+                session.close()
+                self.migrationSession = nil
+                self.connectedMigrationIdentity = nil
+                self.compatibility = HubTeslaMateCompatibility(compatible: false,
+                                                               message: error.localizedDescription,
+                                                               reasonCode: "unavailable",
+                                                               requiredVersion: "4.2.0")
+            }
+            self.render()
+        }
+    }
+
     private func importMigration() {
+        let versionAccepted = migrationVersionAcknowledgement.state == .on
         guard let session = migrationSession,
-              migrationInputsComplete, compatibility?.compatible == true else {
+              migrationInputsComplete,
+              versionAccepted,
+              compatibility?.compatible == true else {
             HubAppLog.shared.record("import.rejected", category: "teslamate_import",
                                     level: "WARN", fields: ["reason": "connection_not_ready"])
             showInlineError("Connect to the TeslaMate server before importing.")
@@ -1084,7 +1141,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         controller.importTeslaMateOnline(source: session.source,
                                          carID: session.carID,
                                          passwordFile: session.passwordFile.path,
-                                         encryptionKeyFile: session.encryptionKeyFile.path) { [weak self] result in
+                                         encryptionKeyFile: session.encryptionKeyFile.path,
+                                         acknowledgeV42CompatibleSchema: versionAccepted) { [weak self] result in
             session.close()
             self?.migrationSession = nil
             self?.connectedMigrationIdentity = nil
@@ -1208,10 +1266,25 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         compatibility = nil
         errorMessage = nil
         migrationDiagnostic = nil
+        migrationVersionAcknowledgement.state = .off
         migrationSession?.close()
         migrationSession = nil
         connectedMigrationIdentity = nil
         render()
+    }
+
+    @objc private func migrationVersionAcknowledgementChanged() {
+        guard let session = migrationSession else {
+            render()
+            return
+        }
+        compatibility = nil
+        if migrationVersionAcknowledgement.state == .on {
+            setBusy(true, message: "Checking compatibility…")
+            checkConnectedMigrationSession(session)
+        } else {
+            render()
+        }
     }
 
     private func chooseFile(for field: NSTextField) {

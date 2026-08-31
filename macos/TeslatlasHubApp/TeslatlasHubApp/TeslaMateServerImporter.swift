@@ -8,6 +8,12 @@ enum TeslaMateSSHAuthentication: Equatable {
     case password(String)
 }
 
+enum TeslaMateVersionClassification: Equatable {
+    case supported(String)
+    case tooOld(String)
+    case unknown
+}
+
 enum TeslaMateSSHRecoveryAction: Equatable {
     case chooseKey
     case usePassword
@@ -35,6 +41,7 @@ final class TeslaMateServerImportSession {
     let carID: String
     let passwordFile: URL
     let encryptionKeyFile: URL
+    let teslaMateVersion: String?
 
     private let tunnel: Process
     private let temporaryDirectory: URL
@@ -45,12 +52,14 @@ final class TeslaMateServerImportSession {
          carID: String,
          passwordFile: URL,
          encryptionKeyFile: URL,
+         teslaMateVersion: String?,
          tunnel: Process,
          temporaryDirectory: URL) {
         self.source = source
         self.carID = carID
         self.passwordFile = passwordFile
         self.encryptionKeyFile = encryptionKeyFile
+        self.teslaMateVersion = teslaMateVersion
         self.tunnel = tunnel
         self.temporaryDirectory = temporaryDirectory
     }
@@ -158,7 +167,8 @@ enum TeslaMateServerImporter {
         "-o", "PermitLocalCommand=no",
         "-o", "RemoteCommand=none",
         "-o", "RequestTTY=no",
-        "-o", "StdinNull=no"
+        "-o", "StdinNull=no",
+        "-o", "StrictHostKeyChecking=yes"
     ]
 
     private static let isolatedSSHArguments = [
@@ -221,6 +231,9 @@ encryption_key=$(env_value ENCRYPTION_KEY)
 [ -n "$db_user" ] && [ -n "$db_pass" ] && [ -n "$db_name" ] && [ -n "$encryption_key" ] \
     || { printf '%s\n' 'TeslaMate credentials are incomplete.' >&2; exit 23; }
 
+tm_image=$(docker_run inspect -f '{{.Config.Image}}' "$tm_id" 2>/dev/null || true)
+tm_label_version=$(docker_run inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$tm_id" 2>/dev/null || true)
+
 network=$(docker_run inspect -f '{{range $name, $value := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$db_id" | head -n 1)
 db_ip=$(docker_run inspect -f "{{with index .NetworkSettings.Networks \"$network\"}}{{.IPAddress}}{{end}}" "$db_id")
 case "$db_ip" in *[!0-9.]*|'') printf '%s\n' 'TeslaMate database network address is invalid.' >&2; exit 24;; esac
@@ -238,6 +251,8 @@ printf 'database=%s\n' "$(encode "$db_name")"
 printf 'key=%s\n' "$(encode "$encryption_key")"
 printf 'car=%s\n' "$(encode "$car_id")"
 printf 'address=%s\n' "$(encode "$db_ip")"
+printf 'image=%s\n' "$(encode "$tm_image")"
+printf 'label_version=%s\n' "$(encode "$tm_label_version")"
 """#
 
     static func connect(host: String,
@@ -283,7 +298,6 @@ printf 'address=%s\n' "$(encode "$db_ip")"
         let discoveryStarted = Date()
         let common = isolatedSSHArguments + [
             "-o", "ConnectTimeout=12",
-            "-o", "StrictHostKeyChecking=accept-new",
             "-o", "ForwardAgent=no",
         ] + resources.arguments + [
             "-p", String(port),
@@ -416,6 +430,82 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         return values
     }
 
+    static func classifyVersionForTests(image: String?,
+                                        labelVersion: String?) -> TeslaMateVersionClassification {
+        classifyVersion(image: image, labelVersion: labelVersion)
+    }
+
+    private static func classifyVersion(image: String?,
+                                        labelVersion: String?) -> TeslaMateVersionClassification {
+        if case let .tooOld(version) = parseVersion(labelVersion) {
+            return .tooOld(version)
+        }
+        let identity = dockerImageIdentity(image)
+        if let tag = identity?.tag {
+            switch parseVersion(tag) {
+            case let .tooOld(version):
+                return .tooOld(version)
+            case let .supported(version) where identity?.official == true:
+                return .supported(version)
+            case .supported, .unknown:
+                break
+            }
+        }
+        return .unknown
+    }
+
+    private static func dockerImageIdentity(_ rawValue: String?)
+        -> (official: Bool, tag: String?)? {
+        guard var image = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !image.isEmpty else { return nil }
+        if let digest = image.firstIndex(of: "@") {
+            image = String(image[..<digest])
+            return (official: isOfficialTeslaMateRepository(image), tag: nil)
+        }
+        let slash = image.lastIndex(of: "/")
+        guard let colon = image.lastIndex(of: ":"), slash == nil || colon > slash! else {
+            return (official: isOfficialTeslaMateRepository(image), tag: nil)
+        }
+        let repository = String(image[..<colon])
+        let tag = String(image[image.index(after: colon)...])
+        return (official: isOfficialTeslaMateRepository(repository), tag: tag)
+    }
+
+    private static func isOfficialTeslaMateRepository(_ rawValue: String) -> Bool {
+        var repository = rawValue.lowercased()
+        for prefix in ["docker.io/", "index.docker.io/"] where repository.hasPrefix(prefix) {
+            repository.removeFirst(prefix.count)
+            break
+        }
+        return repository == "teslamate/teslamate"
+    }
+
+    private static func parseVersion(_ rawValue: String?) -> TeslaMateVersionClassification {
+        guard var value = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else { return .unknown }
+        if value.hasPrefix("refs/tags/") { value.removeFirst("refs/tags/".count) }
+        if value.contains("@") { return .unknown }
+        if let slash = value.lastIndex(of: "/"),
+           let colon = value.lastIndex(of: ":"), colon > slash {
+            value = String(value[value.index(after: colon)...])
+        }
+        if value.hasPrefix("v") { value.removeFirst() }
+        let displayedVersion = value
+        let stable = !value.contains("-")
+        let core = value.split(separator: "+", maxSplits: 1).first.map(String.init) ?? value
+        let components = core.split(separator: ".", omittingEmptySubsequences: false)
+        let patchValue = components.count == 3 ? Int(components[2]) : 0
+        guard (2...3).contains(components.count),
+              let major = Int(components[0]),
+              let minor = Int(components[1]),
+              let patch = patchValue else { return .unknown }
+        guard stable else { return .tooOld(displayedVersion) }
+        if major > 4 || (major == 4 && minor >= 2) {
+            return .supported(displayedVersion)
+        }
+        return .tooOld(displayedVersion)
+    }
+
     private static func makeSession(values: [String: String],
                                     destination: String,
                                     sshPort: Int,
@@ -429,6 +519,16 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: passwordFile.path)
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyFile.path)
 
+        let teslaMateVersion: String?
+        switch classifyVersion(image: values["image"], labelVersion: values["label_version"]) {
+        case let .supported(version):
+            teslaMateVersion = version
+        case .tooOld:
+            throw diagnostic(reason: "teslamate_version_too_old", method: resources.method)
+        case .unknown:
+            teslaMateVersion = nil
+        }
+
         let (tunnel, localPort) = try openTunnel(address: values["address"]!,
                                                  destination: destination,
                                                  sshPort: sshPort,
@@ -440,6 +540,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             carID: values["car"]!,
             passwordFile: passwordFile,
             encryptionKeyFile: keyFile,
+            teslaMateVersion: teslaMateVersion,
             tunnel: tunnel,
             temporaryDirectory: directory
         )
@@ -477,7 +578,6 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             tunnel.arguments = ownedTunnelArguments(controlPath: controlPath) + [
                 "-N", "-o", "ConnectTimeout=12",
                 "-o", "ExitOnForwardFailure=yes", "-o", "ForwardAgent=no",
-                "-o", "StrictHostKeyChecking=accept-new",
                 "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2",
             ] + resources.arguments + [
                 "-p", String(sshPort),
@@ -607,9 +707,9 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
                    "Choose the private key that works in Terminal, or switch to Password."]
                 : ["Check the account password, or switch to SSH config, agent, or key."]
         case "host_key_failed":
-            title = "Server identity changed"
+            title = "Server identity needs verification"
             summary = "OpenSSH refused the server identity."
-            suggestions = ["Verify the server first, then update its entry in ~/.ssh/known_hosts."]
+            suggestions = ["Verify the server fingerprint through a trusted channel, then add or update its entry in ~/.ssh/known_hosts."]
         case "connection_refused":
             title = "SSH connection refused"
             summary = "The server is reachable, but SSH is not accepting this connection."
@@ -642,6 +742,10 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             title = "Local tunnel port unavailable"
             summary = "Hub could not reserve a local database tunnel port."
             suggestions = ["Try again."]
+        case "teslamate_version_too_old":
+            title = "Update TeslaMate first"
+            summary = "Guided migration requires TeslaMate 4.2.0 or newer."
+            suggestions = ["Back up TeslaMate, update it, let its migrations finish, then connect again."]
         default:
             title = "TeslaMate connection failed"
             summary = discoveryFailureMessageForReason(reason)
@@ -670,6 +774,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         case "docker_permission_denied": return "This account cannot access Docker."
         case "docker_missing": return "Docker was not found on the TeslaMate server."
         case "docker_unavailable": return "Docker is installed but unavailable."
+        case "teslamate_version_too_old": return "Guided migration requires TeslaMate 4.2.0 or newer."
         default: return "Hub could not read TeslaMate over SSH."
         }
     }
@@ -729,6 +834,8 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             return "Docker was not found on the TeslaMate server. Check the server and account PATH."
         case "docker_unavailable":
             return "Docker is installed but unavailable. Check that the Docker service is running."
+        case "teslamate_version_too_old":
+            return "Guided migration requires TeslaMate 4.2.0 or newer. Update TeslaMate, then try again."
         case "ssh_authentication_or_connection":
             return "SSH could not connect or authenticate. Check the server, port, account, and selected authentication method."
         case "authentication_failed":
@@ -769,6 +876,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             case 26: return "vehicle_missing"
             case 27: return "multiple_teslamate_instances"
             case 28: return "multiple_database_instances"
+            case 29: return "teslamate_version_too_old"
             case 255:
                 let reason = sshFailureReason(message)
                 return reason == "unclassified" ? "ssh_authentication_or_connection" : reason

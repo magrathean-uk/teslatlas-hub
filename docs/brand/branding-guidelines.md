@@ -1,36 +1,49 @@
 # Branding guidelines
 
-These guidelines explain permitted descriptive use of project branding. They do not grant rights in third-party marks.
+These guidelines separate truthful project references from use that could imply
+an official Magrathean product. They do not grant rights in third-party marks or
+restrict AGPL rights in the code.
+
+## Official identity
+
+Use these forms exactly:
+
+- **Teslatlas** for the product family;
+- **Teslatlas Hub** for this project;
+- **György Bolyki** for the original creator and lead developer; and
+- **MAGRATHEAN UK LTD** for the publisher and project steward.
 
 ## Descriptive references
 
-You may truthfully state that a fork or service is based on, derived from or compatible with Teslatlas Hub, provided that the statement:
+A fork or service may truthfully state that it is based on, derived from or
+compatible with Teslatlas Hub when the statement:
 
 - is no more prominent than reasonably necessary;
-- does not imply endorsement, certification, sponsorship or official status;
 - identifies material modifications;
-- preserves the licence and attribution notices;
-- does not use Magrathean or Teslatlas logos as the primary brand of a modified product without written permission.
+- does not imply endorsement, certification, support or official status;
+- preserves notices required by the applicable licences; and
+- uses its own primary name and visual identity.
 
-Examples of normally acceptable wording:
+Normally acceptable:
 
 - “Based on Teslatlas Hub”;
-- “Fork of Teslatlas Hub”;
+- “Fork of Teslatlas Hub”; and
 - “Compatible with the Teslatlas Hub protocol”.
 
-Examples requiring prior written permission:
+Permission required:
 
-- “Official Teslatlas Hub”;
-- “Teslatlas Hub Pro” as the product name of an unauthorised fork;
-- use of the original logo as an app icon or company mark;
-- statements that Magrathean supports, audits or warranties the fork.
+- “Official Teslatlas Hub” for an unauthorised build;
+- “Teslatlas Hub Pro” as the primary name of a third-party fork;
+- use of the original logo as a company or app identity; or
+- a claim that Magrathean or György Bolyki supports, audits or warrants the fork.
 
-## Required separation for modified distributions
+A modified distribution should state substantially:
 
-A materially modified distribution should use a distinct product name and visual identity. It should display a statement substantially equivalent to:
-
-> This is a modified, independently distributed version of Teslatlas Hub. It is not produced, endorsed or supported by Magrathean UK Ltd.
+> This is a modified, independently distributed version of Teslatlas Hub. It is not produced, endorsed or supported by MAGRATHEAN UK LTD.
 
 ## Third-party marks
 
-Tesla and TeslaMate references are nominative compatibility statements only. Use the minimum text required to identify the relevant vehicle, service or migration source. Do not copy third-party logos, trade dress or product artwork into the repository without a documented licence.
+Tesla and TeslaMate references are nominative compatibility statements only.
+Use the minimum text required to identify the relevant vehicle, service or
+migration source. Do not copy third-party logos, trade dress or product artwork
+without a documented right to do so.

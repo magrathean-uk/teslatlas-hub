@@ -43,7 +43,8 @@ use super::{
     persist_legacy_setup_and_drop_fleet, persist_migrated_legacy_tokens,
     read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
     read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
-    teslamate_check_failure_details, validate_legacy_setup_provider, validate_streaming_setting,
+    teslamate_check_failure_details, teslamate_version_confirmation,
+    validate_legacy_setup_provider, validate_streaming_setting,
 };
 use teslatlas_hub::db::HubStore;
 #[cfg(target_os = "macos")]
@@ -156,13 +157,13 @@ fn teslamate_check_failures_are_redacted_and_actionable() {
 
     assert_eq!(
         teslamate_check_failure_details(&older).1,
-        "older_than_4_1_1"
+        "older_than_v4_2_compatible_schema"
     );
     assert_eq!(teslamate_check_failure_details(&older).2, Some(1));
     assert!(teslamate_check_failure_details(&older).3.contains("update"));
     assert_eq!(
         teslamate_check_failure_details(&newer).1,
-        "newer_than_4_1_1"
+        "newer_than_v4_2_compatible_schema"
     );
     assert!(
         teslamate_check_failure_details(&newer)
@@ -183,6 +184,20 @@ fn teslamate_check_failures_are_redacted_and_actionable() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn teslamate_check_requires_honest_version_confirmation() {
+    let unconfirmed = teslamate_version_confirmation(false);
+    assert_eq!(unconfirmed.0, "confirmation_required");
+    assert_eq!(unconfirmed.1, "v4_2_version_unconfirmed");
+    assert!(unconfirmed.2.contains("cannot prove"));
+
+    let confirmed = teslamate_version_confirmation(true);
+    assert_eq!(confirmed.0, "compatible");
+    assert_eq!(confirmed.1, "v4_2_compatible_schema");
+    assert!(!confirmed.1.contains("exact"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn onboarding_migration_cli_is_explicit_and_noninteractive() {
     let check = Cli::try_parse_from([
         "teslatlas-hub",
@@ -193,6 +208,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         "7",
         "--postgres-password-file",
         "password",
+        "--acknowledge-v4-2-compatible-schema",
     ])
     .expect("compatibility-check CLI");
     assert!(matches!(
@@ -200,6 +216,23 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         Command::TeslaMateCheck { car_id: 7, .. }
     ));
     assert!(!command_requires_user_hub_admission(&check.command));
+
+    assert!(
+        Cli::try_parse_from([
+            "teslatlas-hub",
+            "migrate",
+            "--source",
+            "postgresql://reader@localhost/teslamate",
+            "--car-id",
+            "7",
+            "--postgres-password-file",
+            "password",
+            "--encryption-key-file",
+            "key",
+            "--online-snapshot",
+        ])
+        .is_err()
+    );
 
     let migration = Cli::try_parse_from([
         "teslatlas-hub",
@@ -213,12 +246,14 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         "--encryption-key-file",
         "key",
         "--online-snapshot",
+        "--acknowledge-v4-2-compatible-schema",
     ])
     .expect("online migration CLI");
     assert!(matches!(
         migration.command,
         Command::Migrate {
             online_snapshot: true,
+            acknowledge_v4_2_compatible_schema: true,
             ..
         }
     ));
@@ -245,6 +280,33 @@ async fn teslamate_check_invalid_source_does_not_create_hub_target() {
 
     let error = run(cli).await.expect_err("invalid source must fail");
     assert!(error.to_string().contains("see JSON report"));
+    assert!(!config.exists());
+    assert!(!config.parent().expect("config parent").exists());
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn migration_without_version_confirmation_does_not_create_hub_target() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let config = temporary.path().join("absent/config.toml");
+    let cli = Cli {
+        config: Some(config.clone()),
+        command: Command::Migrate {
+            source: "not-a-postgres-url".to_owned(),
+            car_id: 7,
+            postgres_password_file: PathBuf::from("unused-password"),
+            encryption_key_file: Some(PathBuf::from("unused-key")),
+            access_token_file: None,
+            refresh_token_file: None,
+            online_snapshot: true,
+            acknowledge_v4_2_compatible_schema: false,
+        },
+    };
+
+    let error = run(cli)
+        .await
+        .expect_err("missing version confirmation must fail before migration");
+    assert!(error.to_string().contains("requires --acknowledge"));
     assert!(!config.exists());
     assert!(!config.parent().expect("config parent").exists());
 }
@@ -1920,6 +1982,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         access_token_file: None,
         refresh_token_file: None,
         online_snapshot: false,
+        acknowledge_v4_2_compatible_schema: true,
     }));
     assert!(command_requires_user_hub_admission(&Command::Pair {
         label: "test phone".to_owned(),

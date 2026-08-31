@@ -51,15 +51,9 @@ pub(crate) use sync::manifest_signing;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/teslatlas-hub";
 
-/// Signed release tag containing the exact source for this binary version.
-pub fn source_release_tag() -> String {
-    format!("v{BUILD_VERSION}")
-}
-
-/// Version-bound release page listing every Corresponding Source component.
+/// Source repository for the current unpublished candidate.
 pub fn corresponding_source_url() -> String {
-    let tag = source_release_tag();
-    format!("{SOURCE_URL}/releases/tag/{tag}")
+    SOURCE_URL.to_owned()
 }
 
 #[cfg(test)]
@@ -79,25 +73,19 @@ pub fn legal_notice() -> String {
          Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own\n\
          License: AGPL-3.0-only\n\
          Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: {SOURCE_URL}\n\
-         Corresponding Source for this version: {corresponding_source}\n\
+         Candidate source: {corresponding_source}\n\
          Unofficial; not affiliated with Tesla or TeslaMate; no warranty."
     )
 }
 
 #[cfg(test)]
 mod legal_notice_tests {
-    use super::{
-        BUILD_VERSION, SOURCE_URL, corresponding_source_url, legal_notice, source_release_tag,
-    };
+    use super::{BUILD_VERSION, SOURCE_URL, corresponding_source_url, legal_notice};
 
     #[test]
-    fn corresponding_source_is_bound_to_the_exact_package_version() {
-        let tag = format!("v{BUILD_VERSION}");
-        assert_eq!(source_release_tag(), tag);
-        assert_eq!(
-            corresponding_source_url(),
-            format!("{SOURCE_URL}/releases/tag/{tag}")
-        );
+    fn unpublished_candidate_uses_repository_source_until_a_tag_is_published() {
+        assert_eq!(BUILD_VERSION, "1.0.0-beta.2");
+        assert_eq!(corresponding_source_url(), SOURCE_URL);
     }
 
     #[test]

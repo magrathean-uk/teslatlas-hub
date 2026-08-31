@@ -187,7 +187,7 @@ enum Command {
     /// Print licence, source, and independence notices.
     #[command(visible_aliases = ["licence", "license"])]
     Legal,
-    /// Print the version-bound Corresponding Source release-page URL.
+    /// Print this build's source route.
     Source,
     /// Initialize or migrate the local Hub database.
     Init,
@@ -255,6 +255,9 @@ enum Command {
         /// PostgreSQL password file, or `-` for stdin.
         #[arg(long)]
         postgres_password_file: PathBuf,
+        /// Accept that database evidence proves a TeslaMate v4.2-compatible schema, not the app version.
+        #[arg(long)]
+        acknowledge_v4_2_compatible_schema: bool,
     },
     /// Validate that one configured car and its credentials are ready to serve.
     #[cfg(unix)]
@@ -334,6 +337,9 @@ enum Command {
         /// Take one live read-only snapshot, never prompt for cutover, and leave Hub stopped.
         #[arg(long)]
         online_snapshot: bool,
+        /// Confirm TeslaMate 4.2.0+ and accept that its database schema alone cannot prove the app version.
+        #[arg(long, required = true)]
+        acknowledge_v4_2_compatible_schema: bool,
     },
     /// Explicit allow-listed write-back to TeslaMate PostgreSQL.
     #[cfg(unix)]

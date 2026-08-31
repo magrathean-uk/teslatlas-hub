@@ -355,6 +355,14 @@ pub enum StoreError {
     InvalidCarSettings,
     #[error("drive id must be positive")]
     InvalidDriveId,
+    #[error("drive query limit {0} is invalid")]
+    InvalidDriveQueryLimit(u32),
+    #[error("drive query time range is empty or reversed")]
+    InvalidDriveQueryRange,
+    #[error("drive query cursor is invalid")]
+    InvalidDriveQueryCursor,
+    #[error("materialised drive identity differs from its catalogue key")]
+    InvalidDriveProjectionIdentity,
     #[error("drive position page limit {0} is invalid")]
     InvalidDrivePositionPageLimit(u32),
     #[error("charge id must be positive")]

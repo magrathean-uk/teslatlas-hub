@@ -11,6 +11,13 @@
 | External organisation | Yes | Corporate assignment required |
 | Dependency/upstream patch | Preserve upstream process | Provenance/licence review |
 
+The contributor agreements are the
+[individual assignment](individual-contributor-assignment-agreement.md) and
+[corporate assignment](corporate-contributor-assignment-agreement.md). The
+project's DCO policy and the canonical DCO 1.1 text are in
+[Developer Certificate of Origin](developer-certificate-of-origin.md) and
+[Developer Certificate of Origin 1.1](developer-certificate-of-origin-1.1.md).
+
 ## DCO
 
 Command-line commits:
@@ -63,8 +70,9 @@ certification that was not recorded at commit time.
 Before releasing a descendant, an authorised Company maintainer must review the
 historical authorship set, confirm the applicable private employment,
 assignment, contractor, or founder records, and record that release decision.
-See `docs/governance/historical-contributions.md`. This administrative review does not replace
-third-party provenance or licence analysis.
+See [Historical contribution record](historical-contributions.md). This
+administrative review does not replace third-party provenance or licence
+analysis.
 
 ## Revocation
 

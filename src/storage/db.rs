@@ -55,7 +55,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 56;
+pub const SCHEMA_VERSION: i32 = 57;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -80,6 +80,14 @@ const OBSERVATIONS_AFTER_ID_SQL: &str = "SELECT observation_id, source_id, vehic
      FROM raw_observations \
      WHERE vehicle_id = ?1 AND observation_id > ?2 \
      ORDER BY observation_id ASC LIMIT ?3";
+const PUBLIC_DRIVES_PAGE_SQL: &str = "SELECT drive_id, drive_json FROM materialised_drives
+     WHERE vehicle_id = ?1
+       AND CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER) >= ?2
+       AND CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER) < ?3
+       AND (CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER), drive_id) < (?4, ?5)
+     ORDER BY CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER) DESC,
+              drive_id DESC
+     LIMIT ?6";
 /// Request-ledger reads are metadata-only and bounded independently from raw
 /// observation reads so proof commands cannot accidentally load an unbounded
 /// audit history into memory.

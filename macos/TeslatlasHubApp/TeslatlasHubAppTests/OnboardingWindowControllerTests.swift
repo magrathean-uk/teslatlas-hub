@@ -97,16 +97,24 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(source.action, #selector(AppDelegate.openCorrespondingSource(_:)))
     }
 
-    func testCorrespondingSourceURLIsExactAndRejectsUnsafeVersions() throws {
+    func testCorrespondingSourceURLPreservesPublishedTagsAndKeepsCandidatesUntagged() throws {
         XCTAssertEqual(
             HubRelease.correspondingSourceURL(for: "1.0.0-beta.1")?.absoluteString,
             "https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1"
+        )
+        XCTAssertEqual(
+            HubRelease.correspondingSourceURL(for: "1.0.0-beta.2")?.absoluteString,
+            "https://github.com/magrathean-uk/teslatlas-hub"
         )
         XCTAssertNil(HubRelease.correspondingSourceURL(for: "1.0.0/../../main"))
         XCTAssertNil(HubRelease.correspondingSourceURL(for: "$(TESLATLAS_HUB_VERSION)"))
         XCTAssertEqual(
             HubRelease.licenceURL(for: "1.0.0-beta.1")?.absoluteString,
             "https://github.com/magrathean-uk/teslatlas-hub/blob/v1.0.0-beta.1/LICENSE"
+        )
+        XCTAssertEqual(
+            HubRelease.licenceURL(for: "1.0.0-beta.2")?.absoluteString,
+            "https://github.com/magrathean-uk/teslatlas-hub/blob/main/LICENSE"
         )
         XCTAssertNil(HubRelease.licenceURL(for: "1.0.0/../../main"))
     }
@@ -479,6 +487,12 @@ final class OnboardingWindowControllerTests: XCTestCase {
                                                      onComplete: {})
         let view = onboarding.window?.contentView
         let text = labels(in: view).map(\.stringValue)
+        let migrationRequirement = text.joined(separator: " ")
+        for fragment in ["back up TeslaMate", "update to 4.2.0 or newer", "start it once",
+                         "wait for its database migrations to finish"] {
+            XCTAssertTrue(migrationRequirement.contains(fragment))
+        }
+        XCTAssertTrue(migrationRequirement.contains("database schema alone cannot prove"))
         XCTAssertTrue(text.contains("user"))
         XCTAssertTrue(text.contains(
             "Use a normal server account. It must access the TeslaMate containers directly or through passwordless sudo."
@@ -556,18 +570,76 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testTunnelFailuresAreSafeAndActionable() {
+        XCTAssertEqual(
+            TeslaMateServerImporter.classifyVersionForTests(
+                image: "teslamate/teslamate:v4.1.1", labelVersion: nil
+            ),
+            .tooOld("4.1.1")
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.classifyVersionForTests(
+                image: "docker.io/teslamate/teslamate:4.2.0", labelVersion: nil
+            ),
+            .supported("4.2.0")
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.classifyVersionForTests(
+                image: "teslamate/teslamate:4.2", labelVersion: nil
+            ),
+            .supported("4.2")
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.classifyVersionForTests(
+                image: "teslamate/teslamate:4.3.2", labelVersion: nil
+            ),
+            .supported("4.3.2")
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.classifyVersionForTests(
+                image: "custom/teslamate:4.2.0", labelVersion: "4.2.0"
+            ),
+            .unknown
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.classifyVersionForTests(
+                image: "teslamate/teslamate:latest", labelVersion: "4.2.0"
+            ),
+            .unknown
+        )
+        XCTAssertEqual(
+            TeslaMateServerImporter.classifyVersionForTests(
+                image: "teslamate/teslamate:4.2.0", labelVersion: "4.1.1"
+            ),
+            .tooOld("4.1.1")
+        )
+
         let isolation = TeslaMateServerImporter.sshIsolationArgumentsForTests.joined(separator: " ")
         XCTAssertTrue(isolation.contains("ControlMaster=no"))
         XCTAssertTrue(isolation.contains("ControlPath=none"))
         XCTAssertTrue(isolation.contains("ControlPersist=no"))
         XCTAssertTrue(isolation.contains("ForkAfterAuthentication=no"))
         XCTAssertTrue(isolation.contains("RemoteCommand=none"))
+        XCTAssertTrue(isolation.contains("StrictHostKeyChecking=yes"))
+        XCTAssertFalse(isolation.contains("StrictHostKeyChecking=accept-new"))
         let ownedTunnel = TeslaMateServerImporter.ownedTunnelArgumentsForTests(
             controlPath: "/tmp/owned-control"
         ).joined(separator: " ")
         XCTAssertTrue(ownedTunnel.contains("ControlMaster=yes"))
         XCTAssertTrue(ownedTunnel.contains("ControlPath=/tmp/owned-control"))
         XCTAssertTrue(ownedTunnel.contains("ControlPersist=no"))
+        XCTAssertTrue(ownedTunnel.contains("StrictHostKeyChecking=yes"))
+        XCTAssertFalse(ownedTunnel.contains("StrictHostKeyChecking=accept-new"))
+
+        let hostKeyDiagnostic = TeslaMateServerImporter.connectionDiagnostic(
+            for: HubActionError.commandExited(255, "Host key verification failed"),
+            authentication: .password("unused")
+        )
+        XCTAssertEqual(hostKeyDiagnostic.reasonCode, "host_key_failed")
+        XCTAssertEqual(hostKeyDiagnostic.title, "Server identity needs verification")
+        XCTAssertEqual(
+            hostKeyDiagnostic.suggestions,
+            ["Verify the server fingerprint through a trusted channel, then add or update its entry in ~/.ssh/known_hosts."]
+        )
 
         let keyDiagnostic = TeslaMateServerImporter.connectionDiagnostic(
             for: HubActionError.commandExited(255, "Permission denied"),

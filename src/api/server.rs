@@ -15,7 +15,7 @@ use std::{
 use axum::{
     Json, Router,
     body::{Body, Bytes},
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, Path, Query, State, rejection::QueryRejection},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -33,6 +33,8 @@ use tower_http::{
     trace::TraceLayer,
 };
 use uuid::Uuid;
+
+use super::public_query::{DriveQuery, DriveQueryError, DriveQueryParameters, PublicDrive};
 
 #[cfg(unix)]
 use crate::config::HubConfig;
@@ -58,6 +60,14 @@ const MAX_ACTIVE_PACK_STREAMS_PER_DEVICE: usize = 2;
 const PACK_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_HANDLER_TIMEOUT: Duration = Duration::from_secs(15);
 const READINESS_CACHE_TTL: Duration = Duration::from_secs(1);
+const PUBLIC_API_VERSIONS: [&str; 1] = ["1.0"];
+const PUBLIC_BASE_CAPABILITIES: [&str; 2] = ["query.vehicles", "query.current"];
+const PUBLIC_CAPABILITIES: [&str; 4] = [
+    "query.vehicles",
+    "query.current",
+    "query.drives",
+    "sync.packs",
+];
 
 pub async fn rustls_config_from_identity(
     tls: &TlsListenerConfig,
@@ -564,6 +574,7 @@ fn router_with_access_and_telemetry(
         .route("/v1/device/rotate", post(rotate_device))
         .route("/v1/vehicles", get(vehicles))
         .route("/v1/vehicles/{vehicle_id}/current", get(current_vehicle))
+        .route("/v1/vehicles/{vehicle_id}/drives", get(drives))
         .route("/v1/vehicles/{vehicle_id}/sync/manifest", get(manifest))
         .route("/v1/vehicles/{vehicle_id}/sync/noop", get(schema_22_noop))
         .route("/v1/packs/sha256/{object_name}", get(pack))
@@ -875,12 +886,31 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
     response
 }
 
-async fn capabilities(State(state): State<AppState>) -> impl IntoResponse {
+async fn capabilities(State(state): State<AppState>) -> Response {
+    let hub_id = match state.store.installation_id() {
+        Ok(hub_id) => hub_id,
+        Err(error) => {
+            tracing::error!(%error, "cannot load Hub discovery identity");
+            return public_api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "Hub identity is temporarily unavailable",
+            );
+        }
+    };
+    let capabilities: &[&str] = if state.cursor_key.is_some() {
+        &PUBLIC_CAPABILITIES
+    } else {
+        &PUBLIC_BASE_CAPABILITIES
+    };
     (
         [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
         Json(Capabilities {
+            hub_id,
             protocol: "teslatlas-sync",
             protocol_major: 1,
+            api_versions: &PUBLIC_API_VERSIONS,
+            capabilities,
             version: BUILD_VERSION,
             source_url: corresponding_source_url(),
             pack_format: "sqlite-zstd",
@@ -890,6 +920,7 @@ async fn capabilities(State(state): State<AppState>) -> impl IntoResponse {
                 .map(ManifestSigning::verifying_key_hex),
         }),
     )
+        .into_response()
 }
 
 async fn vehicles(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -962,6 +993,167 @@ async fn current_vehicle(
     (
         [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
         Json(summary),
+    )
+        .into_response()
+}
+
+async fn drives(
+    State(state): State<AppState>,
+    Path(vehicle_id): Path<String>,
+    headers: HeaderMap,
+    parameters: Result<Query<DriveQueryParameters>, QueryRejection>,
+) -> Response {
+    if let Err(status) = require_authorized_device(&state, &headers) {
+        return device_auth_reject(status);
+    }
+    let Some(cursor_key) = state.cursor_key.as_deref() else {
+        return public_api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "service_unavailable",
+            "drive history cursor integrity is unavailable",
+        );
+    };
+    let Some(vehicle_id) = Uuid::parse_str(&vehicle_id)
+        .ok()
+        .filter(|value| !value.is_nil())
+    else {
+        return public_api_error(
+            StatusCode::NOT_FOUND,
+            "vehicle_not_found",
+            "vehicle was not found",
+        );
+    };
+    let Query(parameters) = match parameters {
+        Ok(parameters) => parameters,
+        Err(_) => {
+            return public_api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_query",
+                "query parameters are invalid",
+            );
+        }
+    };
+    let query = match DriveQuery::parse(cursor_key, vehicle_id, parameters) {
+        Ok(query) => query,
+        Err(DriveQueryError::TimeRange) => {
+            return public_api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_time_range",
+                "from_ms must be nonnegative and earlier than to_ms",
+            );
+        }
+        Err(DriveQueryError::Limit) => {
+            return public_api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_limit",
+                "limit must be between 1 and 500",
+            );
+        }
+        Err(DriveQueryError::Cursor) => {
+            return public_api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_cursor",
+                "cursor is invalid for this vehicle and time range",
+            );
+        }
+    };
+    let fetch_limit = query
+        .limit
+        .checked_add(1)
+        .expect("bounded drive page limit has one-row lookahead");
+    let mut items = match state.store.materialised_drives_page(
+        vehicle_id,
+        query.from_ms,
+        query.to_ms,
+        query.after,
+        fetch_limit,
+    ) {
+        Ok(items) => items,
+        Err(crate::db::StoreError::UnknownVehicle(_)) => {
+            return public_api_error(
+                StatusCode::NOT_FOUND,
+                "vehicle_not_found",
+                "vehicle was not found",
+            );
+        }
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load public drive page");
+            return public_api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "drive history is temporarily unavailable",
+            );
+        }
+    };
+    let has_more = items.len() > query.limit as usize;
+    if has_more {
+        items.truncate(query.limit as usize);
+    }
+    let next_cursor = has_more.then(|| {
+        let last = items
+            .last()
+            .expect("one-row lookahead requires a retained page item");
+        query.next_cursor(cursor_key, vehicle_id, (last.start_date_ms, last.id))
+    });
+    let items = items
+        .into_iter()
+        .map(|drive| PublicDrive::from_projection(vehicle_id, drive))
+        .collect();
+    let page = PublicDrivePage { items, next_cursor };
+    match public_json_response_with_etag(&headers, &page) {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot serialize public drive page");
+            public_api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "drive history is temporarily unavailable",
+            )
+        }
+    }
+}
+
+fn public_json_response_with_etag<T: Serialize>(
+    request_headers: &HeaderMap,
+    value: &T,
+) -> Result<Response, serde_json::Error> {
+    let body = serde_json::to_vec(value)?;
+    let etag = format!("\"{}\"", Sha256Digest::of_bytes(&body));
+    if if_none_match_matches(request_headers, &etag) {
+        return Ok(Response::builder()
+            .status(StatusCode::NOT_MODIFIED)
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::ETAG, etag)
+            .body(Body::empty())
+            .expect("static public response headers are valid"));
+    }
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ETAG, etag)
+        .body(Body::from(body))
+        .expect("static public response headers are valid"))
+}
+
+fn if_none_match_matches(headers: &HeaderMap, etag: &str) -> bool {
+    headers.get_all(header::IF_NONE_MATCH).iter().any(|value| {
+        value.to_str().is_ok_and(|value| {
+            value.split(',').any(|candidate| {
+                let candidate = candidate.trim();
+                candidate == "*" || candidate.strip_prefix("W/").unwrap_or(candidate) == etag
+            })
+        })
+    })
+}
+
+fn public_api_error(status: StatusCode, code: &'static str, message: &'static str) -> Response {
+    (
+        status,
+        [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
+        Json(PublicApiErrorEnvelope {
+            error: PublicApiError { code, message },
+        }),
     )
         .into_response()
 }
@@ -1590,8 +1782,11 @@ struct Ready<'a> {
 
 #[derive(Serialize)]
 struct Capabilities<'a> {
+    hub_id: Uuid,
     protocol: &'a str,
     protocol_major: u8,
+    api_versions: &'a [&'a str],
+    capabilities: &'a [&'a str],
     version: &'a str,
     #[serde(rename = "sourceUrl")]
     source_url: String,
@@ -1669,6 +1864,23 @@ impl std::fmt::Debug for PairingSecretInput {
 #[serde(rename_all = "camelCase")]
 struct VehicleList {
     vehicles: Vec<PublishedVehicle>,
+}
+
+#[derive(Serialize)]
+struct PublicDrivePage {
+    items: Vec<PublicDrive>,
+    next_cursor: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PublicApiErrorEnvelope {
+    error: PublicApiError,
+}
+
+#[derive(Serialize)]
+struct PublicApiError {
+    code: &'static str,
+    message: &'static str,
 }
 
 #[cfg(test)]

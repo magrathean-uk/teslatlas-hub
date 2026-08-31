@@ -126,7 +126,7 @@ pub const TESLAMATE_SOURCE_PARITY_ENTRIES: [TeslaMateSourceParityEntry; 17] = [
     preserved(
         "states",
         "state enum (online/offline/asleep)",
-        "exact TeslaMate v4.1.1 enum domain",
+        "exact reviewed TeslaMate v4.2-compatible enum domain",
     ),
 ];
 

@@ -29,15 +29,40 @@ impl Drop for CatalogueCheckpointGuard {
 }
 
 #[cfg(unix)]
-const TESLAMATE_REQUIRED_VERSION: &str = "4.1.1";
+const TESLAMATE_REQUIRED_VERSION: &str = "4.2.0";
 
 #[cfg(unix)]
-fn print_teslamate_check_success(car_id: i64, snapshot: &TeslaMateCheckSnapshot) {
+fn teslamate_version_confirmation(
+    acknowledge_v4_2_compatible_schema: bool,
+) -> (&'static str, &'static str, &'static str) {
+    if acknowledge_v4_2_compatible_schema {
+        (
+            "compatible",
+            "v4_2_compatible_schema",
+            "TeslaMate v4.2-compatible database schema verified and the version limitation was acknowledged. The source is read-only and ready for migration. TeslaMate data is not deleted.",
+        )
+    } else {
+        (
+            "confirmation_required",
+            "v4_2_version_unconfirmed",
+            "The database matches the schema shared by TeslaMate v4.1.1 and v4.2.0, so it cannot prove the running app version. Confirm the running TeslaMate app is 4.2.0 or newer, then retry with --acknowledge-v4-2-compatible-schema.",
+        )
+    }
+}
+
+#[cfg(unix)]
+fn print_teslamate_check_success(
+    car_id: i64,
+    snapshot: &TeslaMateCheckSnapshot,
+    acknowledge_v4_2_compatible_schema: bool,
+) {
+    let (status, reason_code, guidance) =
+        teslamate_version_confirmation(acknowledge_v4_2_compatible_schema);
     println!(
         "{}",
         serde_json::json!({
-            "status": "compatible",
-            "reasonCode": "exact_4_1_1",
+            "status": status,
+            "reasonCode": reason_code,
             "requiredVersion": TESLAMATE_REQUIRED_VERSION,
             "pinnedSourceRevision": snapshot.schema.pinned_source_revision,
             "observedMigrationVersion": snapshot.schema.observed_migration_version,
@@ -53,7 +78,10 @@ fn print_teslamate_check_success(car_id: i64, snapshot: &TeslaMateCheckSnapshot)
             "sourceTokensRelationPresent": snapshot.source_tokens_relation_present,
             "legacyTokenPair": snapshot.legacy_token_pair,
             "sourceNeverMutated": true,
-            "guidance": "Exact TeslaMate 4.1.1 compatibility verified. The source is read-only and ready for migration. TeslaMate data is not deleted.",
+            "versionEvidence": "database_schema_only",
+            "schemaEvidence": "v4_2_compatible_schema",
+            "versionAcknowledged": acknowledge_v4_2_compatible_schema,
+            "guidance": guidance,
         })
     );
 }
@@ -91,24 +119,24 @@ fn teslamate_check_failure_details(
             found, ..
         }) => (
             "incompatible",
-            "older_than_4_1_1",
+            "older_than_v4_2_compatible_schema",
             Some(*found),
-            "Back up TeslaMate, update it to exact version 4.1.1, allow its migrations to finish, then retry.",
+            "Back up TeslaMate, update it to version 4.2.0 or newer, allow its migrations to finish, then retry.",
         ),
         TeslaMateReaderError::Schema(SchemaCompatibilityError::UnreviewedMigration {
             found,
             ..
         }) => (
             "incompatible",
-            "newer_than_4_1_1",
+            "newer_than_v4_2_compatible_schema",
             Some(*found),
-            "This Hub build supports exact TeslaMate 4.1.1 only. Do not downgrade a live database; use a separate compatible backup or wait for a reviewed adapter.",
+            "This Hub build supports the reviewed TeslaMate v4.2-compatible schema only. Do not downgrade a live database; use a separate compatible backup or wait for a reviewed adapter.",
         ),
         TeslaMateReaderError::Schema(_) | TeslaMateReaderError::MissingMigrationVersion => (
             "incompatible",
             "schema_mismatch",
             None,
-            "The source does not match the exact TeslaMate 4.1.1 migration and physical-schema contract. Do not modify or downgrade the live database.",
+            "The source does not match the reviewed TeslaMate v4.2-compatible migration and physical-schema contract. Do not modify or downgrade the live database.",
         ),
         TeslaMateReaderError::SelectedCarMissing { .. } => (
             "incompatible",
@@ -145,6 +173,7 @@ async fn run_teslamate_check(
     source_url: &str,
     car_id: i64,
     postgres_password_file: &Path,
+    acknowledge_v4_2_compatible_schema: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let source = match ReadOnlySource::parse(source_url) {
         Ok(source) => source,
@@ -182,8 +211,19 @@ async fn run_teslamate_check(
         .await
     {
         Ok(snapshot) => {
-            print_teslamate_check_success(car_id, &snapshot);
-            Ok(())
+            print_teslamate_check_success(
+                car_id,
+                &snapshot,
+                acknowledge_v4_2_compatible_schema,
+            );
+            if acknowledge_v4_2_compatible_schema {
+                Ok(())
+            } else {
+                Err(std::io::Error::other(
+                    "TeslaMate version confirmation required; see JSON report",
+                )
+                .into())
+            }
         }
         Err(error) => {
             let (status, reason_code, observed, guidance) = teslamate_check_failure_details(&error);

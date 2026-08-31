@@ -587,7 +587,7 @@ impl VehicleScheduler {
             let (idle_suspend_after, suspended_interval) = if scheduled.settings.use_streaming_api
                 && scheduled.stream_healthy
             {
-                (Duration::from_secs(3 * 60), Duration::from_secs(30 * 60))
+                (Duration::from_secs(3 * 60), Duration::from_secs(10 * 60))
             } else {
                 (
                     Duration::from_secs((scheduled.settings.suspend_after_idle_min * 60) as u64),

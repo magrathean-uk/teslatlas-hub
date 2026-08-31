@@ -4,6 +4,15 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
+## 2026-08-31 — v1.0.0-beta.2 untagged source candidate
+
+- added an untagged beta.2 candidate while retaining the historic
+  "v1.0.0-beta.1" release record;
+- changed candidate source links to the public repository, avoiding a claim
+  that an uncreated beta.2 release page is immutable Corresponding Source;
+- deferred signing, package attestation, notarisation, and publication. No
+  release asset or complete object-code source offer is claimed.
+
 ## 2026-08-30 — v1.0.0-beta.1 release
 
 - published the release OpenPGP fingerprint and the production provenance and

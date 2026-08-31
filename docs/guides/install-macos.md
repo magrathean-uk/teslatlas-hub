@@ -1,15 +1,13 @@
 # Install on macOS
 
-Teslatlas Hub v1.0.0-beta.1 supports Apple-silicon Macs running macOS 13 or
+Teslatlas Hub v1.0.0-beta.2 supports Apple-silicon Macs running macOS 13 or
 later.
 
 ## Verify the download
 
-Download the macOS ZIP and service package only from the
-[v1.0.0-beta.1 release page](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1).
-Treat a missing required asset as an incomplete release. Verify the signed tag,
-`SHA256SUMS`, detached signature, notarisation receipts, and artifact digest
-before opening either file. Follow [Verify a release](../releases/verification.md).
+No binary release is published yet. The installation instructions below apply
+only after the complete signed prerelease is published and passes
+[release verification](../releases/verification.md).
 
 ## Install
 

@@ -5,16 +5,23 @@ import AppKit
 final class ImportSheetController: NSWindowController {
     static let teslaMateHandoverDetail =
         "Hub reads TeslaMate without stopping or changing it. After import, Hub tells you when to disable Tesla access in TeslaMate yourself."
+    static let teslaMateVersionRequirement =
+        "Before import: back up TeslaMate, update it to version 4.2.0 or newer, start it once, and wait for its database migrations to finish. A direct database connection cannot prove the running app version."
 
     private let controller: HubController
     private let sourceField = NSTextField(string: "postgres://localhost/teslamate")
     private let carField = NSTextField(string: "1")
     private let passwordField = NSTextField(string: "")
     private let encryptionField = NSTextField(string: "")
+    private let versionAcknowledgement = NSButton(
+        checkboxWithTitle: "I confirm this database belongs to TeslaMate 4.2.0 or newer",
+        target: nil,
+        action: nil
+    )
 
     init(controller: HubController) {
         self.controller = controller
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 390),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 470),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Import TeslaMate"
         super.init(window: window)
@@ -48,6 +55,12 @@ final class ImportSheetController: NSWindowController {
         handover.maximumNumberOfLines = 2
         handover.widthAnchor.constraint(equalToConstant: 504).isActive = true
         stack.addArrangedSubview(handover)
+        let versionRequirement = NSTextField(wrappingLabelWithString: Self.teslaMateVersionRequirement)
+        versionRequirement.font = .systemFont(ofSize: 13, weight: .semibold)
+        versionRequirement.textColor = .systemOrange
+        versionRequirement.maximumNumberOfLines = 3
+        versionRequirement.widthAnchor.constraint(equalToConstant: 504).isActive = true
+        stack.addArrangedSubview(versionRequirement)
         stack.addArrangedSubview(field("PostgreSQL source", sourceField))
         stack.addArrangedSubview(field("Car ID", carField))
         let passwordRow = NSStackView(views: [passwordField, button("Choose…", #selector(choosePassword))])
@@ -58,6 +71,7 @@ final class ImportSheetController: NSWindowController {
         encryptionRow.spacing = 8
         encryptionRow.widthAnchor.constraint(equalToConstant: 504).isActive = true
         stack.addArrangedSubview(labeled("TeslaMate ENCRYPTION_KEY file", encryptionRow))
+        stack.addArrangedSubview(versionAcknowledgement)
         let buttons = NSStackView(views: [spacer(), button("Cancel", #selector(cancelPressed)), button("Import", #selector(importPressed))])
         buttons.spacing = 8
         stack.addArrangedSubview(buttons)
@@ -136,13 +150,25 @@ final class ImportSheetController: NSWindowController {
             alert.runModal()
             return
         }
+        let versionAccepted = versionAcknowledgement.state == .on
+        guard versionAccepted else {
+            let alert = NSAlert()
+            alert.messageText = "Confirm TeslaMate version"
+            alert.informativeText = Self.teslaMateVersionRequirement
+            alert.runModal()
+            return
+        }
         do {
             try HubController.validateMigrationSource(sourceField.stringValue)
         } catch {
             NSAlert(error: error).runModal()
             return
         }
-        controller.importTeslaMate(source: sourceField.stringValue, carID: carField.stringValue, passwordFile: passwordField.stringValue, encryptionKeyFile: encryptionField.stringValue) { [weak self] result in
+        controller.importTeslaMate(source: sourceField.stringValue,
+                                   carID: carField.stringValue,
+                                   passwordFile: passwordField.stringValue,
+                                   encryptionKeyFile: encryptionField.stringValue,
+                                   acknowledgeV42CompatibleSchema: versionAccepted) { [weak self] result in
             switch result {
             case .success: if let window = self?.window, let parent = window.sheetParent { parent.endSheet(window) }
             case let .failure(error): NSAlert(error: error).runModal()

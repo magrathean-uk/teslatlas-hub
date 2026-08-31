@@ -1421,6 +1421,35 @@ fn charge_energy_uses_the_current_row_and_phase_fallback() {
 }
 
 #[test]
+fn charge_phase_inference_does_not_overflow_high_current_samples() {
+    let start = 1_800_000_000_000_i64;
+    let samples = (0..16)
+        .map(|index| {
+            let timestamp = start + i64::from(index) * 60_000;
+            sample(
+                i64::from(index) + 1,
+                timestamp,
+                json!({
+                    "charge_state": {
+                        "charging_state": "Charging",
+                        "timestamp": timestamp,
+                        "charger_power": 35.65,
+                        "charger_phases": 1,
+                        "charger_actual_current": 155.0,
+                        "charger_voltage": 230.0
+                    }
+                }),
+            )
+        })
+        .collect::<Vec<_>>();
+    let step =
+        apply_samples(OpenSessionState::new(), 1, &samples).expect("valid high-current charge");
+    let stored = &step.state.open_charge.expect("open charge").samples;
+    let energy = calculate_energy_used_kwh(stored).expect("phase-derived energy");
+    assert!((energy - 8.9125).abs() < 1e-9);
+}
+
+#[test]
 fn nonpositive_live_charger_phases_are_stored_as_null() {
     let sample = sample(
         1,

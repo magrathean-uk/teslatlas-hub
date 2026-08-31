@@ -53,8 +53,9 @@ endpoint; other signed commands require the proxy.
 
 ## TeslaMate import fails
 
-Run `teslamate-check`. Hub admits only the exact validated TeslaMate 4.1.1
-migration set. A newer or modified schema is rejected rather than guessed.
+Run `teslamate-check`. The running app must be TeslaMate 4.2.0 or newer, and
+Hub admits only the exact reviewed v4.2-compatible migration set. A newer or
+modified schema is rejected rather than guessed.
 Passwords must not appear in the PostgreSQL URL.
 
 ## Diagnostic sharing

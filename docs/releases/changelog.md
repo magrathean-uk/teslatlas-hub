@@ -3,6 +3,20 @@
 All notable released changes are recorded here. The project follows Semantic
 Versioning for release identifiers; beta interfaces may still change.
 
+## 1.0.0-beta.2 — unpublished source candidate (prepared 2026-08-31)
+
+No GitHub release assets, signed publication, or notarised package are claimed
+for this candidate.
+
+### Changed
+
+- requires a trusted OpenSSH known-host entry before guided TeslaMate migration
+  sends SSH authentication or reads TeslaMate database credentials;
+- requires TeslaMate 4.2.0 or newer for guided migration;
+- identifies the untagged candidate source as the repository rather than
+  claiming a nonexistent beta.2 release page;
+- retains the existing "v1.0.0-beta.1" tag and its release records as history.
+
 ## 1.0.0-beta.1 — 2026-08-30
 
 First public beta. The signed tag, platform artifacts, exact source, and

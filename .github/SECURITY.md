@@ -4,7 +4,8 @@
 
 | Release line | Security support |
 |---|---|
-| v1.0.0-beta.1 | Supported public beta |
+| v1.0.0-beta.2 | Unpublished candidate; not a supported release |
+| v1.0.0-beta.1 | Historical untagged-release documentation; not a supported release |
 | v1.0.0-alpha.1 and earlier | Unsupported; upgrade by backup and fresh beta installation |
 | `main` and untagged builds | Reports accepted, but not a supported release channel |
 

@@ -214,10 +214,10 @@ scripts/build-deb.sh \
   --go-proxy-evidence dist/go-proxy-evidence-amd64 \
   --fleet-telemetry-evidence dist/fleet-telemetry-evidence-amd64 \
   --legal-bundle dist/dependency-legal \
-  --version 1.0.0-beta.1 \
+  --version 1.0.0-beta.2 \
   --architecture amd64 \
-  --output dist/teslatlas-hub_1.0.0-beta.1_amd64.deb
-sudo dpkg -i dist/teslatlas-hub_1.0.0-beta.1_amd64.deb
+  --output dist/teslatlas-hub_1.0.0-beta.2_amd64.deb
+sudo dpkg -i dist/teslatlas-hub_1.0.0-beta.2_amd64.deb
 ```
 
 `fleet-telemetry-evidence/fleet-telemetry-upstream-source.tar.gz` is the exact

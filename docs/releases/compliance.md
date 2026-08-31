@@ -1,5 +1,9 @@
 # Hub release compliance gate
 
+> **Historical reference:** this gate applies when an approved release is
+> resumed. v1.0.0-beta.2 is an untagged source candidate; no signing,
+> notarisation, or publication step is active.
+
 Release is blocked unless all items pass.
 
 ## Licence/source

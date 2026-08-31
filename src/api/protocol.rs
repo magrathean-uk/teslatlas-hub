@@ -62,6 +62,7 @@ const CURSOR_PAYLOAD_BYTES: usize = 77;
 const CURSOR_TAG_BYTES: usize = 32;
 const MANIFEST_SIGNING_SEED_DOMAIN: &[u8] = b"teslatlas-hub/manifest-ed25519-signing-seed/v1";
 const FLEET_CREDENTIAL_ENCRYPTION_DOMAIN: &[u8] = b"teslatlas-hub/fleet-credential-encryption/v1";
+const PUBLIC_QUERY_CURSOR_DOMAIN: &[u8] = b"teslatlas-hub/public-query-cursor/v1\0";
 
 /// Version of the manifest and cursor envelope, not the Hub binary version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -934,6 +935,17 @@ impl CursorKey {
 
     pub(crate) fn fleet_credential_encryption_key(&self) -> [u8; 32] {
         hmac_sha256(&self.0, FLEET_CREDENTIAL_ENCRYPTION_DOMAIN)
+    }
+
+    pub(crate) fn public_query_cursor_tag(&self, payload: &[u8]) -> [u8; 32] {
+        let mut message = Vec::with_capacity(PUBLIC_QUERY_CURSOR_DOMAIN.len() + payload.len());
+        message.extend_from_slice(PUBLIC_QUERY_CURSOR_DOMAIN);
+        message.extend_from_slice(payload);
+        hmac_sha256(&self.0, &message)
+    }
+
+    pub(crate) fn verifies_public_query_cursor_tag(&self, payload: &[u8], tag: &[u8; 32]) -> bool {
+        constant_time_eq(&self.public_query_cursor_tag(payload), tag)
     }
 }
 

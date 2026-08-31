@@ -35,7 +35,7 @@ use crate::{
     teslamate_projection::TeslaMateUpdatePhysicalV2_2,
     teslamate_schema::{
         MAX_VALIDATED_MIGRATION, TESLAMATE_V4_MIGRATION_COUNT, TESLAMATE_V4_MIGRATION_SET_SHA256,
-        TESLAMATE_V4_SOURCE_REVISION,
+        TESLAMATE_V4_SOURCE_REVISION, is_supported_teslamate_source_revision,
     },
     updates_logical::{
         APP_SCHEMA_VERSION, LOGICAL_STREAM_SCHEMA, LogicalUpdatesStream, LogicalUpdatesSummary,
@@ -1446,6 +1446,8 @@ pub(crate) fn prepare_initial_production_updates_schema_22_with_gate(
     publication_gate: &PublicationGate,
     legacy_sequence: u64,
 ) -> Result<PreparedProductionUpdatesSchema22, UpdatesDeliveryError> {
+    // New captures must use the current reviewed source. Legacy beta revision
+    // acceptance is limited to verification of already-signed witnesses below.
     if source_capture.schema.pinned_source_revision != TESLAMATE_V4_SOURCE_REVISION
         || source_capture.schema.pinned_migration_set_sha256 != TESLAMATE_V4_MIGRATION_SET_SHA256
         || source_capture.schema.observed_migration_count != TESLAMATE_V4_MIGRATION_COUNT
@@ -1587,6 +1589,8 @@ pub(crate) fn publish_production_updates_schema_22_with_gate(
     expected_head: &Option<ProductionUpdatesHead>,
     admitted_legacy_head: Option<(Uuid, u64)>,
 ) -> Result<ProductionUpdatesPublication, UpdatesDeliveryError> {
+    // New captures must use the current reviewed source. Legacy beta revision
+    // acceptance is limited to verification of already-signed witnesses below.
     if source_capture.schema.pinned_source_revision != TESLAMATE_V4_SOURCE_REVISION
         || source_capture.schema.pinned_migration_set_sha256 != TESLAMATE_V4_MIGRATION_SET_SHA256
         || source_capture.schema.observed_migration_count != TESLAMATE_V4_MIGRATION_COUNT
@@ -2260,7 +2264,7 @@ fn validate_production_source_witness(
     );
     if witness.schema != "teslatlas-pg-source-witness-v1"
         || witness.source_transaction != "read_only_repeatable_read_exported_snapshot"
-        || witness.source_revision != TESLAMATE_V4_SOURCE_REVISION
+        || !is_supported_teslamate_source_revision(&witness.source_revision)
         || witness.pinned_migration_set_sha256 != TESLAMATE_V4_MIGRATION_SET_SHA256
         || witness.observed_migration_count
             != u64::try_from(TESLAMATE_V4_MIGRATION_COUNT).expect("migration count fits u64")

@@ -30,7 +30,7 @@ use crate::{
         HubStore, ObservationInput, SUPERVISED_COLLECTOR_LEASE_MS, SourceDescriptor,
         SupervisedCollectorState, VehicleDescriptor,
     },
-    hub_pack::ProjectionCarSettings,
+    hub_pack::{ProjectionCarSettings, ProjectionDrive},
     protocol::{
         CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V2, HUB_PROJECTION_SCHEMA_V3, LineageDelta,
         LineageManifestV2, MirrorTable, OpaqueCursor, PackCompression, PackFormat, ProtocolVersion,
@@ -914,7 +914,10 @@ fn default_schema_negotiation_never_advertises_schema_22() {
 #[tokio::test]
 async fn exposes_health_and_capabilities() {
     let temp = crate::private_tempdir().expect("temp directory");
-    let app = router(HubStore::initialize(temp.path()).expect("store"));
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let installation_id = store.installation_id().expect("installation identity");
+    let unsigned = router(store.clone());
+    let app = public_query_router(store, 46);
 
     let health = app
         .clone()
@@ -946,7 +949,33 @@ async fn exposes_health_and_capabilities() {
     let payload: serde_json::Value = serde_json::from_slice(&bytes).expect("capabilities JSON");
     assert_eq!(payload["pack_format"], "sqlite-zstd");
     assert_eq!(payload["sourceUrl"], crate::corresponding_source_url());
-    assert!(payload.get("manifestPublicKey").is_none());
+    assert_eq!(payload["hub_id"], installation_id.to_string());
+    assert_eq!(payload["api_versions"], serde_json::json!(["1.0"]));
+    assert_eq!(
+        payload["capabilities"],
+        serde_json::json!([
+            "query.vehicles",
+            "query.current",
+            "query.drives",
+            "sync.packs"
+        ])
+    );
+    assert!(payload["manifestPublicKey"].as_str().is_some());
+
+    let unsigned_capabilities = unsigned
+        .oneshot(
+            Request::builder()
+                .uri("/.well-known/teslatlas-hub")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("unsigned capabilities response");
+    let unsigned_payload = response_json(unsigned_capabilities).await;
+    assert_eq!(
+        unsigned_payload["capabilities"],
+        serde_json::json!(["query.vehicles", "query.current"])
+    );
 }
 
 #[tokio::test]
@@ -1532,6 +1561,433 @@ async fn current_vehicle_serves_the_durable_v4_1_1_summary_without_raw_history()
             })
             .unwrap(),
         0
+    );
+}
+
+fn public_drive_fixture(id: i64, start_date_ms: i64) -> ProjectionDrive {
+    ProjectionDrive {
+        id,
+        car_id: 1,
+        optimized_at_ms: None,
+        start_date_ms,
+        end_date_ms: start_date_ms + 500,
+        distance_km: Some(id as f64),
+        duration_min: Some(1),
+        efficiency: None,
+        outside_temp_avg: None,
+        inside_temp_avg: None,
+        speed_max: None,
+        power_max: None,
+        power_min: None,
+        start_ideal_range_km: None,
+        end_ideal_range_km: None,
+        start_address: None,
+        end_address: None,
+        start_geofence: None,
+        end_geofence: None,
+        start_latitude: None,
+        start_longitude: None,
+        end_latitude: None,
+        end_longitude: None,
+        start_soc: None,
+        end_soc: None,
+        start_rated_range_km: None,
+        end_rated_range_km: None,
+        ascent: None,
+        descent: None,
+    }
+}
+
+fn public_query_router(store: HubStore, key_byte: u8) -> Router {
+    trusted_local_router(
+        store,
+        false,
+        Some(CursorKey::from_bytes([key_byte; 32])),
+        None,
+    )
+}
+
+fn seed_public_drive(store: &HubStore, vehicle_id: Uuid, drive: &ProjectionDrive) {
+    store
+        .open()
+        .expect("open store")
+        .execute(
+            "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![
+                vehicle_id.to_string(),
+                drive.id,
+                drive.car_id,
+                serde_json::to_string(drive).expect("drive JSON")
+            ],
+        )
+        .expect("seed materialised drive");
+}
+
+fn mark_vehicle_published(store: &HubStore, vehicle_id: Uuid) {
+    store
+        .open()
+        .expect("open store")
+        .execute(
+            "INSERT INTO sync_manifests(snapshot_id, vehicle_id, head_sequence, manifest_json)
+             VALUES (?1, ?2, 1, ?3)",
+            rusqlite::params![
+                Uuid::new_v4().to_string(),
+                vehicle_id.to_string(),
+                b"{}".as_slice()
+            ],
+        )
+        .expect("seed published vehicle");
+}
+
+async fn response_json(response: Response) -> serde_json::Value {
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("response body")
+        .to_bytes();
+    serde_json::from_slice(&body).expect("response JSON")
+}
+
+#[tokio::test]
+async fn public_drive_query_hides_unpublished_vehicle_history() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let source = store
+        .register_source(
+            &SourceDescriptor::new("owner_api", "unpublished-public-drive-query"),
+            1_000,
+        )
+        .expect("source");
+    let vehicle = store
+        .register_vehicle(
+            &VehicleDescriptor::new(source.source_id, "9").with_tesla_identity(Some(9), None),
+            1_000,
+        )
+        .expect("vehicle");
+    seed_public_drive(&store, vehicle.vehicle_id, &public_drive_fixture(1, 1_000));
+
+    let response = public_query_router(store, 47)
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/drives?from_ms=1000&to_ms=2000",
+                    vehicle.vehicle_id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("unpublished drive query response");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        response_json(response).await["error"]["code"],
+        "vehicle_not_found"
+    );
+}
+
+#[tokio::test]
+async fn public_drive_query_is_bounded_ordered_and_cursor_resumable() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let source = store
+        .register_source(
+            &SourceDescriptor::new("owner_api", "public-drive-query"),
+            1_000,
+        )
+        .expect("source");
+    let vehicle = store
+        .register_vehicle(
+            &VehicleDescriptor::new(source.source_id, "9").with_tesla_identity(Some(9), None),
+            1_000,
+        )
+        .expect("vehicle");
+    for drive in [
+        public_drive_fixture(1, 1_000),
+        public_drive_fixture(2, 2_000),
+        public_drive_fixture(3, 3_000),
+    ] {
+        seed_public_drive(&store, vehicle.vehicle_id, &drive);
+    }
+    mark_vehicle_published(&store, vehicle.vehicle_id);
+    let wrong_key_app = public_query_router(store.clone(), 48);
+    let app = public_query_router(store, 47);
+
+    let first = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/drives?limit=2&from_ms=1000&to_ms=4000",
+                    vehicle.vehicle_id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("first drive page");
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(first.headers()[header::CACHE_CONTROL], "no-store");
+    let etag = first
+        .headers()
+        .get(header::ETAG)
+        .expect("drive page ETag")
+        .clone();
+    let first = response_json(first).await;
+    assert_eq!(first["items"][0]["id"], 3);
+    assert_eq!(first["items"][1]["id"], 2);
+    assert_eq!(
+        first["items"][0]["vehicle_id"],
+        vehicle.vehicle_id.to_string()
+    );
+    let first_item = first["items"][0].as_object().expect("public drive object");
+    assert!(!first_item.contains_key("car_id"));
+    assert!(!first_item.contains_key("optimized_at_ms"));
+    let cursor = first["next_cursor"].as_str().expect("next cursor");
+
+    let wrong_key = wrong_key_app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/drives?limit=2&from_ms=1000&to_ms=4000&cursor={cursor}",
+                    vehicle.vehicle_id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("wrong cursor-key response");
+    assert_eq!(wrong_key.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(wrong_key).await["error"]["code"],
+        "invalid_cursor"
+    );
+
+    let not_modified = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/drives?limit=2&from_ms=1000&to_ms=4000",
+                    vehicle.vehicle_id
+                ))
+                .header(header::IF_NONE_MATCH, etag.clone())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("conditional drive page");
+    assert_eq!(not_modified.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(not_modified.headers()[header::ETAG], etag);
+    assert_eq!(not_modified.headers()[header::CACHE_CONTROL], "no-store");
+    assert!(
+        not_modified
+            .into_body()
+            .collect()
+            .await
+            .expect("304 body")
+            .to_bytes()
+            .is_empty()
+    );
+
+    let second = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/drives?limit=2&from_ms=1000&to_ms=4000&cursor={cursor}",
+                    vehicle.vehicle_id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("second drive page");
+    assert_eq!(second.status(), StatusCode::OK);
+    let second = response_json(second).await;
+    assert_eq!(second["items"].as_array().expect("items").len(), 1);
+    assert_eq!(second["items"][0]["id"], 1);
+    assert!(second["next_cursor"].is_null());
+
+    let wrong_scope = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/drives?limit=2&from_ms=999&to_ms=4000&cursor={cursor}",
+                    vehicle.vehicle_id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("wrong-scope cursor response");
+    assert_eq!(wrong_scope.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(wrong_scope).await["error"]["code"],
+        "invalid_cursor"
+    );
+
+    let mut tampered = cursor.as_bytes().to_vec();
+    let last = tampered.last_mut().expect("cursor byte");
+    *last = if *last == b'a' { b'b' } else { b'a' };
+    let tampered = String::from_utf8(tampered).expect("ASCII cursor");
+    let rejected = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/drives?limit=2&from_ms=1000&to_ms=4000&cursor={tampered}",
+                    vehicle.vehicle_id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("tampered cursor response");
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(rejected).await["error"]["code"],
+        "invalid_cursor"
+    );
+}
+
+#[tokio::test]
+async fn public_drive_query_rejects_invalid_scope_and_preserves_device_auth() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([47; 32]);
+    let app = paired_router(store.clone(), &cursor_key);
+    let unknown_vehicle = Uuid::new_v4();
+
+    let denied = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{unknown_vehicle}/drives"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("unauthorized drive query");
+    assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+
+    let local = public_query_router(store, 47);
+    let invalid_range = local
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{unknown_vehicle}/drives?from_ms=2000&to_ms=2000"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("invalid range response");
+    assert_eq!(invalid_range.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(invalid_range).await["error"]["code"],
+        "invalid_time_range"
+    );
+
+    let invalid_limit = local
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{unknown_vehicle}/drives?limit=501"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("invalid limit response");
+    assert_eq!(invalid_limit.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(invalid_limit).await["error"]["code"],
+        "invalid_limit"
+    );
+
+    let unknown = local
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{unknown_vehicle}/drives"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("unknown vehicle response");
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        response_json(unknown).await["error"]["code"],
+        "vehicle_not_found"
+    );
+}
+
+#[tokio::test]
+async fn public_drive_query_fails_closed_on_catalogue_identity_divergence() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let source = store
+        .register_source(
+            &SourceDescriptor::new("owner_api", "public-drive-identity"),
+            1_000,
+        )
+        .expect("source");
+    let vehicle = store
+        .register_vehicle(
+            &VehicleDescriptor::new(source.source_id, "9").with_tesla_identity(Some(9), None),
+            1_000,
+        )
+        .expect("vehicle");
+    let drive = public_drive_fixture(99, 1_000);
+    store
+        .open()
+        .expect("open store")
+        .execute(
+            "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+             VALUES (?1, 1, ?2, ?3)",
+            rusqlite::params![
+                vehicle.vehicle_id.to_string(),
+                drive.car_id,
+                serde_json::to_string(&drive).expect("drive JSON")
+            ],
+        )
+        .expect("seed divergent drive identity");
+    mark_vehicle_published(&store, vehicle.vehicle_id);
+
+    let response = public_query_router(store, 47)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{}/drives", vehicle.vehicle_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("divergent identity response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response_json(response).await["error"]["code"],
+        "service_unavailable"
+    );
+}
+
+#[tokio::test]
+async fn public_drive_query_requires_a_cursor_integrity_key() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let response = router(store)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{}/drives", Uuid::new_v4()))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("unsigned query response");
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response_json(response).await["error"]["code"],
+        "service_unavailable"
     );
 }
 

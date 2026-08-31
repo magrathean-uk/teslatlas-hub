@@ -17,4 +17,4 @@ git commit -s
 
 The sign-off must use a real identity or a legally accountable corporate identity approved by the maintainer. A pseudonym may be accepted only where the private CLA and contributor register establish the legal person behind it.
 
-A DCO sign-off is not a substitute for the contributor assignment agreement where `docs/governance/cla-policy.md` requires one. See `docs/governance/developer-certificate-of-origin-1.1.md`.
+A DCO sign-off is not a substitute for the contributor assignment agreement where the [contributor rights policy](cla-policy.md) requires one. See the canonical [Developer Certificate of Origin 1.1](developer-certificate-of-origin-1.1.md).

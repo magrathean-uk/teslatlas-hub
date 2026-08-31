@@ -276,6 +276,31 @@ fn reviewed_migration_pin_requires_the_exact_upstream_set() {
     );
     assert_eq!(TESLAMATE_V4_SOURCE_REVISION.len(), 40);
     assert_eq!(
+        TESLAMATE_V4_SOURCE_REVISION,
+        "e8d24886f97f22469c2675f89be843f6d401c76a"
+    );
+    assert!(is_supported_teslamate_source_revision(
+        TESLAMATE_V4_SOURCE_REVISION
+    ));
+    assert!(is_supported_teslamate_source_revision(
+        TESLAMATE_V4_1_1_SOURCE_REVISION
+    ));
+    assert!(!is_supported_teslamate_source_revision(
+        "0000000000000000000000000000000000000000"
+    ));
+    assert!(matches!(
+        validate_migration_versions(
+            &PINNED_MIGRATION_VERSIONS[..PINNED_MIGRATION_VERSIONS.len() - 1]
+        ),
+        Err(SchemaCompatibilityError::LegacyMigration { .. })
+    ));
+    let mut future = PINNED_MIGRATION_VERSIONS.to_vec();
+    future.push(MAX_VALIDATED_MIGRATION + 1);
+    assert!(matches!(
+        validate_migration_versions(&future),
+        Err(SchemaCompatibilityError::UnreviewedMigration { .. })
+    ));
+    assert_eq!(
         validate_migration_versions(&PINNED_MIGRATION_VERSIONS[1..]),
         Err(SchemaCompatibilityError::MigrationSetMismatch)
     );

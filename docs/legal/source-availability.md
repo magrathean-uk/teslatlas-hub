@@ -16,10 +16,19 @@ Keep source access available for the period required by the distribution method.
 
 A modified network deployment must offer the source of the version actually running, not stale upstream source.
 
-## Official v1 source assets
+## Current untagged candidate
 
-The version-bound GitHub release page is the prominent source landing page. Its
-complete Corresponding Source offer comprises both the exact tagged workspace
+"v1.0.0-beta.2" is source-only and untagged. No binary or package is
+distributed for it, and no release asset or complete object-code source offer
+is claimed. Its candidate source is the public repository main branch. A
+future object-code release must satisfy the full requirements above with an
+exact immutable source reference.
+
+## Planned v1 source assets
+
+When the release is published, its version-bound GitHub release page will be the
+prominent source landing page. The complete Corresponding Source offer will
+comprise both the exact tagged workspace
 archive `teslatlas-hub-v1.0.0-beta.1-source.tar.gz` and the source components
 inside `teslatlas-hub-v1.0.0-beta.1-evidence.tar.gz`; neither asset alone is
 represented as complete. Locked Rust registry source is a deterministic
@@ -91,11 +100,13 @@ teslatlas-hub licence
 teslatlas-hub source
 ```
 
-The official binary prints the version-bound GitHub release-page URL that lists
-both required source assets. `/.well-known/teslatlas-hub` exposes that same
-immutable landing page. The macOS app provides a Corresponding Source menu item
-bound to its embedded Hub version. Release notes must identify the workspace
-archive and detailed evidence archive as the complete two-part source set.
+An untagged candidate prints the public repository route; it has no
+version-bound release page or complete object-code source offer. A published
+binary prints the version-bound GitHub release-page URL that lists both required
+source assets. `/.well-known/teslatlas-hub` exposes the same source route. The
+macOS app provides a source menu item bound to its embedded Hub version.
+Published-release notes must identify the workspace archive and detailed
+evidence archive as the complete two-part source set.
 
 An operator distributing a modified build must replace that route with the
 complete Corresponding Source for the version actually served.

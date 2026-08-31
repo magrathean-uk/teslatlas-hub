@@ -1839,6 +1839,26 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 56;
     }
 
+    if version == 56 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                DROP INDEX IF EXISTS materialised_drives_public_query;
+                CREATE INDEX materialised_drives_public_query
+                    ON materialised_drives(
+                        vehicle_id,
+                        CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER) DESC,
+                        drive_id DESC
+                    );
+                PRAGMA user_version = 57;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 57;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {

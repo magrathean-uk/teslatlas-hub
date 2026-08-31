@@ -1,5 +1,9 @@
 # Release keys
 
+> **Historical reference:** these trust anchors document the v1.0.0-beta.1
+> release procedure. v1.0.0-beta.2 is untagged and has no release assets;
+> signing and publication are deferred.
+
 Official release tags and checksum manifests are signed with the Teslatlas Hub
 release OpenPGP key.
 

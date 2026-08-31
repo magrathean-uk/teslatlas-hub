@@ -26,6 +26,33 @@ fn lifecycle_cursor_query_uses_the_per_vehicle_id_index() {
     );
 }
 
+#[test]
+fn public_drive_query_uses_its_vehicle_time_cursor_index_without_sorting() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let connection = store.open().expect("connection");
+    let mut statement = connection
+        .prepare(&format!("EXPLAIN QUERY PLAN {PUBLIC_DRIVES_PAGE_SQL}"))
+        .expect("query plan");
+    let details = statement
+        .query_map(
+            params![Uuid::new_v4().to_string(), 0_i64, 10_i64, 10_i64, 10_i64, 10_i64],
+            |row| row.get::<_, String>(3),
+        )
+        .expect("plan rows")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("plan details");
+    let plan = details.join("\n");
+    assert!(
+        plan.contains("materialised_drives_public_query"),
+        "public drive query must use its vehicle/time/cursor index: {plan}"
+    );
+    assert!(
+        !plan.contains("TEMP B-TREE"),
+        "public drive query must not sort an entire vehicle history: {plan}"
+    );
+}
+
 fn tree_contents(root: &Path) -> Vec<(PathBuf, u32, Option<(u64, String)>)> {
     fn visit(
         root: &Path,

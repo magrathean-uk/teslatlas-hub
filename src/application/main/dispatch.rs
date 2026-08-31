@@ -8,9 +8,27 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         source,
         car_id,
         postgres_password_file,
+        acknowledge_v4_2_compatible_schema,
     } = &cli.command
     {
-        return run_teslamate_check(source, *car_id, postgres_password_file).await;
+        return run_teslamate_check(
+            source,
+            *car_id,
+            postgres_password_file,
+            *acknowledge_v4_2_compatible_schema,
+        )
+        .await;
+    }
+
+    #[cfg(unix)]
+    if matches!(
+        &cli.command,
+        Command::Migrate {
+            acknowledge_v4_2_compatible_schema: false,
+            ..
+        }
+    ) {
+        return Err("TeslaMate migration requires --acknowledge-v4-2-compatible-schema after confirming TeslaMate 4.2.0 or newer".into());
     }
 
     #[cfg(unix)]
@@ -162,6 +180,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         access_token_file,
         refresh_token_file,
         online_snapshot,
+        acknowledge_v4_2_compatible_schema: _,
     } = &cli.command
     {
         let start_hub = run_macos_migration(

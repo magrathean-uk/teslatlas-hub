@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "Please cite the specific Teslatlas Hub release or commit you used."
+title: "Teslatlas Hub"
+type: software
+authors:
+  - family-names: "Bolyki"
+    given-names: "György"
+    affiliation: "MAGRATHEAN UK LTD"
+    email: "contact@magrathean.uk"
+abstract: >-
+  A self-hosted, multi-vehicle Tesla telemetry collector and local sync hub
+  for supported macOS and Debian deployments.
+repository-code: "https://github.com/magrathean-uk/teslatlas-hub"
+url: "https://teslatlas.eu"
+license: "AGPL-3.0-only"
+keywords:
+  - self-hosted
+  - telemetry
+  - Tesla
+  - Rust
+  - macOS
+  - Debian

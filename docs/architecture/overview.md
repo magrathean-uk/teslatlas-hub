@@ -58,7 +58,8 @@ provider credentials.
 ## Migration boundary
 
 TeslaMate migration opens an operator-supplied PostgreSQL source in a read-only
-transaction and maps supported TeslaMate 4.1.1 records into Hub-owned storage.
+transaction and maps supported TeslaMate v4.2-compatible records into Hub-owned
+storage.
 TeslaMate is not bundled, started, stopped, or required after migration.
 
 The explicit `write-back` command is outside migration and collection. It can

@@ -8,22 +8,36 @@
 //! validate their rows with this module, and only then use the fixed paginated
 //! projections below.
 //!
-//! The contract is pinned to the TeslaMate v4.1.1 tag revision
-//! `d6c43bc8c48784da8f0b701945b80b20911b3d1a`. A source must match that
-//! migration high-water mark and complete ordered set.
+//! The contract is pinned to the TeslaMate v4.2.0 tag revision
+//! `e8d24886f97f22469c2675f89be843f6d401c76a`. TeslaMate v4.2.0 retains
+//! the same migration identifiers and physical schema as v4.1.1, so database
+//! evidence proves only v4.2-compatible schema, not the running app version.
+//! A source must match that migration high-water mark and complete ordered set.
 //! A newer migration, or a database reconstructed with a different migration
 //! history, is rejected until its schema delta has been reviewed.
 
 use sha2::{Digest, Sha256};
 
-/// First TeslaMate migration version this adapter supports (the exact v4.1.1 set).
+/// First TeslaMate migration version this adapter supports (the v4.2-compatible set).
 pub const MIN_SUPPORTED_MIGRATION: i64 = 20_260_808_090_000;
 
-/// Last migration in the pinned v4.1.1 source tree.
+/// Last migration in the pinned v4.2.0 source tree.
 pub const MAX_VALIDATED_MIGRATION: i64 = MIN_SUPPORTED_MIGRATION;
 
-/// Immutable v4.1.1 source revision behind this compatibility contract.
-pub const TESLAMATE_V4_SOURCE_REVISION: &str = "d6c43bc8c48784da8f0b701945b80b20911b3d1a";
+/// Immutable v4.2.0 source revision written by new imports.
+pub const TESLAMATE_V4_SOURCE_REVISION: &str = "e8d24886f97f22469c2675f89be843f6d401c76a";
+
+/// Immutable v4.1.1 revision retained as legacy beta provenance.
+pub const TESLAMATE_V4_1_1_SOURCE_REVISION: &str = "d6c43bc8c48784da8f0b701945b80b20911b3d1a";
+
+/// Accept only reviewed source revisions when verifying already-produced beta
+/// witnesses. New captures always write [`TESLAMATE_V4_SOURCE_REVISION`].
+pub const fn is_supported_teslamate_source_revision(revision: &str) -> bool {
+    matches!(
+        revision.as_bytes(),
+        b"e8d24886f97f22469c2675f89be843f6d401c76a" | b"d6c43bc8c48784da8f0b701945b80b20911b3d1a"
+    )
+}
 
 /// Number of migrations in the pinned source revision.
 pub const TESLAMATE_V4_MIGRATION_COUNT: usize = 105;
@@ -1418,9 +1432,6 @@ pub fn validate_migration_versions(versions: &[i64]) -> Result<i64, SchemaCompat
     let Some(&high_water) = versions.last() else {
         return Err(SchemaCompatibilityError::InvalidMigrationSet);
     };
-    if versions.len() != TESLAMATE_V4_MIGRATION_COUNT {
-        return Err(SchemaCompatibilityError::MigrationSetMismatch);
-    }
     if versions
         .windows(2)
         .any(|pair| pair[0] <= 0 || pair[1] <= pair[0])
@@ -1429,6 +1440,9 @@ pub fn validate_migration_versions(versions: &[i64]) -> Result<i64, SchemaCompat
         return Err(SchemaCompatibilityError::InvalidMigrationSet);
     }
     validate_migration_version(high_water)?;
+    if versions.len() != TESLAMATE_V4_MIGRATION_COUNT {
+        return Err(SchemaCompatibilityError::MigrationSetMismatch);
+    }
 
     let mut digest = Sha256::new();
     for version in versions {

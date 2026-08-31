@@ -1,38 +1,45 @@
-## Change
+## Outcome
 
-Describe the outcome, affected components and rollback.
+What changes for the user or operator? Identify affected components and scope.
+
+## Validation
+
+- [ ] Tests cover success and failure paths.
+- [ ] Repository layout and provenance gates pass.
+- [ ] Formatting and Clippy pass where Rust changed.
+- [ ] Documentation matches observable behaviour.
+- [ ] Logs, errors and fixtures contain no secret or personal data.
+
+Commands and results:
+
+```text
+
+```
+
+## Risk and rollback
+
+Describe security, privacy, data-integrity, provider, resource and compatibility
+risk. State the rollback or recovery path.
 
 ## Provenance and rights
 
-- [ ] Every commit has `Signed-off-by:` DCO certification.
-- [ ] The applicable contributor assignment is recorded privately, or employment/contract/founder deed coverage is confirmed.
-- [ ] Every consulted source, implementation and exact revision is listed below.
-- [ ] Copied, translated, adapted or generated material is identified.
-- [ ] Third-party licences/notices are identified.
-- [ ] No confidential information, credentials, personal data, VINs or precise travel history are included.
-- [ ] No code was copied from the proprietary Teslatlas repository without documented Magrathean rights and boundary approval.
+- [ ] Every commit has a DCO `Signed-off-by:` trailer.
+- [ ] Every consulted implementation, specification and exact revision is listed below.
+- [ ] Copied, adapted, translated or generated material is identified with its licence.
+- [ ] Employment, client and confidentiality restrictions are disclosed.
+- [ ] No proprietary Teslatlas source was copied without an approved rights record.
+- [ ] The required contributor assignment is verified privately before merge.
 
 Sources and revisions:
 
-## Security, privacy and operations
+```text
 
-- [ ] Least privilege and secret redaction are preserved.
-- [ ] Resource use is bounded.
-- [ ] Migration, rollback and recovery are documented.
-- [ ] Data-flow and retention documentation remains accurate.
-- [ ] Tests cover success and failure paths.
+```
 
-## Licence and release impact
+## Release impact
 
-- [ ] AGPL-3.0-only notices remain consistent.
-- [ ] Corresponding Source requirements are satisfied.
-- [ ] Dependency/SBOM/notice generation has been reviewed.
-- [ ] Modified upstream material is marked and attributed where applicable.
-
-## Release-sensitive changes
-
-- [ ] Cargo, binary, GUI, package, tag, and documentation versions agree.
-- [ ] The tracked-file provenance verifier passes.
-- [ ] Platform artifacts include the complete legal/source bundle.
-- [ ] No GitHub workflow or external automation was added without explicit
-      project-owner approval.
+- [ ] AGPL, third-party notices and Corresponding Source remain correct.
+- [ ] Modified upstream material is marked and attributed where required.
+- [ ] Dependency, SBOM and release-evidence impact has been reviewed.
+- [ ] Versioned interfaces, migration, packaging and platform support are updated where applicable.
+- [ ] No external automation or GitHub workflow was added without project-owner approval.

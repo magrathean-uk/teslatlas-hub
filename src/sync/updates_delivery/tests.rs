@@ -7,7 +7,10 @@ use crate::{
         TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateSettingsPhysicalV2_2,
     },
     teslamate_reader::TeslaMateSchemaInfo,
-    teslamate_schema::{MAX_VALIDATED_MIGRATION, TESLAMATE_V4_MIGRATION_SET_SHA256},
+    teslamate_schema::{
+        MAX_VALIDATED_MIGRATION, TESLAMATE_V4_1_1_SOURCE_REVISION,
+        TESLAMATE_V4_MIGRATION_SET_SHA256,
+    },
     updates_logical::decode_updates_logical_stream,
 };
 
@@ -249,6 +252,22 @@ fn production_capture_publishes_dynamic_exact_pair_and_reuses_exact_bytes() {
     assert_eq!(empty.source_witness.source_end_max_pg_us, None);
     let empty_pair = schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key)
         .expect("zero-row signed pair");
+    let mut legacy_noop: SignedNoOpState =
+        serde_json::from_slice(&empty_pair.1).expect("typed legacy no-op");
+    legacy_noop
+        .source_witness
+        .as_mut()
+        .expect("production witness")
+        .source_revision = TESLAMATE_V4_1_1_SOURCE_REVISION.into();
+    let legacy_witness = legacy_noop
+        .source_witness
+        .clone()
+        .expect("legacy production witness");
+    validate_production_source_witness(&legacy_noop, &legacy_witness)
+        .expect("legacy beta witness remains readable");
+    let mut unknown_witness = legacy_witness;
+    unknown_witness.source_revision = "0000000000000000000000000000000000000000".into();
+    assert!(validate_production_source_witness(&legacy_noop, &unknown_witness).is_err());
     empty_source.postgres_snapshot_sha256 = hex_sha256(Uuid::new_v4().as_bytes());
     let empty_replay =
         publish_production_updates_schema_22(&store, &cursor_key, &binding, empty_source)

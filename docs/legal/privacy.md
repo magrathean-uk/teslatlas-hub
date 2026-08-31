@@ -77,3 +77,6 @@ Hub should, unless clearly disclosed otherwise:
 - provide retention and deletion controls.
 
 Correct documentation if code differs.
+
+Deployers processing telemetry for another person or organisation should also
+use the [data-protection notice and checklist](../operations/data-protection-for-deployers.md).

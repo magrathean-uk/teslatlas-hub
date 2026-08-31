@@ -1,6 +1,6 @@
 # Install on Debian
 
-Teslatlas Hub v1.0.0-beta.1 supports Debian 13 on amd64 and ARM64.
+Teslatlas Hub v1.0.0-beta.2 supports Debian 13 on amd64 and ARM64.
 
 ## Select and verify the package
 
@@ -8,17 +8,14 @@ Teslatlas Hub v1.0.0-beta.1 supports Debian 13 on amd64 and ARM64.
 dpkg --print-architecture
 ```
 
-Download the matching `.deb` from the
-[v1.0.0-beta.1 release page](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1)
-and follow [Verify a release](../releases/verification.md). Treat a missing
-required asset as an incomplete release. Do not install an artifact whose
-architecture, checksum, signature, or package metadata differs from the release
-evidence.
+No binary release is published yet. The package instructions below apply only
+after the complete signed prerelease is published and passes
+[release verification](../releases/verification.md).
 
 ## Install
 
 ```sh
-sudo dpkg -i "teslatlas-hub_1.0.0-beta.1_$(dpkg --print-architecture).deb"
+sudo dpkg -i "teslatlas-hub_1.0.0-beta.2_$(dpkg --print-architecture).deb"
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml bootstrap
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \

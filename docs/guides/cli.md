@@ -66,6 +66,12 @@ appear in process arguments.
 | `observation-watermark` | Capture a durable cutover watermark. |
 | `verify-observation` | Prove a newer observation was committed. |
 
+TeslaMate migration requires a running TeslaMate 4.2.0 or newer and the exact
+reviewed v4.2-compatible database schema. Because the database cannot prove the
+app version, `teslamate-check` reports confirmation required until the operator
+passes `--acknowledge-v4-2-compatible-schema`; `migrate` always requires that
+flag.
+
 ## Vehicle control
 
 `control` manages collection settings, paired devices, geofences, GPX export,
@@ -89,5 +95,7 @@ teslatlas-hub licence
 teslatlas-hub source
 ```
 
-These commands identify the exact version, licence, notices, and immutable
-Corresponding Source route for the running binary.
+These commands identify the exact version, licence, notices, and source route
+for the running binary. An untagged source candidate prints the public
+repository route; a published binary must instead identify its complete,
+version-bound Corresponding Source offer.

@@ -5,21 +5,21 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class OnboardingHubControllerTests: XCTestCase {
-    func testTeslaMateCompatibilityParsingAcceptsOnlyExact41Contract() throws {
-        let exact = try XCTUnwrap(HubController.parseTeslaMateCompatibility("""
+    func testTeslaMateCompatibilityParsingAcceptsOnlyAcknowledged42CompatibleSchema() throws {
+        let compatible = try XCTUnwrap(HubController.parseTeslaMateCompatibility("""
         progress line
-        {"status":"compatible","reasonCode":"exact_4_1_1","requiredVersion":"4.1.1","guidance":"Ready to import."}
+        {"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready to import."}
         """))
-        XCTAssertTrue(exact.compatible)
-        XCTAssertEqual(exact.reasonCode, "exact_4_1_1")
-        XCTAssertEqual(exact.requiredVersion, "4.1.1")
-        XCTAssertEqual(exact.message, "Ready to import.")
+        XCTAssertTrue(compatible.compatible)
+        XCTAssertEqual(compatible.reasonCode, "v4_2_compatible_schema")
+        XCTAssertEqual(compatible.requiredVersion, "4.2.0")
+        XCTAssertEqual(compatible.message, "Ready to import.")
 
         let mismatch = try XCTUnwrap(HubController.parseTeslaMateCompatibility("""
-        {"status":"compatible","reasonCode":"migration_set_mismatch","requiredVersion":"4.1.1","guidance":"Update required."}
+        {"status":"compatible","reasonCode":"exact_4_2_0","requiredVersion":"4.2.0","guidance":"Invalid exactness claim."}
         """))
         XCTAssertFalse(mismatch.compatible)
-        XCTAssertEqual(mismatch.reasonCode, "migration_set_mismatch")
+        XCTAssertEqual(mismatch.reasonCode, "exact_4_2_0")
         XCTAssertNil(HubController.parseTeslaMateCompatibility("not JSON"))
     }
 
@@ -113,13 +113,19 @@ final class OnboardingHubControllerTests: XCTestCase {
         controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
                                          carID: "1",
                                          passwordFile: "/private/password",
-                                         encryptionKeyFile: "/private/encryption") { result in
+                                         encryptionKeyFile: "/private/encryption",
+                                         acknowledgeV42CompatibleSchema: true) { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             migration.fulfill()
         }
 
         wait(for: [migration], timeout: 2)
         XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
+        XCTAssertEqual(runner.argumentCalls.filter { $0.contains("teslamate-check") }.count, 1)
+        XCTAssertEqual(runner.argumentCalls.filter { $0.contains("migrate") }.count, 1)
+        XCTAssertTrue(runner.argumentCalls
+            .filter { $0.contains("teslamate-check") || $0.contains("migrate") }
+            .allSatisfy { $0.contains("--acknowledge-v4-2-compatible-schema") })
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         let config = home.appendingPathComponent(
             "Library/Application Support/Teslatlas Hub/config.toml"
@@ -162,6 +168,35 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
     }
 
+    func testOnlineMigrationRejectsMissingVersionAcknowledgementBeforeCommands() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(events: events)
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: OnboardingService(events: events),
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let rejected = expectation(description: "missing acknowledgement rejected")
+
+        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+                                         carID: "1",
+                                         passwordFile: "/private/password",
+                                         encryptionKeyFile: "/private/encryption",
+                                         acknowledgeV42CompatibleSchema: false) { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("missing acknowledgement was accepted")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("4.2.0 or newer"))
+            rejected.fulfill()
+        }
+
+        wait(for: [rejected], timeout: 1)
+        XCTAssertTrue(events.values.isEmpty)
+        XCTAssertTrue(runner.argumentCalls.isEmpty)
+    }
+
     func testOnlineMigrationWithoutCompletionReportKeepsHandoverGateAndHubStopped() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -180,7 +215,8 @@ final class OnboardingHubControllerTests: XCTestCase {
         controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
                                          carID: "1",
                                          passwordFile: "/private/password",
-                                         encryptionKeyFile: "/private/encryption") { result in
+                                         encryptionKeyFile: "/private/encryption",
+                                         acknowledgeV42CompatibleSchema: true) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("expected missing report failure")
             }
@@ -216,6 +252,7 @@ private final class OnboardingEvents {
 private final class OnboardingRunner: HubCommandRunning {
     private let events: OnboardingEvents?
     private let migrationResult: Result<String, Error>
+    private(set) var argumentCalls: [[String]] = []
 
     init(events: OnboardingEvents? = nil,
          migrationResult: Result<String, Error> = .success(
@@ -226,10 +263,11 @@ private final class OnboardingRunner: HubCommandRunning {
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        argumentCalls.append(arguments)
         if arguments.contains("teslamate-check") {
             events?.append("check")
             completion(.success("""
-            {"status":"compatible","reasonCode":"exact_4_1_1","requiredVersion":"4.1.1","guidance":"Ready."}
+            {"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready."}
             """))
         } else if arguments.contains("migrate") {
             events?.append("migrate")
@@ -237,7 +275,7 @@ private final class OnboardingRunner: HubCommandRunning {
         } else if arguments.contains("status") {
             events?.append("status")
             completion(.success("""
-            {"status":"ok","version":"1.0.0-beta.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
+            {"status":"ok","version":"1.0.0-beta.2","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
             """))
         } else if arguments.contains("doctor") {
             events?.append("doctor")

@@ -570,6 +570,8 @@ pub fn normalize_tesla_model_code(value: &str) -> String {
         "X".to_owned()
     } else if compact.starts_with("modely") {
         "Y".to_owned()
+    } else if compact.starts_with("cybertruck") {
+        "Cybertruck".to_owned()
     } else {
         trimmed.to_owned()
     }
@@ -581,7 +583,7 @@ pub fn teslamate_suspend_min_default(
     marketing_name: Option<&str>,
 ) -> Option<i64> {
     match normalize_tesla_model_code(model?).as_str() {
-        "3" | "Y" => Some(12),
+        "3" | "Y" | "Cybertruck" => Some(12),
         "S" | "X" if trim_badging.is_none() || marketing_name.is_some() => Some(12),
         "S" | "X" => Some(21),
         _ => None,

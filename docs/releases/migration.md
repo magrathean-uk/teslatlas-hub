@@ -4,7 +4,7 @@ Migration exists to move authorised historical data and, where expressly selecte
 
 New Hub installations do not require TeslaMate.
 
-**This project is an unofficial community tool and is not affiliated with, endorsed by or supported by the official TeslaMate project.**
+**Teslatlas Hub is an independent project and is not affiliated with, endorsed by or supported by the TeslaMate project.**
 
 ## Source protection
 
@@ -24,14 +24,21 @@ The explicit credential-transfer path may read the relevant encrypted token rela
 
 ## Operator duties
 
-The operator must have authority, back up and test recovery, stop concurrent credential refresh during cutover, preserve the source until validation, and comply with privacy/employment rules.
+The operator must have authority, back up and test recovery, update TeslaMate
+to 4.2.0 or newer, start it once, wait for its database migrations to finish,
+stop concurrent credential refresh during cutover, preserve the source until
+validation, and comply with privacy/employment rules.
 
 ## Data differences
 
 The v1 beta importer is a selected-car projection, not a PostgreSQL backup and
-not a continuing TeslaMate bridge. It accepts only the exact reviewed TeslaMate
-v4.1.1 migration set. Extra tables and columns are allowed, but a missing or
-changed reviewed column, enum, relationship, or migration set fails closed.
+not a continuing TeslaMate bridge. The running app must be TeslaMate 4.2.0 or
+newer, and the database must match the exact reviewed v4.2-compatible migration
+set. That schema is also present in v4.1.1, so database evidence cannot prove
+the app version and the operator must acknowledge the limitation explicitly.
+Extra tables and columns are allowed, but a missing or changed reviewed column,
+enum, relationship, or migration set fails closed. A later TeslaMate release
+that adds migrations remains blocked until its schema delta is reviewed.
 
 ### Imported records
 
