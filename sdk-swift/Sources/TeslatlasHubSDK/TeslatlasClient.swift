@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 public actor TeslatlasClient {
   public private(set) var discovery: HubDiscoveryDocument
   public private(set) var selectedProtocolVersion: TeslatlasProtocolVersion

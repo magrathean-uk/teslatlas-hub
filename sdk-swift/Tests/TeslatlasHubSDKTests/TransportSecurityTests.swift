@@ -3,7 +3,20 @@ import XCTest
 
 @testable import TeslatlasHubSDK
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 final class TransportSecurityTests: XCTestCase {
+  func testBoundedAccumulatorRejectsChunkBeforeStoringPastLimit() {
+    var accumulator = TeslatlasBoundedBodyAccumulator(maximumBytes: 4)
+
+    XCTAssertTrue(accumulator.append(Data("12".utf8)))
+    XCTAssertTrue(accumulator.append(Data("34".utf8)))
+    XCTAssertFalse(accumulator.append(Data("5".utf8)))
+    XCTAssertEqual(accumulator.data, Data("1234".utf8))
+  }
+
   func testDefaultSessionConfigurationDoesNotPersistAmbientState() {
     let configuration = URLSessionTeslatlasTransport.isolatedConfiguration()
 
@@ -18,13 +31,41 @@ final class TransportSecurityTests: XCTestCase {
     )
   }
 
+  func testRedirectDelegateRejectsEveryRedirect() throws {
+    let session = URLSession(configuration: .ephemeral)
+    let task = session.dataTask(
+      with: try XCTUnwrap(URL(string: "https://hub.example.invalid/start"))
+    )
+    let response = try XCTUnwrap(
+      HTTPURLResponse(
+        url: try XCTUnwrap(URL(string: "https://hub.example.invalid/start")),
+        statusCode: 302,
+        httpVersion: "HTTP/1.1",
+        headerFields: ["Location": "https://attacker.example.invalid/"]
+      )
+    )
+    let redirected = URLRequest(
+      url: try XCTUnwrap(URL(string: "https://attacker.example.invalid/"))
+    )
+    let box = TeslatlasRedirectResultBox()
+
+    TeslatlasRejectRedirectsDelegate().urlSession(
+      session,
+      task: task,
+      willPerformHTTPRedirection: response,
+      newRequest: redirected
+    ) { request in
+      box.store(request)
+    }
+
+    XCTAssertTrue(box.wasCalled)
+    XCTAssertNil(box.request)
+    session.invalidateAndCancel()
+  }
+
   func testTransportRejectsResponseBodyAboveConfiguredLimit() async throws {
     let session = URLSession(
-      configuration: StubURLProtocol.configuration(
-        statusCode: 200,
-        body: Data("12345".utf8),
-        includesContentLength: false
-      )
+      configuration: StubURLProtocol.configuration()
     )
     let transport = URLSessionTeslatlasTransport(
       session: session,
@@ -33,7 +74,12 @@ final class TransportSecurityTests: XCTestCase {
 
     do {
       _ = try await transport.send(
-        URLRequest(url: try XCTUnwrap(URL(string: "https://hub.invalid/v1")))
+        StubURLProtocol.request(
+          url: try XCTUnwrap(URL(string: "https://hub.invalid/v1")),
+          statusCode: 200,
+          body: Data("12345".utf8),
+          includesContentLength: false
+        )
       )
       XCTFail("Expected oversized response rejection")
     } catch let error as TeslatlasSDKError {
@@ -50,10 +96,7 @@ final class TransportSecurityTests: XCTestCase {
 
   func testTransportAcceptsResponseBodyAtConfiguredLimit() async throws {
     let session = URLSession(
-      configuration: StubURLProtocol.configuration(
-        statusCode: 200,
-        body: Data("1234".utf8)
-      )
+      configuration: StubURLProtocol.configuration()
     )
     let transport = URLSessionTeslatlasTransport(
       session: session,
@@ -61,32 +104,63 @@ final class TransportSecurityTests: XCTestCase {
     )
 
     let response = try await transport.send(
-      URLRequest(url: try XCTUnwrap(URL(string: "https://hub.invalid/v1")))
+      StubURLProtocol.request(
+        url: try XCTUnwrap(URL(string: "https://hub.invalid/v1")),
+        statusCode: 200,
+        body: Data("1234".utf8)
+      )
     )
 
     XCTAssertEqual(response.body, Data("1234".utf8))
   }
 }
 
-private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
+private final class TeslatlasRedirectResultBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storedWasCalled = false
+  private var storedRequest: URLRequest?
+
+  var wasCalled: Bool {
+    lock.withLock { storedWasCalled }
+  }
+
+  var request: URLRequest? {
+    lock.withLock { storedRequest }
+  }
+
+  func store(_ request: URLRequest?) {
+    lock.withLock {
+      storedWasCalled = true
+      storedRequest = request
+    }
+  }
+}
+
+private final class StubURLProtocol: URLProtocol {
   private static let responseHeader = "X-Teslatlas-Stub-Response"
   private static let bodyHeader = "X-Teslatlas-Stub-Body"
+  private static let includesLengthHeader = "X-Teslatlas-Stub-Includes-Length"
 
-  static func configuration(
+  static func configuration() -> URLSessionConfiguration {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [StubURLProtocol.self]
+    return configuration
+  }
+
+  static func request(
+    url: URL,
     statusCode: Int,
     body: Data,
     includesContentLength: Bool = true
-  )
-    -> URLSessionConfiguration
-  {
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.protocolClasses = [StubURLProtocol.self]
-    configuration.httpAdditionalHeaders = [
-      responseHeader: String(statusCode),
-      bodyHeader: body.base64EncodedString(),
-      "X-Teslatlas-Stub-Includes-Length": String(includesContentLength),
-    ]
-    return configuration
+  ) -> URLRequest {
+    var request = URLRequest(url: url)
+    request.setValue(String(statusCode), forHTTPHeaderField: responseHeader)
+    request.setValue(body.base64EncodedString(), forHTTPHeaderField: bodyHeader)
+    request.setValue(
+      String(includesContentLength),
+      forHTTPHeaderField: includesLengthHeader
+    )
+    return request
   }
 
   override class func canInit(with request: URLRequest) -> Bool { true }
@@ -98,14 +172,13 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
   override func startLoading() {
     guard
       let url = request.url,
-      let headers = request.allHTTPHeaderFields,
-      let statusText = headers[Self.responseHeader],
+      let statusText = request.value(forHTTPHeaderField: Self.responseHeader),
       let statusCode = Int(statusText),
-      let bodyText = headers[Self.bodyHeader],
+      let bodyText = request.value(forHTTPHeaderField: Self.bodyHeader),
       let body = Data(base64Encoded: bodyText),
-      let includesContentLengthText = headers[
-        "X-Teslatlas-Stub-Includes-Length"
-      ]
+      let includesContentLengthText = request.value(
+        forHTTPHeaderField: Self.includesLengthHeader
+      )
     else {
       client?.urlProtocol(self, didFailWithError: StubError.invalidRequest)
       return

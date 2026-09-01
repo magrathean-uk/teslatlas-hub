@@ -3,6 +3,10 @@ import XCTest
 
 @testable import TeslatlasHubSDK
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 enum TestURLs {
   static let discovery = URL(
     string: "https://hub.example.invalid/.well-known/teslatlas-hub"

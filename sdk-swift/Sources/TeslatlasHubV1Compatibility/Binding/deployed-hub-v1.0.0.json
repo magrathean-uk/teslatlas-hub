@@ -1,0 +1,377 @@
+{
+  "kind": "teslatlas-deployed-hub-binding",
+  "binding_version": "1.0.0",
+  "authority": {
+    "status": "vendored-from-immutable-hub-release-source",
+    "protocol_repository": "https://github.com/magrathean-uk/teslatlas-protocol",
+    "protocol_commit_checked": "79ced4c7fdc79520ad31d72a0280bf5f3f19f407",
+    "protocol_release_binding_present": false,
+    "hub_repository": "https://github.com/magrathean-uk/teslatlas-hub",
+    "hub_tag": "v1.0.0",
+    "hub_tag_object": "4b45708a00f14f76306f6cb37375eb0c538643d7",
+    "hub_commit": "a5e6c5c4f86776da96c9946f7e45b2080c571f86",
+    "corresponding_source_url": "https://github.com/magrathean-uk/teslatlas-hub/tree/v1.0.0",
+    "source_files": [
+      {
+        "path": "src/lib.rs",
+        "git_blob_sha": "ba2119ad7e68397986ce1b21803208106062ad1e"
+      },
+      {
+        "path": "docs/guides/api.md",
+        "git_blob_sha": "013b12bdeb9852c276a290a6cbcd16ece4d84ad4"
+      },
+      {
+        "path": "src/api/server.rs",
+        "git_blob_sha": "bc58b487ad5c01bb4889ba12be1cd37435c7e039"
+      },
+      {
+        "path": "src/api/public_query.rs",
+        "git_blob_sha": "94960af88473306bd3cb0b1f3684f348ec00b7fb"
+      },
+      {
+        "path": "src/collection/current_state.rs",
+        "git_blob_sha": "9d93500a9ad5a93fa7651cb1f5131e78f28e1e37"
+      },
+      {
+        "path": "src/storage/db/access_models.rs",
+        "git_blob_sha": "9f33f8c6d2576e056e7d283842c20a4cbfdafb64"
+      },
+      {
+        "path": "src/storage/db.rs",
+        "git_blob_sha": "b7b4c0f8cb6eeb6d50b1f36a30327032a7379e27"
+      },
+      {
+        "path": "src/storage/db/catalogue_helpers.rs",
+        "git_blob_sha": "03c0d70ececc15949a3441a846895c58b4ba7a02"
+      },
+      {
+        "path": "src/sync/hub_pack/model.rs",
+        "git_blob_sha": "6fccc042c7d91cc794d3ec711ec72bd9b8d7689c"
+      }
+    ]
+  },
+  "discovery": {
+    "method": "GET",
+    "path": "/.well-known/teslatlas-hub",
+    "required_fields": [
+      "hub_id",
+      "protocol",
+      "protocol_major",
+      "api_versions",
+      "capabilities",
+      "version",
+      "sourceUrl",
+      "pack_format"
+    ],
+    "optional_fields": [
+      "manifestPublicKey"
+    ],
+    "protocol": "teslatlas-sync",
+    "protocol_major": 1,
+    "api_versions": [
+      "1.0"
+    ],
+    "hub_version": "1.0.0",
+    "source_url": "https://github.com/magrathean-uk/teslatlas-hub/tree/v1.0.0",
+    "pack_format": "sqlite-zstd",
+    "allowed_capability_sets": [
+      [
+        "query.vehicles",
+        "query.current"
+      ],
+      [
+        "query.vehicles",
+        "query.current",
+        "query.drives",
+        "sync.packs"
+      ]
+    ]
+  },
+  "authentication": {
+    "header": "Authorization",
+    "scheme": "Bearer",
+    "bearer_wire_encoding": "ascii-hex",
+    "bearer_wire_length": 64,
+    "discovery_is_unauthenticated": true,
+    "credentialed_operations": [
+      "vehicles",
+      "current_state",
+      "drives"
+    ],
+    "allow_redirects": false,
+    "non_loopback_requires_https": true
+  },
+  "responses": {
+    "success_status": 200,
+    "not_modified_status": 304,
+    "bad_request_status": 400,
+    "unauthorized_status": 401,
+    "not_found_status": 404,
+    "service_unavailable_status": 503,
+    "json_media_type": "application/json",
+    "content_type_header": "Content-Type",
+    "request_id_header": "X-Request-ID",
+    "entity_tag_header": "ETag",
+    "unauthorized_challenge_header": "WWW-Authenticate",
+    "unauthorized_challenge_value": "Bearer",
+    "drive_error_status_by_code": {
+      "invalid_query": 400,
+      "invalid_time_range": 400,
+      "invalid_limit": 400,
+      "invalid_cursor": 400,
+      "vehicle_not_found": 404,
+      "service_unavailable": 503
+    }
+  },
+  "routes": [
+    {
+      "operation": "vehicles",
+      "method": "GET",
+      "path_template": "/v1/vehicles",
+      "required_capability": "query.vehicles",
+      "response_model": "vehicle_list"
+    },
+    {
+      "operation": "current_state",
+      "method": "GET",
+      "path_template": "/v1/vehicles/{vehicle_id}/current",
+      "required_capability": "query.current",
+      "response_model": "current_state"
+    },
+    {
+      "operation": "drives",
+      "method": "GET",
+      "path_template": "/v1/vehicles/{vehicle_id}/drives",
+      "required_capability": "query.drives",
+      "response_model": "drive_page"
+    }
+  ],
+  "drive_pagination": {
+    "from_parameter": "from_ms",
+    "from_default": 0,
+    "from_minimum": 0,
+    "from_inclusive": true,
+    "to_parameter": "to_ms",
+    "to_default": 9223372036854775807,
+    "to_minimum": 0,
+    "to_exclusive": true,
+    "limit_parameter": "limit",
+    "limit_default": 100,
+    "limit_minimum": 1,
+    "limit_maximum": 500,
+    "cursor_parameter": "cursor",
+    "cursor_is_opaque": true,
+    "sort_fields": [
+      "start_date_ms",
+      "id"
+    ],
+    "sort_direction": "descending",
+    "etag_is_strong": true,
+    "conditional_request_header": "If-None-Match",
+    "etag_format": "quoted-lowercase-sha256"
+  },
+  "models": {
+    "vehicle_list": {
+      "required_fields": [
+        "vehicles"
+      ],
+      "optional_fields": []
+    },
+    "vehicle": {
+      "required_fields": [
+        "vehicle_id",
+        "display_name"
+      ],
+      "optional_fields": []
+    },
+    "current_state": {
+      "required_fields": [
+        "vehicle_id",
+        "observed_at_ms",
+        "car",
+        "display_name",
+        "state",
+        "since",
+        "healthy",
+        "latitude",
+        "longitude",
+        "heading",
+        "battery_level",
+        "charging_state",
+        "usable_battery_level",
+        "ideal_battery_range_km",
+        "est_battery_range_km",
+        "rated_battery_range_km",
+        "charge_energy_added",
+        "speed",
+        "outside_temp",
+        "inside_temp",
+        "is_climate_on",
+        "is_preconditioning",
+        "locked",
+        "sentry_mode",
+        "plugged_in",
+        "scheduled_charging_start_time",
+        "charge_limit_soc",
+        "charger_power",
+        "windows_open",
+        "driver_front_window_open",
+        "driver_rear_window_open",
+        "passenger_front_window_open",
+        "passenger_rear_window_open",
+        "doors_open",
+        "driver_front_door_open",
+        "driver_rear_door_open",
+        "passenger_front_door_open",
+        "passenger_rear_door_open",
+        "odometer",
+        "shift_state",
+        "charge_port_door_open",
+        "time_to_full_charge",
+        "charger_phases",
+        "charger_actual_current",
+        "charger_voltage",
+        "version",
+        "update_available",
+        "update_version",
+        "update_status",
+        "is_user_present",
+        "geofence",
+        "model",
+        "trim_badging",
+        "exterior_color",
+        "wheel_type",
+        "spoiler_type",
+        "trunk_open",
+        "frunk_open",
+        "elevation",
+        "power",
+        "charge_current_request",
+        "charge_current_request_max",
+        "tpms_pressure_fl",
+        "tpms_pressure_fr",
+        "tpms_pressure_rl",
+        "tpms_pressure_rr",
+        "tpms_soft_warning_fl",
+        "tpms_soft_warning_fr",
+        "tpms_soft_warning_rl",
+        "tpms_soft_warning_rr",
+        "climate_keeper_mode",
+        "active_route_destination",
+        "active_route_latitude",
+        "active_route_longitude",
+        "active_route_energy_at_arrival",
+        "active_route_miles_to_arrival",
+        "active_route_minutes_to_arrival",
+        "active_route_traffic_minutes_delay",
+        "center_display_state",
+        "service_mode",
+        "sun_roof_state",
+        "sun_roof_installed",
+        "sun_roof_percent_open",
+        "download_perc",
+        "install_perc"
+      ],
+      "optional_fields": []
+    },
+    "projection_car": {
+      "required_fields": [
+        "id",
+        "name",
+        "model",
+        "vin",
+        "source_eid",
+        "source_vid",
+        "trim_badging",
+        "marketing_name",
+        "exterior_color",
+        "wheel_type",
+        "spoiler_type",
+        "firmware_version",
+        "efficiency_wh_per_km",
+        "settings"
+      ],
+      "optional_fields": []
+    },
+    "projection_car_settings": {
+      "required_fields": [
+        "enabled",
+        "use_streaming_api",
+        "suspend_after_idle_min",
+        "suspend_min",
+        "suspend_min_resolved",
+        "req_not_unlocked",
+        "free_supercharging",
+        "lfp_battery"
+      ],
+      "optional_fields": []
+    },
+    "drive_page": {
+      "required_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "optional_fields": []
+    },
+    "drive": {
+      "required_fields": [
+        "id",
+        "vehicle_id",
+        "start_date_ms",
+        "end_date_ms",
+        "distance_km",
+        "duration_min",
+        "efficiency",
+        "outside_temp_avg",
+        "inside_temp_avg",
+        "speed_max",
+        "power_max",
+        "power_min",
+        "start_ideal_range_km",
+        "end_ideal_range_km",
+        "start_address",
+        "end_address",
+        "start_geofence",
+        "end_geofence",
+        "start_latitude",
+        "start_longitude",
+        "end_latitude",
+        "end_longitude",
+        "start_soc",
+        "end_soc",
+        "start_rated_range_km",
+        "end_rated_range_km",
+        "ascent",
+        "descent"
+      ],
+      "optional_fields": []
+    },
+    "error_envelope": {
+      "required_fields": [
+        "error"
+      ],
+      "optional_fields": []
+    },
+    "error": {
+      "required_fields": [
+        "code",
+        "message"
+      ],
+      "optional_fields": []
+    }
+  },
+  "stable_drive_error_codes": [
+    "invalid_query",
+    "invalid_time_range",
+    "invalid_limit",
+    "invalid_cursor",
+    "vehicle_not_found",
+    "service_unavailable"
+  ],
+  "unavailable_features": [
+    "events",
+    "commands",
+    "metadata",
+    "charges"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "id": 41,
+      "vehicle_id": "11111111-2222-4333-8444-555555555555",
+      "start_date_ms": 1788080400000,
+      "end_date_ms": 1788082260000,
+      "distance_km": 20.4,
+      "duration_min": 31,
+      "efficiency": 176.2,
+      "outside_temp_avg": 16.5,
+      "inside_temp_avg": 21.1,
+      "speed_max": 109,
+      "power_max": 128.5,
+      "power_min": -54.2,
+      "start_ideal_range_km": 350.0,
+      "end_ideal_range_km": 326.5,
+      "start_address": "London",
+      "end_address": "Watford",
+      "start_geofence": null,
+      "end_geofence": null,
+      "start_latitude": 51.655,
+      "start_longitude": -0.396,
+      "end_latitude": 51.507,
+      "end_longitude": -0.128,
+      "start_soc": 75,
+      "end_soc": 69,
+      "start_rated_range_km": 326.0,
+      "end_rated_range_km": 304.0,
+      "ascent": 118,
+      "descent": 131
+    }
+  ],
+  "next_cursor": null
+}

@@ -11,6 +11,10 @@ let package = Package(
   products: [
     .library(name: "TeslatlasHubSDK", targets: ["TeslatlasHubSDK"]),
     .library(name: "TeslatlasCommands", targets: ["TeslatlasCommands"]),
+    .library(
+      name: "TeslatlasHubV1Compatibility",
+      targets: ["TeslatlasHubV1Compatibility"]
+    ),
     .executable(
       name: "TeslatlasHubSDKExample",
       targets: ["TeslatlasHubSDKExample"]
@@ -18,6 +22,10 @@ let package = Package(
   ],
   targets: [
     .target(name: "TeslatlasHubSDK"),
+    .target(
+      name: "TeslatlasHubV1Compatibility",
+      resources: [.copy("Binding")]
+    ),
     .target(
       name: "TeslatlasCommands",
       dependencies: ["TeslatlasHubSDK"]
@@ -30,6 +38,11 @@ let package = Package(
     .testTarget(
       name: "TeslatlasHubSDKTests",
       dependencies: ["TeslatlasHubSDK", "TeslatlasCommands"],
+      resources: [.copy("Fixtures")]
+    ),
+    .testTarget(
+      name: "TeslatlasHubV1CompatibilityTests",
+      dependencies: ["TeslatlasHubV1Compatibility"],
       resources: [.copy("Fixtures")]
     ),
   ]

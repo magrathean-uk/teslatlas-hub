@@ -1,6 +1,10 @@
 import Foundation
 import TeslatlasHubSDK
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 public struct TeslatlasCommandClient: Sendable {
   private let discovery: HubDiscoveryDocument
   private let selectedProtocolVersion: TeslatlasProtocolVersion
