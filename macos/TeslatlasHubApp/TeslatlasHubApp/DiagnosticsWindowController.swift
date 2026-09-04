@@ -4,25 +4,24 @@ import AppKit
 
 final class DiagnosticsWindowController: NSWindowController {
     private let controller: HubController
-    private let textView = NSTextView()
-    private let statusIcon = NSImageView()
-    private let statusTitle = NSTextField(labelWithString: "Diagnostics")
-    private let statusDetail = NSTextField(wrappingLabelWithString: "")
-    private let runButton = HubActionButton(title: "Run Diagnostics", target: nil, action: nil)
+    private let onDismiss: () -> Void
+    private let statusDetail = NSTextField(labelWithString: "")
+    private let rowsStack = NSStackView()
+    private let rowsContainer = HubFlippedSurfaceView(fill: .card)
+    private let rowsCard = HubCardView()
+    private let rawTextView = NSTextView()
+    private let rawScroll = NSScrollView()
+    private let rawDisclosure = HubActionButton(title: "Show raw redacted report", target: nil, action: nil)
+    private let runButton = HubActionButton(title: "Run Again", target: nil, action: nil)
     private let copyButton = HubActionButton(title: "Copy Report", target: nil, action: nil)
     private let saveButton = HubActionButton(title: "Save Report…", target: nil, action: nil)
     private var latestReport: String?
 
-    init(controller: HubController) {
+    init(controller: HubController, onDismiss: @escaping () -> Void = {}) {
         self.controller = controller
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 560),
-                              styleMask: [.titled, .closable, .resizable],
-                              backing: .buffered,
-                              defer: false)
-        window.title = "Hub Diagnostics"
-        super.init(window: window)
-        window.contentView = contentView()
-        window.center()
+        self.onDismiss = onDismiss
+        super.init(window: HubSheetStyle.makeWindow(contentSize: HubMetrics.diagnosticsSheetSize))
+        window?.contentView = contentView()
         showInitialSummary()
     }
 
@@ -30,116 +29,228 @@ final class DiagnosticsWindowController: NSWindowController {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private func contentView() -> NSView {
-        let root = NSView()
+        let root = HubModalRootView()
+        configureButton(runButton, symbol: "arrow.clockwise", style: .neutral,
+                        action: #selector(runPressed))
+        let closeButton = HubModalChrome.closeButton(target: self, action: #selector(closePressed))
+        let header = HubModalChrome.header(title: "Diagnostics", trailing: [runButton, closeButton],
+                                           identifier: "hub.diagnostics.header")
 
-        statusIcon.image = NSImage(systemSymbolName: "stethoscope", accessibilityDescription: "Diagnostics ready")
-        statusIcon.contentTintColor = .secondaryLabelColor
-        statusIcon.imageScaling = .scaleProportionallyDown
-        statusIcon.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        statusIcon.heightAnchor.constraint(equalToConstant: 28).isActive = true
-        statusTitle.font = .systemFont(ofSize: 17, weight: .semibold)
-        statusDetail.font = .systemFont(ofSize: 12)
-        statusDetail.textColor = .secondaryLabelColor
-        statusDetail.maximumNumberOfLines = 2
-        let statusText = NSStackView(views: [statusTitle, statusDetail])
-        statusText.orientation = .vertical
-        statusText.alignment = .leading
-        statusText.spacing = 2
-        let heading = NSStackView(views: [statusIcon, statusText])
-        heading.spacing = 12
-        heading.alignment = .centerY
+        statusDetail.font = .systemFont(ofSize: 12.5)
+        statusDetail.textColor = HubPalette.mutedForeground
 
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        textView.textContainerInset = NSSize(width: 10, height: 10)
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
-        scroll.documentView = textView
+        rowsStack.orientation = .vertical
+        rowsStack.alignment = .leading
+        rowsStack.spacing = 0
+        rowsStack.translatesAutoresizingMaskIntoConstraints = false
+        rowsCard.translatesAutoresizingMaskIntoConstraints = false
+        rowsCard.addSubview(rowsStack)
+        NSLayoutConstraint.activate([
+            rowsStack.leadingAnchor.constraint(equalTo: rowsCard.leadingAnchor),
+            rowsStack.trailingAnchor.constraint(equalTo: rowsCard.trailingAnchor),
+            rowsStack.topAnchor.constraint(equalTo: rowsCard.topAnchor),
+            rowsStack.bottomAnchor.constraint(equalTo: rowsCard.bottomAnchor)
+        ])
 
-        configureFlatButton(runButton, symbol: "play.fill", tint: .controlAccentColor,
-                            action: #selector(runPressed))
-        configureFlatButton(copyButton, symbol: "doc.on.doc", action: #selector(copyPressed))
-        configureFlatButton(saveButton, symbol: "square.and.arrow.down", action: #selector(savePressed))
-        let actions = NSStackView(views: [runButton, copyButton, saveButton])
-        actions.spacing = 14
-        actions.alignment = .centerY
+        rowsContainer.identifier = NSUserInterfaceItemIdentifier("hub.diagnostics.rows-document")
+        rowsContainer.translatesAutoresizingMaskIntoConstraints = false
+        rowsContainer.addSubview(rowsCard)
+        NSLayoutConstraint.activate([
+            rowsCard.leadingAnchor.constraint(equalTo: rowsContainer.leadingAnchor),
+            rowsCard.trailingAnchor.constraint(equalTo: rowsContainer.trailingAnchor),
+            rowsCard.topAnchor.constraint(equalTo: rowsContainer.topAnchor),
+            rowsCard.bottomAnchor.constraint(equalTo: rowsContainer.bottomAnchor)
+        ])
+        let rowsScroll = NSScrollView()
+        rowsScroll.identifier = NSUserInterfaceItemIdentifier("hub.diagnostics.rows-scroll")
+        rowsScroll.hasVerticalScroller = true
+        rowsScroll.autohidesScrollers = true
+        rowsScroll.drawsBackground = false
+        rowsScroll.borderType = .noBorder
+        rowsScroll.documentView = rowsContainer
+        rowsContainer.widthAnchor.constraint(equalTo: rowsScroll.contentView.widthAnchor).isActive = true
 
-        let privacy = NSTextField(labelWithString:
+        rawDisclosure.target = self
+        rawDisclosure.action = #selector(toggleRawReport)
+        rawDisclosure.hubStyle = .flat
+        rawDisclosure.hubFont = .systemFont(ofSize: 11.5, weight: .medium)
+        rawTextView.isEditable = false
+        rawTextView.identifier = NSUserInterfaceItemIdentifier("hub.diagnostics.raw-report")
+        rawTextView.isSelectable = true
+        rawTextView.font = .monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        rawTextView.textContainerInset = NSSize(width: 8, height: 8)
+        rawScroll.hasVerticalScroller = true
+        rawScroll.borderType = .noBorder
+        rawScroll.documentView = rawTextView
+        rawScroll.heightAnchor.constraint(equalToConstant: 105).isActive = true
+        rawScroll.isHidden = true
+
+        configureButton(copyButton, symbol: "doc.on.doc", style: .neutral,
+                        action: #selector(copyPressed))
+        configureButton(saveButton, symbol: "arrow.down.to.line", style: .neutral,
+                        action: #selector(savePressed))
+        let reportActions = NSStackView(views: [rawDisclosure, NSView(), copyButton, saveButton])
+        reportActions.alignment = .centerY
+        reportActions.spacing = 6
+        reportActions.isHidden = true
+
+        let privacy = NSTextField(wrappingLabelWithString:
             "Displayed, copied, and saved reports redact credentials and private identifiers. Review before sharing.")
-        privacy.font = .systemFont(ofSize: 11)
-        privacy.textColor = .secondaryLabelColor
+        privacy.font = .systemFont(ofSize: 10.5)
+        privacy.textColor = HubPalette.mutedForeground
+        privacy.maximumNumberOfLines = 2
+        privacy.isHidden = true
 
-        let line = separator()
-        let stack = NSStackView(views: [heading, line, scroll, actions, privacy])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(stack)
-        for view in [heading, line, scroll, privacy] {
-            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        let body = NSStackView(views: [statusDetail, rowsScroll, reportActions, rawScroll, privacy])
+        body.orientation = .vertical
+        body.alignment = .leading
+        body.spacing = 10
+        body.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(header)
+        root.addSubview(body)
+        header.translatesAutoresizingMaskIntoConstraints = false
+        for view in [statusDetail, rowsScroll, reportActions, rawScroll, privacy] {
+            view.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
         }
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20),
-            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 360)
+            header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            header.topAnchor.constraint(equalTo: root.topAnchor),
+            body.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
+            body.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+            body.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 14),
+            body.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
+            rowsScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 330)
         ])
         return root
     }
 
     private func showInitialSummary() {
-        statusDetail.isHidden = true
-        let summary = controller.diagnostics()
-        let text = summary.isEmpty
-            ? "No diagnostic report has been run."
-            : "Current Hub summary\n\n" + summary.joined(separator: "\n")
-        textView.string = Self.shareableReport(text)
-        copyButton.isEnabled = false
-        saveButton.isEnabled = false
+        if controller.previewMode {
+            let rows = Self.previewRows
+            latestReport = rows.map { "== \($0.title) ==\n\($0.detail)" }
+                .joined(separator: "\n\n")
+            rawTextView.string = latestReport ?? ""
+            statusDetail.stringValue = "\(rows.count) of \(rows.count) checks passed."
+            render(rows: rows)
+            copyButton.isEnabled = true
+            saveButton.isEnabled = true
+        } else {
+            let summary = controller.diagnostics()
+            statusDetail.stringValue = summary.isEmpty
+                ? "Run diagnostics to collect a redacted report."
+                : summary.joined(separator: " · ")
+            render(rows: [])
+            rawTextView.string = "No diagnostic report has been run."
+            copyButton.isEnabled = false
+            saveButton.isEnabled = false
+        }
     }
 
     @objc private func runPressed() {
-        statusDetail.isHidden = false
         runButton.isEnabled = false
         copyButton.isEnabled = false
         saveButton.isEnabled = false
-        statusIcon.image = NSImage(systemSymbolName: "hourglass", accessibilityDescription: "Diagnostics running")
-        statusIcon.contentTintColor = .controlAccentColor
-        statusTitle.stringValue = "Running checks"
-        statusDetail.stringValue = "Collection pauses briefly while checks run, then resumes automatically."
-        textView.string = "Running diagnostics…"
-        controller.runFullDiagnostics { [weak self] text in
+        latestReport = nil
+        rawTextView.string = ""
+        rawDisclosure.title = "Show raw redacted report"
+        rawScroll.isHidden = true
+        statusDetail.stringValue = "Running checks…"
+        render(rows: [])
+        controller.runFullDiagnostics { [weak self] report in
             guard let self else { return }
             DispatchQueue.main.async {
-                let safeText = Self.shareableReport(text)
-                self.latestReport = safeText
-                self.textView.string = safeText
-                let hasFailure = text.contains(" (failed) ==")
-                self.statusIcon.image = NSImage(
-                    systemSymbolName: hasFailure ? "exclamationmark.triangle" : "checkmark",
-                    accessibilityDescription: hasFailure ? "Diagnostics found issues" : "Diagnostics finished"
-                )
-                self.statusIcon.contentTintColor = hasFailure ? .systemOrange : .systemGreen
-                self.statusTitle.stringValue = hasFailure ? "Checks finished with issues" : "Checks finished"
-                self.statusDetail.stringValue = hasFailure
-                    ? "Review the failed section below."
-                    : "Database, credentials, collector, and logs were checked."
+                let safeReport = HubShareRedactor.redact(report)
+                self.latestReport = safeReport
+                self.rawTextView.string = safeReport
+                let rows = HubDiagnosticsPresentation.rows(from: safeReport)
+                self.render(rows: rows)
+                let passed = rows.filter { $0.outcome == .passed }.count
+                self.statusDetail.stringValue = rows.isEmpty
+                    ? "No structured checks were returned."
+                    : "\(passed) of \(rows.count) checks passed."
                 self.runButton.isEnabled = true
-                self.copyButton.isEnabled = true
-                self.saveButton.isEnabled = true
+                self.copyButton.isEnabled = !safeReport.isEmpty
+                self.saveButton.isEnabled = !safeReport.isEmpty
             }
         }
     }
 
+    private func render(rows: [HubDiagnosticRow]) {
+        rowsStack.arrangedSubviews.forEach {
+            rowsStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        if rows.isEmpty {
+            let empty = NSTextField(wrappingLabelWithString: "Run diagnostics to view completed checks.")
+            empty.textColor = HubPalette.mutedForeground
+            empty.font = .systemFont(ofSize: 12)
+            let holder = NSStackView(views: [empty])
+            holder.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
+            rowsStack.addArrangedSubview(holder)
+            holder.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
+        } else {
+            for (index, row) in rows.enumerated() {
+                if index > 0 {
+                    let line = HubModalChrome.divider()
+                    rowsStack.addArrangedSubview(line)
+                    line.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
+                }
+                let view = diagnosticRow(for: row)
+                rowsStack.addArrangedSubview(view)
+                view.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
+            }
+        }
+        rowsContainer.needsLayout = true
+    }
+
+    private func diagnosticRow(for row: HubDiagnosticRow) -> NSView {
+        let view = NSView()
+        view.identifier = NSUserInterfaceItemIdentifier("hub.diagnostics.row")
+        let icon = NSImageView(image: NSImage(
+            systemSymbolName: row.outcome == .failed ? "xmark.circle" : "checkmark.circle",
+            accessibilityDescription: nil
+        ) ?? NSImage())
+        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
+        icon.contentTintColor = row.outcome == .failed ? HubPalette.danger : HubPalette.success
+        icon.widthAnchor.constraint(equalToConstant: 17).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 17).isActive = true
+        let title = NSTextField(labelWithString: row.title)
+        title.font = .systemFont(ofSize: 12.5, weight: .medium)
+        title.textColor = HubPalette.foreground
+        let detail = NSTextField(labelWithString: row.detail.isEmpty ? "No additional detail." : row.detail)
+        detail.font = .systemFont(ofSize: 11.5)
+        detail.textColor = HubPalette.mutedForeground
+        detail.lineBreakMode = .byTruncatingTail
+        let labels = NSStackView(views: [title, detail])
+        labels.orientation = .vertical
+        labels.alignment = .leading
+        labels.spacing = 2
+        let stack = NSStackView(views: [icon, labels])
+        stack.alignment = .centerY
+        stack.spacing = 11
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 9),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -9),
+            view.heightAnchor.constraint(equalToConstant: 52)
+        ])
+        return view
+    }
+
+    @objc private func toggleRawReport() {
+        let visible = rawScroll.isHidden
+        rawScroll.isHidden = !visible
+        rawDisclosure.title = visible ? "Hide raw redacted report" : "Show raw redacted report"
+    }
+
     @objc private func copyPressed() {
         guard let latestReport else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(Self.shareableReport(latestReport), forType: .string)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(latestReport, forType: .string)
         statusDetail.stringValue = "Redacted report copied."
     }
 
@@ -151,38 +262,36 @@ final class DiagnosticsWindowController: NSWindowController {
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let destination = panel.url else { return }
             do {
-                try HubAppLog.writePrivateReport(Self.shareableReport(latestReport),
-                                                 to: destination)
+                try HubAppLog.writePrivateReport(latestReport, to: destination)
                 self?.statusDetail.stringValue = "Redacted report saved."
             } catch {
-                NSAlert(error: error).runModal()
+                HubUIPresentation.presentError(error)
             }
         }
     }
 
-    private static func shareableReport(_ report: String) -> String {
-        HubShareRedactor.redact(report)
-    }
+    @objc private func closePressed() { onDismiss() }
 
-    private func configureFlatButton(_ button: NSButton,
-                                     symbol: String,
-                                     tint: NSColor = .labelColor,
-                                     action: Selector) {
+    private func configureButton(_ button: HubActionButton,
+                                 symbol: String,
+                                 style: HubButtonStyle,
+                                 action: Selector) {
         button.target = self
         button.action = action
-        button.isBordered = false
+        button.hubStyle = style
+        button.hubFont = .systemFont(ofSize: 12, weight: .medium)
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
         button.imagePosition = .imageLeading
-        button.contentTintColor = .labelColor
-        (button as? HubActionButton)?.hubAppearance = .flat
-        button.font = .systemFont(ofSize: 13, weight: .medium)
-        button.focusRingType = .default
+        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
     }
 
-    private func separator() -> NSBox {
-        let line = NSBox()
-        line.boxType = .separator
-        line.heightAnchor.constraint(equalToConstant: 1).isActive = true
-        return line
-    }
+    private static let previewRows: [HubDiagnosticRow] = [
+        .init(title: "Environment doctor", detail: "Runtime and permissions OK", outcome: .passed),
+        .init(title: "Preflight", detail: "Configuration is valid", outcome: .passed),
+        .init(title: "Service status", detail: "Running", outcome: .passed),
+        .init(title: "Database", detail: "Integrity check passed", outcome: .passed),
+        .init(title: "Credentials", detail: "Fleet token valid", outcome: .passed),
+        .init(title: "Connection", detail: "Reached Tesla Fleet endpoint", outcome: .passed),
+        .init(title: "Recent logs", detail: "No errors in the last hour", outcome: .passed)
+    ]
 }

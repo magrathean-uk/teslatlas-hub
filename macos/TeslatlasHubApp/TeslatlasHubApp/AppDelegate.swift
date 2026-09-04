@@ -4,8 +4,6 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
-    private var onboardingWindowController: OnboardingWindowController?
-    private var logsWindowController: LogsWindowController?
     private var hubController: HubController!
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -78,12 +76,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let staleImports = TeslaMateServerImporter.cleanupStaleTemporaryDirectories()
-        if staleImports > 0 {
-            HubAppLog.shared.record("temporary_files.removed", category: "teslamate_import",
-                                    fields: ["directories": String(staleImports)])
-        }
+        guard !HubUIPresentation.isSilentTestHost else { return }
         hubController = HubController()
+        if !hubController.previewMode {
+            let staleImports = TeslaMateServerImporter.cleanupStaleTemporaryDirectories()
+            if staleImports > 0 {
+                HubAppLog.shared.record("temporary_files.removed", category: "teslamate_import",
+                                        fields: ["directories": String(staleImports)])
+            }
+        }
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
             as? String ?? "development"
         let appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
@@ -94,11 +95,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ])
         showDashboard { [weak self] snapshot in
             guard let self else { return }
-            if self.hubController.shouldShowOnboarding(for: snapshot) {
-                let dashboard = self.mainWindowController
-                self.mainWindowController = nil
-                self.showOnboarding()
-                dashboard?.close()
+            if let scene = self.hubController.previewScene {
+                self.mainWindowController?.configurePreviewScene(scene)
+            } else if self.hubController.shouldShowOnboarding(for: snapshot) {
+                self.mainWindowController?.showFirstRunOnboarding()
             }
         }
     }
@@ -110,15 +110,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showLogs(_ sender: Any?) {
         guard let hubController else { return }
         HubAppLog.shared.record("window.opened", category: "logs", fields: ["source": "keyboard_or_menu"])
-        if let logsWindowController {
-            logsWindowController.refresh()
-            logsWindowController.showWindow(nil)
-            logsWindowController.window?.makeKeyAndOrderFront(nil)
-            return
-        }
-        logsWindowController = LogsWindowController(controller: hubController)
-        logsWindowController?.showWindow(nil)
-        logsWindowController?.window?.makeKeyAndOrderFront(nil)
+        showDashboard()
+        _ = mainWindowController?.showLogs()
     }
 
     @objc func openCorrespondingSource(_ sender: Any?) {
@@ -133,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "View Licence")
         alert.addButton(withTitle: "Corresponding Source")
-        switch alert.runModal() {
+        switch HubUIPresentation.response(to: alert) {
         case .alertSecondButtonReturn:
             if let bundled = Bundle.main.url(forResource: "LICENSE", withExtension: nil) {
                 NSWorkspace.shared.open(bundled)
@@ -153,27 +146,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
     Unofficial; not affiliated with Tesla or TeslaMate; no warranty.
     """
-
-    private func showOnboarding() {
-        let onboarding = OnboardingWindowController(
-            controller: hubController,
-            resumeMigrationHandoverPhase: hubController.pendingMigrationHandoverPhase,
-            previewRoute: hubController.onboardingPreviewRoute
-        ) { [weak self] completion in
-            guard let self else { return }
-            let finishedOnboarding = self.onboardingWindowController
-            self.onboardingWindowController = nil
-            self.showDashboard()
-            if completion == .hubStarted {
-                self.mainWindowController?.settleStartedHubFromOnboarding()
-            }
-            finishedOnboarding?.close()
-        }
-        onboardingWindowController = onboarding
-        onboarding.showWindow(nil)
-        onboarding.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
 
     private func showDashboard(onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
         if mainWindowController == nil {

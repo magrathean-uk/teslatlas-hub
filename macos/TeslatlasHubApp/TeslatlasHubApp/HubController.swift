@@ -89,9 +89,9 @@ enum HubHealth: Equatable {
 
     var title: String {
         switch self {
-        case .running: return "Collecting vehicle data"
+        case .running: return "Hub is running"
         case .stopped: return "Hub is stopped"
-        case .needsInstall: return "Install Teslatlas Hub"
+        case .needsInstall: return "Setup required"
         case .degraded: return "Attention needed"
         }
     }
@@ -325,17 +325,27 @@ struct HubSnapshot {
 
     static let previewRunning = HubSnapshot(
         health: .running,
-        service: "Installed and running",
+        service: "Active",
         account: "Connected",
         provider: .fleet,
-        vehicleName: "Athena",
-        vehicle: "Online · seen just now",
-        controlVehicleID: nil,
-        controlVehicles: [],
-        database: "Healthy · 18,426 records",
+        vehicleName: "Aurora",
+        vehicle: "Model 3 Long Range · Parked · 78% · Home",
+        controlVehicleID: UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5"),
+        controlVehicles: [
+            HubControlVehicle(
+                id: UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!,
+                displayName: "Aurora",
+                status: "Model 3 Long Range · Parked · 78% · Home"
+            ),
+            HubControlVehicle(
+                id: UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!,
+                displayName: "Comet",
+                status: "Model Y Performance · Asleep · 54%"
+            )
+        ],
+        database: "teslatlas.sqlite · 3.51 GB (imported)",
         activity: [
-            HubActivity(message: "Vehicle online", age: "just now", color: .systemGreen),
-            HubActivity(message: "Position stored", age: "4 minutes ago", color: .systemGreen)
+            HubActivity(message: "Imported TeslaMate history", age: "just now", color: .systemGreen)
         ],
         version: HubRelease.fallbackVersion,
         dataDirectory: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/Teslatlas Hub"),
@@ -961,7 +971,17 @@ final class LaunchctlServiceController: HubServiceControlling {
 }
 
 final class HubController {
+    static let previewOnboardingChecks = [
+        HubOnboardingCheck(title: "Service", detail: "Launch agent installed and responsive", passed: true),
+        HubOnboardingCheck(title: "Tesla account", detail: "Credentials stored and valid", passed: true),
+        HubOnboardingCheck(title: "Vehicle", detail: "1 vehicle reachable", passed: true),
+        HubOnboardingCheck(title: "Database", detail: "SQLite schema at revision 42", passed: true),
+        HubOnboardingCheck(title: "Diagnostics", detail: "Preflight checks passed", passed: true),
+        HubOnboardingCheck(title: "Logs", detail: "No errors in the last hour", passed: true)
+    ]
+
     let previewMode: Bool
+    let previewScene: HubPreviewScene?
     let onboardingPreviewRoute: String?
     private let commandRunner: HubCommandRunning
     private let installedCommandRunner: HubCommandRunning
@@ -982,15 +1002,27 @@ final class HubController {
          homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
          serviceInstalledOverride: Bool? = nil,
          initialSnapshot: HubSnapshot? = nil) {
-        previewMode = environment["TESLATLAS_HUB_UI_PREVIEW"] == "1"
-        onboardingPreviewRoute = environment["TESLATLAS_HUB_ONBOARDING_PREVIEW"]
+        let scene = HubPreviewScene(environmentValue: environment["TESLATLAS_HUB_PREVIEW_SCENE"])
+        let isPreview = environment["TESLATLAS_HUB_UI_PREVIEW"] == "1" || scene != nil
+        let previewRoute = isPreview
+            ? (scene?.onboardingRoute ?? environment["TESLATLAS_HUB_ONBOARDING_PREVIEW"])
+            : nil
+        previewMode = isPreview
+        previewScene = scene
+        onboardingPreviewRoute = previewRoute
         self.commandRunner = commandRunner
         self.installedCommandRunner = installedCommandRunner
         self.installer = installer
         self.serviceRunner = serviceRunner
         self.homeDirectory = homeDirectory
         self.serviceInstalledOverride = serviceInstalledOverride
-        snapshot = initialSnapshot ?? (previewMode ? .previewRunning : .firstRun)
+        let firstRunPreviewRoutes = [
+            "welcome", "choose", "choose-migration", "provider", "fleet", "legacy",
+            "migration", "migration-connected", "verify", "finish", "finish-migration"
+        ]
+        let previewSnapshot: HubSnapshot = firstRunPreviewRoutes.contains(previewRoute ?? "")
+            ? .firstRun : .previewRunning
+        snapshot = initialSnapshot ?? (isPreview ? previewSnapshot : .firstRun)
     }
 
     static func isBundledServiceVersionOutput(_ output: String) -> Bool {
@@ -2197,15 +2229,7 @@ final class HubController {
         HubAppLog.shared.record("verification.started", category: "onboarding",
                                 fields: ["expect_running": expectRunning ? "true" : "false"])
         if previewMode {
-            let checks = [
-                HubOnboardingCheck(title: "Service", detail: "Installed and running", passed: true),
-                HubOnboardingCheck(title: "Tesla account", detail: "Connected", passed: true),
-                HubOnboardingCheck(title: "Vehicle", detail: "Available", passed: true),
-                HubOnboardingCheck(title: "Database", detail: "Healthy", passed: true),
-                HubOnboardingCheck(title: "Diagnostics", detail: "Passed", passed: true),
-                HubOnboardingCheck(title: "Logs", detail: "Readable", passed: true)
-            ]
-            DispatchQueue.main.async { completion(.success(checks)) }
+            DispatchQueue.main.async { completion(.success(Self.previewOnboardingChecks)) }
             return
         }
         if !expectRunning, migrationHandoverState != nil {

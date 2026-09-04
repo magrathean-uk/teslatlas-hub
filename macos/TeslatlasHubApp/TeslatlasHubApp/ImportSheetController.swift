@@ -99,7 +99,7 @@ final class ImportSheetController: NSWindowController {
         button.image = NSImage(systemSymbolName: symbol(for: title), accessibilityDescription: title)
         button.imagePosition = .imageLeading
         button.contentTintColor = .labelColor
-        button.hubAppearance = .flat
+        button.hubStyle = .flat
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.focusRingType = .default
         return button
@@ -147,7 +147,7 @@ final class ImportSheetController: NSWindowController {
             let alert = NSAlert()
             alert.messageText = "Complete all fields"
             alert.informativeText = "Source, car ID, password file, and ENCRYPTION_KEY file are required."
-            alert.runModal()
+            HubUIPresentation.presentInformation(alert)
             return
         }
         let versionAccepted = versionAcknowledgement.state == .on
@@ -155,13 +155,13 @@ final class ImportSheetController: NSWindowController {
             let alert = NSAlert()
             alert.messageText = "Confirm TeslaMate version"
             alert.informativeText = Self.teslaMateVersionRequirement
-            alert.runModal()
+            HubUIPresentation.presentInformation(alert)
             return
         }
         do {
             try HubController.validateMigrationSource(sourceField.stringValue)
         } catch {
-            NSAlert(error: error).runModal()
+            HubUIPresentation.presentError(error)
             return
         }
         controller.importTeslaMate(source: sourceField.stringValue,
@@ -171,7 +171,7 @@ final class ImportSheetController: NSWindowController {
                                    acknowledgeV42CompatibleSchema: versionAccepted) { [weak self] result in
             switch result {
             case .success: if let window = self?.window, let parent = window.sheetParent { parent.endSheet(window) }
-            case let .failure(error): NSAlert(error: error).runModal()
+            case let .failure(error): HubUIPresentation.presentError(error)
             }
         }
     }

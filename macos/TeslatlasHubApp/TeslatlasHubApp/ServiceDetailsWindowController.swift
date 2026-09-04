@@ -2,14 +2,26 @@
 
 import AppKit
 
-final class ServiceDetailsWindowController: NSWindowController {
+struct HubServiceDetail: Equatable {
+    let label: String
+    let value: String
+}
+
+final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate {
+    typealias ConfirmationPresenter = (NSAlert, NSApplication.ModalResponse) -> NSApplication.ModalResponse
+
     private let controller: HubController
     private let mutationAllowed: () -> Bool
     private let onMutationStateChanged: (Bool) -> Void
     private let onChanged: () -> Void
-    private let detailsField = NSTextField(labelWithString: "")
+    private let onDismiss: () -> Void
+    private let errorPresenter: (Error) -> Void
+    private let confirmationPresenter: ConfirmationPresenter
+    private let rowsStack = NSStackView()
+    private let closeButton = HubActionButton(title: "", target: nil, action: nil)
     private let updateButton = HubActionButton(title: "Update Service…", target: nil, action: nil)
     private let uninstallButton = HubActionButton(title: "Uninstall Hub…", target: nil, action: nil)
+    private let deleteDataButton = HubActionButton(title: "Delete Hub and Data…", target: nil, action: nil)
     private var mutationsEnabled = true
     private var mutationPending = false
 
@@ -17,58 +29,58 @@ final class ServiceDetailsWindowController: NSWindowController {
          controller: HubController,
          mutationAllowed: @escaping () -> Bool = { true },
          onMutationStateChanged: @escaping (Bool) -> Void = { _ in },
-         onChanged: @escaping () -> Void) {
+         onChanged: @escaping () -> Void,
+         onDismiss: @escaping () -> Void = {},
+         errorPresenter: @escaping (Error) -> Void = HubUIPresentation.presentError,
+         confirmationPresenter: @escaping ConfirmationPresenter = { alert, silentResponse in
+             HubUIPresentation.response(to: alert, silentResponse: silentResponse)
+         }) {
         self.controller = controller
         self.mutationAllowed = mutationAllowed
         self.onMutationStateChanged = onMutationStateChanged
         self.onChanged = onChanged
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 300), styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Service Details"
-        super.init(window: window)
-        detailsField.font = .systemFont(ofSize: 13)
-        detailsField.lineBreakMode = .byCharWrapping
-        detailsField.translatesAutoresizingMaskIntoConstraints = false
-
-        updateButton.target = self
-        updateButton.action = #selector(updateServicePressed)
-        configureFlatButton(updateButton, symbol: "arrow.down.circle", tint: .controlAccentColor)
-        updateButton.translatesAutoresizingMaskIntoConstraints = false
-        uninstallButton.target = self
-        uninstallButton.action = #selector(uninstallPressed)
-        configureFlatButton(uninstallButton, symbol: "trash", tint: .systemRed)
-        uninstallButton.translatesAutoresizingMaskIntoConstraints = false
-        let buttons = NSStackView(views: [updateButton, uninstallButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 8
-        buttons.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = NSStackView(views: [detailsField, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 16
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        let container = NSView()
-        container.addSubview(stack)
-        window.contentView = container
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -28),
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 28),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -28)
-        ])
-        window.center()
+        self.onDismiss = onDismiss
+        self.errorPresenter = errorPresenter
+        self.confirmationPresenter = confirmationPresenter
+        super.init(window: HubSheetStyle.makeWindow(contentSize: HubMetrics.serviceDetailsSheetSize))
+        window?.title = "Service Details"
+        window?.delegate = self
+        window?.contentView = contentView()
         update(snapshot: snapshot)
     }
 
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    static func details(for snapshot: HubSnapshot) -> [HubServiceDetail] {
+        [
+            .init(label: "Version", value: "Teslatlas Hub \(snapshot.version)"),
+            .init(label: "Service", value: snapshot.health == .running ? "Active" : snapshot.service),
+            .init(label: "Provider", value: snapshot.provider?.displayName ?? "Not configured"),
+            .init(label: "Tesla account", value: snapshot.accountDisplay),
+            .init(label: "Database", value: snapshot.database),
+            .init(label: "Data folder",
+                  value: snapshot.dataDirectory.map {
+                      ($0.path as NSString).abbreviatingWithTildeInPath
+                  } ?? "Not available")
+        ]
+    }
+
     func update(snapshot: HubSnapshot) {
-        detailsField.stringValue = [
-            "Status: \(snapshot.service)",
-            "Account: \(snapshot.accountDisplay)",
-            "Vehicle: \(snapshot.vehicleName) · \(snapshot.vehicle)",
-            "Database: \(snapshot.database)",
-            "Data folder: \(snapshot.dataDirectory?.path ?? "Not available")",
-            "Version: \(snapshot.version)"
-        ].joined(separator: "\n\n")
+        rowsStack.arrangedSubviews.forEach {
+            rowsStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        for (index, detail) in Self.details(for: snapshot).enumerated() {
+            if index > 0 {
+                let line = HubModalChrome.divider()
+                rowsStack.addArrangedSubview(line)
+                line.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
+            }
+            let row = ServiceDetailRowView(detail: detail)
+            rowsStack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
+        }
     }
 
     func setMutationsEnabled(_ enabled: Bool) {
@@ -76,27 +88,128 @@ final class ServiceDetailsWindowController: NSWindowController {
         updateMutationButtons()
     }
 
-    private func configureFlatButton(_ button: NSButton,
-                                     symbol: String,
-                                     tint: NSColor = .labelColor) {
-        button.isBordered = false
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
-        button.imagePosition = .imageLeading
-        button.contentTintColor = .labelColor
-        (button as? HubActionButton)?.hubAppearance = .flat
-        button.font = .systemFont(ofSize: 13, weight: .medium)
-        button.focusRingType = .default
+    var mutationInProgress: Bool { mutationPending }
+
+    private func contentView() -> NSView {
+        let root = HubModalRootView()
+        let modalClose = HubModalChrome.closeButton(target: self, action: #selector(closePressed))
+        closeButton.target = self
+        closeButton.action = #selector(closePressed)
+        closeButton.image = modalClose.image
+        closeButton.imagePosition = .imageOnly
+        closeButton.hubStyle = .flat
+        closeButton.identifier = modalClose.identifier
+        closeButton.setAccessibilityLabel("Close")
+        closeButton.toolTip = "Close"
+        closeButton.widthAnchor.constraint(equalToConstant: 26).isActive = true
+        closeButton.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        let header = HubModalChrome.header(title: "Service Details", trailing: [closeButton],
+                                           identifier: "hub.service.header")
+
+        rowsStack.orientation = .vertical
+        rowsStack.alignment = .leading
+        rowsStack.spacing = 0
+        rowsStack.translatesAutoresizingMaskIntoConstraints = false
+        let detailsCard = HubCardView()
+        detailsCard.identifier = NSUserInterfaceItemIdentifier("hub.service.details")
+        detailsCard.addSubview(rowsStack)
+        NSLayoutConstraint.activate([
+            rowsStack.leadingAnchor.constraint(equalTo: detailsCard.leadingAnchor),
+            rowsStack.trailingAnchor.constraint(equalTo: detailsCard.trailingAnchor),
+            rowsStack.topAnchor.constraint(equalTo: detailsCard.topAnchor),
+            rowsStack.bottomAnchor.constraint(equalTo: detailsCard.bottomAnchor)
+        ])
+
+        configureButton(uninstallButton, symbol: nil, style: .destructive,
+                        action: #selector(uninstallPressed))
+        let dangerTitle = NSTextField(labelWithString: "Uninstall Hub")
+        dangerTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        dangerTitle.textColor = HubPalette.foreground
+        let dangerDetail = NSTextField(wrappingLabelWithString:
+            "Stops the service and removes it from this Mac. Your collected data folder is left in place unless you delete it manually.")
+        dangerDetail.font = .systemFont(ofSize: 12.5)
+        dangerDetail.textColor = HubPalette.mutedForeground
+        dangerDetail.maximumNumberOfLines = 2
+        let dangerContents = NSStackView(views: [dangerTitle, dangerDetail, uninstallButton])
+        dangerContents.orientation = .vertical
+        dangerContents.alignment = .leading
+        dangerContents.spacing = 0
+        dangerContents.setCustomSpacing(4, after: dangerTitle)
+        dangerContents.setCustomSpacing(11, after: dangerDetail)
+        dangerContents.translatesAutoresizingMaskIntoConstraints = false
+        let dangerCard = HubDangerCardView()
+        dangerCard.identifier = NSUserInterfaceItemIdentifier("hub.service.danger")
+        dangerCard.addSubview(dangerContents)
+        NSLayoutConstraint.activate([
+            dangerContents.leadingAnchor.constraint(equalTo: dangerCard.leadingAnchor, constant: 14),
+            dangerContents.trailingAnchor.constraint(equalTo: dangerCard.trailingAnchor, constant: -14),
+            dangerContents.topAnchor.constraint(equalTo: dangerCard.topAnchor, constant: 12),
+            dangerContents.bottomAnchor.constraint(equalTo: dangerCard.bottomAnchor, constant: -12)
+        ])
+
+        configureButton(updateButton, symbol: "arrow.down.circle", style: .flatAccent,
+                        action: #selector(updateServicePressed))
+        configureButton(deleteDataButton, symbol: "trash", style: .flatDanger,
+                        action: #selector(deleteDataPressed))
+        deleteDataButton.identifier = NSUserInterfaceItemIdentifier("hub.service.delete-data")
+        let hiddenMaintenance = NSStackView(views: [updateButton, deleteDataButton])
+        hiddenMaintenance.isHidden = true
+        root.addSubview(hiddenMaintenance)
+
+        let body = NSStackView(views: [detailsCard, dangerCard])
+        body.orientation = .vertical
+        body.alignment = .leading
+        body.spacing = 16
+        body.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(header)
+        root.addSubview(body)
+        header.translatesAutoresizingMaskIntoConstraints = false
+        for view in [detailsCard, dangerCard] {
+            view.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
+        }
+        NSLayoutConstraint.activate([
+            header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            header.topAnchor.constraint(equalTo: root.topAnchor),
+            body.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
+            body.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+            body.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 14),
+            body.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14)
+        ])
+        return root
+    }
+
+    private func configureButton(_ button: HubActionButton,
+                                 symbol: String?,
+                                 style: HubButtonStyle,
+                                 action: Selector) {
+        button.target = self
+        button.action = action
+        button.hubStyle = style
+        button.hubFont = .systemFont(ofSize: 12, weight: .medium)
+        button.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: button.title) }
+        button.imagePosition = symbol == nil ? .noImage : .imageLeading
+        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+    }
+
+    @objc private func closePressed() {
+        guard !mutationPending else { NSSound.beep(); return }
+        onDismiss()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !mutationPending else { NSSound.beep(); return false }
+        onDismiss()
+        return false
     }
 
     @objc private func updateServicePressed() {
         guard beginMutation() else { return }
-        controller.installService { [weak self] result in
-            self?.endMutation()
+        controller.installService { [self] result in
+            endMutation()
             switch result {
-            case .success:
-                self?.onChanged()
-            case let .failure(error):
-                NSAlert(error: error).runModal()
+            case .success: onChanged()
+            case let .failure(error): errorPresenter(error)
             }
         }
     }
@@ -109,23 +222,32 @@ final class ServiceDetailsWindowController: NSWindowController {
         choice.addButton(withTitle: "Uninstall, Keep Data")
         choice.addButton(withTitle: "Delete Data…")
         choice.addButton(withTitle: "Cancel")
-        let response = choice.runModal()
+        let response = confirmationPresenter(choice, .alertThirdButtonReturn)
         guard response != .alertThirdButtonReturn else { return }
 
         let deleteData = response == .alertSecondButtonReturn
         if deleteData {
-            guard Self.deleteDataConfirmation().runModal() == .alertSecondButtonReturn else { return }
+            guard confirmationPresenter(Self.deleteDataConfirmation(), .alertFirstButtonReturn)
+                == .alertSecondButtonReturn else { return }
         }
+        uninstall(deleteData: deleteData)
+    }
 
+    @objc private func deleteDataPressed() {
+        guard confirmationPresenter(Self.deleteDataConfirmation(), .alertSecondButtonReturn)
+            == .alertSecondButtonReturn else { return }
+        uninstall(deleteData: true)
+    }
+
+    private func uninstall(deleteData: Bool) {
         guard beginMutation() else { return }
-        controller.uninstallService(deleteData: deleteData) { [weak self] result in
-            self?.endMutation()
+        controller.uninstallService(deleteData: deleteData) { [self] result in
+            endMutation()
             switch result {
             case .success:
-                self?.close()
-                self?.onChanged()
-            case let .failure(error):
-                NSAlert(error: error).runModal()
+                onChanged()
+                onDismiss()
+            case let .failure(error): errorPresenter(error)
             }
         }
     }
@@ -152,6 +274,8 @@ final class ServiceDetailsWindowController: NSWindowController {
         let enabled = mutationsEnabled && !mutationPending
         updateButton.isEnabled = enabled
         uninstallButton.isEnabled = enabled
+        deleteDataButton.isEnabled = enabled
+        closeButton.isEnabled = !mutationPending
     }
 
     static func deleteDataConfirmation() -> NSAlert {
@@ -164,6 +288,59 @@ final class ServiceDetailsWindowController: NSWindowController {
         confirmation.buttons[0].keyEquivalent = "\r"
         confirmation.buttons[1].keyEquivalent = ""
         return confirmation
+    }
+}
+
+private final class ServiceDetailRowView: NSView {
+    init(detail: HubServiceDetail) {
+        super.init(frame: .zero)
+        let label = NSTextField(labelWithString: detail.label)
+        label.font = .systemFont(ofSize: 12.5, weight: .medium)
+        label.textColor = HubPalette.foreground
+        let value = NSTextField(labelWithString: detail.value)
+        value.font = .systemFont(ofSize: 12)
+        value.textColor = HubPalette.mutedForeground
+        value.lineBreakMode = .byTruncatingMiddle
+        value.alignment = .right
+        value.toolTip = detail.value
+        let stack = NSStackView(views: [label, NSView(), value])
+        stack.alignment = .centerY
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            label.widthAnchor.constraint(equalToConstant: 104),
+            value.widthAnchor.constraint(lessThanOrEqualToConstant: 286),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
+            heightAnchor.constraint(equalToConstant: 37)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+private final class HubDangerCardView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = HubMetrics.cardRadius
+        layer?.cornerCurve = .continuous
+        layer?.borderWidth = 0.5
+        updateLayer()
+    }
+
+    override func updateLayer() {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        layer?.backgroundColor = HubPalette.danger.withAlphaComponent(isDark ? 0.15 : 0.05).cgColor
+        layer?.borderColor = HubPalette.danger.withAlphaComponent(isDark ? 0.45 : 0.30).cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateLayer()
     }
 
     @available(*, unavailable)

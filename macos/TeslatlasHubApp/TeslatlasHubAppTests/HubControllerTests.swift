@@ -6,19 +6,20 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class HubControllerTests: XCTestCase {
-    func testActionButtonsUseBlackWhenEnabledAndLightGreyWhenDisabled() {
+    func testActionButtonsUseSharedStyleTokensWhenEnabledAndDisabled() {
         let flat = HubActionButton(title: "Action", target: nil, action: nil)
-        flat.hubAppearance = .flat
-        XCTAssertEqual(flat.contentTintColor, .labelColor)
+        flat.hubStyle = .flat
+        XCTAssertEqual(flat.contentTintColor,
+                       flat.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)
         flat.isEnabled = false
         XCTAssertEqual(flat.contentTintColor, .disabledControlTextColor)
 
         let primary = HubActionButton(title: "Continue", target: nil, action: nil)
-        primary.hubAppearance = .primary
+        primary.hubStyle = .primary
         XCTAssertEqual(primary.contentTintColor, .white)
-        XCTAssertEqual(primary.layer?.backgroundColor, NSColor.black.cgColor)
+        XCTAssertEqual(primary.layer?.backgroundColor, HubPalette.accent.cgColor)
         primary.isEnabled = false
-        XCTAssertEqual(primary.layer?.backgroundColor, NSColor.lightGray.cgColor)
+        XCTAssertEqual(primary.layer?.backgroundColor, NSColor.disabledControlTextColor.cgColor)
     }
 
     func testMainWindowBuildsInPreviewMode() {
@@ -27,6 +28,28 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(windowController.window?.title, "Teslatlas Hub")
         XCTAssertEqual(windowController.window?.contentRect(forFrameRect: windowController.window!.frame).size,
                        NSSize(width: 900, height: 630))
+    }
+
+    func testOnboardingPreviewRoutesUseFirstRunBackgroundOnlyInPreviewMode() {
+        for route in ["welcome", "choose", "provider", "fleet", "legacy", "migration", "migration-connected"] {
+            let controller = HubController(environment: [
+                "TESLATLAS_HUB_UI_PREVIEW": "1",
+                "TESLATLAS_HUB_ONBOARDING_PREVIEW": route
+            ])
+            XCTAssertEqual(controller.snapshot.health, .needsInstall, route)
+            XCTAssertEqual(controller.snapshot.account, "Not configured", route)
+        }
+
+        let ordinaryPreview = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        XCTAssertEqual(ordinaryPreview.snapshot.health, .running)
+        XCTAssertEqual(ordinaryPreview.snapshot.account, "Connected")
+
+        let production = HubController(environment: [
+            "TESLATLAS_HUB_ONBOARDING_PREVIEW": "welcome"
+        ])
+        XCTAssertFalse(production.previewMode)
+        XCTAssertNil(production.onboardingPreviewRoute)
+        XCTAssertEqual(production.snapshot.health, .needsInstall)
     }
 
     func testServiceDetailsUpdateButtonInstallsCurrentPackage() throws {
@@ -73,6 +96,223 @@ final class HubControllerTests: XCTestCase {
                 .first { $0.title == title })
             XCTAssertFalse(button.isEnabled)
         }
+    }
+
+    func testPendingServiceDetailsMutationBlocksCloseAndPrimaryModalReplacementUntilCompletion() throws {
+        // Catches a pending operation losing its owner and leaving the dashboard mutation gate locked.
+        let installer = PendingInstaller()
+        let controller = HubController(
+            commandRunner: CountingRunner(),
+            installedCommandRunner: CountingRunner(),
+            installer: installer,
+            serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+            serviceInstalledOverride: true,
+            initialSnapshot: .previewRunning
+        )
+        let dashboard = MainWindowController(controller: controller)
+        let details = try XCTUnwrap(dashboard.showServiceDetails())
+        let update = try XCTUnwrap(buttons(in: details.window?.contentView)
+            .first { $0.title == "Update Service…" })
+        let close = try XCTUnwrap(buttons(in: details.window?.contentView)
+            .first { $0.identifier?.rawValue == "hub.modal.close" })
+
+        update.performClick(nil)
+
+        XCTAssertEqual(installer.installCalls, 1)
+        XCTAssertFalse(close.isEnabled)
+        XCTAssertFalse(details.windowShouldClose(try XCTUnwrap(details.window)))
+        XCTAssertNil(dashboard.showDiagnostics())
+
+        installer.completeInstall(.success(""))
+        let restored = expectation(description: "service details mutation gate restored")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            XCTAssertTrue(close.isEnabled)
+            let diagnostics = dashboard.showDiagnostics()
+            XCTAssertNotNil(diagnostics)
+            self.buttons(in: diagnostics?.window?.contentView)
+                .first { $0.identifier?.rawValue == "hub.modal.close" }?.performClick(nil)
+            restored.fulfill()
+        }
+        wait(for: [restored], timeout: 1)
+    }
+
+    func testConfirmedDeleteDataActionUsesDeleteDataAndDismissesAfterUnlocking() throws {
+        // Catches the direct danger action using the keep-data path or dismissing before its lock is cleared.
+        let installer = PendingInstaller()
+        let controller = HubController(
+            commandRunner: CountingRunner(),
+            installedCommandRunner: CountingRunner(),
+            installer: installer,
+            serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+            serviceInstalledOverride: true,
+            initialSnapshot: .previewRunning
+        )
+        var events: [String] = []
+        let changed = expectation(description: "delete-data refresh requested")
+        let dismissed = expectation(description: "delete-data details dismissed")
+        let details = ServiceDetailsWindowController(
+            snapshot: .previewRunning,
+            controller: controller,
+            onMutationStateChanged: { pending in events.append(pending ? "locked" : "unlocked") },
+            onChanged: {
+                events.append("changed")
+                changed.fulfill()
+            },
+            onDismiss: {
+                events.append("dismissed")
+                dismissed.fulfill()
+            }
+        )
+        let delete = try XCTUnwrap(buttons(in: details.window?.contentView).first {
+            $0.identifier?.rawValue == "hub.service.delete-data"
+        })
+        let close = try XCTUnwrap(buttons(in: details.window?.contentView)
+            .first { $0.identifier?.rawValue == "hub.modal.close" })
+
+        delete.performClick(nil)
+
+        XCTAssertEqual(installer.deleteDataChoices, [true])
+        XCTAssertEqual(events, ["locked"])
+        XCTAssertFalse(close.isEnabled)
+
+        installer.completeUninstall(.success(""))
+        wait(for: [changed, dismissed], timeout: 1)
+        XCTAssertEqual(events, ["locked", "unlocked", "changed", "dismissed"])
+    }
+
+    func testDeleteDataFailureRestoresTheSharedMutationGate() throws {
+        // Catches a failed destructive action leaving the sheet locked after its error is dismissed.
+        let installer = PendingInstaller()
+        let controller = HubController(
+            commandRunner: CountingRunner(),
+            installedCommandRunner: CountingRunner(),
+            installer: installer,
+            serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+            serviceInstalledOverride: true,
+            initialSnapshot: .previewRunning
+        )
+        var events: [String] = []
+        var presentedErrors: [String] = []
+        let unlocked = expectation(description: "delete-data failure unlocked")
+        let details = ServiceDetailsWindowController(
+            snapshot: .previewRunning,
+            controller: controller,
+            onMutationStateChanged: { pending in
+                events.append(pending ? "locked" : "unlocked")
+                if !pending { unlocked.fulfill() }
+            },
+            onChanged: { XCTFail("failed delete-data action refreshed details") },
+            errorPresenter: { error in presentedErrors.append(error.localizedDescription) }
+        )
+        let delete = try XCTUnwrap(buttons(in: details.window?.contentView).first {
+            $0.identifier?.rawValue == "hub.service.delete-data"
+        })
+        let close = try XCTUnwrap(buttons(in: details.window?.contentView)
+            .first { $0.identifier?.rawValue == "hub.modal.close" })
+
+        delete.performClick(nil)
+        XCTAssertEqual(installer.deleteDataChoices, [true])
+        XCTAssertFalse(close.isEnabled)
+
+        installer.completeUninstall(.failure(HubActionError.commandFailed("uninstall failed")))
+        wait(for: [unlocked], timeout: 1)
+
+        XCTAssertEqual(events, ["locked", "unlocked"])
+        XCTAssertEqual(presentedErrors, ["uninstall failed"])
+        XCTAssertTrue(close.isEnabled)
+    }
+
+    func testServiceDetailsUseRealSnapshotAndProvider() {
+        // Catches replacing the current snapshot with a prototype or stale service value.
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.provider = .fleet
+
+        let rows = ServiceDetailsWindowController.details(for: snapshot)
+
+        XCTAssertEqual(rows.first { $0.label == "Provider" }?.value, "Fleet API")
+        XCTAssertEqual(rows.first { $0.label == "Version" }?.value,
+                       "Teslatlas Hub \(snapshot.version)")
+    }
+
+    func testServiceDetailsOmitUnavailableTeslaAccountIdentity() {
+        // Catches fabricating an account identity when Hub only knows the configuration state.
+        let rows = ServiceDetailsWindowController.details(for: .firstRun)
+
+        XCTAssertEqual(rows.first { $0.label == "Tesla account" }?.value, "Not configured")
+        XCTAssertFalse(rows.contains { $0.value.contains("@") })
+    }
+
+    func testServiceDetailsRetainUpdateAndBothUninstallOutcomes() throws {
+        // Catches losing a maintenance or irreversible deletion path in the redesign.
+        let controller = ServiceDetailsWindowController(
+            snapshot: .previewRunning,
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+            onChanged: {}
+        )
+
+        let titles = buttons(in: controller.window?.contentView).map(\.title)
+
+        XCTAssertTrue(titles.contains("Update Service…"))
+        XCTAssertTrue(titles.contains("Uninstall Hub…"))
+        XCTAssertEqual(ServiceDetailsWindowController.deleteDataConfirmation().buttons.map(\.title),
+                       ["Cancel", "Delete Data and Uninstall"])
+    }
+
+    func testServiceDetailsUseTheSharedSheetSizeAndIdentifyTheDeleteDataAction() throws {
+        // Catches using a standalone detail window or an unidentifiable destructive action.
+        let details = ServiceDetailsWindowController(
+            snapshot: .previewRunning,
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+            onChanged: {}
+        )
+
+        XCTAssertEqual(details.window?.contentRect(forFrameRect: details.window!.frame).size,
+                       HubMetrics.serviceDetailsSheetSize)
+        XCTAssertNotNil(buttons(in: details.window?.contentView).first {
+            $0.identifier?.rawValue == "hub.service.delete-data"
+        })
+    }
+
+    func testServiceDetailsUsePrimaryModalCoordinationAndPreserveSelectedPage() throws {
+        // Catches bypassing the shared sheet coordinator or resetting the selected dashboard page.
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let dashboard = MainWindowController(controller: controller)
+        dashboard.selectMainSection(.vehicles)
+
+        let details = try XCTUnwrap(dashboard.showServiceDetails())
+
+        XCTAssertEqual(dashboard.activeModalKind, .serviceDetails)
+        XCTAssertEqual(dashboard.selectedSection, .vehicles)
+        XCTAssertTrue(details.window?.sheetParent === dashboard.window)
+        try XCTUnwrap(buttons(in: details.window?.contentView)
+            .first { $0.identifier?.rawValue == "hub.modal.close" }).performClick(nil)
+    }
+
+    func testServiceDetailsRefuseToReplaceBusyOrNonDismissibleOnboarding() throws {
+        // Catches details dismissing setup while its onboarding sheet must remain modal.
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let dashboard = MainWindowController(controller: controller)
+        let busyOnboarding = try XCTUnwrap(dashboard.showOnboarding(route: .provider))
+        busyOnboarding.setBusy(true, message: "Checking credentials…")
+        defer {
+            busyOnboarding.setBusy(false)
+            busyOnboarding.close()
+        }
+
+        XCTAssertNil(dashboard.showServiceDetails())
+        XCTAssertEqual(dashboard.activeModalKind, .onboarding)
+
+        let firstRunController = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                                               initialSnapshot: .firstRun)
+        let firstRunDashboard = MainWindowController(controller: firstRunController)
+        _ = try XCTUnwrap(firstRunDashboard.showFirstRunOnboarding())
+        let firstRunIdentifier = try XCTUnwrap(firstRunDashboard.activeOnboardingIdentifier)
+        defer {
+            firstRunDashboard.completeOnboarding(identifier: firstRunIdentifier, completion: .configured)
+        }
+
+        XCTAssertNil(firstRunDashboard.showServiceDetails())
+        XCTAssertEqual(firstRunDashboard.activeModalKind, .onboarding)
     }
 
     func testPreviewIsReadOnly() {
@@ -258,6 +498,75 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(runner.calls, 0)
     }
 
+    func testDiagnosticsRowsHaveNonzeroDocumentAndRowFramesAfterRendering() throws {
+        let runner = CommandMapRunner(responses: [
+            "doctor": .success("{\"status\":\"ok\"}"),
+            "preflight": .success("{\"status\":\"ready\"}"),
+            "status": .success("{\"status\":\"ok\"}")
+        ])
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       serviceInstalledOverride: false)
+        let diagnostics = DiagnosticsWindowController(controller: controller)
+        let root = try XCTUnwrap(diagnostics.window?.contentView)
+
+        try XCTUnwrap(buttons(in: root).first { $0.title == "Run Again" }).performClick(nil)
+        let rendered = expectation(description: "diagnostic rows rendered")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            diagnostics.window?.layoutIfNeeded()
+            root.layoutSubtreeIfNeeded()
+            let views = self.descendantViews(in: root)
+            let document = views.first {
+                $0.identifier?.rawValue == "hub.diagnostics.rows-document"
+            }
+            let row = views.first {
+                $0.identifier?.rawValue == "hub.diagnostics.row"
+            }
+            XCTAssertNotNil(document)
+            XCTAssertNotNil(row)
+            XCTAssertEqual(document?.isFlipped, true)
+            XCTAssertGreaterThan(document?.frame.width ?? 0, 0)
+            XCTAssertGreaterThan(document?.frame.height ?? 0, 0)
+            XCTAssertGreaterThan(row?.frame.width ?? 0, 0)
+            XCTAssertGreaterThan(row?.frame.height ?? 0, 0)
+            rendered.fulfill()
+        }
+        wait(for: [rendered], timeout: 1)
+    }
+
+    func testDiagnosticsRerunClearsPreviouslyRenderedRawAndStructuredReport() throws {
+        let runner = CommandMapRunner(responses: [
+            "doctor": .success("{\"status\":\"old\"}"),
+            "preflight": .success("{\"status\":\"ready\"}"),
+            "status": .success("{\"status\":\"ok\"}")
+        ])
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       serviceInstalledOverride: false)
+        let diagnostics = DiagnosticsWindowController(controller: controller)
+        let root = try XCTUnwrap(diagnostics.window?.contentView)
+        let run = try XCTUnwrap(buttons(in: root).first { $0.title == "Run Again" })
+
+        run.performClick(nil)
+        let firstReport = expectation(description: "first diagnostic report rendered")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let raw = self.descendantViews(in: root).compactMap { $0 as? NSTextView }.first {
+                $0.identifier?.rawValue == "hub.diagnostics.raw-report"
+            }
+            XCTAssertTrue(raw?.string.contains("old") == true)
+            XCTAssertTrue(self.labels(in: root).contains { $0.stringValue == "Environment doctor" })
+            try? XCTUnwrap(self.buttons(in: root).first { $0.title == "Show raw redacted report" }).performClick(nil)
+            run.performClick(nil)
+            XCTAssertEqual(raw?.string, "")
+            XCTAssertTrue(raw?.enclosingScrollView?.isHidden == true)
+            XCTAssertFalse(self.labels(in: root).contains { $0.stringValue == "Environment doctor" })
+            firstReport.fulfill()
+        }
+        wait(for: [firstReport], timeout: 1)
+    }
+
     func testSharedReportsRedactValuesWithoutDeletingUsefulErrors() {
         let source = """
         password authentication failed for user reader
@@ -413,8 +722,8 @@ final class HubControllerTests: XCTestCase {
             XCTAssertFalse(copy.contains { $0.localizedCaseInsensitiveContains("needs attention") })
             let start = self.buttons(in: dashboard?.window?.contentView)
                 .first { $0.title == "Start Hub" }
-            XCTAssertEqual(start?.keyEquivalent, "\r")
-            XCTAssertTrue(dashboard?.window?.defaultButtonCell === start?.cell)
+            XCTAssertEqual((start as? HubActionButton)?.hubStyle, .primary)
+            XCTAssertTrue(start?.isEnabled ?? false)
             XCTAssertNotNil(start?.layer?.backgroundColor)
             settled.fulfill()
         }
@@ -477,6 +786,45 @@ final class HubControllerTests: XCTestCase {
         ])
     }
 
+    func testVehicleCommandActivityKeepsDispatchedVehicleWhenSelectionChangesWhilePending() throws {
+        // Catches recording the currently selected vehicle after a pending command completes.
+        let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
+        let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
+        let runner = PendingVehicleControlRunner(status: """
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        """)
+        let controller = HubController(installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+                                       serviceInstalledOverride: true)
+        let loaded = expectation(description: "vehicle dashboard loaded")
+        let dashboard = MainWindowController(controller: controller) { _ in loaded.fulfill() }
+        wait(for: [loaded], timeout: 1)
+
+        let command = try XCTUnwrap(buttons(in: dashboard.window?.contentView)
+            .first { $0.title == "Wake" })
+        command.performClick(nil)
+        let confirmation = try XCTUnwrap(dashboard.window?.attachedSheet)
+        try XCTUnwrap(buttons(in: confirmation.contentView)
+            .first { $0.title == "Wake Vehicle" }).performClick(nil)
+
+        let selector = try XCTUnwrap(popups(in: dashboard.window?.contentView).first)
+        XCTAssertFalse(selector.isEnabled)
+        selector.selectItem(at: 1)
+        selector.sendAction(selector.action, to: selector.target)
+        XCTAssertTrue(runner.hasPendingControl)
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { NSApp.abortModal() }
+        runner.completeControl(.success(""))
+        let rendered = expectation(description: "accepted activity rendered")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let text = self.labels(in: dashboard.window?.contentView).map(\.stringValue).joined(separator: " ")
+            XCTAssertTrue(text.contains("Wake Vehicle accepted for One"))
+            XCTAssertFalse(text.contains("Wake Vehicle accepted for Two"))
+            rendered.fulfill()
+        }
+        wait(for: [rendered], timeout: 1)
+    }
+
     func testMultipleVehicleDashboardShowsNativeSelector() throws {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
@@ -494,7 +842,7 @@ final class HubControllerTests: XCTestCase {
                 .first { $0.itemTitles == ["One", "Two"] }
             XCTAssertNotNil(selector)
             XCTAssertFalse(selector?.isHidden ?? true)
-            XCTAssertFalse(selector?.isBordered ?? true)
+            XCTAssertTrue(selector?.isBordered ?? false)
             settled.fulfill()
         }
 
@@ -651,7 +999,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(embedded.arguments, [])
     }
 
-    func testAthenaCardShowsControlsAndManageTeslaInsteadOfConnectTesla() {
+    func testPreviewVehicleCardShowsControlsAndManageTeslaInsteadOfConnectTesla() {
         let alert = MainWindowController.vehicleControlConfirmation(.climateStart,
                                                                     vehicleName: "Model 3")
         XCTAssertEqual(alert.messageText, "Start Climate for Model 3?")
@@ -662,11 +1010,11 @@ final class HubControllerTests: XCTestCase {
         let settled = expectation(description: "preview dashboard settled")
         DispatchQueue.main.async {
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
-                .contains { $0.stringValue == "Athena" })
+                .contains { $0.stringValue == "Aurora" })
             XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
                 .contains { $0.title == "Vehicle Controls…" })
             for title in ["Start Climate", "Stop Climate", "Wake", "Lock",
-                          "Unlock", "Flash", "Honk"] {
+                          "Unlock", "Flash Lights", "Honk"] {
                 let button = self.buttons(in: windowController.window?.contentView)
                     .first { $0.title == title }
                 XCTAssertNotNil(button, "missing \(title)")
@@ -679,12 +1027,13 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Connected · Fleet API" })
             XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
+                .compactMap { $0 as? HubActionButton }
                 .allSatisfy { !$0.isBordered })
             XCTAssertNil(windowController.window?.defaultButtonCell)
             XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
                 .contains { $0.title == "Stop Hub…" && !$0.isHidden })
             XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
-                .contains { $0.title == "Restart Hub" && $0.isHidden })
+                .contains { $0.title == "Restart Hub" && !$0.isHidden })
             XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
                 .contains { $0.keyEquivalent == "\r" })
             XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
@@ -732,7 +1081,7 @@ final class HubControllerTests: XCTestCase {
         let running = expectation(description: "running dashboard settled")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             XCTAssertTrue(self.labels(in: dashboard?.window?.contentView)
-                .contains { $0.stringValue == "Collecting vehicle data" })
+                .contains { $0.stringValue == "Hub is running" })
             XCTAssertTrue(self.labels(in: dashboard?.window?.contentView)
                 .contains { $0.stringValue == "Hub runs in the background. You can close this window." })
             running.fulfill()
@@ -751,6 +1100,43 @@ final class HubControllerTests: XCTestCase {
             .contains { $0.stringValue == "Starting Hub…" })
         XCTAssertFalse(labels(in: dashboard.window?.contentView)
             .contains { $0.stringValue == "Attention needed" })
+    }
+
+    func testHubStartedOnboardingCompletionSchedulesOnlySettlementRefresh() throws {
+        let runner = PendingCommandRunner()
+        let controller = HubController(
+            installedCommandRunner: runner,
+            serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+            serviceInstalledOverride: true,
+            initialSnapshot: .firstRun
+        )
+        let initialRefresh = expectation(description: "initial dashboard refresh")
+        let dashboard = MainWindowController(
+            controller: controller,
+            serviceTransitionTimeout: 1,
+            serviceTransitionPollInterval: 0.01,
+            errorPresenter: { error in XCTFail("unexpected error: \(error)") },
+            onInitialRefresh: { _ in initialRefresh.fulfill() }
+        )
+        XCTAssertEqual(runner.arguments.count, 1)
+        runner.complete(.success("""
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        """))
+        wait(for: [initialRefresh], timeout: 1)
+
+        _ = try XCTUnwrap(dashboard.showOnboarding(route: .provider))
+        let identifier = try XCTUnwrap(dashboard.activeOnboardingIdentifier)
+        dashboard.completeOnboarding(identifier: identifier, completion: .hubStarted)
+
+        let settlementRefresh = expectation(description: "settlement refresh scheduled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            XCTAssertEqual(runner.arguments.count, 2,
+                           "Hub-start completion schedules only the controlled settlement refresh")
+            XCTAssertEqual(runner.arguments.last?.suffix(1), ["status"])
+            settlementRefresh.fulfill()
+        }
+        wait(for: [settlementRefresh], timeout: 1)
+        withExtendedLifetime(dashboard) {}
     }
 
     func testInFlightRefreshDoesNotRepaintDashboardDuringServiceTransition() {
@@ -804,7 +1190,7 @@ final class HubControllerTests: XCTestCase {
         wait(for: [timedOut], timeout: 0.5)
         let visibleText = labels(in: dashboard.window?.contentView).map(\.stringValue)
         XCTAssertFalse(visibleText.contains("Starting Hub…"))
-        XCTAssertTrue(visibleText.contains("Collecting vehicle data"))
+        XCTAssertTrue(visibleText.contains("Hub is running"))
         XCTAssertTrue(dashboard.connectButton.isEnabled)
         XCTAssertTrue(dashboard.importButton.isEnabled)
     }
@@ -983,7 +1369,7 @@ final class HubControllerTests: XCTestCase {
 
         DispatchQueue.main.async {
             for title in ["Start Climate", "Stop Climate", "Wake", "Lock",
-                          "Unlock", "Flash", "Honk"] {
+                          "Unlock", "Flash Lights", "Honk"] {
                 let button = self.buttons(in: windowController.window?.contentView)
                     .first { $0.title == title }
                 XCTAssertNotNil(button, "missing \(title)")
@@ -998,19 +1384,207 @@ final class HubControllerTests: XCTestCase {
         wait(for: [settled], timeout: 1)
     }
 
-    func testDashboardUsesLogoWithoutOutlinedCardsAndOnlyServiceStatusDot() {
+    func testDashboardUsesApprovedCardsAndRealSnapshotValues() throws {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
                                        initialSnapshot: .previewRunning)
-        let dashboard = MainWindowController(controller: controller)
-        let content = dashboard.window?.contentView
+        let windowController = MainWindowController(controller: controller)
+        let view = try XCTUnwrap(windowController.window?.contentView)
+        let identifiers = descendantViews(in: view).compactMap { $0.identifier?.rawValue }
 
-        XCTAssertTrue(imageViews(in: content).contains {
-            $0.accessibilityLabel() == "Teslatlas Hub" && !$0.isHidden
+        XCTAssertTrue(identifiers.contains("hub.dashboard.hero"))
+        XCTAssertTrue(identifiers.contains("hub.dashboard.vehicle-card"))
+        XCTAssertTrue(identifiers.contains("hub.dashboard.status-card"))
+        XCTAssertTrue(labels(in: view).contains {
+            $0.stringValue == "Teslatlas Hub \(HubSnapshot.previewRunning.version)"
         })
-        XCTAssertEqual(imageViews(in: content).filter {
-            $0.accessibilityLabel() == "Service status"
-        }.count, 1)
-        XCTAssertFalse(boxes(in: content).contains { $0.boxType == .custom })
+        XCTAssertFalse(labels(in: view).contains { $0.stringValue.contains("1.4.0") })
+    }
+
+    func testDashboardDoesNotInventUnavailableVehicleFacts() {
+        var unavailable = HubSnapshot.previewRunning
+        unavailable.vehicleName = "Vehicle"
+        unavailable.vehicle = "Unknown"
+        unavailable.controlVehicleID = nil
+        unavailable.controlVehicles = []
+        let dashboard = HubDashboardView(actions: .noOp)
+        dashboard.apply(snapshot: unavailable, transition: nil, activity: [])
+        let text = labels(in: dashboard).map(\.stringValue).joined(separator: " ")
+
+        XCTAssertFalse(text.contains("78%"))
+        XCTAssertFalse(text.contains("Model 3"))
+        XCTAssertFalse(text.contains("Home"))
+    }
+
+    func testNavigationSeparatesContentSelectionFromModalActions() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                                       initialSnapshot: .previewRunning)
+        let windowController = MainWindowController(controller: controller)
+
+        windowController.selectMainSection(.vehicles)
+        XCTAssertEqual(windowController.selectedSection, .vehicles)
+        XCTAssertFalse(windowController.vehiclesView.isHidden)
+        XCTAssertTrue(windowController.dashboardView.isHidden)
+
+        _ = windowController.showDiagnostics()
+        XCTAssertEqual(windowController.selectedSection, .vehicles)
+        XCTAssertEqual(windowController.activeModalKind, .diagnostics)
+    }
+
+    func testDiagnosticsReplacementTearsDownDismissibleOnboardingBeforeChangingModalKind() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let dashboard = MainWindowController(controller: controller)
+        let onboarding = try XCTUnwrap(dashboard.showOnboarding(route: .provider))
+        XCTAssertNotNil(dashboard.activeOnboardingIdentifier)
+        XCTAssertTrue(dashboard.accountWorkflowActive)
+
+        let diagnostics = try XCTUnwrap(dashboard.showDiagnostics())
+
+        XCTAssertFalse(onboarding === diagnostics)
+        XCTAssertEqual(dashboard.activeModalKind, .diagnostics)
+        XCTAssertNil(dashboard.activeOnboardingIdentifier)
+        XCTAssertFalse(dashboard.accountWorkflowActive)
+    }
+
+    func testDiagnosticsRefusesToReplaceBusyOrNonDismissibleOnboarding() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let dashboard = MainWindowController(controller: controller)
+        let busyOnboarding = try XCTUnwrap(dashboard.showOnboarding(route: .provider))
+        busyOnboarding.setBusy(true, message: "Checking credentials…")
+
+        XCTAssertNil(dashboard.showDiagnostics())
+        XCTAssertEqual(dashboard.activeModalKind, .onboarding)
+        XCTAssertTrue(dashboard.accountWorkflowActive)
+
+        let firstRunController = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                                               initialSnapshot: .firstRun)
+        let firstRunDashboard = MainWindowController(controller: firstRunController)
+        _ = try XCTUnwrap(firstRunDashboard.showFirstRunOnboarding())
+
+        XCTAssertNil(firstRunDashboard.showDiagnostics())
+        XCTAssertEqual(firstRunDashboard.activeModalKind, .onboarding)
+        XCTAssertTrue(firstRunDashboard.accountWorkflowActive)
+    }
+
+    func testVehiclesPageRendersEveryRealVehicleWithoutMockMetadata() {
+        let first = HubControlVehicle(id: UUID(), displayName: "Aurora", status: "Last seen just now")
+        let second = HubControlVehicle(id: UUID(), displayName: "Comet", status: "No observations yet")
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.controlVehicles = [first, second]
+        let view = HubVehiclesView(actions: .noOp)
+        view.apply(snapshot: snapshot, enabled: true)
+
+        let text = labels(in: view).map(\.stringValue).joined(separator: " ")
+        XCTAssertTrue(text.contains("Aurora"))
+        XCTAssertTrue(text.contains("Comet"))
+        XCTAssertFalse(text.contains("Model Y"))
+    }
+
+    func testVehicleConfirmationKeepsItsOriginalTargetAndStaleTargetIsRejected() throws {
+        let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
+        let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
+        let status = """
+        {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"Aurora"},{"vehicleId":"\(secondID.uuidString)","displayName":"Comet"}],"credentials":{"present":true}}
+        """
+        let runner = PendingVehicleControlRunner(status: status)
+        let controller = HubController(installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+                                       serviceInstalledOverride: true)
+        let loaded = expectation(description: "vehicle dashboard loaded")
+        let windowController = MainWindowController(controller: controller) { _ in loaded.fulfill() }
+        wait(for: [loaded], timeout: 1)
+
+        try XCTUnwrap(buttons(in: windowController.window?.contentView)
+            .first { $0.title == "Wake" }).performClick(nil)
+        let confirmation = try XCTUnwrap(windowController.window?.attachedSheet)
+        let selector = try XCTUnwrap(popups(in: windowController.window?.contentView)
+            .first { $0.itemTitles == ["Aurora", "Comet"] })
+        selector.selectItem(at: 1)
+        selector.sendAction(selector.action, to: selector.target)
+        try XCTUnwrap(buttons(in: confirmation.contentView)
+            .first { $0.title == "Wake Vehicle" }).performClick(nil)
+
+        XCTAssertTrue(runner.hasPendingControl)
+        XCTAssertTrue(runner.arguments.last?.contains(firstID.uuidString.lowercased()) == true)
+        XCTAssertFalse(runner.arguments.last?.contains(secondID.uuidString.lowercased()) == true)
+
+        var staleSnapshot = HubSnapshot.previewRunning
+        staleSnapshot.controlVehicleID = secondID
+        staleSnapshot.controlVehicles = [HubControlVehicle(id: secondID, displayName: "Comet", status: "Online")]
+        let staleRunner = CountingRunner()
+        let staleController = HubController(installedCommandRunner: staleRunner,
+                                            serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+                                            serviceInstalledOverride: true,
+                                            initialSnapshot: staleSnapshot)
+        let rejected = expectation(description: "stale confirmed target rejected")
+        staleController.performVehicleControl(.wake, vehicleID: firstID) { result in
+            guard case let .failure(error) = result else {
+                XCTFail("stale target was dispatched")
+                rejected.fulfill()
+                return
+            }
+            XCTAssertTrue(error.localizedDescription.contains("no longer configured"))
+            rejected.fulfill()
+        }
+        wait(for: [rejected], timeout: 1)
+        XCTAssertEqual(staleRunner.calls, 0)
+    }
+
+    func testFleetProviderWithoutConnectionShowsConnectTesla() throws {
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.account = "Not configured"
+        snapshot.provider = .fleet
+        let navigation = HubNavigationBar(actions: .noOp)
+
+        navigation.apply(snapshot: snapshot, enabled: true)
+
+        let account = try XCTUnwrap(buttons(in: navigation)
+            .first { $0.identifier?.rawValue == "hub.nav.account" })
+        XCTAssertEqual(account.title, "Connect Tesla")
+    }
+
+    func testVehiclePagesShareAcceptedSnapshotEligibility() {
+        let commandTitles = ["Start Climate", "Stop Climate", "Wake", "Lock", "Unlock", "Flash Lights", "Honk"]
+        var valid = HubSnapshot.previewRunning
+        let vehicleID = UUID()
+        valid.controlVehicleID = vehicleID
+        valid.controlVehicles = [HubControlVehicle(id: vehicleID, displayName: "Aurora", status: "Online")]
+
+        let cases: [(HubSnapshot, Bool, Bool, Bool, Bool, Bool)] = [
+            (valid, false, false, false, false, true),
+            ({ var snapshot = valid; snapshot.health = .stopped; return snapshot }(), false, false, false, false, false),
+            ({ var snapshot = valid; snapshot.account = "Not configured"; return snapshot }(), false, false, false, false, false),
+            ({ var snapshot = valid; snapshot.provider = .legacy; return snapshot }(), false, false, false, false, false),
+            (valid, true, false, false, false, false),
+            (valid, false, true, false, false, false),
+            (valid, false, false, true, false, false),
+            (valid, false, false, false, true, false)
+        ]
+
+        for (snapshot, transition, accountWorkflow, serviceMutation, vehiclePending, expected) in cases {
+            let enabled = MainWindowController.acceptedVehicleControlsEnabled(
+                for: snapshot,
+                serviceTransitionActive: transition,
+                accountWorkflowActive: accountWorkflow,
+                serviceDetailsMutationPending: serviceMutation,
+                vehicleControlPending: vehiclePending,
+                vehicleControlOutcomeUnknown: false
+            )
+            XCTAssertEqual(enabled, expected)
+
+            let dashboard = HubDashboardView(actions: .noOp)
+            dashboard.setInteractionsEnabled(enabled)
+            dashboard.setVehicleControlsEnabled(enabled)
+            dashboard.apply(snapshot: snapshot, transition: nil, activity: [])
+            let vehicles = HubVehiclesView(actions: .noOp)
+            vehicles.apply(snapshot: snapshot, enabled: enabled)
+            for view in [dashboard, vehicles] {
+                let commands = buttons(in: view).filter { commandTitles.contains($0.title) }
+                XCTAssertTrue(
+                    commands.allSatisfy { $0.isEnabled == expected },
+                    "health=\(snapshot.health) account=\(snapshot.account) provider=\(String(describing: snapshot.provider)) expected=\(expected) states=\(commands.map { "\($0.title):\($0.isEnabled)" })"
+                )
+            }
+        }
     }
 
     func testLegacyProviderRejectsVehicleCommandsBeforeRunner() {
@@ -2335,6 +2909,10 @@ final class HubControllerTests: XCTestCase {
         return (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap { labels(in: $0) }
     }
 
+    private func descendantViews(in view: NSView) -> [NSView] {
+        [view] + view.subviews.flatMap { descendantViews(in: $0) }
+    }
+
     private func popups(in view: NSView?) -> [NSPopUpButton] {
         guard let view else { return [] }
         return (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap { popups(in: $0) }
@@ -2349,6 +2927,29 @@ final class HubControllerTests: XCTestCase {
         guard let view else { return [] }
         return (view as? NSBox).map { [$0] } ?? view.subviews.flatMap { boxes(in: $0) }
     }
+}
+
+private extension HubDashboardActions {
+    static let noOp = HubDashboardActions(
+        start: {},
+        stop: {},
+        restart: {},
+        setup: {},
+        diagnostics: {},
+        vehicle: HubVehicleCardActions(select: { _ in }, command: { _, _ in }),
+        serviceDetails: {},
+        dataFolder: {}
+    )
+}
+
+private extension HubVehicleCardActions {
+    static let noOp = HubVehicleCardActions(select: { _ in }, command: { _, _ in })
+}
+
+private extension HubNavigationActions {
+    static let noOp = HubNavigationActions(select: { _ in }, diagnostics: {}, logs: {},
+                                           serviceDetails: {}, importTeslaMate: {}, connectTesla: {},
+                                           manageTesla: { _ in })
 }
 
 private final class CountingRunner: HubCommandRunning {
@@ -2432,8 +3033,10 @@ private final class PendingServiceRunner: HubServiceControlling {
 private final class PendingCommandRunner: HubCommandRunning {
     private var completion: ((Result<String, Error>) -> Void)?
     private var pendingResult: Result<String, Error>?
+    private(set) var arguments: [[String]] = []
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        self.arguments.append(arguments)
         self.completion = completion
         if let pendingResult {
             self.pendingResult = nil
@@ -2448,6 +3051,34 @@ private final class PendingCommandRunner: HubCommandRunning {
         }
         self.completion = nil
         completion(result)
+    }
+}
+
+private final class PendingVehicleControlRunner: HubCommandRunning {
+    private let status: String
+    private var controlCompletion: ((Result<String, Error>) -> Void)?
+    private(set) var arguments: [[String]] = []
+
+    init(status: String) { self.status = status }
+
+    var hasPendingControl: Bool { controlCompletion != nil }
+
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        self.arguments.append(arguments)
+        if arguments.contains("status") {
+            completion(.success(status))
+        } else {
+            controlCompletion = completion
+        }
+    }
+
+    func completeControl(_ result: Result<String, Error>) {
+        guard let controlCompletion else {
+            XCTFail("vehicle control was not pending")
+            return
+        }
+        self.controlCompletion = nil
+        controlCompletion(result)
     }
 }
 
@@ -2628,5 +3259,34 @@ private final class RecordingInstaller: HubInstalling {
     func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
         deleteDataChoices.append(deleteData)
         completion(.success(""))
+    }
+}
+
+private final class PendingInstaller: HubInstalling {
+    private(set) var installCalls = 0
+    private(set) var deleteDataChoices: [Bool] = []
+    private var installCompletion: ((Result<String, Error>) -> Void)?
+    private var uninstallCompletion: ((Result<String, Error>) -> Void)?
+
+    func install(completion: @escaping (Result<String, Error>) -> Void) {
+        installCalls += 1
+        installCompletion = completion
+    }
+
+    func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
+        deleteDataChoices.append(deleteData)
+        uninstallCompletion = completion
+    }
+
+    func completeInstall(_ result: Result<String, Error>) {
+        let completion = installCompletion
+        installCompletion = nil
+        completion?(result)
+    }
+
+    func completeUninstall(_ result: Result<String, Error>) {
+        let completion = uninstallCompletion
+        uninstallCompletion = nil
+        completion?(result)
     }
 }
