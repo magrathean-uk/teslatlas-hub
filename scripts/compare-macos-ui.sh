@@ -40,7 +40,9 @@ for reference in "$reference_dir"/R*.png; do
     overlay="$output_dir/$scene-overlay.png"
     heatmap="$output_dir/$scene-heatmap.png"
     dimensions=$(magick identify -format '%wx%h' "$reference")
-    magick "$capture" -resize "$dimensions!" "$normalized"
+    # Preserve aspect ratio. Native chrome and the taller Logs viewport are
+    # intentional differences and must never be disguised by stretching.
+    magick "$capture" -resize "$dimensions" -background white -gravity center -extent "$dimensions" "$normalized"
     magick "$reference" "$normalized" +append "$side_by_side"
     magick "$reference" "$normalized" -alpha on -compose blend -define compose:args=50,50 -composite "$overlay"
     magick compare -metric SSIM "$reference" "$normalized" "$heatmap" 2> "$output_dir/$scene-ssim.txt" || true

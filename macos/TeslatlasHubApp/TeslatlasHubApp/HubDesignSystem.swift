@@ -13,7 +13,7 @@ enum HubMetrics {
     static let onboardingSheetSize = NSSize(width: 485, height: 350)
     static let welcomeSheetSize = NSSize(width: 485, height: 282)
     static let diagnosticsSheetSize = NSSize(width: 485, height: 422)
-    static let logsSheetSize = NSSize(width: 554, height: 221)
+    static let logsSheetSize = NSSize(width: 640, height: 360)
     static let serviceDetailsSheetSize = NSSize(width: 450, height: 410)
     static let modalHeaderHeight: CGFloat = 38
     static let modalFooterHeight: CGFloat = 48
@@ -110,6 +110,98 @@ enum HubButtonStyle: Equatable {
 }
 
 final class HubActionButton: NSButton {
+    // Constraints describe our painted bounds, not NSButtonCell's bezel/image
+    // alignment rect (which varies with the selected SF Symbol).
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
+    // Own the visible geometry. NSButtonCell's imageAbove layout puts the image
+    // against the bezel edge and does not include our painted control insets.
+    private(set) var hubImageView = NSImageView()
+    private(set) var hubTitleLabel = NSTextField(labelWithString: "")
+    private var installedContent = false
+    var horizontalInset: CGFloat = 12 { didSet { invalidateIntrinsicContentSize(); needsLayout = true } }
+    var iconBoxSize: CGFloat = 16 { didSet { invalidateIntrinsicContentSize(); needsLayout = true } }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        installContent()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        installContent()
+    }
+
+    private func installContent() {
+        guard !installedContent else { return }
+        installedContent = true
+        hubImageView.imageScaling = .scaleProportionallyDown
+        hubTitleLabel.alignment = .center
+        hubTitleLabel.lineBreakMode = .byClipping
+        hubTitleLabel.maximumNumberOfLines = 1
+        addSubview(hubImageView)
+        addSubview(hubTitleLabel)
+        updateHubAppearance()
+    }
+
+    override var imagePosition: NSControl.ImagePosition {
+        didSet { invalidateIntrinsicContentSize(); needsLayout = true }
+    }
+
+    override var symbolConfiguration: NSImage.SymbolConfiguration? {
+        didSet { updateHubAppearance() }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isHidden, bounds.contains(convert(point, from: superview)) else { return nil }
+        return self
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // The layer paints the surface; the two child views paint the contents.
+        // Do not ask NSButtonCell to draw a second image/title pair.
+        if isHighlighted {
+            NSColor.labelColor.withAlphaComponent(0.07).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: HubMetrics.controlRadius,
+                         yRadius: HubMetrics.controlRadius).fill()
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        let showsImage = image != nil && imagePosition != .noImage
+        let showsTitle = !title.isEmpty && imagePosition != .imageOnly
+        hubImageView.isHidden = !showsImage
+        hubTitleLabel.isHidden = !showsTitle
+        let textSize = (title as NSString).size(withAttributes: [.font: hubFont])
+        let labelHeight = ceil(textSize.height)
+        // NSTextFieldCell reserves two points on each side of its text rect.
+        let labelWidth = showsImage
+            ? min(ceil(textSize.width) + 4, max(0, bounds.width - horizontalInset * 2))
+            : bounds.width
+        let icon = iconBoxSize
+        if imagePosition == .imageAbove || imagePosition == .imageBelow {
+            let groupHeight = icon + (showsTitle ? 4 + labelHeight : 0)
+            let bottom = (bounds.height - groupHeight) / 2
+            let imageFirst = imagePosition == .imageAbove
+            let imageY = isFlipped == imageFirst ? bottom : bottom + (showsTitle ? labelHeight + 4 : 0)
+            let titleY = isFlipped == imageFirst ? bottom + icon + 4 : bottom
+            hubTitleLabel.frame = NSRect(x: (bounds.width - labelWidth) / 2, y: titleY,
+                                        width: labelWidth, height: labelHeight)
+            hubImageView.frame = NSRect(x: (bounds.width - icon) / 2,
+                                       y: imageY,
+                                       width: icon, height: icon)
+        } else {
+            let gap: CGFloat = showsImage && showsTitle ? 6 : 0
+            let groupWidth = (showsImage ? icon : 0) + gap + (showsTitle ? labelWidth : 0)
+            let left = (bounds.width - groupWidth) / 2
+            let trailingImage = imagePosition == .imageTrailing || imagePosition == .imageRight
+            hubImageView.frame = NSRect(x: trailingImage ? left + labelWidth + gap : left,
+                                       y: (bounds.height - icon) / 2, width: icon, height: icon)
+            hubTitleLabel.frame = NSRect(x: left + (showsImage && !trailingImage ? icon + gap : 0),
+                                        y: (bounds.height - labelHeight) / 2,
+                                        width: labelWidth, height: labelHeight)
+        }
+    }
     var hubFont = NSFont.systemFont(ofSize: 13, weight: .medium) {
         didSet {
             invalidateIntrinsicContentSize()
@@ -136,22 +228,18 @@ final class HubActionButton: NSButton {
     }
 
     override var image: NSImage? {
-        didSet { invalidateIntrinsicContentSize() }
+        didSet { invalidateIntrinsicContentSize(); updateHubAppearance() }
     }
 
     override var intrinsicContentSize: NSSize {
-        let measured = super.intrinsicContentSize
-        let horizontalPadding: CGFloat
-        switch hubStyle {
-        case .flat, .flatAccent, .flatDanger:
-            horizontalPadding = 12
-        case .primary, .neutral, .destructive:
-            horizontalPadding = 20
+        let textWidth = imagePosition == .imageOnly ? 0 : ceil((title as NSString).size(withAttributes: [.font: hubFont]).width) + 4
+        let hasIcon = image != nil && imagePosition != .noImage
+        if imagePosition == .imageOnly { return NSSize(width: 28, height: 28) }
+        if imagePosition == .imageAbove || imagePosition == .imageBelow {
+            return NSSize(width: max(textWidth, iconBoxSize) + horizontalInset * 2, height: 51)
         }
-        return NSSize(
-            width: ceil(measured.width + horizontalPadding),
-            height: max(HubMetrics.compactControlHeight, ceil(measured.height + 6))
-        )
+        return NSSize(width: textWidth + (hasIcon ? iconBoxSize + 6 : 0) + horizontalInset * 2,
+                      height: HubMetrics.compactControlHeight)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -160,6 +248,7 @@ final class HubActionButton: NSButton {
     }
 
     func updateHubAppearance() {
+        guard installedContent else { return }
         wantsLayer = true
         isBordered = false
         alignment = .center
@@ -181,7 +270,7 @@ final class HubActionButton: NSButton {
             layer?.backgroundColor = (isEnabled ? HubPalette.danger : .disabledControlTextColor).cgColor
             foreground = .white
         case .neutral:
-            layer?.backgroundColor = HubPalette.card.cgColor
+            layer?.backgroundColor = (imagePosition == .imageAbove ? HubPalette.elevated : HubPalette.card).cgColor
             foreground = isEnabled ? HubPalette.foreground : .disabledControlTextColor
         case .flat:
             layer?.backgroundColor = NSColor.clear.cgColor
@@ -195,6 +284,14 @@ final class HubActionButton: NSButton {
         }
 
         contentTintColor = foreground
+        hubImageView.image = image
+        hubImageView.symbolConfiguration = symbolConfiguration ?? NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        hubImageView.contentTintColor = foreground
+        hubTitleLabel.stringValue = title
+        hubTitleLabel.font = hubFont
+        hubTitleLabel.textColor = foreground
+        needsLayout = true
+        needsDisplay = true
         attributedTitle = NSAttributedString(
             string: title,
             attributes: [

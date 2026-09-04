@@ -3,37 +3,56 @@
 import AppKit
 
 final class LogsWindowController: NSWindowController {
+    typealias SavePanelPresenter = (NSSavePanel, NSWindow,
+                                    @escaping (NSApplication.ModalResponse) -> Void) -> Void
+
     private let controller: HubController
-    private let textView = NSTextView()
+    private let appLog: HubAppLogging
+    private let savePanelPresenter: SavePanelPresenter
+    private let textView = HubReportTextView()
+    private let scroll = NSScrollView()
+    private var utilityToolbar: HubUtilityToolbar?
+    var scrollViewForTesting: NSScrollView { scroll }
+    var textViewForTesting: NSTextView { textView }
     private let statusLabel = NSTextField(labelWithString: "Loading logs…")
-    private let refreshButton = HubActionButton(title: "Refresh", target: nil, action: nil)
-    private let diagnosticsButton = HubActionButton(title: "Run Diagnostics", target: nil, action: nil)
+    let secondaryActionsMenu = NSMenu(title: "Log actions")
+    private let moreButton = HubActionButton(title: "More", target: nil, action: nil)
+    private let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshPressed), keyEquivalent: "")
+    private let diagnosticsItem = NSMenuItem(title: "Run Diagnostics", action: #selector(diagnosticsPressed), keyEquivalent: "")
     private let copyButton = HubActionButton(title: "Copy", target: nil, action: nil)
     private let saveButton = HubActionButton(title: "Save…", target: nil, action: nil)
     private var latestText = ""
     private var operationInProgress = false
 
-    init(controller: HubController) {
+    init(controller: HubController,
+         appLog: HubAppLogging = HubAppLog.shared,
+         savePanelPresenter: @escaping SavePanelPresenter = LogsWindowController.presentSavePanel) {
         self.controller = controller
-        super.init(window: HubSheetStyle.makeWindow(contentSize: HubMetrics.logsSheetSize))
+        self.appLog = appLog
+        self.savePanelPresenter = savePanelPresenter
+        super.init(window: HubUtilityWindowStyle.makeWindow(title: "Logs", size: HubMetrics.logsSheetSize,
+                                                           minimum: NSSize(width: 554, height: 300)))
         window?.contentView = contentView()
-        refresh()
+        utilityToolbar = HubUtilityToolbar(identifier: "hub.logs.toolbar", buttons: [copyButton, saveButton, moreButton])
+        window?.toolbar = utilityToolbar?.toolbar
+        window?.toolbarStyle = .expanded
+        if controller.previewMode {
+            renderLogs(Self.previewLogText, status: "Preview fixture")
+        } else {
+            refresh()
+        }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private func contentView() -> NSView {
-        let root = HubModalRootView()
+        let root = HubSurfaceView(fill: .elevated)
         configureButton(copyButton, symbol: "doc.on.doc", style: .neutral,
                         action: #selector(copyPressed))
         configureButton(saveButton, symbol: "arrow.down.to.line", style: .neutral,
                         action: #selector(savePressed))
-        let closeButton = HubModalChrome.closeButton(target: self, action: #selector(closePressed))
-        let header = HubModalChrome.header(title: "Logs", trailing: [copyButton, saveButton, closeButton],
-                                           identifier: "hub.logs.header")
-
-        let scroll = NSScrollView()
+        scroll.identifier = NSUserInterfaceItemIdentifier("hub.logs.scroll")
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
@@ -45,80 +64,109 @@ final class LogsWindowController: NSWindowController {
         textView.drawsBackground = true
         textView.backgroundColor = HubPalette.elevated
         textView.textColor = HubPalette.foreground.withAlphaComponent(0.90)
-        textView.font = .monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         textView.textContainerInset = NSSize(width: 14, height: 12)
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 3
+        textView.defaultParagraphStyle = paragraph
 
-        configureButton(refreshButton, symbol: "arrow.clockwise", style: .flatAccent,
-                        action: #selector(refreshPressed))
-        configureButton(diagnosticsButton, symbol: "waveform.path.ecg", style: .flatAccent,
-                        action: #selector(diagnosticsPressed))
+        configureButton(moreButton, symbol: "ellipsis.circle", style: .flat,
+                        action: #selector(morePressed))
+        moreButton.imagePosition = .imageOnly
+        moreButton.toolTip = "More log actions"
+        secondaryActionsMenu.autoenablesItems = false
+        for item in [refreshItem, diagnosticsItem] {
+            item.target = self
+            secondaryActionsMenu.addItem(item)
+        }
         statusLabel.font = .systemFont(ofSize: 11)
         statusLabel.textColor = HubPalette.mutedForeground
         let privacy = NSTextField(wrappingLabelWithString:
             "Displayed, copied, and saved logs redact credentials and private identifiers. Review before sharing.")
         privacy.font = .systemFont(ofSize: 10.5)
         privacy.textColor = HubPalette.mutedForeground
-        let supportControls = NSStackView(views: [refreshButton, diagnosticsButton, statusLabel, privacy])
-        supportControls.isHidden = true
+        let actionRow = NSStackView(views: [NSView(), statusLabel])
+        actionRow.spacing = 8
+        let supportControls = NSStackView(views: [actionRow, privacy])
+        supportControls.orientation = .vertical
+        supportControls.alignment = .leading
+        supportControls.spacing = 4
+        supportControls.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(supportControls)
-
-        root.addSubview(header)
         root.addSubview(scroll)
-        header.translatesAutoresizingMaskIntoConstraints = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            header.topAnchor.constraint(equalTo: root.topAnchor),
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: header.bottomAnchor),
-            scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+            scroll.topAnchor.constraint(equalTo: root.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: supportControls.topAnchor, constant: -6),
+            supportControls.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
+            supportControls.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
+            supportControls.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
+            actionRow.widthAnchor.constraint(equalTo: supportControls.widthAnchor),
+            privacy.widthAnchor.constraint(equalTo: supportControls.widthAnchor)
         ])
         return root
     }
 
     func refresh() {
         guard !operationInProgress else { return }
+        if controller.previewMode {
+            renderLogs(Self.previewLogText, status: "Preview fixture")
+            return
+        }
         operationInProgress = true
         let started = Date()
-        HubAppLog.shared.record("refresh.requested", category: "logs")
+        appLog.record("refresh.requested", category: "logs", level: "INFO", fields: [:])
         setActionsEnabled(false)
         statusLabel.stringValue = "Loading logs…"
 
-        if controller.previewMode {
-            finishRefresh(serviceText: Self.previewLogText, started: started)
-            return
-        }
         controller.logs { [weak self] text in
             self?.finishRefresh(serviceText: text, started: started)
         }
     }
 
     private func finishRefresh(serviceText: String, started: Date) {
-        let appText = controller.previewMode ? "" : HubAppLog.shared.recentText()
-        let combined = controller.previewMode
-            ? Self.shareableText(serviceText)
-            : Self.shareableText([
-                "== app and import diagnostics ==\n\(appText)",
-                "== Hub service logs ==\n\(serviceText)"
-            ].joined(separator: "\n"))
-        latestText = combined
-        textView.string = Self.numberedPresentation(combined)
-        statusLabel.stringValue = "Updated just now"
-        setActionsEnabled(!combined.isEmpty)
-        operationInProgress = false
-        HubAppLog.shared.record("refresh.completed", category: "logs", fields: [
+        let appText = appLog.recentText(maximumBytes: 256 * 1024)
+        let combined = Self.shareableText([
+            "== app and import diagnostics ==\n\(appText)",
+            "== Hub service logs ==\n\(serviceText)"
+        ].joined(separator: "\n"))
+        renderLogs(combined, status: "Updated just now")
+        appLog.record("refresh.completed", category: "logs", level: "INFO", fields: [
             "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
             "service_bytes": String(serviceText.utf8.count)
         ])
     }
 
+    func renderLogs(_ redactedText: String, status: String = "Updated just now") {
+        let combined = Self.shareableText(redactedText)
+        latestText = combined
+        textView.string = Self.numberedPresentation(combined)
+        window?.contentView?.layoutSubtreeIfNeeded()
+        textView.fitDocument()
+        textView.scrollToBeginningOfDocument(nil)
+        statusLabel.stringValue = status
+        setActionsEnabled(!combined.isEmpty)
+        operationInProgress = false
+    }
+
     @objc private func refreshPressed() { refresh() }
 
+    @objc private func morePressed() {
+        secondaryActionsMenu.popUp(positioning: nil,
+                                   at: NSPoint(x: 0, y: moreButton.bounds.maxY + 4), in: moreButton)
+    }
+
     @objc private func diagnosticsPressed() {
+        guard !controller.previewMode else { return }
         guard !operationInProgress else { return }
         operationInProgress = true
         setActionsEnabled(false)
@@ -127,11 +175,12 @@ final class LogsWindowController: NSWindowController {
         controller.runFullDiagnostics { [weak self] report in
             guard let self else { return }
             let combined = Self.shareableText([
-                "== app and import diagnostics ==\n\(HubAppLog.shared.recentText())",
+                "== app and import diagnostics ==\n\(self.appLog.recentText(maximumBytes: 256 * 1024))",
                 "== full Hub diagnostics ==\n\(report)"
             ].joined(separator: "\n"))
             self.latestText = combined
             self.textView.string = Self.numberedPresentation(combined)
+            self.textView.fitDocument()
             self.statusLabel.stringValue = Self.diagnosticsStatus(for: report)
             self.setActionsEnabled(true)
             self.operationInProgress = false
@@ -139,6 +188,7 @@ final class LogsWindowController: NSWindowController {
     }
 
     @objc private func copyPressed() {
+        guard !controller.previewMode else { return }
         guard !latestText.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(Self.shareableText(latestText), forType: .string)
@@ -146,12 +196,13 @@ final class LogsWindowController: NSWindowController {
     }
 
     @objc private func savePressed() {
+        guard !controller.previewMode else { return }
         guard !latestText.isEmpty, let window else { return }
         let report = Self.shareableText(latestText)
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "teslatlas-hub-logs.txt"
         panel.canCreateDirectories = true
-        panel.beginSheetModal(for: window) { [weak self] response in
+        savePanelPresenter(panel, window) { [weak self] response in
             guard response == .OK, let destination = panel.url else { return }
             do {
                 try HubAppLog.writePrivateReport(report, to: destination)
@@ -162,9 +213,15 @@ final class LogsWindowController: NSWindowController {
         }
     }
 
+    private static func presentSavePanel(_ panel: NSSavePanel,
+                                         for window: NSWindow,
+                                         completion: @escaping (NSApplication.ModalResponse) -> Void) {
+        panel.beginSheetModal(for: window, completionHandler: completion)
+    }
+
     private func setActionsEnabled(_ enabled: Bool) {
-        refreshButton.isEnabled = !operationInProgress || enabled
-        diagnosticsButton.isEnabled = !operationInProgress || enabled
+        refreshItem.isEnabled = !operationInProgress || enabled
+        diagnosticsItem.isEnabled = !operationInProgress || enabled
         copyButton.isEnabled = enabled
         saveButton.isEnabled = enabled
     }

@@ -55,20 +55,6 @@ enum HubModalChrome {
         return surface
     }
 
-    static func closeButton(target: AnyObject, action: Selector) -> HubActionButton {
-        let button = HubActionButton(title: "", target: target, action: action)
-        button.identifier = NSUserInterfaceItemIdentifier("hub.modal.close")
-        button.hubStyle = .flat
-        button.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")
-        button.imagePosition = .imageOnly
-        button.contentTintColor = HubPalette.mutedForeground
-        button.setAccessibilityLabel("Close")
-        button.toolTip = "Close"
-        button.widthAnchor.constraint(equalToConstant: 26).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 26).isActive = true
-        return button
-    }
-
     static func hairline() -> NSView {
         let line = HubSurfaceView(fill: .navigationGroup)
         line.identifier = NSUserInterfaceItemIdentifier("hub.modal.hairline")

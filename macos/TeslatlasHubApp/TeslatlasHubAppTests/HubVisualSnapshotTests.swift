@@ -5,11 +5,48 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class HubVisualSnapshotTests: XCTestCase {
+    private var baselineWindowCount = 0
+    private var baselineAlertCount = 0
+    private var alertRecorder = HubPreviewAlertRecorder()
+    private var panelRecorder = HubPreviewPanelRecorder()
+    private var baselinePanelCount = 0
+    private var previousAlertPresenter: HubAlertPresenting?
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        baselineWindowCount = appWindows.count
+        alertRecorder = HubPreviewAlertRecorder()
+        panelRecorder = HubPreviewPanelRecorder()
+        previousAlertPresenter = HubUIPresentation.replaceAlertPresenterForTesting(alertRecorder)
+        baselineAlertCount = alertRecorder.totalInvocations
+        baselinePanelCount = panelRecorder.savePanelRequests
+    }
+
+    override func tearDownWithError() throws {
+        defer {
+            _ = HubUIPresentation.replaceAlertPresenterForTesting(previousAlertPresenter)
+            try? super.tearDownWithError()
+        }
+        let remainingWindows = appWindows.map { "\(type(of: $0)): \($0.title), visible=\($0.isVisible)" }
+        XCTAssertEqual(appWindows.count, baselineWindowCount,
+                       "preview rendering must return AppKit windows to their baseline: \(remainingWindows)")
+        XCTAssertEqual(alertRecorder.totalInvocations, baselineAlertCount,
+                       "preview rendering must not invoke an alert presenter")
+        XCTAssertEqual(panelRecorder.savePanelRequests, baselinePanelCount,
+                       "preview rendering must not invoke a save-panel presenter")
+    }
+
+    private var appWindows: [NSWindow] {
+        // macOS lazily retains an invisible Text Input UI service window after
+        // rendering native titlebars. It is not an app window or leaked sheet.
+        NSApp.windows.filter { !(String(describing: type(of: $0)) == "TUINSWindow" && !$0.isVisible) }
+    }
+
     func testEveryPreviewSceneRendersANonEmptyNativeSurface() throws {
         for scene in HubPreviewScene.allCases {
-            let rendered = try render(scene)
-            XCTAssertGreaterThan(rendered.png.count, 1_000, scene.rawValue)
-            let attachment = XCTAttachment(data: rendered.png, uniformTypeIdentifier: "public.png")
+            let png = try autoreleasepool { try render(scene) }
+            XCTAssertGreaterThan(png.count, 1_000, scene.rawValue)
+            let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
             attachment.name = outputName(for: scene)
             attachment.lifetime = .keepAlways
             add(attachment)
@@ -20,17 +57,22 @@ final class HubVisualSnapshotTests: XCTestCase {
                     at: destination.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
-                try rendered.png.write(to: destination, options: .atomic)
+                try png.write(to: destination, options: .atomic)
             }
-            withExtendedLifetime(rendered.owner) {}
         }
     }
 
-    private func render(_ scene: HubPreviewScene) throws -> (png: Data, owner: AnyObject) {
+    private func render(_ scene: HubPreviewScene) throws -> Data {
+        let operations = HubPreviewOperationRecorder()
+        let appLog = HubPreviewLogRecorder()
         let controller = HubController(environment: [
             "TESLATLAS_HUB_PREVIEW_SCENE": scene.rawValue,
             "TESLATLAS_HUB_TEST_MODE": "1"
-        ])
+        ],
+        commandRunner: operations,
+        installedCommandRunner: operations,
+        installer: operations,
+        serviceRunner: operations)
         let owner: NSWindowController
         switch scene {
         case .welcome, .choose, .migration, .migrationConnected, .verify, .finishMigration:
@@ -42,7 +84,9 @@ final class HubVisualSnapshotTests: XCTestCase {
         case .diagnostics:
             owner = DiagnosticsWindowController(controller: controller)
         case .logs:
-            owner = LogsWindowController(controller: controller)
+            owner = LogsWindowController(controller: controller,
+                                         appLog: appLog,
+                                         savePanelPresenter: panelRecorder.present)
         case .serviceDetails:
             owner = ServiceDetailsWindowController(
                 snapshot: controller.snapshot,
@@ -54,17 +98,28 @@ final class HubVisualSnapshotTests: XCTestCase {
             if scene != .dashboard { main.selectMainSection(.vehicles) }
             owner = main
         }
+        defer { owner.close() }
 
-        let view = try XCTUnwrap(owner.window?.contentView, scene.rawValue)
+        owner.window?.appearance = NSAppearance(named: .aqua)
+        let view = try XCTUnwrap(owner.window?.contentView?.superview, scene.rawValue)
         view.layoutSubtreeIfNeeded()
         let representation = try XCTUnwrap(
-            view.bitmapImageRepForCachingDisplay(in: view.bounds),
+            NSBitmapImageRep(bitmapDataPlanes: nil,
+                             pixelsWide: Int(view.bounds.width * 2),
+                             pixelsHigh: Int(view.bounds.height * 2),
+                             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                             isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
             scene.rawValue
         )
+        representation.size = view.bounds.size
         view.cacheDisplay(in: view.bounds, to: representation)
         let png = try XCTUnwrap(representation.representation(using: .png, properties: [:]),
                                 scene.rawValue)
-        return (png, owner)
+        XCTAssertTrue(operations.calls.isEmpty,
+                      "\(scene.rawValue) invoked \(operations.calls) while rendering its fixture")
+        XCTAssertTrue(appLog.calls.isEmpty,
+                      "\(scene.rawValue) invoked \(appLog.calls) while rendering its fixture")
+        return png
     }
 
     private func outputName(for scene: HubPreviewScene) -> String {

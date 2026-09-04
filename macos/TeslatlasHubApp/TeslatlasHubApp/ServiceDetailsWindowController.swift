@@ -18,7 +18,6 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private let errorPresenter: (Error) -> Void
     private let confirmationPresenter: ConfirmationPresenter
     private let rowsStack = NSStackView()
-    private let closeButton = HubActionButton(title: "", target: nil, action: nil)
     private let updateButton = HubActionButton(title: "Update Service…", target: nil, action: nil)
     private let uninstallButton = HubActionButton(title: "Uninstall Hub…", target: nil, action: nil)
     private let deleteDataButton = HubActionButton(title: "Delete Hub and Data…", target: nil, action: nil)
@@ -42,7 +41,8 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         self.onDismiss = onDismiss
         self.errorPresenter = errorPresenter
         self.confirmationPresenter = confirmationPresenter
-        super.init(window: HubSheetStyle.makeWindow(contentSize: HubMetrics.serviceDetailsSheetSize))
+        super.init(window: HubUtilityWindowStyle.makeWindow(title: "Service Details", size: HubMetrics.serviceDetailsSheetSize,
+                                                           minimum: NSSize(width: 450, height: 380)))
         window?.title = "Service Details"
         window?.delegate = self
         window?.contentView = contentView()
@@ -91,20 +91,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     var mutationInProgress: Bool { mutationPending }
 
     private func contentView() -> NSView {
-        let root = HubModalRootView()
-        let modalClose = HubModalChrome.closeButton(target: self, action: #selector(closePressed))
-        closeButton.target = self
-        closeButton.action = #selector(closePressed)
-        closeButton.image = modalClose.image
-        closeButton.imagePosition = .imageOnly
-        closeButton.hubStyle = .flat
-        closeButton.identifier = modalClose.identifier
-        closeButton.setAccessibilityLabel("Close")
-        closeButton.toolTip = "Close"
-        closeButton.widthAnchor.constraint(equalToConstant: 26).isActive = true
-        closeButton.heightAnchor.constraint(equalToConstant: 26).isActive = true
-        let header = HubModalChrome.header(title: "Service Details", trailing: [closeButton],
-                                           identifier: "hub.service.header")
+        let root = HubSurfaceView(fill: .background)
 
         rowsStack.orientation = .vertical
         rowsStack.alignment = .leading
@@ -129,7 +116,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
             "Stops the service and removes it from this Mac. Your collected data folder is left in place unless you delete it manually.")
         dangerDetail.font = .systemFont(ofSize: 12.5)
         dangerDetail.textColor = HubPalette.mutedForeground
-        dangerDetail.maximumNumberOfLines = 2
+        dangerDetail.maximumNumberOfLines = 0
         let dangerContents = NSStackView(views: [dangerTitle, dangerDetail, uninstallButton])
         dangerContents.orientation = .vertical
         dangerContents.alignment = .leading
@@ -146,35 +133,47 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
             dangerContents.topAnchor.constraint(equalTo: dangerCard.topAnchor, constant: 12),
             dangerContents.bottomAnchor.constraint(equalTo: dangerCard.bottomAnchor, constant: -12)
         ])
+        dangerDetail.widthAnchor.constraint(equalTo: dangerContents.widthAnchor).isActive = true
 
         configureButton(updateButton, symbol: "arrow.down.circle", style: .flatAccent,
                         action: #selector(updateServicePressed))
         configureButton(deleteDataButton, symbol: "trash", style: .flatDanger,
                         action: #selector(deleteDataPressed))
         deleteDataButton.identifier = NSUserInterfaceItemIdentifier("hub.service.delete-data")
-        let hiddenMaintenance = NSStackView(views: [updateButton, deleteDataButton])
-        hiddenMaintenance.isHidden = true
-        root.addSubview(hiddenMaintenance)
-
-        let body = NSStackView(views: [detailsCard, dangerCard])
+        let maintenance = NSStackView(views: [updateButton, deleteDataButton])
+        maintenance.orientation = .vertical
+        maintenance.alignment = .leading
+        maintenance.spacing = 4
+        maintenance.isHidden = controller.previewMode
+        let body = NSStackView(views: [detailsCard, dangerCard, maintenance])
         body.orientation = .vertical
         body.alignment = .leading
         body.spacing = 16
         body.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(header)
-        root.addSubview(body)
-        header.translatesAutoresizingMaskIntoConstraints = false
+        let scroll = NSScrollView()
+        scroll.identifier = NSUserInterfaceItemIdentifier("hub.service.scroll")
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        let document = HubFlippedSurfaceView(fill: .background)
+        document.translatesAutoresizingMaskIntoConstraints = false
+        document.addSubview(body)
+        scroll.documentView = document
+        root.addSubview(scroll)
         for view in [detailsCard, dangerCard] {
             view.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
         }
         NSLayoutConstraint.activate([
-            header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            header.topAnchor.constraint(equalTo: root.topAnchor),
-            body.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
-            body.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-            body.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 14),
-            body.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14)
+            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: root.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            body.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 14),
+            body.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -14),
+            body.topAnchor.constraint(equalTo: document.topAnchor, constant: 14),
+            body.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -14)
         ])
         return root
     }
@@ -192,15 +191,13 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         button.heightAnchor.constraint(equalToConstant: 28).isActive = true
     }
 
-    @objc private func closePressed() {
-        guard !mutationPending else { NSSound.beep(); return }
-        onDismiss()
-    }
-
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard !mutationPending else { NSSound.beep(); return false }
+        return true
+    }
+
+    func windowWillClose(_ notification: Notification) {
         onDismiss()
-        return false
     }
 
     @objc private func updateServicePressed() {
@@ -275,7 +272,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         updateButton.isEnabled = enabled
         uninstallButton.isEnabled = enabled
         deleteDataButton.isEnabled = enabled
-        closeButton.isEnabled = !mutationPending
+        window?.standardWindowButton(.closeButton)?.isEnabled = !mutationPending
     }
 
     static func deleteDataConfirmation() -> NSAlert {

@@ -42,9 +42,10 @@ final class HubVehicleCardView: NSView {
         carTile.wantsLayer = true
         carTile.layer?.cornerRadius = 10
         carTile.layer?.cornerCurve = .continuous
-        let car = NSImageView(image: NSImage(systemSymbolName: "car.fill",
+        let car = NSImageView(image: NSImage(systemSymbolName: "car",
                                               accessibilityDescription: "Vehicle") ?? NSImage())
         car.contentTintColor = HubPalette.accent
+        car.imageScaling = .scaleProportionallyDown
         car.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         car.translatesAutoresizingMaskIntoConstraints = false
         carTile.addSubview(car)
@@ -52,7 +53,9 @@ final class HubVehicleCardView: NSView {
             carTile.widthAnchor.constraint(equalToConstant: 35),
             carTile.heightAnchor.constraint(equalToConstant: 35),
             car.centerXAnchor.constraint(equalTo: carTile.centerXAnchor),
-            car.centerYAnchor.constraint(equalTo: carTile.centerYAnchor)
+            car.centerYAnchor.constraint(equalTo: carTile.centerYAnchor),
+            car.widthAnchor.constraint(equalToConstant: 18),
+            car.heightAnchor.constraint(equalToConstant: 18)
         ])
 
         nameLabel.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -83,12 +86,21 @@ final class HubVehicleCardView: NSView {
             button.image = NSImage(systemSymbolName: symbol(for: command),
                                    accessibilityDescription: command.title)
             button.imagePosition = .imageAbove
+            button.horizontalInset = 3
+            button.iconBoxSize = 16
             button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-            button.hubFont = .systemFont(ofSize: 10.5, weight: .medium)
+            button.hubFont = .systemFont(ofSize: 10, weight: .regular)
             button.hubStyle = .neutral
             button.heightAnchor.constraint(equalToConstant: 51).isActive = true
             commandButtons[command] = button
             commandStack.addArrangedSubview(button)
+        }
+        // NSStackView's fillEqually may preserve a button's intrinsic minimum.
+        // Command tiles have a stricter contract: every painted frame is equal.
+        if let first = commandButtons[Self.commandOrder[0]] {
+            for button in commandButtons.values where button !== first {
+                button.widthAnchor.constraint(equalTo: first.widthAnchor).isActive = true
+            }
         }
 
         legacyMessage.font = .systemFont(ofSize: 11.5)

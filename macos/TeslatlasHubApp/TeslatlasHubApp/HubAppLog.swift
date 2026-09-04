@@ -4,7 +4,15 @@ import Foundation
 import OSLog
 import Darwin
 
-final class HubAppLog {
+protocol HubAppLogging: AnyObject {
+    func record(_ name: String,
+                category: String,
+                level: String,
+                fields: [String: String])
+    func recentText(maximumBytes: Int) -> String
+}
+
+final class HubAppLog: HubAppLogging {
     static let shared = HubAppLog()
     static let unavailableText = "App diagnostics are unavailable or the log path is unsafe.\n"
 

@@ -105,7 +105,7 @@ final class MainWindowController: NSWindowController {
         vehiclesView = HubVehiclesView(actions: makeVehicleActions())
         navigationBar = HubNavigationBar(actions: makeNavigationActions())
         window.contentView = makeContentView()
-        window.minSize = NSSize(width: max(760, navigationBar.fittingSize.width + 24), height: 610)
+        window.contentMinSize = NSSize(width: max(900, navigationBar.fittingSize.width + 24), height: 590)
         appearancePreference.apply(to: window)
         window.center()
         update()
@@ -131,16 +131,7 @@ final class MainWindowController: NSWindowController {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private func configureTitlebar(_ window: NSWindow) {
-        window.titleVisibility = .hidden
-        if let titlebar = window.standardWindowButton(.closeButton)?.superview {
-            titlebarTitle.font = .systemFont(ofSize: 13, weight: .semibold)
-            titlebarTitle.translatesAutoresizingMaskIntoConstraints = false
-            titlebar.addSubview(titlebarTitle)
-            NSLayoutConstraint.activate([
-                titlebarTitle.centerXAnchor.constraint(equalTo: titlebar.centerXAnchor),
-                titlebarTitle.centerYAnchor.constraint(equalTo: titlebar.centerYAnchor)
-            ])
-        }
+        window.titleVisibility = .visible
         appearanceButton.target = self
         appearanceButton.action = #selector(appearancePressed)
         appearanceButton.image = NSImage(systemSymbolName: "moon",
@@ -247,6 +238,12 @@ final class MainWindowController: NSWindowController {
         dashboardView?.isHidden = section != .dashboard
         vehiclesView?.isHidden = section != .vehicles
         navigationBar?.select(section)
+        updateDefaultButton()
+    }
+
+    private func updateDefaultButton() {
+        let button = selectedSection == .dashboard ? dashboardView?.defaultButton : nil
+        window?.defaultButtonCell = button?.isEnabled == true ? button?.cell as? NSButtonCell : nil
     }
 
     func configurePreviewScene(_ scene: HubPreviewScene) {
@@ -720,7 +717,7 @@ final class MainWindowController: NSWindowController {
                 row.widthAnchor.constraint(equalTo: activityStack.widthAnchor).isActive = true
             }
         }
-        window?.defaultButtonCell = dashboardView.defaultButton?.cell as? NSButtonCell
+        updateDefaultButton()
     }
 
     private func compactButton(_ title: String, _ symbol: String, _ action: Selector) -> NSButton {
@@ -1142,7 +1139,7 @@ final class MainWindowController: NSWindowController {
     func showLogs() -> LogsWindowController? {
         if let logs = activeModalController as? LogsWindowController,
            modalState.active == .logs {
-            logs.refresh()
+            logs.window?.makeKeyAndOrderFront(nil)
             return logs
         }
         guard let logs = presentPrimaryModal(kind: .logs, controller: {
@@ -1285,7 +1282,7 @@ final class MainWindowController: NSWindowController {
                                      controller make: () -> NSWindowController) -> NSWindowController? {
         guard let parent = window else { return nil }
         if modalState.active == kind {
-            activeModalController?.window?.makeKey()
+            activeModalController?.window?.makeKeyAndOrderFront(nil)
             return activeModalController
         }
         guard dismissActivePrimaryModalForReplacement() else { return nil }
@@ -1293,7 +1290,15 @@ final class MainWindowController: NSWindowController {
         let controller = make()
         guard let sheet = controller.window else { return nil }
         activeModalController = controller
-        parent.beginSheet(sheet)
+        if kind == .onboarding {
+            parent.beginSheet(sheet)
+        } else {
+            sheet.appearance = parent.appearance
+            let origin = NSPoint(x: parent.frame.midX - sheet.frame.width / 2,
+                                 y: parent.frame.midY - sheet.frame.height / 2)
+            sheet.setFrameOrigin(origin)
+            if !HubUIPresentation.isSilentTestHost { controller.showWindow(nil) }
+        }
         return controller
     }
 
@@ -1313,7 +1318,10 @@ final class MainWindowController: NSWindowController {
             break
         case let (.serviceDetails, details as ServiceDetailsWindowController):
             guard !details.mutationInProgress else { return false }
+            let oldWindow = details.window
+            detailsWindow = nil
             dismissPrimaryModal(kind: .serviceDetails)
+            oldWindow?.close()
             return true
         default:
             return false
@@ -1330,7 +1338,7 @@ final class MainWindowController: NSWindowController {
         activeModalController = nil
         modalState.dismiss(kind)
         if let sheet, let parent = window {
-            parent.endSheet(sheet)
+            if sheet.sheetParent === parent { parent.endSheet(sheet) }
             sheet.orderOut(nil)
         }
     }
@@ -1486,7 +1494,7 @@ final class MainWindowController: NSWindowController {
            modalState.active == .serviceDetails {
             detailsWindow.update(snapshot: controller.snapshot)
             detailsWindow.setMutationsEnabled(!accountWorkflowActive && !serviceDetailsMutationPending)
-            detailsWindow.window?.makeKey()
+            detailsWindow.window?.makeKeyAndOrderFront(nil)
             return detailsWindow
         }
         let details = presentPrimaryModal(kind: .serviceDetails) {
@@ -1518,7 +1526,7 @@ final class MainWindowController: NSWindowController {
     func showDiagnostics() -> DiagnosticsWindowController? {
         if let diagnostics = activeModalController as? DiagnosticsWindowController,
            modalState.active == .diagnostics {
-            diagnostics.window?.makeKey()
+            diagnostics.window?.makeKeyAndOrderFront(nil)
             return diagnostics
         }
         return presentPrimaryModal(kind: .diagnostics) {

@@ -113,8 +113,7 @@ final class HubControllerTests: XCTestCase {
         let details = try XCTUnwrap(dashboard.showServiceDetails())
         let update = try XCTUnwrap(buttons(in: details.window?.contentView)
             .first { $0.title == "Update Service…" })
-        let close = try XCTUnwrap(buttons(in: details.window?.contentView)
-            .first { $0.identifier?.rawValue == "hub.modal.close" })
+        let close = try XCTUnwrap(details.window?.standardWindowButton(.closeButton))
 
         update.performClick(nil)
 
@@ -124,16 +123,11 @@ final class HubControllerTests: XCTestCase {
         XCTAssertNil(dashboard.showDiagnostics())
 
         installer.completeInstall(.success(""))
-        let restored = expectation(description: "service details mutation gate restored")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            XCTAssertTrue(close.isEnabled)
-            let diagnostics = dashboard.showDiagnostics()
-            XCTAssertNotNil(diagnostics)
-            self.buttons(in: diagnostics?.window?.contentView)
-                .first { $0.identifier?.rawValue == "hub.modal.close" }?.performClick(nil)
-            restored.fulfill()
-        }
-        wait(for: [restored], timeout: 1)
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in close.isEnabled }, object: nil)
+        wait(for: [restored], timeout: 2)
+        let diagnostics = dashboard.showDiagnostics()
+        XCTAssertNotNil(diagnostics)
+        diagnostics?.window?.performClose(nil)
     }
 
     func testConfirmedDeleteDataActionUsesDeleteDataAndDismissesAfterUnlocking() throws {
@@ -166,8 +160,7 @@ final class HubControllerTests: XCTestCase {
         let delete = try XCTUnwrap(buttons(in: details.window?.contentView).first {
             $0.identifier?.rawValue == "hub.service.delete-data"
         })
-        let close = try XCTUnwrap(buttons(in: details.window?.contentView)
-            .first { $0.identifier?.rawValue == "hub.modal.close" })
+        let close = try XCTUnwrap(details.window?.standardWindowButton(.closeButton))
 
         delete.performClick(nil)
 
@@ -207,8 +200,7 @@ final class HubControllerTests: XCTestCase {
         let delete = try XCTUnwrap(buttons(in: details.window?.contentView).first {
             $0.identifier?.rawValue == "hub.service.delete-data"
         })
-        let close = try XCTUnwrap(buttons(in: details.window?.contentView)
-            .first { $0.identifier?.rawValue == "hub.modal.close" })
+        let close = try XCTUnwrap(details.window?.standardWindowButton(.closeButton))
 
         delete.performClick(nil)
         XCTAssertEqual(installer.deleteDataChoices, [true])
@@ -283,9 +275,11 @@ final class HubControllerTests: XCTestCase {
 
         XCTAssertEqual(dashboard.activeModalKind, .serviceDetails)
         XCTAssertEqual(dashboard.selectedSection, .vehicles)
-        XCTAssertTrue(details.window?.sheetParent === dashboard.window)
-        try XCTUnwrap(buttons(in: details.window?.contentView)
-            .first { $0.identifier?.rawValue == "hub.modal.close" }).performClick(nil)
+        XCTAssertNil(details.window?.sheetParent)
+        XCTAssertTrue(details.window?.isMovable == true)
+        details.window?.performClose(nil)
+        XCTAssertNil(dashboard.activeModalKind)
+        XCTAssertEqual(dashboard.selectedSection, .vehicles)
     }
 
     func testServiceDetailsRefuseToReplaceBusyOrNonDismissibleOnboarding() throws {
@@ -512,8 +506,11 @@ final class HubControllerTests: XCTestCase {
         let root = try XCTUnwrap(diagnostics.window?.contentView)
 
         try XCTUnwrap(buttons(in: root).first { $0.title == "Run Again" }).performClick(nil)
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.descendantViews(in: root).contains { $0.identifier?.rawValue == "hub.diagnostics.row" }
+        }, object: nil)], timeout: 3)
         let rendered = expectation(description: "diagnostic rows rendered")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        DispatchQueue.main.async {
             diagnostics.window?.layoutIfNeeded()
             root.layoutSubtreeIfNeeded()
             let views = self.descendantViews(in: root)
@@ -550,8 +547,11 @@ final class HubControllerTests: XCTestCase {
         let run = try XCTUnwrap(buttons(in: root).first { $0.title == "Run Again" })
 
         run.performClick(nil)
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.descendantViews(in: root).compactMap { $0 as? NSTextView }.contains { $0.string.contains("old") }
+        }, object: nil)], timeout: 3)
         let firstReport = expectation(description: "first diagnostic report rendered")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        DispatchQueue.main.async {
             let raw = self.descendantViews(in: root).compactMap { $0 as? NSTextView }.first {
                 $0.identifier?.rawValue == "hub.diagnostics.raw-report"
             }
@@ -2901,7 +2901,11 @@ final class HubControllerTests: XCTestCase {
 
     private func buttons(in view: NSView?) -> [NSButton] {
         guard let view else { return [] }
-        return (view as? NSButton).map { [$0] } ?? view.subviews.flatMap { buttons(in: $0) }
+        var result = (view as? NSButton).map { [$0] } ?? view.subviews.flatMap { buttons(in: $0) }
+        if view === view.window?.contentView {
+            result += view.window?.toolbar?.items.compactMap(\.view).flatMap { buttons(in: $0) } ?? []
+        }
+        return result
     }
 
     private func labels(in view: NSView?) -> [NSTextField] {

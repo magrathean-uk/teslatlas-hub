@@ -2,12 +2,19 @@
 
 import AppKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var mainWindowController: MainWindowController?
     private var hubController: HubController!
+    private let keyWindow: () -> NSWindow?
+
+    init(keyWindow: @escaping () -> NSWindow? = { NSApp.keyWindow }) {
+        self.keyWindow = keyWindow
+        super.init()
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMainMenu(actionTarget: self)
+        NSApp.windowsMenu = NSApp.mainMenu?.items.compactMap(\.submenu).first { $0.title == "Window" }
     }
 
     static func makeMainMenu(actionTarget: AnyObject? = nil) -> NSMenu {
@@ -44,9 +51,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 action: #selector(NSApplication.unhideAllApplications(_:)),
                                 keyEquivalent: "")
         applicationMenu.addItem(.separator())
-        applicationMenu.addItem(withTitle: "Quit Teslatlas Hub",
-                                action: #selector(NSApplication.terminate(_:)),
-                                keyEquivalent: "q")
+        let quit = applicationMenu.addItem(withTitle: "Quit Teslatlas Hub",
+                                           action: #selector(quitApplication(_:)),
+                                           keyEquivalent: "q")
+        quit.target = actionTarget
 
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
@@ -72,7 +80,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                     keyEquivalent: "l")
         logs.target = actionTarget
 
+        let windowItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowItem.submenu = windowMenu
+        mainMenu.addItem(windowItem)
+        // AppKit disables performClose: for attached sheets before asking the
+        // window to validate it. Route Close explicitly to the key window so an
+        // idle account sheet can use its guarded Cancel action instead.
+        let close = windowMenu.addItem(withTitle: "Close", action: #selector(closeKeyWindow(_:)), keyEquivalent: "w")
+        close.target = actionTarget
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+
         return mainMenu
+    }
+
+    @objc func closeKeyWindow(_ sender: Any?) {
+        guard let window = keyWindow() else { return }
+        if let onboarding = window.windowController as? OnboardingWindowController {
+            onboarding.cancelOperation(sender)
+        } else {
+            window.performClose(sender)
+        }
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(closeKeyWindow(_:)) else { return true }
+        guard let window = keyWindow() else { return false }
+        if let onboarding = window.windowController as? OnboardingWindowController {
+            return onboarding.canCancel
+        }
+        return window.styleMask.contains(.closable) && window.attachedSheet == nil
+    }
+
+    @objc func quitApplication(_ sender: Any?) {
+        guard Self.finishSheetsBeforeQuit(in: NSApp.windows) else {
+            let alert = NSAlert()
+            alert.messageText = "Hub is finishing an operation"
+            alert.informativeText = "Wait for the current setup or import operation to finish, then quit. Your background Hub service will keep running."
+            alert.addButton(withTitle: "OK")
+            _ = HubUIPresentation.response(to: alert)
+            return
+        }
+        NSApp.terminate(sender)
+    }
+
+    /// NSApplication's standard termination can be suppressed by an attached
+    /// setup sheet. End idle sheets explicitly; don't interrupt an active import.
+    static func finishSheetsBeforeQuit(in windows: [NSWindow]) -> Bool {
+        let sheets = windows.filter { $0.sheetParent != nil }
+        guard !sheets.contains(where: {
+            ($0.delegate as? OnboardingWindowController)?.operationPreventsQuit == true
+        }) else { return false }
+        for sheet in sheets {
+            sheet.sheetParent?.endSheet(sheet, returnCode: .cancel)
+            sheet.close()
+        }
+        return true
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

@@ -14,6 +14,7 @@ struct HubNavigationActions {
 
 final class HubNavigationBar: NSView {
     private let actions: HubNavigationActions
+    private var accountConnected = false
     private let dashboardButton = HubActionButton(title: "Dashboard", target: nil, action: nil)
     private let vehiclesButton = HubActionButton(title: "Vehicles", target: nil, action: nil)
     private let diagnosticsButton = HubActionButton(title: "Diagnostics", target: nil, action: nil)
@@ -84,6 +85,7 @@ final class HubNavigationBar: NSView {
 
     func apply(snapshot: HubSnapshot, enabled: Bool) {
         let connected = snapshot.account == "Connected"
+        accountConnected = connected
         accountButton.title = connected ? "Manage Tesla" : "Connect Tesla"
         accountButton.hubStyle = connected ? .neutral : .primary
         accountButton.image = connected
@@ -95,7 +97,7 @@ final class HubNavigationBar: NSView {
     }
 
     func showAccountMenuForPreview() {
-        guard accountButton.title == "Manage Tesla" else { return }
+        guard accountConnected else { return }
         actions.manageTesla(accountButton)
     }
 
@@ -106,7 +108,7 @@ final class HubNavigationBar: NSView {
     @objc private func servicePressed() { actions.serviceDetails() }
     @objc private func importPressed() { actions.importTeslaMate() }
     @objc private func accountPressed(_ sender: NSButton) {
-        sender.title == "Connect Tesla" ? actions.connectTesla() : actions.manageTesla(sender)
+        accountConnected ? actions.manageTesla(sender) : actions.connectTesla()
     }
 
     private func configure(_ button: HubActionButton,
@@ -118,6 +120,9 @@ final class HubNavigationBar: NSView {
         button.action = action
         button.hubStyle = .flat
         button.hubFont = .systemFont(ofSize: 12, weight: .medium)
+        button.horizontalInset = 10
+        button.iconBoxSize = 15
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: button.title) }
         button.imagePosition = symbol == nil ? .noImage : .imageLeading
         button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
