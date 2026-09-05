@@ -1,8 +1,7 @@
 # Release versioning
 
 Accepted on 5 September 2026. Future Teslatlas Hub releases use the
-Tesla-inspired calendar format **`YEAR.WEEK.REVISION`**. This is Hub's own
-policy, not a claim that Tesla uses identical release rules.
+calendar format **`YEAR.WEEK.REVISION`**.
 
 The first agreed calendar version is **`2026.36.1`**, with Git tag
 **`v2026.36.1`**. This records the versioning decision, not a published release
