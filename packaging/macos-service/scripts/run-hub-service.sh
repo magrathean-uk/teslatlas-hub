@@ -31,6 +31,28 @@ safe_user_file() {
     esac
 }
 
+user_file_status() {
+    path=$1
+    expected_uid=$2
+    [ -e "$path" ] || { [ -L "$path" ] && printf '%s\n' symlink || printf '%s\n' missing; return; }
+    [ ! -L "$path" ] || { printf '%s\n' symlink; return; }
+    [ -f "$path" ] || { printf '%s\n' not_regular; return; }
+    [ "$(/usr/bin/stat -f '%u' "$path")" = "$expected_uid" ] || { printf '%s\n' wrong_owner; return; }
+    [ -r "$path" ] || { printf '%s\n' unreadable; return; }
+    mode=$(/usr/bin/stat -f '%Lp' "$path") || { printf '%s\n' unreadable; return; }
+    case "$mode" in
+        *[1-7][0-7]|*[0-7][1-7]) printf '%s\n' unsafe_permissions ;;
+        *) printf '%s\n' safe ;;
+    esac
+}
+
+configuration_blocked() {
+    status=$(user_file_status "$1" "$(/usr/bin/id -u)")
+    [ "$status" = safe ] && return 1
+    printf '%s\n' "Teslatlas Hub service: configuration blocked ($status); correct the file and start Hub again" >&2
+    return 0
+}
+
 safe_root_executable() {
     path=$1
     [ -f "$path" ] && [ ! -L "$path" ] && [ -x "$path" ] || return 1
@@ -105,10 +127,7 @@ fi
 CONFIG=$2
 STDOUT_LOG=$4
 STDERR_LOG=$6
-safe_user_file "$CONFIG" || {
-    printf '%s\n' 'Teslatlas Hub service: configuration is not a private regular file' >&2
-    exit 1
-}
+configuration_blocked "$CONFIG" && exit 0
 compact_log "$STDOUT_LOG"
 compact_log "$STDERR_LOG"
 safe_root_executable "$HUB" || {

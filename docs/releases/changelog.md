@@ -1,7 +1,21 @@
 # Changelog
 
-All notable released changes are recorded here. The project follows Semantic
-Versioning for release identifiers.
+All notable released changes are recorded here. From 2026.36.1, Hub follows
+[calendar versioning](versioning.md): `YEAR.WEEK.REVISION`.
+
+## 2026.36.1 — 2026-09-05
+
+- Redesigned the macOS AppKit interface, native windows, keyboard navigation,
+  migration SSH selection, and animations.
+- Hardened subprocess pipe cancellation and streaming outage retries while
+  preserving vehicle sleep state.
+- Prevented macOS supervisor restart storms for missing or unsafe configuration.
+- Bounded migration completion with fresh collector readiness and rollback.
+- Adopted calendar versions across source, app, and packages.
+- Prepared an Apple-silicon macOS installer and Debian 13 ARM64/amd64 core-only
+  packages. Debian packages omit Fleet companions; no live Tesla or restored
+  backup acceptance is claimed. See [release notes](release-notes-2026.36.1.md)
+  and the published build record for distribution and verification details.
 
 ## 1.0.0 — 2026-08-31
 

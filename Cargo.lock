@@ -2425,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "teslatlas-hub"
-version = "1.0.0"
+version = "2026.36.1"
 dependencies = [
  "aes-gcm",
  "axum",

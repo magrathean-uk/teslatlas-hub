@@ -310,11 +310,14 @@ fn report_stream_outage(vehicle_id: VehicleId, reason: &'static str, outage: Str
         reason,
         consecutive_failures = outage.consecutive_failures,
         outage_ms = u64::try_from(outage.outage_duration.as_millis()).unwrap_or(u64::MAX),
-        phase = ?outage.phase,
+        last_poll_phase = ?outage.phase,
         owner_api_fallback_scheduled = outage.owner_api_fallback_scheduled,
+        owner_api_fallback_after_ms = ?outage.owner_api_fallback_after
+            .map(|delay| u64::try_from(delay.as_millis()).unwrap_or(u64::MAX)),
+        suspended = outage.suspended,
         live_power_gate = outage.live_power_gate,
         recovery = "stream_reconnect_and_owner_api_fallback",
-        "vehicle stream degraded; bounded recovery active"
+        "vehicle stream degraded; recovery pending"
     );
 }
 
@@ -364,12 +367,12 @@ fn process_stream_event(
         }
         StreamEvent::VehicleOffline => {
             let now = Instant::now();
+            scheduler.schedule_offline_state_fetch(stream.vehicle_id, now);
             report_stream_outage(
                 stream.vehicle_id,
                 "vehicle_offline",
                 scheduler.stream_unhealthy(stream.vehicle_id, now),
             );
-            scheduler.schedule_offline_state_fetch(stream.vehicle_id, now);
         }
         StreamEvent::AuthRejected => {
             *authentication_rejected = true;

@@ -8,13 +8,13 @@
 
 **Tech Stack:** Swift 5, AppKit, Foundation, SF Symbols, XCTest, XcodeGen, Xcode-beta, macOS 13 deployment target, `sips`/ImageMagick for local-only comparison artifacts.
 
-**Spec:** `docs/superpowers/specs/2026-09-04-macos-app-redesign-design.md`
+**Spec:** `docs/maintainers/specs/2026-09-04-macos-app-redesign-design.md`
 
 ## Status and supersession
 
-This plan supersedes the execution sequence in `docs/superpowers/plans/2026-09-04-macos-app-redesign.md`; it does not discard that file or its evidence. The current `hub/main` worktree at `a5e6c5c4f86776da96c9946f7e45b2080c571f86` already contains a substantial uncommitted partial redesign. Continue from that exact working tree. Do not reset, clean, stash, recreate, or overwrite it.
+This plan supersedes the execution sequence in `docs/maintainers/plans/2026-09-04-macos-app-redesign.md`; it does not discard that file or its evidence. The current `hub/main` worktree at `a5e6c5c4f86776da96c9946f7e45b2080c571f86` already contains a substantial uncommitted partial redesign. Continue from that exact working tree. Do not reset, clean, stash, recreate, or overwrite it.
 
-`design-qa.md` currently ends in `final result: blocked`. The existing structural tests and the earlier Welcome comparison are evidence, but they are not visual acceptance for the remaining screens and must not be described as a green redesign.
+`docs/maintainers/design-qa.md` currently ends in `final result: blocked`. The existing structural tests and the earlier Welcome comparison are evidence, but they are not visual acceptance for the remaining screens and must not be described as a green redesign.
 
 ## Approach decision
 
@@ -62,20 +62,20 @@ Copy these files once into ignored `target/design-qa/reference/`, record SHA-256
 
 | ID | Source file | Pixels | Acceptance state | Required underlying state |
 |---|---|---:|---|---|
-| R01 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.17.54.png` | 1932 × 1336 | Welcome, Step 1 of 5 | First-run/setup-required Dashboard |
-| R02 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.17.57.png` | 1976 × 1352 | New installation vs TeslaMate choice | First-run/setup-required Dashboard |
-| R03 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.02.png` | 1982 × 1356 | TeslaMate SSH-key form | First-run/setup-required Dashboard |
-| R04 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.09.png` | 1904 × 1316 | TeslaMate connected; version acknowledgement off; Import disabled | First-run/setup-required Dashboard |
-| R05 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.18.png` | 1948 × 1336 | Verification passed | First-run/setup-required Dashboard |
-| R06 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.21.png` | 1948 × 1382 | Migration complete; handover acknowledgement off; Start Hub disabled | First-run/setup-required Dashboard |
-| R07 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.25.png` | 1896 × 1338 | Running Dashboard | Fleet-connected running snapshot with one selected vehicle and one activity |
-| R08 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.28.png` | 1958 × 1342 | Vehicles page | Fleet-connected running snapshot with two vehicles; Vehicles selected |
-| R09 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.34.png` | 1932 × 1360 | Diagnostics sheet | Same Vehicles state as R08 underneath |
-| R10 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.38.png` | 1910 × 1358 | Logs sheet | Same Vehicles state as R08 underneath |
-| R11 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.41.png` | 1928 × 1346 | Service Details sheet | Same Vehicles state as R08 underneath |
-| R12 | `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.46.png` | 572 × 554 | Manage Tesla menu | Connected toolbar state with menu anchored under the account button |
+| R01 | `Screenshot 2026-09-04 at 13.17.54.png` | 1932 × 1336 | Welcome, Step 1 of 5 | First-run/setup-required Dashboard |
+| R02 | `Screenshot 2026-09-04 at 13.17.57.png` | 1976 × 1352 | New installation vs TeslaMate choice | First-run/setup-required Dashboard |
+| R03 | `Screenshot 2026-09-04 at 13.18.02.png` | 1982 × 1356 | TeslaMate SSH-key form | First-run/setup-required Dashboard |
+| R04 | `Screenshot 2026-09-04 at 13.18.09.png` | 1904 × 1316 | TeslaMate connected; version acknowledgement off; Import disabled | First-run/setup-required Dashboard |
+| R05 | `Screenshot 2026-09-04 at 13.18.18.png` | 1948 × 1336 | Verification passed | First-run/setup-required Dashboard |
+| R06 | `Screenshot 2026-09-04 at 13.18.21.png` | 1948 × 1382 | Migration complete; handover acknowledgement off; Start Hub disabled | First-run/setup-required Dashboard |
+| R07 | `Screenshot 2026-09-04 at 13.18.25.png` | 1896 × 1338 | Running Dashboard | Fleet-connected running snapshot with one selected vehicle and one activity |
+| R08 | `Screenshot 2026-09-04 at 13.18.28.png` | 1958 × 1342 | Vehicles page | Fleet-connected running snapshot with two vehicles; Vehicles selected |
+| R09 | `Screenshot 2026-09-04 at 13.18.34.png` | 1932 × 1360 | Diagnostics sheet | Same Vehicles state as R08 underneath |
+| R10 | `Screenshot 2026-09-04 at 13.18.38.png` | 1910 × 1358 | Logs sheet | Same Vehicles state as R08 underneath |
+| R11 | `Screenshot 2026-09-04 at 13.18.41.png` | 1928 × 1346 | Service Details sheet | Same Vehicles state as R08 underneath |
+| R12 | `Screenshot 2026-09-04 at 13.18.46.png` | 572 × 554 | Manage Tesla menu | Connected toolbar state with menu anchored under the account button |
 
-The ZIP `/Users/bolyki/Downloads/Redesign macOS Application.zip` supplies these visual-reference files only:
+The ZIP `Redesign macOS Application.zip` supplies these visual-reference files only:
 
 - `src/index.css`
 - `src/components/macos/WindowFrame.tsx`
@@ -262,18 +262,18 @@ When `previewMode == true`, action closures may move between preview scenes or u
 
 ```sh
 mkdir -p target/design-qa/reference
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.17.54.png" target/design-qa/reference/R01-welcome.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.17.57.png" target/design-qa/reference/R02-start-choice.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.02.png" target/design-qa/reference/R03-migration-form.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.09.png" target/design-qa/reference/R04-migration-connected.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.18.png" target/design-qa/reference/R05-verification-passed.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.21.png" target/design-qa/reference/R06-migration-finished.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.25.png" target/design-qa/reference/R07-running-dashboard.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.28.png" target/design-qa/reference/R08-vehicles.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.34.png" target/design-qa/reference/R09-diagnostics.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.38.png" target/design-qa/reference/R10-logs.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.41.png" target/design-qa/reference/R11-service-details.png
-cp "/Users/bolyki/Desktop/Screenshot 2026-09-04 at 13.18.46.png" target/design-qa/reference/R12-manage-tesla.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.17.54.png" target/design-qa/reference/R01-welcome.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.17.57.png" target/design-qa/reference/R02-start-choice.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.02.png" target/design-qa/reference/R03-migration-form.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.09.png" target/design-qa/reference/R04-migration-connected.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.18.png" target/design-qa/reference/R05-verification-passed.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.21.png" target/design-qa/reference/R06-migration-finished.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.25.png" target/design-qa/reference/R07-running-dashboard.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.28.png" target/design-qa/reference/R08-vehicles.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.34.png" target/design-qa/reference/R09-diagnostics.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.38.png" target/design-qa/reference/R10-logs.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.41.png" target/design-qa/reference/R11-service-details.png
+cp "$HOME/Desktop/Screenshot 2026-09-04 at 13.18.46.png" target/design-qa/reference/R12-manage-tesla.png
 shasum -a 256 target/design-qa/reference/R*.png > target/design-qa/reference/manifest.sha256
 sips -g pixelWidth -g pixelHeight target/design-qa/reference/R*.png > target/design-qa/reference/dimensions.txt
 ```
@@ -736,7 +736,7 @@ Fix P0/P1/P2. Record remaining optical P3 items instead of cycling indefinitely 
 ### Task 11: Run the non-repetitive visual acceptance matrix
 
 **Files:**
-- Modify: `design-qa.md`
+- Modify: `docs/maintainers/design-qa.md`
 - Create: `scripts/compare-macos-ui.sh`
 - Generate ignored evidence: `target/design-qa/implementation/`
 - Generate ignored evidence: `target/design-qa/comparisons/`
@@ -795,7 +795,7 @@ Group shared-token, shell, onboarding, vehicle, and modal fixes before editing. 
 
 Launch the built preview once with `TESLATLAS_HUB_UI_PREVIEW=1` and `TESLATLAS_HUB_PREVIEW_SCENE=r01-welcome`. Cycle R01–R12 with the preview-only Next Scene command in that same process. Capture each distinct state once to verify genuine titlebar, attached-sheet/dimming behavior, and the native menu. Do not click operational controls.
 
-- [ ] **Step 7: Rewrite `design-qa.md` from the final combined evidence**
+- [ ] **Step 7: Rewrite `docs/maintainers/design-qa.md` from the final combined evidence**
 
 Include source/implementation paths, dimensions and density, viewport, full and focused comparisons, all prior P0/P1/P2 history, per-state score, registered native deviations, interactions inspected, and the exact final line `final result: passed` only when every R01–R12 state passes. Otherwise end with `final result: blocked` and name the failed states.
 
@@ -809,7 +809,7 @@ Include source/implementation paths, dimensions and density, viewport, full and 
 - Preserve: all `target/design-qa/` evidence
 
 **Interfaces:**
-- Consumes: `design-qa.md` with `final result: passed`.
+- Consumes: `docs/maintainers/design-qa.md` with `final result: passed`.
 - Produces: one final test receipt, one scope receipt, one development build, and the user-visible preview handoff.
 
 - [ ] **Step 1: Perform a fresh read-only source/safety review**
@@ -880,7 +880,7 @@ Do not run implementation tasks in parallel when they touch shared AppKit files.
 ## Definition of done
 
 - R01–R12 each score at least 95/100 and have no actionable P0/P1/P2 findings.
-- `design-qa.md` ends exactly with `final result: passed`.
+- `docs/maintainers/design-qa.md` ends exactly with `final result: passed`.
 - React-only states reuse the same tokens/components and have no clipping or unsafe mock behavior.
 - Dark and minimum-width supplemental matrices have no P0/P1/P2 findings.
 - Preview mode is mechanically inert and test-host UI is silent.

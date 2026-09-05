@@ -939,11 +939,12 @@ fn state_capture_failure_removes_already_written_candidate_pack() {
         true,
     )
     .with_projection_state_capture(TeslaMateProjectionStateCapture::for_initial_base(state));
-    sink.write(snapshot)
-        .expect("pack build is deferred until queue finish");
-    let error = sink
-        .finish()
-        .expect_err("state row ceiling rejects candidate after write");
+    let error = match sink.write(snapshot) {
+        Ok(()) => sink
+            .finish()
+            .expect_err("state row ceiling rejects queued candidate after write"),
+        Err(error) => error,
+    };
     assert!(matches!(
         error,
         TeslaMateFragmentError::ProjectionState(TeslaMateProjectionStateError::RowLimitExceeded {

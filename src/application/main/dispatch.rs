@@ -317,6 +317,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             };
             let readiness = store
                 .service_readiness_at(config.collector.interval_seconds > 0, current_epoch_ms()?);
+            let collector = store.supervised_collector_lease_status()?;
             let database_bytes = fs::metadata(store.database_path())?.len();
             println!(
                 "{}",
@@ -329,6 +330,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     },
                     "ready": readiness.is_ok(),
                     "readinessReason": readiness.err().map(|failure| failure.code),
+                    "collector": collector,
                     "provider": config.collector.provider,
                     "vehicle": vehicle,
                     "vehicles": vehicle_summaries,

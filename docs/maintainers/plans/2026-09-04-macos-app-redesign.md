@@ -8,7 +8,7 @@
 
 **Tech Stack:** Swift 5, AppKit, Foundation, SF Symbols, XCTest, XcodeGen, Xcode-beta, macOS 13 deployment target.
 
-**Spec:** `docs/superpowers/specs/2026-09-04-macos-app-redesign-design.md`
+**Spec:** `docs/maintainers/specs/2026-09-04-macos-app-redesign-design.md`
 
 ## Global Constraints
 
@@ -1365,7 +1365,7 @@ Run: `git diff --check && git status --short`.
 - Modify: `macos/TeslatlasHubApp/TeslatlasHubApp/HubController.swift` (preview fixtures only)
 - Modify: `macos/TeslatlasHubApp/TeslatlasHubAppTests/OnboardingWindowControllerTests.swift`
 - Modify: `macos/TeslatlasHubApp/TeslatlasHubAppTests/HubControllerTests.swift`
-- Create: `design-qa.md`
+- Create: `docs/maintainers/design-qa.md`
 
 **Interfaces:**
 
@@ -1436,9 +1436,9 @@ Expected: one PNG per named state from Step 2. Keep the path for visual inspecti
 
 - [ ] **Step 5: Compare every captured state with the supplied references**
 
-Open the reference screenshots from `/Users/bolyki/Desktop/` and the matching native captures. Check window geometry, navigation density, selected state, card hierarchy, typography, button emphasis, spacing, sheet dimming, progress marks, field alignment, scrolling, destructive styling, light/dark dynamic colors, and long-content behavior.
+Open the reference screenshots from the Desktop folder and the matching native captures. Check window geometry, navigation density, selected state, card hierarchy, typography, button emphasis, spacing, sheet dimming, progress marks, field alignment, scrolling, destructive styling, light/dark dynamic colors, and long-content behavior.
 
-Record findings in `design-qa.md` with this exact structure:
+Record findings in `docs/maintainers/design-qa.md` with this exact structure:
 
 ```markdown
 # Teslatlas Hub macOS redesign QA
@@ -1506,7 +1506,7 @@ git diff --name-only | rg '^(dist/|packaging/|src/|Cargo\.|Cargo.lock)' && exit 
 rg -n 'React|Tailwind|lucide|1\.4\.0|gyorgy@teslatlas\.example|Model [3YSX]|78%|54%' macos/TeslatlasHubApp/TeslatlasHubApp
 ```
 
-Expected: no whitespace errors; no release/Rust/package changes; no prototype framework, fake version, fake email, model, or battery strings in production source. `design-qa.md` ends with `final result: passed`.
+Expected: no whitespace errors; no release/Rust/package changes; no prototype framework, fake version, fake email, model, or battery strings in production source. `docs/maintainers/design-qa.md` ends with `final result: passed`.
 
 ---
 
@@ -1515,7 +1515,7 @@ Expected: no whitespace errors; no release/Rust/package changes; no prototype fr
 The implementation is ready to hand off only when all of the following are present:
 
 - a fresh, uninterrupted `test-macos-appkit: PASS` result;
-- `design-qa.md` with `final result: passed`;
+- `docs/maintainers/design-qa.md` with `final result: passed`;
 - native captures for all listed states;
 - a launchable development app under `target/macos-ui-preview/`;
 - a clean `git diff --check`;

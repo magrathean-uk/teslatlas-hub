@@ -1,4 +1,15 @@
-# v1.0.0 release gate
+# Release compliance gates
+
+## Calendar release gate
+
+For 2026.36.1 and later, use the [calendar release process](releasing.md),
+[versioning policy](versioning.md), and [verification guide](verification.md).
+The exact source, embedded versions, package scope, legal/source material,
+checksums, signing status, and completed test record must agree. Public records
+must exclude private build paths, device identifiers, credentials, and backups.
+No GitHub Actions build or verification is part of this process.
+
+## Historical v1.0.0 release gate
 
 The v1.0.0 release is complete when its source commit and annotated tag satisfy
 this gate. GitHub Release assets are outside the v1.0.0 publication scope.

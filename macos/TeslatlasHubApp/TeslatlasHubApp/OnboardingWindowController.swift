@@ -231,6 +231,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var connectedMigrationIdentity: String?
     private var onboardingContainer: HubOnboardingContainerView!
     private let headerContentHost = NSView()
+    private var renderedStep: Int?
+    private var diagnosticView: NSView?
+    private var filePanelOpen = false
+    private let presentFilePanel: (NSOpenPanel, NSWindow, @escaping (URL?) -> Void) -> Void
 
     init(controller: HubController,
          resumeMigrationHandoverPhase: HubMigrationHandoverPhase? = nil,
@@ -238,6 +242,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
          previewRoute: String? = nil,
          dismissalPolicy: HubOnboardingDismissalPolicy = .accountManagement,
          onDismiss: @escaping () -> Void = {},
+         presentFilePanel: @escaping (NSOpenPanel, NSWindow, @escaping (URL?) -> Void) -> Void = { panel, window, completion in
+             panel.beginSheetModal(for: window) { response in
+                 completion(response == .OK ? panel.url : nil)
+             }
+         },
          onComplete: @escaping (HubOnboardingCompletion) -> Void) {
         let effectivePreviewRoute = controller.previewMode ? previewRoute : nil
         self.controller = controller
@@ -245,6 +254,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         self.dismissalPolicy = dismissalPolicy
         self.onDismiss = onDismiss
         self.onComplete = onComplete
+        self.presentFilePanel = presentFilePanel
         let shouldAutoVerify: Bool
         let resumeMessage: String?
         if let resumeMigrationHandoverPhase {
@@ -289,6 +299,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 reasonCode: "preview",
                 requiredVersion: "4.2.0"
             )
+        } else if effectivePreviewRoute == "migration-error" {
+            migrationDiagnostic = TeslaMateSSHDiagnostic(
+                reasonCode: "preview", title: "TeslaMate connection failed",
+                summary: "This account cannot access Docker.",
+                suggestions: ["Check the server account and Docker access, then try again."],
+                recoveryActions: [.openLogs])
         } else if effectivePreviewRoute == "verify" {
             checks = HubController.previewOnboardingChecks
             verificationFinished = true
@@ -312,7 +328,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case "provider": return HubOnboardingState(route: .provider)
         case "fleet": return HubOnboardingState(route: .fleet)
         case "legacy": return HubOnboardingState(route: .legacy, provider: .legacy)
-        case "migration": return HubOnboardingState(route: .migration, path: .migration)
+        case "migration", "migration-error": return HubOnboardingState(route: .migration, path: .migration)
         case "migration-connected": return HubOnboardingState(route: .migration, path: .migration)
         case "verify": return HubOnboardingState(route: .verify)
         case "finish": return HubOnboardingState(route: .finish)
@@ -448,6 +464,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                       migrationServer, migrationUser, migrationPort,
                       migrationIdentityFile, migrationSSHPassword] {
             field.controlSize = .regular
+            field.font = HubTypography.body
         }
         fleetAccessToken.placeholderString = "Access token"
         fleetRefreshToken.placeholderString = "Refresh token"
@@ -461,15 +478,26 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     private func render() {
         guard let window else { return }
+        let previousStep = renderedStep
+        renderedStep = state.step
+        diagnosticView = nil
         let operation = focusedOperation
-        window.setContentSize(currentSheetSize)
+        if window.isVisible && HubMotion.enabled {
+            var frame = window.frame
+            let desired = window.frameRect(forContentRect: NSRect(origin: .zero, size: currentSheetSize)).size
+            frame.origin.y += frame.height - desired.height
+            frame.size = desired
+            window.setFrame(frame, display: true, animate: true)
+        } else {
+            window.setContentSize(currentSheetSize)
+        }
         let previousField = (window.firstResponder as? NSTextView)?.delegate as? NSView
         window.initialFirstResponder = nil
         window.makeFirstResponder(nil)
         migrationKeyViews = []
         headerContentHost.subviews.forEach { $0.removeFromSuperview() }
         let stepLabel = NSTextField(labelWithString: "Step \(state.step) of 5")
-        stepLabel.font = .systemFont(ofSize: 11.5, weight: .medium)
+        stepLabel.font = HubTypography.label
         stepLabel.textColor = HubPalette.mutedForeground
         let headerContent = NSStackView(views: [stepLabel, spacer(), progressView()])
         headerContent.alignment = .centerY
@@ -486,11 +514,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             content = operationBody(operation)
         } else {
             let title = NSTextField(labelWithString: pageTitle)
-            title.font = .systemFont(ofSize: 17.5, weight: .bold)
+            title.font = HubTypography.heading
             title.textColor = HubPalette.foreground
             title.alignment = .left
             let subtitle = NSTextField(wrappingLabelWithString: pageSubtitle)
-            subtitle.font = .systemFont(ofSize: 12)
+            subtitle.font = HubTypography.body
             subtitle.textColor = HubPalette.mutedForeground
             subtitle.alignment = .left
             subtitle.maximumNumberOfLines = 2
@@ -520,15 +548,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if operation == nil {
             configureMigrationKeyViewLoop(previousField: previousField)
         }
-        if HubUIPresentation.isSilentTestHost {
-            onboardingContainer.alphaValue = 1
-        } else {
-            onboardingContainer.alphaValue = 0
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                self.onboardingContainer.animator().alphaValue = 1
-            }
+        onboardingContainer.alphaValue = 1
+        if let diagnosticView {
+            onboardingContainer.reveal(diagnosticView)
+        }
+        if let previousStep {
+            HubMotion.transition(onboardingContainer.bodyDocumentView,
+                                 forward: previousStep == state.step ? nil : state.step > previousStep)
         }
     }
 
@@ -545,7 +571,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             case .choose, .provider: height = 349
             case .fleet: height = 455
             case .legacy: height = 390
-            case .migration: height = isPreviewConnectedMigration || migrationSession != nil ? 271 : 393
+            case .migration: height = isPreviewConnectedMigration || migrationSession != nil ? 271 : (migrationDiagnostic == nil ? 455 : 520)
             case .verify: height = 498
             case .finish: height = 280
             }
@@ -568,10 +594,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             spinner.controlSize = .regular
             spinner.startAnimation(nil)
             let title = NSTextField(labelWithString: "Setting up Hub…")
-            title.font = .systemFont(ofSize: 17.5, weight: .bold)
+            title.font = HubTypography.heading
             title.textColor = HubPalette.foreground
             let subtitle = NSTextField(labelWithString: "Saving your connection and preparing Hub.")
-            subtitle.font = .systemFont(ofSize: 12)
+            subtitle.font = HubTypography.body
             subtitle.textColor = HubPalette.mutedForeground
             let stack = NSStackView(views: [title, subtitle, spinner])
             stack.orientation = .vertical
@@ -656,7 +682,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         image.widthAnchor.constraint(equalToConstant: 16).isActive = true
         image.heightAnchor.constraint(equalToConstant: 16).isActive = true
         let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 12)
+        label.font = HubTypography.body
         label.textColor = HubPalette.foreground
         let row = NSStackView(views: [image, label])
         row.spacing = 9
@@ -764,8 +790,16 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                verticalField("Authentication", migrationAuthentication, width: nil)]
         migrationKeyViews = [migrationServer, migrationUser, migrationPort, migrationAuthentication]
         if migrationAuthentication.indexOfSelectedItem == 0 {
-            views.append(verticalField("SSH key", migrationIdentityFile, width: nil))
-            migrationKeyViews.append(migrationIdentityFile)
+            let choose = HubActionButton(title: "Choose Key…", target: self, action: #selector(chooseMigrationIdentity))
+            choose.identifier = NSUserInterfaceItemIdentifier("onboarding.choose-ssh-key")
+            choose.hubFont = HubTypography.action
+            choose.setContentCompressionResistancePriority(.required, for: .horizontal)
+            let keyRow = NSStackView(views: [migrationIdentityFile, choose])
+            keyRow.alignment = .centerY
+            keyRow.spacing = 8
+            migrationIdentityFile.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            views.append(verticalField("SSH key", keyRow, width: nil))
+            migrationKeyViews.append(contentsOf: [migrationIdentityFile, choose])
         } else {
             views.append(verticalField("Password", migrationSSHPassword, width: nil))
             migrationKeyViews.append(migrationSSHPassword)
@@ -792,6 +826,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
         if let migrationDiagnostic {
             let diagnostic = migrationDiagnosticView(migrationDiagnostic)
+            diagnosticView = diagnostic
             stack.addArrangedSubview(diagnostic)
             diagnostic.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
@@ -871,9 +906,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         icon.widthAnchor.constraint(equalToConstant: 16).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
         let title = NSTextField(labelWithString: "Connected to \(host)")
-        title.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        title.font = HubTypography.emphasis
         let detail = NSTextField(labelWithString: "Found a TeslaMate database ready to import.")
-        detail.font = .systemFont(ofSize: 11.5)
+        detail.font = HubTypography.body
         detail.textColor = HubPalette.mutedForeground
         let copy = NSStackView(views: [title, detail])
         copy.orientation = .vertical
@@ -900,10 +935,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationProgress.controlSize = .regular
 
         let title = NSTextField(labelWithString: "Importing data…")
-        title.font = .systemFont(ofSize: 17.5, weight: .bold)
+        title.font = HubTypography.heading
         title.textColor = HubPalette.foreground
         let subtitle = NSTextField(labelWithString: "Copying your TeslaMate history into Hub.")
-        subtitle.font = .systemFont(ofSize: 12)
+        subtitle.font = HubTypography.body
         subtitle.textColor = HubPalette.mutedForeground
 
         let stack = NSStackView(views: [title, subtitle, migrationProgress])
@@ -941,11 +976,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func migrationDiagnosticView(_ diagnostic: TeslaMateSSHDiagnostic) -> NSView {
-        let title = NSTextField(labelWithString: diagnostic.title)
-        title.font = .systemFont(ofSize: 15, weight: .semibold)
-        title.textColor = .systemOrange
+        let title = NSTextField(wrappingLabelWithString: diagnostic.title)
+        title.font = HubTypography.emphasis
+        title.textColor = HubPalette.foreground
 
         let summary = NSTextField(wrappingLabelWithString: diagnostic.summary)
+        summary.font = HubTypography.body
         summary.maximumNumberOfLines = 0
 
         let stack = NSStackView(views: [title, summary])
@@ -954,6 +990,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         stack.spacing = 6
         for suggestion in diagnostic.suggestions {
             let label = NSTextField(wrappingLabelWithString: "• \(suggestion)")
+            label.font = HubTypography.body
             label.textColor = .secondaryLabelColor
             label.maximumNumberOfLines = 0
             stack.addArrangedSubview(label)
@@ -982,14 +1019,26 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                             action: #selector(copyMigrationDiagnostic))
         configureFlatButton(copy)
         buttons.append(copy)
-        let buttonRow = NSStackView(views: buttons)
-        buttonRow.spacing = 12
-        buttonRow.alignment = .centerY
-        stack.addArrangedSubview(buttonRow)
+        for index in stride(from: 0, to: buttons.count, by: 2) {
+            let buttonRow = NSStackView(views: Array(buttons[index..<min(index + 2, buttons.count)]))
+            buttonRow.spacing = 12
+            buttonRow.alignment = .centerY
+            stack.addArrangedSubview(buttonRow)
+        }
         for view in stack.arrangedSubviews {
             view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
-        return stack
+        let card = HubCardView()
+        card.identifier = NSUserInterfaceItemIdentifier("onboarding.connection-error")
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12)
+        ])
+        return card
     }
 
     private func verifyBody() -> NSView {
@@ -1044,9 +1093,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         icon.widthAnchor.constraint(equalToConstant: 16).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
         let title = NSTextField(labelWithString: check.title)
-        title.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        title.font = HubTypography.emphasis
         let detail = NSTextField(labelWithString: check.detail)
-        detail.font = .systemFont(ofSize: 11.5)
+        detail.font = HubTypography.body
         detail.textColor = HubPalette.mutedForeground
         let copy = NSStackView(views: [title, detail])
         copy.orientation = .vertical
@@ -1152,7 +1201,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         continueButton.action = #selector(continuePressed)
         configurePrimaryButton(continueButton)
         continueButton.controlSize = .regular
-        continueButton.hubFont = .systemFont(ofSize: 12, weight: .medium)
+        continueButton.hubFont = HubTypography.action
         continueWidthConstraint?.isActive = false
         continueWidthConstraint = continueButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 76)
         continueWidthConstraint?.isActive = true
@@ -1164,7 +1213,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         footerSpinner.controlSize = .small
         footerSpinner.isDisplayedWhenStopped = false
         footerSpinner.toolTip = "Hub setup is working"
-        footerStatus.font = .systemFont(ofSize: 11.5)
+        footerStatus.font = HubTypography.label
         footerStatus.textColor = HubPalette.mutedForeground
         let logs = HubActionButton(title: "View Logs", target: self, action: #selector(openLogs))
         configureFlatButton(logs)
@@ -1779,12 +1828,25 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func chooseFile(for field: NSTextField) {
+        guard let window, !interactionBlocked, !filePanelOpen else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.beginSheetModal(for: window!) { response in
-            if response == .OK { field.stringValue = panel.url?.path ?? "" }
+        if field === migrationIdentityFile {
+            panel.title = "Choose SSH Key"
+            panel.prompt = "Choose Key"
+            panel.showsHiddenFiles = true
+            panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh")
+        }
+        filePanelOpen = true
+        presentFilePanel(panel, window) { [weak self, weak field] url in
+            guard let self else { return }
+            self.filePanelOpen = false
+            guard let field, let url else { return }
+            field.stringValue = url.path
+            field.toolTip = url.path
+            self.updateFooter()
         }
     }
 
@@ -1871,10 +1933,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         ])
 
         let heading = NSTextField(labelWithString: title)
-        heading.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        heading.font = HubTypography.emphasis
         heading.alignment = .left
         let detail = NSTextField(wrappingLabelWithString: subtitle)
-        detail.font = .systemFont(ofSize: 11.5)
+        detail.font = HubTypography.body
         detail.textColor = HubPalette.mutedForeground
         detail.alignment = .left
         detail.maximumNumberOfLines = 2
@@ -1915,13 +1977,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     private func verticalField(_ title: String, _ field: NSView, width: CGFloat? = nil) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 11.5, weight: .medium)
+        label.font = HubTypography.label
         label.textColor = HubPalette.mutedForeground
         if let width {
             field.widthAnchor.constraint(equalToConstant: width).isActive = true
         }
         if let control = field as? NSControl {
             control.controlSize = .regular
+            control.font = HubTypography.body
         }
         let stack = NSStackView(views: [label, field])
         stack.orientation = .vertical
@@ -1935,6 +1998,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     private func wrappingCheckbox(_ checkbox: NSButton, title: String) -> NSView {
         let label = NSTextField(wrappingLabelWithString: title)
+        label.font = HubTypography.body
         label.maximumNumberOfLines = 0
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let row = NSStackView(views: [checkbox, label])
@@ -1954,7 +2018,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         image.widthAnchor.constraint(equalToConstant: 30).isActive = true
         image.heightAnchor.constraint(equalToConstant: 30).isActive = true
         let label = NSTextField(wrappingLabelWithString: title)
-        label.font = .systemFont(ofSize: 14)
+        label.font = HubTypography.body
         label.maximumNumberOfLines = 2
         let row = NSStackView(views: [image, label])
         row.spacing = 12
@@ -1983,7 +2047,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     private func formRow(_ title: String, _ field: NSView) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.font = HubTypography.body
         label.widthAnchor.constraint(equalToConstant: 120).isActive = true
         field.widthAnchor.constraint(greaterThanOrEqualToConstant: 348).isActive = true
         let row = NSStackView(views: [label, field])
@@ -2011,7 +2075,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         button.imagePosition = .imageLeading
         button.contentTintColor = .labelColor
         (button as? HubActionButton)?.hubStyle = .flat
-        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.font = HubTypography.action
+        (button as? HubActionButton)?.hubFont = HubTypography.action
         button.focusRingType = .default
     }
 
@@ -2023,7 +2088,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
         button.imagePosition = .imageTrailing
         button.contentTintColor = .white
-        button.font = .systemFont(ofSize: 13, weight: .semibold)
+        button.font = HubTypography.action
+        (button as? HubActionButton)?.hubFont = HubTypography.action
         button.keyEquivalent = "\r"
         updatePrimaryAppearance(button)
     }

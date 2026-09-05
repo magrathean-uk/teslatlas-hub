@@ -8,7 +8,7 @@
 
 **Tech Stack:** Swift 5, AppKit, Foundation, SF Symbols, XCTest, XcodeGen, Xcode-beta, macOS 13 deployment target, local image comparison tooling.
 
-**Spec:** docs/superpowers/specs/2026-09-04-macos-app-native-fidelity-correction.md
+**Spec:** docs/maintainers/specs/2026-09-04-macos-app-native-fidelity-correction.md
 
 ## Status and supersession
 
@@ -16,12 +16,12 @@ The checked-in baseline before this planning pass was clean hub/main at commit 4
 
 This plan supersedes the execution sequences in:
 
-- docs/superpowers/plans/2026-09-04-macos-app-redesign.md
-- docs/superpowers/plans/2026-09-04-macos-app-redesign-fidelity-completion.md
+- docs/maintainers/plans/2026-09-04-macos-app-redesign.md
+- docs/maintainers/plans/2026-09-04-macos-app-redesign-fidelity-completion.md
 
 Those files remain historical evidence. The original design spec also remains useful for behavior and safety, but its generic utility-sheet language is replaced by the native-window contract in the correction spec.
 
-The current design-qa.md says passed even though the user demonstrated major visual and interaction defects. At the start of implementation, change its status to blocked and do not restore passed until the new window-composition and behavior gates have actual evidence.
+The current docs/maintainers/design-qa.md says passed even though the user demonstrated major visual and interaction defects. At the start of implementation, change its status to blocked and do not restore passed until the new window-composition and behavior gates have actual evidence.
 
 ## Why the next pass will be materially different
 
@@ -79,7 +79,7 @@ No implementation task may press or invoke uninstall, delete, install, start, st
 
 **Files:**
 
-- Modify: design-qa.md
+- Modify: docs/maintainers/design-qa.md
 - Create: target/design-qa/reference/manifest.tsv at execution time; keep generated evidence ignored
 - Modify: macos/TeslatlasHubApp/TeslatlasHubAppTests/HubPreviewCatalogTests.swift
 - Modify: macos/TeslatlasHubApp/TeslatlasHubAppTests/HubVisualSnapshotTests.swift
@@ -88,12 +88,12 @@ No implementation task may press or invoke uninstall, delete, install, start, st
 
 - HubPreviewScene remains the canonical R01 through R12 state enumeration.
 - manifest.tsv records source file, SHA-256, source dimensions, app-window crop, uniform normalization scale, and any approved native-only comparison mask.
-- design-qa.md begins with current result: blocked and lists the observed defects from the user's 19:01 and 19:23 screenshots.
+- docs/maintainers/design-qa.md begins with current result: blocked and lists the observed defects from the user's 19:01 and 19:23 screenshots.
 
 - [ ] Copy the twelve supplied Figma screenshots to target/design-qa/reference with stable R01 through R12 names and compute their literal hashes.
 - [ ] Record the app-window crop for each reference. Exclude the blue Figma canvas and browser-only surroundings; do not stretch the app surface.
 - [ ] Record the later defect screenshots as regression evidence, not visual targets.
-- [ ] Change design-qa.md from passed to blocked. Remove claims that button containment, native modal behavior, and pairwise comparison already passed.
+- [ ] Change docs/maintainers/design-qa.md from passed to blocked. Remove claims that button containment, native modal behavior, and pairwise comparison already passed.
 - [ ] Extend HubPreviewCatalogTests so every R01 through R12 scene exists exactly once, uses inert fixture data, and can be entered without an operational call.
 - [ ] Add a window-count and alert-count baseline assertion to preview teardown.
 - [ ] Do not run these tests yet.
@@ -459,16 +459,16 @@ This is the first point at which tests, builds, or application UI may run.
 
 **Files:**
 
-- Modify: design-qa.md
-- Review: docs/superpowers/specs/2026-09-04-macos-app-native-fidelity-correction.md
-- Review: docs/superpowers/plans/2026-09-04-macos-app-native-fidelity-correction.md
+- Modify: docs/maintainers/design-qa.md
+- Review: docs/maintainers/specs/2026-09-04-macos-app-native-fidelity-correction.md
+- Review: docs/maintainers/plans/2026-09-04-macos-app-native-fidelity-correction.md
 
 - [ ] Run the complete AppKit suite once after visual acceptance is green.
 - [ ] Run git diff --check.
 - [ ] Scan the diff for credentials, absolute temporary paths, generated binaries, release artifacts, React dependencies, WebView use, operational fixtures, and unintended Rust changes.
 - [ ] Verify every R01 through R12 score is at least 95 and no P0, P1, or P2 remains.
 - [ ] Verify the long-log, native-window lifecycle, onboarding containment, modal exclusivity, and zero-operation reports are green.
-- [ ] Update design-qa.md with exact commands, result-bundle paths, capture paths, comparison paths, per-state scores, approved P3 native deviations, and any genuinely remaining gap.
+- [ ] Update docs/maintainers/design-qa.md with exact commands, result-bundle paths, capture paths, comparison paths, per-state scores, approved P3 native deviations, and any genuinely remaining gap.
 - [ ] Do not call the result passed based on compilation, tests, a generated screenshot, or a reviewer alone. Passed requires the actual same-size comparison and behavior evidence.
 - [ ] Leave commits and pushes out of scope unless the user separately asks for them.
 
@@ -539,7 +539,7 @@ Production changes should remain within:
 - macos/TeslatlasHubApp/TeslatlasHubApp
 - macos/TeslatlasHubApp/TeslatlasHubAppTests
 - scripts
-- design-qa.md
-- docs/superpowers
+- docs/maintainers/design-qa.md
+- docs/maintainers
 
 No change is expected in HubController.swift, TeslaMateServerImporter.swift, TeslaAuthWindowController.swift, Rust crates, packaging, dist, signing, release, or GitHub automation.

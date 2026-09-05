@@ -1,12 +1,17 @@
 # Teslatlas Hub documentation
 
-Teslatlas Hub v1.0.0 supports Apple-silicon macOS 13 or later and
+Teslatlas Hub 2026.36.1 targets Apple-silicon macOS 13 or later and
 Debian 13 on amd64 or ARM64.
 
 Created by György Bolyki. Published and maintained by MAGRATHEAN UK LTD.
 
-The release is published as the immutable `v1.0.0` source tag. It has no
-GitHub Release page or downloadable release assets; build packages locally.
+Read the [2026.36.1 release notes](releases/release-notes-2026.36.1.md) before
+installing: Debian packages contain core/legacy functionality without Fleet
+companions. The Mac app is ad-hoc signed and its installer is unsigned and
+unnotarised; use the combined package because in-app service installation and
+update are unavailable. Package hashes and
+completed checks belong to the release's `SHA256SUMS` and `BUILD-INFO.md`.
+The historical `v1.0.0` release remains a source-only tag.
 
 ## Start here
 
@@ -20,6 +25,7 @@ GitHub Release page or downloadable release assets; build packages locally.
 | Learn the command-line interface | [CLI reference](guides/cli.md) |
 | Operate and diagnose Hub | [Operations](operations/runbook.md) |
 | Back up or recover a deployment | [Backup and recovery](operations/backup-and-recovery.md) |
+| Upgrade or plan rollback | [Upgrade and rollback](releases/upgrade.md) |
 | Import TeslaMate history | [TeslaMate migration](releases/migration.md) |
 | Solve a fault | [Troubleshooting](guides/troubleshooting.md) |
 
@@ -34,6 +40,8 @@ GitHub Release page or downloadable release assets; build packages locally.
 
 ## Verify or reproduce a release
 
+- [Calendar versioning](releases/versioning.md)
+- [2026.36.1 release notes](releases/release-notes-2026.36.1.md)
 - [v1.0.0 release notes](releases/release-notes-v1.0.0.md)
 - [v1.0.0-beta.1 historical notes](releases/release-notes-v1.0.0-beta.1.md)
 - [Changelog](releases/changelog.md)

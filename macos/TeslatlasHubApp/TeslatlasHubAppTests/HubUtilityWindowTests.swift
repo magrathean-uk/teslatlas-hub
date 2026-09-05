@@ -5,6 +5,74 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class HubUtilityWindowTests: XCTestCase {
+    func testAppChromeShowsBundledVersionWhenServiceReportsOlderRelease() throws {
+        var snapshot = HubSnapshot.firstRun
+        snapshot.version = "1.0.0"
+        let main = MainWindowController(controller: HubController(
+            environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"], initialSnapshot: snapshot))
+        defer { main.close() }
+        let labels = descendants(main.window?.contentView).compactMap { $0 as? NSTextField }.map(\.stringValue)
+        XCTAssertTrue(labels.contains("Teslatlas Hub \(HubRelease.bundledVersion)"))
+        XCTAssertFalse(labels.contains("Teslatlas Hub 1.0.0"))
+    }
+
+    func testSystemQuitUsesHubApplicationEntryPoint() {
+        XCTAssertTrue(NSApp is HubApplication, "Dock Quit must use the same sheet preflight as menu Quit")
+    }
+
+    func testMigrationKeyPickerIsVisibleAndPreservesPathOnCancel() throws {
+        var selection: URL? = URL(fileURLWithPath: "/tmp/fixture-ssh-key")
+        var presentations = 0
+        let owner = OnboardingWindowController(
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+            initialRoute: .migration,
+            presentFilePanel: { panel, _, completion in
+                presentations += 1
+                XCTAssertTrue(panel.showsHiddenFiles)
+                XCTAssertTrue(panel.canChooseFiles)
+                XCTAssertFalse(panel.canChooseDirectories)
+                XCTAssertFalse(panel.allowsMultipleSelection)
+                XCTAssertEqual(panel.directoryURL?.lastPathComponent, ".ssh")
+                completion(selection)
+            }, onComplete: { _ in })
+        defer { owner.close() }
+        let views = descendants(owner.window?.contentView)
+        let chooser = try XCTUnwrap(views.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "onboarding.choose-ssh-key"
+        })
+        XCTAssertFalse(chooser.isHidden)
+        chooser.performClick(nil)
+        XCTAssertEqual(presentations, 1)
+        let field = try XCTUnwrap(views.compactMap { $0 as? NSTextField }.first {
+            $0.stringValue == "/tmp/fixture-ssh-key"
+        })
+        XCTAssertEqual(field.font?.pointSize, HubTypography.body.pointSize)
+        XCTAssertEqual(field.toolTip, field.stringValue)
+        selection = nil
+        chooser.performClick(nil)
+        XCTAssertEqual(presentations, 2)
+        XCTAssertEqual(field.stringValue, "/tmp/fixture-ssh-key")
+        owner.setBusy(true)
+        XCTAssertFalse(chooser.isEnabled)
+    }
+
+    func testMigrationErrorIsRevealedAboveFixedFooter() throws {
+        let owner = OnboardingWindowController(
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+            previewRoute: "migration-error", onComplete: { _ in })
+        defer { owner.close() }
+        let container = try XCTUnwrap(owner.window?.contentView as? HubOnboardingContainerView)
+        container.layoutSubtreeIfNeeded()
+        let error = try XCTUnwrap(descendants(container).first {
+            $0.identifier?.rawValue == "onboarding.connection-error"
+        })
+        let rect = error.convert(error.bounds, to: container.bodyDocumentView)
+        XCTAssertTrue(container.bodyDocumentView.visibleRect.contains(rect), "Error and recovery actions must be visible: \(rect)")
+        let labels = descendants(error).compactMap { $0 as? NSTextField }
+        XCTAssertTrue(labels.allSatisfy { $0.font?.pointSize == 13 })
+        XCTAssertEqual(container.footerView.frame.height, 48)
+    }
+
     func testQuitEndsIdleFirstRunSheetButDoesNotInterruptBusySetup() throws {
         for busy in [false, true] {
             let main = MainWindowController(controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]))

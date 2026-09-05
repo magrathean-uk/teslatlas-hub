@@ -5,7 +5,7 @@ import Darwin
 import Foundation
 
 enum HubRelease {
-    static let fallbackVersion = "1.0.0"
+    static let fallbackVersion = "2026.36.1"
     static let sourceRepository = "https://github.com/magrathean-uk/teslatlas-hub"
     static let licenceExpression = "AGPL-3.0-only"
     static var bundledVersion: String {
@@ -20,7 +20,7 @@ enum HubRelease {
             of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
             options: .regularExpression
         ) != nil else { return nil }
-        if version == fallbackVersion {
+        if version == "1.0.0" {
             return URL(string: "\(sourceRepository)/tree/v\(version)")
         }
         return URL(string: "\(sourceRepository)/releases/tag/v\(version)")
@@ -263,6 +263,30 @@ private struct HubMigrationHandoverState: Codable {
         self.previousIntervalSeconds = previousIntervalSeconds
         self.previousProvider = previousProvider
     }
+}
+
+private struct HubCollectorLeaseWitness: Decodable {
+    let instanceId: UUID
+    let startedAtMs: Int64
+    let heartbeatAtMs: Int64
+    let leaseUntilMs: Int64
+
+    var isCoherent: Bool {
+        startedAtMs >= 0
+            && heartbeatAtMs >= startedAtMs
+            && leaseUntilMs > heartbeatAtMs
+    }
+}
+
+private struct HubStartupStatusDocument: Decodable {
+    let status: String
+    let ready: Bool
+    let collector: HubCollectorLeaseWitness?
+}
+
+private enum HubCollectorLeaseBaseline {
+    case observed(UUID?)
+    case unavailable
 }
 
 enum HubVehicleControl: String, CaseIterable, Equatable {
@@ -522,6 +546,108 @@ private final class ProcessOutputLineDecoder {
     }
 }
 
+final class ProcessOutputPipeReader {
+    enum Outcome: Equatable {
+        case pending
+        case endOfFile
+        case cancelled
+        case failed(Int32)
+    }
+
+    private static let pollIntervalMilliseconds: Int32 = 20
+    private static let chunkSize = 16 * 1024
+
+    private let fileHandle: FileHandle
+    private let onChunk: (Data) -> Void
+    private let lock = NSLock()
+    private var cancellationRequested = false
+    private var storedOutcome = Outcome.pending
+
+    init(fileHandle: FileHandle, onChunk: @escaping (Data) -> Void) {
+        self.fileHandle = fileHandle
+        self.onChunk = onChunk
+    }
+
+    var outcome: Outcome {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedOutcome
+    }
+
+    func cancel() {
+        lock.lock()
+        cancellationRequested = true
+        lock.unlock()
+    }
+
+    func run() {
+        let fileDescriptor = fileHandle.fileDescriptor
+        var pollDescriptor = pollfd(
+            fd: fileDescriptor,
+            events: Int16(POLLIN | POLLHUP | POLLERR),
+            revents: 0
+        )
+        var buffer = [UInt8](repeating: 0, count: Self.chunkSize)
+        defer { try? fileHandle.close() }
+
+        while true {
+            if isCancellationRequested {
+                finish(with: .cancelled)
+                return
+            }
+            pollDescriptor.revents = 0
+            let pollResult = Darwin.poll(
+                &pollDescriptor,
+                1,
+                Self.pollIntervalMilliseconds
+            )
+            if pollResult == 0 { continue }
+            if pollResult < 0 {
+                let pollError = errno
+                if pollError == EINTR { continue }
+                finish(with: .failed(pollError))
+                return
+            }
+            if pollDescriptor.revents & Int16(POLLNVAL) != 0 {
+                finish(with: .failed(EBADF))
+                return
+            }
+            guard pollDescriptor.revents & Int16(POLLIN | POLLHUP | POLLERR) != 0 else {
+                continue
+            }
+            let byteCount = buffer.withUnsafeMutableBytes { storage in
+                Darwin.read(fileDescriptor, storage.baseAddress, storage.count)
+            }
+            if byteCount > 0 {
+                onChunk(Data(buffer.prefix(byteCount)))
+                continue
+            }
+            if byteCount == 0 {
+                finish(with: .endOfFile)
+                return
+            }
+            let readError = errno
+            if readError == EINTR || readError == EAGAIN || readError == EWOULDBLOCK {
+                continue
+            }
+            finish(with: .failed(readError))
+            return
+        }
+    }
+
+    private var isCancellationRequested: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancellationRequested
+    }
+
+    private func finish(with outcome: Outcome) {
+        lock.lock()
+        storedOutcome = outcome
+        lock.unlock()
+    }
+}
+
 enum HubProcessExecutor {
     static let defaultMaximumOutputBytes = 256 * 1024
     static let defaultTimeout: TimeInterval = 5 * 60
@@ -544,6 +670,12 @@ enum HubProcessExecutor {
             let retained = BoundedProcessOutput(maximumBytes: maximumOutputBytes)
             let callbackGate = ProcessOutputLineCallbackGate(callback: onOutputLine)
             let lineDecoder = ProcessOutputLineDecoder(callbackGate: callbackGate)
+            let pipeReader = ProcessOutputPipeReader(
+                fileHandle: output.fileHandleForReading
+            ) { chunk in
+                retained.append(chunk)
+                lineDecoder.append(chunk)
+            }
             let reader = DispatchGroup()
             let terminated = DispatchSemaphore(value: 0)
             process.executableURL = executable
@@ -559,12 +691,7 @@ enum HubProcessExecutor {
                 try process.run()
                 reader.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
-                    while true {
-                        let chunk = output.fileHandleForReading.availableData
-                        guard !chunk.isEmpty else { break }
-                        retained.append(chunk)
-                        lineDecoder.append(chunk)
-                    }
+                    pipeReader.run()
                     lineDecoder.finish()
                     reader.leave()
                 }
@@ -581,7 +708,7 @@ enum HubProcessExecutor {
                         _ = terminated.wait(timeout: .now() + max(0.001, terminationGrace))
                     }
                     if reader.wait(timeout: .now() + max(0.001, outputDrainTimeout)) == .timedOut {
-                        try? output.fileHandleForReading.close()
+                        pipeReader.cancel()
                         _ = reader.wait(timeout: .now() + max(0.001, outputDrainTimeout))
                     }
                     completion(.failure(HubActionError.commandTimedOut))
@@ -589,13 +716,18 @@ enum HubProcessExecutor {
                 }
                 guard reader.wait(timeout: .now() + max(0.001, outputDrainTimeout)) == .success else {
                     callbackGate.cancel()
-                    try? output.fileHandleForReading.close()
+                    pipeReader.cancel()
                     _ = reader.wait(timeout: .now() + max(0.001, outputDrainTimeout))
                     completion(.failure(HubActionError.commandFailed("Hub command output did not close.")))
                     return
                 }
                 callbackGate.cancel()
-                try? output.fileHandleForReading.close()
+                guard pipeReader.outcome == .endOfFile else {
+                    completion(.failure(HubActionError.commandFailed(
+                        "Hub command output could not be read."
+                    )))
+                    return
+                }
                 let text = String(decoding: retained.snapshot(), as: UTF8.self)
                 if process.terminationStatus == 0 {
                     completion(.success(text))
@@ -989,10 +1121,20 @@ final class HubController {
     private let serviceRunner: HubServiceControlling
     private let homeDirectory: URL
     private let serviceInstalledOverride: Bool?
+    private let migrationStartupReadinessPollInterval: TimeInterval
+    private let migrationStartupReadinessTimeout: TimeInterval
+    private let migrationStartupReadinessMaxAttempts: Int
+    private let migrationStartupReadinessNow: () -> Date
+    private let migrationStartupReadinessSchedule: (
+        _ delay: TimeInterval,
+        _ action: @escaping () -> Void
+    ) -> Void
     private(set) var snapshot: HubSnapshot
     private var lastStatusFailureCode: String?
     private let refreshRequestLock = NSLock()
     private var newestRefreshRequest: UInt64 = 0
+    private let migrationHandoverStartLock = NSLock()
+    private var migrationHandoverStartOperationID: UUID?
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment,
          commandRunner: HubCommandRunning = EmbeddedHubCommandRunner(),
@@ -1001,7 +1143,20 @@ final class HubController {
          serviceRunner: HubServiceControlling = LaunchctlServiceController(),
          homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
          serviceInstalledOverride: Bool? = nil,
-         initialSnapshot: HubSnapshot? = nil) {
+         initialSnapshot: HubSnapshot? = nil,
+         migrationStartupReadinessPollInterval: TimeInterval = 0.5,
+         migrationStartupReadinessTimeout: TimeInterval = 60,
+         migrationStartupReadinessMaxAttempts: Int = 121,
+         migrationStartupReadinessNow: @escaping () -> Date = Date.init,
+         migrationStartupReadinessSchedule: @escaping (
+             _ delay: TimeInterval,
+             _ action: @escaping () -> Void
+         ) -> Void = { delay, action in
+             DispatchQueue.global(qos: .userInitiated).asyncAfter(
+                 deadline: .now() + delay,
+                 execute: action
+             )
+         }) {
         let scene = HubPreviewScene(environmentValue: environment["TESLATLAS_HUB_PREVIEW_SCENE"])
         let isPreview = environment["TESLATLAS_HUB_UI_PREVIEW"] == "1" || scene != nil
         let previewRoute = isPreview
@@ -1016,6 +1171,11 @@ final class HubController {
         self.serviceRunner = serviceRunner
         self.homeDirectory = homeDirectory
         self.serviceInstalledOverride = serviceInstalledOverride
+        self.migrationStartupReadinessPollInterval = max(0, migrationStartupReadinessPollInterval)
+        self.migrationStartupReadinessTimeout = max(0, migrationStartupReadinessTimeout)
+        self.migrationStartupReadinessMaxAttempts = max(1, migrationStartupReadinessMaxAttempts)
+        self.migrationStartupReadinessNow = migrationStartupReadinessNow
+        self.migrationStartupReadinessSchedule = migrationStartupReadinessSchedule
         let firstRunPreviewRoutes = [
             "welcome", "choose", "choose-migration", "provider", "fleet", "legacy",
             "migration", "migration-connected", "verify", "finish", "finish-migration"
@@ -2134,93 +2294,322 @@ final class HubController {
             completion(.failure(HubActionError.preview))
             return
         }
+        guard let operationID = beginMigrationHandoverStart() else {
+            HubAppLog.shared.record("handover_start.rejected", category: "teslamate_import",
+                                    level: "WARN", fields: ["reason": "already_in_progress"])
+            completion(.failure(HubActionError.commandFailed(
+                "Hub startup is already in progress."
+            )))
+            return
+        }
+        let finish: (Result<Void, Error>) -> Void = { [weak self] result in
+            self?.finishMigrationHandoverStart(
+                operationID: operationID,
+                result: result,
+                completion: completion
+            )
+        }
         guard let handover = migrationHandoverState,
               handover.phase == .awaitingHandover else {
             HubAppLog.shared.record("handover_start.rejected", category: "teslamate_import",
                                     level: "WARN", fields: ["reason": "checks_incomplete"])
-            completion(.failure(HubActionError.commandFailed(
+            finish(.failure(HubActionError.commandFailed(
                 "Finish the migration checks before starting Hub."
             )))
             return
         }
         let started = Date()
         HubAppLog.shared.record("handover_start.requested", category: "teslamate_import")
-        do {
-            try ensureConfig(provider: handover.previousProvider,
-                             collectorIntervalSeconds: handover.previousIntervalSeconds)
-        } catch {
-            HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
-                                    level: "ERROR", fields: [
+        captureMigrationCollectorLeaseBaseline { [weak self] baseline in
+            guard let self else { return }
+            do {
+                try self.ensureConfig(provider: handover.previousProvider,
+                                      collectorIntervalSeconds: handover.previousIntervalSeconds)
+            } catch {
+                HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
+                                        level: "ERROR", fields: [
                                         "error_code": HubAppLog.errorCode(error),
                                         "reason": "config_restore_failed"
                                     ])
-            completion(.failure(error))
-            return
-        }
-        serviceRunner.run(arguments: ["service", "start"]) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success:
-                do {
-                    try FileManager.default.removeItem(at: self.migrationHandoverMarker)
-                    HubAppLog.shared.record("handover_start.completed",
-                                            category: "teslamate_import", fields: [
-                                                "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000))
-                                            ])
-                    DispatchQueue.main.async { completion(.success(())) }
-                } catch {
-                    let cleanupError = error
-                    HubAppLog.shared.record("handover_start.failed",
-                                            category: "teslamate_import", level: "ERROR",
-                                            fields: [
-                                                "error_code": HubAppLog.errorCode(error),
-                                                "reason": "handover_gate_cleanup_failed"
-                                            ])
-                    self.serviceRunner.run(arguments: ["service", "stop"]) { _ in
-                        do {
-                            try self.ensureConfig(provider: handover.previousProvider,
-                                                  collectorIntervalSeconds: 0)
-                            try self.writeMigrationHandoverMarker(handover)
-                        } catch {
-                            HubAppLog.shared.record("handover_recovery.failed",
-                                                    category: "teslamate_import", level: "ERROR",
-                                                    fields: [
-                                                        "error_code": HubAppLog.errorCode(error),
-                                                        "reason": "cleanup_failure_rollback"
-                                                    ])
-                        }
-                        DispatchQueue.main.async {
-                            completion(.failure(HubActionError.commandFailed(
-                                "Hub was stopped because the migration handover gate could not be cleared: \(cleanupError.localizedDescription)"
-                            )))
+                finish(.failure(error))
+                return
+            }
+            let startRequestedAtMs = self.migrationStartupReadinessNowMilliseconds()
+            let readinessDeadlineAtMs = startRequestedAtMs + Int64(
+                self.migrationStartupReadinessTimeout * 1_000
+            )
+            self.serviceRunner.run(arguments: ["service", "start"]) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success:
+                    self.waitForMigrationStartupReadiness(
+                        baseline: baseline,
+                        startRequestedAtMs: startRequestedAtMs,
+                        deadlineAtMs: readinessDeadlineAtMs,
+                        collectorRequired: handover.previousIntervalSeconds > 0,
+                        attemptsRemaining: self.migrationStartupReadinessMaxAttempts
+                    ) { readinessResult in
+                        switch readinessResult {
+                        case .success:
+                            self.completeMigrationHandoverStart(
+                                handover: handover,
+                                started: started,
+                                completion: finish
+                            )
+                        case let .failure(readinessError):
+                            self.rollbackUnreadyMigrationHandoverStart(
+                                handover: handover,
+                                readinessError: readinessError,
+                                completion: finish
+                            )
                         }
                     }
-                }
-            case let .failure(startError):
-                HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
-                                        level: "ERROR", fields: [
-                                            "error_code": HubAppLog.errorCode(startError),
-                                            "reason": "service_start_failed"
-                                        ])
-                do {
-                    try self.ensureConfig(provider: handover.previousProvider,
-                                          collectorIntervalSeconds: 0)
-                    try self.writeMigrationHandoverMarker(handover)
-                    DispatchQueue.main.async { completion(.failure(startError)) }
-                } catch {
-                    HubAppLog.shared.record("handover_recovery.failed",
-                                            category: "teslamate_import", level: "ERROR",
-                                            fields: [
-                                                "error_code": HubAppLog.errorCode(error),
-                                                "reason": "start_failure_rollback"
+                case let .failure(startError):
+                    HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
+                                            level: "ERROR", fields: [
+                                                "error_code": HubAppLog.errorCode(startError),
+                                                "reason": "service_start_failed"
                                             ])
-                    DispatchQueue.main.async {
-                        completion(.failure(HubActionError.commandFailed(
+                    do {
+                        try self.ensureConfig(provider: handover.previousProvider,
+                                              collectorIntervalSeconds: 0)
+                        try self.writeMigrationHandoverMarker(handover)
+                        finish(.failure(startError))
+                    } catch {
+                        HubAppLog.shared.record("handover_recovery.failed",
+                                                category: "teslamate_import", level: "ERROR",
+                                                fields: [
+                                                    "error_code": HubAppLog.errorCode(error),
+                                                    "reason": "start_failure_rollback"
+                                                ])
+                        finish(.failure(HubActionError.commandFailed(
                             "Hub did not start: \(startError.localizedDescription). The collector pause could not be restored: \(error.localizedDescription)"
                         )))
                     }
                 }
             }
+        }
+    }
+
+    private func beginMigrationHandoverStart() -> UUID? {
+        migrationHandoverStartLock.lock()
+        defer { migrationHandoverStartLock.unlock() }
+        guard migrationHandoverStartOperationID == nil else { return nil }
+        let operationID = UUID()
+        migrationHandoverStartOperationID = operationID
+        return operationID
+    }
+
+    private func finishMigrationHandoverStart(
+        operationID: UUID,
+        result: Result<Void, Error>,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        migrationHandoverStartLock.lock()
+        guard migrationHandoverStartOperationID == operationID else {
+            migrationHandoverStartLock.unlock()
+            return
+        }
+        migrationHandoverStartOperationID = nil
+        migrationHandoverStartLock.unlock()
+        DispatchQueue.main.async { completion(result) }
+    }
+
+    private func captureMigrationCollectorLeaseBaseline(
+        completion: @escaping (HubCollectorLeaseBaseline) -> Void
+    ) {
+        installedCommandRunner.run(arguments: ["--config", configPath.path, "status"]) { result in
+            guard case let .success(output) = result,
+                  let data = output.data(using: .utf8),
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  root.keys.contains("collector"),
+                  let document = try? JSONDecoder().decode(HubStartupStatusDocument.self,
+                                                            from: data),
+                  document.status == "ok" else {
+                completion(.unavailable)
+                return
+            }
+            guard !(root["collector"] is NSNull) else {
+                completion(.observed(nil))
+                return
+            }
+            guard let collector = document.collector, collector.isCoherent else {
+                completion(.unavailable)
+                return
+            }
+            completion(.observed(collector.instanceId))
+        }
+    }
+
+    private func waitForMigrationStartupReadiness(
+        baseline: HubCollectorLeaseBaseline,
+        startRequestedAtMs: Int64,
+        deadlineAtMs: Int64,
+        collectorRequired: Bool,
+        attemptsRemaining: Int,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        guard migrationStartupReadinessNowMilliseconds() < deadlineAtMs else {
+            completion(.failure(HubActionError.commandFailed(
+                "Hub did not become ready before the startup deadline."
+            )))
+            return
+        }
+        installedCommandRunner.run(arguments: ["--config", configPath.path, "status"]) {
+            [weak self] result in
+            guard let self else { return }
+            let document: HubStartupStatusDocument
+            switch result {
+            case .failure:
+                completion(.failure(HubActionError.commandFailed(
+                    "Hub readiness status could not be read."
+                )))
+                return
+            case let .success(output):
+                guard let data = output.data(using: .utf8),
+                      let parsed = try? JSONDecoder().decode(HubStartupStatusDocument.self,
+                                                             from: data),
+                      parsed.status == "ok" else {
+                    completion(.failure(HubActionError.commandFailed(
+                        "Hub readiness status was invalid."
+                    )))
+                    return
+                }
+                document = parsed
+            }
+            if document.ready,
+               self.isFreshMigrationStartupStatus(
+                document,
+                baseline: baseline,
+                startRequestedAtMs: startRequestedAtMs,
+                collectorRequired: collectorRequired
+               ) {
+                completion(.success(()))
+                return
+            }
+            if document.ready, collectorRequired,
+               (document.collector == nil || document.collector?.isCoherent != true) {
+                completion(.failure(HubActionError.commandFailed(
+                    "Hub readiness status did not include a valid collector lease."
+                )))
+                return
+            }
+            guard attemptsRemaining > 1,
+                  self.migrationStartupReadinessNowMilliseconds() < deadlineAtMs else {
+                completion(.failure(HubActionError.commandFailed(
+                    "Hub did not become ready before the startup deadline."
+                )))
+                return
+            }
+            self.migrationStartupReadinessSchedule(self.migrationStartupReadinessPollInterval) {
+                [weak self] in
+                self?.waitForMigrationStartupReadiness(
+                    baseline: baseline,
+                    startRequestedAtMs: startRequestedAtMs,
+                    deadlineAtMs: deadlineAtMs,
+                    collectorRequired: collectorRequired,
+                    attemptsRemaining: attemptsRemaining - 1,
+                    completion: completion
+                )
+            }
+        }
+    }
+
+    private func migrationStartupReadinessNowMilliseconds() -> Int64 {
+        Int64(migrationStartupReadinessNow().timeIntervalSince1970 * 1_000)
+    }
+
+    private func isFreshMigrationStartupStatus(
+        _ document: HubStartupStatusDocument,
+        baseline: HubCollectorLeaseBaseline,
+        startRequestedAtMs: Int64,
+        collectorRequired: Bool
+    ) -> Bool {
+        guard collectorRequired else { return true }
+        guard let collector = document.collector, collector.isCoherent else { return false }
+        switch baseline {
+        case let .observed(previousInstance):
+            return previousInstance != collector.instanceId
+        case .unavailable:
+            return collector.startedAtMs >= startRequestedAtMs
+        }
+    }
+
+    private func completeMigrationHandoverStart(
+        handover: HubMigrationHandoverState,
+        started: Date,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        do {
+            try FileManager.default.removeItem(at: migrationHandoverMarker)
+            HubAppLog.shared.record("handover_start.completed",
+                                    category: "teslamate_import", fields: [
+                                        "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000))
+                                    ])
+            completion(.success(()))
+        } catch {
+            let cleanupError = error
+            HubAppLog.shared.record("handover_start.failed",
+                                    category: "teslamate_import", level: "ERROR",
+                                    fields: [
+                                        "error_code": HubAppLog.errorCode(error),
+                                        "reason": "handover_gate_cleanup_failed"
+                                    ])
+            serviceRunner.run(arguments: ["service", "stop"]) { _ in
+                do {
+                    try self.ensureConfig(provider: handover.previousProvider,
+                                          collectorIntervalSeconds: 0)
+                    try self.writeMigrationHandoverMarker(handover)
+                } catch {
+                    HubAppLog.shared.record("handover_recovery.failed",
+                                            category: "teslamate_import", level: "ERROR",
+                                            fields: [
+                                                "error_code": HubAppLog.errorCode(error),
+                                                "reason": "cleanup_failure_rollback"
+                                            ])
+                }
+                completion(.failure(HubActionError.commandFailed(
+                    "Hub was stopped because the migration handover gate could not be cleared: \(cleanupError.localizedDescription)"
+                )))
+            }
+        }
+    }
+
+    private func rollbackUnreadyMigrationHandoverStart(
+        handover: HubMigrationHandoverState,
+        readinessError: Error,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
+                                level: "ERROR", fields: [
+                                    "error_code": HubAppLog.errorCode(readinessError),
+                                    "reason": "startup_readiness_failed"
+                                ])
+        serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
+            var pauseRestored = true
+            do {
+                try self.ensureConfig(provider: handover.previousProvider,
+                                      collectorIntervalSeconds: 0)
+                try self.writeMigrationHandoverMarker(handover)
+            } catch {
+                pauseRestored = false
+                HubAppLog.shared.record("handover_recovery.failed",
+                                        category: "teslamate_import", level: "ERROR",
+                                        fields: [
+                                            "error_code": HubAppLog.errorCode(error),
+                                            "reason": "readiness_failure_rollback"
+                                        ])
+            }
+            let message: String
+            switch (stopResult, pauseRestored) {
+            case (.success, true):
+                message = "Hub did not become ready and was stopped. The migration handover remains pending."
+            case (.success, false):
+                message = "Hub was stopped after startup failed, but the collector pause could not be restored. Keep TeslaMate disabled and try again."
+            case (.failure, _):
+                message = "Hub did not become ready and could not be confirmed stopped. Keep TeslaMate disabled, stop Hub, and try again."
+            }
+            completion(.failure(HubActionError.commandFailed(message)))
         }
     }
 

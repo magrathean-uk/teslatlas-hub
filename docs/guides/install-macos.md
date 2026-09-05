@@ -1,18 +1,30 @@
 # Install on macOS
 
-Teslatlas Hub v1.0.0 supports Apple-silicon Macs running macOS 13 or
+Teslatlas Hub 2026.36.1 targets Apple-silicon Macs running macOS 13 or
 later.
 
-Build the combined installer from the `v1.0.0` source tag:
+Download `TeslatlasHub-2026.36.1-arm64.pkg` from the matching release and
+[verify it](../releases/verification.md). Read the
+[release notes](../releases/release-notes-2026.36.1.md): the app is ad-hoc signed
+and the combined installer is unsigned and unnotarised. Use the combined
+installer for installation and upgrades; in-app service installation,
+reinstallation, and update are unavailable in this distribution. The embedded
+installer requires official-release metadata and Gatekeeper trust, which this
+build does not provide. The unsigned installer can be blocked by macOS or
+organisation policy. Do not disable system-wide security controls to install it.
+For an existing installation, follow [Upgrade and rollback](../releases/upgrade.md).
+
+Alternatively, build the combined installer from the matching source tag:
 
 ```sh
-git checkout --detach v1.0.0
+git checkout --detach v2026.36.1
 ./scripts/build-macos-app.sh
 ```
 
 ## Install
 
-1. Open `dist/TeslatlasHub.pkg`.
+1. Open the verified `TeslatlasHub-2026.36.1-arm64.pkg` (or
+   `dist/TeslatlasHub.pkg` for a local build).
 2. Complete the macOS Installer flow. It installs **Teslatlas Hub.app** in
    `/Applications` and the service payload in
    `/Library/Application Support/Teslatlas Hub`.
@@ -22,8 +34,9 @@ git checkout --detach v1.0.0
 6. Confirm the dashboard reports **Running** and **Ready**.
 
 The product installer includes both the app and a service-only component. The
-app also carries `Contents/Resources/TeslatlasHubService.pkg` solely for in-app
-service management; it is not a separately downloadable app installer. A
+app also carries `Contents/Resources/TeslatlasHubService.pkg`, but this
+distribution cannot install that embedded package through the app. Use the
+combined installer to install or update the service. A
 per-user LaunchAgent owns the running Hub service for the signed-in user.
 
 The app keeps Hub stopped when setup, version admission, package verification,

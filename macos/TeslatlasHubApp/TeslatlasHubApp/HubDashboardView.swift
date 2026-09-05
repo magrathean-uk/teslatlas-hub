@@ -207,7 +207,7 @@ final class HubDashboardView: HubSurfaceView {
         serviceRow.statusTone = tone
         accountRow.value = snapshot.accountDisplay
         databaseRow.value = snapshot.database
-        versionLabel.stringValue = "Teslatlas Hub \(snapshot.version)"
+        versionLabel.stringValue = "Teslatlas Hub \(HubRelease.bundledVersion)"
 
         let availableIDs = Set(snapshot.controlVehicles.map(\.id))
         if let selectedVehicleID, !availableIDs.contains(selectedVehicleID) {

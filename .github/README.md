@@ -23,8 +23,14 @@
   <sub>Created by <strong>György Bolyki</strong> · Published and maintained by <strong>MAGRATHEAN UK LTD</strong></sub>
 </p>
 
-The current source release is **v1.0.0**. GitHub hosts its immutable source tag;
-the project does not publish a GitHub Release or downloadable release assets.
+The current calendar release is **2026.36.1**, with source tag `v2026.36.1`.
+Read the [release notes](../docs/releases/release-notes-2026.36.1.md) before
+installing. Debian packages include core/legacy collection without Fleet
+companions. The macOS app is ad-hoc signed and its combined installer is
+unsigned and unnotarised. Use the combined package for installation and
+upgrades; in-app service installation, reinstallation, and update are unavailable.
+No live Tesla or restored-backup acceptance is claimed. Historical `v1.0.0`
+remains a source-only release.
 
 Teslatlas Hub keeps telemetry under the operator's control. It collects every
 configured vehicle, stores history in local SQLite-backed packs, and exposes a
@@ -69,24 +75,26 @@ through the same resident credential owner. See
 | Debian 13 | `amd64` | Hardened systemd units | CLI |
 | Debian 13 | `arm64` | Hardened systemd units | CLI |
 
-Other operating systems and CPU architectures are not part of the v1 support
+Other operating systems and CPU architectures are not part of the release support
 contract. Linux support is intentionally native and does not depend on AppKit,
 MapKit, or another Apple framework.
 
 ## Install
 
-Teslatlas Hub v1.0.0 is published as source at the
-[`v1.0.0` tag](https://github.com/magrathean-uk/teslatlas-hub/tree/v1.0.0).
-Build platform packages from that checkout. No installer or package is attached
-to a GitHub Release.
+Use the matching packages, `SHA256SUMS`, and `BUILD-INFO.md` from the
+[2026.36.1 release](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v2026.36.1).
+[Verify downloads](../docs/releases/verification.md) and review
+[upgrade guidance](../docs/releases/upgrade.md) before replacing an installation.
 
 ### macOS
 
-Run `./scripts/build-macos-app.sh`, then open `dist/TeslatlasHub.pkg`. The installer
+Open the verified `TeslatlasHub-2026.36.1-arm64.pkg`. For a source build, run
+`./scripts/build-macos-app.sh` and open `dist/TeslatlasHub.pkg`. The installer
 places **Teslatlas Hub.app** in `/Applications` and the service payload under
 `/Library/Application Support/Teslatlas Hub`; then open the app. The app retains
-an embedded service-only package for in-app service management, not as a
-separate public download.
+an embedded service-only package, but this distribution cannot install it
+through the app because that path requires official-release metadata and
+Gatekeeper trust. Use the combined package to install or update the service.
 
 Open **Teslatlas Hub**, choose a new Fleet or legacy installation, or select
 the guided TeslaMate migration path. The app keeps Hub stopped until setup and
@@ -97,14 +105,15 @@ diagnostics succeed.
 Choose the `.deb` matching `dpkg --print-architecture`, then:
 
 ```sh
-sudo dpkg -i teslatlas-hub_1.0.0_$(dpkg --print-architecture).deb
+sudo dpkg -i teslatlas-hub_2026.36.1_$(dpkg --print-architecture).deb
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml bootstrap
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml doctor
 ```
 
-Complete either legacy or Fleet setup before starting the service. Full steps,
+Complete legacy setup before starting these core-only packages. Fleet setup
+requires separately verified companions, which these Debian downloads omit. Full steps,
 permissions, TLS placement, and systemd controls are in
 [Install on Debian](../docs/guides/install-debian.md).
 
@@ -117,7 +126,7 @@ Xcode 27 and XcodeGen.
 ```sh
 git clone https://github.com/magrathean-uk/teslatlas-hub.git
 cd teslatlas-hub
-git checkout --detach v1.0.0
+git checkout --detach v2026.36.1
 cargo build --locked --release
 ./target/release/teslatlas-hub --version
 ```
@@ -234,7 +243,7 @@ its identified licence. See [Legal framework](../docs/legal/overview.md),
 [Licensing](../docs/legal/licensing.md), [Notices](../NOTICE), and
 [Third-party notices](../docs/legal/third-party-notices.md).
 
-The v1.0.0 source is the immutable tagged tree. Locally built packages include
+The v2026.36.1 source is the immutable tagged tree. Distributed packages include
 the applicable licence and dependency notices.
 
 ## Contributing and support

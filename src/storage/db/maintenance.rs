@@ -843,6 +843,30 @@ impl HubStore {
         Ok(())
     }
 
+    /// Return the current collector lease witness without mutating or renewing
+    /// it. Local supervisors use the instance identity to distinguish a new
+    /// collector from an unexpired lease left by an earlier process.
+    pub fn supervised_collector_lease_status(
+        &self,
+    ) -> Result<Option<SupervisedCollectorLeaseStatus>, StoreError> {
+        self.open_read_only_connection()?
+            .query_row(
+                "SELECT instance_id, started_at_ms, heartbeat_at_ms, lease_until_ms
+                   FROM supervised_collector_lease WHERE singleton_id = 1",
+                [],
+                |row| {
+                    Ok(SupervisedCollectorLeaseStatus {
+                        instance_id: row.get(0)?,
+                        started_at_ms: row.get(1)?,
+                        heartbeat_at_ms: row.get(2)?,
+                        lease_until_ms: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StoreError::Query)
+    }
+
     pub fn quick_check(&self) -> Result<(), StoreError> {
         let connection = self.open_read_only_connection()?;
         let result: String = connection

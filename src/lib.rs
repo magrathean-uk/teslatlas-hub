@@ -50,8 +50,10 @@ pub(crate) use sync::manifest_signing;
 
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/teslatlas-hub";
-pub const CORRESPONDING_SOURCE_URL: &str =
-    "https://github.com/magrathean-uk/teslatlas-hub/tree/v1.0.0";
+pub const CORRESPONDING_SOURCE_URL: &str = concat!(
+    "https://github.com/magrathean-uk/teslatlas-hub/tree/v",
+    env!("CARGO_PKG_VERSION")
+);
 
 /// Immutable Corresponding Source for this release.
 pub fn corresponding_source_url() -> String {
@@ -88,7 +90,11 @@ mod legal_notice_tests {
 
     #[test]
     fn stable_release_uses_immutable_tagged_source() {
-        assert_eq!(BUILD_VERSION, "1.0.0");
+        assert_eq!(BUILD_VERSION, "2026.36.1");
+        assert_eq!(
+            corresponding_source_url(),
+            "https://github.com/magrathean-uk/teslatlas-hub/tree/v2026.36.1"
+        );
         assert_eq!(corresponding_source_url(), CORRESPONDING_SOURCE_URL);
     }
 

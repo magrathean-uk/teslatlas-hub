@@ -2,6 +2,41 @@
 
 import AppKit
 
+enum HubTypography {
+    static let heading = NSFont.systemFont(ofSize: 18, weight: .bold)
+    static let body = NSFont.systemFont(ofSize: 13)
+    static let label = NSFont.systemFont(ofSize: 12, weight: .medium)
+    static let action = NSFont.systemFont(ofSize: 13, weight: .medium)
+    static let emphasis = NSFont.systemFont(ofSize: 13, weight: .semibold)
+}
+
+enum HubMotion {
+    static var enabled: Bool {
+        !HubUIPresentation.isSilentTestHost && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    static func transition(_ view: NSView, forward: Bool? = nil) {
+        guard enabled, view.window?.isVisible == true else { return }
+        view.wantsLayer = true
+        let animation = CATransition()
+        animation.type = forward == nil ? .fade : .push
+        animation.subtype = forward == false ? .fromLeft : .fromRight
+        animation.duration = 0.18
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        view.layer?.add(animation, forKey: "hub.content-transition")
+    }
+
+    static func click(_ view: NSView) {
+        guard enabled, view.window?.isVisible == true else { return }
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 0.55
+        animation.toValue = 1
+        animation.duration = 0.15
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        view.layer?.add(animation, forKey: "hub.click")
+    }
+}
+
 enum HubMetrics {
     static let windowSize = NSSize(width: 900, height: 630)
     static let referenceScale: CGFloat = 900.0 / 1040.0
@@ -110,6 +145,11 @@ enum HubButtonStyle: Equatable {
 }
 
 final class HubActionButton: NSButton {
+    override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
+        guard isEnabled else { return false }
+        HubMotion.click(self)
+        return super.sendAction(action, to: target)
+    }
     // Constraints describe our painted bounds, not NSButtonCell's bezel/image
     // alignment rect (which varies with the selected SF Symbol).
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }

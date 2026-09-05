@@ -1,12 +1,12 @@
 # Corresponding Source availability
 
-Teslatlas Hub v1.0.0 is published as source under `AGPL-3.0-only`. The
-immutable source boundary is the annotated Git tag `v1.0.0`:
+Teslatlas Hub 2026.36.1 is distributed under `AGPL-3.0-only`. Its corresponding
+source boundary is the annotated Git tag `v2026.36.1`:
 
 ```sh
 git clone https://github.com/magrathean-uk/teslatlas-hub.git
 cd teslatlas-hub
-git checkout --detach v1.0.0
+git checkout --detach v2026.36.1
 git status --short
 ```
 
@@ -15,6 +15,14 @@ platform packaging, lockfiles, interface definitions, licence texts, notices,
 and the inputs needed by the documented build helpers.
 
 ## Distribution status
+
+For 2026.36.1, the release's sanitised `BUILD-INFO.md` records the exact source
+commit and package scope. Compare it to the tag and use `SHA256SUMS` to verify
+distributed bytes. Packages must retain their applicable project and dependency
+legal material. Debian core-only packages omit Fleet companions; source and
+evidence for components that are distributed must match those exact components.
+
+### Historical v1.0.0
 
 There is no GitHub Release page and no downloadable GitHub release asset for
 v1.0.0. The repository distributes source. A combined macOS package can be

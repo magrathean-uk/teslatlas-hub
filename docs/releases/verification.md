@@ -1,4 +1,56 @@
-# Verify v1.0.0
+# Verify a release
+
+## Verify 2026.36.1 downloads
+
+Download the package for your architecture, `SHA256SUMS`, and `BUILD-INFO.md`
+from the same `v2026.36.1` release. Check the build record's source commit,
+platform scope, signing status, and completed checks. On macOS run
+`shasum -a 256 -c SHA256SUMS`; on Debian run `sha256sum -c SHA256SUMS`.
+If only one package was downloaded, other entries will report missing files;
+the selected package must report `OK`. A checksum confirms byte identity with
+the manifest, not a signing identity or live vehicle acceptance.
+
+Inspect the selected package:
+
+```sh
+# macOS
+pkgutil --check-signature TeslatlasHub-2026.36.1-arm64.pkg
+pkgutil --payload-files TeslatlasHub-2026.36.1-arm64.pkg
+
+# Debian (run on the target architecture)
+dpkg-deb --field "teslatlas-hub_2026.36.1_$(dpkg --print-architecture).deb" \
+  Package Version Architecture
+dpkg-deb --contents "teslatlas-hub_2026.36.1_$(dpkg --print-architecture).deb"
+```
+
+The Debian metadata must report package `teslatlas-hub`, version
+`2026.36.1-1`, and the selected architecture. These Debian packages omit Fleet
+companions. The macOS package includes the app and service components. Its
+installer is unsigned and unnotarised; the app uses ad-hoc signing. Neither is
+Developer ID distribution. In-app embedded service installation and update
+are unavailable; use the combined package for installation and upgrades.
+
+After installation, use the platform's absolute binary path from the
+[CLI reference](../guides/cli.md#platform-invocation) to run `--version`,
+`legal`, and `source`. The version must be `2026.36.1` and source must identify
+the matching immutable `v2026.36.1` tree. Preserve the legal bundle.
+
+To inspect the corresponding source:
+
+```sh
+git clone https://github.com/magrathean-uk/teslatlas-hub.git teslatlas-hub-2026.36.1
+cd teslatlas-hub-2026.36.1
+git fetch --tags origin
+git show --no-patch --format=fuller v2026.36.1
+git rev-parse 'v2026.36.1^{commit}'
+git checkout --detach v2026.36.1
+```
+
+Compare the resolved commit to `BUILD-INFO.md`. Tags and checksums are not a
+claim of independent cryptographic authentication unless their signatures are
+explicitly supplied and verified.
+
+## Historical v1.0.0 verification
 
 Teslatlas Hub v1.0.0 is a source-tag release. It has no GitHub Release page or
 downloadable GitHub release assets.

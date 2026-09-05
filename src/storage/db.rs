@@ -751,6 +751,17 @@ pub(crate) struct SupervisedCollectorLease {
     instance_id: Uuid,
 }
 
+/// Redacted identity and timing witness for the collector lease reported by
+/// local status commands. It contains no credentials, vehicle data, or paths.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisedCollectorLeaseStatus {
+    pub instance_id: String,
+    pub started_at_ms: i64,
+    pub heartbeat_at_ms: i64,
+    pub lease_until_ms: i64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SupervisedCollectorState {
     Active,

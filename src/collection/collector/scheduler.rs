@@ -83,6 +83,8 @@ struct StreamOutageStatus {
     consecutive_failures: u32,
     outage_duration: Duration,
     owner_api_fallback_scheduled: bool,
+    owner_api_fallback_after: Option<Duration>,
+    suspended: bool,
     live_power_gate: bool,
     phase: PollPhase,
 }
@@ -512,11 +514,13 @@ impl VehicleScheduler {
     }
 
     fn schedule_offline_state_fetch(&mut self, id: VehicleId, now: Instant) {
-        if let Some(scheduled) = self.vehicles.get_mut(&id) {
-            if scheduled.offline_state_fetch_due.is_none() {
-                scheduled.offline_state_fetch_due = Some(now);
-            }
-            scheduled.next_poll = now + GENERIC_OTHER_RETRY;
+        if let Some(scheduled) = self.vehicles.get_mut(&id)
+            && scheduled.offline_state_fetch_due.is_none()
+        {
+            scheduled.offline_state_fetch_due = Some(now);
+            // Coalesce repeated offline notices without shortening a data
+            // retry/suspension or extending an already pending state retry.
+            scheduled.next_poll = scheduled.next_poll.max(now + GENERIC_OTHER_RETRY);
         }
     }
 
@@ -864,32 +868,44 @@ impl VehicleScheduler {
         if let Some(scheduled) = self.vehicles.get_mut(&id)
             && scheduled.settings.use_streaming_api
         {
+            let first_failure = scheduled.stream_outage_started_at.is_none();
             let started_at = *scheduled.stream_outage_started_at.get_or_insert(now);
             scheduled.consecutive_stream_failures =
                 scheduled.consecutive_stream_failures.saturating_add(1);
             scheduled.stream_healthy = false;
-            scheduled.suspended = false;
             if matches!(scheduled.pre_online, PreOnlineCheck::ConfirmedReal) {
                 scheduled.pre_online = PreOnlineCheck::Probing {
                     deadline: now + PRE_ONLINE_TIMEOUT,
                 };
             }
-            if !matches!(
+            let live_power_gate = matches!(
                 scheduled.pre_online,
-                PreOnlineCheck::Probing { .. } | PreOnlineCheck::ConfirmedFake { .. }
-            ) {
+                PreOnlineCheck::Probing { .. }
+                    | PreOnlineCheck::ConfirmedFake { .. }
+                    | PreOnlineCheck::ConfirmedReal
+            );
+            // An outage starts fallback once. Subsequent reconnect failures
+            // must leave successful polling cadence, API backoff and idle
+            // suspension intact; failure alone is not evidence of activity.
+            if first_failure
+                && !scheduled.suspended
+                && scheduled.offline_state_fetch_due.is_none()
+                && !live_power_gate
+            {
                 scheduled.next_poll = now;
             }
+            let owner_api_fallback_after = (scheduled.vehicle.is_online()
+                && scheduled.settings.enabled
+                && !scheduled.service_mode
+                && !live_power_gate)
+                .then(|| scheduled.next_poll.saturating_duration_since(now));
             return StreamOutage::Active(StreamOutageStatus {
                 consecutive_failures: scheduled.consecutive_stream_failures,
                 outage_duration: now.saturating_duration_since(started_at),
-                owner_api_fallback_scheduled: now >= scheduled.next_poll,
-                live_power_gate: matches!(
-                    scheduled.pre_online,
-                    PreOnlineCheck::Probing { .. }
-                        | PreOnlineCheck::ConfirmedFake { .. }
-                        | PreOnlineCheck::ConfirmedReal
-                ),
+                owner_api_fallback_scheduled: owner_api_fallback_after == Some(Duration::ZERO),
+                owner_api_fallback_after,
+                suspended: scheduled.suspended,
+                live_power_gate,
                 phase: scheduled.last_phase,
             });
         }

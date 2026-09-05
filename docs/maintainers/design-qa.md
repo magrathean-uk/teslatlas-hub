@@ -43,14 +43,14 @@ complete app/sheet composition matches the Figma screenshots.
 The following later screenshots are preserved as evidence of the flawed baseline and
 must not be used as reference targets:
 
-- `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 19.23.13.png` — baseline running
+- `Screenshot 2026-09-04 at 19.23.13.png` — baseline running
   Dashboard composition.
-- `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 19.23.14.png` — incomplete or
+- `Screenshot 2026-09-04 at 19.23.14.png` — incomplete or
   clipped window composition, with most of the intended page absent from the
   captured surface.
-- `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 19.23.20.png` — Diagnostics
+- `Screenshot 2026-09-04 at 19.23.20.png` — Diagnostics
   still has the imitation right-side `x` close affordance.
-- `/Users/bolyki/Desktop/Screenshot 2026-09-04 at 19.23.28.png` — Logs is an
+- `Screenshot 2026-09-04 at 19.23.28.png` — Logs is an
   embedded, dimming fake sheet with a right-side close affordance and a shallow
   viewport; it does not demonstrate a usable vertical scroll range.
 
@@ -139,3 +139,33 @@ Figma fidelity acceptance is not claimed. Changes remain uncommitted and unpushe
   absence was checked after Quit without reopening the application.
 - No installed application replacement, operational service action, commit, or
   push. The safe preview was left closed.
+
+## Motion, migration picker, and system Quit follow-up — 2026-09-04
+
+- Added a shared NSApplication termination entry point for Dock/system requests
+  and menu Quit. It checks every onboarding window for active operations before
+  ending idle sheets, deepest first. A blocked request explains the active
+  operation; it does not silently disappear or stop the background service.
+- Restored a visible Choose Key button alongside the editable identity path.
+  The native file chooser opens in .ssh with hidden files visible. Cancellation
+  preserves the path; selecting a path updates its tooltip; busy setup disables
+  the chooser. Tests inject only the panel result, never real credentials.
+- Setup typography now uses 18-point headings, 13-point body/actions, and
+  12-point field/step labels. Connection failures use a compact neutral card,
+  with recovery buttons in rows of at most two. Error content is revealed in
+  the scroll area above the fixed footer; the migration form has more height.
+- Added 150 ms button feedback and 180 ms body/page transitions without delaying
+  action dispatch or moving button contents. Header/footer remain outside the
+  content transition. Test hosts and system Reduce Motion disable animations.
+- Final local AppKit build/test: 213 tests, zero failures; result bundle:
+  target/design-qa/native-fidelity-correction/motion-quit-final-proof.xcresult.
+  The initial run had two obsolete key-picker layout expectations; both were
+  updated to check the restored button and its non-overlapping path field.
+- Safe live preview verified error-card visibility, native picker opening in
+  .ssh, picker cancellation, and Cmd-Q exit with setup attached. Process absence
+  was checked without reopening the preview. Direct Dock UI verification was
+  unavailable because Dock automation timed out; subclass identity and shared
+  termination preflight are covered by tests, not claimed as a Dock click test.
+- Focused read-only review found no additional critical or important issues.
+  No SSH connection, credential selection, import, service mutation, installed
+  app replacement, commit, or push was performed during this follow-up.

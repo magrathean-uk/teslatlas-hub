@@ -2,6 +2,23 @@
 
 import AppKit
 
+/// Dock Quit and the application menu both enter NSApplication.terminate(_:).
+/// Handle sheets here, before AppKit can silently defer termination for them.
+final class HubApplication: NSApplication {
+    override func terminate(_ sender: Any?) {
+        guard AppDelegate.finishSheetsBeforeQuit(in: windows) else {
+            activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Hub is finishing an operation"
+            alert.informativeText = "Wait for the current setup or import operation to finish, then quit. Quitting the app does not stop the background Hub service."
+            alert.addButton(withTitle: "OK")
+            _ = HubUIPresentation.response(to: alert)
+            return
+        }
+        super.terminate(sender)
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var mainWindowController: MainWindowController?
     private var hubController: HubController!
@@ -114,24 +131,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc func quitApplication(_ sender: Any?) {
-        guard Self.finishSheetsBeforeQuit(in: NSApp.windows) else {
-            let alert = NSAlert()
-            alert.messageText = "Hub is finishing an operation"
-            alert.informativeText = "Wait for the current setup or import operation to finish, then quit. Your background Hub service will keep running."
-            alert.addButton(withTitle: "OK")
-            _ = HubUIPresentation.response(to: alert)
-            return
-        }
         NSApp.terminate(sender)
     }
 
     /// NSApplication's standard termination can be suppressed by an attached
     /// setup sheet. End idle sheets explicitly; don't interrupt an active import.
     static func finishSheetsBeforeQuit(in windows: [NSWindow]) -> Bool {
-        let sheets = windows.filter { $0.sheetParent != nil }
-        guard !sheets.contains(where: {
+        guard !windows.contains(where: {
             ($0.delegate as? OnboardingWindowController)?.operationPreventsQuit == true
         }) else { return false }
+        func depth(_ window: NSWindow) -> Int {
+            var count = 0
+            var parent = window.sheetParent
+            while let current = parent { count += 1; parent = current.sheetParent }
+            return count
+        }
+        let sheets = windows.filter { $0.sheetParent != nil }.sorted { depth($0) > depth($1) }
         for sheet in sheets {
             sheet.sheetParent?.endSheet(sheet, returnCode: .cancel)
             sheet.close()

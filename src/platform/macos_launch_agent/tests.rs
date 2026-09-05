@@ -436,7 +436,10 @@ fn installs_private_binary_and_minimal_absolute_plist_without_launchctl() {
     assert!(plist.contains(&format!("<string>{}</string>", canonical_config.display())));
     assert!(plist.contains("<string>--config</string>"));
     assert!(plist.contains("<string>serve</string>"));
-    assert!(plist.contains("<key>KeepAlive</key>\n  <true/>"));
+    assert!(plist.contains(
+        "<key>KeepAlive</key>\n  <dict>\n    <key>SuccessfulExit</key>\n    <false/>\n  </dict>"
+    ));
+    assert!(!plist.contains("<key>KeepAlive</key>\n  <true/>"));
     assert!(!plist.contains("EnvironmentVariables"));
     assert!(!plist.contains("ResourceLimits"));
     assert!(!plist.contains("SERVICE_WRAPPER"));

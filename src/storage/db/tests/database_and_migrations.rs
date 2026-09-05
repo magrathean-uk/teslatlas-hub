@@ -450,6 +450,22 @@ fn supervised_collector_lease_fences_kill_stale_and_recovery_transitions() {
     let first = store
         .acquire_supervised_collector_lease(1_000)
         .expect("first collector lease");
+    let first_status = store
+        .supervised_collector_lease_status()
+        .expect("read first collector lease status")
+        .expect("first collector lease status");
+    assert!(Uuid::parse_str(&first_status.instance_id).is_ok());
+    assert_eq!(first_status.started_at_ms, 1_000);
+    assert_eq!(first_status.heartbeat_at_ms, 1_000);
+    assert_eq!(first_status.lease_until_ms, 1_000 + SUPERVISED_COLLECTOR_LEASE_MS);
+    let status_json = serde_json::to_value(&first_status).expect("serialize collector lease status");
+    let status_object = status_json.as_object().expect("collector status object");
+    let mut status_keys = status_object.keys().map(String::as_str).collect::<Vec<_>>();
+    status_keys.sort_unstable();
+    assert_eq!(
+        status_keys,
+        ["heartbeatAtMs", "instanceId", "leaseUntilMs", "startedAtMs"]
+    );
     let competing_process =
         HubStore::initialize(temporary.path()).expect("second process store handle");
     store
@@ -477,6 +493,17 @@ fn supervised_collector_lease_fences_kill_stale_and_recovery_transitions() {
     store
         .heartbeat_supervised_collector_lease(first, SupervisedCollectorState::Active, 3_000)
         .expect("authenticated recovery heartbeat");
+    let recovered_status = store
+        .supervised_collector_lease_status()
+        .expect("read recovered collector lease status")
+        .expect("recovered collector lease status");
+    assert_eq!(recovered_status.instance_id, first_status.instance_id);
+    assert_eq!(recovered_status.started_at_ms, 1_000);
+    assert_eq!(recovered_status.heartbeat_at_ms, 3_000);
+    assert_eq!(
+        recovered_status.lease_until_ms,
+        3_000 + SUPERVISED_COLLECTOR_LEASE_MS
+    );
     store
         .service_readiness_at(true, 3_001)
         .expect("authenticated recovery restores readiness");
@@ -521,6 +548,12 @@ fn supervised_collector_lease_fences_kill_stale_and_recovery_transitions() {
     competing_process
         .release_supervised_collector_lease(replacement)
         .expect("replacement releases exactly its lease");
+    assert_eq!(
+        store
+            .supervised_collector_lease_status()
+            .expect("read released collector lease status"),
+        None
+    );
     assert_eq!(
         store
             .service_readiness_at(true, replacement_at + 1)

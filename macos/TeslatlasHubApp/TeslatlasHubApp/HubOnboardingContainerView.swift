@@ -105,6 +105,12 @@ final class HubOnboardingContainerView: NSView {
         bodyScrollView.reflectScrolledClipView(bodyScrollView.contentView)
     }
 
+    func reveal(_ view: NSView) {
+        layoutSubtreeIfNeeded()
+        let rect = view.convert(view.bounds, to: bodyDocumentView)
+        bodyDocumentView.scrollToVisible(rect.insetBy(dx: 0, dy: -8))
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }

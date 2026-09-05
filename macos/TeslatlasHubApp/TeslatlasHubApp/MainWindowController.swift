@@ -234,11 +234,15 @@ final class MainWindowController: NSWindowController {
     }
 
     func selectMainSection(_ section: HubMainSection) {
+        let changed = selectedSection != section
         selectedSection = section
         dashboardView?.isHidden = section != .dashboard
         vehiclesView?.isHidden = section != .vehicles
         navigationBar?.select(section)
         updateDefaultButton()
+        if changed, let page = section == .dashboard ? dashboardView as NSView? : vehiclesView as NSView? {
+            HubMotion.transition(page)
+        }
     }
 
     private func updateDefaultButton() {
@@ -608,7 +612,7 @@ final class MainWindowController: NSWindowController {
                                && !accountWorkflowActive
                                && !serviceDetailsMutationPending)
         databaseValue.stringValue = snapshot.database
-        versionLabel.stringValue = snapshot.version
+        versionLabel.stringValue = HubRelease.bundledVersion
         serviceDot.contentTintColor = snapshot.health.color
 
         stopButton.isHidden = snapshot.health == .needsInstall

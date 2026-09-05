@@ -247,7 +247,15 @@ final class OnboardingHubControllerTests: XCTestCase {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let events = OnboardingEvents()
-        let runner = OnboardingRunner(events: events)
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: "22222222-2222-4222-8222-222222222222",
+                startedAtMs: 4_000_000_000_000
+            ))
+        ])
         let service = OnboardingService(events: events)
         let controller = HubController(commandRunner: runner,
                                        installedCommandRunner: runner,
@@ -311,8 +319,301 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 60"))
         XCTAssertEqual(events.values, [
             "check", "service:stop", "migrate", "service:stop", "status", "doctor",
-            "service:start"
+            "status", "service:start", "status"
         ])
+    }
+
+    func testHandoverRejectsStaleReadyLeaseUntilANewCollectorIsReady() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let scheduler = ManualOnboardingScheduler()
+        let oldInstance = "11111111-1111-4111-8111-111111111111"
+        let newInstance = "22222222-2222-4222-8222-222222222222"
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: oldInstance,
+                startedAtMs: 50_000
+            )),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: oldInstance,
+                startedAtMs: 50_000
+            )),
+            .success(readinessStatus(
+                ready: false,
+                collectorInstanceID: oldInstance,
+                startedAtMs: 50_000
+            )),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: newInstance,
+                startedAtMs: 101_000
+            ))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            installedCommandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessPollInterval: 1,
+            migrationStartupReadinessMaxAttempts: 3,
+            migrationStartupReadinessNow: { Date(timeIntervalSince1970: 100) },
+            migrationStartupReadinessSchedule: scheduler.schedule
+        )
+        let finished = expectation(description: "fresh collector becomes ready")
+        var completed = false
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            completed = true
+            finished.fulfill()
+        }
+
+        XCTAssertFalse(completed)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 60"))
+
+        scheduler.runNext()
+        XCTAssertFalse(completed)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+
+        scheduler.runNext()
+        wait(for: [finished], timeout: 1)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(events.values, [
+            "status", "service:start", "status", "status", "status"
+        ])
+    }
+
+    func testHandoverStartRejectsConcurrentInvocationBeforeStartingAnotherService() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(ready: false, collectorInstanceID: nil))
+        ])
+        let service = OnboardingService(events: events, holdStartCompletions: true)
+        let controller = HubController(
+            commandRunner: runner,
+            installedCommandRunner: runner,
+            serviceRunner: service,
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessMaxAttempts: 1
+        )
+        let firstFinished = expectation(description: "first start reports its held failure")
+        let duplicateFinished = expectation(description: "duplicate start is rejected")
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            guard case .failure = result else {
+                return XCTFail("held first start unexpectedly succeeded")
+            }
+            firstFinished.fulfill()
+        }
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            guard case let .failure(error) = result else {
+                return XCTFail("duplicate handover start unexpectedly succeeded")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub startup is already in progress.")
+            duplicateFinished.fulfill()
+        }
+
+        XCTAssertEqual(service.startCallCount, 1)
+        XCTAssertEqual(events.values, ["status", "service:start"])
+        service.completeHeldStarts(with: .failure(
+            HubActionError.commandFailed("held service start failure")
+        ))
+        wait(for: [duplicateFinished, firstFinished], timeout: 1)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+    }
+
+    func testHandoverFallsBackToPostRequestStartTimeWhenBaselineStatusIsUnavailable() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let scheduler = ManualOnboardingScheduler()
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(#"{"status":"ok","ready":false}"#),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: "33333333-3333-4333-8333-333333333333",
+                startedAtMs: 99_999
+            )),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: "33333333-3333-4333-8333-333333333333",
+                startedAtMs: 100_000
+            ))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            installedCommandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessPollInterval: 1,
+            migrationStartupReadinessMaxAttempts: 2,
+            migrationStartupReadinessNow: { Date(timeIntervalSince1970: 100) },
+            migrationStartupReadinessSchedule: scheduler.schedule
+        )
+        let finished = expectation(description: "timestamp witness becomes fresh")
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        scheduler.runNext()
+        wait(for: [finished], timeout: 1)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(events.values, ["status", "service:start", "status", "status"])
+    }
+
+    func testHandoverReadinessFailuresStopHubRestorePauseAndKeepGate() throws {
+        let failureCases: [(name: String, status: Result<String, Error>)] = [
+            (
+                "process failure",
+                .failure(HubActionError.commandFailed("private status diagnostic"))
+            ),
+            ("malformed status", .success("not JSON")),
+            (
+                "not ready before timeout",
+                .success(readinessStatus(ready: false, collectorInstanceID: nil))
+            )
+        ]
+
+        for failureCase in failureCases {
+            let home = try temporaryHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+            let events = OnboardingEvents()
+            let runner = OnboardingRunner(events: events, statusResults: [
+                .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+                failureCase.status
+            ])
+            let controller = HubController(
+                commandRunner: runner,
+                installedCommandRunner: runner,
+                serviceRunner: OnboardingService(events: events),
+                homeDirectory: home,
+                serviceInstalledOverride: true,
+                migrationStartupReadinessPollInterval: 1,
+                migrationStartupReadinessMaxAttempts: 1,
+                migrationStartupReadinessNow: { Date(timeIntervalSince1970: 100) },
+                migrationStartupReadinessSchedule: { _, _ in
+                    XCTFail("\(failureCase.name) scheduled beyond the bounded final attempt")
+                }
+            )
+            let finished = expectation(description: failureCase.name)
+
+            controller.acknowledgeMigrationHandoverAndStart { result in
+                guard case let .failure(error) = result else {
+                    return XCTFail("\(failureCase.name) cleared the handover gate")
+                }
+                XCTAssertFalse(error.localizedDescription.contains("private status diagnostic"))
+                finished.fulfill()
+            }
+
+            wait(for: [finished], timeout: 1)
+            XCTAssertTrue(controller.hasPendingMigrationHandover, failureCase.name)
+            XCTAssertTrue(
+                try String(contentsOf: config).contains("interval_seconds = 0"),
+                failureCase.name
+            )
+            XCTAssertEqual(
+                events.values,
+                ["status", "service:start", "status", "service:stop"],
+                failureCase.name
+            )
+        }
+    }
+
+    func testHandoverReadinessDeadlineStopsBeforeIssuingAnotherStatusCommand() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let scheduler = ManualOnboardingScheduler()
+        var now = Date(timeIntervalSince1970: 100)
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(ready: false, collectorInstanceID: nil)),
+            .success(readinessStatus(
+                ready: true,
+                collectorInstanceID: "44444444-4444-4444-8444-444444444444",
+                startedAtMs: 101_000
+            ))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            installedCommandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessPollInterval: 1,
+            migrationStartupReadinessTimeout: 1,
+            migrationStartupReadinessMaxAttempts: 3,
+            migrationStartupReadinessNow: { now },
+            migrationStartupReadinessSchedule: scheduler.schedule
+        )
+        let finished = expectation(description: "readiness deadline expires")
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            guard case .failure = result else {
+                return XCTFail("deadline cleared the handover gate")
+            }
+            finished.fulfill()
+        }
+
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        now = Date(timeIntervalSince1970: 101)
+        scheduler.runNext()
+        wait(for: [finished], timeout: 1)
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+        XCTAssertEqual(events.values, ["status", "service:start", "status", "service:stop"])
+    }
+
+    func testHandoverWithCollectorDisabledAcceptsReadyWithoutCollectorLease() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 0)
+        let events = OnboardingEvents()
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: true, collectorInstanceID: nil)),
+            .success(readinessStatus(ready: true, collectorInstanceID: nil))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            installedCommandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessMaxAttempts: 1
+        )
+        let finished = expectation(description: "collector-disabled Hub is ready")
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+
+        wait(for: [finished], timeout: 1)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
+        XCTAssertEqual(events.values, ["status", "service:start", "status"])
     }
 
     func testOnlineMigrationForwardsStructuredProgressOnMainThread() throws {
@@ -453,6 +754,47 @@ final class OnboardingHubControllerTests: XCTestCase {
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: false)
         return home
     }
+
+    private func prepareAwaitingHandover(in home: URL,
+                                         previousIntervalSeconds: Int) throws -> URL {
+        let folder = home.appendingPathComponent(
+            "Library/Application Support/Teslatlas Hub",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let config = folder.appendingPathComponent("config.toml")
+        try """
+        data_dir = "\(folder.appendingPathComponent("data").path)"
+
+        [collector]
+        provider = "legacy"
+        interval_seconds = 0
+        """.write(to: config, atomically: true, encoding: .utf8)
+        try """
+        {"phase":"awaiting_handover","previousIntervalSeconds":\(previousIntervalSeconds),"previousProvider":"legacy"}
+        """.write(
+            to: folder.appendingPathComponent(".teslamate-handover-pending"),
+            atomically: true,
+            encoding: .utf8
+        )
+        return config
+    }
+
+    private func readinessStatus(ready: Bool,
+                                 collectorInstanceID: String?,
+                                 startedAtMs: Int64 = 50_000) -> String {
+        let collector: String
+        if let collectorInstanceID {
+            collector = """
+            {"instanceId":"\(collectorInstanceID)","startedAtMs":\(startedAtMs),"heartbeatAtMs":\(startedAtMs + 1_000),"leaseUntilMs":\(startedAtMs + 31_000)}
+            """
+        } else {
+            collector = "null"
+        }
+        return """
+        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":\(ready),"readinessReason":\(ready ? "null" : "\"collector_absent\""),"provider":"legacy","vehicle":{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000},"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000}],"credentials":{"present":true},"legacyCredentials":{"present":true,"expiresAt":null,"nextRefreshAt":null},"fleetCredentials":{"present":false,"expiresAt":null,"nextRefreshAt":null,"scopes":null,"scopeStatus":null},"fleetTelemetry":{"enabled":false,"configured":false,"mode":"disabled","operationalState":"disabled","paidVehicleDataPolling":false,"deliveryPolicy":null},"collector":\(collector)}
+        """
+    }
 }
 
 private final class OnboardingEvents {
@@ -463,12 +805,31 @@ private final class OnboardingEvents {
     }
 }
 
+private final class ManualOnboardingScheduler {
+    private var pending: [() -> Void] = []
+
+    var pendingCount: Int { pending.count }
+
+    func schedule(after _: TimeInterval, action: @escaping () -> Void) {
+        pending.append(action)
+    }
+
+    func runNext() {
+        guard !pending.isEmpty else {
+            XCTFail("no scheduled readiness poll")
+            return
+        }
+        pending.removeFirst()()
+    }
+}
+
 private final class OnboardingRunner: HubCommandRunning {
     private let events: OnboardingEvents?
     private let compatibilityResult: Result<String, Error>
     private let migrationResult: Result<String, Error>
     private let progressLines: [String]
     private let lateProgressLines: [String]
+    private var statusResults: [Result<String, Error>]
     private(set) var argumentCalls: [[String]] = []
 
     init(events: OnboardingEvents? = nil,
@@ -479,12 +840,14 @@ private final class OnboardingRunner: HubCommandRunning {
              "{\"status\":\"imported\",\"captureMode\":\"online-snapshot\"}"
          ),
          progressLines: [String] = [],
-         lateProgressLines: [String] = []) {
+         lateProgressLines: [String] = [],
+         statusResults: [Result<String, Error>] = []) {
         self.events = events
         self.compatibilityResult = compatibilityResult
         self.migrationResult = migrationResult
         self.progressLines = progressLines
         self.lateProgressLines = lateProgressLines
+        self.statusResults = statusResults
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
@@ -497,9 +860,13 @@ private final class OnboardingRunner: HubCommandRunning {
             completion(migrationResult)
         } else if arguments.contains("status") {
             events?.append("status")
-            completion(.success("""
-            {"status":"ok","version":"1.0.0","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
-            """))
+            if statusResults.isEmpty {
+                completion(.success("""
+                {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
+                """))
+            } else {
+                completion(statusResults.removeFirst())
+            }
         } else if arguments.contains("doctor") {
             events?.append("doctor")
             completion(.success("{\"status\":\"ok\"}"))
@@ -546,14 +913,32 @@ private final class OnboardingInstaller: HubInstalling {
 
 private final class OnboardingService: HubServiceControlling {
     private let events: OnboardingEvents?
+    private let holdStartCompletions: Bool
+    private var heldStartCompletions: [(Result<String, Error>) -> Void] = []
+    private(set) var startCallCount = 0
 
-    init(events: OnboardingEvents? = nil) {
+    init(events: OnboardingEvents? = nil, holdStartCompletions: Bool = false) {
         self.events = events
+        self.holdStartCompletions = holdStartCompletions
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
-        events?.append("service:\(arguments.last ?? "unknown")")
+        let action = arguments.last ?? "unknown"
+        events?.append("service:\(action)")
+        if action == "start" {
+            startCallCount += 1
+            if holdStartCompletions {
+                heldStartCompletions.append(completion)
+                return
+            }
+        }
         completion(.success(""))
+    }
+
+    func completeHeldStarts(with result: Result<String, Error>) {
+        let completions = heldStartCompletions
+        heldStartCompletions.removeAll()
+        completions.forEach { $0(result) }
     }
 
     func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {

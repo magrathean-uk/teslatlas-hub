@@ -4,8 +4,9 @@
 
 | Release line | Security support |
 |---|---|
-| v1.0.0 | Supported |
-| v1.0.0-beta.1 and earlier | Unsupported; upgrade to v1.0.0 |
+| 2026.36.1 | Current release; reports accepted for its documented platform scope |
+| v1.0.0 | Historical source release; reports accepted, upgrade planning recommended |
+| v1.0.0-beta.1 and earlier | Unsupported; review current release and upgrade guidance |
 | `main` and untagged builds | Reports accepted, but not a supported release channel |
 
 ## Private reporting
@@ -51,5 +52,9 @@ No safe harbour covers vehicle commands, phishing, credential stuffing, access t
 
 ## Release integrity
 
-The supported source boundary is the immutable `v1.0.0` tag. GitHub Release
-assets are not part of this release.
+The current source boundary is the immutable `v2026.36.1` tag. Compare release
+assets against `SHA256SUMS` and their source commit against `BUILD-INFO.md`.
+Read [verification guidance](../docs/releases/verification.md) and the
+[release limits](../docs/releases/release-notes-2026.36.1.md), including signing
+status and Debian companion omissions. The historical `v1.0.0` tag remains
+source-only and unchanged.

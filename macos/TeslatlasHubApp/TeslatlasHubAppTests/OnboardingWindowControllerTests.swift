@@ -57,7 +57,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let cases: [(String, NSSize)] = [
             ("welcome", NSSize(width: 485, height: 282)),
             ("choose", NSSize(width: 485, height: 349)),
-            ("migration", NSSize(width: 485, height: 393)),
+            ("migration", NSSize(width: 485, height: 455)),
             ("migration-connected", NSSize(width: 485, height: 271)),
             ("verify", NSSize(width: 485, height: 498)),
             ("finish", NSSize(width: 485, height: 280))
@@ -277,6 +277,14 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testCorrespondingSourceURLPreservesPublishedTagsAndPinsStableSource() throws {
+        XCTAssertEqual(
+            HubRelease.correspondingSourceURL(for: HubRelease.fallbackVersion)?.absoluteString,
+            "https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v2026.36.1"
+        )
+        XCTAssertEqual(
+            HubRelease.correspondingSourceURL(for: "2026.36.1")?.absoluteString,
+            "https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v2026.36.1"
+        )
         XCTAssertEqual(
             HubRelease.correspondingSourceURL(for: "1.0.0-beta.1")?.absoluteString,
             "https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1"
@@ -670,9 +678,9 @@ final class OnboardingWindowControllerTests: XCTestCase {
             $0.stringValue == "Your own Tesla telemetry collector, running privately on this Mac."
         })
         XCTAssertEqual(title.alignment, .left)
-        XCTAssertEqual(title.font?.pointSize, 17.5)
+        XCTAssertEqual(title.font?.pointSize, 18)
         XCTAssertEqual(subtitle.alignment, .left)
-        XCTAssertEqual(subtitle.font?.pointSize, 12)
+        XCTAssertEqual(subtitle.font?.pointSize, 13)
 
         let featureIcons = imageViews(in: view).filter {
             $0.identifier?.rawValue == "onboarding.welcome.feature-icon"
@@ -691,7 +699,8 @@ final class OnboardingWindowControllerTests: XCTestCase {
             .first { $0.title == "Continue" })
         XCTAssertNil(continueButton.image)
         XCTAssertEqual(continueButton.controlSize, .regular)
-        XCTAssertEqual(continueButton.frame.width, 101, accuracy: 0.5)
+        let titleWidth = (continueButton.title as NSString).size(withAttributes: [.font: HubTypography.action]).width
+        XCTAssertGreaterThanOrEqual(continueButton.frame.width, titleWidth + 24)
     }
 
     func testWelcomeHeaderAndFooterUseTranslatedChromeGeometry() throws {
@@ -728,7 +737,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             ("provider", 349),
             ("fleet", 455),
             ("legacy", 390),
-            ("migration", 393),
+            ("migration", 455),
             ("verify", 498),
             ("finish", 280)
         ]
@@ -844,7 +853,10 @@ final class OnboardingWindowControllerTests: XCTestCase {
         })
         XCTAssertGreaterThan(server.frame.width, 250)
         XCTAssertGreaterThan(user.frame.width, 350)
-        XCTAssertGreaterThan(key.frame.width, 350)
+        XCTAssertGreaterThan(key.frame.width, 250)
+        let chooser = try XCTUnwrap(buttons(in: root).first { $0.title == "Choose Key…" })
+        XCTAssertGreaterThanOrEqual(chooser.frame.minX - key.frame.maxX, 8)
+        XCTAssertLessThanOrEqual(chooser.frame.maxX, try XCTUnwrap(key.superview).bounds.maxX)
         XCTAssertGreaterThan(try XCTUnwrap(popups(in: root).first).frame.width, 350)
         let connect = try XCTUnwrap(buttons(in: root).first { $0.title == "Connect to Server" })
         XCTAssertFalse(connect.isEnabled)
@@ -913,7 +925,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(text.contains {
             $0.localizedCaseInsensitiveContains("normal server account")
         })
-        XCTAssertFalse(buttons(in: view).contains { $0.title == "Choose Key…" })
+        XCTAssertTrue(buttons(in: view).contains { $0.title == "Choose Key…" })
         let sudo = try XCTUnwrap(buttons(in: view).first {
             $0.accessibilityLabel() == "This user needs sudo to read the TeslaMate database"
         })

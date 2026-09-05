@@ -174,6 +174,133 @@ fn established_drive_keeps_owner_api_fallback_when_stream_fails() {
 }
 
 #[test]
+fn repeated_stream_outage_preserves_successful_fallback_cadence() {
+    for (phase, interval) in [
+        (PollPhase::Driving, 5),
+        (PollPhase::Charging, 10),
+        (PollPhase::Online, 75),
+    ] {
+        let now = Instant::now();
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+        scheduler.pre_online_power(id, Some(1), now);
+        scheduler.vehicle_succeeded(id, phase, false, now);
+        scheduler.stream_unhealthy(id, now);
+        scheduler.vehicle_succeeded(id, phase, false, now);
+
+        for seconds in 1..interval {
+            let at = now + Duration::from_secs(seconds);
+            let StreamOutage::Active(status) = scheduler.stream_unhealthy(id, at) else {
+                panic!("outage remains observable");
+            };
+            assert!(!status.owner_api_fallback_scheduled);
+            assert_eq!(status.phase, phase);
+            assert!(scheduler.due_vehicles(at).is_empty());
+        }
+        assert_eq!(
+            scheduler.due_vehicles(now + Duration::from_secs(interval)),
+            vec![id]
+        );
+    }
+}
+
+#[test]
+fn repeated_stream_outage_preserves_owner_api_retry_deadline() {
+    for (error, delay) in [
+        (OwnerApiError::RequestTimeout, 75),
+        (
+            OwnerApiError::RateLimited {
+                retry_after_seconds: 120,
+            },
+            120,
+        ),
+    ] {
+        let now = Instant::now();
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+        let id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+        scheduler.pre_online_power(id, Some(0), now);
+        scheduler.vehicle_succeeded(id, PollPhase::Online, false, now);
+        scheduler.stream_unhealthy(id, now);
+        scheduler.vehicle_failed_for_error(id, &CollectorError::OwnerApi(error), now);
+
+        for seconds in 1..delay {
+            let at = now + Duration::from_secs(seconds);
+            scheduler.stream_unhealthy(id, at);
+            assert!(scheduler.due_vehicles(at).is_empty());
+        }
+        assert_eq!(
+            scheduler.due_vehicles(now + Duration::from_secs(delay)),
+            vec![id]
+        );
+    }
+}
+
+#[test]
+fn repeated_stream_offline_preserves_state_retry_and_data_backoff() {
+    let now = Instant::now();
+    let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+    let id = vehicle.id;
+    let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+    scheduler.accept_discovery(vec![vehicle], now);
+    scheduler.pre_online_power(id, Some(0), now);
+    scheduler.vehicle_succeeded(id, PollPhase::Online, false, now);
+    scheduler.stream_unhealthy(id, now);
+    scheduler.schedule_offline_state_fetch(id, now);
+    assert_eq!(scheduler.due_offline_state_vehicles(now), vec![id]);
+    scheduler.offline_state_failed_for_error(
+        id,
+        &CollectorError::OwnerApi(OwnerApiError::RateLimited {
+            retry_after_seconds: 120,
+        }),
+        now,
+    );
+
+    for seconds in 1..120 {
+        let at = now + Duration::from_secs(seconds);
+        scheduler.stream_unhealthy(id, at);
+        scheduler.schedule_offline_state_fetch(id, at);
+        assert!(scheduler.due_offline_state_vehicles(at).is_empty());
+        assert!(scheduler.due_vehicles(at).is_empty());
+    }
+    assert_eq!(
+        scheduler.due_offline_state_vehicles(now + Duration::from_secs(120)),
+        vec![id]
+    );
+    assert_eq!(
+        scheduler.due_vehicles(now + Duration::from_secs(120)),
+        vec![id]
+    );
+}
+
+#[test]
+fn stream_outage_diagnostics_do_not_claim_fallback_through_live_power_gate() {
+    let now = Instant::now();
+    let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
+    let id = vehicle.id;
+    let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+    scheduler.accept_discovery(vec![vehicle], now);
+    let StreamOutage::Active(status) = scheduler.stream_unhealthy(id, now) else {
+        panic!("outage status");
+    };
+    assert!(status.live_power_gate);
+    assert!(!status.owner_api_fallback_scheduled);
+    assert!(scheduler.due_vehicles(now).is_empty());
+
+    scheduler.pre_online_power(id, None, now);
+    let after_deadline = now + Duration::from_secs(31);
+    let StreamOutage::Active(status) = scheduler.stream_unhealthy(id, after_deadline) else {
+        panic!("outage status");
+    };
+    assert!(status.live_power_gate);
+    assert!(!status.owner_api_fallback_scheduled);
+    assert!(scheduler.due_vehicles(after_deadline).is_empty());
+}
+
+#[test]
 fn nil_power_pre_online_stream_remains_gated_after_deadline() {
     let now = Instant::now();
     let asleep = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "asleep");
@@ -460,11 +587,17 @@ fn stream_health_switches_between_streaming_and_fallback_sleep_cadence() {
     let fallback_at = streaming_idle + Duration::from_secs(1);
     scheduler.stream_unhealthy(vehicle_id, fallback_at);
     assert!(!scheduler.vehicles[&vehicle_id].stream_healthy);
-    assert!(!scheduler.vehicles[&vehicle_id].suspended);
-    assert!(scheduler.due_vehicles(fallback_at).contains(&vehicle_id));
+    assert!(scheduler.vehicles[&vehicle_id].suspended);
+    assert!(scheduler.due_vehicles(fallback_at).is_empty());
+    assert_eq!(
+        scheduler.vehicles[&vehicle_id].next_poll,
+        streaming_idle + Duration::from_secs(600)
+    );
     assert!(!scheduler.requires_live_stream_power_gate(vehicle_id));
-    scheduler.vehicle_succeeded(vehicle_id, PollPhase::Online, false, fallback_at);
-    let fallback_idle = fallback_at + Duration::from_secs(15 * 60);
+    let fallback_poll = streaming_idle + Duration::from_secs(600);
+    assert_eq!(scheduler.due_vehicles(fallback_poll), vec![vehicle_id]);
+    scheduler.vehicle_succeeded(vehicle_id, PollPhase::Online, false, fallback_poll);
+    let fallback_idle = fallback_poll + Duration::from_secs(15 * 60);
     let suspended = scheduler
         .vehicle_succeeded(vehicle_id, PollPhase::Online, true, fallback_idle)
         .expect("unhealthy stream uses owner polling sleep threshold");
@@ -472,6 +605,14 @@ fn stream_health_switches_between_streaming_and_fallback_sleep_cadence() {
     assert_eq!(
         scheduler.vehicles[&vehicle_id].next_poll,
         fallback_idle + Duration::from_secs(21 * 60)
+    );
+
+    scheduler.stream_unhealthy(vehicle_id, fallback_idle + Duration::from_millis(500));
+    assert!(scheduler.vehicles[&vehicle_id].suspended);
+    assert!(
+        scheduler
+            .due_vehicles(fallback_idle + Duration::from_millis(500))
+            .is_empty()
     );
 
     let recovered_at = fallback_idle + Duration::from_secs(1);

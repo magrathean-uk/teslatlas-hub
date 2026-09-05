@@ -143,6 +143,12 @@ assert_before_fixed 'if [ -f "$STATE_DIRECTORY/was-loaded" ]; then' '    stop_lo
 /usr/bin/grep -A1 '<key>ThrottleInterval</key>' "$PLIST" \
     | /usr/bin/grep -Fq '<integer>30</integer>' \
     || fail "LaunchAgent restart failures are not throttled"
+/usr/libexec/PlistBuddy -c 'Print :KeepAlive:SuccessfulExit' "$PLIST" \
+    | /usr/bin/grep -qx false \
+    || fail "LaunchAgent does not stop retrying successful configuration blocks"
+/usr/libexec/PlistBuddy -c 'Print :KeepAlive:SuccessfulExit' "$CLI_PLIST" \
+    | /usr/bin/grep -qx false \
+    || fail "CLI LaunchAgent does not stop retrying successful configuration blocks"
 /usr/bin/grep -Fq '<string>--stdout-log</string>' "$PLIST" \
     || fail "LaunchAgent does not pass stdout log to the supervisor"
 /usr/bin/grep -Fq '<string>--stderr-log</string>' "$PLIST" \
@@ -407,6 +413,34 @@ SUPERVISOR_FUNCTIONS="$TEST_ROOT/supervisor-functions.sh"
     "$SUPERVISOR" >"$SUPERVISOR_FUNCTIONS"
 # shellcheck source=/dev/null
 . "$SUPERVISOR_FUNCTIONS"
+
+config_fixture="$TEST_ROOT/config.toml"
+[ "$(user_file_status "$config_fixture" "$(/usr/bin/id -u)")" = missing ] \
+    || fail "missing configuration is not classified"
+/bin/ln -s "$TEST_ROOT/absent-config" "$config_fixture"
+[ "$(user_file_status "$config_fixture" "$(/usr/bin/id -u)")" = symlink ] \
+    || fail "configuration symlink is not classified"
+/bin/rm "$config_fixture"
+/usr/bin/printf '%s\n' '[database]' >"$config_fixture"
+/bin/chmod 0644 "$config_fixture"
+[ "$(user_file_status "$config_fixture" "$(/usr/bin/id -u)")" = unsafe_permissions ] \
+    || fail "unsafe configuration permissions are not classified"
+/bin/chmod 0600 "$config_fixture"
+[ "$(user_file_status "$config_fixture" "$(( $(/usr/bin/id -u) + 1 ))")" = wrong_owner ] \
+    || fail "wrong configuration owner is not classified"
+/bin/chmod 0000 "$config_fixture"
+[ "$(user_file_status "$config_fixture" "$(/usr/bin/id -u)")" = unreadable ] \
+    || fail "mode 000 configuration is not blocked as unreadable"
+configuration_blocked "$config_fixture" 2>"$TEST_ROOT/config-blocked-000.err" \
+    || fail "mode 000 configuration block is not a clean supervisor exit"
+/bin/chmod 0200 "$config_fixture"
+[ "$(user_file_status "$config_fixture" "$(/usr/bin/id -u)")" = unreadable ] \
+    || fail "write-only configuration is not blocked as unreadable"
+configuration_blocked "$config_fixture" 2>"$TEST_ROOT/config-blocked-200.err" \
+    || fail "write-only configuration block is not a clean supervisor exit"
+/bin/chmod 0600 "$config_fixture"
+[ "$(user_file_status "$config_fixture" "$(/usr/bin/id -u)")" = safe ] \
+    || fail "private regular configuration is not admitted after correction"
 single_token="$TEST_ROOT/fleet bearer # literal"
 printf '%s\n' '[collector.fleet_telemetry]' \
     "hostname = 'telemetry.example.invalid'" \

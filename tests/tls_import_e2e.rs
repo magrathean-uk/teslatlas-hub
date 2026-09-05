@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Mac-local TLS end-to-end: claim → vehicle → signed manifest → pack stream
-//! with Range resume. Drives the shipped server and pack contracts without
-//! systemd, Docker, or a Debian VM.
+//! Loopback TLS end-to-end: claim → vehicle → signed manifest → pack stream
+//! with Range resume. Runs both the router and the real native Hub executable
+//! without systemd, Docker, provider credentials, or a live vehicle.
 
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, Command, Stdio},
     time::Duration,
 };
 
 use axum_server::tls_rustls::RustlsConfig;
+use base64::Engine;
+use ed25519_dalek::Verifier;
 use reqwest::{
     Client,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, RANGE},
@@ -24,7 +26,7 @@ use teslatlas_hub::{
         ProjectionBinding, ProjectionCar, ProjectionDrive, ProjectionPackRequest,
         ProjectionPackWriter, ProjectionPosition, ProjectionSnapshot,
     },
-    protocol::{CursorKey, SequenceRange},
+    protocol::{CursorKey, SequenceRange, Sha256Digest},
     server::paired_router,
 };
 use tokio::sync::oneshot;
@@ -61,6 +63,40 @@ async fn claim_manifest_and_range_resume_over_real_tls() {
     let base = format!("https://127.0.0.1:{}", addr.port());
     wait_until_ready(&client, &base).await;
 
+    assert_pairing_and_pack_transfer(
+        &client,
+        &base,
+        &published,
+        invitation.pairing_id,
+        invitation.secret(),
+    )
+    .await;
+    let _ = shutdown_tx.send(());
+    let _ = server.await;
+}
+
+async fn assert_pairing_and_pack_transfer(
+    client: &Client,
+    base: &str,
+    published: &Published,
+    pairing_id: Uuid,
+    pairing_secret: &str,
+) {
+    for path in [
+        "/v1/vehicles".to_owned(),
+        format!("/v1/vehicles/{}/sync/manifest", published.vehicle_id),
+    ] {
+        assert_eq!(
+            client
+                .get(format!("{base}{path}"))
+                .send()
+                .await
+                .expect("unauthenticated request")
+                .status(),
+            reqwest::StatusCode::UNAUTHORIZED,
+        );
+    }
+
     // Capabilities publish the manifest verifying key.
     let capabilities = read_json(
         client
@@ -83,16 +119,13 @@ async fn claim_manifest_and_range_resume_over_real_tls() {
 
     // One-use claim.
     let claim_body = serde_json::json!({
-        "secret": invitation.secret(),
+        "secret": pairing_secret,
         "device_name": "Mac Simulator E2E"
     })
     .to_string();
     let claim = read_json(
         client
-            .post(format!(
-                "{base}/v1/pairings/{}/claim",
-                invitation.pairing_id
-            ))
+            .post(format!("{base}/v1/pairings/{}/claim", pairing_id))
             .header(CONTENT_TYPE, "application/json")
             .body(claim_body.clone())
             .send()
@@ -107,10 +140,7 @@ async fn claim_manifest_and_range_resume_over_real_tls() {
 
     // Replay of the same secret must fail closed.
     let replay = client
-        .post(format!(
-            "{base}/v1/pairings/{}/claim",
-            invitation.pairing_id
-        ))
+        .post(format!("{base}/v1/pairings/{}/claim", pairing_id))
         .header(CONTENT_TYPE, "application/json")
         .body(claim_body)
         .send()
@@ -159,6 +189,24 @@ async fn claim_manifest_and_range_resume_over_real_tls() {
         .to_owned();
     assert!(!signature.is_empty());
     let raw_manifest = manifest_response.bytes().await.expect("manifest body");
+    let public_key: [u8; 32] = hex::decode(
+        capabilities["manifestPublicKey"]
+            .as_str()
+            .expect("public key"),
+    )
+    .expect("hex public key")
+    .try_into()
+    .expect("32-byte public key");
+    let signature = base64::engine::general_purpose::STANDARD
+        .decode(&signature)
+        .expect("base64 signature");
+    ed25519_dalek::VerifyingKey::from_bytes(&public_key)
+        .expect("verifying key")
+        .verify(
+            &raw_manifest,
+            &ed25519_dalek::Signature::from_slice(&signature).expect("signature"),
+        )
+        .expect("manifest signature authenticates downloaded bytes");
     let manifest: serde_json::Value = serde_json::from_slice(&raw_manifest).expect("manifest json");
     assert_eq!(
         manifest["vehicle_id"].as_str().expect("vehicle"),
@@ -176,6 +224,15 @@ async fn claim_manifest_and_range_resume_over_real_tls() {
 
     // Full pack download.
     let pack_url = format!("{base}/v1/packs/sha256/{pack_sha}.sqlite.zst");
+    assert_eq!(
+        client
+            .get(&pack_url)
+            .send()
+            .await
+            .expect("unauthenticated pack request")
+            .status(),
+        reqwest::StatusCode::UNAUTHORIZED,
+    );
     let full = client
         .get(&pack_url)
         .header(AUTHORIZATION, format!("Bearer {token}"))
@@ -233,9 +290,162 @@ async fn claim_manifest_and_range_resume_over_real_tls() {
         .await
         .expect("wrong vehicle");
     assert_eq!(wrong.status(), reqwest::StatusCode::NOT_FOUND);
+}
 
-    let _ = shutdown_tx.send(());
-    let _ = server.await;
+/// Run against Cargo's real executable, or a native release/package artifact:
+/// TESLATLAS_HUB_SMOKE_BINARY=/absolute/path/teslatlas-hub cargo test --test
+/// tls_import_e2e packaged_binary_serves_seeded_snapshot -- --exact
+#[tokio::test]
+async fn packaged_binary_serves_seeded_snapshot() {
+    use std::os::unix::fs::PermissionsExt;
+    use teslatlas_hub::{
+        credentials::OwnerTokens,
+        db::TeslaMateLegacyTokenStore,
+        teslamate_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
+        teslamate_token::encrypt_legacy_owner_tokens,
+    };
+
+    let root = tempfile::tempdir().expect("isolated smoke root");
+    let data_dir = root.path().join("hub");
+    let store = HubStore::initialize(&data_dir).expect("smoke store");
+    let cursor_key = load_or_create_cursor_key(&data_dir).expect("durable synthetic signing key");
+    let published = publish_typed_snapshot(&store, &cursor_key).expect("synthetic snapshot");
+    // macOS Serve preflight requires a usable encrypted pair even when the
+    // collector is disabled. These literals have no authority at any provider.
+    let tokens = OwnerTokens::from_file_bytes(
+        zeroize::Zeroizing::new(b"smoke-test-not-a-tesla-access-token".to_vec()),
+        zeroize::Zeroizing::new(b"smoke-test-not-a-tesla-refresh-token".to_vec()),
+    )
+    .expect("synthetic tokens");
+    let key = b"smoke-test-local-encryption-key";
+    let (access, refresh) =
+        encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt synthetic pair");
+    let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("synthetic pair");
+    replace_key_and_tokens(&data_dir, &store, key, &stored).expect("seed synthetic pair");
+    let invitation = store
+        .create_pairing("binary-smoke", 1_000, i64::MAX)
+        .expect("pairing");
+    store
+        .checkpoint_catalogue_for_immutable_read()
+        .expect("preflight snapshot");
+    drop(store);
+
+    let (cert, private_key) = write_self_signed_localhost_cert(root.path());
+    let port_reservation =
+        std::net::TcpListener::bind("127.0.0.1:0").expect("ephemeral loopback port");
+    let address = port_reservation.local_addr().expect("port");
+    let base = format!("https://{address}");
+    // A bound, unserved loopback endpoint catches any accidental Owner API call.
+    let owner_api_sink = std::net::TcpListener::bind("127.0.0.1:0").expect("Owner API sink");
+    owner_api_sink
+        .set_nonblocking(true)
+        .expect("nonblocking sink");
+    let config = root.path().join("config.toml");
+    fs::write(&config, format!(
+        "data_dir = {data_dir:?}\nbind = {address:?}\n\
+         [tls]\ncertificate_path = {cert:?}\nprivate_key_path = {private_key:?}\npublic_url = {base:?}\n\
+         [collector]\ninterval_seconds = 0\nowner_api_base_url = {owner_api:?}\n\
+         [collector.legacy_auth]\nenabled = false\n\
+         [terrain]\nenabled = false\n[geocoder]\nenabled = false\n",
+        data_dir = data_dir.to_str().expect("UTF-8 path"),
+        address = address.to_string(),
+        cert = cert.to_str().expect("UTF-8 cert path"),
+        private_key = private_key.to_str().expect("UTF-8 key path"),
+        owner_api = format!("https://{}/", owner_api_sink.local_addr().expect("sink address")),
+    )).expect("smoke config");
+    fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).expect("private config");
+    let binary = std::env::var_os("TESLATLAS_HUB_SMOKE_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_teslatlas-hub")));
+    let log_path = root.path().join("serve.log");
+    let log = fs::File::create(&log_path).expect("process log");
+    drop(port_reservation);
+    let mut process = SmokeProcess(
+        Command::new(&binary)
+            .arg("--config")
+            .arg(&config)
+            .arg("serve")
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(log.try_clone().expect("log clone")))
+            .stderr(Stdio::from(log))
+            .spawn()
+            .expect("launch smoke binary"),
+    );
+    let client = pinned_https_client(&cert);
+    let mut healthy = false;
+    for _ in 0..100 {
+        if let Some(status) = process.0.try_wait().expect("child status") {
+            panic!(
+                "smoke binary exited {status}: {}",
+                fs::read_to_string(&log_path).unwrap_or_default()
+            );
+        }
+        if client
+            .get(format!("{base}/healthz"))
+            .timeout(Duration::from_millis(250))
+            .send()
+            .await
+            .is_ok_and(|reply| reply.status().is_success())
+        {
+            healthy = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        healthy,
+        "binary never became healthy: {}",
+        fs::read_to_string(&log_path).unwrap_or_default()
+    );
+    let ready = client
+        .get(format!("{base}/readyz"))
+        .send()
+        .await
+        .expect("readiness");
+    assert_eq!(ready.status(), reqwest::StatusCode::OK);
+    assert_eq!(read_json(ready).await["status"], "ready");
+    assert_pairing_and_pack_transfer(
+        &client,
+        &base,
+        &published,
+        invitation.pairing_id,
+        invitation.secret(),
+    )
+    .await;
+    assert_eq!(
+        owner_api_sink
+            .accept()
+            .expect_err("disabled collector must not contact Owner API")
+            .kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+
+    let pid = rustix::process::Pid::from_raw(process.0.id() as i32).expect("child pid");
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).expect("graceful SIGTERM");
+    let mut stopped = false;
+    for _ in 0..100 {
+        if let Some(status) = process.0.try_wait().expect("shutdown status") {
+            assert!(status.success(), "binary shutdown failed: {status}");
+            stopped = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(stopped, "binary did not stop after SIGTERM");
+    assert!(
+        std::net::TcpStream::connect(address).is_err(),
+        "listener outlived binary"
+    );
+}
+
+struct SmokeProcess(Child);
+
+impl Drop for SmokeProcess {
+    fn drop(&mut self) {
+        // Test panics must never leave a resident Hub behind.
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }
 
 async fn read_json(response: reqwest::Response) -> serde_json::Value {
@@ -256,7 +466,8 @@ fn publish_typed_snapshot(
         &SourceDescriptor::new("owner_api_compat", "local_installation_v1"),
         now,
     )?;
-    let mut descriptor = VehicleDescriptor::new(source.source_id, "9");
+    let mut descriptor =
+        VehicleDescriptor::new(source.source_id, "9").with_tesla_identity(Some(9), None);
     descriptor.display_name = Some("E2E Model 3".to_owned());
     descriptor.vin = Some("5YJ3E1EA7KF000001".to_owned());
     let vehicle = store.register_vehicle(&descriptor, now)?;
@@ -268,7 +479,7 @@ fn publish_typed_snapshot(
             name: "E2E Model 3".to_owned(),
             model: "model3".to_owned(),
             vin: Some("5YJ3E1EA7KF000001".to_owned()),
-            source_eid: None,
+            source_eid: Some(9),
             source_vid: None,
             trim_badging: None,
             marketing_name: None,
@@ -397,9 +608,15 @@ fn publish_typed_snapshot(
         },
         snapshot: &snapshot,
     };
-    let built = ProjectionPackWriter::new(store.packs_dir()).write_full_snapshot(&request)?;
-    let manifest = request.signed_manifest(&built, cursor_key)?;
-    store.publish_manifest(&manifest)?;
+    let built = ProjectionPackWriter::new(store.packs_dir())
+        .write_full_snapshot_with_states_and_updates(&request, &[], &[])?;
+    let manifest = request.signed_manifest_with_states_and_updates(&built, &[], &[], cursor_key)?;
+    store.finalize_import_snapshot_with_binding(
+        &manifest,
+        Sha256Digest::from_bytes([0x5A; 32]),
+        &[],
+        &request.binding,
+    )?;
     Ok(Published {
         vehicle_id: vehicle.vehicle_id,
     })
@@ -408,28 +625,11 @@ fn publish_typed_snapshot(
 fn write_self_signed_localhost_cert(dir: &Path) -> (PathBuf, PathBuf) {
     let cert = dir.join("leaf.pem");
     let key = dir.join("leaf-key.pem");
-    let status = Command::new("openssl")
-        .args([
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-sha256",
-            "-days",
-            "1",
-            "-nodes",
-            "-keyout",
-            key.to_str().expect("key path"),
-            "-out",
-            cert.to_str().expect("cert path"),
-            "-subj",
-            "/CN=localhost",
-            "-addext",
-            "subjectAltName=DNS:localhost,IP:127.0.0.1",
-        ])
-        .status()
-        .expect("openssl available on Mac");
-    assert!(status.success(), "openssl failed to mint local TLS leaf");
+    let identity =
+        rcgen::generate_simple_self_signed(vec!["localhost".to_owned(), "127.0.0.1".to_owned()])
+            .expect("local TLS identity");
+    fs::write(&cert, identity.cert.pem()).expect("certificate");
+    fs::write(&key, identity.signing_key.serialize_pem()).expect("private key");
     // Restrict key mode the way production expects for private material.
     #[cfg(unix)]
     {
@@ -492,6 +692,7 @@ async fn wait_until_ready(client: &Client, base: &str) {
 }
 
 fn pinned_https_client(cert_path: &Path) -> Client {
+    teslatlas_hub::crypto::install_default_provider();
     // For this Mac e2e proof we accept the generated local leaf. Production
     // iOS pins the SHA-256 fingerprint from the pairing URI instead.
     let pem = fs::read(cert_path).expect("read cert");
@@ -502,8 +703,6 @@ fn pinned_https_client(cert_path: &Path) -> Client {
         .redirect(Policy::none())
         .timeout(Duration::from_secs(10))
         .add_root_certificate(cert)
-        // Self-signed local leaf for Mac e2e; iOS pins by SHA-256 instead.
-        .danger_accept_invalid_certs(true)
         .build()
         .expect("client")
 }

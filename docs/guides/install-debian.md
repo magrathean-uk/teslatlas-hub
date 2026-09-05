@@ -1,6 +1,11 @@
 # Install on Debian
 
-Teslatlas Hub v1.0.0 supports Debian 13 on amd64 and ARM64.
+Teslatlas Hub 2026.36.1 targets Debian 13 on amd64 and ARM64. The published
+packages contain core/legacy collection without Fleet command-proxy or Fleet
+Telemetry companions. They are not a complete Fleet installation. Read the
+[release limits](../releases/release-notes-2026.36.1.md) and
+[verify the package](../releases/verification.md) before installing. For an
+existing deployment, follow [Upgrade and rollback](../releases/upgrade.md).
 
 ## Select the package
 
@@ -11,7 +16,7 @@ dpkg --print-architecture
 ## Install
 
 ```sh
-sudo dpkg -i "teslatlas-hub_1.0.0_$(dpkg --print-architecture).deb"
+sudo dpkg -i "teslatlas-hub_2026.36.1_$(dpkg --print-architecture).deb"
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml bootstrap
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
@@ -38,8 +43,9 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --all-vehicles
 ```
 
-For Fleet API, use the bounded standard-input flow in
-[Fleet setup](fleet-setup.md).
+The [Fleet setup](fleet-setup.md) guide applies to installations with separately
+verified compatible Fleet companions; those companions are absent from these
+2026.36.1 Debian packages.
 
 ## Start and inspect
 
