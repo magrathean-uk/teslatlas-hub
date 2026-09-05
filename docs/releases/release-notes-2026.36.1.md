@@ -1,5 +1,9 @@
 # Teslatlas Hub 2026.36.1
 
+Historical artifact record: GitHub releases and their downloads were withdrawn
+on 5 September 2026. The source tag remains available. For current fixes,
+[build from main](../guides/build-from-source.md).
+
 The first Hub calendar release uses `YEAR.WEEK.REVISION`, with source tag
 `v2026.36.1`. Historical `v1.0.0` and prerelease tags remain unchanged.
 

@@ -699,7 +699,7 @@ final class MainWindowController: NSWindowController {
             $0.removeFromSuperview()
         }
         if snapshot.activity.isEmpty {
-            let empty = NSTextField(labelWithString: "No activity yet.")
+            let empty = NSTextField(labelWithString: "No recent app actions. See Logs for collector activity.")
             empty.textColor = .secondaryLabelColor
             empty.heightAnchor.constraint(equalToConstant: 30).isActive = true
             activityStack.addArrangedSubview(empty)

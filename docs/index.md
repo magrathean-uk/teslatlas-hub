@@ -5,12 +5,9 @@ Debian 13 on amd64 or ARM64.
 
 Created by György Bolyki. Published and maintained by MAGRATHEAN UK LTD.
 
-Read the [2026.36.1 release notes](releases/release-notes-2026.36.1.md) before
-installing: Debian packages contain core/legacy functionality without Fleet
-companions. The Mac app is ad-hoc signed and its installer is unsigned and
-unnotarised; use the combined package because in-app service installation and
-update are unavailable. Package hashes and
-completed checks belong to the release's `SHA256SUMS` and `BUILD-INFO.md`.
+Hub is source-only. [Build your own package](guides/build-from-source.md)
+before installing. GitHub releases and downloadable assets are no longer
+provided; existing source tags and historical notes remain available.
 
 ## First installation
 
@@ -22,8 +19,7 @@ completed checks belong to the release's `SHA256SUMS` and `BUILD-INFO.md`.
    after configuring a secure connection.
 4. Keep a [recovery copy](operations/backup-and-recovery.md).
 
-Looking for a download? Open the
-[release page](https://github.com/magrathean-uk/teslatlas-hub/releases/latest).
+Looking for an installer? Follow [Build from source](guides/build-from-source.md).
 If something fails, start with [Troubleshooting](guides/troubleshooting.md).
 
 ## Start here

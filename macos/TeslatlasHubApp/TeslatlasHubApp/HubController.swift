@@ -1211,6 +1211,19 @@ final class HubController {
         }
     }
 
+    private func reuseOrUpdateInstalledService(
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        installedServiceMatchesBundledVersion { matches in
+            if matches {
+                HubAppLog.shared.record("installed_version.reused", category: "service")
+                completion(.success("Matching service already installed"))
+            } else {
+                self.installer.install(completion: completion)
+            }
+        }
+    }
+
     var hasPendingMigrationHandover: Bool {
         !previewMode && FileManager.default.fileExists(atPath: migrationHandoverMarker.path)
     }
@@ -1867,10 +1880,9 @@ final class HubController {
                     if case let .failure(error) = stopResult { finish(.failure(error)) }
                     return
                 }
-                // Update the package before setup. Only the newly installed binary may
-                // open and migrate the database for Fleet credentials. Keep the
-                // existing valid provider config through package preflight.
-                self.installer.install { installResult in
+                // Reuse the matching package; only upgrade when versions differ.
+                // Keep the existing provider config through any package preflight.
+                self.reuseOrUpdateInstalledService { installResult in
                     switch installResult {
                     case .success:
                         do {
@@ -2120,9 +2132,9 @@ final class HubController {
                     if case let .failure(error) = stopResult { finish(.failure(error)) }
                     return
                 }
-                // Preserve the old provider and its credentials through package
-                // verification. Only the installed current binary performs setup.
-                self.installer.install { installResult in
+                // Preserve the old provider through any required package upgrade.
+                // A matching installed service needs no installer invocation.
+                self.reuseOrUpdateInstalledService { installResult in
                     switch installResult {
                     case .success:
                         do {
@@ -2652,11 +2664,11 @@ final class HubController {
 
     private func performOnboardingChecks(expectRunning: Bool,
                                          completion: @escaping (Result<[HubOnboardingCheck], Error>) -> Void) {
-        refresh { [weak self] snapshot in
+        let finish: (Result<String, Error>) -> Void = { [weak self] doctorResult in
             guard let self else { return }
-            let runner = self.isServiceInstalled ? self.installedCommandRunner : self.commandRunner
-            runner.run(arguments: ["--config", self.configPath.path, "doctor"]) { doctorResult in
-                self.logs { logText in
+            self.logs { logText in
+                // Read readiness last, so the wizard and dashboard use the same current state.
+                self.refresh { snapshot in
                     let servicePassed = expectRunning
                         ? snapshot.health == .running
                         : snapshot.health == .stopped
@@ -2671,8 +2683,11 @@ final class HubController {
                     let doctorDetail: String
                     switch doctorResult {
                     case .success:
-                        doctorPassed = true
-                        doctorDetail = "Passed"
+                        doctorPassed = !expectRunning || servicePassed
+                        doctorDetail = expectRunning
+                            ? (servicePassed ? "Live readiness passed; full integrity check available in Diagnostics"
+                               : "Hub is not ready yet. Wait a moment, then run again.")
+                            : "Passed"
                     case let .failure(error):
                         doctorPassed = false
                         doctorDetail = Self.conciseDiagnostic(error.localizedDescription)
@@ -2724,6 +2739,14 @@ final class HubController {
                     }
                 }
             }
+        }
+        if expectRunning {
+            // Immutable doctor requires a stopped writer. Status opens the live database
+            // read-only and checks readiness without pausing collection or calling Tesla.
+            finish(.success(""))
+        } else {
+            let runner = isServiceInstalled ? installedCommandRunner : commandRunner
+            runner.run(arguments: ["--config", configPath.path, "doctor"], completion: finish)
         }
     }
 
@@ -2816,7 +2839,12 @@ final class HubController {
                 ("hub.err.log", folder.appendingPathComponent("hub.err.log"))
             ]
             let contents = files.compactMap { name, url in
-                Self.logTail(of: url, maximumBytes: maximumBytes).map { "== \(name) ==\n\($0)" }
+                Self.logTail(of: url, maximumBytes: maximumBytes).map { tail in
+                    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                    let modified = attributes?[.modificationDate] as? Date
+                    let timestamp = modified.map { ISO8601DateFormatter().string(from: $0) } ?? "unknown"
+                    return "File last written: \(timestamp). This file may contain historical errors, not current service status.\n== \(name) ==\n\(tail)"
+                }
             }
             let text = contents.isEmpty ? "No Hub logs are available yet.\n" : contents.joined(separator: "\n")
             DispatchQueue.main.async { completion(text) }

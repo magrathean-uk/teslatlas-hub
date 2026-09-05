@@ -6,15 +6,15 @@ connects to Hub to synchronise history.
 
 ## Choose your host
 
-| Host | Interface | Current download |
+| Host | Interface | Local build |
 |---|---|---|
 | Apple-silicon Mac, macOS 13+ | Native app and CLI | Combined installer with Fleet companions |
 | Debian 13, amd64 or arm64 | CLI and systemd | Core/Legacy package; no Fleet companions |
 
 Start with [Mac setup and everyday use](install-macos.md) or
-[Debian installation](install-debian.md). The current Mac installer is unsigned
-and unnotarised and may be blocked by macOS. Read the
-[release limitations](../releases/release-notes-2026.36.1.md) before downloading.
+[Debian installation](install-debian.md), after [building from source](build-from-source.md).
+No prebuilt releases are provided. Local Mac installers are unsigned and
+unnotarised by default and may be blocked by macOS.
 
 ## Choose a setup path
 
@@ -27,7 +27,7 @@ and unnotarised and may be blocked by macOS. Read the
 | Connection | What you need | Important boundary |
 |---|---|---|
 | Legacy | Existing Owner API access/refresh tokens, or the explicitly selected migration credential path | Only one service may refresh the token pair |
-| Fleet | A Tesla Developer application, account authorisation and configured Fleet companions | Not a complete installation in the current Debian downloads |
+| Fleet | A Tesla Developer application, account authorisation and configured Fleet companions | Not included in a core-only Debian build |
 
 Follow [Fleet setup](fleet-setup.md) for the prerequisites. The Mac wizard does
 not remove the developer-application and receiver requirements.

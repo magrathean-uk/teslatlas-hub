@@ -306,7 +306,7 @@ final class OnboardingHubControllerTests: XCTestCase {
         }
         wait(for: [verified], timeout: 2)
         XCTAssertEqual(events.values, [
-            "check", "service:stop", "migrate", "service:stop", "status", "doctor"
+            "check", "service:stop", "migrate", "service:stop", "doctor", "status"
         ])
 
         let acknowledged = expectation(description: "acknowledgement starts Hub")
@@ -318,7 +318,7 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertFalse(controller.hasPendingMigrationHandover)
         XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 60"))
         XCTAssertEqual(events.values, [
-            "check", "service:stop", "migrate", "service:stop", "status", "doctor",
+            "check", "service:stop", "migrate", "service:stop", "doctor", "status",
             "status", "service:start", "status"
         ])
     }

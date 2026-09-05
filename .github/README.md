@@ -7,7 +7,7 @@
 <p align="center">Collect your Tesla vehicle history on your own Mac or Debian host.</p>
 
 <p align="center">
-  <a href="https://github.com/magrathean-uk/teslatlas-hub/releases/latest">Download</a> ·
+  <a href="../docs/guides/build-from-source.md">Build from source</a> ·
   <a href="../docs/guides/getting-started.md">Get started</a> ·
   <a href="../docs/releases/migration.md">Move from TeslaMate</a> ·
   <a href="../docs/index.md">Documentation</a> ·
@@ -25,26 +25,19 @@ TeslaMate, Grafana or MQTT.
 *The actual AppKit interface rendered with fictional demonstration data. No
 personal account or vehicle data is shown.*
 
-## Download and install
+## Build and install
 
-Current release: **2026.36.1**. Download the package for your host:
+Hub is distributed as source. Prebuilt GitHub releases and installer downloads
+are no longer provided. Build your own package using the
+[source build guide](../docs/guides/build-from-source.md), then follow
+[Mac setup](../docs/guides/install-macos.md) or
+[Debian installation](../docs/guides/install-debian.md).
 
-| Host | Download | Included collection paths | Setup guide |
-|---|---|---|---|
-| macOS 13+, Apple silicon | [Mac installer](https://github.com/magrathean-uk/teslatlas-hub/releases/download/v2026.36.1/TeslatlasHub-2026.36.1-arm64.pkg) | Legacy and Fleet companions; Fleet configuration required | [Mac setup](../docs/guides/install-macos.md) |
-| Debian 13, ARM64 | [ARM64 package](https://github.com/magrathean-uk/teslatlas-hub/releases/download/v2026.36.1/teslatlas-hub_2026.36.1_arm64.deb) | Core/Legacy only | [Debian installation](../docs/guides/install-debian.md) |
-| Debian 13, x86-64 | [amd64 package](https://github.com/magrathean-uk/teslatlas-hub/releases/download/v2026.36.1/teslatlas-hub_2026.36.1_amd64.deb) | Core/Legacy only | [Debian installation](../docs/guides/install-debian.md) |
-
-**Current distribution limits:** the Mac app is ad-hoc signed and the installer
-is unsigned and unnotarised; macOS may block installation. Use the combined
-installer for upgrades, not the in-app service installer. Debian downloads do
-not include Fleet companions and must not replace a Fleet deployment without a
-separately verified companion plan. Do not disable system-wide security controls.
-
-[Verify downloads](../docs/releases/verification.md) before installing, and
-[back up before upgrading](../docs/releases/upgrade.md). The
-[release page](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v2026.36.1)
-includes checksums, build evidence and the full release limitations.
+Supported hosts are Apple-silicon macOS 13+ and Debian 13 on ARM64 or x86-64.
+Local Mac builds do not automatically gain trusted signing or notarisation;
+use the combined installer for initial service installation. The Debian
+core-only build does not include Fleet companions. Back up before upgrading,
+and do not disable system-wide security controls.
 
 ## What you can do
 
@@ -62,7 +55,7 @@ includes checksums, build evidence and the full release limitations.
 
 ## Your first setup
 
-1. **Install** the package for your host and open the Mac app, or follow the
+1. **Build and install** the package for your host and open the Mac app, or follow the
    Debian guide.
 2. **Connect or migrate.** Choose a new installation or bring supported
    TeslaMate history across. Fleet requires a developer application and

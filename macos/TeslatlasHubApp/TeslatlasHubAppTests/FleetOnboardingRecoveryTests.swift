@@ -45,7 +45,7 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         XCTAssertTrue(try configContents(in: home).contains("provider = \"fleet\""))
         XCTAssertTrue(configAtInstall.contains("provider = \"legacy\""))
         XCTAssertFalse(configAtInstall.contains("provider = \"fleet\""))
-        XCTAssertEqual(events.values, ["state", "service:stop", "install", "installed-setup"])
+        XCTAssertEqual(events.values, ["state", "service:stop", "command", "install", "installed-setup"])
     }
 
     func testInstalledInstallerFailureRestoresConfigAndRestartsLoadedService() throws {
@@ -76,7 +76,7 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         wait(for: [finished], timeout: 2)
 
         XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["state", "service:stop", "install", "service:start"])
+        XCTAssertEqual(events.values, ["state", "service:stop", "command", "install", "service:start"])
     }
 
     func testForwardOnlyInstallerFailureRestoresConfigAndLeavesOldServiceStopped() throws {
@@ -105,7 +105,7 @@ final class FleetOnboardingRecoveryTests: XCTestCase {
         wait(for: [finished], timeout: 2)
 
         XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["state", "service:stop", "install"])
+        XCTAssertEqual(events.values, ["state", "service:stop", "command", "install"])
     }
 
     func testFreshSetupFailureDoesNotStartService() throws {

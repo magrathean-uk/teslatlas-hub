@@ -16,7 +16,11 @@ and the inputs needed by the documented build helpers.
 
 ## Distribution status
 
-For 2026.36.1, the release's sanitised `BUILD-INFO.md` records the exact source
+Hub is now source-only. GitHub release pages and binary assets were withdrawn
+on 5 September 2026; source tags remain available for previously distributed
+versions. Current fixes are on `main`. Users can [build locally](../guides/build-from-source.md).
+
+For previously downloaded 2026.36.1 packages, the sanitised `BUILD-INFO.md` records the exact source
 commit and package scope. Compare it to the tag and use `SHA256SUMS` to verify
 distributed bytes. Packages must retain their applicable project and dependency
 legal material. Debian core-only packages omit Fleet companions; source and

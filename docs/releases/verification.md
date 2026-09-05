@@ -1,6 +1,11 @@
 # Verify a release
 
-## Verify 2026.36.1 downloads
+## Historical 2026.36.1 package verification
+
+GitHub release downloads are no longer provided. The instructions below apply
+only to previously retained packages and build records. For new installations,
+[build from source](../guides/build-from-source.md) and retain your own source
+commit, toolchain information and checksums.
 
 Download the package for your architecture, `SHA256SUMS`, and `BUILD-INFO.md`
 from the same `v2026.36.1` release. Check the build record's source commit,

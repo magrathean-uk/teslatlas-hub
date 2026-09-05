@@ -6,6 +6,36 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class HubControllerTests: XCTestCase {
+    func testLiveOnboardingUsesReadinessWithoutOfflineDoctorOrServiceMutation() throws {
+        for ready in [true, false] {
+            let home = try temporaryHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let folder = home.appendingPathComponent("Library/Logs/Teslatlas Hub")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data("started\n".utf8).write(to: folder.appendingPathComponent("hub.out.log"))
+            let runner = CommandMapRunner(responses: [
+                "status": .success("""
+                {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1024},"ready":\(ready),"provider":"legacy","vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Example"}],"credentials":{"present":true}}
+                """),
+                "doctor": .failure(HubActionError.commandFailed("hub catalogue changed during the immutable diagnostic check"))
+            ])
+            let events = EventRecorder()
+            let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+                serviceRunner: ScriptedService(events: events, loadState: .loaded),
+                homeDirectory: home, serviceInstalledOverride: true)
+            let done = expectation(description: "live checks complete")
+            controller.runOnboardingChecks(expectRunning: true) { result in
+                guard case let .success(checks) = result else { XCTFail("missing checks"); done.fulfill(); return }
+                XCTAssertEqual(checks.first { $0.title == "Service" }?.passed, ready)
+                XCTAssertEqual(checks.first { $0.title == "Diagnostics" }?.passed, ready)
+                done.fulfill()
+            }
+            wait(for: [done], timeout: 2)
+            XCTAssertEqual(runner.commands, ["status"])
+            XCTAssertFalse(events.values.contains { $0.contains("service:") })
+        }
+    }
+
     func testActionButtonsUseSharedStyleTokensWhenEnabledAndDisabled() {
         let flat = HubActionButton(title: "Action", target: nil, action: nil)
         flat.hubStyle = .flat
@@ -647,12 +677,16 @@ final class HubControllerTests: XCTestCase {
                                     atomically: true, encoding: .utf8)
         try "error event\n".write(to: folder.appendingPathComponent("hub.err.log"),
                                    atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 0)],
+            ofItemAtPath: folder.appendingPathComponent("hub.err.log").path)
         let controller = HubController(homeDirectory: home, serviceInstalledOverride: false)
         let finished = expectation(description: "logs loaded")
 
         controller.logs { text in
             XCTAssertTrue(text.contains("== hub.out.log ==\nnormal event"))
             XCTAssertTrue(text.contains("== hub.err.log ==\nerror event"))
+            XCTAssertTrue(text.contains("1970-01-01T00:00:00Z"))
+            XCTAssertTrue(text.contains("historical"))
             finished.fulfill()
         }
 
@@ -2057,7 +2091,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(events.values, [
             "service:stop", "install", "setup", "service:start", "command"
         ])
-        XCTAssertEqual(embedded.calls, 0)
+        XCTAssertEqual(embedded.calls, 1) // Read-only version probe; setup uses the installed binary.
         XCTAssertNotNil(installed.stdin)
         XCTAssertTrue(installed.arguments[0].contains("--all-vehicles"))
         XCTAssertEqual(installed.arguments.count, 2)
@@ -2096,7 +2130,7 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
-        XCTAssertEqual(events.values, ["service:stop", "install", "setup"])
+        XCTAssertEqual(events.values, ["service:stop", "command", "install", "setup"])
     }
 
     func testInstalledLegacyFailureKeepsPreviouslyStoppedHubStopped() throws {
@@ -2126,7 +2160,7 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
-        XCTAssertEqual(events.values, ["service:stop", "install", "setup"])
+        XCTAssertEqual(events.values, ["service:stop", "command", "install", "setup"])
     }
 
     func testInstalledLegacyStopFailureKeepsFleetConfigUnchanged() throws {
@@ -2188,7 +2222,7 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["service:stop", "install", "service:start"])
+        XCTAssertEqual(events.values, ["service:stop", "command", "install", "service:start"])
     }
 
     func testForwardOnlyInstallFailureLeavesNewServiceStopped() throws {
@@ -2222,7 +2256,7 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["service:stop", "install"])
+        XCTAssertEqual(events.values, ["service:stop", "command", "install"])
     }
 
     func testInstalledUnconfiguredLegacySetupRunsBeforePackagePreflight() throws {
@@ -2397,6 +2431,92 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
+    func testConnectedLegacyReusesMatchingServiceWithoutInstallerTrust() throws {
+        try assertConnectedAccountReusesService(provider: "legacy")
+    }
+
+    func testConnectedFleetReusesMatchingServiceWithoutInstallerTrust() throws {
+        try assertConnectedAccountReusesService(provider: "fleet")
+    }
+
+    private func assertConnectedAccountReusesService(provider: String) throws {
+        let events = EventRecorder()
+        let runner = VersionAwareRunner(events: events,
+            versionResult: .success("teslatlas-hub 2026.36.1\n"))
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        _ = try writeCollectorConfig(in: home, provider: "legacy")
+        let controller = HubController(commandRunner: runner,
+            installedCommandRunner: runner,
+            installer: ScriptedInstaller(events: events, result: .failure(
+                HubActionError.untrustedInstaller("signed release metadata is missing"))),
+            serviceRunner: ScriptedService(events: events, loadState: .unloaded),
+            homeDirectory: home, serviceInstalledOverride: true,
+            initialSnapshot: .previewRunning)
+        let finished = expectation(description: "connected account configured without reinstall")
+        let completion: (Result<Void, Error>) -> Void = { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            finished.fulfill()
+        }
+        if provider == "legacy" {
+            controller.configureTeslaAccount(tokens: TeslaAuthTokens(
+                accessToken: "test-access", refreshToken: "test-refresh"), completion: completion)
+        } else {
+            controller.configureFleetAccount(credentials: HubFleetSetupCredentials(
+                accessToken: "test-access", refreshToken: "test-refresh", clientID: "test-client",
+                region: "europe_middle_east_and_africa", expiresInSeconds: 3600),
+                completion: completion)
+        }
+        wait(for: [finished], timeout: 2)
+        XCTAssertFalse(events.values.contains("install"))
+        XCTAssertEqual(events.values, ["service:stop", "version", "version",
+            provider == "legacy" ? "setup" : "command", "service:start", "command"])
+        XCTAssertTrue(try configContents(in: home).contains("provider = \"\(provider)\""))
+    }
+
+    func testConnectedAccountsDoNotReuseOlderService() throws {
+        try assertConnectedAccountsRequireInstaller(installedVersion: .success("teslatlas-hub 1.0.0"))
+    }
+
+    func testConnectedAccountsDoNotReuseUnreadableServiceVersion() throws {
+        try assertConnectedAccountsRequireInstaller(installedVersion: .failure(
+            HubActionError.commandFailed("version probe failed")))
+    }
+
+    private func assertConnectedAccountsRequireInstaller(installedVersion: Result<String, Error>) throws {
+        for provider in ["legacy", "fleet"] {
+            let events = EventRecorder()
+            let embedded = VersionAwareRunner(events: events,
+                versionResult: .success("teslatlas-hub 2026.36.1"))
+            let installed = VersionAwareRunner(events: events, versionResult: installedVersion)
+            let home = try temporaryHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let original = try writeCollectorConfig(in: home, provider: "legacy")
+            let controller = HubController(commandRunner: embedded, installedCommandRunner: installed,
+                installer: ScriptedInstaller(events: events, result: .failure(
+                    HubActionError.untrustedInstaller("test installer rejected"))),
+                serviceRunner: ScriptedService(events: events, loadState: .unloaded),
+                homeDirectory: home, serviceInstalledOverride: true, initialSnapshot: .previewRunning)
+            let finished = expectation(description: "upgrade remains subject to installer admission")
+            let completion: (Result<Void, Error>) -> Void = { result in
+                guard case let .failure(error) = result else { return XCTFail("unsafe reuse") }
+                XCTAssertTrue(error.localizedDescription.contains("test installer rejected"))
+                finished.fulfill()
+            }
+            if provider == "legacy" {
+                controller.configureTeslaAccount(tokens: TeslaAuthTokens(
+                    accessToken: "test-access", refreshToken: "test-refresh"), completion: completion)
+            } else {
+                controller.configureFleetAccount(credentials: HubFleetSetupCredentials(
+                    accessToken: "test-access", refreshToken: "test-refresh", clientID: "test-client",
+                    region: "europe_middle_east_and_africa", expiresInSeconds: 3600), completion: completion)
+            }
+            wait(for: [finished], timeout: 2)
+            XCTAssertEqual(events.values, ["service:stop", "version", "version", "install"])
+            XCTAssertEqual(try configContents(in: home), original)
+        }
+    }
+
     func testBundledServiceVersionMatchIsExact() {
         XCTAssertTrue(HubController.isBundledServiceVersionOutput(
             "teslatlas-hub 2026.36.1\n"
@@ -2477,7 +2597,7 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["service:stop", "install", "setup"])
+        XCTAssertEqual(events.values, ["service:stop", "command", "install", "setup"])
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 

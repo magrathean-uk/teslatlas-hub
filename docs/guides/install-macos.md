@@ -3,9 +3,8 @@
 Teslatlas Hub 2026.36.1 targets Apple-silicon Macs running macOS 13 or
 later.
 
-Download [TeslatlasHub-2026.36.1-arm64.pkg](https://github.com/magrathean-uk/teslatlas-hub/releases/download/v2026.36.1/TeslatlasHub-2026.36.1-arm64.pkg) and
-[verify it](../releases/verification.md). Read the
-[release notes](../releases/release-notes-2026.36.1.md): the app is ad-hoc signed
+Build your own package using [Build from source](build-from-source.md).
+Prebuilt GitHub releases are no longer provided. By default the app is ad-hoc signed
 and the combined installer is unsigned and unnotarised. Use the combined
 installer for installation and upgrades; in-app service installation,
 reinstallation, and update are unavailable in this distribution. The embedded
@@ -16,8 +15,7 @@ For an existing installation, follow [Upgrade and rollback](../releases/upgrade.
 
 ## Install
 
-1. Open the verified `TeslatlasHub-2026.36.1-arm64.pkg` (or
-   `dist/TeslatlasHub.pkg` for a local build).
+1. Open your locally built `dist/TeslatlasHub.pkg`.
 2. Complete the macOS Installer flow. It installs **Teslatlas Hub.app** in
    `/Applications` and the service payload in
    `/Library/Application Support/Teslatlas Hub`.
@@ -132,16 +130,15 @@ choice.
 The uninstaller refuses to remove a shared service payload while another local
 user still has a Hub LaunchAgent.
 
-## Build instead of downloading
+## Build from source
 
 For developers building from source, follow the toolchain and packaging
 requirements in the [release process](../releases/releasing.md). From a source
-checkout of the matching tag, the combined installer entry point is:
+checkout of `main` (or a historical tag when reproducing it), the combined installer entry point is:
 
 ```sh
-git checkout --detach v2026.36.1
 ./scripts/build-macos-app.sh
 ```
 
-This is not required to use the downloadable package. Source builds do not
+See the [source build guide](build-from-source.md). Source builds do not
 automatically gain trusted signing or notarisation.

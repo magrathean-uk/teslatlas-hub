@@ -1,7 +1,8 @@
 # Install on Debian
 
-Teslatlas Hub 2026.36.1 targets Debian 13 on amd64 and ARM64. The published
-packages contain core/legacy collection without Fleet command-proxy or Fleet
+Teslatlas Hub targets Debian 13 on amd64 and ARM64. First
+[build a local package](build-from-source.md); no prebuilt releases are provided.
+The core-only packages contain core/legacy collection without Fleet command-proxy or Fleet
 Telemetry companions. They are not a complete Fleet installation. Read the
 [release limits](../releases/release-notes-2026.36.1.md) and
 [verify the package](../releases/verification.md) before installing. For an

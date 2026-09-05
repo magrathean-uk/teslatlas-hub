@@ -1,5 +1,10 @@
 # Release versioning
 
+Distribution policy: Hub is source-only. Do not create GitHub Releases or
+upload prebuilt packages. Ordinary fixes are pushed without creating a new
+release or tag; version changes require an explicit decision. Existing tags
+remain immutable. See [source publishing](releasing.md).
+
 Accepted on 5 September 2026. Future Teslatlas Hub releases use the
 calendar format **`YEAR.WEEK.REVISION`**.
 

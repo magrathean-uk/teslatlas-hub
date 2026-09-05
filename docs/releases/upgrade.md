@@ -1,5 +1,9 @@
 # Upgrade and rollback
 
+Build your own replacement package using [Build from source](../guides/build-from-source.md).
+No prebuilt GitHub releases are provided. Retain your previous local package
+and its source commit for recovery.
+
 For 2026.36.1, Debian packages contain core/legacy collection only. They omit
 Fleet companions. Do not replace an existing Fleet deployment with these
 packages without separately verified compatible companions. Read the
@@ -18,8 +22,8 @@ and Gatekeeper trust.
 2. Create a data backup and retain separately recoverable credentials using
    [Backup and recovery](../operations/backup-and-recovery.md). Keep these
    private. This release does not claim a completed restored-backup rehearsal.
-3. Verify the new package against its published `SHA256SUMS` and inspect
-   `BUILD-INFO.md` using [Verify a release](verification.md).
+3. Inspect your new package and retain its checksum, source commit, toolchain
+   versions and completed build/test results.
 4. Stop the existing Hub service through the Mac app or
    `sudo systemctl stop teslatlas-hub.service` on Debian. Prevent simultaneous
    collectors from owning the same refresh credentials.

@@ -69,6 +69,7 @@
         "docs/guides/configuration.md",
         "docs/guides/fleet-setup.md",
         "docs/guides/getting-started.md",
+        "docs/guides/build-from-source.md",
         "docs/guides/install-debian.md",
         "docs/guides/install-macos.md",
         "docs/guides/troubleshooting.md",

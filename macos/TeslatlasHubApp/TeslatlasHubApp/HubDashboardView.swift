@@ -321,7 +321,7 @@ final class HubDashboardView: HubSurfaceView {
             $0.removeFromSuperview()
         }
         let entries = activity.isEmpty
-            ? [HubActivity(message: "No activity yet.", age: "", color: HubPalette.mutedForeground)]
+            ? [HubActivity(message: "No recent app actions. See Logs for collector activity.", age: "", color: HubPalette.mutedForeground)]
             : Array(activity.prefix(3))
         for (index, entry) in entries.enumerated() {
             if index > 0 {

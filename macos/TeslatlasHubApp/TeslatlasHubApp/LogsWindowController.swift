@@ -139,14 +139,14 @@ final class LogsWindowController: NSWindowController {
             "== app and import diagnostics ==\n\(appText)",
             "== Hub service logs ==\n\(serviceText)"
         ].joined(separator: "\n"))
-        renderLogs(combined, status: "Updated just now")
+        renderLogs(combined, status: "Files read just now · entries may be historical")
         appLog.record("refresh.completed", category: "logs", level: "INFO", fields: [
             "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
             "service_bytes": String(serviceText.utf8.count)
         ])
     }
 
-    func renderLogs(_ redactedText: String, status: String = "Updated just now") {
+    func renderLogs(_ redactedText: String, status: String = "Files read just now · entries may be historical") {
         let combined = Self.shareableText(redactedText)
         latestText = combined
         textView.string = Self.numberedPresentation(combined)
