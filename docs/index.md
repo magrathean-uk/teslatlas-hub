@@ -11,14 +11,27 @@ companions. The Mac app is ad-hoc signed and its installer is unsigned and
 unnotarised; use the combined package because in-app service installation and
 update are unavailable. Package hashes and
 completed checks belong to the release's `SHA256SUMS` and `BUILD-INFO.md`.
-The historical `v1.0.0` release remains a source-only tag.
+
+## First installation
+
+1. [Choose your setup path](guides/getting-started.md): new collection or an
+   existing TeslaMate history import.
+2. Follow [Mac setup and everyday use](guides/install-macos.md) or
+   [Debian installation](guides/install-debian.md).
+3. [Pair the separately distributed client](guides/getting-started.md#pair-your-client)
+   after configuring a secure connection.
+4. Keep a [recovery copy](operations/backup-and-recovery.md).
+
+Looking for a download? Open the
+[release page](https://github.com/magrathean-uk/teslatlas-hub/releases/latest).
+If something fails, start with [Troubleshooting](guides/troubleshooting.md).
 
 ## Start here
 
 | Task | Guide |
 |---|---|
-| Choose a host, credential path, network boundary, and recovery plan | [Getting started](guides/getting-started.md) |
-| Install the Mac app and service | [Install on macOS](guides/install-macos.md) |
+| Choose a host and set up collection | [Getting started](guides/getting-started.md) |
+| Install and use the Mac app | [Mac setup and everyday use](guides/install-macos.md) |
 | Install the Debian package | [Install on Debian](guides/install-debian.md) |
 | Configure collection, TLS, geocoding, or terrain | [Configuration](guides/configuration.md) |
 | Configure Fleet API and Fleet Telemetry | [Fleet setup](guides/fleet-setup.md) |

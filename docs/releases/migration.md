@@ -1,8 +1,53 @@
-# Migration from a user-controlled TeslaMate database
+# Move from TeslaMate
 
 Migration exists to move authorised historical data and, where expressly selected, encrypted legacy credentials into Teslatlas-owned storage.
 
 New Hub installations do not require TeslaMate.
+
+## Before you start
+
+1. Back up TeslaMate and keep a recoverable copy. Do not remove the original
+   installation after the first successful import.
+2. Update TeslaMate to 4.2.0 or newer, start it once, and let its database
+   migrations finish. A newer version is not automatically compatible: Hub
+   must recognise the exact reviewed schema described below.
+3. Prepare your server address, SSH port, user and authentication. The account
+   must be able to access the TeslaMate Docker deployment; if it needs sudo,
+   select that option in the Mac form. Do not grant broad permissions simply
+   to bypass a failed check.
+4. Decide whether you are importing history only or also selecting the
+   supported Legacy credential-transfer path. Never allow two services to
+   refresh the same token pair.
+
+## Import using the Mac app
+
+1. Choose **Migrate from TeslaMate** during setup, or from **Manage Tesla**.
+2. Enter the server, port and SSH user. For **SSH key**, use **Choose Key…**
+   to select the private key, or leave the field empty for your SSH agent or
+   default keys. Use **Password** only for the password authentication path.
+3. Choose **Connect to Server**. Read the connection result and compatibility
+   acknowledgement before selecting **Import Data**.
+4. Wait for the import and Hub checks. If a step fails, read the error and use
+   **Open Logs** before retrying. Keep both the source and partial-run diagnostics.
+5. Complete the cutover acknowledgement truthfully: stop TeslaMate's access
+   before Hub takes ownership of the same Legacy refresh credentials. Hub
+   does not stop or modify TeslaMate for you.
+6. Start Hub when setup permits it. Check the intended vehicle, imported
+   journeys and charges, diagnostics, and subsequent collection. Keep the
+   original data until you are satisfied with the result.
+
+The [Mac guide](../guides/install-macos.md#connect-or-migrate) shows the form.
+For authentication, Docker access or compatibility errors, see
+[Troubleshooting](../guides/troubleshooting.md). Command-line operators should
+use the [CLI reference](../guides/cli.md) and the technical requirements below.
+
+## What transfers
+
+An import selects one car and its supported driving, charging, position, state
+and update history, with referenced settings, addresses and geofences. It is
+not a copy of the entire TeslaMate deployment. Grafana dashboards, containers,
+logs, custom tables and unselected vehicles are not transferred. Credentials
+are separate from an ordinary history import. The exact scope follows below.
 
 **Teslatlas Hub is an independent project and is not affiliated with, endorsed by or supported by the TeslaMate project.**
 
@@ -31,7 +76,7 @@ validation, and comply with privacy/employment rules.
 
 ## Data differences
 
-The v1 beta importer is a selected-car projection, not a PostgreSQL backup and
+The importer is a selected-car projection, not a PostgreSQL backup and
 not a continuing TeslaMate bridge. The running app must be TeslaMate 4.2.0 or
 newer, and the database must match the exact reviewed v4.2-compatible migration
 set. That schema is also present in v4.1.1, so database evidence cannot prove

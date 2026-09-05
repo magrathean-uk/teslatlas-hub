@@ -169,3 +169,21 @@ Figma fidelity acceptance is not claimed. Changes remain uncommitted and unpushe
 - Focused read-only review found no additional critical or important issues.
   No SSH connection, credential selection, import, service mutation, installed
   app replacement, commit, or push was performed during this follow-up.
+
+## Published documentation screenshots
+
+`docs/assets/hub-dashboard.png` and `docs/assets/hub-migration.png` are unedited
+native AppKit attachments from the 5 September 2026 release test run, using
+source `c1b6ef38a89d6c1992636f81849d9626b7661bd6`. They correspond to
+`R07-dashboard` and `R03-migration`, rendered by
+`HubVisualSnapshotTests.testEveryPreviewSceneRendersANonEmptyNativeSurface`.
+The editable UI and fictional fixtures are in
+`macos/TeslatlasHubApp/TeslatlasHubApp`, with the renderer in the adjacent test
+directory. No Figma reference image or production data is published.
+
+To regenerate, run that test with `TESLATLAS_HUB_SNAPSHOT_DIR` pointing to a
+private output directory, or export its PNG attachments with
+`xcrun xcresulttool export attachments` from the resulting test bundle. Inspect
+the two images before replacing the published copies. Preserve captions
+identifying demonstration data. A rendered screenshot is not evidence of live
+vehicle collection or a fresh installation test.

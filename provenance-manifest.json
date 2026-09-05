@@ -270,6 +270,20 @@
       }
     },
     {
+      "id": "generated-documentation-app-screenshots",
+      "class": "GENERATED",
+      "rationale": "Unedited native AppKit test attachments using the repository's fictional preview fixtures.",
+      "paths": [
+        "docs/assets/hub-dashboard.png",
+        "docs/assets/hub-migration.png"
+      ],
+      "exception": {
+        "origin": "HubVisualSnapshotTests.testEveryPreviewSceneRendersANonEmptyNativeSurface at release source c1b6ef38a89d6c1992636f81849d9626b7661bd6; R07-dashboard and R03-migration attachments from the verified 5 September 2026 AppKit run.",
+        "licensing": "Generated views of the AGPL-3.0-only project UI with system AppKit rendering. No production telemetry or Figma reference imagery is included.",
+        "release_treatment": "Retain the native UI and fictional fixture sources; regenerate with HubVisualSnapshotTests and inspect for personal data. Label screenshots as demonstration data, not live collection evidence."
+      }
+    },
+    {
       "id": "generated-sidecar-digests",
       "class": "GENERATED",
       "rationale": "Candidate-bound sidecar digest allow-list produced from separately built binaries.",

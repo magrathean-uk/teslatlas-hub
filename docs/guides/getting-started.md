@@ -1,92 +1,76 @@
 # Getting started
 
-Teslatlas Hub runs on one operator-controlled host, keeps provider credentials
-resident there, stores telemetry locally, and synchronises history to paired
-Teslatlas clients.
+Teslatlas Hub collects vehicle history on your own host. The native Mac app
+controls the background service; the separately distributed Teslatlas client
+connects to Hub to synchronise history.
 
-## 1. Choose the host
+## Choose your host
 
-| Host | Supported beta deployment |
-|---|---|
-| Apple-silicon Mac, macOS 13+ | Native **Teslatlas Hub.app** plus per-user LaunchAgent |
-| Debian 13, `amd64` or `arm64` | Native package plus hardened systemd units |
+| Host | Interface | Current download |
+|---|---|---|
+| Apple-silicon Mac, macOS 13+ | Native app and CLI | Combined installer with Fleet companions |
+| Debian 13, amd64 or arm64 | CLI and systemd | Core/Legacy package; no Fleet companions |
 
-Follow [Install on macOS](install-macos.md) or
-[Install on Debian](install-debian.md). Other systems are outside the beta
-support scope.
+Start with [Mac setup and everyday use](install-macos.md) or
+[Debian installation](install-debian.md). The current Mac installer is unsigned
+and unnotarised and may be blocked by macOS. Read the
+[release limitations](../releases/release-notes-2026.36.1.md) before downloading.
 
-## 2. Choose one credential path
+## Choose a setup path
 
-| Legacy | Fleet |
-|---|---|
-| Uses an existing Owner API access/refresh-token pair. | Uses a Tesla developer application and Fleet credentials. |
-| Collects by polling and the legacy driving stream. | Collects through Fleet API and selected Fleet Telemetry push. |
-| Only one service may own refresh of the token pair. | Hub remains the resident credential owner and supervises companion services. |
-| Suits an existing legacy or TeslaMate deployment. | Suits a new provider-supported setup. |
+- **New installation:** configure Fleet or Legacy credentials, run diagnostics
+  and start collecting. You do not need TeslaMate.
+- **Migrate from TeslaMate:** bring supported history from your own server.
+  Read the [migration checklist](../releases/migration.md#before-you-start)
+  before connecting. Keep the source and a backup until you verify the result.
 
-Do not configure both paths casually. For Fleet, follow the complete
-[Fleet setup](fleet-setup.md). For legacy setup, use the guided macOS flow or
-the packaged Debian command shown in the installation guide.
+| Connection | What you need | Important boundary |
+|---|---|---|
+| Legacy | Existing Owner API access/refresh tokens, or the explicitly selected migration credential path | Only one service may refresh the token pair |
+| Fleet | A Tesla Developer application, account authorisation and configured Fleet companions | Not a complete installation in the current Debian downloads |
 
-## 3. Decide the network boundary
+Follow [Fleet setup](fleet-setup.md) for the prerequisites. The Mac wizard does
+not remove the developer-application and receiver requirements.
 
-The safe default is:
+## Confirm collection
 
-```toml
-data_dir = "/absolute/private/path/teslatlas-hub"
-bind = "127.0.0.1:8080"
+Complete setup and diagnostics before starting Hub. On Mac, check the
+dashboard's service state, expected vehicles and recent activity. On Debian,
+use the installed status and doctor commands in the installation guide.
+Confirm fresh data appropriate to the vehicle's state; an asleep car does not
+need to be woken merely to test setup.
 
-[geocoder]
-enabled = false
+If checks fail, use [Troubleshooting](troubleshooting.md). Do not run a second
+collector or let TeslaMate and Hub refresh the same Legacy credentials.
 
-[terrain]
-enabled = false
-```
+## Pair your client
 
-Keep plaintext HTTP on loopback. A non-loopback listener requires Hub TLS and
-paired-device bearer authentication. Never publish the internal Fleet
-Telemetry ingestion route. See [Configuration](configuration.md).
+Pairing is separate from connecting Hub to Tesla. It authorises a Teslatlas
+client to access this Hub's history.
 
-## 4. Initialise and verify
+1. Choose how the client will reach the host. Plaintext HTTP must remain on
+   loopback. A client on another device requires a reachable Hub address,
+   Hub TLS and paired-device authentication. Follow
+   [Configuration](configuration.md) before exposing a listener.
+2. Use the `pair` command from the [CLI reference](cli.md#platform-invocation)
+   with the same configuration and operating-system user as the deployment.
+   It creates a short-lived, single-use invitation. This is a CLI step, not a
+   dashboard button.
+3. Complete pairing in the separately distributed Teslatlas client using its
+   connection flow. Treat the invitation as a secret; do not paste it into
+   issues or screenshots. Create a new invitation if the old one expires.
+4. Check that history synchronises. Revoke retired or unknown devices using
+   Hub's device controls described in the CLI reference.
 
-Use the exact platform invocation from the [CLI reference](cli.md). On a source
-checkout, the sequence is:
+Do not publish the internal Fleet Telemetry ingestion route as a client endpoint.
 
-```sh
-cargo build --locked --release --bin teslatlas-hub
-./target/release/teslatlas-hub --config /absolute/path/config.toml init
-./target/release/teslatlas-hub --config /absolute/path/config.toml doctor
-./target/release/teslatlas-hub --config /absolute/path/config.toml status
-```
+## Keep a recovery copy
 
-After credentials are configured, run `doctor` again, start the service, and
-confirm that every intended vehicle is admitted and collecting. Redact all
-diagnostics before sharing them.
+Before relying on the installation, create and verify a data backup, export
+credentials into a separately encrypted recovery file, store them separately,
+and test restoration into a new directory. A data backup alone does not restore
+provider credentials. Follow [Backup and recovery](../operations/backup-and-recovery.md).
 
-## 5. Pair a client
-
-Create a short-lived, single-use invitation with `pair`, then complete pairing
-from the Teslatlas client. Revoke unknown or retired devices immediately.
-Pairing does not make an unsafe network listener safe; TLS and host-level
-controls still apply.
-
-## 6. Establish recovery
-
-Before relying on Hub:
-
-1. create and verify a data-only backup;
-2. export credentials into a separately encrypted recovery file;
-3. store the two materials separately; and
-4. test restoration into a new directory.
-
-Follow [Backup and recovery](../operations/backup-and-recovery.md). A data
-backup alone cannot restore provider credentials.
-
-## Migrating from TeslaMate
-
-Migration is optional and read-only against the source database. Back up
-TeslaMate, update it to 4.2.0 or newer, start it once, and wait for its database
-migrations to finish. Run the compatibility check and explicitly acknowledge
-that database evidence cannot prove the running app version. At final cutover,
-stop TeslaMate before Hub receives ownership of the same legacy token pair. See
-[TeslaMate migration](../releases/migration.md).
+For routine use, see [Mac controls](install-macos.md#everyday-use) or the
+[operations runbook](../operations/runbook.md). Before replacing installed
+software, read [Upgrade and rollback](../releases/upgrade.md).

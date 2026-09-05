@@ -1,259 +1,130 @@
 <p align="center">
-  <img src="../docs/assets/teslatlas-hub-icon.png" width="180" alt="Teslatlas Hub icon">
+  <img src="../docs/assets/teslatlas-hub-icon.png" width="120" alt="Teslatlas Hub icon">
 </p>
 
 <h1 align="center">Teslatlas Hub</h1>
 
-<p align="center">
-  A fast, self-hosted vehicle telemetry collector and local sync hub for macOS and Debian Linux.
-</p>
+<p align="center">Collect your Tesla vehicle history on your own Mac or Debian host.</p>
 
 <p align="center">
-  <a href="#install">Install</a> ·
-  <a href="../docs/guides/getting-started.md">Getting started</a> ·
+  <a href="https://github.com/magrathean-uk/teslatlas-hub/releases/latest">Download</a> ·
+  <a href="../docs/guides/getting-started.md">Get started</a> ·
+  <a href="../docs/releases/migration.md">Move from TeslaMate</a> ·
   <a href="../docs/index.md">Documentation</a> ·
-  <a href="../docs/guides/fleet-setup.md">Fleet setup</a> ·
-  <a href="../docs/releases/migration.md">TeslaMate migration</a> ·
-  <a href="SECURITY.md">Security</a> ·
-  <a href="../docs/releases/changelog.md">Changelog</a> ·
-  <a href="../CITATION.cff">Cite</a>
+  <a href="SUPPORT.md">Support</a>
 </p>
 
-<p align="center">
-  <sub>Created by <strong>György Bolyki</strong> · Published and maintained by <strong>MAGRATHEAN UK LTD</strong></sub>
-</p>
+Teslatlas Hub collects vehicle telemetry in the background, stores history
+locally, and synchronises it to the separately distributed Teslatlas client.
+Use the native Mac app to manage setup, vehicles, diagnostics and logs, or run
+Hub as a command-line service on Debian. New installations do not require
+TeslaMate, Grafana or MQTT.
 
-The current calendar release is **2026.36.1**, with source tag `v2026.36.1`.
-Read the [release notes](../docs/releases/release-notes-2026.36.1.md) before
-installing. Debian packages include core/legacy collection without Fleet
-companions. The macOS app is ad-hoc signed and its combined installer is
-unsigned and unnotarised. Use the combined package for installation and
-upgrades; in-app service installation, reinstallation, and update are unavailable.
-No live Tesla or restored-backup acceptance is claimed. Historical `v1.0.0`
-remains a source-only release.
+![Native macOS dashboard showing service status, vehicle controls and recent activity](../docs/assets/hub-dashboard.png)
 
-Teslatlas Hub keeps telemetry under the operator's control. It collects every
-configured vehicle, stores history in local SQLite-backed packs, and exposes a
-bounded sync protocol for the separately distributed Teslatlas client. New
-installations do not need TeslaMate, Grafana, or MQTT.
+*The actual AppKit interface rendered with fictional demonstration data. No
+personal account or vehicle data is shown.*
 
-## Why Teslatlas Hub
+## Download and install
 
-| | Capability |
-|---|---|
-| **Local first** | Vehicle history, credentials, backups, and logs remain on the operator-controlled host. |
-| **Two collection paths** | Legacy Owner API polling and streaming, or official Fleet API with native Fleet Telemetry push. |
-| **Multi-vehicle** | Independent identity, collection, state, history, and commands for every configured vehicle. |
-| **Native operation** | AppKit control app and LaunchAgent on Apple silicon; hardened systemd service on Debian amd64 and ARM64. |
-| **Safe migration** | Optional read-only TeslaMate 4.2.0+ import with an explicit compatibility acknowledgement and stopped cutover. |
-| **Built for recovery** | Integrity checks, repair, data-only backups, and separately encrypted credential recovery. |
+Current release: **2026.36.1**. Download the package for your host:
 
-## Architecture
-
-```mermaid
-flowchart LR
-    V[Vehicle] -->|Legacy stream / Fleet Telemetry| C[Collector]
-    C --> H[Teslatlas Hub]
-    H --> D[(Local SQLite + immutable packs)]
-    D --> S[Authenticated local sync]
-    S --> A[Teslatlas client]
-    T[(Optional TeslaMate 4.2.0+)] -. read-only migration .-> H
-```
-
-The resident Hub process is the only provider-token owner. Fleet Telemetry is
-received by a pinned companion receiver and forwarded over authenticated
-loopback ingestion. Commands are explicit, confirmed, bounded, and routed
-through the same resident credential owner. See
-[Architecture](../docs/architecture/overview.md) and
-[Security model](../docs/architecture/security-model.md).
-
-## Supported platforms
-
-| Platform | Architecture | Service | User interface |
+| Host | Download | Included collection paths | Setup guide |
 |---|---|---|---|
-| macOS 13+ | Apple silicon (`arm64`) | Per-user LaunchAgent with root-owned payload | Native AppKit app and CLI |
-| Debian 13 | `amd64` | Hardened systemd units | CLI |
-| Debian 13 | `arm64` | Hardened systemd units | CLI |
+| macOS 13+, Apple silicon | [Mac installer](https://github.com/magrathean-uk/teslatlas-hub/releases/download/v2026.36.1/TeslatlasHub-2026.36.1-arm64.pkg) | Legacy and Fleet companions; Fleet configuration required | [Mac setup](../docs/guides/install-macos.md) |
+| Debian 13, ARM64 | [ARM64 package](https://github.com/magrathean-uk/teslatlas-hub/releases/download/v2026.36.1/teslatlas-hub_2026.36.1_arm64.deb) | Core/Legacy only | [Debian installation](../docs/guides/install-debian.md) |
+| Debian 13, x86-64 | [amd64 package](https://github.com/magrathean-uk/teslatlas-hub/releases/download/v2026.36.1/teslatlas-hub_2026.36.1_amd64.deb) | Core/Legacy only | [Debian installation](../docs/guides/install-debian.md) |
 
-Other operating systems and CPU architectures are not part of the release support
-contract. Linux support is intentionally native and does not depend on AppKit,
-MapKit, or another Apple framework.
+**Current distribution limits:** the Mac app is ad-hoc signed and the installer
+is unsigned and unnotarised; macOS may block installation. Use the combined
+installer for upgrades, not the in-app service installer. Debian downloads do
+not include Fleet companions and must not replace a Fleet deployment without a
+separately verified companion plan. Do not disable system-wide security controls.
 
-## Install
+[Verify downloads](../docs/releases/verification.md) before installing, and
+[back up before upgrading](../docs/releases/upgrade.md). The
+[release page](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v2026.36.1)
+includes checksums, build evidence and the full release limitations.
 
-Use the matching packages, `SHA256SUMS`, and `BUILD-INFO.md` from the
-[2026.36.1 release](https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v2026.36.1).
-[Verify downloads](../docs/releases/verification.md) and review
-[upgrade guidance](../docs/releases/upgrade.md) before replacing an installation.
+## What you can do
 
-### macOS
+- **Keep history on your host.** Hub stores telemetry locally in SQLite-backed
+  storage and keeps provider credentials with the resident service.
+- **Manage multiple vehicles.** Inspect status and use explicit controls for
+  climate, wake, locking, lights and horn where supported by your configuration.
+- **Import existing history.** Guided Mac migration connects to TeslaMate over
+  SSH without modifying the source database. Review the
+  [compatibility and data limits](../docs/releases/migration.md).
+- **Check service health.** Use the dashboard, diagnostics and scrollable logs.
+- **Connect a client.** Pair the separate Teslatlas client to synchronise history.
+- **Plan recovery.** Create data backups and separately encrypted credential
+  recovery files using the [backup guide](../docs/operations/backup-and-recovery.md).
 
-Open the verified `TeslatlasHub-2026.36.1-arm64.pkg`. For a source build, run
-`./scripts/build-macos-app.sh` and open `dist/TeslatlasHub.pkg`. The installer
-places **Teslatlas Hub.app** in `/Applications` and the service payload under
-`/Library/Application Support/Teslatlas Hub`; then open the app. The app retains
-an embedded service-only package, but this distribution cannot install it
-through the app because that path requires official-release metadata and
-Gatekeeper trust. Use the combined package to install or update the service.
+## Your first setup
 
-Open **Teslatlas Hub**, choose a new Fleet or legacy installation, or select
-the guided TeslaMate migration path. The app keeps Hub stopped until setup and
-diagnostics succeed.
+1. **Install** the package for your host and open the Mac app, or follow the
+   Debian guide.
+2. **Connect or migrate.** Choose a new installation or bring supported
+   TeslaMate history across. Fleet requires a developer application and
+   receiver configuration; Legacy requires an existing token pair.
+3. **Check collection.** Complete diagnostics, start Hub, and confirm the
+   intended vehicles and fresh activity. A running process alone does not
+   establish that data is arriving.
+4. **Pair your client.** Follow [Getting started](../docs/guides/getting-started.md#pair-your-client)
+   to prepare a secure connection and create a one-use invitation.
 
-### Debian
+Hub runs independently of its Mac control app. Closing the last app window or
+quitting the app does not stop the background service. Use **Stop Hub…** to
+pause collection.
 
-Choose the `.deb` matching `dpkg --print-architecture`, then:
+## Guides and reference
 
-```sh
-sudo dpkg -i teslatlas-hub_2026.36.1_$(dpkg --print-architecture).deb
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml bootstrap
-sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /etc/teslatlas-hub/config.toml doctor
-```
+| I want to… | Read |
+|---|---|
+| Set up and use the Mac app | [Mac setup and everyday use](../docs/guides/install-macos.md) |
+| Run a Debian service | [Debian installation](../docs/guides/install-debian.md) |
+| Move from TeslaMate | [Migration](../docs/releases/migration.md) |
+| Configure Fleet API and Telemetry | [Fleet setup](../docs/guides/fleet-setup.md) |
+| Resolve a problem | [Troubleshooting](../docs/guides/troubleshooting.md) |
+| Upgrade or recover | [Upgrade](../docs/releases/upgrade.md) · [Backup](../docs/operations/backup-and-recovery.md) |
+| Use the CLI or configure networking | [CLI](../docs/guides/cli.md) · [Configuration](../docs/guides/configuration.md) |
+| Understand or contribute to Hub | [Architecture](../docs/architecture/overview.md) · [Contributing](CONTRIBUTING.md) |
 
-Complete legacy setup before starting these core-only packages. Fleet setup
-requires separately verified companions, which these Debian downloads omit. Full steps,
-permissions, TLS placement, and systemd controls are in
-[Install on Debian](../docs/guides/install-debian.md).
+For source builds and release reproduction, see the
+[release process](../docs/releases/releasing.md). For all guides and policies,
+see the [documentation index](../docs/index.md).
 
-### Build from source
+## Privacy and support
 
-Requirements: Rust 1.98. Building the optional signed-command and Fleet
-Telemetry companions also requires Go 1.27.0 exactly. macOS app builds require
-Xcode 27 and XcodeGen.
+Vehicle history includes precise locations and other sensitive information.
+Keep plaintext HTTP on loopback; remote client connections require TLS and
+paired-device authentication. Never expose the internal Telemetry ingestion
+route. Review [privacy guidance](../docs/legal/privacy.md) and the
+[security model](../docs/architecture/security-model.md).
 
-```sh
-git clone https://github.com/magrathean-uk/teslatlas-hub.git
-cd teslatlas-hub
-git checkout --detach v2026.36.1
-cargo build --locked --release
-./target/release/teslatlas-hub --version
-```
+Start with [Troubleshooting](../docs/guides/troubleshooting.md) and
+[Support](SUPPORT.md). Report vulnerabilities privately through
+[Security](SECURITY.md). Never post tokens, pairing invitations, VINs, locations
+or private databases in an issue.
 
-The tag is the version boundary. Build and package from that detached checkout
-to keep the source and displayed version aligned.
+## Project and licence
 
-## Quick CLI start
-
-Create a private configuration:
-
-```toml
-data_dir = "/absolute/private/path/teslatlas-hub"
-bind = "127.0.0.1:8080"
-
-[geocoder]
-enabled = false
-
-[terrain]
-enabled = false
-```
-
-Initialize, configure, inspect, and serve:
-
-The commands below use `teslatlas-hub` as shorthand. Use the exact packaged or
-source-checkout invocation in [CLI reference](../docs/guides/cli.md#platform-invocation).
-
-```sh
-teslatlas-hub --config /absolute/path/config.toml init
-teslatlas-hub --config /absolute/path/config.toml setup \
-  --access-token-file /private/access-token \
-  --refresh-token-file /private/refresh-token \
-  --all-vehicles
-teslatlas-hub --config /absolute/path/config.toml doctor
-teslatlas-hub --config /absolute/path/config.toml serve
-```
-
-Keep secrets out of arguments, logs, and shell history. Fleet credentials are
-accepted as one bounded JSON object over standard input; see
-[Fleet API setup](../docs/guides/fleet-setup.md).
-
-## Operations
-
-Common read-only checks:
-
-```sh
-teslatlas-hub --config /absolute/path/config.toml status
-teslatlas-hub --config /absolute/path/config.toml doctor
-teslatlas-hub --config /absolute/path/config.toml preflight
-teslatlas-hub legal
-teslatlas-hub source
-```
-
-Stopping Hub stops its collector, Tesla streaming connection, Fleet command
-proxy, HTTP listener, and supervised companion connections. A bounded grace
-period lets active requests close before the process exits.
-
-See [Operations](../docs/operations/runbook.md),
-[Backup and recovery](../docs/operations/backup-and-recovery.md), and
-[Troubleshooting](../docs/guides/troubleshooting.md).
-
-## TeslaMate migration
-
-Migration is optional. It requires a running TeslaMate 4.2.0 or newer whose
-database matches the reviewed v4.2-compatible schema, then reads one
-operator-controlled PostgreSQL snapshot in a read-only transaction and
-converts supported history into Hub storage. Database evidence alone cannot
-prove the running app version, so the operator must confirm it explicitly. Hub
-does not start, stop, remove, or modify TeslaMate.
-
-Before connecting Hub, back up TeslaMate, update it to 4.2.0 or newer, start it
-once, and wait for its database migrations to finish.
-
-At final cutover, stop TeslaMate before granting Hub ownership of the same
-legacy token pair. Never run two services that can refresh those credentials.
-See [Migration](../docs/releases/migration.md).
-
-## Security and privacy
-
-Vehicle telemetry contains precise journeys, identifiers, account credentials,
-and behavioural history. Keep the plaintext listener on loopback. A
-non-loopback listener requires Hub TLS plus paired-device bearer
-authentication. Never expose the internal Fleet Telemetry ingestion route.
-
-- Report vulnerabilities privately under [SECURITY.md](SECURITY.md).
-- Review deployment responsibilities in [privacy](../docs/legal/privacy.md).
-- Review safety boundaries in [safety and use limits](../docs/legal/safety-and-use-limits.md).
-
-## Independence
-
-Teslatlas Hub is independently maintained by MAGRATHEAN UK LTD. It is an
-unofficial community tool and is not affiliated with, endorsed by, or supported
-by Tesla, Inc. or the official TeslaMate project. Tesla, TeslaMate, Apple, and
-other names and marks belong to their respective owners. Compatibility
-references are factual and do not imply sponsorship.
-
-## Project leadership
-
-György Bolyki created Teslatlas Hub and leads its architecture and development.
-MAGRATHEAN UK LTD publishes and maintains the official project. See
-[authorship and stewardship](../docs/governance/authorship-and-stewardship.md)
+Created by **György Bolyki**. Published and maintained by **MAGRATHEAN UK LTD**.
+See [authorship and stewardship](../docs/governance/authorship-and-stewardship.md)
 and [citation metadata](../CITATION.cff).
 
-## Licence and source
+Teslatlas Hub is an independent, unofficial project, not affiliated with,
+endorsed by or supported by Tesla, Inc. or the official TeslaMate project.
+Third-party names and marks belong to their respective owners.
 
 Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors,
-each as applicable to material they own.
-
-Teslatlas Hub is free software under the
-[GNU Affero General Public License version 3 only](../LICENSE)
-(`AGPL-3.0-only`), with the permitted section 7 notices in
-[additional terms](../docs/legal/additional-terms.md). Third-party material remains under
-its identified licence. See [Legal framework](../docs/legal/overview.md),
-[Licensing](../docs/legal/licensing.md), [Notices](../NOTICE), and
-[Third-party notices](../docs/legal/third-party-notices.md).
-
-The v2026.36.1 source is the immutable tagged tree. Distributed packages include
-the applicable licence and dependency notices.
-
-## Contributing and support
-
-Read [Contributing](CONTRIBUTING.md), the
-[Code of conduct](CODE_OF_CONDUCT.md), and [Support policy](SUPPORT.md) before
-opening an issue or pull request. Never submit tokens, VINs, coordinates,
-private logs, or production databases.
+each as applicable to material they own. Hub is free software under
+[GNU AGPL version 3 only](../LICENSE), with the permitted section 7 notices in
+[additional terms](../docs/legal/additional-terms.md). Third-party material
+retains its identified licence. See [Notices](../NOTICE),
+[third-party notices](../docs/legal/third-party-notices.md) and
+[Corresponding Source](../docs/legal/source-availability.md).
 
 MAGRATHEAN UK LTD · Registered in England and Wales · Company number 16955343<br>
 Registered office: 16 Caledonian Court West Street, Watford, England, WD17 1RY<br>
-[contact@magrathean.uk](mailto:contact@magrathean.uk) ·
-[teslatlas.eu](https://teslatlas.eu)
+[contact@magrathean.uk](mailto:contact@magrathean.uk) · [teslatlas.eu](https://teslatlas.eu)

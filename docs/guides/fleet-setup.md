@@ -1,5 +1,12 @@
 # Fleet API setup
 
+This is the advanced setup guide for Fleet installations. The current Mac
+package includes companion binaries, but you must still configure your
+developer application and receiver. The current Debian downloads are
+Core/Legacy-only and omit those companions; do not follow this guide as though
+installing the `.deb` alone provides a complete Fleet deployment. See the
+[package limits](../releases/release-notes-2026.36.1.md).
+
 Fleet API login requires a Tesla Developer application. The application owns
 the HTTPS callback URI and client secret; Hub stores only the resulting access
 token, single-use refresh token, public client ID, and region.
