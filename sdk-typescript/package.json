@@ -1,6 +1,6 @@
 {
   "name": "@teslatlas/sdk",
-  "version": "0.0.0-development",
+  "version": "2026.36.2",
   "description": "Private protocol-derived Teslatlas client for browser and Node.js development",
   "private": true,
   "license": "Apache-2.0",
@@ -44,6 +44,7 @@
     "docs/api.md",
     "docs/architecture.md",
     "docs/compatibility.md",
+    "docs/product-versioning.md",
     "docs/protocol-dependency-gate.md",
     "LICENSE",
     "README.md"
@@ -62,11 +63,14 @@
     "pretest:unit": "npm run build",
     "test": "npm run test:unit && npm run test:conformance && npm run test:protocol",
     "test:browser": "vitest run --project browser-conformance",
+    "test:hub:node": "node scripts/test-hub-node.mjs",
+    "test:hub:browser": "node scripts/test-hub-browser.mjs",
     "test:conformance": "vitest run --project node-conformance --project browser-conformance",
     "test:protocol": "vitest run --project protocol-cases",
+    "test:package": "node scripts/test-clean-package.mjs",
     "test:unit": "vitest run --project unit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run protocol:check && npm run build && npm run test && npm run example:node && npm run pack:check"
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run protocol:check && npm run build && npm run test && npm run example:node && npm run pack:check && npm run test:package"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",

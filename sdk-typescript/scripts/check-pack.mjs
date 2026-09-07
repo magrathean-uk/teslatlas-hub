@@ -17,6 +17,7 @@ const required = [
   "docs/api.md",
   "docs/architecture.md",
   "docs/compatibility.md",
+  "docs/product-versioning.md",
   "docs/protocol-dependency-gate.md",
   "dist/browser.d.ts",
   "dist/browser.js",
@@ -26,6 +27,9 @@ const required = [
   "dist/node.js",
   "dist/generated/validators.d.ts",
   "dist/generated/validators.js",
+  "dist/generated/hub-protocol.d.ts",
+  "dist/generated/hub-validators.d.ts",
+  "dist/generated/hub-validators.js",
   "package.json",
 ];
 const forbiddenPrefixes = [

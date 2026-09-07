@@ -2,9 +2,6 @@ import { createHash } from "node:crypto";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 
-export const protocolCommit = "79ced4c7fdc79520ad31d72a0280bf5f3f19f407";
-export const currentProfile = "1.2.0";
-export const supportedProfiles = Object.freeze(["1.0.0", "1.1.0", "1.2.0"]);
 export const sourceGlobs = Object.freeze([
   "openapi/teslatlas-v1.openapi.json",
   "events/teslatlas-v1.sse.json",
@@ -13,6 +10,7 @@ export const sourceGlobs = Object.freeze([
   "fixtures/**/*.json",
   "compatibility/**/*.json",
   "conformance/cases/*.json",
+  "profiles/hub-http-v1/**/*.{json,SHA256SUMS}",
 ]);
 
 export function assertContained(root, candidate) {
@@ -31,7 +29,10 @@ export function matchesSourcePath(path) {
     path === "events/teslatlas-v1.sse.json" ||
     /^schemas\/[^/]+\.schema\.json$/.test(path) ||
     /^(examples|fixtures|compatibility)\/.+\.json$/.test(path) ||
-    /^conformance\/cases\/[^/]+\.json$/.test(path)
+    /^conformance\/cases\/[^/]+\.json$/.test(path) ||
+    /^profiles\/hub-http-v1\/[^/]+\/(?:[A-Za-z0-9][A-Za-z0-9._-]*\/)*(?:[A-Za-z0-9][A-Za-z0-9._-]*\.json|SHA256SUMS)$/.test(
+      path,
+    )
   );
 }
 
@@ -65,9 +66,16 @@ export async function discoverJsonFiles(root) {
     "fixtures",
     "compatibility",
     "conformance/cases",
+    "profiles",
   ]) {
     const absolutePath = assertContained(root, resolve(root, directory));
-    const stat = await lstat(absolutePath);
+    let stat;
+    try {
+      stat = await lstat(absolutePath);
+    } catch (error) {
+      if (directory === "profiles" && error?.code === "ENOENT") continue;
+      throw error;
+    }
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
       throw new Error(`Protocol source directory must be a real directory: ${absolutePath}`);
     }
@@ -80,6 +88,48 @@ export async function sha256File(path) {
   return createHash("sha256")
     .update(await readFile(path))
     .digest("hex");
+}
+
+export function sha256DigestMap(entries) {
+  const hash = createHash("sha256");
+  for (const [path, digest] of Object.entries(entries).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    hash.update(path);
+    hash.update("\0");
+    hash.update(digest);
+    hash.update("\n");
+  }
+  return hash.digest("hex");
+}
+
+export function candidateSourceIdentity(repository, baseCommit, entries) {
+  if (
+    typeof repository !== "string" ||
+    repository.length === 0 ||
+    !/^[0-9a-f]{40}$/.test(baseCommit)
+  ) {
+    throw new Error("Candidate protocol source identity is invalid");
+  }
+  return {
+    kind: "local-content",
+    repository,
+    baseCommit,
+    contentSha256: sha256DigestMap(entries),
+  };
+}
+
+export function filesForProfile(entries, profile) {
+  return Object.fromEntries(
+    Object.entries(entries).filter(([path]) => {
+      const isCurrentHub = path.startsWith("profiles/hub-http-v1/");
+      return profile === "currentHub" ? isCurrentHub : !isCurrentHub;
+    }),
+  );
+}
+
+export async function readProtocolLock(path) {
+  return JSON.parse(await readFile(path, "utf8"));
 }
 
 export function stableJson(value) {

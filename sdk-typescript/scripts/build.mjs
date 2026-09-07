@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { copyFile, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as bundleBrowser } from "vite";
@@ -13,7 +13,8 @@ if (relative(repositoryRoot, distributionDirectory) !== "dist") {
   throw new Error("Build output directory is not the repository dist directory");
 }
 
-await removeSourceMaps(distributionDirectory);
+// Every package must be derived only from current source, including declarations.
+await rm(distributionDirectory, { recursive: true, force: true });
 const result = spawnSync(process.execPath, [compiler, "-p", "tsconfig.build.json"], {
   cwd: repositoryRoot,
   stdio: "inherit",
@@ -22,6 +23,15 @@ if (result.error !== undefined) throw result.error;
 if (result.status !== 0) {
   process.exitCode = result.status ?? 1;
 } else {
+  await copyFile(
+    resolve(repositoryRoot, "src/generated/hub-validators.js"),
+    resolve(distributionDirectory, "generated/hub-validators.js"),
+  );
+  // tsc reads .d.ts inputs but does not emit them into outDir.
+  await copyFile(
+    resolve(repositoryRoot, "src/generated/hub-validators.d.ts"),
+    resolve(distributionDirectory, "generated/hub-validators.d.ts"),
+  );
   await preserveGeneratedNoCheckDirectives();
   await bundleBrowser({
     configFile: false,

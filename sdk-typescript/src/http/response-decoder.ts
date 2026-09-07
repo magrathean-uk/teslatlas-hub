@@ -11,6 +11,7 @@ import { validateProblem } from "../generated/validators.js";
 import type { ProtocolProblem } from "../protocol/models.js";
 import { decodeProtocolValue, type ProtocolValidator } from "../protocol/validate.js";
 import { isStrongEntityTag } from "./strong-etag.js";
+import { requireEmptyResponseBody } from "./empty-body.js";
 
 const protocolVersionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
 const safeLocationBase = "https://teslatlas-location.invalid";
@@ -43,7 +44,7 @@ export async function decodeReadResponse<T>(
     ...(requirements.requireStrongEntityTag === true ? { requireStrongEntityTag: true } : {}),
   };
   if (response.status === 304) {
-    if (response.body !== null) throw new ProtocolValidationError(`${validatorName}.304`);
+    await requireEmptyResponseBody(response, signal, `${validatorName}.304`);
     return {
       kind: "not-modified",
       metadata: readResponseMetadata(response, validatorName, metadataRequirements),

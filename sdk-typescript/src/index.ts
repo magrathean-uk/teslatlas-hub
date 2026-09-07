@@ -66,6 +66,35 @@ export {
   asStrongEntityTag,
   type StrongEntityTag,
 } from "./http/strong-etag.js";
+export {
+  HubClientDisposedError,
+  HubHttpError,
+  HubIdentityMismatchError,
+  UnsupportedHubMethodError,
+  VehicleIdentityMismatchError,
+} from "./hub/client.js";
+export type {
+  CreateHubClientOptions,
+  HubCapability,
+  HubClaim,
+  HubClient,
+  HubCredential,
+  HubCredentialStore,
+  HubCurrent,
+  HubDiscovery,
+  HubDrive,
+  HubDrives,
+  HubDrivesOptions,
+  HubDrivesResult,
+  HubErrorCode,
+  HubHealth,
+  HubInvitation,
+  HubReadiness,
+  HubRequestOptions,
+  HubResponse,
+  HubResponseMetadata,
+  HubVehicles,
+} from "./hub/models.js";
 export type {
   Charge,
   ChargePage,

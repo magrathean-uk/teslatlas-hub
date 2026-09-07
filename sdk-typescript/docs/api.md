@@ -23,6 +23,26 @@ optional injected Fetch implementation, an optional requested profile, and an
 abort signal. Discovery is public and unauthenticated; authenticated operations
 ask the provider immediately before dispatch.
 
+## Current Hub client
+
+The browser and Node entry points also export `createHubClient`, a dedicated
+adapter for the frozen `hub-http-v1@1.0.0` profile. It requires one fixed HTTPS
+endpoint, the expected Hub UUID, and a caller-owned `HubCredentialStore`.
+Its methods are `discover`, `health`, `readiness`, `claimPairing`,
+`rotateDevice`, `vehicles`, `current`, and `drives`.
+
+`discover` is always unauthenticated and verifies the returned Hub identity
+before an authenticated method can dispatch. `drives` returns either a `page`
+or `notModified`; cursors are bound to the vehicle and millisecond filter set.
+`logout()` aborts pending work and clears caller credentials and identity-bound
+state. `dispose()` aborts pending work and permanently closes that client.
+Neither operation claims to revoke credentials at the Hub.
+
+Invitation TLS pins are validated as invitation data, but browser Fetch cannot
+apply a certificate fingerprint. Browser callers must use their normal trusted
+PKI and the invitation's exact endpoint; the SDK never disables certificate
+validation or derives a replacement pin from discovery.
+
 ## Results and errors
 
 JSON reads return `ReadResult<T>`: either `modified` with a validated `value`,

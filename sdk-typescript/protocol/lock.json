@@ -1,10 +1,9 @@
 {
-  "commit": "79ced4c7fdc79520ad31d72a0280bf5f3f19f407",
-  "currentProfile": "1.2.0",
   "files": {
     "compatibility/1.0.0/profile.json": "bb3a33bac9af880590026fbfdba7ee23e9b77f7506cb9adea40370e249e28dfc",
     "compatibility/1.1.0/profile.json": "4952e7614b1658f9d685ad5e731d6ff4d440328266cf9ad5ae2774741701f05b",
     "compatibility/1.2.0/profile.json": "bca30f036e4a426562dadd3b0a2bb7ba85b7fe7eebaa6917641f68a2aad961c5",
+    "compatibility/hub.json": "db8ac0037f8b4929897c1b06718b70e0d5c0384d70d0f24ce8c57f2009f8ed21",
     "compatibility/manifest.json": "e10da4584f3d9a4e2622792daea6e06f18d3c486ab7ae61f5e744f4e7a99805b",
     "conformance/cases/command-idempotency.json": "0766db7f17f1094ac4d62f5b9bc8c09201a584604ebbf44de4f639537b443f84",
     "conformance/cases/cursor-pagination.json": "abb60eb92cf105548a3cffa9f0c9f6676df90cd38f9323d128579282f31a6125",
@@ -55,6 +54,24 @@
     "fixtures/v1/normal.json": "fb40a4025fecaa2fe4c8ec62629562c737a6fe651aa55ef8649974765480d3a5",
     "fixtures/v1/reordered.json": "e9fa3a2bd791aea1dc862455a50fae6775d4812d1e7844708a65bbd402d35982",
     "openapi/teslatlas-v1.openapi.json": "393b5b2c2d46b6509773bc5c5b634b419c37a2d88fd1d79fab89d315d2ce01aa",
+    "profiles/hub-http-v1/1.0.0/auth.schema.json": "27891c9cd96b57b5fa47db36b0d7caf22600b172a9150dcdaf735c64a8297b19",
+    "profiles/hub-http-v1/1.0.0/cases.json": "7743aa276b4c027abbd357304bfa065db79edec20cafac59b4311364e0d28201",
+    "profiles/hub-http-v1/1.0.0/discovery.schema.json": "3d45864e4296fdc14b0a3ef0ef5acdbfcca94cacda1ec60fccca396271851e18",
+    "profiles/hub-http-v1/1.0.0/errors.schema.json": "835fe4a83f3c894bc706e5f575e4abd5d473c4b8406fc0d9b0cbf0e95172a5b4",
+    "profiles/hub-http-v1/1.0.0/examples/claim.json": "8eb1ac46f72762321575d457d6bbd1ed7b1def904de9c07448b67d0659b15e1d",
+    "profiles/hub-http-v1/1.0.0/examples/current.json": "2246f7a4b98e559c4040877ecf9474d081df5f7ab8fdfb9bcde2a3fbceacf911",
+    "profiles/hub-http-v1/1.0.0/examples/discovery.json": "e673ea82496110f6cbbe1c108b40eb098418bb95d781723753bdff4792c84136",
+    "profiles/hub-http-v1/1.0.0/examples/drives.json": "fd326bd9476115bba05bbbeb61d40361e16d164984de7817e5cba58b7d29954f",
+    "profiles/hub-http-v1/1.0.0/examples/health.json": "27cd5e17b843fd061cdec83140a87f30365f09f1d27704aa5ae98c58d303347b",
+    "profiles/hub-http-v1/1.0.0/examples/invitation.json": "9ecf1cf49edac1fed91a0e92729d8d77c4ff13634f212555973a7003f1d4e926",
+    "profiles/hub-http-v1/1.0.0/examples/ready.json": "9994e13386b29bde4071dd062d8c4ab8dbb6b4b877f968b4a34fb2c7b0ead65e",
+    "profiles/hub-http-v1/1.0.0/examples/vehicles.json": "36b77389bac75fb247c6e0da2baf284511f40a808227b38d7543b2d199437150",
+    "profiles/hub-http-v1/1.0.0/field-semantics.json": "bd9b7162c94efbd3e570ffd785fe543dfb98299379ea81cf8b2e028496bd3ee7",
+    "profiles/hub-http-v1/1.0.0/openapi.json": "951a326d0ad9c0d16a9a0fe860cb84a7ecf0c0b88eb3dbb0fe92f763a4382440",
+    "profiles/hub-http-v1/1.0.0/profile.json": "a352aeb5e0818317ed8798107caf9b45ee47c30438c54b0d531a6cf936724a7b",
+    "profiles/hub-http-v1/1.0.0/resources.schema.json": "6b2523de42f5860ddaaf83b0db78b6f172e3f15e1dab8048e221c1fa6337a4be",
+    "profiles/hub-http-v1/1.0.0/SHA256SUMS": "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b",
+    "profiles/hub-http-v1/1.0.0/sync-regression.json": "6aebb1a5d5e250447435876d4cb64934b916e8cd61c2c8b148d2111c7f5fc691",
     "schemas/command.schema.json": "35829f51d18356bc1c62c0b768f7f26f54ca1e1c865c0d06c7a58568094bfa27",
     "schemas/common.schema.json": "3149c36caeb50b341b943c0434de1a8e025209c0434c12e799d77cc2ba327401",
     "schemas/conformance.schema.json": "d0c48aa6780a7733ce48d035fcc5d41e8a13bb65b336bb76eb1e38baa49ad145",
@@ -70,6 +87,9 @@
     "schemas/sse-contract.schema.json": "16def7c35263fb52339369130b618a2e626f909362f3be8542fd60b4845df4e8"
   },
   "generated": {
+    "src/generated/hub-protocol.ts": "71847c42032d13f3325053ac40bafa2001a010989cfbb34204d2924638bb8d91",
+    "src/generated/hub-validators.d.ts": "bd27b3ad9de02a5a11c58ba78a4e37f74b48030eabf92cdbb48f1e76b78d7936",
+    "src/generated/hub-validators.js": "4dc6fe33cd4bad5d6472dfecb4f4361a79e92c439765df26745ab86a1d0ad81a",
     "src/generated/protocol-cases.ts": "5cb96f66f9d441da12cf64f695ef088e0866596c9fcf9f20ac0378fac34eedb0",
     "src/generated/protocol.ts": "658b521763cafa7bfbe3c147c080feb092dda23aecf4b19dce83e7f716d65782",
     "src/generated/validators.ts": "4f2d41ffb15b6fcb67768d8afaf16c0e0d765af2754aa4c2f0c013f31f802146"
@@ -78,9 +98,32 @@
     "package": "openapi-typescript",
     "version": "7.13.0"
   },
-  "supportedProfiles": [
-    "1.0.0",
-    "1.1.0",
-    "1.2.0"
-  ]
+  "profiles": {
+    "currentHub": {
+      "bundleSha256": "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b",
+      "generatedOutputSha256": "2054e1fbd3a59c9619980ea7f5307fa1451c48d520aee3002ce33590aa469722",
+      "id": "hub-http-v1",
+      "inputSha256": "bd7d604be83a465c39e8f94b3d49218755ab7286e8d4695e2f7a625dd08e8f62",
+      "revision": "1.0.0",
+      "status": "candidate"
+    },
+    "richer": {
+      "generatedOutputSha256": "edcc471c48316f01094fb293578a48f52989a8642f983560d4f0c074b9dd8e58",
+      "id": "teslatlas-public",
+      "inputSha256": "91d3153e9578a77ee421aa654ed3c531f6f65381761e3967dc61069a5de58453",
+      "revision": "1.2.0",
+      "supportedRevisions": [
+        "1.0.0",
+        "1.1.0",
+        "1.2.0"
+      ]
+    }
+  },
+  "schemaVersion": 2,
+  "source": {
+    "baseCommit": "79ced4c7fdc79520ad31d72a0280bf5f3f19f407",
+    "contentSha256": "774573debf6e3e2cc4edb50bd162e6ca5acd181b90fd149bc73b6589ed4cd9e0",
+    "kind": "local-content",
+    "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git"
+  }
 }

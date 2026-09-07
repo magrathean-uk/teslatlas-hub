@@ -1,5 +1,6 @@
 import { TeslatlasClient } from "./client/client.js";
 import { createClientSession, type CreateClientOptions } from "./client/session.js";
+export { createHubClient } from "./hub/client.js";
 
 export * from "./index.js";
 

@@ -1,0 +1,35 @@
+{
+  "$id": "urn:teslatlas:hub-http-v1:1.0.0:errors",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_query",
+            "invalid_time_range",
+            "invalid_limit",
+            "invalid_cursor",
+            "vehicle_not_found",
+            "service_unavailable"
+          ]
+        },
+        "message": {
+          "maxLength": 65536,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "type": "object"
+}

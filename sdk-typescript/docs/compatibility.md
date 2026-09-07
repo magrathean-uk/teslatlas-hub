@@ -25,6 +25,21 @@ npm run protocol:check
 The canonical SDK codebase was retained. A separate documentation-only clone
 was design input, not an executable branch to merge.
 
+## Current Hub profile
+
+The current-Hub adapter is independently bound to `hub-http-v1@1.0.0` and the
+bundle manifest SHA-256
+`b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b`.
+This pin does not replace or weaken the richer profile pin above. Generated
+current-Hub OpenAPI types and standalone validators are covered by the lock's
+separate input and output hashes.
+
+Run `npm run test:hub:node` and `npm run test:hub:browser` only with the private
+fixture environment variables described by the task harness. These lanes use
+default Fetch from a freshly packed SDK. The browser lane additionally requires
+a normally trusted CA, a cross-origin allowlisted fixture origin, and a CDP URL;
+certificate-error bypass flags are outside the acceptance contract.
+
 ## Public methods
 
 The closed `TeslatlasClient` surface contains exactly these named operations:

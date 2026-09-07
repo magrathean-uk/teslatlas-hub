@@ -71,6 +71,55 @@ describe("read response decoder", () => {
     ).rejects.toBeInstanceOf(ProtocolValidationError);
   });
 
+  it("treats an empty 304 stream as empty and rejects a stream containing bytes", async () => {
+    await expect(
+      decodeReadResponse<CurrentState>(
+        streamedResponseAt304(""),
+        validateCurrentState,
+        "validateCurrentState",
+      ),
+    ).resolves.toMatchObject({ kind: "not-modified" });
+    await expect(
+      decodeReadResponse<CurrentState>(
+        streamedResponseAt304(new Uint8Array([0xef, 0xbb, 0xbf])),
+        validateCurrentState,
+        "validateCurrentState",
+      ),
+    ).rejects.toMatchObject({ code: "protocol_validation", validator: "validateCurrentState.304" });
+    await expect(
+      decodeReadResponse<CurrentState>(
+        streamedResponseAt304("unexpected"),
+        validateCurrentState,
+        "validateCurrentState",
+      ),
+    ).rejects.toMatchObject({ code: "protocol_validation", validator: "validateCurrentState.304" });
+  });
+
+  it("preserves the caller's abort reason while reading a streamed 304 body", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("cancel streamed 304", "AbortError");
+    let rejectBody: ((reason: unknown) => void) | undefined;
+    const response = {
+      status: 304,
+      headers: new Headers({ ETag: 'W/"revision-8"' }),
+      body: new ReadableStream(),
+      text: () =>
+        new Promise<string>((_resolve, reject) => {
+          rejectBody = reject;
+        }),
+    } as Response;
+    const pending = decodeReadResponse<CurrentState>(
+      response,
+      validateCurrentState,
+      "validateCurrentState",
+      controller.signal,
+    );
+    controller.abort(reason);
+    rejectBody?.(new Error("transport cancelled"));
+
+    await expect(pending).rejects.toBe(reason);
+  });
+
   it.each([200, 304])("rejects malformed ETag metadata on status %i", async (status) => {
     const response =
       status === 200
@@ -200,4 +249,10 @@ async function captureError(promise: Promise<unknown>): Promise<unknown> {
   } catch (error) {
     return error;
   }
+}
+
+function streamedResponseAt304(body: BodyInit): Response {
+  const response = new Response(body, { headers: { ETag: 'W/"revision-8"' } });
+  Object.defineProperty(response, "status", { value: 304 });
+  return response;
 }

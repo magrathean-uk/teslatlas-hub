@@ -39,6 +39,18 @@ const validatorRefs = {
   validateEvent: "urn:teslatlas:protocol:schema:event:1.2.0",
 };
 
+const hubValidatorRefs = {
+  validateHubDiscovery: "urn:teslatlas:hub-http-v1:1.0.0:discovery",
+  validateHubError: "urn:teslatlas:hub-http-v1:1.0.0:errors",
+  validateHubClaim: "urn:teslatlas:hub-http-v1:1.0.0:auth#/$defs/claim",
+  validateHubInvitation: "urn:teslatlas:hub-http-v1:1.0.0:auth#/$defs/invitation",
+  validateHubVehicles: "urn:teslatlas:hub-http-v1:1.0.0:resources#/$defs/vehicles",
+  validateHubCurrent: "urn:teslatlas:hub-http-v1:1.0.0:resources#/$defs/current",
+  validateHubDrives: "urn:teslatlas:hub-http-v1:1.0.0:resources#/$defs/drives",
+  validateHubHealth: "urn:teslatlas:hub-http-v1:1.0.0:resources#/$defs/health",
+  validateHubReady: "urn:teslatlas:hub-http-v1:1.0.0:resources#/$defs/ready",
+};
+
 async function readJson(path) {
   return JSON.parse(await readFile(path, "utf8"));
 }
@@ -60,6 +72,34 @@ async function generateValidators() {
   }
   return `// @ts-nocheck
 // @generated
+import ajvFormats from "ajv-formats/dist/formats.js";
+import ajvEqual from "ajv/dist/runtime/equal.js";
+import ajvUcs2Length from "ajv/dist/runtime/ucs2length.js";
+const ajvEqualRuntime = typeof ajvEqual === "function" ? ajvEqual : ajvEqual.default;
+const ajvUcs2LengthRuntime = typeof ajvUcs2Length === "function" ? ajvUcs2Length : ajvUcs2Length.default;
+${standalone}`;
+}
+
+async function generateHubValidators() {
+  const profileDirectory = join(sourceRoot, "profiles/hub-http-v1/1.0.0");
+  const ajv = new Ajv2020({ allErrors: true, code: { esm: true, source: true }, strict: false });
+  addFormats(ajv);
+  for (const file of [
+    "auth.schema.json",
+    "discovery.schema.json",
+    "errors.schema.json",
+    "resources.schema.json",
+  ]) {
+    ajv.addSchema(await readJson(join(profileDirectory, file)));
+  }
+  const standalone = standaloneCode(ajv, hubValidatorRefs)
+    .replaceAll('require("ajv-formats/dist/formats").fullFormats', "ajvFormats.fullFormats")
+    .replaceAll('require("ajv/dist/runtime/equal").default', "ajvEqualRuntime")
+    .replaceAll('require("ajv/dist/runtime/ucs2length").default', "ajvUcs2LengthRuntime");
+  if (standalone.includes("require(")) {
+    throw new Error("Generated Hub validators must not contain CommonJS runtime helpers");
+  }
+  return `// @generated
 import ajvFormats from "ajv-formats/dist/formats.js";
 import ajvEqual from "ajv/dist/runtime/equal.js";
 import ajvUcs2Length from "ajv/dist/runtime/ucs2length.js";
@@ -162,3 +202,36 @@ await writeFile(
 );
 await writeFile(join(outputRoot, "validators.ts"), await generateValidators());
 await writeFile(join(outputRoot, "protocol-cases.ts"), await generateCases());
+
+const hubProtocolOutput = join(outputRoot, "hub-protocol.ts");
+execFileSync(
+  npmExecutable,
+  [
+    "exec",
+    "--offline",
+    "--",
+    "openapi-typescript",
+    "protocol/source/profiles/hub-http-v1/1.0.0/openapi.json",
+    "--output",
+    hubProtocolOutput,
+  ],
+  { cwd: repositoryRoot, stdio: "inherit" },
+);
+await writeFile(
+  hubProtocolOutput,
+  `// @ts-nocheck\n// @generated\n${await readFile(hubProtocolOutput, "utf8")}`,
+);
+await writeFile(join(outputRoot, "hub-validators.js"), await generateHubValidators());
+await writeFile(
+  join(outputRoot, "hub-validators.d.ts"),
+  `// @generated
+export interface GeneratedHubValidator {
+  (value: unknown): boolean;
+  readonly errors?: unknown;
+}
+${Object.keys(hubValidatorRefs)
+  .sort()
+  .map((name) => `export const ${name}: GeneratedHubValidator;`)
+  .join("\n")}
+`,
+);

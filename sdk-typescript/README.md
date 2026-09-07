@@ -35,6 +35,12 @@ checkpoint persistence. See the [API reference](docs/api.md) and
 [compatibility guide](docs/compatibility.md) for the result, error, ETag, and
 replay contracts.
 
+For the frozen current Hub API, import `createHubClient` from the same browser
+or Node subpath. Supply the exact Hub endpoint, expected Hub UUID, and a
+caller-owned credential store. This dedicated adapter preserves the richer
+`createClient` API and exposes discovery, health/readiness, pairing, credential
+rotation, vehicles, current state, and drives.
+
 ## Local verification
 
 ```bash
@@ -69,6 +75,7 @@ Teslatlas SDK browser client: 1 vehicle, protocol 1.2.0
 
 ## Read next
 
+- [Product versioning](docs/product-versioning.md)
 - [Architecture](docs/architecture.md)
 - [API reference](docs/api.md)
 - [Compatibility](docs/compatibility.md)

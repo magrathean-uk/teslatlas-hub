@@ -1,0 +1,584 @@
+import { asSafeRequestId, ProtocolValidationError, TeslatlasError } from "../core/errors.js";
+import { FetchTransport, type FetchImplementation } from "../http/fetch-transport.js";
+import { requireEmptyResponseBody } from "../http/empty-body.js";
+import { asStrongEntityTag, isStrongEntityTag } from "../http/strong-etag.js";
+import type {
+  CreateHubClientOptions,
+  HubCapability,
+  HubClaim,
+  HubClient,
+  HubCredential,
+  HubDiscovery,
+  HubDrive,
+  HubDrivesOptions,
+  HubDrivesResult,
+  HubErrorCode,
+  HubInvitation,
+  HubRequestOptions,
+  HubResponse,
+  HubResponseMetadata,
+} from "./models.js";
+import {
+  decodeHubJson,
+  validateHubClaim,
+  validateHubCurrent,
+  validateHubDiscovery,
+  validateHubDrives,
+  validateHubError,
+  validateHubHealth,
+  validateHubInvitation,
+  validateHubReady,
+  validateHubVehicles,
+  type HubValidator,
+} from "./validate.js";
+
+const discoveryPath = "/.well-known/teslatlas-hub";
+const maximumResponseBytes = 1_048_576;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const tokenPattern = /^[0-9a-f]{64}$/u;
+
+export class HubIdentityMismatchError extends TeslatlasError<"hub_identity_mismatch"> {
+  constructor() {
+    super("Hub identity does not match the expected installation", {
+      code: "hub_identity_mismatch",
+    });
+  }
+}
+
+export class VehicleIdentityMismatchError extends TeslatlasError<"vehicle_identity_mismatch"> {
+  constructor() {
+    super("Hub response vehicle identity does not match the requested vehicle", {
+      code: "vehicle_identity_mismatch",
+    });
+  }
+}
+
+export class UnsupportedHubMethodError extends TeslatlasError<"unsupported_method"> {
+  readonly capability: HubCapability;
+
+  constructor(capability: HubCapability) {
+    super("Hub does not advertise the capability required by this method", {
+      code: "unsupported_method",
+    });
+    this.capability = capability;
+  }
+}
+
+export class HubHttpError extends TeslatlasError<HubErrorCode | "hub_http_error"> {
+  constructor(status: number, code: HubErrorCode | "hub_http_error", message?: string) {
+    super(message ?? "Hub request failed", { code, status });
+  }
+}
+
+export class HubClientDisposedError extends TeslatlasError<"client_disposed"> {
+  constructor() {
+    super("Hub client has been disposed", { code: "client_disposed" });
+  }
+}
+
+export function createHubClient(options: CreateHubClientOptions): HubClient {
+  return new StaticHubClient(options);
+}
+
+class StaticHubClient implements HubClient {
+  readonly #endpoint: URL;
+  readonly #expectedHubId: string;
+  readonly #credentials: CreateHubClientOptions["credentials"];
+  readonly #unauthenticatedTransport: FetchTransport;
+  readonly #authenticatedTransport: FetchTransport;
+  readonly #ownerSignal: AbortSignal | undefined;
+  #sessionAbort = new AbortController();
+  #discovery: HubDiscovery | undefined;
+  #discoveryPending: Promise<HubResponse<HubDiscovery>> | undefined;
+  #disposed = false;
+  #sessionGeneration = 0;
+  readonly #cursorBindings = new Map<string, string>();
+
+  constructor(options: CreateHubClientOptions) {
+    this.#endpoint = parseEndpoint(options.endpoint);
+    if (!uuidPattern.test(options.expectedHubId))
+      throw new ProtocolValidationError("expectedHubId");
+    this.#expectedHubId = options.expectedHubId;
+    this.#credentials = options.credentials;
+    this.#ownerSignal = options.signal;
+    const transportOptions = {
+      baseUrl: this.#endpoint,
+      ...(options.fetch === undefined ? {} : { fetch: options.fetch as FetchImplementation }),
+    };
+    this.#unauthenticatedTransport = new FetchTransport(transportOptions);
+    this.#authenticatedTransport = new FetchTransport({
+      ...transportOptions,
+      authorization: async () => {
+        const credential = await this.#credentials.load();
+        if (credential === undefined) return undefined;
+        validateCredential(credential);
+        return `Bearer ${credential.accessToken}`;
+      },
+    });
+  }
+
+  async discover(options: HubRequestOptions = {}): Promise<HubResponse<HubDiscovery>> {
+    this.#requireActive();
+    if (this.#discoveryPending !== undefined) return this.#discoveryPending;
+    const generation = this.#sessionGeneration;
+    const pending = this.#read(
+      this.#unauthenticatedTransport,
+      discoveryPath,
+      validateHubDiscovery,
+      "HubDiscovery",
+      options.signal,
+      [200],
+    ).then((result: HubResponse<HubDiscovery>) => {
+      if (generation !== this.#sessionGeneration || this.#disposed) {
+        throw new DOMException("Hub discovery belongs to an expired session", "AbortError");
+      }
+      if (result.value.hubId !== this.#expectedHubId) throw new HubIdentityMismatchError();
+      this.#discovery = result.value;
+      this.#cursorBindings.clear();
+      return result;
+    });
+    this.#discoveryPending = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.#discoveryPending === pending) this.#discoveryPending = undefined;
+    }
+  }
+
+  async health(options: HubRequestOptions = {}) {
+    this.#requireActive();
+    return this.#read(
+      this.#unauthenticatedTransport,
+      "/healthz",
+      validateHubHealth,
+      "HubHealth",
+      options.signal,
+      [200],
+    );
+  }
+
+  async readiness(options: HubRequestOptions = {}) {
+    this.#requireActive();
+    return this.#read(
+      this.#unauthenticatedTransport,
+      "/readyz",
+      validateHubReady,
+      "HubReadiness",
+      options.signal,
+      [200, 503],
+    );
+  }
+
+  async claimPairing(
+    invitation: HubInvitation,
+    deviceName: string,
+    options: HubRequestOptions = {},
+  ): Promise<HubResponse<HubClaim>> {
+    this.#requireActive();
+    await this.#ensureDiscovery(options.signal);
+    validateInvitation(invitation, this.#endpoint);
+    if (deviceName.length === 0 || deviceName.length > 65_536) {
+      throw new ProtocolValidationError("HubClaimRequest.deviceName");
+    }
+    const result = await this.#writeClaim(
+      this.#unauthenticatedTransport,
+      `/v1/pairings/${encodeURIComponent(invitation.pairingId)}/claim`,
+      JSON.stringify({ secret: invitation.secret, device_name: deviceName }),
+      options.signal,
+    );
+    requireUnexpiredClaim(result.value);
+    await this.#credentials.save(asCredential(result.value));
+    return result;
+  }
+
+  async rotateDevice(options: HubRequestOptions = {}): Promise<HubResponse<HubClaim>> {
+    this.#requireActive();
+    await this.#ensureDiscovery(options.signal);
+    const previous = await this.#credentials.load();
+    if (previous === undefined) throw new HubHttpError(401, "hub_http_error");
+    validateCredential(previous);
+    const result = await this.#writeClaim(
+      this.#authenticatedTransport,
+      "/v1/device/rotate",
+      undefined,
+      options.signal,
+    );
+    requireUnexpiredClaim(result.value);
+    if (result.value.deviceId !== previous.deviceId) {
+      throw new ProtocolValidationError("HubClaim.deviceId");
+    }
+    await this.#credentials.save(asCredential(result.value));
+    return result;
+  }
+
+  async vehicles(options: HubRequestOptions = {}) {
+    await this.#requireCapability("query.vehicles", options.signal);
+    return this.#read(
+      this.#authenticatedTransport,
+      "/v1/vehicles",
+      validateHubVehicles,
+      "HubVehicles",
+      options.signal,
+      [200],
+    );
+  }
+
+  async current(vehicleId: string, options: HubRequestOptions = {}) {
+    validateUuid(vehicleId, "vehicleId");
+    await this.#requireCapability("query.current", options.signal);
+    const result = await this.#read(
+      this.#authenticatedTransport,
+      `/v1/vehicles/${encodeURIComponent(vehicleId)}/current`,
+      validateHubCurrent,
+      "HubCurrent",
+      options.signal,
+      [200],
+    );
+    if (result.value.vehicleId !== vehicleId) throw new VehicleIdentityMismatchError();
+    return result;
+  }
+
+  async drives(vehicleId: string, options: HubDrivesOptions = {}): Promise<HubDrivesResult> {
+    validateUuid(vehicleId, "vehicleId");
+    if (options.ifNoneMatch !== undefined) asStrongEntityTag(options.ifNoneMatch);
+    await this.#requireCapability("query.drives", options.signal);
+    const binding = cursorBinding(vehicleId, options.fromMs, options.toMs);
+    if (
+      options.cursor !== undefined &&
+      this.#cursorBindings.has(options.cursor) &&
+      this.#cursorBindings.get(options.cursor) !== binding
+    ) {
+      throw new ProtocolValidationError("HubDrives.cursorBinding");
+    }
+    const query = new URLSearchParams();
+    appendInteger(query, "from_ms", options.fromMs);
+    appendInteger(query, "to_ms", options.toMs);
+    appendInteger(query, "limit", options.limit);
+    if (options.cursor !== undefined) query.set("cursor", options.cursor);
+    const response = await this.#authenticatedTransport.request(
+      `/v1/vehicles/${encodeURIComponent(vehicleId)}/drives${query.size === 0 ? "" : `?${query}`}`,
+      {
+        redirect: "error",
+        signal: this.#signal(options.signal),
+        ...(options.ifNoneMatch === undefined
+          ? {}
+          : { headers: { "If-None-Match": options.ifNoneMatch } }),
+      },
+    );
+    if (response.status !== 200 && response.status !== 304) {
+      return this.#throwHubError(response, "drives", options.signal);
+    }
+    requireNoStore(response);
+    const metadata = responseMetadata(response, true);
+    if (response.status === 304) {
+      await requireEmptyResponseBody(response, options.signal, "HubDrives.304");
+      return { kind: "notModified", metadata };
+    }
+    const value = await decodeResponse(response, validateHubDrives, "HubDrives", options.signal);
+    if (value.items.some((drive: HubDrive) => drive.vehicleId !== vehicleId)) {
+      throw new VehicleIdentityMismatchError();
+    }
+    if (value.nextCursor !== null) this.#cursorBindings.set(value.nextCursor, binding);
+    return { kind: "page", value, metadata };
+  }
+
+  async logout(): Promise<void> {
+    this.#requireActive();
+    this.#sessionAbort.abort(new DOMException("Hub client logged out", "AbortError"));
+    this.#sessionGeneration += 1;
+    this.#sessionAbort = new AbortController();
+    this.#cursorBindings.clear();
+    this.#discovery = undefined;
+    this.#discoveryPending = undefined;
+    await this.#credentials.clear();
+  }
+
+  dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#sessionGeneration += 1;
+    this.#sessionAbort.abort(new DOMException("Hub client disposed", "AbortError"));
+    this.#cursorBindings.clear();
+    this.#discovery = undefined;
+  }
+
+  async #ensureDiscovery(signal: AbortSignal | undefined): Promise<HubDiscovery> {
+    return (
+      this.#discovery ??
+      (await this.discover({ ...(signal === undefined ? {} : { signal }) })).value
+    );
+  }
+
+  async #requireCapability(
+    capability: HubCapability,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    this.#requireActive();
+    const discovery = await this.#ensureDiscovery(signal);
+    if (!(discovery.capabilities as readonly string[]).includes(capability)) {
+      throw new UnsupportedHubMethodError(capability);
+    }
+  }
+
+  async #read<T>(
+    transport: FetchTransport,
+    path: string,
+    validator: HubValidator<T>,
+    validatorName: string,
+    signal: AbortSignal | undefined,
+    successStatuses: readonly number[],
+  ): Promise<HubResponse<T>> {
+    const response = await transport.request(path, {
+      redirect: "error",
+      signal: this.#signal(signal),
+    });
+    if (!successStatuses.includes(response.status)) {
+      return this.#throwHubError(response, path === discoveryPath ? "discovery" : "other", signal);
+    }
+    return {
+      value: await decodeResponse(response, validator, validatorName, signal),
+      metadata: responseMetadata(response, false),
+    };
+  }
+
+  async #writeClaim(
+    transport: FetchTransport,
+    path: string,
+    body: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<HubResponse<HubClaim>> {
+    const response = await transport.request(path, {
+      method: "POST",
+      redirect: "error",
+      signal: this.#signal(signal),
+      ...(body === undefined ? {} : { body, headers: { "Content-Type": "application/json" } }),
+    });
+    if (response.status !== 200) return this.#throwHubError(response, "other", signal);
+    return {
+      value: await decodeResponse(response, validateHubClaim, "HubClaim", signal),
+      metadata: responseMetadata(response, false),
+    };
+  }
+
+  async #throwHubError(
+    response: Response,
+    route: "discovery" | "drives" | "other",
+    signal: AbortSignal | undefined,
+  ): Promise<never> {
+    const body = await readBody(response, signal, "HubError");
+    if (body.length === 0) throw new HubHttpError(response.status, "hub_http_error");
+    requireJsonContentType(response, "HubError");
+    const envelope = decodeHubJson(body, validateHubError, "HubError");
+    const code: HubErrorCode = envelope.error.code;
+    const expectedStatus = statusForHubError(code);
+    if (
+      expectedStatus !== response.status ||
+      (route === "discovery" && code !== "service_unavailable") ||
+      (route === "drives" && response.status === 503 && code !== "service_unavailable") ||
+      route === "other"
+    ) {
+      throw new ProtocolValidationError("HubError.status");
+    }
+    throw new HubHttpError(response.status, code, envelope.error.message);
+  }
+
+  #signal(signal: AbortSignal | undefined): AbortSignal {
+    this.#requireActive();
+    return AbortSignal.any(
+      [this.#ownerSignal, this.#sessionAbort.signal, signal].filter(
+        (candidate): candidate is AbortSignal => candidate !== undefined,
+      ),
+    );
+  }
+
+  #requireActive(): void {
+    if (this.#disposed) throw new HubClientDisposedError();
+  }
+}
+
+function parseEndpoint(value: string | URL): URL {
+  let url: URL;
+  try {
+    url = new URL(value instanceof URL ? value.href : value);
+  } catch {
+    throw new ProtocolValidationError("endpoint");
+  }
+  if (
+    (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback(url.hostname))) ||
+    url.username.length > 0 ||
+    url.password.length > 0 ||
+    url.pathname !== "/" ||
+    url.search.length > 0 ||
+    url.hash.length > 0
+  ) {
+    throw new ProtocolValidationError("endpoint");
+  }
+  return url;
+}
+
+function isLoopback(hostname: string): boolean {
+  return (
+    hostname === "localhost" || hostname === "[::1]" || /^127(?:\.[0-9]{1,3}){3}$/u.test(hostname)
+  );
+}
+
+function validateUuid(value: string, name: string): void {
+  if (!uuidPattern.test(value)) throw new ProtocolValidationError(name);
+}
+
+function validateCredential(value: HubCredential): void {
+  if (
+    !tokenPattern.test(value.accessToken) ||
+    !uuidPattern.test(value.deviceId) ||
+    !Number.isSafeInteger(value.expiresAtMs)
+  ) {
+    throw new ProtocolValidationError("HubCredential");
+  }
+}
+
+function validateInvitation(invitation: HubInvitation, endpoint: URL): void {
+  const wire = {
+    pairingId: invitation.pairingId,
+    secret: invitation.secret,
+    expiresAtMs: invitation.expiresAtMs,
+    endpoint: invitation.endpoint,
+    tlsPin: invitation.tlsPin,
+    pairingUri: invitation.pairingUri,
+  };
+  if (!validateHubInvitation(wire)) throw new ProtocolValidationError("HubInvitation");
+  if (!Number.isSafeInteger(invitation.expiresAtMs) || invitation.expiresAtMs <= Date.now()) {
+    throw new ProtocolValidationError("HubInvitation.expiry");
+  }
+  const invitationEndpoint = parseEndpoint(invitation.endpoint);
+  if (invitationEndpoint.origin !== endpoint.origin) {
+    throw new ProtocolValidationError("HubInvitation.endpoint");
+  }
+  let pairingUri: URL;
+  try {
+    pairingUri = new URL(invitation.pairingUri);
+  } catch {
+    throw new ProtocolValidationError("HubInvitation.pairingUri");
+  }
+  const expected = new Map([
+    ["endpoint", invitation.endpoint],
+    ["pairing_id", invitation.pairingId],
+    ["secret", invitation.secret],
+    ["tls_pin", invitation.tlsPin],
+  ]);
+  if (
+    pairingUri.protocol !== "teslatlas-hub:" ||
+    pairingUri.hostname !== "pair" ||
+    pairingUri.searchParams.size !== expected.size ||
+    [...expected].some(([key, value]) => pairingUri.searchParams.get(key) !== value)
+  ) {
+    throw new ProtocolValidationError("HubInvitation.pairingUri");
+  }
+}
+
+function requireUnexpiredClaim(claim: HubClaim): void {
+  if (!Number.isSafeInteger(claim.expiresAtMs) || claim.expiresAtMs <= Date.now()) {
+    throw new ProtocolValidationError("HubClaim.expiry");
+  }
+}
+
+function asCredential(claim: HubClaim): HubCredential {
+  return {
+    accessToken: claim.accessToken,
+    deviceId: claim.deviceId,
+    expiresAtMs: claim.expiresAtMs,
+  };
+}
+
+async function decodeResponse<T>(
+  response: Response,
+  validator: HubValidator<T>,
+  validatorName: string,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  requireJsonContentType(response, validatorName);
+  return decodeHubJson(
+    await readBody(response, signal, validatorName),
+    validator,
+    validatorName,
+  ) as T;
+}
+
+async function readBody(
+  response: Response,
+  signal: AbortSignal | undefined,
+  validatorName: string,
+): Promise<string> {
+  let body: string;
+  try {
+    body = await response.text();
+  } catch (error) {
+    if (signal?.aborted === true) throw signal.reason ?? error;
+    throw new ProtocolValidationError(validatorName);
+  }
+  if (new TextEncoder().encode(body).byteLength > maximumResponseBytes) {
+    throw new ProtocolValidationError(`${validatorName}.size`);
+  }
+  return body;
+}
+
+function requireJsonContentType(response: Response, validatorName: string): void {
+  const mediaType = response.headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (mediaType !== "application/json") {
+    throw new ProtocolValidationError(`${validatorName}.contentType`);
+  }
+}
+
+function responseMetadata(
+  response: Response,
+  requireEtag: true,
+): HubResponseMetadata & { etag: ReturnType<typeof asStrongEntityTag> };
+function responseMetadata(response: Response, requireEtag: false): HubResponseMetadata;
+function responseMetadata(response: Response, requireEtag: boolean): HubResponseMetadata {
+  const etag = response.headers.get("ETag") ?? undefined;
+  if (requireEtag && (etag === undefined || !isStrongEntityTag(etag))) {
+    throw new ProtocolValidationError("HubResponse.etag");
+  }
+  const requestIdHeader = response.headers.get("X-Request-ID");
+  const requestId = requestIdHeader === null ? undefined : asSafeRequestId(requestIdHeader);
+  return {
+    status: response.status,
+    ...(etag === undefined ? {} : { etag: requireEtag ? asStrongEntityTag(etag) : etag }),
+    ...(requestId === undefined ? {} : { requestId }),
+  };
+}
+
+function requireNoStore(response: Response): void {
+  if (response.headers.get("Cache-Control") !== "no-store") {
+    throw new ProtocolValidationError("HubDrives.cacheControl");
+  }
+}
+
+function appendInteger(query: URLSearchParams, name: string, value: number | undefined): void {
+  if (value === undefined) return;
+  if (!Number.isSafeInteger(value)) throw new ProtocolValidationError(`HubDrives.${name}`);
+  query.set(name, String(value));
+}
+
+function cursorBinding(
+  vehicleId: string,
+  fromMs: number | undefined,
+  toMs: number | undefined,
+): string {
+  return `${vehicleId}\u0000${fromMs ?? 0}\u0000${toMs ?? 9_007_199_254_740_991}`;
+}
+
+function statusForHubError(code: HubErrorCode): number {
+  switch (code) {
+    case "invalid_query":
+    case "invalid_time_range":
+    case "invalid_limit":
+    case "invalid_cursor":
+      return 400;
+    case "vehicle_not_found":
+      return 404;
+    case "service_unavailable":
+      return 503;
+    default:
+      throw new ProtocolValidationError("HubError.code");
+  }
+}

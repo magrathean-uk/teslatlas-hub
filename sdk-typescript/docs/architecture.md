@@ -33,6 +33,13 @@ client implementation. Both accept an injected Fetch implementation for
 deterministic tests and embedding-specific network policy. The examples and
 cross-runtime suites use fixture responses only.
 
+The current-Hub adapter is a separate, static-endpoint client so the richer
+`createClient` negotiation and public API remain intact. It shares safe Fetch
+transport primitives where wire semantics match, while using validators
+generated from the independently locked `hub-http-v1@1.0.0` bundle. Explicit
+logout or disposal provides the required abort and identity reset boundary
+without inventing a mutable endpoint API.
+
 ## Event and command boundaries
 
 Typed event streaming validates known events, preserves caller-owned replay
