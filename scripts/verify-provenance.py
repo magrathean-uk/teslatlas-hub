@@ -12,6 +12,8 @@ import subprocess
 import sys
 from typing import Any
 
+from candidate_source_manifest import CandidateManifestError, load_candidate_paths
+
 
 SCHEMA = "teslatlas.provenance-classification/v1"
 CLASSES = {
@@ -117,7 +119,9 @@ def require_nonempty_text(value: Any, label: str) -> str:
     return value
 
 
-def verify(repo: Path, manifest_path: Path) -> int:
+def verify(
+    repo: Path, manifest_path: Path, source_paths: set[str] | None = None
+) -> int:
     manifest = load_manifest(manifest_path)
     if manifest.get("schema") != SCHEMA:
         raise ManifestError(f"manifest schema must be {SCHEMA}")
@@ -131,7 +135,7 @@ def verify(repo: Path, manifest_path: Path) -> int:
     if not isinstance(rules, list) or not rules:
         raise ManifestError("manifest rules must be a non-empty array")
 
-    tracked = tracked_files(repo)
+    tracked = source_paths if source_paths is not None else tracked_files(repo)
     coverage: dict[str, list[tuple[str, str]]] = {path: [] for path in tracked}
     rule_ids: set[str] = set()
 
@@ -196,15 +200,26 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--manifest", type=Path)
+    parser.add_argument(
+        "--candidate-manifest",
+        type=Path,
+        help="verify this exact content-bound candidate file set instead of the Git index",
+    )
     args = parser.parse_args()
     repo = args.repo.resolve()
     manifest = (args.manifest or repo / "provenance-manifest.json").resolve()
     try:
-        count = verify(repo, manifest)
-    except ManifestError as exc:
+        source_paths = (
+            load_candidate_paths(repo, args.candidate_manifest.resolve())
+            if args.candidate_manifest is not None
+            else None
+        )
+        count = verify(repo, manifest, source_paths)
+    except (ManifestError, CandidateManifestError) as exc:
         print(f"verify-provenance: {exc}", file=sys.stderr)
         return 1
-    print(f"provenance classification passed: {count} tracked files, exactly one class each")
+    scope = "candidate files" if source_paths is not None else "tracked files"
+    print(f"provenance classification passed: {count} {scope}, exactly one class each")
     return 0
 
 

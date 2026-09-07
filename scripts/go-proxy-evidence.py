@@ -23,9 +23,11 @@ from typing import Any
 from urllib.parse import quote
 import zipfile
 
+from go_toolchain import select_go
+
 
 SCHEMA = "teslatlas.go-proxy-evidence/v2"
-LOCK_SCHEMA = "teslatlas.tesla-proxy-lock/v2"
+LOCK_SCHEMA = "teslatlas.tesla-proxy-lock/v3"
 PACKAGE = "github.com/teslamotors/vehicle-command/cmd/tesla-http-proxy"
 MAX_LOCK_BYTES = 128 * 1024
 MAX_BINARY_BYTES = 128 * 1024 * 1024
@@ -356,7 +358,7 @@ def validate_lock(lock: object) -> dict[str, Any]:
         validate_sha(subject["sha256"], f"lock.subjects.{target}.sha256")
         if not isinstance(subject["size"], int) or subject["size"] <= 0:
             raise GateError(f"lock.subjects.{target}.size must be a positive integer")
-    validate_build_host(root["build_host"])
+    validate_build_host_policy(root["build_host"])
     toolchain = require_keys(root["toolchain"], set(TOOLCHAIN_POLICY), "lock.toolchain")
     if toolchain != TOOLCHAIN_POLICY:
         raise GateError("lock toolchain does not match the reviewed build policy")
@@ -489,9 +491,10 @@ def locked_subject(repo: Path, lock: dict[str, Any], target: str) -> dict[str, A
 
 
 def strict_go_environment() -> tuple[str, dict[str, str], dict[str, str]]:
-    go = shutil.which("go")
-    if not go or not Path(go).is_file():
-        raise GateError("go is required")
+    try:
+        go = select_go(TOOLCHAIN_POLICY["go_version"])
+    except RuntimeError as exc:
+        raise GateError(str(exc)) from exc
     environment = os.environ.copy()
     for key in (
         "CC", "CXX", "CGO_CFLAGS", "CGO_CPPFLAGS", "CGO_CXXFLAGS", "CGO_LDFLAGS",
@@ -1415,24 +1418,69 @@ def write_output(path: Path, data: bytes) -> None:
     write_file(path, data, mode=0o644)
 
 
-def validate_build_host(value: object) -> dict[str, Any]:
-    host = require_keys(value, {"go", "compiler", "xcode", "sdk"}, "Go build host")
-    go = require_keys(host["go"], {"path", "sha256", "goroot"}, "Go build host.go")
+def validate_go_host(value: object, label: str) -> dict[str, Any]:
+    go = require_keys(value, {"path", "sha256", "goroot"}, label)
+    for field in ("path", "goroot"):
+        text = require_string(go[field], f"{label}.{field}")
+        if not Path(text).is_absolute() or any(
+            ord(character) < 32 or ord(character) == 127 for character in text
+        ):
+            raise GateError(f"{label}.{field} must be a safe absolute path")
+    validate_sha(go["sha256"], f"{label}.sha256")
+    return go
+
+
+def validate_non_go_host(host: dict[str, Any], label: str) -> None:
     compiler = require_keys(
-        host["compiler"], {"path", "sha256", "version"}, "Go build host.compiler"
+        host["compiler"], {"path", "sha256", "version"}, f"{label}.compiler"
     )
-    xcode = require_keys(host["xcode"], {"version", "build"}, "Go build host.xcode")
-    sdk = require_keys(host["sdk"], {"path", "version", "build"}, "Go build host.sdk")
+    xcode = require_keys(host["xcode"], {"version", "build"}, f"{label}.xcode")
+    sdk = require_keys(host["sdk"], {"path", "version", "build"}, f"{label}.sdk")
     for item, prefix, fields in (
-        (go, "Go build host.go", ("path", "goroot")),
-        (compiler, "Go build host.compiler", ("path", "version")),
-        (xcode, "Go build host.xcode", ("version", "build")),
-        (sdk, "Go build host.sdk", ("path", "version", "build")),
+        (compiler, f"{label}.compiler", ("path", "version")),
+        (xcode, f"{label}.xcode", ("version", "build")),
+        (sdk, f"{label}.sdk", ("path", "version", "build")),
     ):
         for field in fields:
             require_string(item[field], f"{prefix}.{field}")
-    validate_sha(go["sha256"], "Go build host.go.sha256")
-    validate_sha(compiler["sha256"], "Go build host.compiler.sha256")
+    validate_sha(compiler["sha256"], f"{label}.compiler.sha256")
+
+
+def validate_build_host_policy(value: object) -> dict[str, Any]:
+    host = require_keys(value, {"go", "compiler", "xcode", "sdk"}, "Go build host policy")
+    allowed_go = host["go"]
+    if not isinstance(allowed_go, list) or not 1 <= len(allowed_go) <= 8:
+        raise GateError("Go build host policy.go must contain 1-8 allowed identities")
+    for index, candidate in enumerate(allowed_go):
+        validate_go_host(candidate, f"Go build host policy.go[{index}]")
+    identities = [
+        (candidate["path"], candidate["sha256"], candidate["goroot"])
+        for candidate in allowed_go
+    ]
+    if len(identities) != len(set(identities)):
+        raise GateError("Go build host policy contains a duplicate Go host identity")
+    if identities != sorted(identities):
+        raise GateError("Go build host policy.go must be uniquely sorted")
+    validate_non_go_host(host, "Go build host policy")
+    return host
+
+
+def validate_observed_build_host(value: object, label: str) -> dict[str, Any]:
+    host = require_keys(value, {"go", "compiler", "xcode", "sdk"}, label)
+    validate_go_host(host["go"], f"{label}.go")
+    validate_non_go_host(host, label)
+    return host
+
+
+def require_reviewed_build_host(
+    value: object, policy: dict[str, Any], label: str
+) -> dict[str, Any]:
+    host = validate_observed_build_host(value, label)
+    if host["go"] not in policy["go"]:
+        raise GateError(f"{label} Go identity is not an allowed complete binding")
+    for section in ("compiler", "xcode", "sdk"):
+        if host[section] != policy[section]:
+            raise GateError(f"{label} {section} identity does not match the exact lock")
     return host
 
 
@@ -1474,9 +1522,9 @@ def validate_build_receipt(
         raise GateError("Go build receipt proxy does not match the locked subject")
     if receipt["toolchain"] != receipt_toolchain(lock, target):
         raise GateError("Go build receipt toolchain does not match the exact lock")
-    validate_build_host(receipt["build_host"])
-    if receipt["build_host"] != lock["build_host"]:
-        raise GateError("Go build receipt host identity does not match the exact lock")
+    require_reviewed_build_host(
+        receipt["build_host"], lock["build_host"], "Go build receipt host"
+    )
     expected_source_configuration = {
         "archived_upstream_source_unchanged": True,
         "overlay_path": lock["overlay"]["path"],
@@ -1666,8 +1714,7 @@ def evidence(
         staged_proxy = temporary / "supplied-tesla-http-proxy"
         write_file(staged_proxy, proxy_data, mode=0o700)
         build_host = toolchain_identity(go, base_environment, temporary)
-        if build_host != lock["build_host"]:
-            raise GateError("local Go/Xcode build host does not match the reviewed lock")
+        require_reviewed_build_host(build_host, lock["build_host"], "local Go build host")
         build_info = verify_build_info(
             go, base_environment, temporary, staged_proxy, lock, target
         )
@@ -1770,10 +1817,15 @@ def parse_args() -> argparse.Namespace:
         description="Generate deterministic Tesla Go proxy source and dependency evidence."
     )
     parser.add_argument("--repo", required=True, help="Teslatlas Hub repository root")
-    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs = parser.add_mutually_exclusive_group()
     inputs.add_argument("--proxy-binary", help="unsigned linker-built proxy")
     inputs.add_argument("--verify-dir", help="verify an existing evidence directory")
     parser.add_argument("--output-dir", help="new evidence directory")
+    parser.add_argument(
+        "--check-go-toolchain",
+        action="store_true",
+        help="validate and print the selected Go executable, then exit",
+    )
     parser.add_argument(
         "--target",
         choices=tuple(TARGET_POLICIES),
@@ -1788,6 +1840,16 @@ def main() -> int:
     args = parse_args()
     try:
         repo = checked_directory(Path(args.repo), "repository")
+        if args.check_go_toolchain:
+            if args.proxy_binary or args.verify_dir or args.output_dir or args.target != "darwin-arm64":
+                raise GateError("--check-go-toolchain cannot be combined with evidence inputs")
+            try:
+                print(select_go(TOOLCHAIN_POLICY["go_version"]))
+            except RuntimeError as exc:
+                raise GateError(str(exc)) from exc
+            return 0
+        if bool(args.proxy_binary) == bool(args.verify_dir):
+            raise GateError("exactly one of --proxy-binary or --verify-dir is required")
         if args.verify_dir:
             if args.output_dir:
                 raise GateError("--output-dir cannot be used with --verify-dir")

@@ -1384,3 +1384,102 @@ fn projection_state_digest_cache_rejects_mismatched_durable_rows() {
         ));
     }
 }
+
+#[test]
+fn owner_observation_joins_caller_transaction_for_atomic_receipts() {
+    for commit in [false, true] {
+        let temp = crate::private_tempdir().expect("temp directory");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let (source, vehicle) = test_registered_vehicle(&store);
+        let input = ObservationInput {
+            source_id: source.source_id,
+            vehicle_id: vehicle.vehicle_id,
+            observed_at_ms: 10_000,
+            payload: serde_json::json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "source_vehicle_id": "9",
+                "source_vehicle_state": "online",
+                "vehicle_data": {
+                    "drive_state": {"shift_state": "P", "speed": 0},
+                    "charge_state": {"charging_state": "Disconnected", "battery_level": 0},
+                    "vehicle_state": {"timestamp": 10_000}
+                }
+            }),
+        };
+        let mut connection = store.open().expect("connection");
+        connection
+            .execute_batch("CREATE TABLE interop_transaction_receipts (id INTEGER PRIMARY KEY)")
+            .unwrap();
+        let observer = store.open().expect("independent read connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        let result = store
+            .accept_owner_observation_and_lifecycle_in_transaction(
+                &transaction,
+                &input,
+                10_001,
+                1,
+                crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT,
+            )
+            .expect("accept inside outer transaction");
+        assert!(result.append.inserted);
+        transaction
+            .execute("INSERT INTO interop_transaction_receipts VALUES (1)", [])
+            .unwrap();
+        for table in [
+            "current_observations",
+            "vehicle_lifecycle_state",
+            "interop_transaction_receipts",
+        ] {
+            let count: i64 = observer
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "{table} must not become visible before commit");
+        }
+        if commit {
+            transaction.commit().unwrap();
+        } else {
+            transaction.rollback().unwrap();
+        }
+        assert_eq!(
+            store
+                .open()
+                .unwrap()
+                .query_row(
+                    "SELECT COUNT(*) FROM interop_transaction_receipts",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            i64::from(commit)
+        );
+        let current = store
+            .current_observations_for_vehicle(vehicle.vehicle_id)
+            .unwrap();
+        assert_eq!(current.len(), usize::from(commit));
+        assert_eq!(
+            store
+                .load_lifecycle_state(vehicle.vehicle_id)
+                .unwrap()
+                .is_some(),
+            commit
+        );
+        if commit {
+            assert_eq!(current[0].observed_at_ms, 10_000);
+            assert_eq!(
+                current[0].payload["vehicle_data"]["charge_state"]["battery_level"],
+                0
+            );
+        }
+        let retry = store
+            .accept_owner_observation_and_lifecycle(&input, 10_002, 1)
+            .unwrap();
+        assert_eq!(
+            retry.append.inserted, !commit,
+            "rollback must also undo observation deduplication"
+        );
+    }
+}

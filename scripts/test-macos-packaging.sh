@@ -61,6 +61,13 @@ done
 /bin/sh -n "$SERVICE_BUILD" || fail "invalid macOS service build script"
 /bin/sh -n "$PROXY_BUILD" || fail "invalid Tesla command proxy build script"
 /bin/sh -n "$FLEET_TELEMETRY_BUILD" || fail "invalid Fleet Telemetry build script"
+/usr/bin/grep -Fq 'bootstrap-companions.py' "$SERVICE_BUILD" \
+    || fail "service package does not include the companion bootstrap helper"
+/usr/bin/grep -Fq 'catalog-current.json' "$SERVICE_BUILD" \
+    || fail "service package does not include the fixed shipped companion catalog"
+if /usr/bin/grep -Fq 'bootstrap-companions.py' "$POSTINSTALL"; then
+    fail "privileged postinstall must not run the companion bootstrap"
+fi
 /usr/bin/plutil -lint "$PLIST" >/dev/null || fail "invalid LaunchAgent template"
 /usr/bin/python3 -m json.tool "$FLEET_TELEMETRY_EXAMPLE" >/dev/null \
     || fail "invalid Fleet Telemetry receiver example"

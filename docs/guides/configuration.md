@@ -36,6 +36,34 @@ public_url = "https://hub.example.net/"
 TLS-facing sync endpoints require a paired-device bearer. The one-time pairing
 claim is the only unauthenticated mutation. Never reuse pairing invitations.
 
+## Browser clients
+
+Cross-origin browser access is disabled by default. List each permitted Viewer
+origin explicitly when the Viewer is hosted separately from Hub:
+
+```toml
+[http]
+allowed_origins = ["https://viewer.example.net", "http://localhost:5173"]
+```
+
+Origins must use canonical `http://host[:port]` or `https://host[:port]` syntax,
+with no trailing slash, path, credentials, query or fragment. Default ports
+are omitted. Duplicate values, wildcards and `null` are rejected. There may
+be at most 32 origins, each at most 2048 bytes. The configured Hub public
+origin also supports same-origin requests without being listed.
+
+CORS applies to the public HTTP routes, including pairing and rotation, with
+route-specific GET/POST preflights. It never exposes the internal Fleet
+ingress. Manifest and no-op requests admit only their sync-negotiation headers;
+`Range` and `If-Range` are admitted only for pack downloads. Responses vary by
+origin and expose ETags, request IDs and required sync/range response headers.
+An allowed-origin public request that reaches the bounded handler/queue timeout
+retains CORS metadata on its 503 response. Cookies are not enabled; clients use
+dedicated paired-device bearer tokens. An allowed origin does not bypass
+authentication or certificate validation. Browsers must trust Hub's TLS
+certificate through their normal trust store. Plaintext loopback remains a
+development mode with pairing disabled and cannot verify client authentication.
+
 ## Collector mode
 
 Legacy mode is the default. It combines adaptive Owner API polling with Tesla

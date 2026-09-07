@@ -1,0 +1,479 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+
+"""Behavior tests for the Hub ecosystem product-version synchronizer."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import subprocess
+import sys
+import tarfile
+import tempfile
+import unittest
+from datetime import date
+from pathlib import Path
+
+
+SCRIPT = Path(__file__).with_name("sync-ecosystem-versions.py")
+PRODUCT_VERSION = "2026.36.2"
+COMPATIBILITY_COMPONENTS = (
+    "teslatlas-protocol",
+    "teslatlas-sdk-typescript",
+    "teslatlas-sdk-swift",
+    "teslatlas-viewer",
+    "teslatlas-home-assistant",
+    "teslatlas-edge",
+)
+
+
+def write(path: Path, contents: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(contents, encoding="utf-8")
+
+
+def product_record(version: str) -> str:
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "status": "candidate",
+            "product_version": version,
+            "profile": {
+                "id": "hub-http-v1",
+                "revision": "1.0.0",
+                "sha256": None,
+            },
+            "tested_hub_versions": [],
+            "tested_hub_source_fingerprints": [],
+            "required_capabilities": [],
+            "optional_capabilities": [],
+            "test_receipt_paths": [],
+        },
+        indent=2,
+    ) + "\n"
+
+
+def ecosystem_release_record(
+    version: str, *, tag_status: str = "not_created", artifact_version: str | None = None
+) -> str:
+    artifacts = []
+    if artifact_version is not None:
+        artifacts.append(
+            {
+                "component": "teslatlas-sdk-typescript",
+                "name": f"teslatlas-sdk-{artifact_version}.tgz",
+                "embedded_version": artifact_version,
+                "sha256": "a" * 64,
+                "status": "local_candidate",
+                "distribution": "not_published",
+            }
+        )
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "status": "candidate",
+            "product_version": version,
+            "source_tag": {"name": f"v{version}", "status": tag_status},
+            "profile": {
+                "id": "hub-http-v1",
+                "revision": "1.0.0",
+                "sha256": None,
+                "status": "unbound",
+            },
+            "components": [],
+            "artifacts": artifacts,
+            "test_receipt_paths": [],
+        },
+        indent=2,
+    ) + "\n"
+
+
+def make_workspace(root: Path, version: str = PRODUCT_VERSION) -> dict[Path, bytes]:
+    write(root / "hub/Cargo.toml", f'[package]\nname = "teslatlas-hub"\nversion = "{version}"\n')
+    write(
+        root / "hub/Cargo.lock",
+        f'version = 4\n\n[[package]]\nname = "teslatlas-hub"\nversion = "{version}"\n',
+    )
+    write(
+        root / "hub/macos/TeslatlasHubApp/project.yml",
+        "name: TeslatlasHubApp\nsettings:\n  base:\n"
+        f'    MARKETING_VERSION: "{version}"\n'
+        '    TESLATLAS_HUB_VERSION: "$(MARKETING_VERSION)"\n'
+        '    CURRENT_PROJECT_VERSION: "20260905.1"\n',
+    )
+    write(
+        root / "hub/macos/TeslatlasHubApp/TeslatlasHubApp/Info.plist",
+        """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+<key>TeslatlasHubVersion</key><string>$(TESLATLAS_HUB_VERSION)</string>
+</dict></plist>
+""",
+    )
+    write(
+        root / "hub/docs/compatibility/ecosystem-release.json",
+        ecosystem_release_record(version),
+    )
+
+    write(
+        root / "teslatlas-protocol/pyproject.toml",
+        f'[project]\nname = "teslatlas-protocol-conformance"\nversion = "{version}"\n',
+    )
+    write(
+        root / "teslatlas-protocol/uv.lock",
+        "version = 1\nrevision = 3\n\n[[package]]\n"
+        f'name = "teslatlas-protocol-conformance"\nversion = "{version}"\n',
+    )
+    write(root / "teslatlas-protocol/VERSION", f"{version}\n")
+
+    write(
+        root / "teslatlas-sdk-typescript/package.json",
+        json.dumps({"name": "@teslatlas/sdk", "version": version, "private": True}, indent=2)
+        + "\n",
+    )
+    write(
+        root / "teslatlas-sdk-typescript/package-lock.json",
+        json.dumps(
+            {
+                "name": "@teslatlas/sdk",
+                "version": version,
+                "lockfileVersion": 3,
+                "packages": {"": {"name": "@teslatlas/sdk", "version": version}},
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+
+    write(root / "teslatlas-sdk-swift/VERSION", f"{version}\n")
+    write(
+        root / "teslatlas-sdk-swift/Sources/TeslatlasHubSDK/ProductVersion.swift",
+        "// @generated by hub/scripts/sync-ecosystem-versions.py\n"
+        f'public let teslatlasProductVersion = "{version}"\n',
+    )
+
+    write(
+        root / "teslatlas-viewer/package.json",
+        json.dumps({"name": "teslatlas-viewer", "version": version, "private": True}, indent=2)
+        + "\n",
+    )
+    write(
+        root / "teslatlas-viewer/package-lock.json",
+        json.dumps(
+            {
+                "name": "teslatlas-viewer",
+                "version": version,
+                "lockfileVersion": 3,
+                "packages": {"": {"name": "teslatlas-viewer", "version": version}},
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    write(
+        root / "teslatlas-viewer/public/version.json",
+        json.dumps({"product_version": version}, indent=2) + "\n",
+    )
+
+    write(
+        root / "teslatlas-home-assistant/pyproject.toml",
+        f'[project]\nname = "teslatlas-home-assistant"\nversion = "{version}"\n',
+    )
+    write(
+        root / "teslatlas-home-assistant/uv.lock",
+        "version = 1\nrevision = 3\n\n[[package]]\n"
+        f'name = "teslatlas-home-assistant"\nversion = "{version}"\n',
+    )
+    write(
+        root / "teslatlas-home-assistant/custom_components/teslatlas_hub/manifest.json",
+        json.dumps({"domain": "teslatlas_hub", "version": version}, indent=2) + "\n",
+    )
+
+    write(
+        root / "teslatlas-edge/Cargo.toml",
+        f'[package]\nname = "teslatlas-edge"\nversion = "{version}"\n',
+    )
+    write(
+        root / "teslatlas-edge/Cargo.lock",
+        f'version = 4\n\n[[package]]\nname = "teslatlas-edge"\nversion = "{version}"\n',
+    )
+
+    for component in (
+        "teslatlas-protocol",
+        "teslatlas-sdk-typescript",
+        "teslatlas-sdk-swift",
+        "teslatlas-viewer",
+        "teslatlas-home-assistant",
+        "teslatlas-edge",
+    ):
+        write(root / component / "compatibility/hub.json", product_record(version))
+
+    protected = {
+        root / "teslatlas-protocol/compatibility/1.2.0/profile.json": b'{"protocol_version":"1.2.0"}\n',
+        root / "teslatlas-protocol/openapi/wire.json": b'{"api_version":"1.0"}\n',
+        root / "hub/fixtures/pack-manifest.json": b'{"schema_version":"2.2"}\n',
+        root / "teslatlas-edge/src/spool.rs": b"pub const SPOOL_FORMAT_VERSION: u16 = 2;\n",
+        root / "teslatlas-edge/packaging/config.toml.example": b"version = 1\n",
+        root / "teslatlas-edge/packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json": b'{"version":"0.1.0"}\n',
+        root / "teslatlas-sdk-swift/Package.swift": b"// swift-tools-version: 6.0\n",
+    }
+    for path, contents in protected.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(contents)
+    return protected
+
+
+def run_script(workspace: Path, mode: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--workspace", str(workspace), mode],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def load_script():
+    spec = importlib.util.spec_from_file_location("ecosystem_versions", SCRIPT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load ecosystem version script")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class EcosystemVersionCliTests(unittest.TestCase):
+    def test_check_accepts_exact_equality_across_all_product_manifests(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            make_workspace(workspace)
+
+            result = run_script(workspace, "--check")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, "")
+            self.assertIn("ecosystem product version 2026.36.2 is aligned", result.stdout)
+
+    def test_check_rejects_one_mismatched_component(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            make_workspace(workspace)
+            package = workspace / "teslatlas-viewer/package.json"
+            contents = json.loads(package.read_text(encoding="utf-8"))
+            contents["version"] = "2026.36.1"
+            write(package, json.dumps(contents, indent=2) + "\n")
+
+            result = run_script(workspace, "--check")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("teslatlas-viewer/package.json:version", result.stderr)
+            self.assertIn("expected 2026.36.2, found 2026.36.1", result.stderr)
+
+    def test_candidate_record_cannot_claim_tested_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            make_workspace(workspace)
+            record_path = workspace / "teslatlas-viewer/compatibility/hub.json"
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            record["tested_hub_versions"] = [PRODUCT_VERSION]
+            write(record_path, json.dumps(record, indent=2) + "\n")
+
+            result = run_script(workspace, "--check")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("candidate record must have no tested Hub versions", result.stderr)
+
+    def test_candidate_record_may_bind_exported_profile_before_compatibility_testing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            make_workspace(workspace)
+            for component in COMPATIBILITY_COMPONENTS:
+                record_path = workspace / component / "compatibility/hub.json"
+                record = json.loads(record_path.read_text(encoding="utf-8"))
+                record["profile"]["sha256"] = "a" * 64
+                write(record_path, json.dumps(record, indent=2) + "\n")
+
+            result = run_script(workspace, "--check")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_check_rejects_stale_candidate_artifact_and_source_tag_bindings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            make_workspace(workspace)
+            release_path = workspace / "hub/docs/compatibility/ecosystem-release.json"
+            write(
+                release_path,
+                ecosystem_release_record(PRODUCT_VERSION, artifact_version="2026.36.1").replace(
+                    f'"name": "v{PRODUCT_VERSION}"', '"name": "v2026.36.1"'
+                ),
+            )
+
+            result = run_script(workspace, "--check")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("source_tag.name", result.stderr)
+            self.assertIn("artifacts[0].embedded_version", result.stderr)
+
+    def test_apply_transition_invalidates_artifact_without_relabelling_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            make_workspace(workspace, "2026.36.1")
+            release_path = workspace / "hub/docs/compatibility/ecosystem-release.json"
+            write(
+                release_path,
+                ecosystem_release_record("2026.36.1", artifact_version="2026.36.1"),
+            )
+            hub_manifest = workspace / "hub/Cargo.toml"
+            write(
+                hub_manifest,
+                hub_manifest.read_text(encoding="utf-8").replace("2026.36.1", PRODUCT_VERSION),
+            )
+
+            result = run_script(workspace, "--apply")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            release = json.loads(release_path.read_text(encoding="utf-8"))
+            self.assertEqual(release["product_version"], PRODUCT_VERSION)
+            self.assertEqual(release["source_tag"], {"name": f"v{PRODUCT_VERSION}", "status": "not_created"})
+            self.assertEqual(release["artifacts"], [])
+
+    def test_apply_refuses_to_move_a_created_source_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            make_workspace(workspace, "2026.36.1")
+            release_path = workspace / "hub/docs/compatibility/ecosystem-release.json"
+            original_release = ecosystem_release_record(
+                "2026.36.1", tag_status="created", artifact_version="2026.36.1"
+            )
+            write(release_path, original_release)
+            hub_manifest = workspace / "hub/Cargo.toml"
+            write(
+                hub_manifest,
+                hub_manifest.read_text(encoding="utf-8").replace("2026.36.1", PRODUCT_VERSION),
+            )
+
+            result = run_script(workspace, "--apply")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("refusing to move created source tag", result.stderr)
+            self.assertEqual(release_path.read_text(encoding="utf-8"), original_release)
+
+    def test_apply_updates_only_allowlisted_product_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            protected = make_workspace(workspace, "2026.36.1")
+            hub_manifest = workspace / "hub/Cargo.toml"
+            write(
+                hub_manifest,
+                hub_manifest.read_text(encoding="utf-8").replace("2026.36.1", PRODUCT_VERSION),
+            )
+
+            result = run_script(workspace, "--apply")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(run_script(workspace, "--check").returncode, 0)
+            for path, original in protected.items():
+                self.assertEqual(path.read_bytes(), original, str(path))
+
+    def test_check_rejects_missing_and_invalid_versions(self) -> None:
+        cases = {
+            "missing": None,
+            "leading-zero": "2026.036.1",
+            "zero-revision": "2026.36.0",
+            "invalid-week": "2026.54.1",
+        }
+        for name, value in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                workspace = Path(directory).resolve()
+                make_workspace(workspace)
+                version_file = workspace / "teslatlas-sdk-swift/VERSION"
+                if value is None:
+                    version_file.unlink()
+                else:
+                    write(version_file, f"{value}\n")
+
+                result = run_script(workspace, "--check")
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("teslatlas-sdk-swift/VERSION", result.stderr)
+
+    def test_workspace_must_be_absolute(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--workspace", "relative", "--check"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--workspace must be an absolute path", result.stderr)
+
+
+class CalendarVersionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.module = load_script()
+
+    def test_comparison_is_numeric(self) -> None:
+        ordered = ["2026.36.9", "2026.36.10", "2026.37.1", "2027.1.1"]
+        self.assertEqual(
+            sorted(reversed(ordered), key=self.module.parse_product_version),
+            ordered,
+        )
+
+    def test_iso_week_year_rollover_uses_release_date(self) -> None:
+        self.assertEqual(self.module.iso_release_week(date(2027, 1, 1)), "2026.53")
+        self.assertEqual(self.module.iso_release_week(date(2027, 1, 4)), "2027.1")
+
+    def test_invalid_versions_are_rejected(self) -> None:
+        for value in ("2026.036.1", "2026.36.0", "2026.54.1"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    self.module.parse_product_version(value)
+
+
+class EmbeddedVersionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.module = load_script()
+
+    def test_cli_version_requires_one_exact_stdout_line_and_empty_stderr(self) -> None:
+        self.module.check_cli_version(
+            "teslatlas-hub 2026.36.2\n", "", "teslatlas-hub", PRODUCT_VERSION
+        )
+        for stdout, stderr in (
+            ("teslatlas-hub 2026.36.1\n", ""),
+            ("teslatlas-hub 2026.36.2\nextra\n", ""),
+            ("teslatlas-hub 2026.36.2\n", "warning\n"),
+        ):
+            with self.subTest(stdout=stdout, stderr=stderr), self.assertRaises(ValueError):
+                self.module.check_cli_version(
+                    stdout, stderr, "teslatlas-hub", PRODUCT_VERSION
+                )
+
+    def test_debian_version_keeps_separate_package_suffix(self) -> None:
+        self.module.check_debian_version("2026.36.2-1", PRODUCT_VERSION)
+        with self.assertRaises(ValueError):
+            self.module.check_debian_version("2026.36.20-1", PRODUCT_VERSION)
+
+    def test_npm_tarball_embeds_exact_package_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "teslatlas-sdk-2026.36.2.tgz"
+            metadata = json.dumps({"name": "@teslatlas/sdk", "version": PRODUCT_VERSION}).encode()
+            payload = Path(directory) / "package.json"
+            payload.write_bytes(metadata)
+            with tarfile.open(archive, "w:gz") as tar:
+                tar.add(payload, arcname="package/package.json")
+
+            self.module.check_npm_tarball_version(archive, PRODUCT_VERSION)
+
+            with self.assertRaises(ValueError):
+                self.module.check_npm_tarball_version(archive, "2026.36.1")
+
+
+if __name__ == "__main__":
+    unittest.main()

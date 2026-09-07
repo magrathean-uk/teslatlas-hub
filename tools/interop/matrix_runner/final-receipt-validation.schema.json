@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/final-receipt-validation-v2.json",
+  "title": "Closed semantic validation result with independently parsed input lineage",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "kind", "path", "sha256", "cohort_id", "scope", "status", "artifact_schema", "gate_ids", "accepted_review_verdict", "tested_cohort_inputs", "historical_tested_inputs"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 2},
+    "kind": {"enum": ["matrix", "package", "bootstrap", "upgrade", "private-lane", "historical", "review"]},
+    "path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"},
+    "cohort_id": {"type": "string", "minLength": 1},
+    "scope": {"enum": ["local-tested-cohort-not-published", "local-built-not-published", "local-source-candidate", "isolated-upgrade", "authorized-private-lane", "historical-local-evidence", "independent-review"]},
+    "status": {"enum": ["passed", "pending"]}, "artifact_schema": {"type": "string", "minLength": 1},
+    "gate_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "accepted_review_verdict": {"type": ["boolean", "null"]},
+    "tested_cohort_inputs": {"anyOf": [{"$ref": "#/$defs/binding"}, {"type": "null"}]},
+    "historical_tested_inputs": {"anyOf": [{"$ref": "#/$defs/binding"}, {"type": "null"}]}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "binding": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    }
+  }
+}

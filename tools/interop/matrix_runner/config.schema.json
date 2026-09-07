@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/hub-compatibility-runner-config-v2.json",
+  "title": "Private Teslatlas Hub compatibility runner config",
+  "type": "object",
+  "additionalProperties": false,
+  "allOf": [
+    {"if": {"properties": {"schema_version": {"const": 1}}}, "then": {
+      "not": {"required": ["cohort_inputs"]},
+      "properties": {"jobs": {"items": {"not": {"anyOf": [{"required": ["installed_session"]}, {"required": ["client_execution"]}]}}}}
+    }},
+    {"if": {"properties": {"schema_version": {"const": 2}}}, "then": {
+      "required": ["cohort_inputs"],
+      "properties": {
+        "execution_kind": {"const": "actual_hub_acceptance"},
+        "jobs": {"items": {"required": ["installed_session", "client_execution"]}}
+      }
+    }}
+  ],
+  "required": ["schema_version", "execution_kind", "matrix_sha256", "product_version", "profile", "jobs"],
+  "properties": {
+    "schema_version": {"enum": [1, 2]},
+    "execution_kind": {"enum": ["actual_hub_acceptance", "interim_actual_protocol_smoke", "deterministic_runner_test"]},
+    "matrix_sha256": {"$ref": "#/$defs/sha256"},
+    "product_version": {"const": "2026.36.2"},
+    "profile": {"$ref": "#/$defs/profile"},
+    "jobs": {"type": "array", "maxItems": 21, "items": {"$ref": "#/$defs/job"}},
+    "cohort_inputs": {"$ref": "#/$defs/command_file"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "absolute_path": {"type": "string", "pattern": "^/"},
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "path", "sha256"],
+      "properties": {
+        "id": {"const": "hub-http-v1"},
+        "revision": {"const": "1.0.0"},
+        "path": {"$ref": "#/$defs/absolute_path"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "repo", "head", "dirty_patch_sha256", "untracked_source_manifest_sha256"],
+      "properties": {
+        "role": {"enum": ["hub_source", "protocol_source", "typescript_sdk_source", "viewer_source", "swift_sdk_source", "home_assistant_source", "edge_source", "app_source", "deterministic_source"]},
+        "repo": {"$ref": "#/$defs/absolute_path"},
+        "head": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "dirty_patch_sha256": {"$ref": "#/$defs/sha256"},
+        "untracked_source_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "name", "path", "embedded_version", "sha256"],
+      "properties": {
+        "role": {"enum": ["hub_executable", "typescript_sdk_tarball", "protocol_fixture_seed", "viewer_package_tarball", "swift_sdk_product", "home_assistant_integration_archive", "edge_executable", "deterministic_fixture"]},
+        "name": {"type": "string", "minLength": 1},
+        "path": {"$ref": "#/$defs/absolute_path"},
+        "embedded_version": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "runtime_host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture", "native_or_emulated", "service_mode", "tool_versions"],
+      "properties": {
+        "os": {"type": "string", "minLength": 1},
+        "architecture": {"type": "string", "minLength": 1},
+        "native_or_emulated": {"enum": ["native", "emulated"]},
+        "service_mode": {"type": "string", "minLength": 1},
+        "tool_versions": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "minLength": 1}}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hub", "client", "browser_engines", "client_transports"],
+      "properties": {
+        "hub": {"$ref": "#/$defs/runtime_host"},
+        "client": {"$ref": "#/$defs/runtime_host"},
+        "browser_engines": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "client_transports": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "command_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/absolute_path"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cell_id", "adapter", "argv", "cwd", "environment_file", "evidence_path",
+        "evidence_mode", "timeout_seconds", "max_output_bytes", "command_files",
+        "source_identities", "artifacts", "runtime"
+      ],
+      "properties": {
+        "cell_id": {"type": "string", "minLength": 1},
+        "adapter": {"enum": ["protocol_actual_hub", "typescript_node", "typescript_browser", "viewer", "swift", "home_assistant", "edge_v2"]},
+        "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "cwd": {"$ref": "#/$defs/absolute_path"},
+        "environment_file": {"$ref": "#/$defs/absolute_path"},
+        "evidence_path": {"$ref": "#/$defs/absolute_path"},
+        "evidence_mode": {"enum": ["stdout_json", "file_json"]},
+        "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+        "max_output_bytes": {"type": "integer", "minimum": 1024, "maximum": 8388608},
+        "command_files": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/command_file"}},
+        "source_identities": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
+        "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/artifact"}},
+        "runtime": {"$ref": "#/$defs/runtime"},
+        "installed_session": {
+          "type": "object", "additionalProperties": false,
+          "required": ["config", "registration_inventory"],
+          "properties": {"config": {"$ref": "#/$defs/command_file"}, "registration_inventory": {"$ref": "#/$defs/command_file"}}
+        },
+        "client_execution": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "registration", "relay"],
+          "properties": {
+            "kind": {"enum": ["local", "ssh_linux", "docker_exec_pipe"]},
+            "registration": {"oneOf": [{"$ref": "#/$defs/command_file"}, {"type": "null"}]},
+            "relay": {"oneOf": [{"$ref": "#/$defs/command_file"}, {"type": "null"}]}
+          }
+        }
+      }
+    }
+  }
+}

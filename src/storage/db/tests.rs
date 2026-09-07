@@ -8,6 +8,7 @@ use crate::protocol::{
 };
 
 include!("tests/database_and_migrations.rs");
+include!("tests/edge_delivery.rs");
 include!("tests/catalogue_and_pairing.rs");
 include!("tests/observations_and_import_setup.rs");
 include!("tests/projection_state.rs");

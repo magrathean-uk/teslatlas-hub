@@ -32,7 +32,8 @@ usage() {
     printf '%s\n' \
         'Usage: scripts/build-fleet-telemetry-bridge.sh --target TARGET --output PATH' \
         '' \
-        'TARGET: darwin-arm64, darwin-amd64, linux-arm64, or linux-amd64'
+        'TARGET: darwin-arm64, darwin-amd64, linux-arm64, or linux-amd64' \
+        '--check-go-toolchain validates and prints the selected Go executable.'
 }
 
 sha256_file() {
@@ -47,6 +48,7 @@ sha256_file() {
 
 target=
 output=
+check_go_toolchain=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --target)
@@ -59,6 +61,10 @@ while [ "$#" -gt 0 ]; do
             output=$2
             shift 2
             ;;
+        --check-go-toolchain)
+            check_go_toolchain=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -70,33 +76,35 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "$target" ] || die "--target is required"
-[ -n "$output" ] || die "--output is required"
-case "$target" in
-    darwin-arm64)
-        target_os=darwin
-        target_arch=arm64
-        file_pattern='Mach-O 64-bit executable arm64'
-        ;;
-    darwin-amd64)
-        target_os=darwin
-        target_arch=amd64
-        file_pattern='Mach-O 64-bit executable x86_64'
-        ;;
-    linux-arm64)
-        target_os=linux
-        target_arch=arm64
-        file_pattern='ELF 64-bit LSB executable, ARM aarch64'
-        ;;
-    linux-amd64)
-        target_os=linux
-        target_arch=amd64
-        file_pattern='ELF 64-bit LSB executable, x86-64'
-        ;;
-    *)
-        die "unsupported target: $target"
-        ;;
-esac
+if [ "$check_go_toolchain" -eq 0 ]; then
+    [ -n "$target" ] || die "--target is required"
+    [ -n "$output" ] || die "--output is required"
+    case "$target" in
+        darwin-arm64)
+            target_os=darwin
+            target_arch=arm64
+            file_pattern='Mach-O 64-bit executable arm64'
+            ;;
+        darwin-amd64)
+            target_os=darwin
+            target_arch=amd64
+            file_pattern='Mach-O 64-bit executable x86_64'
+            ;;
+        linux-arm64)
+            target_os=linux
+            target_arch=arm64
+            file_pattern='ELF 64-bit LSB executable, ARM aarch64'
+            ;;
+        linux-amd64)
+            target_os=linux
+            target_arch=amd64
+            file_pattern='ELF 64-bit LSB executable, x86-64'
+            ;;
+        *)
+            die "unsupported target: $target"
+            ;;
+    esac
+fi
 
 script_directory=$(CDPATH='' cd "$(dirname "$0")" && pwd -P)
 repository_root=$(CDPATH='' cd "$script_directory/.." && pwd -P)
@@ -106,12 +114,21 @@ overlay_patch="$repository_root/packaging/fleet-telemetry-bridge/0001-teslatlas-
 [ -f "$overlay_patch" ] && [ ! -L "$overlay_patch" ] || die "overlay patch is missing or unsafe"
 
 PYTHON=$(command -v python3) || die "python3 is required"
-GO=$(command -v go) || die "go is required"
+GO_TOOLCHAIN_HELPER="$repository_root/scripts/go_toolchain.py"
+[ -f "$GO_TOOLCHAIN_HELPER" ] && [ ! -L "$GO_TOOLCHAIN_HELPER" ] \
+    || die "Go toolchain selector is missing or unsafe"
+GO=$(/usr/bin/python3 "$GO_TOOLCHAIN_HELPER" --expected-version "$GO_VERSION") \
+    || die "cannot select the pinned Go toolchain"
+TESLATLAS_GO=$GO
+export TESLATLAS_GO
+if [ "$check_go_toolchain" -eq 1 ]; then
+    printf '%s\n' "$TESLATLAS_GO"
+    exit 0
+fi
 CURL=$(command -v curl) || die "curl is required"
 PATCH=$(command -v patch) || die "patch is required"
 TAR=$(command -v tar) || die "tar is required"
 FILE=$(command -v file) || die "file is required"
-[ "$($GO env GOVERSION)" = "$GO_VERSION" ] || die "$GO_VERSION is required exactly"
 
 "$PYTHON" - "$lock_file" "$VERSION" "$COMMIT" "$ARCHIVE_URL" "$ARCHIVE_SHA256" "$PATCH_SHA256" "$GO_VERSION" "$target" <<'PY'
 import json

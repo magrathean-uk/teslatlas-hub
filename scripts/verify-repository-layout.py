@@ -13,6 +13,8 @@ import stat
 import subprocess
 import sys
 
+from candidate_source_manifest import CandidateManifestError, load_candidate_paths
+
 
 DOC_CATEGORIES = {
     "architecture",
@@ -149,8 +151,8 @@ def verify_links(repo: Path, paths: set[str]) -> list[str]:
     return errors
 
 
-def verify(repo: Path) -> None:
-    paths = tracked_paths(repo)
+def verify(repo: Path, source_paths: set[str] | None = None) -> None:
+    paths = source_paths if source_paths is not None else tracked_paths(repo)
     errors: list[str] = []
     root_markdown = sorted(
         path for path in paths if "/" not in path and path.endswith(".md")
@@ -221,7 +223,8 @@ def verify(repo: Path) -> None:
         raise LayoutError("\n".join(errors))
     markdown_count = sum(path.endswith(".md") for path in paths)
     print(
-        f"repository layout passed: {len(paths)} tracked files, "
+        f"repository layout passed: {len(paths)} "
+        f"{'candidate files' if source_paths is not None else 'tracked files'}, "
         f"{markdown_count} Markdown files, zero root Markdown, "
         f"{len(SOURCE_DOMAINS)} source domains, Rust files <= {MAX_RUST_SOURCE_LINES} lines"
     )
@@ -230,10 +233,21 @@ def verify(repo: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--candidate-manifest",
+        type=Path,
+        help="verify this exact content-bound candidate file set instead of the Git index",
+    )
     args = parser.parse_args()
     try:
-        verify(args.repo.resolve())
-    except LayoutError as exc:
+        repo = args.repo.resolve()
+        source_paths = (
+            load_candidate_paths(repo, args.candidate_manifest.resolve())
+            if args.candidate_manifest is not None
+            else None
+        )
+        verify(repo, source_paths)
+    except (LayoutError, CandidateManifestError) as exc:
         print(f"repository-layout: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

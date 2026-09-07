@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use thiserror::Error;
 
@@ -80,10 +80,23 @@ pub struct FleetTelemetryAccumulator {
     created_at_ms: i64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct TimedPackValue {
     value: f64,
     timestamp_ms: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CompleteAccumulatorState {
+    version: u32,
+    vin: String,
+    owner_data: Map<String, Value>,
+    field_watermarks: BTreeMap<String, i64>,
+    pack_voltage: Option<TimedPackValue>,
+    pack_current: Option<TimedPackValue>,
+    created_at_ms: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -173,6 +186,80 @@ enum Group {
 }
 
 impl FleetTelemetryAccumulator {
+    /// Restore the Edge ingestion accumulator without discarding ordering
+    /// watermarks or either half of a split pack-power sample.
+    pub fn restore_complete(input: &[u8]) -> Result<Self, FleetTelemetryError> {
+        if input.len() > MAX_FLEET_TELEMETRY_INPUT_BYTES {
+            return Err(FleetTelemetryError::InputTooLarge);
+        }
+        let state: CompleteAccumulatorState =
+            serde_json::from_slice(input).map_err(|_| FleetTelemetryError::InvalidExistingState)?;
+        if state.version != 1
+            || state.created_at_ms < 0
+            || state.field_watermarks.len() > MAX_FLEET_TELEMETRY_FIELDS + 1
+            || state.field_watermarks.iter().any(|(field, timestamp)| {
+                field.len() > MAX_FIELD_NAME_BYTES
+                    || field.is_empty()
+                    || *timestamp < EARLIEST_TIMESTAMP_MS
+            })
+            || [state.pack_voltage, state.pack_current]
+                .into_iter()
+                .flatten()
+                .any(|value| !value.value.is_finite() || value.timestamp_ms < EARLIEST_TIMESTAMP_MS)
+        {
+            return Err(FleetTelemetryError::InvalidExistingState);
+        }
+        let vin = validate_vin(&state.vin)?;
+        let owner_data = sanitize_existing_owner(&state.owner_data)?;
+        if owner_data
+            .get("vin")
+            .and_then(Value::as_str)
+            .is_some_and(|owner_vin| owner_vin != vin)
+        {
+            return Err(FleetTelemetryError::VinMismatch);
+        }
+        Ok(Self {
+            vin,
+            owner_data,
+            field_watermarks: state.field_watermarks,
+            pack_voltage: state.pack_voltage,
+            pack_current: state.pack_current,
+            created_at_ms: state.created_at_ms,
+        })
+    }
+
+    /// Restore durable Edge state and bind it to the configured delivery VIN.
+    /// A complete state is lineage-owned; accepting it for another VIN would
+    /// turn every subsequent supported record into an acknowledged data loss.
+    pub(crate) fn restore_complete_for_vin(
+        input: &[u8],
+        expected_vin: &str,
+    ) -> Result<Self, FleetTelemetryError> {
+        let accumulator = Self::restore_complete(input)?;
+        if accumulator.vin != validate_vin(expected_vin)? {
+            return Err(FleetTelemetryError::VinMismatch);
+        }
+        Ok(accumulator)
+    }
+
+    /// Versioned, bounded state used only by the durable Edge consumer.
+    pub fn encode_complete(&self) -> Result<Vec<u8>, FleetTelemetryError> {
+        let encoded = serde_json::to_vec(&CompleteAccumulatorState {
+            version: 1,
+            vin: self.vin.clone(),
+            owner_data: self.owner_data.clone(),
+            field_watermarks: self.field_watermarks.clone(),
+            pack_voltage: self.pack_voltage,
+            pack_current: self.pack_current,
+            created_at_ms: self.created_at_ms,
+        })
+        .map_err(|_| FleetTelemetryError::InvalidExistingState)?;
+        if encoded.len() > MAX_FLEET_TELEMETRY_INPUT_BYTES {
+            return Err(FleetTelemetryError::InputTooLarge);
+        }
+        Ok(encoded)
+    }
+
     pub fn restore(vin: &str, existing_owner_data: &Value) -> Result<Self, FleetTelemetryError> {
         let vin = validate_vin(vin)?;
         let bytes = serde_json::to_vec(existing_owner_data)

@@ -106,6 +106,37 @@ include!("collector/scheduler.rs");
 include!("collector/projection.rs");
 include!("collector/errors.rs");
 
+/// Drain the ordinary durable sync-mutation outbox created by an Edge ingest.
+/// The Edge receipt remains committed when this derived publication fails.
+pub(crate) fn publish_edge_pending_mutations(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    vehicle_id: Uuid,
+    now_ms: i64,
+) -> Result<usize, CollectorError> {
+    let _publication_gate = store.try_acquire_publication_gate()?;
+    #[cfg(feature = "edge-test-faults")]
+    if crate::edge_test_fault::fail_publication_once() {
+        return Err(
+            StoreError::SyncMutation("instrumented Edge publication failure".to_owned()).into(),
+        );
+    }
+    if !store.vehicle_has_v2_base(vehicle_id)? {
+        return Err(StoreError::LineageCatalogConflict.into());
+    }
+    let mut published = 0usize;
+    while let Some(claim) = store.claim_sync_mutations(vehicle_id, now_ms, 10_000)? {
+        match publish_v2_delta(store, cursor_key, &claim) {
+            Ok(()) => published += claim.mutations.len(),
+            Err(error) => {
+                store.release_sync_mutations(&claim)?;
+                return Err(error);
+            }
+        }
+    }
+    Ok(published)
+}
+
 #[cfg(test)]
 #[path = "collector/tests.rs"]
 mod tests;

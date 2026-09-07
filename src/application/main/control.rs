@@ -11,6 +11,9 @@ async fn main() -> ExitCode {
         .init();
 
     let cli = Cli::parse();
+    if let Command::Companions { command } = &cli.command {
+        return run_companion_command(command).await;
+    }
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

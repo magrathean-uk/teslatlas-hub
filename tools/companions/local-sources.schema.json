@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Teslatlas content-bound local companion sources",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "components"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "components": {
+      "type": "object",
+      "propertyNames": {
+        "enum": ["protocol", "sdk-typescript", "sdk-swift", "viewer", "home-assistant", "edge"]
+      },
+      "additionalProperties": {"$ref": "#/$defs/source"}
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "path", "repository", "commit", "source_sha256", "files"],
+      "properties": {
+        "component": {
+          "enum": ["protocol", "sdk-typescript", "sdk-swift", "viewer", "home-assistant", "edge"]
+        },
+        "path": {"type": "string", "pattern": "^/"},
+        "repository": {
+          "enum": [
+            "https://github.com/magrathean-uk/teslatlas-protocol.git",
+            "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+            "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+            "https://github.com/magrathean-uk/teslatlas-viewer.git",
+            "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+            "https://github.com/magrathean-uk/teslatlas-edge.git"
+          ]
+        },
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "files": {
+          "type": "array",
+          "maxItems": 50000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "size", "executable"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "size": {"type": "integer", "minimum": 0},
+              "executable": {"type": "boolean"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

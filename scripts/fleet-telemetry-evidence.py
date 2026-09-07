@@ -23,6 +23,8 @@ from typing import Any
 from urllib.parse import quote
 import zipfile
 
+from go_toolchain import select_configured_go, select_go
+
 
 SCHEMA = "teslatlas.fleet-telemetry-evidence/v1"
 LEGAL_LOCK_SCHEMA = "teslatlas.fleet-telemetry-legal-lock/v1"
@@ -1028,13 +1030,23 @@ def write_file(path: Path, data: bytes) -> None:
         os.close(descriptor)
 
 
+def configured_go_override() -> str | None:
+    try:
+        return select_configured_go("go1.27.0")
+    except RuntimeError as exc:
+        raise GateError(str(exc)) from exc
+
+
 def default_module_cache() -> Path:
+    go = configured_go_override()
     configured = os.environ.get("GOMODCACHE")
     if configured:
         return Path(os.path.abspath(configured))
-    go = shutil.which("go")
     if go is None:
-        raise GateError("--module-cache is required when Go is unavailable")
+        try:
+            go = select_go("go1.27.0")
+        except RuntimeError as exc:
+            raise GateError(str(exc)) from exc
     environment = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": os.environ.get("HOME", ""),
@@ -1120,9 +1132,27 @@ def main() -> int:
     parser.add_argument("--target", default="darwin-arm64")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--verify-dir", type=Path)
+    parser.add_argument("--check-go-toolchain", action="store_true")
     args = parser.parse_args()
 
     repo = checked_directory(Path(os.path.abspath(args.repo)), "repository")
+    if args.check_go_toolchain:
+        if any(
+            value is not None
+            for value in (
+                args.receiver_binary,
+                args.source_archive,
+                args.module_cache,
+                args.output_dir,
+                args.verify_dir,
+            )
+        ) or args.target != "darwin-arm64":
+            raise GateError("--check-go-toolchain cannot be combined with evidence inputs")
+        try:
+            print(select_go("go1.27.0"))
+        except RuntimeError as exc:
+            raise GateError(str(exc)) from exc
+        return 0
     if args.verify_dir is not None:
         if any(
             value is not None
@@ -1151,12 +1181,12 @@ def main() -> int:
             + ".tar.gz"
         )
     )
-    module_cache = checked_directory(
-        Path(os.path.abspath(args.module_cache))
-        if args.module_cache is not None
-        else default_module_cache(),
-        "offline Go module cache",
-    )
+    if args.module_cache is not None:
+        configured_go_override()
+        module_cache_path = Path(os.path.abspath(args.module_cache))
+    else:
+        module_cache_path = default_module_cache()
+    module_cache = checked_directory(module_cache_path, "offline Go module cache")
     output_raw = Path(os.path.abspath(args.output_dir))
     output_parent = checked_directory(output_raw.parent, "output parent")
     output = output_parent / output_raw.name

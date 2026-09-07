@@ -465,10 +465,37 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        let result = self.accept_owner_observation_and_lifecycle_in_transaction(
+            &transaction,
+            input,
+            received_at_ms,
+            car_id,
+            offline_drive_timeout,
+        )?;
+        self.maybe_stream_fault(StreamFaultPoint::Commit)?;
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        Ok(result)
+    }
+
+    /// Join the caller's transaction without opening or committing another one.
+    /// The caller must roll back on error and owns the final commit/fault boundary.
+    pub(crate) fn accept_owner_observation_and_lifecycle_in_transaction(
+        &self,
+        transaction: &rusqlite::Transaction<'_>,
+        input: &ObservationInput,
+        received_at_ms: i64,
+        car_id: i64,
+        offline_drive_timeout: std::time::Duration,
+    ) -> Result<OwnerObservationResult, StoreError> {
+        input.validate()?;
+        validate_timestamp("observation received_at_ms", received_at_ms)?;
+        if car_id <= 0 {
+            return Err(StoreError::InvalidLifecycleCarId);
+        }
         self.maybe_stream_fault(StreamFaultPoint::RawInsert)?;
-        let appended = append_observation_in_transaction(&transaction, input, received_at_ms)?;
+        let appended = append_observation_in_transaction(transaction, input, received_at_ms)?;
         self.maybe_stream_fault(StreamFaultPoint::LifecycleWrite)?;
-        let existing = load_lifecycle_state_in_transaction(&transaction, input.vehicle_id)?;
+        let existing = load_lifecycle_state_in_transaction(transaction, input.vehicle_id)?;
         let mut state = match existing.as_ref() {
             Some(record) => crate::lifecycle::OpenSessionState::decode(&record.open_session_json)
                 .map_err(|_| StoreError::InvalidLifecycleSession)?,
@@ -476,7 +503,7 @@ impl HubStore {
         };
         // Incremental path: no full open-child rehydrate per observation.
         let observations = observations_after_id_in_transaction(
-            &transaction,
+            transaction,
             input.vehicle_id,
             state.last_observation_id,
             MAX_OBSERVATION_QUERY_LIMIT,
@@ -533,7 +560,7 @@ impl HubStore {
             .encode()
             .map_err(|_| StoreError::InvalidLifecycleSession)?;
         Self::commit_lifecycle_delta_in_transaction(
-            &transaction,
+            transaction,
             &LifecycleCommit {
                 vehicle_id: input.vehicle_id,
                 car_id,
@@ -544,8 +571,6 @@ impl HubStore {
                 delta: &delta,
             },
         )?;
-        self.maybe_stream_fault(StreamFaultPoint::Commit)?;
-        transaction.commit().map_err(StoreError::LifecycleWrite)?;
         Ok(OwnerObservationResult {
             append: appended,
             drives_closed: delta.drives.len(),
@@ -846,8 +871,8 @@ impl HubStore {
             .map_err(StoreError::Query)?
             .map(|value| {
                 let (stored_drive_id, value) = value.map_err(StoreError::Query)?;
-                let drive: crate::hub_pack::ProjectionDrive = serde_json::from_str(&value)
-                    .map_err(StoreError::DeserializeLifecycleRow)?;
+                let drive: crate::hub_pack::ProjectionDrive =
+                    serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
                 if drive.id != stored_drive_id {
                     return Err(StoreError::InvalidDriveProjectionIdentity);
                 }

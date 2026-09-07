@@ -1,6 +1,6 @@
 [package]
 name = "teslatlas-hub"
-version = "2026.36.1"
+version = "2026.36.2"
 edition = "2024"
 rust-version = "1.98"
 license = "AGPL-3.0-only"
@@ -18,6 +18,10 @@ path = "src/lib.rs"
 name = "teslatlas-hub"
 path = "src/application/main.rs"
 
+[features]
+default = []
+edge-test-faults = []
+
 [dependencies]
 getrandom = "0.4.3"
 aes-gcm = "0.11.1"
@@ -32,13 +36,14 @@ hex = "0.4"
 http = "1"
 qrcode = { version = "0.14.1", default-features = false }
 rcgen = { version = "0.14.9", default-features = false, features = ["crypto", "pem", "ring"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["http2", "query", "rustls-no-provider", "stream"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["http2", "json", "query", "rustls-no-provider", "stream"] }
 rust_decimal = { version = "1.42.1", features = ["db-tokio-postgres"] }
 rustix = { version = "1.1.4", features = ["fs", "process"] }
 rusqlite = { version = "0.40.2", features = ["backup", "bundled"] }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_jcs = "0.1"
 sha2 = "0.11.0"
 thiserror = "2"
 tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "rt-multi-thread", "signal", "net", "process", "time"] }

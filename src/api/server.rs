@@ -36,6 +36,10 @@ use uuid::Uuid;
 
 use super::public_query::{DriveQuery, DriveQueryError, DriveQueryParameters, PublicDrive};
 
+#[path = "server/browser_cors.rs"]
+mod browser_cors;
+use browser_cors::CorsPolicy;
+
 #[cfg(unix)]
 use crate::config::HubConfig;
 use crate::{
@@ -566,6 +570,30 @@ fn router_with_access_and_telemetry(
     native_config_digest: Option<Sha256Digest>,
     fleet_telemetry: Option<FleetTelemetryIngress>,
 ) -> Router {
+    router_with_access_telemetry_and_http(
+        store,
+        supervised_collector_required,
+        require_device_auth,
+        pairing_claim_enabled,
+        manifest_signing,
+        cursor_key,
+        native_config_digest,
+        fleet_telemetry,
+        CorsPolicy::default(),
+    )
+}
+
+fn router_with_access_telemetry_and_http(
+    store: HubStore,
+    supervised_collector_required: bool,
+    require_device_auth: bool,
+    pairing_claim_enabled: bool,
+    manifest_signing: Option<ManifestSigning>,
+    cursor_key: Option<CursorKey>,
+    native_config_digest: Option<Sha256Digest>,
+    fleet_telemetry: Option<FleetTelemetryIngress>,
+    cors: CorsPolicy,
+) -> Router {
     let ordinary = Router::new()
         .route("/healthz", get(health))
         .route("/readyz", get(ready))
@@ -578,7 +606,11 @@ fn router_with_access_and_telemetry(
         .route("/v1/vehicles/{vehicle_id}/sync/manifest", get(manifest))
         .route("/v1/vehicles/{vehicle_id}/sync/noop", get(schema_22_noop))
         .route("/v1/packs/sha256/{object_name}", get(pack))
-        .layer(DefaultBodyLimit::max(4 * 1024));
+        .layer(DefaultBodyLimit::max(4 * 1024))
+        .layer(axum::middleware::from_fn_with_state(
+            cors.clone(),
+            browser_cors::apply,
+        ));
     let telemetry = Router::new()
         .route("/v1/internal/fleet-telemetry", post(ingest_fleet_telemetry))
         .layer(DefaultBodyLimit::max(MAX_FLEET_TELEMETRY_INPUT_BYTES));
@@ -597,7 +629,12 @@ fn router_with_access_and_telemetry(
             native_config_digest,
             fleet_telemetry,
         ));
-    apply_http_resource_limits(router, MAX_IN_FLIGHT_HTTP_REQUESTS, HTTP_HANDLER_TIMEOUT)
+    apply_http_resource_limits_with_cors(
+        router,
+        MAX_IN_FLIGHT_HTTP_REQUESTS,
+        HTTP_HANDLER_TIMEOUT,
+        cors,
+    )
 }
 
 fn apply_http_resource_limits(router: Router, maximum: usize, timeout: Duration) -> Router {
@@ -610,6 +647,17 @@ fn apply_http_resource_limits(router: Router, maximum: usize, timeout: Duration)
             StatusCode::SERVICE_UNAVAILABLE,
             timeout,
         ))
+}
+
+fn apply_http_resource_limits_with_cors(
+    router: Router,
+    maximum: usize,
+    timeout: Duration,
+    cors: CorsPolicy,
+) -> Router {
+    apply_http_resource_limits(router, maximum, timeout).layer(
+        axum::middleware::from_fn_with_state(cors, browser_cors::decorate_resource_limit_response),
+    )
 }
 
 /// Serve from the one admitted Hub process. Its durable cursor key is kept
@@ -708,7 +756,7 @@ where
             handle,
             tokio::spawn(
                 server.serve(
-                    router_with_access_and_telemetry(
+                    router_with_access_telemetry_and_http(
                         store,
                         supervised_collector_required,
                         true,
@@ -717,6 +765,7 @@ where
                         Some(cursor_key.clone()),
                         Some(native_config_digest),
                         fleet_telemetry,
+                        CorsPolicy::for_config(config),
                     )
                     .into_make_service(),
                 ),
@@ -741,7 +790,7 @@ where
             handle,
             tokio::spawn(
                 server.serve(
-                    router_with_access_and_telemetry(
+                    router_with_access_telemetry_and_http(
                         store,
                         supervised_collector_required,
                         false,
@@ -750,6 +799,7 @@ where
                         cursor_key,
                         Some(native_config_digest),
                         fleet_telemetry,
+                        CorsPolicy::for_config(config),
                     )
                     .into_make_service(),
                 ),
@@ -1886,3 +1936,7 @@ struct PublicApiError {
 #[cfg(test)]
 #[path = "server/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "server/cors_tests.rs"]
+mod cors_tests;

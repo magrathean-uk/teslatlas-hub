@@ -41,6 +41,7 @@ fn supervised_restart_test_config(data_dir: &std::path::Path) -> HubConfig {
         data_dir: data_dir.to_path_buf(),
         bind: "127.0.0.1:39191".parse().expect("loopback bind"),
         tls: None,
+        http: Default::default(),
         collector: crate::config::CollectorConfig::default(),
         geocoder: crate::config::GeocoderConfig {
             enabled: false,

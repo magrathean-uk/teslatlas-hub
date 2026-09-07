@@ -79,6 +79,17 @@ pub struct CollectorDiagnostics {
     pub geocoder_enabled: bool,
     pub terrain_enabled: bool,
     pub bind: String,
+    pub edge: Option<EdgeConsumerDiagnostics>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EdgeConsumerDiagnostics {
+    pub state: String,
+    pub detail: String,
+    pub updated_at_ms: Option<i64>,
+    pub pending_publications: u64,
+    pub ack_frontier: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -295,8 +306,11 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         && catalogue.paired_devices == 0
         && !legacy.present
         && !fleet.present;
-    let collector_required = config.collector.interval_seconds > 0 && !init_only;
-    let can_start = collector_required && !configured.is_empty() && selected_credentials_present;
+    let collector_required =
+        (config.collector.interval_seconds > 0 || config.collector.edge.is_some()) && !init_only;
+    let can_start = collector_required
+        && !configured.is_empty()
+        && (config.collector.edge.is_some() || selected_credentials_present);
     let selected_credentials_configured = match config.collector.provider {
         CollectorProvider::Legacy => legacy.present,
         CollectorProvider::Fleet => fleet.present,
@@ -336,6 +350,24 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     }
 
     let tls = tls_diagnostics(config);
+    let edge = if let Some(edge) = &config.collector.edge {
+        let counts = store.edge_ledger_counts(&edge.installation_id, &edge.lineage)?;
+        let state = store.edge_diagnostic(&edge.installation_id, &edge.lineage)?;
+        Some(EdgeConsumerDiagnostics {
+            state: state
+                .as_ref()
+                .map_or_else(|| "never_started".to_owned(), |value| value.state.clone()),
+            detail: state.as_ref().map_or_else(
+                || "no Edge worker receipt".to_owned(),
+                |value| value.detail.clone(),
+            ),
+            updated_at_ms: state.as_ref().map(|value| value.updated_at_ms),
+            pending_publications: counts.pending_publications,
+            ack_frontier: counts.ack_frontier,
+        })
+    } else {
+        None
+    };
     let wal_ok = DoctorCheck {
         name: "sqliteJournal".to_owned(),
         passed: catalogue.journal_mode.eq_ignore_ascii_case("wal")
@@ -474,6 +506,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             geocoder_enabled: config.geocoder.enabled,
             terrain_enabled: config.terrain.enabled,
             bind: config.bind.to_string(),
+            edge,
         },
         stream_audit,
         tls,

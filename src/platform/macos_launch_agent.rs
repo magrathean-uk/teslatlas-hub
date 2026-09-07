@@ -38,7 +38,47 @@ pub fn prepare_install(data_dir: &Path, config_path: &Path) -> io::Result<Instal
         .map(PathBuf::from)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
     let executable = std::env::current_exe()?;
-    install_files_after_preflight(data_dir, config_path, &home, &executable)
+    let config = crate::config::HubConfig::load(config_path)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    if config.data_dir != data_dir {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "configuration data directory does not match install target",
+        ));
+    }
+    preflight_hub_for_config(&config)?;
+    install_files(data_dir, config_path, &home, &executable)
+}
+
+/// Validate the configured collection authority, including Edge-only Fleet
+/// ingestion where no Tesla Fleet token is owned by Hub.
+pub fn preflight_hub_for_config(config: &crate::config::HubConfig) -> io::Result<()> {
+    if let Some(edge) = &config.collector.edge {
+        let store = preflight_store(&config.data_dir)?;
+        let selected = store
+            .configured_tesla_vehicles()
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+            .into_iter()
+            .any(|(vehicle_id, _, settings)| vehicle_id == edge.vehicle_id && settings.enabled);
+        store
+            .validate_edge_binding(&crate::db::EdgeBinding {
+                installation_id: edge.installation_id.clone(),
+                lineage: edge.lineage.clone(),
+                source_id: edge.source_id,
+                vehicle_id: edge.vehicle_id,
+                vin: edge.vin.clone(),
+                car_id: edge.car_id,
+            })
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        if selected {
+            return Ok(());
+        }
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "configured Edge vehicle/source/VIN binding is unavailable",
+        ));
+    }
+    preflight_hub_for_provider(&config.data_dir, config.collector.provider)
 }
 
 /// Load and request start of an already prepared LaunchAgent. The caller must
@@ -61,6 +101,13 @@ pub fn start_installed(data_dir: &Path) -> io::Result<()> {
     start_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
 }
 
+/// Start after the caller validated the exact loaded configuration.
+pub fn start_preflighted_installed() -> io::Result<()> {
+    let plist = installed_plist()?;
+    let (domain, service) = service_identifiers();
+    start_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
+}
+
 /// Idempotently stop the installed Hub LaunchAgent.
 pub fn stop_installed() -> io::Result<()> {
     let (_, service) = service_identifiers();
@@ -70,6 +117,13 @@ pub fn stop_installed() -> io::Result<()> {
 /// Restart an installed Hub LaunchAgent after revalidating Hub data.
 pub fn restart_installed(data_dir: &Path) -> io::Result<()> {
     preflight_hub(data_dir)?;
+    let plist = installed_plist()?;
+    let (domain, service) = service_identifiers();
+    restart_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
+}
+
+/// Restart after the caller validated the exact loaded configuration.
+pub fn restart_preflighted_installed() -> io::Result<()> {
     let plist = installed_plist()?;
     let (domain, service) = service_identifiers();
     restart_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
@@ -164,6 +218,7 @@ fn provider_credentials_are_usable(
     Ok(())
 }
 
+#[cfg(test)]
 fn install_files_after_preflight(
     data_dir: &Path,
     config_path: &Path,

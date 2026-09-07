@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Teslatlas immutable companion cohort catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "cohorts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "cohorts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "product_version",
+          "publication_status",
+          "admitted_hub_versions",
+          "components"
+        ],
+        "properties": {
+          "product_version": {"type": "string", "pattern": "^[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+$"},
+          "publication_status": {"enum": ["published", "local-unpublished"]},
+          "admitted_hub_versions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+$"}
+          },
+          "components": {
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": {
+              "enum": ["protocol", "sdk-typescript", "sdk-swift", "viewer", "home-assistant", "edge"]
+            },
+            "additionalProperties": {"$ref": "#/$defs/component"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "source_sha256", "product_version", "profile"],
+      "allOf": [
+        {
+          "if": {"properties": {"repository": {"const": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git"}}},
+          "then": {
+            "required": ["artifacts"],
+            "properties": {
+              "artifacts": {
+                "required": ["package_filename", "package_sha256"],
+                "maxProperties": 2
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"repository": {"const": "https://github.com/magrathean-uk/teslatlas-viewer.git"}}},
+          "then": {
+            "required": ["artifacts"],
+            "properties": {
+              "artifacts": {
+                "required": [
+                  "package_filename",
+                  "package_sha256",
+                  "asset_manifest_sha256",
+                  "sdk_package_filename",
+                  "sdk_package_sha256"
+                ],
+                "minProperties": 5
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "repository": {
+          "enum": [
+            "https://github.com/magrathean-uk/teslatlas-protocol.git",
+            "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+            "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+            "https://github.com/magrathean-uk/teslatlas-viewer.git",
+            "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+            "https://github.com/magrathean-uk/teslatlas-edge.git"
+          ]
+        },
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "product_version": {"type": "string", "pattern": "^[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+$"},
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "package_filename": {"type": "string", "pattern": "^[A-Za-z0-9._-]+\\.tgz$"},
+            "package_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "asset_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "sdk_package_filename": {"type": "string", "pattern": "^teslatlas-sdk-[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+\\.tgz$"},
+            "sdk_package_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "revision", "sha256"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "revision": {"type": "string", "minLength": 1},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        }
+      }
+    }
+  }
+}

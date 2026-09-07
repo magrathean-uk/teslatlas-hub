@@ -45,11 +45,13 @@ Builds Tesla's official tesla-http-proxy. TARGET defaults to darwin-arm64.
 
 Options:
   --target darwin-arm64|linux-amd64|linux-arm64
+  --check-go-toolchain  Validate and print the selected Go executable, then exit.
 EOF
 }
 
 output=
 target=darwin-arm64
+check_go_toolchain=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --output)
@@ -62,6 +64,10 @@ while [ "$#" -gt 0 ]; do
             target=$2
             shift 2
             ;;
+        --check-go-toolchain)
+            check_go_toolchain=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -72,7 +78,7 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
-[ -n "$output" ] || die "--output is required"
+[ "$check_go_toolchain" -eq 1 ] || [ -n "$output" ] || die "--output is required"
 
 case "$target" in
     darwin-arm64)
@@ -101,18 +107,24 @@ esac
 
 script_directory=$(CDPATH='' cd "$(dirname "$0")" && pwd -P)
 repository_root=$(CDPATH='' cd "$script_directory/.." && pwd -P)
+GO_TOOLCHAIN_HELPER="$repository_root/scripts/go_toolchain.py"
+[ -f "$GO_TOOLCHAIN_HELPER" ] && [ ! -L "$GO_TOOLCHAIN_HELPER" ] \
+    || die "Go toolchain selector is missing or unsafe"
+GO=$(/usr/bin/python3 "$GO_TOOLCHAIN_HELPER" --expected-version "$GO_VERSION") \
+    || die "cannot select the pinned Go toolchain"
+TESLATLAS_GO=$GO
+export TESLATLAS_GO
+if [ "$check_go_toolchain" -eq 1 ]; then
+    printf '%s\n' "$TESLATLAS_GO"
+    exit 0
+fi
+
 overlay_patch="$repository_root/packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch"
 [ -f "$overlay_patch" ] && [ ! -L "$overlay_patch" ] \
     || die "Tesla command-proxy overlay patch is missing or unsafe"
 [ "$(sha256_file "$overlay_patch")" = "$OVERLAY_PATCH_SHA256" ] \
     || die "Tesla command-proxy overlay patch does not match the reviewed digest"
-
-GO=$(command -v go) || die "go is required"
-[ -x "$GO" ] || die "go is not executable"
 PATCH=$(command -v patch) || die "patch is required"
-go_version=$($GO env GOVERSION)
-[ "$go_version" = "$GO_VERSION" ] \
-    || die "$GO_VERSION is required exactly: $go_version"
 
 output_directory=$(CDPATH='' cd "$(dirname "$output")" && pwd)
 output="$output_directory/$(basename "$output")"
@@ -133,7 +145,7 @@ MODULE=github.com/teslamotors/vehicle-command
 MODULE_SUM=h1:J4ne/TNGwgodJLYJDLm/hjoygXyQ/bpqO/EiCaeoobM=
 MODULE_GOSUM=h1:liN6VG6MCc7m02wFaBm2sQT6MYGm/dJua6bG00QSpnA=
 
-module_json=$($GO mod download -json "$MODULE@$VERSION") \
+module_json=$("$GO" mod download -json "$MODULE@$VERSION") \
     || die "cannot download Tesla vehicle-command module"
 module_path=$(printf '%s\n' "$module_json" | /usr/bin/awk -F'"' '$2 == "Path" { print $4; exit }')
 module_version=$(printf '%s\n' "$module_json" | /usr/bin/awk -F'"' '$2 == "Version" { print $4; exit }')
@@ -151,7 +163,7 @@ origin_hash=$(printf '%s\n' "$module_json" | /usr/bin/awk -F'"' '$2 == "Hash" { 
 # Reconstruct the main module in a private cache from the checksum-verified
 # download proxy. Never compile the mutable extracted source tree in the shared
 # Go module cache.
-host_module_cache=$($GO env GOMODCACHE)
+host_module_cache=$("$GO" env GOMODCACHE)
 case "$host_module_cache" in
     /*) ;;
     *) die "Go module cache path is not absolute" ;;
@@ -162,7 +174,7 @@ GOMODCACHE="$work/module-cache"
 GOPROXY="file://$host_file_proxy"
 GOSUMDB=off
 export GOMODCACHE GOPROXY GOSUMDB
-private_module_json=$($GO mod download -json "$MODULE@$VERSION") \
+private_module_json=$("$GO" mod download -json "$MODULE@$VERSION") \
     || die "cannot reconstruct Tesla source in the private module cache"
 private_module_dir=$(printf '%s\n' "$private_module_json" | /usr/bin/awk -F'"' '$2 == "Dir" { print $4; exit }')
 private_module_sum=$(printf '%s\n' "$private_module_json" | /usr/bin/awk -F'"' '$2 == "Sum" { print $4; exit }')
@@ -183,7 +195,7 @@ private_module_gosum=$(printf '%s\n' "$private_module_json" | /usr/bin/awk -F'"'
     cd "$work/source"
     GOMODCACHE="$host_module_cache" GOCACHE="$work/discovery-cache" \
         GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
-        GOWORK=off $GO list -mod=readonly -deps ./cmd/tesla-http-proxy >/dev/null
+        GOWORK=off "$GO" list -mod=readonly -deps ./cmd/tesla-http-proxy >/dev/null
 ) || die "cannot cache the locked Tesla proxy dependencies"
 (
     cd "$work/source"
@@ -196,7 +208,7 @@ if [ "$target" = darwin-arm64 ]; then
     (
         cd "$work/source"
         GOWORK=off CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-            $GO build -trimpath -buildvcs=false -ldflags='-s -w' \
+            "$GO" build -trimpath -buildvcs=false -ldflags='-s -w' \
             -o "$work/tesla-http-proxy" ./cmd/tesla-http-proxy \
             || die "cannot build Tesla command proxy"
     )
@@ -204,7 +216,7 @@ else
     (
         cd "$work/source"
         GOWORK=off CGO_ENABLED="$target_cgo" GOOS="$target_os" GOARCH="$target_arch" \
-            $GO build -trimpath -buildvcs=false -ldflags='-s -w' \
+            "$GO" build -trimpath -buildvcs=false -ldflags='-s -w' \
             -o "$work/tesla-http-proxy" ./cmd/tesla-http-proxy \
             || die "cannot build Tesla command proxy for $target"
     )

@@ -1,0 +1,48 @@
+{
+  "$comment": "SPDX-License-Identifier: AGPL-3.0-only",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.com/schemas/interop/installed-host-session-v1.json",
+  "title": "Teslatlas installed host private session",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "run_id", "cell_id", "adapter_id", "client_id", "session_id", "host_id", "host_registration", "controller_bundle", "package", "package_manifest", "expected", "seed", "profile", "scenario", "local_private_root", "guest_run_id", "lifetime_seconds", "allowed_origins"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "installed-host"},
+    "run_id": {"$ref": "#/$defs/token"},
+    "cell_id": {"$ref": "#/$defs/token"},
+    "adapter_id": {"enum": ["protocol_actual_hub", "typescript_node", "typescript_browser", "viewer", "swift", "home_assistant", "edge_v2"]},
+    "client_id": {"enum": ["protocol_actual_hub", "typescript_node", "typescript_browser", "viewer", "swift", "home_assistant", "edge_v2"]},
+    "session_id": {"type": "string", "format": "uuid"},
+    "host_id": {"$ref": "#/$defs/token"},
+    "host_registration": {"$ref": "#/$defs/fileBinding"},
+    "controller_bundle": {"$ref": "#/$defs/fileBinding"},
+    "package": {"$ref": "#/$defs/fileBinding"},
+    "package_manifest": {"$ref": "#/$defs/fileBinding"},
+    "expected": {
+      "type": "object", "additionalProperties": false,
+      "required": ["os", "architecture", "native_or_emulated", "service_mode", "product_version", "hub_executable_sha256"],
+      "properties": {
+        "os": {"enum": ["macOS", "Debian 13"]},
+        "architecture": {"enum": ["arm64", "amd64"]},
+        "native_or_emulated": {"enum": ["native", "emulated"]},
+        "service_mode": {"enum": ["installed-app-launchagent", "installed-deb-systemd"]},
+        "product_version": {"type": "string", "minLength": 1, "maxLength": 128},
+        "hub_executable_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "seed": {"$ref": "#/$defs/fileBinding"},
+    "profile": {"$ref": "#/$defs/fileBinding"},
+    "scenario": {"$ref": "#/$defs/fileBinding"},
+    "local_private_root": {"$ref": "#/$defs/absolutePath"},
+    "guest_run_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "lifetime_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+    "allowed_origins": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "pattern": "^http://(127\\.0\\.0\\.1|localhost):[1-9][0-9]{0,4}$"}}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "token": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "absolutePath": {"type": "string", "pattern": "^/[^\\u0000\\r\\n]*$", "maxLength": 1024},
+    "fileBinding": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"$ref": "#/$defs/absolutePath"}, "sha256": {"$ref": "#/$defs/digest"}}}
+  }
+}

@@ -1,0 +1,989 @@
+{
+  "schema_version": 1,
+  "objective": "Implement all Hub ecosystem compatibility plan tasks",
+  "status": "active",
+  "plan": "/Users/bolyki/dev/source/teslatlas-service/docs/superpowers/plans/2026-09-05-hub-ecosystem-compatibility.md",
+  "candidate_product_version": "2026.36.2",
+  "baseline": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/baseline.json",
+  "tasks": {
+    "1": "complete",
+    "2": "complete",
+    "3": "complete",
+    "4": "complete",
+    "5": "complete",
+    "6": "complete",
+    "7": "complete",
+    "8": "complete",
+    "9": "complete",
+    "10": "core_and_node_browser_approved_installed_host_and_remaining_adapters_pending",
+    "11": "pending",
+    "12": "pending",
+    "10a": "standalone_and_hub_integration_approved_final_installed_matrix_pending"
+  },
+  "platforms": {
+    "macos_arm64": "available_native",
+    "debian13_arm64": "isolated_debian13_container_running_native_arm64_on_ubuntu_vm_kernel",
+    "debian13_amd64": "isolated_debian13_container_running_qemu_amd64_on_arm64_vm",
+    "macos13_arm64_vm": "running_verified_macos13.7.4_build22H420_isolated",
+    "debian13_arm64_vm": "running_verified_Debian13.6_aarch64_native_vz_systemd",
+    "debian13_amd64_vm": "running_verified_Debian13.6_x86_64_full_QEMU_systemd"
+  },
+  "publication_performed": false,
+  "rulings": [
+    "Existing main checkouts are explicitly authorized; no skill-created worktrees or commits.",
+    "Candidate 2026.36.2 is unused in all seven remote tag inventories; 2026.36.1 remains immutable. No release or tag is created.",
+    "Latest Hub source-only distribution policy supersedes older downloadable-release prose. Build/install tests remain local evidence only.",
+    "App has 52 preserved dirty files in the execution baseline and is not an implementation target.",
+    "User all-in-bulk: independent Tasks6/7/8 run concurrently, one writer per repository, unique fixture ports and runtime paths; shared Hub edits serialized.",
+    "Owner companion installation amendment: no separate companion macOS installers or embedded companion payloads; one CLI/source bootstrap optionally invoked by Hub setup resolves current to an immutable verified Hub-compatible cohort.",
+    "Task10a standalone bootstrap owns only new tools/companions and scripts/bootstrap-companions.py; Task9 retains existing Rust/config/storage/test ownership. Shared CLI/package/metadata edits remain serialized."
+  ],
+  "evidence": {
+    "baseline_tls_e2e": {
+      "command": "rustup run 1.98.0 cargo test --locked --test tls_import_e2e",
+      "passed": 2,
+      "failed": 0,
+      "product_version": "2026.36.1"
+    },
+    "fixture_seed": {
+      "command": "rustup run 1.98.0 cargo test --locked --test interop_fixture",
+      "passed": 2,
+      "failed": 0
+    },
+    "fixture_config": {
+      "command": "python3 -m unittest discover -s hub/tools/interop -p test_fixture.py -v",
+      "passed": 7,
+      "failed": 0
+    },
+    "baseline_real_process_smoke": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/baseline-smoke-receipt.json",
+    "baseline_shutdown": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/baseline-smoke/stopped.json",
+    "linux_candidate_source": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/linux-candidate-source.json",
+    "linux_runtime": {
+      "docker_context": "colima-interop-20260905",
+      "container": "interop-debian13-arm64",
+      "image": "rust@sha256:620dbcd124499c59e2406d3741574b5c5838cf9eb9656f0c3a03948f79b02959",
+      "distribution": "Debian 13.6",
+      "rust": "1.98.0",
+      "architecture": "arm64",
+      "systemd_package_acceptance": "pending"
+    },
+    "debian13_arm64_candidate_build": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-arm64-build.log",
+    "debian13_arm64_candidate_smoke": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-arm64-smoke-receipt.json",
+    "debian13_amd64_candidate_build": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-amd64-build.log",
+    "debian13_amd64_candidate_smoke": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-amd64-smoke-receipt.json",
+    "debian13_amd64_shutdown": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-amd64-stopped.json",
+    "debian13_arm64_shutdown": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-arm64-stopped.json",
+    "task_2_review": "hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-2-fix-1-review.md",
+    "protocol_pre_profile_full_gate": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/protocol-pre-profile-full-gate.log",
+    "macos_vm_tooling": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/tooling/tart-provenance.json",
+    "macos_package_source_1": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/macos-package-source-1.json",
+    "cors_fix_review": "hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/cors-fix-1-review.md",
+    "debian13_arm64_early_installed_service": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-arm64-installed-service-receipt.json",
+    "debian13_arm64_early_installed_smoke": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-arm64-installed-smoke-receipt.json",
+    "task3_native_final": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task3-fix1-native/acceptance.json",
+    "task3_profile_sha256": "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b",
+    "app_preservation_interim": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/app-preservation-interim.json",
+    "browser_runtime": "Chromium152.0.7977.75 in isolated Debian13.6 arm64 VM",
+    "debian13_amd64_early_installed_service": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-amd64-installed-service-receipt.json",
+    "debian13_amd64_early_installed_smoke": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/debian13-amd64-installed-smoke-receipt.json",
+    "task3_review": "hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-3-fix-1-review.md",
+    "go_toolchain_review": "hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-toolchain-fix-1-review.md",
+    "macos_package_source_2": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/macos-package-source-2.json",
+    "macos_package_build_2": {
+      "status": "failed",
+      "exit_code": 1,
+      "log": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/macos-package-build-2.log",
+      "comparison": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/macos-build-host-comparison.json",
+      "reason": "Go executable path/hash/GOROOT differ from reviewed build host; compiler/Xcode/SDK match"
+    },
+    "task4_sdk": {
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-4-report.md",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-4-review-package.md",
+      "artifact_sha256": "26efb1c6730f6579cea9bc0192e219cfa39b130f8edfd1f5f83f0e36d15b573d",
+      "evidence_index": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task4-typescript/root-evidence-index.json",
+      "reported_tests": {
+        "unit": 236,
+        "conformance": 25,
+        "protocol": 52,
+        "fix2_evidence_admission": 3
+      },
+      "scope": "focused packed Node and Chromium against native macOS Hub; full Task10 matrix outstanding",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-4-fix-3-review.md",
+      "artifact": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task4-fix3/final-pack/teslatlas-sdk-2026.36.2.tgz",
+      "installed_content_sha256": "26e98ac42262adbab4312c7f038110048862cb7e635ce41ef3e02619a415fae5",
+      "final_fix_evidence": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task4-fix2",
+      "current_clean_source_artifact": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task4-clean-build/pack-1/teslatlas-sdk-2026.36.2.tgz",
+      "current_clean_source_artifact_sha256": "d1ab6ba0ede3a24ae12ed4151db0c90bf957fa19f5640cc4323bd368e565e8bb"
+    },
+    "macos_package_build_3": {
+      "status": "passed",
+      "exit_code": 0,
+      "source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/macos-package-source-3.json",
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/macos-package-build-3-receipt.json",
+      "package_sha256": "0b8d8f5e848deaa9d43cd203e6a5e5a15b53256856846204bb6e37862ad82b44",
+      "scope": "preliminary source snapshot; final cohort rebuild required"
+    },
+    "macos13_installed_service": {
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/macos13-installed-service-receipt.json",
+      "passed": 8,
+      "final_service_state": "absent_and_endpoint_closed",
+      "scope": "real installed app/LaunchAgent synthetic package lifecycle; not full client matrix"
+    },
+    "additional_client_runtimes": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/additional-client-runtimes.json",
+    "current_profile_linux": {
+      "source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/linux-profile-final-source.json",
+      "arm64": {
+        "status": "passed",
+        "runs": 24,
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/linux-profile-arm64/conformance-receipt.json",
+        "summary": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/linux-profile-arm64/runtime-summary.json",
+        "scope": "actual Debian13 arm64 process on own VM container; final matrix pending"
+      },
+      "amd64_container": {
+        "status": "rejected",
+        "reason": "strict native executable mismatch under QEMU user emulation",
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/linux-profile-amd64-container-rejected.json"
+      },
+      "amd64_vm": {
+        "status": "passed",
+        "runs": 24,
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/linux-profile-amd64/conformance-receipt.json",
+        "summary": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/linux-profile-amd64/runtime-summary.json",
+        "scope": "actual Debian13.6 x86_64 full QEMU VM process; clean stop and stopped admission rejection passed; final matrix pending"
+      }
+    },
+    "edge_linux_baseline": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/edge-linux-baseline/receipt.json",
+    "edge_linux_bridge_baseline": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/edge-linux-baseline/bridge-receipt.json",
+    "task5_viewer": {
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-5-report.md",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-5-review-package.md",
+      "bundle_manifest_sha256": "ee4b741b0dbf06c0123f8a9a995f7541800cafde84e3d0d97f6af88fbca9c8ff",
+      "live_logout_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task5-viewer/viewer-live-fix2-final-logout-receipt.json",
+      "live_auth_loss_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task5-viewer/viewer-live-fix2-final-auth-loss-receipt.json",
+      "cleanup_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task5-viewer/cleanup-fix2-final-receipt.json",
+      "unit_tests": 52,
+      "artifact_tests": 2,
+      "fixture_e2e_tests": 11,
+      "scope": "Task5 implementation and assigned nativeHub/builtViewer lanes independently approved; final cross-platform matrix pending Task10",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-5-fix-2-review.md",
+      "open_important_findings": []
+    },
+    "swift_linux_real_http_diagnosis": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/swift-linux-transport-probe/comparison.json",
+    "task4_browser_304_regression": {
+      "evidence": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task5-viewer/sdk-browser-304-failure-evidence.json",
+      "sha256": "cef7e7dc9df21021cff4f0867174fb35b02057adb805e7e07c75fb1a5a940582",
+      "status": "fixed_and_independently_reviewed",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-4-fix-3-review.md"
+    },
+    "edge_native_runtime_preparation": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/edge-native-runtime/receipt.json",
+    "upgrade_predecessor_inventory": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/summary.json",
+    "linux_predecessor_packages": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/linux-predecessor-package-receipt.json",
+    "task9_transaction_prerequisite": {
+      "status": "approved",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-9-transaction-review.md",
+      "scope": "caller-owned observation/lifecycle transaction helper only; fullTask9 pending"
+    },
+    "amd64_installed_predecessor": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/amd64-installed-predecessor/root-verification.json",
+    "task8_edge_profile": {
+      "status": "approved",
+      "profile_sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-8-fix-1-review.md",
+      "scope": "publiccontract+Edge literalspool vectors; fullHubconsumer/task10runtime outstanding"
+    },
+    "task7_ha_fix1": {
+      "status": "approved_with_minor",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-7-report.md",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-7-fix-1-review-package.md",
+      "live_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task7-ha/ha-live-receipt.json",
+      "live_receipt_sha256": "7f10518271f8cc89b05f0b50d6293b680e970ef23f91a603cdae21b140ae53cd",
+      "scope": "10-file correction delta; full real reauth; final Task10 cohort matrix remains pending",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-7-fix-1-review.md"
+    },
+    "retained_original_hub_predecessors": {
+      "version": "2026.36.1",
+      "source": "retained original local dist packages; not freshly rebuilt predecessor packages",
+      "targets": {
+        "macos_arm64": {
+          "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/retained-macos-installed-receipt.json",
+          "sha256": "8641464a0ae4cb5a143f9977600248630598bf04d95250502be27fb340a9925e",
+          "status": "predecessor_installed_verified_stopped",
+          "candidate_upgrade": "pending"
+        },
+        "linux_arm64": {
+          "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/retained-arm64-installed-predecessor/receipt.json",
+          "sha256": "430b3b4887b82f56fcfc6ef5cdcaec818919d99ece7872eb56f4f25e78e18a63",
+          "status": "predecessor_installed_verified_stopped",
+          "candidate_upgrade": "pending"
+        },
+        "linux_amd64": {
+          "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/retained-amd64-installed-predecessor/receipt.json",
+          "sha256": "8e8daa1dd2abf4bf8337f2dc9d5919dcd287c76e1f56b9a52287e80a2cc46f55",
+          "status": "predecessor_installed_verified_stopped",
+          "candidate_upgrade": "pending"
+        }
+      }
+    },
+    "task9_full_consumer": {
+      "status": "approved_report_minor_corrected",
+      "report": "hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-9-report.md",
+      "report_sha256": "f2566f0195bdcb4d86e704869505964ff63410a5215714af1586851381c68c0d",
+      "review_package": "hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-9-review-package.md",
+      "runtime_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task9-runtime-arm/receipt.json",
+      "runtime_receipt_sha256": "319e7758806d3625b357296d7275a28927422afcaa86bef6667d675c442de59f",
+      "scope": "Approved24-file durable consumer and assigned local actual Edge/Hub fault/restart evidence; final cross-platform installed cohort matrix remains pending.",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-9-fix-2-review.md",
+      "fix1_checkpoint": {
+        "status": "implementation_in_progress",
+        "reported": "I1-I4 focused corrections passed; schema59 immutable car_id migration; actual normal process E2E covers delayed/split/unsupported/reenqueue/public state and publication with Edge unavailable; feature-gated crash lane final rerun/report pending",
+        "independent_review": "pending"
+      },
+      "fix1_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-9-fix-1-review-package.md",
+      "fix1_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task9-fix-1/receipt-final.json",
+      "fix1_receipt_sha256": "06fedc72e5d5a019271d3b4b75adb021a78654a45cc9c2f8ebf4f9566af8e69e",
+      "fix1_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-9-fix-1-review.md",
+      "open_important_findings": [],
+      "fix2_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-9-fix-2-review-package.md",
+      "fix2_source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task9-fix-2/source-files-final.json",
+      "fix2_source_manifest_sha256": "90f3b89e020bad1dc51e3481787aff26f5ca77482827e34fbfe7a1f58ca8a090"
+    },
+    "task9_postchange_tls_import_regression": {
+      "command": "rustup run 1.98.0 cargo test --locked --test tls_import_e2e",
+      "passed": 2,
+      "failed": 0,
+      "log": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task9-postchange-tls-import-regression.log",
+      "log_sha256": "18a788ce3aab083b743feb21c8828277c19dff0b28e1bf0063991db1b1ce1ce0",
+      "scope": "native actual TLS signed manifest, Range and seeded snapshot regression after Task9; full matrix pending"
+    },
+    "task10a_viewer_cli": {
+      "status": "approved",
+      "report": "hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-viewer-report.md",
+      "artifact": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task10a-viewer/teslatlas-viewer-2026.36.2.tgz",
+      "sha256": "6f70b4b7a41e69cc6867b205f85d416fa08c70bcb803f5f5a498275f7a8d8538",
+      "scope": "simple Node CLI,9-member local package and real HTTP installation smoke; shared bootstrap and Hub setup delegation pending",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-viewer-fix-1-review.md"
+    },
+    "companion_local_handoff_inventory": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/companion-local-archive-inventory.json",
+    "task6_swift_final": {
+      "status": "approved",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-6-fix-2-review.md",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-6-report.md",
+      "source_manifest_sha256": "7e1c97bd516088efe273577910ee1c2ee4d8539304f0c33ab6f33a8ab3341344",
+      "scope": "current adapter, native/Linux transport and assigned real live lanes; final cross-Hub matrix pending"
+    },
+    "retained_linux_offline_backups": {
+      "arm64": {
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/retained-arm64-installed-predecessor/offline-backup-receipt.json",
+        "receipt_sha256": "92fa0b8e46ee1dcabb7afa1232d0b01f46f4a8cc563e176b73504591572b6517",
+        "database": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/retained-arm64-installed-predecessor/pre-upgrade.sqlite",
+        "database_sha256": "20743a496fda6d05441a68efe3d8475234990d69d225965b461bc3cc8df0922b",
+        "tables_reverified": 60,
+        "integrity": "ok",
+        "candidate_upgrade": "pending"
+      },
+      "amd64": {
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/retained-amd64-installed-predecessor/offline-backup-receipt.json",
+        "receipt_sha256": "ec059e292d583dbeb8b4fc0c55d86a08b09a972d118395a97099feb4ae741ce0",
+        "database": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/retained-amd64-installed-predecessor/pre-upgrade.sqlite",
+        "database_sha256": "d514e96a909900e25e0d4b5c780f058cfdf0360a6d89ca76f0c7b9f80ecd06d5",
+        "tables_reverified": 60,
+        "integrity": "ok",
+        "candidate_upgrade": "pending"
+      }
+    },
+    "upgrade_preservation_harness": {
+      "status": "focused_harness_checks_passed",
+      "scope": "private offline store comparator, not candidate upgrade acceptance",
+      "passed": 6,
+      "files": {
+        "compare-upgrade-stores.py": "5498f554f5c540a6725c2d3b00fa681be11dd305ef69694fae805e62f97acbe6",
+        "test_upgrade_preservation.py": "a3d71bba094337e9c63cf1aeefe677b218264c4468871bdead9794015e2ade86",
+        "preservation-harness-tests.log": "762c95fae355939b1e1384b7507e39065d84e715a9e6ee825d22c698f0ee3dc6"
+      },
+      "log": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/preservation-harness-tests.log",
+      "candidate_upgrades": "pending"
+    },
+    "task10a_core": {
+      "status": "approved_standalone_core",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-brief.md",
+      "owned_paths": [
+        "hub/tools/companions/",
+        "hub/scripts/bootstrap-companions.py"
+      ],
+      "reported_checks": 36,
+      "scope": "initial deterministic bootstrap checks only; actual component build/install smoke and independent review pending",
+      "checkpoint": {
+        "status": "reported_actual_recipes_and_combined_transactions_passed",
+        "scope": "All six current-source recipes installed into isolated prefixes; combined Protocol/SDK/Viewer install,no-op,source-mutation rejection,protocol-only activation androllback reported passed; installed Viewer root/assetHTTP and clean stop passed. Final report/gates/review pending."
+      },
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-report.md",
+      "report_sha256": "ef50addd57a4bd29f186f691e8d864e3f8b4cbff97c5f14f6d2d7b5ccab6a0cf",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-review-package.md",
+      "product_manifest_sha256": "b2d9392a26c18f5ef1f9cd7ef81c2b2f4a50156b7af2867923fd0ef24935fa75",
+      "evidence_manifest_sha256": "14b2d1cf630079778e978e2c43e8472612fab292af647cec6a17cf81a2c06dfb",
+      "review_checkpoint": "Transaction/target lifecycle and installed Viewer output-identity concerns under focused reviewer validation; no acceptance yet.",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-review.md",
+      "review_sha256": "e7283050c8432523c594811c64040df473172e95a00325bb4d8931b88599a9f1",
+      "fix1_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-1-brief.md",
+      "fix1_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-1-review-package.md",
+      "fix1_product_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task10a-core-fix-1/product-files.json",
+      "fix1_report_sha256": "d106e51b56ea85dcd79d387b6265aad79a383c3a8abbb69a50e735ecdbc44dc6",
+      "fix1_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-1-review.md",
+      "fix2_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-2-brief.md",
+      "fix2_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-2-review-package.md",
+      "fix2_report_sha256": "b0078461cd59adb5dc1e78138b4a38cb52d7b971fb3a2e507159057caceb6ff0",
+      "fix2_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-2-review.md",
+      "fix2_review_sha256": "3c6811a1cb25e6233dbed80e14a76f3182c59e727f0d72c825828a0d67cca48b",
+      "fix3_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-3-brief.md",
+      "fix3_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-3-before/files.json",
+      "fix3_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-3-review-package.md",
+      "fix3_report_sha256": "ef50addd57a4bd29f186f691e8d864e3f8b4cbff97c5f14f6d2d7b5ccab6a0cf",
+      "fix3_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-3-review.md",
+      "fix3_review_sha256": "0d926aa0de50c20f7c6d2dcaad89c983725a6074a8ba090413fed1014754910f"
+    },
+    "task4_clean_source_build": {
+      "status": "approved",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-4-clean-build-brief.md",
+      "baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-4-clean-build-before/files.json",
+      "reason": "Accepted SDK tar contains declaration missing from clean source build; complete pack and downstream exact artifact reconciliation required.",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-4-clean-build-report.md",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-4-clean-build-review-package.md",
+      "artifact": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task4-clean-build/pack-1/teslatlas-sdk-2026.36.2.tgz",
+      "artifact_sha256": "d1ab6ba0ede3a24ae12ed4151db0c90bf957fa19f5640cc4323bd368e565e8bb",
+      "runtime_javascript": "byte_identical_to_accepted_fix3",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-4-clean-build-review.md",
+      "review_sha256": "8f350142082c63039c7f6276ce4f09d90880f3d54b68ad091fcad27c08aafcee"
+    },
+    "task10a_viewer_sdk_reconciliation": {
+      "status": "approved",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-viewer-sdk-reconcile-brief.md",
+      "baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-viewer-sdk-reconcile-before/files.json",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-viewer-sdk-reconcile-report.md",
+      "report_sha256": "90876f4801230e16afadbed40efd361cf204655e03f0e4876ee838e9710cae96",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-viewer-sdk-reconcile-review.md",
+      "review_sha256": "244ba572e2c8008cd48abe24c9470cba2d9cda82e0ff7e411a81b8bd4f2a55cb"
+    },
+    "concurrent_external_heads": {
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/concurrent-head-observation.json",
+      "sha256": "813c1c41bc34f374e4e5c953cba7b3d17c451ee19684297106babd130124addc",
+      "scope": "Six AGENTS-only sibling commits and independent App work; Hub HEAD unchanged. Preserve all. Final source/App regression identities need refresh."
+    },
+    "task10_runner_core": {
+      "status": "approved_bounded_core",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-brief.md",
+      "owned_paths": [
+        "hub/tools/interop/run.py",
+        "hub/tools/interop/test_run.py",
+        "hub/tools/interop/matrix_runner",
+        "hub/docs/compatibility/matrix.json",
+        "hub/docs/compatibility/receipt.schema.json"
+      ],
+      "scope": "Standalone core correction; final installed host verifiers/adapters/21cells remain pending",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-report.md",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-review.md",
+      "review_sha256": "5cbf7fe3487589c7635fc2f8c6190e1247d79cd617f8571cad6bc903715c03ed",
+      "fix1_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-1-brief.md",
+      "fix1_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-1-review-package.md",
+      "fix1_report_sha256": "eb323914497c0048520e9a90f66ea8081401c1fff5268201e5240ff2898bbde3",
+      "fix1_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-1-review.md",
+      "fix2_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-2-brief.md",
+      "fix2_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-2-before/files.json",
+      "fix2_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-2-review-package.md",
+      "fix2_report_sha256": "d124114189a89d301d5ca9f247e9902e2fef3e69679cb018a2c4bab1e88033d1",
+      "fix2_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-2-review.md",
+      "fix3_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-3-brief.md",
+      "fix3_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-3-before/files.json",
+      "fix3_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-3-review-package.md",
+      "fix3_report_sha256": "a6138e1cdfee844f690d049f47d6c01a18f64c2af04379a7c3e43948fccceeea",
+      "fix3_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-runner-core-fix-3-review.md",
+      "fix3_review_sha256": "bf8da03b1f5d1a3d64702ef75abda553483c12c5855ff874285f87235a452f8c",
+      "report_sha256": "a6138e1cdfee844f690d049f47d6c01a18f64c2af04379a7c3e43948fccceeea"
+    },
+    "task10_node_browser_lanes": {
+      "status": "approved_bounded_actual_lanes",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-brief.md",
+      "owned_paths": [
+        "hub/tools/interop/client_lanes/"
+      ],
+      "scope": "Reusable full actual packed SDK cases; fresh interim native proof; installed final3target matrix pending",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-report.md",
+      "report_sha256": "fad838c6c3bf20d1c8b46bfdb607b152646422c076d3a9c4fec21d409137b8b4",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-review-package.md",
+      "node_interim": {
+        "passed": 20,
+        "failed": 0,
+        "pending": 1
+      },
+      "browser_interim": {
+        "passed": 22,
+        "failed": 0,
+        "pending": 1
+      },
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-review.md",
+      "fix1_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-fix-1-brief.md",
+      "fix1_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-fix-1-report.md",
+      "fix1_report_sha256": "f3e4c07456946885b77bfd0378e2c40a7864f5bfc91ecff4ac24fafbc7db8e72",
+      "fix1_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-fix-1-review-package.md",
+      "fix1_source_manifest_sha256": "1f75b2b3e04b53984ffd6963d31cfee9292e60beae3d6847738badf56ffeff17",
+      "fix1_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-fix-1-review.md",
+      "fix2_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-fix-2-brief.md",
+      "fix2_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-fix-2-before/files.json",
+      "fix2_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-fix-2-report.md",
+      "fix2_report_sha256": "729bd45fd6b3a8a8bb7fcfd911feafeb4f9de1f47a9419f2909e6e81b80cb1f1",
+      "fix2_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-fix-2-review-package.md",
+      "fix2_browser_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-task10-node-browser-lanes-fix-2/browser-receipt.json",
+      "fix2_browser_receipt_sha256": "5507dfcf50c13a2d6a86a4781cf592606f03e32350e79359af4822ba03ef9970",
+      "fix2_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-node-browser-lanes-fix-2-review.md",
+      "fix2_review_sha256": "b978be2b732b510afee537493152e686e9e980762feb8d44adf4a22a82261209",
+      "remaining": "Installed host verifier/integration and final three-target matrix; retained Node proof fix1, fresh Chromium proof fix2"
+    },
+    "companion_remote_predecessor_inventory": {
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/upgrade-predecessors/companion-remote-predecessor-inventory.json",
+      "sha256": "efb49671eba1e5767a77826822859de38a2f811d5458cc525d25a24bccecd297",
+      "status": "all_six_current_remote_tags_and_release_records_empty",
+      "scope": "No immutable distributed companion predecessor established by current remote records or retained source-only handoff ZIPs; does not prove absence of deleted/historical distribution. Fresh artifact installation remains required."
+    },
+    "mixed_version_node_retained_hub": {
+      "status": "focused_actual_surface_passed",
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/mixed-version-node-retained/attempt4/receipt.json",
+      "sha256": "e04aed463fc4f15eed046cd07f09e59a36f4736193cc279cc9147777abbbc29d",
+      "request_count": 9,
+      "sdk_version": "2026.36.2",
+      "hub_version": "2026.36.1",
+      "scope": "Actual accepted packed Node against original retained package executable in fresh native TLS fixture; no installed-service or fullmatrix/upgrade claim",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-12-predecessor-and-mixed-node-checkpoint.md"
+    },
+    "preintegration_version_check": {
+      "status": "failed_candidate_metadata_reconciliation_pending",
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-preintegration-version-check/receipt.json",
+      "sha256": "52afe64140d61706a766238e877b5e26b771f44bd06de6694593886259efa0ec",
+      "scope": "All product version fields aligned; Swift candidate has nonempty tested fields including a binary hash mislabeled as source fingerprint. Final Task12 reconciliation must correct without upgrading acceptance status prematurely.",
+      "resolution": "Two Swift candidate arrays cleared in reviewed metadata-only correction; source unchanged otherwise; version checker now passes."
+    },
+    "task10a_hub_integration": {
+      "status": "approved_bounded_hub_bootstrap_integration",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-brief.md",
+      "baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-before/files.json",
+      "baseline_sha256": "000606d2cbd1528d3098947e847813c7f6b582755d8fdff327b89de0bdb4a35c",
+      "scope": "Minimum Hub CLI/setup/package/docs/provenance delegation; no six companion payloads embedded, final installed3target matrix pending",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-report.md",
+      "report_sha256": "c97c6412867263404c97b1e40f68340f3d2db0514e817330eefac4ffa2809d10",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-review-package.md",
+      "source_paths": 24,
+      "diff_sha256": "ce726f6f0f052fdc51c82e87aa6ab062e30bb7d21c38972a1c1acf6cdd3d82f8",
+      "root_candidate_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10a-integration-candidate-source-2/candidate-source-manifest.json",
+      "root_candidate_manifest_sha256": "8a70a270e9af66b061c6719561f831a0b342684045cf029661460dfab2930e85",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-review.md",
+      "review_sha256": "51a57868a13663aca95e9a3e92fcdc887028cb5d4d16e2fb376f584afb367904",
+      "findings": {
+        "critical": 0,
+        "important": 3,
+        "minor": 0
+      },
+      "fix1_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-1-brief.md",
+      "fix1_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-1-before/files.json",
+      "fix1_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-1-report.md",
+      "fix1_report_sha256": "21dcc290f53eff2eb24ca75d12ade9834fbfc1da7612c8a5efb8f059ca79999f",
+      "fix1_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-1-review-package.md",
+      "fix1_diff_sha256": "5ea59eb0f3ee9b1838934be569b02c201ed1ea8357d0bebab0a3871a421e78a1",
+      "fix1_candidate_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10a-integration-fix1-candidate-source/candidate-source-manifest.json",
+      "fix1_candidate_manifest_sha256": "0c52a468f24981acd437c04948f9de820fa56d0ee1029ea5bc50161edda91def",
+      "fix1_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-1-review.md",
+      "fix1_review_sha256": "8b0ff181dfd1f4b4252c7231b6619cc9683902eda95afb74f9e6bbdeb82f8be4",
+      "fix1_findings": {
+        "critical": 0,
+        "important": 4,
+        "minor": 1
+      },
+      "fix2_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-2-brief.md",
+      "fix2_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-2-before/files.json",
+      "fix2_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-2-report.md",
+      "fix2_report_sha256": "c2c7db1ee51a032b982f2150a2e52e098032c1dcb9ed5dba673552576ad892ba",
+      "fix2_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-2-review-package.md",
+      "fix2_review_package_sha256": "1fa2cb277a47c51e77d409304956e1750660d7a3b18193a3a32710c954411550",
+      "fix2_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-2-reviewed-files.json",
+      "fix2_reviewed_files_sha256": "83c40450147d4e6fb6ca1fedeccb5e0c466c8b27984a909395093c8cb1a40365",
+      "fix2_diff": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-2-review.diff",
+      "fix2_diff_sha256": "7938ba8ce2a9bd39ea972c8265cdb44bd97292d59ff631c7a971c34a12bea9ad",
+      "fix2_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-2-review.md",
+      "fix2_review_sha256": "c145d80d1ef75c6cbf1142a8a206a1961a1756a86dce47d3f9f715f3188bdd79",
+      "fix2_findings": {
+        "critical": 0,
+        "important": 1,
+        "minor": 0
+      },
+      "fix3_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-3-brief.md",
+      "fix3_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-3-before/files.json",
+      "fix3_findings": {
+        "critical": 0,
+        "important": 0,
+        "minor": 0
+      },
+      "fix3_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-3-report.md",
+      "fix3_report_sha256": "51a10984a8583f373250aae3d202cd50027e98e0b26b1f041d3bf3e76da87a8e",
+      "fix3_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-3-review.md",
+      "fix3_review_sha256": "07afc6fe2893709fdc6355ac6a76afbe621c2236ebd02e99f6b8726766411638",
+      "fix3_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-3-review-package.md",
+      "fix3_review_package_sha256": "d62ef99e04433f9d8dff3957ddc13b84b8ddb528a14b8ba7fa0924304ee7d173",
+      "fix3_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-3-reviewed-files.json",
+      "fix3_reviewed_files_sha256": "8f3a650922e07a1d90245785fad1ba125869ceb2b0bb46f9ea65356dd08f8da4",
+      "fix3_diff": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-integration-fix-3-review.diff",
+      "fix3_diff_sha256": "e8616a79099ca363068b0cc3f9f5f4568c28faf349ecf5a83efeb09fd14208cb",
+      "fix3_packages": {
+        "macos_service_sha256": "09b3022bbebd77996bb24d353d71d9a23014bc3f6fdedb99931da8758fbb1355",
+        "debian_arm64_sha256": "2448b0a6648917a45d40ed55e8b8a0b0bca4b50d24b22431db7a8a764018d915",
+        "scope": "helper repacks with original Rust build provenance; expanded routing accepted, actual installed matrix pending"
+      }
+    },
+    "task12_candidate_alignment": {
+      "status": "approved",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-12-candidate-alignment-brief.md",
+      "scope": "Swift two candidate tested arrays and byte-identical relocation of feature-only Edge helper; no runtime behavior changes",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-12-candidate-alignment-review.md",
+      "review_sha256": "3ba651557a62db853456613ab072d9e094d44a388c3918400115bc1be188515e",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-12-candidate-alignment-report.md"
+    },
+    "current_companion_source_manifest": {
+      "manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/current-companion-source-manifest/local-sources.json",
+      "sha256": "7a1e3b5b720ca998a45c34890401aaac568363827e17be7eb3ee819f5ecfaa59",
+      "scope": "Fresh six-source local manifest, five unchanged digests and Swift metadata-only update; not public Git or install acceptance"
+    },
+    "task12_license_headers": {
+      "status": "approved",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-12-license-headers-brief.md",
+      "scope": "Three comment-only SPDX additions; full provenance belongs to active integration owner",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-12-license-headers-review.md",
+      "review_sha256": "92cd1746a9b69f78e29700d553f9138f5bcb7bff4a158e57f952938e871415a0",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-12-license-headers-report.md"
+    },
+    "task10_installed_host_design": {
+      "status": "design_complete_controller_implementation_pending",
+      "context": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-context.md",
+      "scope": "Concrete host verifier/controller design from actual code seams; no VM/process/service changes authorized by this design task",
+      "design": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-design.md",
+      "design_sha256": "e1f9556e68795bd69a8b5c511c1daeff787c9b44fde1f35326b057cd5b2b5cde"
+    },
+    "task10_installed_host_controller": {
+      "status": "correction_4_accepted_installed_runtime_pending",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-brief.md",
+      "baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-before.json",
+      "scope": "Source and retained local evidence review; all actual installed rows pending",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-report.md",
+      "report_sha256": "fa06b52f2fff7b8f915b34a8f040abbdac3185e4ab0d924b53f63dfeb9b28245",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-review-package.md",
+      "reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-reviewed-files.json",
+      "diff_sha256": "2d4987e4a1f301b4d99e548ab2f5a2bacfb61396fcd1c020d7038cfeb101c9a1",
+      "source_paths": 14,
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-review.md",
+      "review_sha256": "d2ad2ca8cb8df232c1cb6bc272dcac4c0e7048eae68fbf7d712264c6ab5747d3",
+      "fix1_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-1-brief.md",
+      "fix1_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-1-before/files.json",
+      "findings": {
+        "critical": 0,
+        "important": 12,
+        "minor": 2
+      },
+      "fix1_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-1-report.md",
+      "fix1_report_sha256": "7d1b66ea0bf46c92f9bcab4e9c87ebcbee382d54794b46ae08205e53b44ae954",
+      "fix1_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-1-review-package.md",
+      "fix1_review_package_sha256": "e809d6bc35001ebf361f379fc3aa974f56c6e64cb268ee08fc24124f5f38ca50",
+      "fix1_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-1-reviewed-files.json",
+      "fix1_reviewed_files_sha256": "d54bec79b45a050d585f5d7fe5a4bc1ae1003a266a75968c961bee3c9acc4a98",
+      "fix1_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-1-review.md",
+      "fix1_review_sha256": "4d25b4546160be3b867b7856fc34e51213ecbdad71467e7b597005f112710bf4",
+      "fix1_findings": {
+        "critical": 0,
+        "important": 8,
+        "minor": 2
+      },
+      "fix2_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-2-before/files.json",
+      "fix2_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-2-brief.md",
+      "fix2_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-2-report.md",
+      "fix2_report_sha256": "93cd2a0eafaace94d0034d7bc79d2614563f84c6c97eeda32d8383bd854265c9",
+      "fix2_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-2-review.md",
+      "fix2_review_sha256": "fb7aa7e58fce033cd1c07e4f5d7671c4650ec610fbf04e4de1e4e12fccc1fa32",
+      "fix3_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-3-brief.md",
+      "fix3_brief_sha256": "b009b27495300eb73f9ee43ca5e951ba6b32da27379f9c19d64e933c7e41ac6e",
+      "fix2_findings": {
+        "critical": 0,
+        "important": 6,
+        "minor": 1
+      },
+      "fix3_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-3-report.md",
+      "fix3_report_sha256": "4367d7acb3402d8076d78a4533d72c57ba313d09aa7bec1bdcd8080f475ca47e",
+      "fix3_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-3-review-package.md",
+      "fix3_review_package_sha256": "e4df9880b317ddaa18692f8bc29de60c7da1a0a43f1738041e469ac9cbf7eeb5",
+      "fix3_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-3-reviewed-files.json",
+      "fix3_reviewed_files_sha256": "707f5990ec9647b9c6820d1610a7704af6c0a45177537dc7b14aff0aa1cf9fde",
+      "fix3_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-3-review.md",
+      "fix3_review_sha256": "62518cc7dae1fd2a37d80f2aef56a7ca7b3d5624443efb8b7e60b09933fcb633",
+      "fix3_findings": {
+        "critical": 0,
+        "important": 5,
+        "minor": 1
+      },
+      "fix4_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-4-brief.md",
+      "fix4_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-4-before/files.json",
+      "fix4_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-4-report.md",
+      "fix4_report_sha256": "46c2ea311a10527c81a1fd4fb2ef5a3724ec97540161a5d1282d4a6963da947c",
+      "fix4_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-4-review-package.md",
+      "fix4_review_package_sha256": "3db93d696469c86776e422892bae98989f0a9dcef194504ed85778f6d3283c6d",
+      "fix4_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-4-reviewed-files.json",
+      "fix4_reviewed_files_sha256": "b13a96abfcb0b20d9822c8b55264676936a85883e019566ef30afb8af188e4a5",
+      "fix4_diff_sha256": "f9a730e322901b679651e48dfb27b7c4674d32088a4222973e22730a87003c1d",
+      "fix4_final_tests": {
+        "composition": 16,
+        "full": 111,
+        "scope": "synthetic actual-method compositions only; installed acceptance pending"
+      },
+      "fix4_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-installed-host-fix-4-review.md",
+      "fix4_review_sha256": "336850bf6e67cf211e062d678c2638f179abb7786caff2633fcb8cee468c34bd",
+      "fix4_findings": {
+        "critical": 0,
+        "important": 0,
+        "minor": 0
+      },
+      "fix4_limits": "Unknown writer remains quarantined; no-B cleanup only where exact A remains retained; actual installed OS/runtime21cells pending"
+    },
+    "task10_protocol_matrix_adapter": {
+      "status": "approved_bounded_adapter_final_installed_integration_pending",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-brief.md",
+      "baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-before/files.json",
+      "scope": "Source and retained local evidence review; all actual installed rows pending",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-report.md",
+      "report_sha256": "40befdf30ea9b8b021ba1c5bca863ea4d329b59cce60f64e5121cb2c1af7fd81",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-review-package.md",
+      "reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-reviewed-files.json",
+      "diff_sha256": "59bd823c103ff4e658ee69b54c985b3a78e7db230eb4e09b44ee107296a926ff",
+      "source_paths": 5,
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-review.md",
+      "review_sha256": "c384afe80a40e4f4018fc6c263dbee9c45c852384fb1545cf8b055df6b336323",
+      "fix1_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-1-brief.md",
+      "fix1_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-1-before/files.json",
+      "findings": {
+        "critical": 0,
+        "important": 6,
+        "minor": 2
+      },
+      "fix1_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-1-report.md",
+      "fix1_report_sha256": "8e885c041b23db85bfc8cc672ccc2c81794779d18223a771d13f464c10742105",
+      "fix1_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-1-review-package.md",
+      "fix1_review_package_sha256": "f7ca807deb26db26a61aef6c2bab408d1577b382162e30336a18fe3aec669707",
+      "fix1_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-1-reviewed-files.json",
+      "fix1_reviewed_files_sha256": "e12643d0b3be1964b9a73a7f7fd0ad95850a839a5a750bacb15465e91d945e0b",
+      "fix1_diff": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-1-review.diff",
+      "fix1_diff_sha256": "24418591e88e9221f77c71ddb35164f079d72e2eeecae39f57c2fe0219504cb4",
+      "fix1_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-1-review.md",
+      "fix1_review_sha256": "255eec04f7debe5bcbbf048302d09fc8b6de941f4618fa1a625eabfdc4627d12",
+      "fix1_findings": {
+        "critical": 0,
+        "important": 1,
+        "minor": 0
+      },
+      "fix2_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-2-brief.md",
+      "fix2_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-2-before/files.json",
+      "fix2_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-2-report.md",
+      "fix2_report_sha256": "831fceed5bfbf97277020dc7a08c6364464a989dff22d4829784c0487683004c",
+      "fix2_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-2-review-package.md",
+      "fix2_review_package_sha256": "32b31843fbe88d2600c57a54238a0605f44ce3ac45fcfc8fbd21e7f5ad9411c7",
+      "fix2_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-2-reviewed-files.json",
+      "fix2_reviewed_files_sha256": "6bca51ec73c209891335d6c77b6df9670acb1a5f534cbad53f9515f416fe9c33",
+      "fix2_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-protocol-adapter-fix-2-review.md",
+      "fix2_review_sha256": "92e1441f107991884b251181c324895b4b56a16ea3ee7854a8144fd9cb7ec833",
+      "fix2_findings": {
+        "critical": 0,
+        "important": 0,
+        "minor": 0
+      }
+    },
+    "task10_fresh_host_preparation": {
+      "status": "three_fresh_guests_prepared_and_stopped",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-fresh-host-preparation-report.md",
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/installed-matrix-hosts/prepared-hosts.json",
+      "sha256": "99eb16fb98ea07304cb953db80ac99ca889db417bca3c7a1180e8afc63ecd6d6",
+      "scope": "Operating system/SSH/Python prerequisites only; no candidate Hub install or matrix pass"
+    },
+    "task10_amd64_current_rust_build": {
+      "status": "single_job_attempt3_in_progress",
+      "evidence": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-build",
+      "source_manifest_sha256": "59109d7c50daf0910d31929662a591428694ea7b055b231a109ce4604a85f301",
+      "source_export_sha256": "e65af5391b6ef5e71eb7115534b93f2e027f037871786d1846fd5f4850f6e970",
+      "scope": "amd64 isolated builder; first offline cache miss preserved; two exact locked crates copied from existing ARM cache without download; no package install or acceptance",
+      "attempt2_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-build/hub-release-attempt2-receipt.json",
+      "probe_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-build/rustversion-link-probe-receipt.json",
+      "probe_scope": "Failed dependency built successfully with one job; does not isolate exact cause of previous QEMU collect2 segmentation fault"
+    },
+    "app_external_advance": {
+      "scope": "other work advanced App; no App writes by this ecosystem task",
+      "checkpoint": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/app-external-advance-20260905-checkpoint.json",
+      "observed_head": "409dcc9884d89e144c0ceeb10a3c1bd84f81dddd",
+      "latest_checkpoint": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/app-external-edits-20260906-0008-checkpoint.json",
+      "latest_head": "5c12c6c8dba859c2a6e91bd8c9c29ff28e8a696a"
+    },
+    "task10_final_integration_design": {
+      "status": "accepted_design_implementation_pending",
+      "path": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-final-integration-design.md",
+      "sha256": "efaedde892e2b6d49cc331aaa4dd2b346de64216e5eda8b517c7f4f450a97218",
+      "scope": "Finite source evidence ordering; exact adapter actors; installed session completion and mounted-free container pipe transport"
+    },
+    "task10_source_evidence_helpers": {
+      "status": "approved_with_development_retention_limit_shared_integration_pending",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-brief.md",
+      "scope": "New source snapshot/build output/finalization helpers only; shared runner integration pending",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-report.md",
+      "report_sha256": "1c5a095fc3da3a9a06e3ed70ccfed8892bb91c5ac698354982a466e35d79e2cd",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-review.md",
+      "review_sha256": "5218ccd764aeb389ac6d2f87700b4bad3a4274fe4d33d87a4aa4e43e4126b443",
+      "fix1_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-1-brief.md",
+      "fix1_brief_sha256": "85efb1b16a39b5d678e9dad0bb460c6129236523f3919e2178cdbade418b33fe",
+      "findings": {
+        "critical": 0,
+        "important": 9,
+        "minor": 2
+      },
+      "fix1_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-1-report.md",
+      "fix1_report_sha256": "ddef770fd99dcd18ce3882238e3ae3f122083b2e3161d3c9dd920c6406da7e7c",
+      "fix1_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-1-review-package.md",
+      "fix1_review_package_sha256": "509c567132ab19d2a59d21d561c8b918c96adf132e35fe3c8667f9cac9ec341e",
+      "fix1_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-1-reviewed-files.json",
+      "fix1_reviewed_files_sha256": "da88f1458240cfd04eca1c927cc41f883da41533ac039b690f39b111a2eb23f9",
+      "fix1_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-1-review.md",
+      "fix1_review_sha256": "09de37fd88949dc6c094868685b4ecb5405354dd5985e071f9e0671052df222d",
+      "fix1_findings": {
+        "critical": 0,
+        "important": 2,
+        "minor": 1
+      },
+      "fix2_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-2-brief.md",
+      "fix2_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-2-report.md",
+      "fix2_report_sha256": "4a8ba867028ebc0ba17a1fcc9eb91d4fb6b330c6de2f448d073605380702424d",
+      "fix2_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-2-review-package.md",
+      "fix2_review_package_sha256": "5bd0a8f6b29b26d680edb5e5f03e1b0fa71cf82f2d1ac482c17037fd30bb02a0",
+      "fix2_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-2-reviewed-files.json",
+      "fix2_reviewed_files_sha256": "9e77bf4a0ab270f7c44a4716be19abc0d6336afc5806635b14a573ae5d1c095f",
+      "fix2_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-source-evidence-fix-2-review.md",
+      "fix2_review_sha256": "f8d81cfad9e225cc684d3b4b36258d976f45b9309c90a6fdd5254a585e530abe",
+      "fix2_findings": {
+        "critical": 0,
+        "important": 0,
+        "minor": 0
+      },
+      "development_retention_limit": "Earlier failed/focused raw streams and exact timestamps unavailable; final62-test structured run fully retained; no retrospective reconstruction."
+    },
+    "task10_current_mac_package": {
+      "status": "approved_bounded_package_lifecycle_pending",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-current-mac-package-brief.md",
+      "scope": "Immutable fix3 named source; not final B cohort or installed acceptance",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-current-mac-package-report.md",
+      "report_sha256": "f4515c715881a8bbf2fa0bddd6ac538190953d375954a95b45ca3868d0d579f4",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-current-mac-package-review.md",
+      "review_sha256": "3ee4e7d242b9920ec300ae128228c5b6ceecb53e1e38cd4d6d5a8b0fc941f27b",
+      "package": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-mac-package/TeslatlasHub-2026.36.2-macos13-arm64-current.pkg",
+      "package_sha256": "3a8af8985713502b6c772adcf045ce41b966f68b1463e654f827f5f19368b6f4",
+      "findings": {
+        "critical": 0,
+        "important": 0,
+        "minor": 0
+      }
+    },
+    "task10_dedicated_browser_vm": {
+      "status": "prepared_verified_stopped",
+      "evidence_root": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/browser-client-preparation",
+      "provider_id": "teslatlas-matrix-browser-20260905",
+      "retained_archive_sha256": "ba9203ef1b9ee7bae9092cfd13ecd64bb461203c74150cf6f5de5f8114080a6c",
+      "scope": "Exact retained browser runtime package/library inputs; real two-browser NSS startup and independent clean stop. No Hub/TLS compatibility acceptance; fresh host registration must refresh on boot.",
+      "prepared_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/browser-client-preparation/prepared-browser-runtime.json",
+      "prepared_receipt_sha256": "0091aeaed06cf9bfb195ccbe7151263c671186ffda753fe2d1db4a950117480f",
+      "runtime_members_identical": 4607,
+      "stop_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/browser-client-preparation/stop-browser-receipt.json"
+    },
+    "task10_current_native_seed": {
+      "status": "built_schema59_and_advance_smoke_passed",
+      "binary_sha256": "928d7d9786580ed2c11e58d196bb69379a2042fea788f77f642eb155fc5d8ef7",
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-native-seed/seed-verification.json",
+      "scope": "Target-native standalone tooling CLI; named immutable fix3 source. Rust debug stripping warning retained, no installed acceptance."
+    },
+    "task10_current_arm64_seed": {
+      "status": "built_schema59_and_advance_smoke_passed",
+      "binary_sha256": "2c76672abcd9aedf50d17fbab147cb27fd1e1681dc5e558ee720383715cae1bb",
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-arm64-seed/verification/seed-verification.json",
+      "receipt_sha256": "b1896772d1890dd3ea25612534cc2995e6588121f12a4334907065537a5b9e9c",
+      "scope": "Current ARM64 standalone synthetic tooling CLI, named immutable fix3 source; no Hub process or installed acceptance",
+      "execution": "native aarch64 process in Debian container on Colima VM"
+    },
+    "task10_adapter_wire_contract": {
+      "status": "accepted_exact_contract_implementation_pending",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-adapter-wire-contract-brief.md",
+      "scope": "Exact closed adapter config/control/path/lifetime seams to unblock four adapter owners and shared integrator",
+      "document": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-adapter-wire-contract.md",
+      "sha256": "aadd1080f18a12b5515c3f4aa840b1f36dbcf723f8b9d2378fa4ec668885f740",
+      "ruling": "Exact rich ready/ack shapes refine preliminary examples; HA alone uses top-level Docker stdio; Swift host coordinator owns one Unix attachment across native and Docker workers. No public operation or descriptor change."
+    },
+    "task10_ha_matrix_adapter": {
+      "status": "correction2_in_progress_after_fix1_review_C0_I7_M0",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-brief.md",
+      "scope": "All18 cases, real installed HA flow/client harness and pure contracts; runtime execution and installed acceptance pending",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-report.md",
+      "report_sha256": "3eeb0742a0071844d843d9b43ec05d5761439da84f3e6e38669b0d9a6d7844ae",
+      "root_preflight": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-ha-adapter-preflight/preflight.json",
+      "root_runtime_auto_unit": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-ha-adapter-preflight/runtime-unit-auto.record.json",
+      "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-review.md",
+      "review_sha256": "385c933326a7d9a9ae3d21fc5587ac2a115acc6334fda3e65aab3bf735c2067f",
+      "findings": {
+        "critical": 0,
+        "important": 7,
+        "minor": 0
+      },
+      "fix1_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-fix-1-brief.md",
+      "fix1_baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-fix-1-before/files.json",
+      "fix1_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-fix-1-report.md",
+      "fix1_report_sha256": "c2208b2adaf7a7539ce7ffa21b9dda6da1ae93660cff3ef86fa395adf15616d4",
+      "fix1_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-fix-1-review-package.md",
+      "fix1_review_package_sha256": "3b8adb933386e2e9aa705ffe04b093be794efea8027d34690b4f754854e78598",
+      "fix1_reviewed_files": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-fix-1-reviewed-files.json",
+      "fix1_reviewed_files_sha256": "d8561bd54751707aff464f6f3cce307022e75d0185c1296f22137428086cb30a",
+      "correction1_review": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-fix-1-review.md",
+        "sha256": "ce2c6710d753e3134d898e35fb6aa70806bfbe8fffca729893571875d801d89b"
+      },
+      "correction2_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-fix-2-brief.md",
+      "correction2_before_sha256": "d8561bd54751707aff464f6f3cce307022e75d0185c1296f22137428086cb30a"
+    },
+    "task10_current_amd64_seed": {
+      "status": "built_schema59_and_advance_smoke_passed",
+      "binary_sha256": "052f9d2ee352274afca578371e649a3b6c68eea937925a4dfebc34783c58c666",
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-build/verification/seed-verification.json",
+      "receipt_sha256": "1dde8e23e4210bf39b3acad2140d3c9792f6f75e4507044244ed3e926bc6fe5e",
+      "scope": "Current AMD64 standalone synthetic tooling CLI, named immutable fix2 Rust-identical source; no Hub process or installed acceptance",
+      "execution": "QEMU x86_64 process in Debian container on Colima VM"
+    },
+    "task10_current_amd64_build": {
+      "status": "built_package_pending",
+      "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-build/hub-release-attempt3-receipt.json",
+      "binary_sha256": "c4a9a3af593b521aa520722ea7f37469c582afa96d7de91c40c8ca75590281bd",
+      "scope": "Immutable fix2 Rust sources identical to fix3; QEMU user-mode compiler, not native AMD64 or installed acceptance. Earlier linker failure retained; jobs1 retry passed."
+    },
+    "task10_current_amd64_package": {
+      "status": "prepared_expanded_checks_passed_review_pending",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-current-amd64-package-report.md",
+      "report_sha256": "737a891dff8836ba24847d1ab982a6cd72122156ffa06d8d937e2b6d88fb5e2a",
+      "package": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-package/teslatlas-hub_2026.36.2-1_amd64-current.deb",
+      "package_sha256": "5025383ca2053ea47c4d039f4719084ea2c9b9896c525cf91aef247642df80d8",
+      "scope": "Current AMD64 Debian package assembly and expanded helper status; immutable fix3 package source plus Rust-identical fix2 binary. No installed systemd or source-denied acceptance. No optional Fleet sidecars in this API-test package."
+    },
+    "task10_current_edge_fault_builds": {
+      "status": "all_three_built_and_binary_verified_fault_lifecycle_pending",
+      "evidence_root": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-edge-fault-builds",
+      "scope": "Distinct edge-test-faults binaries from named immutable sources and separate copied target/cache trees. No normal installed identity or Edge matrix proof.",
+      "macos": {
+        "sha256": "6683ef8c0ca48d63c7397c2f8a472201fd5a68c1642390f5dcf5b6eb159d08cf",
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-edge-fault-builds/macos/verification/binary-verification.json"
+      },
+      "arm64": {
+        "sha256": "d631da7abef8bca83c50a6efb966af888c50942d03784afc36c0345d289baa3b",
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-edge-fault-builds/arm64/verification/binary-verification.json"
+      },
+      "amd64_attempt2": {
+        "exit_code": 101,
+        "scope": "zstd-sys compiler SIGSEGV underQEMU; exactfailedCcommand diagnostic0; unchangedsourceflagsjobs1 retry3",
+        "evidence_root": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-edge-fault-builds/amd64"
+      },
+      "amd64_attempt3": {
+        "exit_code": 101,
+        "scope": "zstd-safe collect2 SIGSEGV; environment ample free resources and zero cgroup OOM events; diagnostic verbose unchanged-source retry4",
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-edge-fault-builds/amd64/build-attempt3-receipt.json"
+      },
+      "amd64": {
+        "sha256": "5889431cc349db8258644866e6b7ccf4da84f85daaa4e9744280f1139b1e88bf",
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-edge-fault-builds/amd64/verification/binary-verification.json",
+        "build_attempt4": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-edge-fault-builds/amd64/build-attempt4-receipt.json",
+        "build_exit_code": 0,
+        "build_elapsed_seconds": 2240.328405958,
+        "execution": "QEMU user emulated amd64 build and binary probes; actual guest fault lifecycle pending"
+      }
+    },
+    "task10_edge_fixture_design": {
+      "status": "design_accepted_bounded_implementation_pending",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-edge-installed-fixture-design-brief.md",
+      "scope": "Generic installed seed lacks collector.edge setup; exact root-owned synthetic Edge fixture/reference/fault actor seam required before actual Edge rows.",
+      "design": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-edge-installed-fixture-design.md",
+      "design_sha256": "1bcba235042cda667f72d37e16784bb37e7a35325b9c31814672e5d1270241ed",
+      "rulings": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-edge-fixture-rulings.md",
+      "rulings_sha256": "afbcab7800bee5b32fd92933d765381493783eb2d70a40266d674272c820494d",
+      "runtime_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-edge-fixture-runtime-brief.md"
+    },
+    "task10_independent_admission_views": {
+      "status": "root_approved_data_refinement",
+      "document": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-independent-admission-views.md",
+      "sha256": "ab79c736020fb26729b12cc427d6c0763dd6396a15bd14ede05a533116072f6b",
+      "scope": "Immutable root observation/runtime maps; original wire hash unchanged"
+    },
+    "task10_swift_matrix_adapter": {
+      "status": "source_frozen_review_prepared",
+      "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-swift-adapter-report.md",
+      "report_sha256": "c4f150eebcf4d93fe5c613347325b54cce920e93f4d47061b7d23ebeec7e76c3",
+      "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-swift-adapter-review-package.md",
+      "root_inventory_sha256": "35d51d4ce1d99bdc9e7f6a85517acc114c669ddc3db15ab7873f24d75c2a4662",
+      "root_diff_sha256": "cb64fde7905c4815c97be8c33e79d2311cec3e0037fbcb11c545a4fe97bcf2a1",
+      "local_gates": {
+        "python_adapter_passed": 17,
+        "native_swift_non_live_passed": 32,
+        "worker_executed": false,
+        "strict_format_nonrequired": "failed_retained"
+      },
+      "linux_frozen_source_preflight": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-swift-worker-builds",
+      "linux_frozen_source_preflight_status": {
+        "passed": 42,
+        "failed": 0,
+        "source_files_unchanged": 107,
+        "build_exit_code": 0,
+        "build_seconds": 18.407228875,
+        "worker_collected_not_executed": true,
+        "test_executable_sha256": "b8812c6c56f81937e632f60952d4af8f52de956b224e5543f60704d2f8413630",
+        "receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-swift-worker-builds/linux-build-receipt.json",
+        "verification": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-swift-worker-builds/linux-verify.record.json"
+      }
+    },
+    "task10_shared_installed_integration": {
+      "status": "implementation_in_progress",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-shared-installed-integration-brief.md",
+      "baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-shared-installed-integration-before/files.json",
+      "baseline_sha256": "56627080c0f808d8222d88f662080ddec2791a0301d68e3017947ab763126457",
+      "scope": "Actual runtime orchestration/registry/semantic receipt parsers; no installed acceptance yet"
+    },
+    "task10_provider_preflight": {
+      "status": "actual_local_guard_failure_bounded_fix_prepared",
+      "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-provider-preflight-fix-brief.md",
+      "evidence": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/provider-tool-preflight.json",
+      "scope": "Required Lima Homebrew alias rejected by generic non-symlink guard; package installation pending correction and review"
+    },
+    "task10_actual_installed_prerequisites": {
+      "status": "arm64_fresh_host_identity_and_package_manifest_ready_provider_guard_fix_pending",
+      "evidence_root": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites",
+      "arm64_observation": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/arm64/observation-current-boot.record.json",
+      "machine_identity_preserved": true,
+      "ssh_current_boot_pin_sha256": "6546f45bb54e424052ebb87b5850a8e040de0ba1b17ac455d93aabd0ac0c70aa",
+      "arm64_package_manifest": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/arm64/package/package-manifest.json",
+        "sha256": "6e018240f1c03207a3fefc05088d87fd56b502abe563528d2f7f4b54a86c5470"
+      },
+      "installation_started": false,
+      "note": "Fresh guest current public key independently obtained through exact local Lima control plane after old pin refusal; original machine ID matches, current strict SSH passes. ssh.overVsock false on only fresh uninstalled guest. Cause of host key rotation not claimed.",
+      "macos_package_manifest": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/macos/package/package-manifest.json",
+        "sha256": "1e2add80a5b1e2c16cc76df0a0bb5aa1ea228894cc1d359529ae66b4bb8f6aad"
+      },
+      "arm64_preinstall_config": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/arm64/preinstall-config.json",
+        "sha256": "d5ce2c157299b395ea5e806f79dee008b2ef14db8b6f08aa8884a7ae3684796b"
+      },
+      "provider_cli_red": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/arm64/provider-cli-preflight-red.record.json",
+      "provider_fix_status": "implementation_in_progress_with_shared_session_caller_change"
+    },
+    "app_external_edits_latest": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/app-external-edits-20260906-005446-checkpoint.json",
+      "sha256": "49345a618addd6d2f7d4c507f0815be2b11a74467c33e7f18a5b037e7a1c6db3",
+      "head": "5c12c6c8dba859c2a6e91bd8c9c29ff28e8a696a",
+      "status_lines": 51
+    }
+  }
+}

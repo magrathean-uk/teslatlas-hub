@@ -17,6 +17,8 @@ make_repo() {
     git -C "$destination" config user.name Test
     git -C "$destination" config user.email test@example.invalid
     cp "$VERIFY" "$destination/scripts/verify-provenance.py"
+    cp "$ROOT/scripts/candidate_source_manifest.py" \
+        "$destination/scripts/candidate_source_manifest.py"
     printf '%s\n' 'fn main() {}' >"$destination/main.rs"
     printf '%s\n' data >"$destination/fixture.json"
     printf '%s\n' generated >"$destination/Cargo.lock"
@@ -83,7 +85,7 @@ EOF
 
 make_repo "$TMP/good"
 python3 "$VERIFY" --repo "$TMP/good" >"$TMP/good.out"
-grep -Fq '6 tracked files, exactly one class each' "$TMP/good.out"
+grep -Fq '7 tracked files, exactly one class each' "$TMP/good.out"
 
 cp -R "$TMP/good" "$TMP/missing"
 printf '%s\n' uncovered >"$TMP/missing/new.txt"

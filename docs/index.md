@@ -32,6 +32,7 @@ If something fails, start with [Troubleshooting](guides/troubleshooting.md).
 | Configure collection, TLS, geocoding, or terrain | [Configuration](guides/configuration.md) |
 | Configure Fleet API and Fleet Telemetry | [Fleet setup](guides/fleet-setup.md) |
 | Learn the command-line interface | [CLI reference](guides/cli.md) |
+| Install source-built companions | [Companion source setup](guides/companion-setup.md) |
 | Operate and diagnose Hub | [Operations](operations/runbook.md) |
 | Back up or recover a deployment | [Backup and recovery](operations/backup-and-recovery.md) |
 | Upgrade or plan rollback | [Upgrade and rollback](releases/upgrade.md) |

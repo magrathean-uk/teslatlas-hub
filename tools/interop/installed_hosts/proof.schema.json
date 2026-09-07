@@ -1,0 +1,480 @@
+{
+  "$comment": "SPDX-License-Identifier: AGPL-3.0-only",
+  "$defs": {
+    "digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "linuxService": {
+      "additionalProperties": false,
+      "properties": {
+        "control_group": {
+          "const": "/system.slice/teslatlas-hub.service"
+        },
+        "definition_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "drop_in_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "exec_main_code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "exec_main_status": {
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fragment_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "generation": {
+          "$ref": "#/$defs/text"
+        },
+        "hub": {
+          "$ref": "#/$defs/process"
+        },
+        "invocation_id": {
+          "pattern": "^[0-9a-f]{32}$",
+          "type": "string"
+        },
+        "mode": {
+          "const": "installed-deb-systemd"
+        },
+        "post_probe_generation": {
+          "$ref": "#/$defs/text"
+        },
+        "process_tree_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "result": {
+          "$ref": "#/$defs/text"
+        },
+        "state": {
+          "const": "running"
+        },
+        "supervisor": {
+          "$ref": "#/$defs/process"
+        },
+        "target": {
+          "const": "teslatlas-hub.service"
+        }
+      },
+      "required": [
+        "mode",
+        "target",
+        "definition_sha256",
+        "state",
+        "generation",
+        "post_probe_generation",
+        "supervisor",
+        "hub",
+        "process_tree_sha256",
+        "invocation_id",
+        "control_group",
+        "fragment_sha256",
+        "drop_in_manifest_sha256",
+        "result",
+        "exec_main_code",
+        "exec_main_status"
+      ],
+      "type": "object"
+    },
+    "macosService": {
+      "additionalProperties": false,
+      "properties": {
+        "app_process": {
+          "$ref": "#/$defs/process"
+        },
+        "app_receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "definition_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "generation": {
+          "$ref": "#/$defs/text"
+        },
+        "hub": {
+          "$ref": "#/$defs/process"
+        },
+        "loaded_state": {
+          "const": "loaded"
+        },
+        "mode": {
+          "const": "installed-app-launchagent"
+        },
+        "plist_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "post_probe_generation": {
+          "$ref": "#/$defs/text"
+        },
+        "process_tree_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "state": {
+          "const": "running"
+        },
+        "supervisor": {
+          "$ref": "#/$defs/process"
+        },
+        "target": {
+          "pattern": "^gui/[1-9][0-9]*/com\\.teslatlas\\.hub$",
+          "type": "string"
+        },
+        "wrapper_script_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "mode",
+        "target",
+        "definition_sha256",
+        "state",
+        "generation",
+        "post_probe_generation",
+        "supervisor",
+        "hub",
+        "process_tree_sha256",
+        "plist_sha256",
+        "wrapper_script_sha256",
+        "loaded_state",
+        "app_receipt_sha256",
+        "app_process"
+      ],
+      "type": "object"
+    },
+    "path": {
+      "maxLength": 1024,
+      "pattern": "^/[^\\u0000\\r\\n]*$",
+      "type": "string"
+    },
+    "process": {
+      "additionalProperties": false,
+      "properties": {
+        "argv_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "boot_id": {
+          "$ref": "#/$defs/text"
+        },
+        "executable_path": {
+          "$ref": "#/$defs/path"
+        },
+        "executable_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "parent_pid": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pid": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "start_identity": {
+          "$ref": "#/$defs/text"
+        },
+        "uid": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pid",
+        "uid",
+        "parent_pid",
+        "boot_id",
+        "start_identity",
+        "executable_path",
+        "executable_sha256",
+        "argv_sha256"
+      ],
+      "type": "object"
+    },
+    "text": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "token": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$",
+      "type": "string"
+    }
+  },
+  "$id": "https://teslatlas.com/schemas/interop/installed-host-proof-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "challenge": {
+      "$ref": "#/$defs/digest"
+    },
+    "config": {
+      "additionalProperties": false,
+      "properties": {
+        "data_dir": {
+          "$ref": "#/$defs/path"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "scenario_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "seed_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "store_id": {
+          "$ref": "#/$defs/token"
+        },
+        "store_schema_version": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "data_dir",
+        "store_id",
+        "store_schema_version",
+        "scenario_sha256",
+        "seed_sha256"
+      ],
+      "type": "object"
+    },
+    "discovery": {
+      "additionalProperties": false,
+      "properties": {
+        "hub_id": {
+          "$ref": "#/$defs/token"
+        },
+        "product_version": {
+          "$ref": "#/$defs/text"
+        },
+        "profile_id": {
+          "const": "hub-http-v1@1.0.0"
+        },
+        "profile_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "response_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "validated_response_set_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "hub_id",
+        "product_version",
+        "response_sha256",
+        "profile_id",
+        "profile_sha256",
+        "validated_response_set_sha256"
+      ],
+      "type": "object"
+    },
+    "host": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "enum": [
+            "arm64",
+            "amd64"
+          ]
+        },
+        "host_id": {
+          "$ref": "#/$defs/token"
+        },
+        "hypervisor_evidence_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "kernel": {
+          "$ref": "#/$defs/text"
+        },
+        "machine_identity_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "native_or_emulated": {
+          "enum": [
+            "native",
+            "emulated"
+          ]
+        },
+        "os": {
+          "enum": [
+            "macOS",
+            "Debian 13"
+          ]
+        },
+        "os_version": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "host_id",
+        "machine_identity_sha256",
+        "os",
+        "os_version",
+        "architecture",
+        "kernel",
+        "native_or_emulated",
+        "hypervisor_evidence_sha256"
+      ],
+      "type": "object"
+    },
+    "listener": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "const": "127.0.0.1"
+        },
+        "observed_at_monotonic_ns": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "owner_pid": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "port": {
+          "const": 18480
+        },
+        "socket_identity": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "owner_pid",
+        "socket_identity",
+        "observed_at_monotonic_ns"
+      ],
+      "type": "object"
+    },
+    "observer": {
+      "additionalProperties": false,
+      "properties": {
+        "bundle_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "process": {
+          "$ref": "#/$defs/process"
+        }
+      },
+      "required": [
+        "bundle_sha256",
+        "process"
+      ],
+      "type": "object"
+    },
+    "package": {
+      "additionalProperties": false,
+      "properties": {
+        "installation_receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "installed_version": {
+          "$ref": "#/$defs/text"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "payload_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "sha256",
+        "manifest_sha256",
+        "installed_version",
+        "payload_manifest_sha256",
+        "installation_receipt_sha256"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "sequence": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "service": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/linuxService"
+        },
+        {
+          "$ref": "#/$defs/macosService"
+        }
+      ]
+    },
+    "session_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "status": {
+      "const": "verified"
+    },
+    "tls": {
+      "additionalProperties": false,
+      "properties": {
+        "certificate_der_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "endpoint": {
+          "const": "https://127.0.0.1:18480"
+        },
+        "redirect_count": {
+          "const": 0
+        },
+        "verified_chain": {
+          "const": true
+        },
+        "verified_hostname": {
+          "const": true
+        }
+      },
+      "required": [
+        "endpoint",
+        "certificate_der_sha256",
+        "verified_chain",
+        "verified_hostname",
+        "redirect_count"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "session_id",
+    "sequence",
+    "challenge",
+    "observer",
+    "host",
+    "package",
+    "service",
+    "config",
+    "listener",
+    "tls",
+    "discovery"
+  ],
+  "title": "Teslatlas installed host public proof",
+  "type": "object"
+}

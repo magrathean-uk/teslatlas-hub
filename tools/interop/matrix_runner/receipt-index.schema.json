@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/final-receipt-index-v1.json",
+  "title": "Redacted finite cohort receipt index",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "cohort_id", "receipts"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1}, "cohort_id": {"type": "string", "minLength": 1},
+    "receipts": {"type": "array", "items": {"$ref": "#/$defs/receipt"}}
+  },
+  "$defs": {
+    "receipt": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "path", "sha256", "scope"],
+      "properties": {
+        "kind": {"enum": ["matrix", "package", "bootstrap", "upgrade", "private-lane", "historical", "review"]},
+        "path": {"type": "string", "pattern": "^/"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "scope": {"enum": ["local-tested-cohort-not-published", "local-built-not-published", "local-source-candidate", "isolated-upgrade", "authorized-private-lane", "historical-local-evidence", "independent-review"]}
+      }
+    }
+  }
+}

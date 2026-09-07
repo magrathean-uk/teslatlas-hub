@@ -351,7 +351,11 @@ impl HubStore {
                 return Err(StoreError::InjectedStreamFault(point.label()));
             }
         }
-        #[cfg(not(test))]
+        #[cfg(feature = "edge-test-faults")]
+        if crate::edge_test_fault::return_error_at(point.label()) {
+            return Err(StoreError::InjectedStreamFault(point.label()));
+        }
+        #[cfg(not(any(test, feature = "edge-test-faults")))]
         let _ = point;
         Ok(())
     }

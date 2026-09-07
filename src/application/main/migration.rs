@@ -24,6 +24,21 @@ fn collector_can_start(
     store: &HubStore,
     config: &HubConfig,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    if let Some(edge) = &config.collector.edge {
+        store.validate_edge_binding(&teslatlas_hub::db::EdgeBinding {
+            installation_id: edge.installation_id.clone(),
+            lineage: edge.lineage.clone(),
+            source_id: edge.source_id,
+            vehicle_id: edge.vehicle_id,
+            vin: edge.vin.clone(),
+            car_id: edge.car_id,
+        })?;
+        let selected = store
+            .configured_tesla_vehicles()?
+            .into_iter()
+            .any(|(vehicle_id, _, settings)| vehicle_id == edge.vehicle_id && settings.enabled);
+        return Ok(selected);
+    }
     let credentials_present = match config.collector.provider {
         CollectorProvider::Legacy => store.load_teslamate_legacy_tokens()?.is_some(),
         CollectorProvider::Fleet => store.load_fleet_tokens()?.is_some(),
@@ -195,8 +210,7 @@ async fn run_macos_migration(
         preserve_existing_credentials,
         store.load_teslamate_legacy_tokens()?.is_some(),
     );
-    let capture_teslamate_ciphertext =
-        copy_teslamate_ciphertext && !preserve_existing_credentials;
+    let capture_teslamate_ciphertext = copy_teslamate_ciphertext && !preserve_existing_credentials;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
     if !online_snapshot {
@@ -274,38 +288,38 @@ async fn run_macos_migration(
         None
     } else {
         // The encrypted source pair came from the same final snapshot as history.
-        let (encryption_key, access_ciphertext, refresh_ciphertext) =
-            if copy_teslamate_ciphertext {
-                let key_path = encryption_key_file.expect("validated encrypted-token input");
-                let key = read_migration_encryption_key(key_path)?;
-                if key.is_empty() {
-                    return Err("TeslaMate ENCRYPTION_KEY is empty".into());
-                }
-                let ciphertexts = captured_ciphertexts
-                    .ok_or("final migration snapshot did not retain TeslaMate credentials")?;
-                // Validate compatibility without exposing either plaintext token.
-                drop(decrypt_legacy_owner_tokens(
-                    &key,
-                    &ciphertexts.access,
-                    &ciphertexts.refresh,
-                )?);
-                let (access, refresh) = ciphertexts.into_parts();
-                (key, access, refresh)
-            } else {
-                let access_path = access_token_file.expect("validated access-token input");
-                let refresh_path = refresh_token_file.expect("validated refresh-token input");
-                let key = random_encryption_key()?;
-                let (access, refresh) = encrypt_legacy_owner_token_files(
-                    &key,
-                    read_migration_secret(access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
-                    read_migration_secret(refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
-                )?;
-                (key, access, refresh)
-            };
+        let (encryption_key, access_ciphertext, refresh_ciphertext) = if copy_teslamate_ciphertext {
+            let key_path = encryption_key_file.expect("validated encrypted-token input");
+            let key = read_migration_encryption_key(key_path)?;
+            if key.is_empty() {
+                return Err("TeslaMate ENCRYPTION_KEY is empty".into());
+            }
+            let ciphertexts = captured_ciphertexts
+                .ok_or("final migration snapshot did not retain TeslaMate credentials")?;
+            // Validate compatibility without exposing either plaintext token.
+            drop(decrypt_legacy_owner_tokens(
+                &key,
+                &ciphertexts.access,
+                &ciphertexts.refresh,
+            )?);
+            let (access, refresh) = ciphertexts.into_parts();
+            (key, access, refresh)
+        } else {
+            let access_path = access_token_file.expect("validated access-token input");
+            let refresh_path = refresh_token_file.expect("validated refresh-token input");
+            let key = random_encryption_key()?;
+            let (access, refresh) = encrypt_legacy_owner_token_files(
+                &key,
+                read_migration_secret(access_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
+                read_migration_secret(refresh_path, MAX_MIGRATION_TOKEN_FILE_BYTES)?,
+            )?;
+            (key, access, refresh)
+        };
         let stored = TeslaMateLegacyTokenStore::imported(access_ciphertext, refresh_ciphertext)?;
-        persist_migrated_legacy_tokens(&config.data_dir, &store, &encryption_key, &stored).map_err(
-            |error| migration_outcome_ambiguous("persisting imported credentials", error),
-        )?;
+        persist_migrated_legacy_tokens(&config.data_dir, &store, &encryption_key, &stored)
+            .map_err(|error| {
+                migration_outcome_ambiguous("persisting imported credentials", error)
+            })?;
         Some((stored.access().len(), stored.refresh().len()))
     };
     progress.advance_finalizing(3, 4);
@@ -397,15 +411,15 @@ async fn import_direct_migration_snapshot(
     if include_legacy_token {
         let (selected, tokens) =
             import_selected_from_postgres_with_schema_22_and_legacy_token_and_progress(
-            store,
-            source,
-            postgres_password,
-            cursor_key,
-            &request,
-            limits,
-            progress,
-        )
-        .await?;
+                store,
+                source,
+                postgres_password,
+                cursor_key,
+                &request,
+                limits,
+                progress,
+            )
+            .await?;
         Ok((selected.import, Some(tokens)))
     } else {
         let selected = import_selected_from_postgres_with_schema_22_and_progress(

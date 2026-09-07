@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/hub-compatibility-receipt-v2.json",
+  "title": "Teslatlas Hub ecosystem compatibility receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "allOf": [
+    {"if": {"properties": {"schema_version": {"const": 1}}}, "then": {
+      "not": {"required": ["cohort_inputs"]},
+      "properties": {"cells": {"items": {"not": {"required": ["supplement"]}}}}
+    }},
+    {"if": {"properties": {"schema_version": {"const": 2}}}, "then": {
+      "required": ["cohort_inputs"],
+      "properties": {"cells": {"items": {"required": ["supplement"]}}}
+    }}
+  ],
+  "required": [
+    "schema_version", "matrix_id", "matrix_sha256", "execution_kind",
+    "acceptance_scope", "product_version", "profile_id", "profile_revision",
+    "profile_sha256", "started_at", "ended_at", "status", "complete",
+    "summary", "cells", "cohort_requirements", "errors"
+  ],
+  "properties": {
+    "schema_version": {"enum": [1, 2]},
+    "matrix_id": {"type": "string", "minLength": 1},
+    "matrix_sha256": {"$ref": "#/$defs/sha256"},
+    "execution_kind": {"enum": ["actual_hub_acceptance", "interim_actual_protocol_smoke", "deterministic_runner_test", "invalid"]},
+    "acceptance_scope": {"enum": ["actual-hub-acceptance", "interim-protocol-smoke", "schema-and-admission-only"]},
+    "product_version": {"type": "string", "pattern": "^[0-9]{4}\\.[1-9][0-9]?\\.[1-9][0-9]*$"},
+    "profile_id": {"const": "hub-http-v1"},
+    "profile_revision": {"const": "1.0.0"},
+    "profile_sha256": {"$ref": "#/$defs/sha256"},
+    "started_at": {"type": "string", "format": "date-time"},
+    "ended_at": {"type": "string", "format": "date-time"},
+    "status": {"enum": ["passed", "failed", "pending"]},
+    "complete": {"type": "boolean"},
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_cells", "passed", "failed", "pending"],
+      "properties": {
+        "required_cells": {"const": 21},
+        "passed": {"type": "integer", "minimum": 0, "maximum": 21},
+        "failed": {"type": "integer", "minimum": 0, "maximum": 21},
+        "pending": {"type": "integer", "minimum": 0, "maximum": 21}
+      }
+    },
+    "cells": {"type": "array", "maxItems": 21, "items": {"$ref": "#/$defs/cell"}},
+    "cohort_requirements": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "errors": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "cohort_inputs": {"oneOf": [{"$ref": "#/$defs/file_binding"}, {"type": "null"}]}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "file_binding": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "repo", "head", "dirty_patch_sha256", "untracked_source_manifest_sha256"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "repo": {"type": "string", "pattern": "^/"},
+        "head": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "dirty_patch_sha256": {"$ref": "#/$defs/sha256"},
+        "untracked_source_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "name", "path", "embedded_version", "sha256"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "pattern": "^/"},
+        "embedded_version": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources", "artifacts"],
+      "properties": {
+        "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
+        "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/artifact"}}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hub", "client", "browser_engines", "client_transports"],
+      "properties": {
+        "hub": {"$ref": "#/$defs/runtime_host"},
+        "client": {"$ref": "#/$defs/runtime_host"},
+        "browser_engines": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "client_transports": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "runtime_host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture", "native_or_emulated", "service_mode", "tool_versions"],
+      "properties": {
+        "os": {"type": "string", "minLength": 1},
+        "architecture": {"type": "string", "minLength": 1},
+        "native_or_emulated": {"enum": ["native", "emulated"]},
+        "service_mode": {"type": "string", "minLength": 1},
+        "tool_versions": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "minLength": 1}}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "route", "status", "request_id"],
+      "properties": {
+        "method": {"type": "string", "minLength": 1},
+        "route": {"type": "string", "minLength": 1},
+        "status": {"type": "integer", "minimum": 100, "maximum": 599},
+        "request_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "command", "exit_code", "expected", "actual", "evidence_kind", "evidence_path", "evidence_sha256", "request_transcript"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["passed", "failed", "pending", "not_applicable"]},
+        "command": {"type": "array", "items": {"type": "string"}},
+        "exit_code": {"type": ["integer", "null"]},
+        "expected": {"type": "object", "minProperties": 1},
+        "actual": {"type": "object", "minProperties": 1},
+        "evidence_kind": {"enum": ["http", "zero_request", "identity"]},
+        "process_evidence": {"type": "object", "minProperties": 1},
+        "evidence_path": {"type": ["string", "null"]},
+        "evidence_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "request_transcript": {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/request"}},
+        "not_applicable_reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cell_id", "client_id", "hub_target", "required", "status", "adapter",
+        "command", "exit_code", "started_at", "ended_at", "evidence_path",
+        "evidence_sha256", "identity_before", "identity_after", "runtime_expected",
+        "runtime_actual", "launcher_identity", "execution_log", "case_results", "errors"
+      ],
+      "properties": {
+        "cell_id": {"type": "string", "minLength": 1},
+        "client_id": {"enum": ["protocol_actual_hub", "typescript_node", "typescript_browser", "viewer", "swift", "home_assistant", "edge_v2"]},
+        "hub_target": {"enum": ["macos_arm64", "debian13_amd64", "debian13_arm64"]},
+        "required": {"const": true},
+        "status": {"enum": ["passed", "failed", "pending"]},
+        "adapter": {"type": "string", "minLength": 1},
+        "command": {"type": "array", "items": {"type": "string"}},
+        "exit_code": {"type": ["integer", "null"]},
+        "started_at": {"type": ["string", "null"], "format": "date-time"},
+        "ended_at": {"type": ["string", "null"], "format": "date-time"},
+        "evidence_path": {"type": ["string", "null"]},
+        "evidence_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "identity_before": {"anyOf": [{"$ref": "#/$defs/identity"}, {"type": "null"}]},
+        "identity_after": {"anyOf": [{"$ref": "#/$defs/identity"}, {"type": "null"}]},
+        "runtime_expected": {"anyOf": [{"$ref": "#/$defs/runtime"}, {"type": "null"}]},
+        "runtime_actual": {"anyOf": [{"$ref": "#/$defs/runtime"}, {"type": "null"}]},
+        "launcher_identity": {"anyOf": [{"$ref": "#/$defs/launcher_identity"}, {"type": "null"}]},
+        "execution_log": {"anyOf": [{"$ref": "#/$defs/execution_log"}, {"type": "null"}]},
+        "supplement": {"oneOf": [{"$ref": "#/$defs/file_binding"}, {"type": "null"}]},
+        "case_results": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/case"}},
+        "errors": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "log_file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "bytes", "truncated"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 0, "maximum": 8388608}, "truncated": {"type": "boolean"}
+      }
+    },
+    "execution_log": {
+      "type": "object", "additionalProperties": false,
+      "required": ["stdout", "stderr", "command_record", "duration_ms"],
+      "properties": {
+        "stdout": {"$ref": "#/$defs/log_file"}, "stderr": {"$ref": "#/$defs/log_file"},
+        "command_record": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+        "duration_ms": {"type": "integer", "minimum": 0}
+      }
+    },
+    "launcher_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "path", "sha256", "version", "os", "architecture"],
+      "properties": {
+        "kind": {"const": "node"}, "path": {"type": "string", "pattern": "^/"},
+        "sha256": {"$ref": "#/$defs/sha256"}, "version": {"type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "os": {"type": "string", "minLength": 1}, "architecture": {"enum": ["arm64", "amd64"]}
+      }
+    }
+  }
+}

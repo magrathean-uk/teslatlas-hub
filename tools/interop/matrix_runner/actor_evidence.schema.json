@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/matrix-actor-evidence-v1.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "session_id", "cell_id", "session_input_sha256", "actors", "invocations"],
+  "properties": {
+    "schema_version": {"const": 1}, "session_id": {"type": "string", "format": "uuid"},
+    "cell_id": {"type": "string", "minLength": 1}, "session_input_sha256": {"$ref": "#/$defs/sha256"},
+    "actors": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/actor"}},
+    "invocations": {"type": "array", "maxItems": 512, "items": {"$ref": "#/$defs/invocation"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "binding": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "raw": {"type": "object", "additionalProperties": false, "required": ["id", "schema_id", "binding"], "properties": {"id": {"type": "string", "minLength": 1}, "schema_id": {"type": "string", "minLength": 1}, "binding": {"$ref": "#/$defs/binding"}}},
+    "actor": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "runtime_ref", "entrypoint_ref", "artifact_roles", "source_roles", "installed_manifest", "raw_evidence"], "properties": {"id": {"type": "string", "minLength": 1}, "kind": {"type": "string", "minLength": 1}, "runtime_ref": {"type": "string", "minLength": 1}, "entrypoint_ref": {"type": "string", "minLength": 1}, "artifact_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "source_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "installed_manifest": {"$ref": "#/$defs/binding"}, "raw_evidence": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/raw"}}}},
+    "invocation": {"type": "object", "additionalProperties": false, "required": ["id", "case_id", "actor_id", "operation", "session_sequence_before", "session_sequence_after", "evidence_id", "request_ids"], "properties": {"id": {"type": "string", "minLength": 1}, "case_id": {"type": "string", "minLength": 1}, "actor_id": {"type": "string", "minLength": 1}, "operation": {"type": "string", "minLength": 1}, "session_sequence_before": {"type": "integer", "minimum": 1}, "session_sequence_after": {"type": "integer", "minimum": 1}, "evidence_id": {"type": "string", "minLength": 1}, "request_ids": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"type": "string"}}}}
+  }
+}

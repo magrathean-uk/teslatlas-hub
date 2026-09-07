@@ -80,11 +80,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
             ServiceCommand::Start => {
                 let config = HubConfig::load(&config_path)?;
-                teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
-                    &config.data_dir,
-                    config.collector.provider,
-                )?;
-                teslatlas_hub::macos_launch_agent::start_installed(&config.data_dir)?;
+                teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
+                teslatlas_hub::macos_launch_agent::start_preflighted_installed()?;
                 println!("{}", serde_json::json!({"status": "running"}));
             }
             ServiceCommand::Stop => {
@@ -93,11 +90,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
             ServiceCommand::Restart => {
                 let config = HubConfig::load(&config_path)?;
-                teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
-                    &config.data_dir,
-                    config.collector.provider,
-                )?;
-                teslatlas_hub::macos_launch_agent::restart_installed(&config.data_dir)?;
+                teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
+                teslatlas_hub::macos_launch_agent::restart_preflighted_installed()?;
                 println!("{}", serde_json::json!({"status": "running"}));
             }
         }
@@ -148,10 +142,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     if matches!(&cli.command, Command::Install) {
         let config = HubConfig::load(&config_path)?;
         let admission = AdmittedUserHub::admit(&config.data_dir)?;
-        teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
-            &config.data_dir,
-            config.collector.provider,
-        )?;
+        teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
         let installed =
             teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, &config_path)?;
         drop(admission);
@@ -205,10 +196,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(target_os = "macos")]
         if start_hub {
             let config = HubConfig::load(&config_path)?;
-            teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
-                &config.data_dir,
-                config.collector.provider,
-            )?;
+            teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
             let installed =
                 teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, &config_path)?;
             teslatlas_hub::macos_launch_agent::start_prepared(&installed)?;
@@ -318,6 +306,20 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             let readiness = store
                 .service_readiness_at(config.collector.interval_seconds > 0, current_epoch_ms()?);
             let collector = store.supervised_collector_lease_status()?;
+            let edge_delivery = if let Some(edge) = &config.collector.edge {
+                let counts = store.edge_ledger_counts(&edge.installation_id, &edge.lineage)?;
+                let diagnostic = store.edge_diagnostic(&edge.installation_id, &edge.lineage)?;
+                serde_json::json!({
+                    "configured": true,
+                    "state": diagnostic.as_ref().map_or("never_started", |value| value.state.as_str()),
+                    "detail": diagnostic.as_ref().map_or("no Edge worker receipt", |value| value.detail.as_str()),
+                    "updatedAtMs": diagnostic.as_ref().map(|value| value.updated_at_ms),
+                    "pendingPublications": counts.pending_publications,
+                    "ackFrontier": counts.ack_frontier,
+                })
+            } else {
+                serde_json::json!({"configured": false, "state": "disabled"})
+            };
             let database_bytes = fs::metadata(store.database_path())?.len();
             println!(
                 "{}",
@@ -332,6 +334,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "readinessReason": readiness.err().map(|failure| failure.code),
                     "collector": collector,
                     "provider": config.collector.provider,
+                    "edgeDelivery": edge_delivery,
                     "vehicle": vehicle,
                     "vehicles": vehicle_summaries,
                     "credentials": {
@@ -484,6 +487,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let store = HubStore::initialize(&config.data_dir)?;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     match cli.command {
+        Command::Companions { .. } => {
+            unreachable!("companion commands are delegated before Hub configuration")
+        }
         Command::Init => {
             println!("initialized {}", store.database_path().display());
         }
@@ -646,10 +652,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 #[cfg(target_os = "macos")]
                 {
                     store.checkpoint_catalogue_for_immutable_read()?;
-                    teslatlas_hub::macos_launch_agent::preflight_hub_for_provider(
-                        &config.data_dir,
-                        config.collector.provider,
-                    )?;
+                    teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
                 }
                 let admission =
                     admitted_user_hub.ok_or("Serve reached runtime without user admission")?;
@@ -669,6 +672,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let collector_store = store.clone();
                 let collector_config = config.clone();
                 let collector_admission = std::sync::Arc::clone(&admission);
+                let edge_enabled = collector_config.collector.edge.is_some();
                 let server_config = config;
                 let server_admission = std::sync::Arc::clone(&admission);
                 let control_admission = std::sync::Arc::clone(&admission);
@@ -680,17 +684,31 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     command_proxy,
                     collector_enabled,
                     move |ready, shutdown| async move {
-                        collector::run_supervised_for_admitted_user(
-                            &collector_store,
-                            &collector_config,
-                            collector_admission,
-                            ready,
-                            async move {
-                                let _ = shutdown.await;
-                            },
-                        )
-                        .await
-                        .map_err(std::io::Error::other)
+                        if edge_enabled {
+                            edge_delivery::run_for_admitted_user(
+                                &collector_store,
+                                &collector_config,
+                                collector_admission,
+                                ready,
+                                async move {
+                                    let _ = shutdown.await;
+                                },
+                            )
+                            .await
+                            .map_err(std::io::Error::other)
+                        } else {
+                            collector::run_supervised_for_admitted_user(
+                                &collector_store,
+                                &collector_config,
+                                collector_admission,
+                                ready,
+                                async move {
+                                    let _ = shutdown.await;
+                                },
+                            )
+                            .await
+                            .map_err(std::io::Error::other)
+                        }
                     },
                     move |cursor_key, shutdown| async move {
                         server::serve_for_admitted_user(

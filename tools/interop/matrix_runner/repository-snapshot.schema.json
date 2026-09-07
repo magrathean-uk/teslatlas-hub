@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/repository-snapshot-v1.json",
+  "title": "Recoverable repository observation snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "repository", "source_identity", "patch", "members"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "repository": {"$ref": "#/$defs/absolute_path"},
+    "source_identity": {"$ref": "#/$defs/source_identity"},
+    "patch": {"$ref": "#/$defs/sized_binding"},
+    "members": {"type": "array", "maxItems": 250000, "items": {"$ref": "#/$defs/member"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "absolute_path": {"type": "string", "pattern": "^/"},
+    "mode": {"type": "string", "pattern": "^0[0-7]{3}$"},
+    "source_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "repo", "head", "dirty_patch_sha256", "untracked_source_manifest_sha256"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1}, "repo": {"$ref": "#/$defs/absolute_path"},
+        "head": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "dirty_patch_sha256": {"$ref": "#/$defs/sha256"},
+        "untracked_source_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "sized_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {"path": {"$ref": "#/$defs/absolute_path"}, "sha256": {"$ref": "#/$defs/sha256"}, "bytes": {"type": "integer", "minimum": 0}}
+    },
+    "member": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "type", "mode", "bytes", "sha256", "symlink_target", "blob"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1}, "type": {"enum": ["file", "symlink", "deleted"]},
+        "mode": {"$ref": "#/$defs/mode"}, "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "symlink_target": {"type": ["string", "null"]}, "blob": {"anyOf": [{"$ref": "#/$defs/absolute_path"}, {"type": "null"}]}
+      }
+    }
+  }
+}

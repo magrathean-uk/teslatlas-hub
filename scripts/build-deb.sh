@@ -253,6 +253,30 @@ trap 'find "$stage" -depth -delete' EXIT HUP INT TERM
 package_root="$stage/debian/teslatlas-hub"
 
 install -D -m 0755 "$binary" "$package_root/usr/bin/teslatlas-hub"
+companion_wrapper="$root/scripts/bootstrap-companions.py"
+companion_modules="$root/tools/companions"
+for companion_input in "$companion_wrapper" \
+    "$companion_modules/__init__.py" "$companion_modules/cli.py" \
+    "$companion_modules/core.py" "$companion_modules/processes.py" \
+    "$companion_modules/recipes.py" "$companion_modules/targets.py" \
+    "$companion_modules/catalog-current.json" \
+    "$companion_modules/catalog-template.json" \
+    "$companion_modules/catalog.schema.json" \
+    "$companion_modules/local-sources.schema.json"; do
+    [ -f "$companion_input" ] && [ ! -L "$companion_input" ] \
+        || { echo "companion helper input is missing or unsafe: $companion_input" >&2; exit 65; }
+done
+install -D -m 0755 "$companion_wrapper" \
+    "$package_root/usr/lib/teslatlas-hub/bootstrap-companions.py"
+for companion_module in __init__.py cli.py core.py processes.py recipes.py targets.py; do
+    install -D -m 0644 "$companion_modules/$companion_module" \
+        "$package_root/usr/lib/teslatlas-hub/companions/$companion_module"
+done
+for companion_metadata in catalog-current.json catalog-template.json \
+    catalog.schema.json local-sources.schema.json; do
+    install -D -m 0644 "$companion_modules/$companion_metadata" \
+        "$package_root/usr/share/teslatlas-hub/companions/$companion_metadata"
+done
 if [ "$include_fleet_sidecars" = true ]; then
     install -D -m 0755 "$command_proxy_binary" \
         "$package_root/usr/lib/teslatlas-hub/tesla-http-proxy"

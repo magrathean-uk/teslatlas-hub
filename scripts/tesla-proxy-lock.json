@@ -1,5 +1,5 @@
 {
-  "schema": "teslatlas.tesla-proxy-lock/v2",
+  "schema": "teslatlas.tesla-proxy-lock/v3",
   "package": "github.com/teslamotors/vehicle-command/cmd/tesla-http-proxy",
   "subjects": {
     "darwin-arm64": {
@@ -19,11 +19,18 @@
     }
   },
   "build_host": {
-    "go": {
-      "path": "/opt/homebrew/Cellar/go/1.27.0/libexec/bin/go",
-      "sha256": "71c4991041d8e44975c882e4f72005719c958013d3340dc665a3808b72ddf702",
-      "goroot": "/opt/homebrew/Cellar/go/1.27.0/libexec"
-    },
+    "go": [
+      {
+        "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
+        "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
+        "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64"
+      },
+      {
+        "path": "/opt/homebrew/Cellar/go/1.27.0/libexec/bin/go",
+        "sha256": "71c4991041d8e44975c882e4f72005719c958013d3340dc665a3808b72ddf702",
+        "goroot": "/opt/homebrew/Cellar/go/1.27.0/libexec"
+      }
+    ],
     "compiler": {
       "path": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
       "sha256": "32e0a259d4b5931e66cdc09f2b47b2de482d4dbdcf02825c70ed44ca852594bc",

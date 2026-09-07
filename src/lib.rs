@@ -15,6 +15,10 @@ pub mod runtime;
 pub mod storage;
 pub mod sync;
 
+#[cfg(feature = "edge-test-faults")]
+#[path = "runtime/edge_test_fault.rs"]
+mod edge_test_fault;
+
 // Stable compatibility exports. New code should prefer the domain paths above.
 pub use api::{fleet_api, http_range, owner_api, protocol, server, transport};
 pub use auth::{
@@ -23,7 +27,7 @@ pub use auth::{
 };
 #[cfg(test)]
 pub use collection::fake_tesla;
-pub use collection::{collector, current_state, fleet_telemetry, tesla_stream};
+pub use collection::{collector, current_state, edge_delivery, fleet_telemetry, tesla_stream};
 pub use geo::{geocoder, gpx, location, terrain, terrain_cache};
 pub use import::teslamate::{
     direct as teslamate_direct, fragments as teslamate_fragments, importer as teslamate_import,
@@ -55,7 +59,7 @@ pub const CORRESPONDING_SOURCE_URL: &str = concat!(
     env!("CARGO_PKG_VERSION")
 );
 
-/// Immutable Corresponding Source for this release.
+/// Version-derived source-tag URL; it resolves only after that source tag exists.
 pub fn corresponding_source_url() -> String {
     CORRESPONDING_SOURCE_URL.to_owned()
 }
@@ -89,11 +93,11 @@ mod legal_notice_tests {
     };
 
     #[test]
-    fn stable_release_uses_immutable_tagged_source() {
-        assert_eq!(BUILD_VERSION, "2026.36.1");
+    fn versioned_source_url_tracks_the_product_version() {
+        assert_eq!(BUILD_VERSION, "2026.36.2");
         assert_eq!(
             corresponding_source_url(),
-            "https://github.com/magrathean-uk/teslatlas-hub/tree/v2026.36.1"
+            "https://github.com/magrathean-uk/teslatlas-hub/tree/v2026.36.2"
         );
         assert_eq!(corresponding_source_url(), CORRESPONDING_SOURCE_URL);
     }

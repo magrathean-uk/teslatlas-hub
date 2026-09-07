@@ -55,7 +55,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 57;
+pub const SCHEMA_VERSION: i32 = 59;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -222,7 +222,7 @@ pub enum StreamFaultPoint {
     Commit,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "edge-test-faults"))]
 impl StreamFaultPoint {
     const fn label(self) -> &'static str {
         match self {
@@ -1197,6 +1197,7 @@ include!("db/import_finalization.rs");
 include!("db/lineage_verification.rs");
 include!("db/identity_and_audit.rs");
 include!("db/observations_and_lifecycle.rs");
+include!("db/edge_delivery.rs");
 include!("db/geofences_and_terrain.rs");
 include!("db/catalogue_models.rs");
 include!("db/domain_models.rs");

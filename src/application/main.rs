@@ -12,7 +12,7 @@ use std::{
 #[cfg(unix)]
 use std::future::Future;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use qrcode::{QrCode, render::unicode::Dense1x2};
 use rustix::fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open};
 use rustix::process::getuid;
@@ -31,6 +31,7 @@ use teslatlas_hub::{
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{HubStore, ObservationVerificationError, StoreError, TeslaMateLegacyTokenStore},
     diagnostics::{inspect_hub, log_runtime_inventory},
+    edge_delivery,
     fleet_api::FleetRegion,
     fleet_credentials::{
         FleetCredentialError, FleetSetupCredentials, migrate_legacy_fleet_credentials,
@@ -82,6 +83,7 @@ const IMMUTABLE_DIAGNOSTIC_OPEN_DELAY: Duration = Duration::ZERO;
 
 include!("main/macos_service.rs");
 include!("main/cli.rs");
+include!("main/companions.rs");
 include!("main/control.rs");
 include!("main/teslamate_check.rs");
 include!("main/dispatch.rs");

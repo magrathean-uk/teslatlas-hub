@@ -1859,6 +1859,189 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 57;
     }
 
+    if version == 57 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS edge_lineages (
+                    installation_id TEXT NOT NULL,
+                    lineage TEXT NOT NULL,
+                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
+                    vin TEXT NOT NULL,
+                    car_id INTEGER NOT NULL CHECK(car_id > 0),
+                    first_spool_seq INTEGER,
+                    ack_frontier INTEGER,
+                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= created_at_ms),
+                    PRIMARY KEY(installation_id, lineage),
+                    CHECK(length(CAST(installation_id AS BLOB)) BETWEEN 1 AND 128),
+                    CHECK(length(CAST(lineage AS BLOB)) BETWEEN 1 AND 128),
+                    CHECK(length(CAST(vin AS BLOB)) = 17),
+                    CHECK(first_spool_seq IS NULL OR first_spool_seq >= 1),
+                    CHECK(ack_frontier IS NULL OR ack_frontier >= first_spool_seq)
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS edge_applications (
+                    installation_id TEXT NOT NULL,
+                    lineage TEXT NOT NULL,
+                    stable_record_id TEXT NOT NULL,
+                    payload_sha256 TEXT NOT NULL,
+                    disposition TEXT NOT NULL CHECK(disposition IN (
+                        'projected_telemetry', 'durable_non_projection_event'
+                    )),
+                    first_spool_seq INTEGER NOT NULL CHECK(first_spool_seq >= 1),
+                    observation_id INTEGER,
+                    applied_at_ms INTEGER NOT NULL CHECK(applied_at_ms >= 0),
+                    PRIMARY KEY(installation_id, lineage, stable_record_id),
+                    FOREIGN KEY(installation_id, lineage)
+                        REFERENCES edge_lineages(installation_id, lineage) ON DELETE RESTRICT,
+                    CHECK(length(stable_record_id) = 64),
+                    CHECK(length(payload_sha256) = 64)
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS edge_sequence_dispositions (
+                    installation_id TEXT NOT NULL,
+                    lineage TEXT NOT NULL,
+                    spool_seq INTEGER NOT NULL CHECK(spool_seq >= 1),
+                    item_kind TEXT NOT NULL CHECK(item_kind IN ('record', 'gap')),
+                    item_id TEXT NOT NULL,
+                    legacy_record_id TEXT,
+                    payload_sha256 TEXT,
+                    category TEXT NOT NULL CHECK(category IN (
+                        'projected_telemetry', 'durable_non_projection_event',
+                        'durable_gap', 'duplicate'
+                    )),
+                    reason TEXT NOT NULL,
+                    occurred_at_ms INTEGER,
+                    evidence_sha256 TEXT,
+                    committed_at_ms INTEGER NOT NULL CHECK(committed_at_ms >= 0),
+                    PRIMARY KEY(installation_id, lineage, spool_seq),
+                    FOREIGN KEY(installation_id, lineage)
+                        REFERENCES edge_lineages(installation_id, lineage) ON DELETE RESTRICT,
+                    CHECK(length(item_id) = 64),
+                    CHECK(legacy_record_id IS NULL OR length(legacy_record_id) = 64),
+                    CHECK(payload_sha256 IS NULL OR length(payload_sha256) = 64),
+                    CHECK(evidence_sha256 IS NULL OR length(evidence_sha256) = 64),
+                    CHECK((item_kind = 'gap' AND category = 'durable_gap'
+                           AND legacy_record_id IS NULL AND payload_sha256 IS NULL
+                           AND occurred_at_ms IS NOT NULL AND evidence_sha256 IS NOT NULL)
+                       OR (item_kind = 'record' AND category != 'durable_gap'
+                           AND legacy_record_id IS NOT NULL AND payload_sha256 IS NOT NULL
+                           AND occurred_at_ms IS NULL AND evidence_sha256 IS NULL))
+                ) STRICT;
+                CREATE UNIQUE INDEX IF NOT EXISTS edge_sequence_item_identity
+                    ON edge_sequence_dispositions(installation_id, lineage, item_kind, item_id, spool_seq);
+                CREATE TABLE IF NOT EXISTS edge_accumulator_states (
+                    installation_id TEXT NOT NULL,
+                    lineage TEXT NOT NULL,
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
+                    state_version INTEGER NOT NULL CHECK(state_version = 1),
+                    state_json BLOB NOT NULL CHECK(length(state_json) BETWEEN 2 AND 262144),
+                    through_spool_seq INTEGER NOT NULL CHECK(through_spool_seq >= 1),
+                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
+                    PRIMARY KEY(installation_id, lineage),
+                    FOREIGN KEY(installation_id, lineage)
+                        REFERENCES edge_lineages(installation_id, lineage) ON DELETE RESTRICT
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS edge_pending_publications (
+                    installation_id TEXT NOT NULL,
+                    lineage TEXT NOT NULL,
+                    stable_record_id TEXT NOT NULL,
+                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
+                    status TEXT NOT NULL CHECK(status IN ('pending', 'publishing', 'retry', 'complete')),
+                    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+                    next_attempt_ms INTEGER NOT NULL CHECK(next_attempt_ms >= 0),
+                    last_error TEXT,
+                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+                    completed_at_ms INTEGER,
+                    PRIMARY KEY(installation_id, lineage, stable_record_id),
+                    FOREIGN KEY(installation_id, lineage, stable_record_id)
+                        REFERENCES edge_applications(installation_id, lineage, stable_record_id)
+                        ON DELETE RESTRICT,
+                    CHECK(last_error IS NULL OR length(CAST(last_error AS BLOB)) <= 256)
+                ) STRICT;
+                CREATE INDEX IF NOT EXISTS edge_pending_publication_due
+                    ON edge_pending_publications(status, next_attempt_ms);
+                CREATE TABLE IF NOT EXISTS edge_consumer_diagnostics (
+                    installation_id TEXT NOT NULL,
+                    lineage TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN (
+                        'connected', 'backoff', 'auth_failed', 'blocked_record',
+                        'pending_publication', 'stopped'
+                    )),
+                    detail TEXT NOT NULL,
+                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
+                    PRIMARY KEY(installation_id, lineage),
+                    CHECK(length(CAST(detail AS BLOB)) <= 256)
+                ) STRICT;
+                PRAGMA user_version = 58;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 58;
+    }
+
+    if version == 58 {
+        let has_car_id = connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM pragma_table_info('edge_lineages') WHERE name = 'car_id'
+                )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(StoreError::Migrate)?;
+        if has_car_id {
+            connection
+                .execute_batch(
+                    "
+                    BEGIN IMMEDIATE;
+                    CREATE TRIGGER IF NOT EXISTS edge_lineages_require_car_id
+                    BEFORE INSERT ON edge_lineages
+                    FOR EACH ROW WHEN NEW.car_id IS NULL OR NEW.car_id <= 0
+                    BEGIN
+                        SELECT RAISE(ABORT, 'edge lineage car identity is required');
+                    END;
+                    CREATE TRIGGER IF NOT EXISTS edge_lineages_immutable_car_id
+                    BEFORE UPDATE OF car_id ON edge_lineages
+                    FOR EACH ROW WHEN OLD.car_id IS NOT NEW.car_id
+                    BEGIN
+                        SELECT RAISE(ABORT, 'edge lineage car identity is immutable');
+                    END;
+                    PRAGMA user_version = 59;
+                    COMMIT;
+                    ",
+                )
+                .map_err(StoreError::Migrate)?;
+        } else {
+            connection
+                .execute_batch(
+                    "
+                    BEGIN IMMEDIATE;
+                    ALTER TABLE edge_lineages ADD COLUMN car_id INTEGER
+                        CHECK(car_id IS NULL OR car_id > 0);
+                    CREATE TRIGGER edge_lineages_require_car_id
+                    BEFORE INSERT ON edge_lineages
+                    FOR EACH ROW WHEN NEW.car_id IS NULL OR NEW.car_id <= 0
+                    BEGIN
+                        SELECT RAISE(ABORT, 'edge lineage car identity is required');
+                    END;
+                    CREATE TRIGGER edge_lineages_immutable_car_id
+                    BEFORE UPDATE OF car_id ON edge_lineages
+                    FOR EACH ROW WHEN OLD.car_id IS NOT NEW.car_id
+                    BEGIN
+                        SELECT RAISE(ABORT, 'edge lineage car identity is immutable');
+                    END;
+                    PRAGMA user_version = 59;
+                    COMMIT;
+                    ",
+                )
+                .map_err(StoreError::Migrate)?;
+        }
+        version = 59;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {

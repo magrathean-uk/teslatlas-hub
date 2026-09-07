@@ -66,6 +66,7 @@
         "docs/governance/owner-contributions.md",
         "docs/guides/api.md",
         "docs/guides/cli.md",
+        "docs/guides/companion-setup.md",
         "docs/guides/configuration.md",
         "docs/guides/fleet-setup.md",
         "docs/guides/getting-started.md",
@@ -343,6 +344,7 @@
         "src/auth/mod.rs",
         "src/collection/collector.rs",
         "src/collection/current_state.rs",
+        "src/collection/edge_delivery.rs",
         "src/collection/fleet_telemetry.rs",
         "src/collection/mod.rs",
         "src/collection/tesla_stream.rs",
@@ -458,6 +460,46 @@
       ],
       "globs": [
         "packaging/macos-service/scripts/*"
+      ]
+    },
+    {
+      "id": "companion-bootstrap-tooling",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Repository-maintained fixed companion source bootstrap, schemas, catalog, and focused tests.",
+      "globs": [
+        "tools/companions/*",
+        "tools/companions/tests/*"
+      ]
+    },
+    {
+      "id": "ecosystem-compatibility-contracts",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Repository-maintained compatibility release records, execution state, test matrix, and receipt schema.",
+      "paths": [
+        "docs/compatibility/ecosystem-release.json",
+        "docs/compatibility/execution-state.json",
+        "docs/compatibility/matrix.json",
+        "docs/compatibility/receipt.schema.json"
+      ]
+    },
+    {
+      "id": "ecosystem-interop-harness",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Repository-maintained interoperability fixtures, runners, client-lane harnesses, configuration, and focused tests.",
+      "paths": [
+        "examples/interop_fixture.rs",
+        "tests/interop/scenario.json",
+        "tests/interop/seed.rs",
+        "tools/interop/README.md",
+        "tools/interop/fixture.py",
+        "tools/interop/run.py",
+        "tools/interop/smoke.py",
+        "tools/interop/test_fixture.py",
+        "tools/interop/test_run.py"
+      ],
+      "globs": [
+        "tools/interop/client_lanes/*",
+        "tools/interop/matrix_runner/*"
       ]
     },
     {

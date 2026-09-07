@@ -27,10 +27,11 @@ use sha2::Digest;
 use sha2::Sha256;
 
 use super::{
-    Cli, Command, ControlCommand, MAX_TLS_CERTIFICATE_CHAIN_BYTES, MAX_TLS_PRIVATE_KEY_BYTES,
-    PairingCommandError, PairingCommandInput, execute_pairing_at, leaf_certificate_sha256,
-    leaf_certificate_sha256_after_open, pairing_uri, persist_and_present_pairing,
-    read_tls_identity_file, render_pairing_qr, run, run_immutable_diagnostic_with,
+    Cli, Command, CompanionCommand, CompanionMode, ControlCommand, MAX_TLS_CERTIFICATE_CHAIN_BYTES,
+    MAX_TLS_PRIVATE_KEY_BYTES, PairingCommandError, PairingCommandInput, execute_pairing_at,
+    leaf_certificate_sha256, leaf_certificate_sha256_after_open, pairing_uri,
+    persist_and_present_pairing, read_tls_identity_file, render_pairing_qr, run,
+    run_immutable_diagnostic_with,
 };
 #[cfg(target_os = "macos")]
 use super::{
@@ -389,6 +390,62 @@ fn bootstrap_and_explicit_vehicle_commands_parse() {
     ));
     assert!(
         Cli::try_parse_from(["teslatlas-hub", "control", "climate-start", "--confirm"]).is_ok()
+    );
+}
+
+#[test]
+fn companion_setup_alias_parses_typed_source_bootstrap_arguments() {
+    let cli = Cli::try_parse_from([
+        "teslatlas-hub",
+        "setup-companions",
+        "dry-run",
+        "--mode",
+        "local-candidate",
+        "--components",
+        "protocol,sdk-typescript,viewer",
+        "--prefix",
+        "/tmp/teslatlas-companions",
+        "--catalog",
+        "/tmp/catalog.json",
+        "--local-sources",
+        "/tmp/local-sources.json",
+        "--node-bin",
+        "/tmp/node/bin",
+        "--timeout-seconds",
+        "120",
+    ])
+    .expect("companion setup CLI");
+
+    let Command::Companions { command } = cli.command else {
+        panic!("companions command")
+    };
+    let CompanionCommand::DryRun(arguments) = command else {
+        panic!("dry-run command")
+    };
+    assert_eq!(arguments.mode, CompanionMode::LocalCandidate);
+    assert_eq!(
+        arguments.components,
+        ["protocol", "sdk-typescript", "viewer"]
+    );
+    assert_eq!(arguments.prefix, PathBuf::from("/tmp/teslatlas-companions"));
+    assert_eq!(arguments.timeout_seconds, 120);
+}
+
+#[test]
+fn companion_cli_does_not_accept_a_claimed_hub_version() {
+    assert!(
+        Cli::try_parse_from([
+            "teslatlas-hub",
+            "companions",
+            "install",
+            "--components",
+            "protocol",
+            "--prefix",
+            "/tmp/teslatlas-companions",
+            "--hub-version",
+            "2099.1.1",
+        ])
+        .is_err()
     );
 }
 

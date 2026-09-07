@@ -1,5 +1,10 @@
 # Build from source
 
+Hub packages include only the audited companion bootstrap modules and their
+small schemas/catalog. The six companion repositories, dependency trees, and
+built outputs remain outside the Hub payload and are created only by the
+unprivileged command described in [Companion source setup](companion-setup.md).
+
 Hub is source-only: no prebuilt GitHub releases or installer downloads are
 provided. Existing tags remain historical source snapshots. Use `main` for the
 latest fixes and record the exact commit used for your build.
@@ -21,6 +26,19 @@ Go 1.27.0 and Xcode 27. Building downloads locked dependency source material.
 ./scripts/build-macos-app.sh
 codesign --verify --deep --strict "dist/Teslatlas Hub.app"
 pkgutil --payload-files dist/TeslatlasHub.pkg
+```
+
+If Go 1.27.0 is installed outside the default `PATH`, select its executable
+explicitly. `TESLATLAS_GO` must be an absolute path to an executable file; the
+packaging parent, both Go companion builds and their evidence generators use
+the same selection and still reject any version other than exactly Go 1.27.0.
+Quote the path when it contains spaces. Go proxy evidence generation also
+requires the selected executable's resolved path, SHA-256 and reported GOROOT
+to match one complete reviewed host identity in `scripts/tesla-proxy-lock.json`;
+an arbitrary Go 1.27.0 installation is not sufficient.
+
+```sh
+TESLATLAS_GO="/absolute/path/to/go" ./scripts/build-macos-app.sh
 ```
 
 Install `dist/TeslatlasHub.pkg`, then follow [Mac setup](install-macos.md).

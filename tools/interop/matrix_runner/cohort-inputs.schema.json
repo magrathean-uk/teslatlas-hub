@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/cohort-inputs-v2.json",
+  "title": "Finite Teslatlas cohort inputs",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "cohort_id", "product_version", "repository_observations", "builds"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 2},
+    "cohort_id": {"type": "string", "minLength": 1},
+    "product_version": {"type": "string", "pattern": "^[0-9]{4}\\.[1-9][0-9]?\\.[1-9][0-9]*$"},
+    "repository_observations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/observation"}},
+    "builds": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/build"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "binding": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "source_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "repo", "head", "dirty_patch_sha256", "untracked_source_manifest_sha256"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1}, "repo": {"type": "string", "pattern": "^/"},
+        "head": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "dirty_patch_sha256": {"$ref": "#/$defs/sha256"},
+        "untracked_source_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "observation": {
+      "type": "object", "additionalProperties": false, "required": ["source_identity", "snapshot"],
+      "properties": {"source_identity": {"$ref": "#/$defs/source_identity"}, "snapshot": {"$ref": "#/$defs/binding"}}
+    },
+    "host": {
+      "type": "object", "additionalProperties": false, "required": ["os", "architecture", "native_or_emulated"],
+      "properties": {"os": {"type": "string", "minLength": 1}, "architecture": {"type": "string", "minLength": 1}, "native_or_emulated": {"enum": ["native", "emulated"]}}
+    },
+    "tool": {
+      "type": "object", "additionalProperties": false, "required": ["name", "path", "version", "sha256"],
+      "properties": {"name": {"type": "string", "minLength": 1}, "path": {"type": "string", "pattern": "^/"}, "version": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "member": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "type", "mode", "bytes", "sha256", "symlink_target"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1}, "type": {"enum": ["file", "symlink", "directory"]},
+        "mode": {"type": "string", "pattern": "^0[0-7]{3}$"}, "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "symlink_target": {"type": ["string", "null"]}
+      }
+    },
+    "output": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "path", "type", "sha256", "embedded_version", "members"],
+      "properties": {
+        "role": {"type": "string", "minLength": 1}, "path": {"type": "string", "pattern": "^/"},
+        "type": {"enum": ["file", "directory", "tar", "zip"]}, "sha256": {"$ref": "#/$defs/sha256"},
+        "embedded_version": {"type": "string", "minLength": 1},
+        "members": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/member"}}
+      }
+    },
+    "recipe": {
+      "type": "object", "additionalProperties": false, "required": ["argv", "cwd", "command_files", "log"],
+      "properties": {
+        "argv": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "cwd": {"type": "string", "pattern": "^/"},
+        "command_files": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},
+        "log": {"$ref": "#/$defs/binding"}
+      }
+    },
+    "toolchain": {
+      "type": "object", "additionalProperties": false, "required": ["host", "tools", "dependencies", "evidence"],
+      "properties": {
+        "host": {"$ref": "#/$defs/host"}, "tools": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/tool"}},
+        "dependencies": {"type": "array", "items": {"$ref": "#/$defs/binding"}},
+        "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}}
+      }
+    },
+    "build": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "source_roles", "input_manifest", "recipe", "toolchain", "outputs"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "source_roles": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "input_manifest": {"$ref": "#/$defs/binding"}, "recipe": {"$ref": "#/$defs/recipe"},
+        "toolchain": {"$ref": "#/$defs/toolchain"},
+        "outputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/output"}}
+      }
+    }
+  }
+}

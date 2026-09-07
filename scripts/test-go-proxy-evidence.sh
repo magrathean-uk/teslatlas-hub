@@ -12,6 +12,132 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+python3 - "$ROOT" <<'PY'
+import copy
+import importlib.util
+import json
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "scripts"))
+spec = importlib.util.spec_from_file_location(
+    "go_proxy_evidence", root / "scripts" / "go-proxy-evidence.py"
+)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+lock = json.loads((root / "scripts" / "tesla-proxy-lock.json").read_text())
+
+assert lock["schema"] == "teslatlas.tesla-proxy-lock/v3"
+policy = module.validate_lock(copy.deepcopy(lock))["build_host"]
+assert len(policy["go"]) == 2
+assert policy["go"] == sorted(
+    policy["go"], key=lambda item: (item["path"], item["sha256"], item["goroot"])
+)
+official = {
+    "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
+    "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
+    "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64",
+}
+homebrew = {
+    "path": "/opt/homebrew/Cellar/go/1.27.0/libexec/bin/go",
+    "sha256": "71c4991041d8e44975c882e4f72005719c958013d3340dc665a3808b72ddf702",
+    "goroot": "/opt/homebrew/Cellar/go/1.27.0/libexec",
+}
+assert official in policy["go"]
+assert homebrew in policy["go"]
+
+def rejected(action, message):
+    try:
+        action()
+    except module.GateError as error:
+        assert message in str(error), (message, str(error))
+    else:
+        raise AssertionError(f"accepted invalid host policy: {message}")
+
+for selected in (official, homebrew):
+    observed = {
+        "go": copy.deepcopy(selected),
+        "compiler": copy.deepcopy(policy["compiler"]),
+        "xcode": copy.deepcopy(policy["xcode"]),
+        "sdk": copy.deepcopy(policy["sdk"]),
+    }
+    module.require_reviewed_build_host(observed, policy, "test host")
+
+for field in ("path", "sha256", "goroot"):
+    observed = {
+        "go": copy.deepcopy(official),
+        "compiler": copy.deepcopy(policy["compiler"]),
+        "xcode": copy.deepcopy(policy["xcode"]),
+        "sdk": copy.deepcopy(policy["sdk"]),
+    }
+    observed["go"][field] = (
+        "0" * 64 if field == "sha256" else observed["go"][field] + ".forged"
+    )
+    rejected(
+        lambda observed=observed: module.require_reviewed_build_host(
+            observed, policy, "test host"
+        ),
+        "Go identity is not an allowed complete binding",
+    )
+
+mixed = {
+    "go": {
+        "path": official["path"],
+        "sha256": homebrew["sha256"],
+        "goroot": official["goroot"],
+    },
+    "compiler": copy.deepcopy(policy["compiler"]),
+    "xcode": copy.deepcopy(policy["xcode"]),
+    "sdk": copy.deepcopy(policy["sdk"]),
+}
+rejected(
+    lambda: module.require_reviewed_build_host(mixed, policy, "test host"),
+    "Go identity is not an allowed complete binding",
+)
+
+unlisted = copy.deepcopy(mixed)
+unlisted["go"] = {
+    "path": "/private/reviewed-nowhere/go",
+    "sha256": "1" * 64,
+    "goroot": "/private/reviewed-nowhere",
+}
+rejected(
+    lambda: module.require_reviewed_build_host(unlisted, policy, "test host"),
+    "Go identity is not an allowed complete binding",
+)
+
+for section, field in (("compiler", "path"), ("xcode", "build"), ("sdk", "version")):
+    observed = {
+        "go": copy.deepcopy(official),
+        "compiler": copy.deepcopy(policy["compiler"]),
+        "xcode": copy.deepcopy(policy["xcode"]),
+        "sdk": copy.deepcopy(policy["sdk"]),
+    }
+    observed[section][field] += ".forged"
+    rejected(
+        lambda observed=observed: module.require_reviewed_build_host(
+            observed, policy, "test host"
+        ),
+        f"{section} identity does not match the exact lock",
+    )
+
+duplicate = copy.deepcopy(lock)
+duplicate["build_host"]["go"].append(
+    copy.deepcopy(duplicate["build_host"]["go"][0])
+)
+rejected(lambda: module.validate_lock(duplicate), "duplicate Go host identity")
+
+malformed = copy.deepcopy(lock)
+del malformed["build_host"]["go"][0]["goroot"]
+rejected(lambda: module.validate_lock(malformed), "keys mismatch")
+
+unsorted = copy.deepcopy(lock)
+unsorted["build_host"]["go"].reverse()
+rejected(lambda: module.validate_lock(unsorted), "uniquely sorted")
+PY
+
 mkdir -p "$TMP/build-cache"
 GOCACHE="$TMP/build-cache" \
     "$ROOT/scripts/build-tesla-command-proxy.sh" --target darwin-arm64 \
@@ -111,6 +237,11 @@ assert "DefaultGODEBUG" not in {
     item["Key"] for item in receipt["build_info"]["Settings"]
 }
 assert len(receipt["build_host"]["go"]["sha256"]) == 64
+assert receipt["build_host"]["go"] == {
+    "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
+    "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
+    "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64",
+}
 assert len(receipt["build_host"]["compiler"]["sha256"]) == 64
 assert receipt["build_host"]["go"]["goroot"]
 assert receipt["build_host"]["xcode"]["version"].startswith("Xcode ")
@@ -239,9 +370,37 @@ json_forgery(
     "forged-receipt", "go-build-receipt.json",
     lambda value: value.__setitem__("clean_rebuild_sha256", "0" * 64),
 )
+for field, forged in (
+    ("path", "/unreviewed/go"),
+    ("sha256", "0" * 64),
+    ("goroot", "/unreviewed"),
+):
+    json_forgery(
+        f"forged-go-{field}", "go-build-receipt.json",
+        lambda value, field=field, forged=forged: value["build_host"]["go"].__setitem__(
+            field, forged
+        ),
+    )
+
+def mix_allowed_go(value):
+    value["build_host"]["go"] = {
+        "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
+        "sha256": "71c4991041d8e44975c882e4f72005719c958013d3340dc665a3808b72ddf702",
+        "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64",
+    }
+
+json_forgery("forged-go-mixed", "go-build-receipt.json", mix_allowed_go)
 json_forgery(
-    "forged-build-host", "go-build-receipt.json",
+    "forged-compiler", "go-build-receipt.json",
+    lambda value: value["build_host"]["compiler"].__setitem__("path", "/forged/clang"),
+)
+json_forgery(
+    "forged-xcode", "go-build-receipt.json",
     lambda value: value["build_host"]["xcode"].__setitem__("build", "forged"),
+)
+json_forgery(
+    "forged-sdk", "go-build-receipt.json",
+    lambda value: value["build_host"]["sdk"].__setitem__("version", "forged"),
 )
 json_forgery(
     "forged-inventory", "go-dependency-inventory.json",
@@ -279,8 +438,9 @@ manifest_path.write_text(
     json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 )
 PY
-for forgery in forged-receipt forged-build-host forged-inventory forged-sbom \
-    forged-notices forged-archive forged-proxy-component forged-target
+for forgery in forged-receipt forged-go-path forged-go-sha256 forged-go-goroot \
+    forged-go-mixed forged-compiler forged-xcode forged-sdk forged-inventory \
+    forged-sbom forged-notices forged-archive forged-proxy-component forged-target
 do
     if python3 "$HELPER" --repo "$ROOT" --verify-dir "$TMP/$forgery" \
         >"$TMP/$forgery.out" 2>&1; then
@@ -289,7 +449,12 @@ do
     fi
 done
 grep -Fq 'does not prove the locked reproducible subject' "$TMP/forged-receipt.out"
-grep -Fq 'host identity does not match the exact lock' "$TMP/forged-build-host.out"
+for forgery in forged-go-path forged-go-sha256 forged-go-goroot forged-go-mixed; do
+    grep -Fq 'Go identity is not an allowed complete binding' "$TMP/$forgery.out"
+done
+grep -Fq 'compiler identity does not match the exact lock' "$TMP/forged-compiler.out"
+grep -Fq 'xcode identity does not match the exact lock' "$TMP/forged-xcode.out"
+grep -Fq 'sdk identity does not match the exact lock' "$TMP/forged-sdk.out"
 grep -Fq 'inventory does not match the exact lock' "$TMP/forged-inventory.out"
 grep -Fq 'SBOM does not match the locked source archive' "$TMP/forged-sbom.out"
 grep -Fq 'notices do not match the locked source licenses' "$TMP/forged-notices.out"

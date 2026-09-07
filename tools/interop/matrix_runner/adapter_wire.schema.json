@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/matrix-adapter-session-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "run_id", "cell_id", "adapter_id", "client_id", "session_id", "instance_nonce", "header", "case_contract", "host_session", "broker", "inputs", "actors", "outputs", "bounds"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "matrix-adapter-session"},
+    "run_id": {"$ref": "#/$defs/token"},
+    "cell_id": {"type": "string", "pattern": "^(protocol_actual_hub|typescript_node|typescript_browser|viewer|swift|home_assistant|edge_v2)__(macos_arm64|debian13_amd64|debian13_arm64)$"},
+    "adapter_id": {"$ref": "#/$defs/client"},
+    "client_id": {"$ref": "#/$defs/client"},
+    "session_id": {"type": "string", "format": "uuid"},
+    "instance_nonce": {"$ref": "#/$defs/sha256"},
+    "header": {"$ref": "#/$defs/staged"},
+    "case_contract": {"$ref": "#/$defs/staged"},
+    "host_session": {"$ref": "#/$defs/hostSession"},
+    "broker": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["kind", "socket_path"], "properties": {"kind": {"const": "unix"}, "socket_path": {"$ref": "#/$defs/path"}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "socket_path"], "properties": {"kind": {"const": "stdio"}, "socket_path": {"type": "null"}}}
+      ]
+    },
+    "inputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_manifest", "profile_members", "scenario", "certificate", "certificate_der_sha256", "product_inputs"],
+      "properties": {
+        "profile_manifest": {"$ref": "#/$defs/staged"},
+        "profile_members": {"type": "array", "minItems": 18, "maxItems": 18, "items": {"$ref": "#/$defs/staged"}},
+        "scenario": {"$ref": "#/$defs/staged"},
+        "certificate": {"$ref": "#/$defs/staged"},
+        "certificate_der_sha256": {"$ref": "#/$defs/sha256"},
+        "product_inputs": {"type": "array", "maxItems": 4, "items": {"$ref": "#/$defs/productInput"}}
+      }
+    },
+    "actors": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/actor"}},
+    "outputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["normalized", "actor_evidence", "coordination_dir", "framework_log"],
+      "properties": {"normalized": {"$ref": "#/$defs/path"}, "actor_evidence": {"$ref": "#/$defs/path"}, "coordination_dir": {"$ref": "#/$defs/path"}, "framework_log": {"$ref": "#/$defs/path"}}
+    },
+    "bounds": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cell_timeout_ms", "cleanup_timeout_ms", "frame_bytes", "evidence_bytes", "framework_log_bytes"],
+      "properties": {
+        "cell_timeout_ms": {"type": "integer", "minimum": 1, "maximum": 3600000},
+        "cleanup_timeout_ms": {"const": 45000}, "frame_bytes": {"const": 1048576},
+        "evidence_bytes": {"const": 8388608}, "framework_log_bytes": {"const": 8388608}
+      }
+    }
+  },
+  "$defs": {
+    "client": {"enum": ["protocol_actual_hub", "typescript_node", "typescript_browser", "viewer", "swift", "home_assistant", "edge_v2"]},
+    "token": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "path": {"type": "string", "pattern": "^/[^\\u0000\\r\\n]*$", "maxLength": 2048},
+    "binding": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"$ref": "#/$defs/path"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "staged": {"type": "object", "additionalProperties": false, "required": ["id", "root", "local"], "properties": {"id": {"$ref": "#/$defs/token"}, "root": {"$ref": "#/$defs/binding"}, "local": {"$ref": "#/$defs/binding"}}},
+    "hostSession": {"type": "object", "additionalProperties": false, "required": ["schema_version", "kind", "broker_socket", "session_id", "registration_sha256"], "properties": {"schema_version": {"const": 1}, "kind": {"const": "installed-host"}, "broker_socket": {"$ref": "#/$defs/path"}, "session_id": {"type": "string", "format": "uuid"}, "registration_sha256": {"$ref": "#/$defs/sha256"}}},
+    "installedManifest": {"type": "object", "additionalProperties": false, "required": ["schema_version", "artifact_sha256", "files"], "properties": {"schema_version": {"const": 1}, "artifact_sha256": {"$ref": "#/$defs/sha256"}, "files": {"type": "array", "items": {"$ref": "#/$defs/fileRecord"}}}},
+    "fileRecord": {"type": "object", "additionalProperties": false, "required": ["path", "bytes", "mode", "sha256"], "properties": {"path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000\\r\\n]+$"}, "bytes": {"type": "integer", "minimum": 0}, "mode": {"type": "integer", "minimum": 0, "maximum": 4095}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "productInput": {"type": "object", "additionalProperties": false, "required": ["artifact_role", "staged", "installed_manifest", "local_root"], "properties": {"artifact_role": {"type": "string", "minLength": 1}, "staged": {"$ref": "#/$defs/staged"}, "installed_manifest": {"oneOf": [{"$ref": "#/$defs/staged"}, {"type": "null"}]}, "local_root": {"oneOf": [{"$ref": "#/$defs/path"}, {"type": "null"}]}}},
+    "actor": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "execution", "runtime_ref", "artifact_roles", "source_roles", "entrypoint_ref", "input_manifest", "phase_contract"], "properties": {"id": {"$ref": "#/$defs/token"}, "kind": {"enum": ["installed_controller", "built_viewer_ui", "packed_sdk_dependency", "installed_ha_flow", "installed_ha_client", "current_swift_transport", "edge_normal", "edge_fault", "protocol_http", "packed_sdk_node", "packed_sdk_browser"]}, "execution": {"enum": ["coordinator", "local_worker", "docker_worker", "browser_worker"]}, "runtime_ref": {"$ref": "#/$defs/token"}, "artifact_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "source_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "entrypoint_ref": {"$ref": "#/$defs/token"}, "input_manifest": {"$ref": "#/$defs/staged"}, "phase_contract": {"oneOf": [{"$ref": "#/$defs/staged"}, {"type": "null"}]}}}
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "status": "candidate",
+  "product_version": "2026.36.2",
+  "authority": {
+    "component": "teslatlas-hub",
+    "path": "hub/Cargo.toml",
+    "field": "package.version"
+  },
+  "source_tag": {
+    "name": "v2026.36.2",
+    "status": "not_created"
+  },
+  "profile": {
+    "id": "hub-http-v1",
+    "revision": "1.0.0",
+    "sha256": null,
+    "status": "unbound"
+  },
+  "components": [
+    {"id": "teslatlas-hub", "path": "hub"},
+    {"id": "teslatlas-protocol", "path": "teslatlas-protocol"},
+    {"id": "teslatlas-sdk-typescript", "path": "teslatlas-sdk-typescript"},
+    {"id": "teslatlas-sdk-swift", "path": "teslatlas-sdk-swift"},
+    {"id": "teslatlas-viewer", "path": "teslatlas-viewer"},
+    {"id": "teslatlas-home-assistant", "path": "teslatlas-home-assistant"},
+    {"id": "teslatlas-edge", "path": "teslatlas-edge"}
+  ],
+  "artifacts": [
+    {
+      "component": "teslatlas-sdk-typescript",
+      "name": "teslatlas-sdk-2026.36.2.tgz",
+      "embedded_version": "2026.36.2",
+      "sha256": "6b55ea1d9ea67badc8df8d71aec3b38ee5fb521689869b9d0709afdc6f256965",
+      "status": "local_candidate",
+      "distribution": "not_published"
+    }
+  ],
+  "test_receipt_paths": []
+}

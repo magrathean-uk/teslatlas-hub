@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "matrix_id": "hub-ecosystem-compatibility-2026.36.2",
+  "product_version": "2026.36.2",
+  "profile": {
+    "id": "hub-http-v1",
+    "revision": "1.0.0",
+    "manifest_sha256": "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+  },
+  "case_contract": {
+    "schema_version": 1,
+    "admission": "exact typed expected facts plus operation-bound evidence; expected-equals-actual alone is insufficient",
+    "zero_request": [
+      "expired_invitation", "drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor",
+      "unsupported_operation_zero_requests"
+    ],
+    "optional_typed_preflight": ["bad_invitation"],
+    "identity": [
+      "candidate_artifact_identity", "installed_service_runtime", "edge_linux_runtime",
+      "edge_source_owner_exclusivity", "installed_home_assistant_runtime", "built_viewer_packed_sdk"
+    ],
+    "http_common": [
+      "candidate_artifact_identity",
+      "installed_service_runtime",
+      "discovery_identity_profile",
+      "unauthenticated_discovery",
+      "bad_invitation",
+      "expired_invitation",
+      "replayed_invitation",
+      "real_auth",
+      "credential_lifecycle_reauth",
+      "revocation",
+      "unknown_vehicle",
+      "exact_current_values",
+      "endpoint_restart",
+      "outage_recovery",
+      "unsupported_operation_zero_requests"
+    ],
+    "drives_and_rotation": [
+      "credential_rotation_api",
+      "drives_three_page_order",
+      "drives_terminal_cursor",
+      "drives_etag_304",
+      "drives_wrong_vehicle_cursor",
+      "drives_wrong_filter_cursor"
+    ]
+  },
+  "clients": {
+    "protocol_actual_hub": {
+      "label": "Protocol hub-http-v1 actual adapter",
+      "adapter": "protocol_actual_hub",
+      "actual_entrypoint_suffix": "teslatlas-protocol/conformance/run",
+      "allowed_launchers": ["run"],
+      "required_cases": [
+        "candidate_artifact_identity", "installed_service_runtime", "discovery_identity_profile",
+        "unauthenticated_discovery", "bad_invitation", "expired_invitation", "replayed_invitation",
+        "real_auth", "credential_lifecycle_reauth", "revocation", "unknown_vehicle",
+        "exact_current_values", "endpoint_restart", "outage_recovery",
+        "unsupported_operation_zero_requests", "credential_rotation_api",
+        "drives_three_page_order", "drives_terminal_cursor", "drives_etag_304",
+        "drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor"
+      ]
+    },
+    "typescript_node": {
+      "label": "Packed TypeScript SDK Node",
+      "adapter": "typescript_node",
+      "actual_node_version": "v26.7.0",
+      "actual_node_sha256": "a9bd0630891c2dcdee70de88270fee2cc0c4a9e76495039dd3b4f91c5e6b71df",
+      "actual_entrypoint_suffix": "hub/tools/interop/client_lanes/run.mjs",
+      "allowed_launchers": ["node"],
+      "required_cases": [
+        "candidate_artifact_identity", "installed_service_runtime", "discovery_identity_profile",
+        "unauthenticated_discovery", "bad_invitation", "expired_invitation", "replayed_invitation",
+        "real_auth", "credential_lifecycle_reauth", "revocation", "unknown_vehicle",
+        "exact_current_values", "endpoint_restart", "outage_recovery",
+        "unsupported_operation_zero_requests", "credential_rotation_api",
+        "drives_three_page_order", "drives_terminal_cursor", "drives_etag_304",
+        "drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor"
+      ]
+    },
+    "typescript_browser": {
+      "label": "Packed TypeScript SDK real browser and CORS",
+      "adapter": "typescript_browser",
+      "actual_node_version": "v26.7.0",
+      "actual_node_sha256": "a9bd0630891c2dcdee70de88270fee2cc0c4a9e76495039dd3b4f91c5e6b71df",
+      "actual_entrypoint_suffix": "hub/tools/interop/client_lanes/run.mjs",
+      "allowed_launchers": ["node"],
+      "required_cases": [
+        "candidate_artifact_identity", "installed_service_runtime", "discovery_identity_profile",
+        "unauthenticated_discovery", "bad_invitation", "expired_invitation", "replayed_invitation",
+        "real_auth", "credential_lifecycle_reauth", "revocation", "unknown_vehicle",
+        "exact_current_values", "endpoint_restart", "outage_recovery",
+        "unsupported_operation_zero_requests", "credential_rotation_api",
+        "drives_three_page_order", "drives_terminal_cursor", "drives_etag_304",
+        "drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor",
+        "real_browser_cors", "browser_normal_tls_validation"
+      ]
+    },
+    "viewer": {
+      "label": "Built Viewer through packed SDK",
+      "adapter": "viewer",
+      "actual_entrypoint_suffix": "teslatlas-viewer/e2e/live-hub.spec.ts",
+      "allowed_launchers": ["node", "npm", "npx"],
+      "required_cases": [
+        "candidate_artifact_identity", "installed_service_runtime", "discovery_identity_profile",
+        "unauthenticated_discovery", "bad_invitation", "expired_invitation", "replayed_invitation",
+        "real_auth", "credential_lifecycle_reauth", "revocation", "unknown_vehicle",
+        "exact_current_values", "endpoint_restart", "outage_recovery",
+        "unsupported_operation_zero_requests", "credential_rotation_api",
+        "drives_three_page_order", "drives_terminal_cursor", "drives_etag_304",
+        "drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor",
+        "built_viewer_packed_sdk", "real_browser_cors", "browser_normal_tls_validation"
+      ]
+    },
+    "swift": {
+      "label": "Current Swift product",
+      "adapter": "swift",
+      "actual_entrypoint_suffix": "teslatlas-sdk-swift/Tests/TeslatlasCurrentHubTests/CurrentHubLiveTests.swift",
+      "allowed_launchers": ["swift"],
+      "required_cases": [
+        "candidate_artifact_identity", "installed_service_runtime", "discovery_identity_profile",
+        "unauthenticated_discovery", "bad_invitation", "expired_invitation", "replayed_invitation",
+        "real_auth", "credential_lifecycle_reauth", "revocation", "unknown_vehicle",
+        "exact_current_values", "endpoint_restart", "outage_recovery",
+        "unsupported_operation_zero_requests", "credential_rotation_api",
+        "drives_three_page_order", "drives_terminal_cursor", "drives_etag_304",
+        "drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor",
+        "native_macos_transport", "native_linux_transport",
+        "transport_cancellation", "transport_body_limit"
+      ]
+    },
+    "home_assistant": {
+      "label": "Installed Linux Home Assistant integration",
+      "adapter": "home_assistant",
+      "actual_entrypoint_suffix": "teslatlas-home-assistant/tests/integration/test_live_hub.py",
+      "allowed_launchers": ["uv", "python", "python3", "pytest"],
+      "required_cases": [
+        "candidate_artifact_identity", "installed_service_runtime", "discovery_identity_profile",
+        "unauthenticated_discovery", "bad_invitation", "expired_invitation", "replayed_invitation",
+        "real_auth", "credential_lifecycle_reauth", "revocation", "unknown_vehicle",
+        "exact_current_values", "endpoint_restart", "outage_recovery",
+        "unsupported_operation_zero_requests", "credential_loss_reauthentication",
+        "installed_home_assistant_runtime", "polling_transport_zero_sse"
+      ]
+    },
+    "edge_v2": {
+      "label": "Linux Edge v2 to real Hub",
+      "adapter": "edge_v2",
+      "actual_entrypoint_suffix": "hub/tests/edge_delivery_e2e.rs",
+      "allowed_launchers": ["cargo"],
+      "required_cases": [
+        "candidate_artifact_identity", "installed_service_runtime", "edge_linux_runtime",
+        "edge_mtls_bearer_identity", "edge_no_v1_downgrade", "edge_source_owner_exclusivity",
+        "edge_uninterrupted_delivery_parity", "edge_restart_delivery_parity",
+        "edge_duplicate_reenqueue_dedup", "edge_gap_interleaving_later_ack_rejected",
+        "edge_unsupported_event_bounded_disposition", "edge_conflicting_identity_blocks_ack",
+        "edge_transaction_fault_redelivery", "edge_lost_ack_body_redelivery",
+        "edge_pending_publication_offline_recovery", "edge_clean_shutdown_resume"
+      ]
+    }
+  },
+  "hub_targets": {
+    "macos_arm64": {"os": "macOS", "architecture": "arm64", "required_service_mode": "installed-app-launchagent"},
+    "debian13_amd64": {"os": "Debian 13", "architecture": "amd64", "required_service_mode": "installed-deb-systemd"},
+    "debian13_arm64": {"os": "Debian 13", "architecture": "arm64", "required_service_mode": "installed-deb-systemd"}
+  },
+  "cells": [
+    {"id": "protocol_actual_hub__macos_arm64", "client_id": "protocol_actual_hub", "adapter": "protocol_actual_hub", "hub_target": "macos_arm64", "required": true},
+    {"id": "protocol_actual_hub__debian13_amd64", "client_id": "protocol_actual_hub", "adapter": "protocol_actual_hub", "hub_target": "debian13_amd64", "required": true},
+    {"id": "protocol_actual_hub__debian13_arm64", "client_id": "protocol_actual_hub", "adapter": "protocol_actual_hub", "hub_target": "debian13_arm64", "required": true},
+    {"id": "typescript_node__macos_arm64", "client_id": "typescript_node", "adapter": "typescript_node", "hub_target": "macos_arm64", "required": true},
+    {"id": "typescript_node__debian13_amd64", "client_id": "typescript_node", "adapter": "typescript_node", "hub_target": "debian13_amd64", "required": true},
+    {"id": "typescript_node__debian13_arm64", "client_id": "typescript_node", "adapter": "typescript_node", "hub_target": "debian13_arm64", "required": true},
+    {"id": "typescript_browser__macos_arm64", "client_id": "typescript_browser", "adapter": "typescript_browser", "hub_target": "macos_arm64", "required": true},
+    {"id": "typescript_browser__debian13_amd64", "client_id": "typescript_browser", "adapter": "typescript_browser", "hub_target": "debian13_amd64", "required": true},
+    {"id": "typescript_browser__debian13_arm64", "client_id": "typescript_browser", "adapter": "typescript_browser", "hub_target": "debian13_arm64", "required": true},
+    {"id": "viewer__macos_arm64", "client_id": "viewer", "adapter": "viewer", "hub_target": "macos_arm64", "required": true},
+    {"id": "viewer__debian13_amd64", "client_id": "viewer", "adapter": "viewer", "hub_target": "debian13_amd64", "required": true},
+    {"id": "viewer__debian13_arm64", "client_id": "viewer", "adapter": "viewer", "hub_target": "debian13_arm64", "required": true},
+    {"id": "swift__macos_arm64", "client_id": "swift", "adapter": "swift", "hub_target": "macos_arm64", "required": true},
+    {"id": "swift__debian13_amd64", "client_id": "swift", "adapter": "swift", "hub_target": "debian13_amd64", "required": true},
+    {"id": "swift__debian13_arm64", "client_id": "swift", "adapter": "swift", "hub_target": "debian13_arm64", "required": true},
+    {"id": "home_assistant__macos_arm64", "client_id": "home_assistant", "adapter": "home_assistant", "hub_target": "macos_arm64", "required": true},
+    {"id": "home_assistant__debian13_amd64", "client_id": "home_assistant", "adapter": "home_assistant", "hub_target": "debian13_amd64", "required": true},
+    {"id": "home_assistant__debian13_arm64", "client_id": "home_assistant", "adapter": "home_assistant", "hub_target": "debian13_arm64", "required": true},
+    {"id": "edge_v2__macos_arm64", "client_id": "edge_v2", "adapter": "edge_v2", "hub_target": "macos_arm64", "required": true},
+    {"id": "edge_v2__debian13_amd64", "client_id": "edge_v2", "adapter": "edge_v2", "hub_target": "debian13_amd64", "required": true},
+    {"id": "edge_v2__debian13_arm64", "client_id": "edge_v2", "adapter": "edge_v2", "hub_target": "debian13_arm64", "required": true}
+  ],
+  "cohort_requirements": [
+    "hub_signed_manifest", "hub_pack_hash", "hub_range_resume", "hub_pack_noop",
+    "hub_schema_2_2_regression", "fresh_install", "same_input_noop", "compatible_update",
+    "interrupted_update_rollback", "clean_service_stop"
+  ]
+}

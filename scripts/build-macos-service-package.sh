@@ -288,6 +288,33 @@ done
     "$payload/Library/Application Support/Teslatlas Hub/libexec/run-hub-service.sh"
 /usr/bin/install -m 0644 "$ROOT/packaging/macos-service/fleet-telemetry.json.example" \
     "$payload/Library/Application Support/Teslatlas Hub/share/fleet-telemetry.json.example"
+companion_wrapper="$ROOT/scripts/bootstrap-companions.py"
+companion_modules="$ROOT/tools/companions"
+for companion_input in "$companion_wrapper" \
+    "$companion_modules/__init__.py" "$companion_modules/cli.py" \
+    "$companion_modules/core.py" "$companion_modules/processes.py" \
+    "$companion_modules/recipes.py" "$companion_modules/targets.py" \
+    "$companion_modules/catalog-current.json" \
+    "$companion_modules/catalog-template.json" \
+    "$companion_modules/catalog.schema.json" \
+    "$companion_modules/local-sources.schema.json"; do
+    [ -f "$companion_input" ] && [ ! -L "$companion_input" ] \
+        || die "companion helper input is missing or unsafe: $companion_input"
+done
+companion_libexec="$payload/Library/Application Support/Teslatlas Hub/libexec"
+companion_share="$payload/Library/Application Support/Teslatlas Hub/share/companions"
+/usr/bin/install -m 0755 "$companion_wrapper" \
+    "$companion_libexec/bootstrap-companions.py"
+/bin/mkdir -p "$companion_libexec/companions" "$companion_share"
+for companion_module in __init__.py cli.py core.py processes.py recipes.py targets.py; do
+    /usr/bin/install -m 0644 "$companion_modules/$companion_module" \
+        "$companion_libexec/companions/$companion_module"
+done
+for companion_metadata in catalog-current.json catalog-template.json \
+    catalog.schema.json local-sources.schema.json; do
+    /usr/bin/install -m 0644 "$companion_modules/$companion_metadata" \
+        "$companion_share/$companion_metadata"
+done
 /usr/bin/xattr -c "$payload_binary" "$payload_proxy_binary" "$payload_fleet_telemetry_binary" >/dev/null 2>&1 \
     || die "cannot clear Hub binary metadata"
 [ "$(/usr/bin/lipo -archs "$payload_binary")" = arm64 ] \
@@ -409,6 +436,26 @@ expanded_fleet_telemetry_example="$expanded/Payload/Library/Application Support/
 expanded_uninstaller="$expanded/Payload/Library/Application Support/Teslatlas Hub/libexec/uninstall-macos-service.sh"
 [ -f "$expanded_uninstaller" ] && [ ! -L "$expanded_uninstaller" ] && [ -x "$expanded_uninstaller" ] \
     || die "generated package is missing the privileged uninstaller"
+expanded_companion_root="$expanded/Payload/Library/Application Support/Teslatlas Hub"
+expanded_companion_helper="$expanded_companion_root/libexec/bootstrap-companions.py"
+[ -f "$expanded_companion_helper" ] && [ ! -L "$expanded_companion_helper" ] \
+    && [ -x "$expanded_companion_helper" ] \
+    || die "generated package is missing the companion bootstrap helper"
+for companion_module in __init__.py cli.py core.py processes.py recipes.py targets.py; do
+    cmp "$companion_modules/$companion_module" \
+        "$expanded_companion_root/libexec/companions/$companion_module" >/dev/null \
+        || die "generated package companion module changed: $companion_module"
+done
+for companion_metadata in catalog-current.json catalog-template.json \
+    catalog.schema.json local-sources.schema.json; do
+    cmp "$companion_modules/$companion_metadata" \
+        "$expanded_companion_root/share/companions/$companion_metadata" >/dev/null \
+        || die "generated package companion metadata changed: $companion_metadata"
+done
+[ ! -e "$expanded_companion_root/libexec/companions/tests" ] \
+    || die "generated package contains companion tests"
+[ ! -e "$expanded_companion_root/share/companions/node_modules" ] \
+    || die "generated package contains companion dependencies"
 [ ! -e "$expanded/Payload/Applications" ] && [ ! -L "$expanded/Payload/Applications" ] \
     || die "service package must not contain an Applications payload"
 metadata=$(

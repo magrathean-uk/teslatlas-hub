@@ -1,5 +1,11 @@
 # CLI reference
 
+Source-built ecosystem companions are managed independently with
+`teslatlas-hub companions` (visible alias `setup-companions`). The command runs
+before Hub configuration, storage, or instance-lock admission and uses the
+actual embedded Hub version. See [Companion source setup](companion-setup.md)
+for install, update, dry-run, status, rollback, and target-specific examples.
+
 The authoritative command list is emitted by the exact binary:
 
 ```sh

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/hub-installed-cell-supplement-v2.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "cell_id", "session_id", "actors", "case_bindings", "controller_evidence", "completion"],
+  "properties": {
+    "schema_version": {"const": 2}, "cell_id": {"type": "string", "minLength": 1}, "session_id": {"type": "string", "format": "uuid"},
+    "actors": {"type": "array", "maxItems": 8, "items": {"$ref": "#/$defs/actor"}},
+    "case_bindings": {"type": "array", "items": {"$ref": "#/$defs/case"}},
+    "controller_evidence": {"$ref": "#/$defs/controller"}, "completion": {"$ref": "#/$defs/completion"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "path": {"type": "string", "pattern": "^/"},
+    "binding": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"$ref": "#/$defs/path"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "raw_evidence": {"type": "object", "additionalProperties": false, "required": ["id", "schema_id", "binding"], "properties": {"id": {"type": "string", "minLength": 1}, "schema_id": {"type": "string", "minLength": 1}, "binding": {"$ref": "#/$defs/binding"}}},
+    "actor": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "runtime_ref", "runtime_evidence", "artifact_roles", "source_roles", "entrypoint_ref", "installed_manifest", "raw_evidence"], "properties": {"id": {"type": "string", "minLength": 1}, "kind": {"type": "string", "minLength": 1}, "runtime_ref": {"type": "string", "minLength": 1}, "runtime_evidence": {"$ref": "#/$defs/binding"}, "artifact_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "source_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "entrypoint_ref": {"type": "string", "minLength": 1}, "installed_manifest": {"$ref": "#/$defs/binding"}, "raw_evidence": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/raw_evidence"}}}},
+    "invocation": {"type": "object", "additionalProperties": false, "required": ["id", "case_id", "actor_id", "operation", "session_sequence_before", "session_sequence_after", "evidence_id", "request_ids"], "properties": {"id": {"type": "string", "minLength": 1}, "case_id": {"type": "string", "minLength": 1}, "actor_id": {"type": "string", "minLength": 1}, "operation": {"type": "string", "minLength": 1}, "session_sequence_before": {"type": "integer", "minimum": 1}, "session_sequence_after": {"type": "integer", "minimum": 1}, "evidence_id": {"type": "string", "minLength": 1}, "request_ids": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"type": "string"}}}},
+    "case": {"type": "object", "additionalProperties": false, "required": ["case_id", "actor_ids", "invocations"], "properties": {"case_id": {"type": "string"}, "actor_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "invocations": {"type": "array", "maxItems": 512, "items": {"$ref": "#/$defs/invocation"}}}},
+    "controller": {"type": "object", "additionalProperties": false, "required": ["registration_sha256", "session_config_sha256", "observations", "journal", "final_stopped", "transport_cleanup"], "properties": {"registration_sha256": {"$ref": "#/$defs/sha256"}, "session_config_sha256": {"$ref": "#/$defs/sha256"}, "observations": {"$ref": "#/$defs/binding"}, "journal": {"$ref": "#/$defs/binding"}, "final_stopped": {"$ref": "#/$defs/binding"}, "transport_cleanup": {"$ref": "#/$defs/binding"}}},
+    "completion": {"type": "object", "additionalProperties": false, "required": ["adapter_completion", "ready", "ack", "normalized", "actor_evidence", "command_outcome", "status"], "properties": {"adapter_completion": {"$ref": "#/$defs/binding"}, "ready": {"$ref": "#/$defs/binding"}, "ack": {"$ref": "#/$defs/binding"}, "normalized": {"$ref": "#/$defs/binding"}, "actor_evidence": {"$ref": "#/$defs/binding"}, "command_outcome": {"$ref": "#/$defs/binding"}, "status": {"enum": ["passed", "failed", "pending"]}}}
+  }
+}

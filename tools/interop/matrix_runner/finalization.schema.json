@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/evidence-finalization-v3.json",
+  "title": "External immutable Teslatlas evidence finalization",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "cohort_id", "cohort_inputs", "final_receipts", "repository_before", "repository_after", "ignored_inputs_after", "changes", "report_files", "review_receipts", "publication_performed", "status"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 3}, "cohort_id": {"type": "string", "minLength": 1},
+    "cohort_inputs": {"$ref": "#/$defs/binding"},
+    "final_receipts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/receipt"}},
+    "repository_before": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/repository"}},
+    "repository_after": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/repository"}},
+    "ignored_inputs_after": {"$ref": "#/$defs/binding"},
+    "changes": {"type": "array", "items": {"$ref": "#/$defs/change"}},
+    "report_files": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},
+    "review_receipts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/receipt"}},
+    "publication_performed": {"type": "boolean", "const": false}, "status": {"enum": ["passed", "failed", "pending"]}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "binding": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "receipt": {"type": "object", "additionalProperties": false, "required": ["kind", "path", "sha256", "scope"], "properties": {"kind": {"enum": ["matrix", "package", "bootstrap", "upgrade", "private-lane", "historical", "review"]}, "path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"}, "scope": {"enum": ["local-tested-cohort-not-published", "local-built-not-published", "local-source-candidate", "isolated-upgrade", "authorized-private-lane", "historical-local-evidence", "independent-review"]}}},
+    "repository": {"type": "object", "additionalProperties": false, "required": ["repo", "path", "sha256"], "properties": {"repo": {"type": "string", "minLength": 1}, "path": {"type": "string", "pattern": "^/"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "ignored_input_observation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "capture_phase", "started_at", "ended_at", "cohort_inputs", "repository_after", "members"],
+      "properties": {
+        "schema_version": {"type": "integer", "const": 1},
+        "capture_phase": {"const": "C-after-annotations-and-repository-snapshots"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "ended_at": {"type": "string", "format": "date-time"},
+        "cohort_inputs": {"$ref": "#/$defs/binding"},
+        "repository_after": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/repository"}},
+        "members": {"type": "array", "maxItems": 250000, "items": {"$ref": "#/$defs/ignored_input_member"}}
+      }
+    },
+    "ignored_input_member": {
+      "type": "object", "additionalProperties": false,
+      "required": ["build_id", "role", "root", "path", "presence", "type", "mode", "bytes", "sha256", "symlink_target", "blob"],
+      "properties": {
+        "build_id": {"type": "string", "minLength": 1}, "role": {"type": "string", "minLength": 1},
+        "root": {"type": "string", "pattern": "^/"}, "path": {"type": "string", "minLength": 1},
+        "presence": {"enum": ["present", "absent"]},
+        "type": {"type": ["string", "null"], "enum": ["file", "symlink", "directory", null]},
+        "mode": {"type": "string", "pattern": "^0[0-7]{3}$"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "symlink_target": {"type": ["string", "null"]},
+        "blob": {"anyOf": [{"type": "string", "pattern": "^/"}, {"type": "null"}]}
+      }
+    },
+    "change": {"type": "object", "additionalProperties": false, "required": ["repo", "path", "before_sha256", "after_sha256", "json_pointers", "classification"], "properties": {"repo": {"type": "string", "minLength": 1}, "path": {"type": "string", "minLength": 1}, "before_sha256": {"$ref": "#/$defs/sha256"}, "after_sha256": {"$ref": "#/$defs/sha256"}, "json_pointers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^/"}}, "classification": {"const": "final-evidence-annotation"}}}
+  }
+}

@@ -249,6 +249,7 @@ fn local_tls_server_config(
         geocoder: Default::default(),
         teslamate: Default::default(),
         terrain: Default::default(),
+        http: Default::default(),
     }
 }
 
@@ -261,6 +262,7 @@ fn local_plain_server_config(data_dir: std::path::PathBuf, bind: SocketAddr) -> 
         geocoder: Default::default(),
         teslamate: Default::default(),
         terrain: Default::default(),
+        http: Default::default(),
     }
 }
 

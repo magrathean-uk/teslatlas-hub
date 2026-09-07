@@ -17,7 +17,78 @@ die() {
     exit 1
 }
 
+usage() {
+    cat <<'EOF'
+Usage: scripts/build-macos-app.sh [--check-go-toolchain|--check-go-toolchain-chain]
+
+Builds the local unsigned macOS app and combined installer.
+
+Options:
+  --check-go-toolchain        Validate and print the selected Go executable.
+  --check-go-toolchain-chain  Validate selection through all downstream tools.
+EOF
+}
+
+check_go_toolchain=none
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --check-go-toolchain)
+            check_go_toolchain=single
+            shift
+            ;;
+        --check-go-toolchain-chain)
+            check_go_toolchain=chain
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            usage >&2
+            die "unknown argument: $1"
+            ;;
+    esac
+done
+
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
+GO_TOOLCHAIN_HELPER="$ROOT/scripts/go_toolchain.py"
+[ -f "$GO_TOOLCHAIN_HELPER" ] && [ ! -L "$GO_TOOLCHAIN_HELPER" ] \
+    || die "Go toolchain selector is missing or unsafe"
+TESLATLAS_GO=$(/usr/bin/python3 "$GO_TOOLCHAIN_HELPER" \
+    --expected-version go1.27.0) \
+    || die "cannot select the pinned Go toolchain"
+export TESLATLAS_GO
+
+probe_go_toolchain() {
+    probe_label=$1
+    shift
+    probe_selection=$("$@") || die "$probe_label Go toolchain probe failed"
+    [ "$probe_selection" = "$TESLATLAS_GO" ] \
+        || die "$probe_label selected a different Go executable"
+    printf '%s\n' "$probe_label=$probe_selection"
+}
+
+case "$check_go_toolchain" in
+    single)
+        printf '%s\n' "$TESLATLAS_GO"
+        exit 0
+        ;;
+    chain)
+        printf '%s\n' "parent=$TESLATLAS_GO"
+        probe_go_toolchain tesla-command-proxy \
+            "$ROOT/scripts/build-tesla-command-proxy.sh" --check-go-toolchain
+        probe_go_toolchain fleet-telemetry \
+            "$ROOT/scripts/build-fleet-telemetry-bridge.sh" --check-go-toolchain
+        probe_go_toolchain go-proxy-evidence /usr/bin/python3 \
+            "$ROOT/scripts/go-proxy-evidence.py" --repo "$ROOT" --check-go-toolchain
+        probe_go_toolchain fleet-telemetry-evidence /usr/bin/python3 \
+            "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
+            --check-go-toolchain
+        exit 0
+        ;;
+esac
+
 ICON_BUILD="$ROOT/scripts/build-app-icon.sh"
 APP_SOURCE="$ROOT/macos/TeslatlasHubApp"
 DERIVED="$ROOT/target/macos-app"

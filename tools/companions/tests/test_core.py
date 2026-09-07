@@ -1,0 +1,574 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from companions.core import (  # noqa: E402
+    BootstrapError,
+    CatalogError,
+    PrefixLock,
+    active_release_id,
+    fetch_git_source,
+    install_cohort,
+    parse_catalog,
+    rollback,
+    select_cohort,
+    source_manifest_for,
+    status,
+    verify_local_source,
+)
+
+PROFILE_SHA = "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+COMMITS = {
+    "protocol": "1" * 40,
+    "sdk-typescript": "2" * 40,
+}
+REPOSITORIES = {
+    "protocol": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+    "sdk-typescript": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+}
+
+
+def component(name: str, version: str, *, digest: str | None = None) -> dict:
+    value = {
+        "repository": REPOSITORIES[name],
+        "commit": COMMITS[name],
+        "source_sha256": digest or ("a" if name == "protocol" else "b") * 64,
+        "product_version": version,
+        "profile": {
+            "id": "hub-http-v1",
+            "revision": "1.0.0",
+            "sha256": PROFILE_SHA,
+        },
+    }
+    if name == "sdk-typescript":
+        value["artifacts"] = {
+            "package_filename": f"teslatlas-sdk-{version}.tgz",
+            "package_sha256": (
+                "d1ab6ba0ede3a24ae12ed4151db0c90bf957fa19f5640cc4323bd368e565e8bb"
+                if version == "2026.36.2"
+                else "d" * 64
+            ),
+        }
+    return value
+
+
+def catalog_data() -> dict:
+    return {
+        "schema_version": 1,
+        "cohorts": [
+            {
+                "product_version": "2026.36.2",
+                "publication_status": "local-unpublished",
+                "admitted_hub_versions": [],
+                "components": {
+                    name: component(name, "2026.36.2") for name in REPOSITORIES
+                },
+            },
+            {
+                "product_version": "2026.37.1",
+                "publication_status": "published",
+                "admitted_hub_versions": ["2026.36.2"],
+                "components": {
+                    name: component(name, "2026.37.1") for name in REPOSITORIES
+                },
+            },
+        ],
+    }
+
+
+class CatalogTests(unittest.TestCase):
+    def test_same_cohort_is_default_and_update_needs_explicit_later_admission(
+        self,
+    ) -> None:
+        data = catalog_data()
+        data["cohorts"][1]["admitted_hub_versions"] = []
+        catalog = parse_catalog(data)
+        selected = select_cohort(
+            catalog,
+            ("protocol", "sdk-typescript"),
+            "2026.36.2",
+            allow_candidates=True,
+            update=True,
+        )
+        self.assertEqual(selected.product_version, "2026.36.2")
+
+        data["cohorts"][1]["admitted_hub_versions"] = ["2026.36.2"]
+        selected = select_cohort(
+            parse_catalog(data),
+            ("protocol", "sdk-typescript"),
+            "2026.36.2",
+            allow_candidates=True,
+            update=True,
+        )
+        self.assertEqual(selected.product_version, "2026.37.1")
+        self.assertEqual(set(selected.components), {"protocol", "sdk-typescript"})
+
+        protocol_only = select_cohort(
+            parse_catalog(data),
+            ("protocol",),
+            "2026.36.2",
+            allow_candidates=True,
+            update=False,
+        )
+        self.assertEqual(set(protocol_only.components), {"protocol"})
+
+    def test_production_rejects_candidate_and_unknown_or_mutable_source(self) -> None:
+        data = catalog_data()
+        with self.assertRaisesRegex(CatalogError, "unpublished"):
+            select_cohort(
+                parse_catalog(data),
+                ("protocol",),
+                "2026.36.2",
+                allow_candidates=False,
+                update=False,
+            )
+
+        data["cohorts"][0]["components"]["protocol"]["repository"] = (
+            "https://example.invalid/teslatlas-protocol.git"
+        )
+        with self.assertRaisesRegex(CatalogError, "repository"):
+            parse_catalog(data)
+
+        data = catalog_data()
+        data["cohorts"][0]["components"]["protocol"]["commit"] = "main"
+        with self.assertRaisesRegex(CatalogError, "commit"):
+            parse_catalog(data)
+
+    def test_production_update_can_skip_an_unpublished_same_version(self) -> None:
+        selected = select_cohort(
+            parse_catalog(catalog_data()),
+            ("protocol",),
+            "2026.36.2",
+            allow_candidates=False,
+            update=True,
+        )
+        self.assertEqual(selected.product_version, "2026.37.1")
+        self.assertEqual(selected.publication_status, "published")
+
+    def test_component_version_and_profile_must_match_the_cohort(self) -> None:
+        data = catalog_data()
+        data["cohorts"][0]["components"]["protocol"]["product_version"] = "2026.36.1"
+        with self.assertRaisesRegex(CatalogError, "product_version"):
+            parse_catalog(data)
+
+        data = catalog_data()
+        data["cohorts"][0]["components"]["protocol"]["profile"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(CatalogError, "profile"):
+            parse_catalog(data)
+
+        data = catalog_data()
+        data["cohorts"][0]["components"]["sdk-typescript"]["artifacts"][
+            "package_sha256"
+        ] = "0" * 64
+        with self.assertRaisesRegex(CatalogError, "reviewed artifacts"):
+            parse_catalog(data)
+
+
+class SourceTests(unittest.TestCase):
+    def test_source_manifest_rejects_a_symlinked_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            outside = root / "outside"
+            source.mkdir()
+            outside.mkdir()
+            (outside / "payload.txt").write_text("outside\n")
+            (source / "linked").symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(BootstrapError, "unsupported file type"):
+                source_manifest_for(
+                    "protocol",
+                    source,
+                    REPOSITORIES["protocol"],
+                    COMMITS["protocol"],
+                )
+
+    def test_local_manifest_binds_every_copied_byte_and_rejects_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "a.txt").write_text("alpha\n")
+            script = source / "run.sh"
+            script.write_text("#!/bin/sh\nexit 0\n")
+            script.chmod(0o755)
+            (source / ".git").mkdir()
+            (source / ".git" / "ignored").write_text("mutable metadata")
+            (source / "AGENTS.md").write_text("workspace instructions\n")
+            record = source_manifest_for(
+                "protocol", source, REPOSITORIES["protocol"], COMMITS["protocol"]
+            )
+            destination = root / "copy"
+            verify_local_source(record, destination)
+            self.assertEqual((destination / "a.txt").read_text(), "alpha\n")
+            self.assertEqual((destination / "a.txt").stat().st_mode & 0o777, 0o644)
+            self.assertTrue((destination / "run.sh").stat().st_mode & 0o100)
+            self.assertFalse((destination / ".git").exists())
+            self.assertFalse((destination / "AGENTS.md").exists())
+
+            (source / "a.txt").write_text("changed\n")
+            with self.assertRaisesRegex(BootstrapError, "changed"):
+                verify_local_source(record, root / "rejected")
+
+    def test_git_transport_checks_the_exact_detached_commit_and_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = root / "repo"
+            repository.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "fixture@example.invalid"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Fixture"], cwd=repository, check=True
+            )
+            (repository / "payload.txt").write_text("immutable\n")
+            subprocess.run(["git", "add", "payload.txt"], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "fixture"], cwd=repository, check=True
+            )
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repository, text=True
+            ).strip()
+            expected = source_manifest_for(
+                "protocol", repository, REPOSITORIES["protocol"], commit
+            )
+            destination = root / "checkout"
+            observed = fetch_git_source(
+                repository.as_uri(),
+                commit,
+                destination,
+                expected["source_sha256"],
+                allowed_repositories={repository.as_uri()},
+                timeout_seconds=30,
+            )
+            self.assertEqual(observed["commit"], commit)
+            self.assertEqual((destination / "payload.txt").read_text(), "immutable\n")
+
+            with self.assertRaisesRegex(BootstrapError, "source digest"):
+                fetch_git_source(
+                    repository.as_uri(),
+                    commit,
+                    root / "bad-checkout",
+                    "0" * 64,
+                    allowed_repositories={repository.as_uri()},
+                    timeout_seconds=30,
+                )
+
+
+class PrefixTests(unittest.TestCase):
+    def test_prefix_operations_reject_a_symlinked_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            actual = root / "actual"
+            actual.mkdir()
+            link = root / "prefix"
+            link.symlink_to(actual, target_is_directory=True)
+            with self.assertRaisesRegex(BootstrapError, "must not be a symlink"):
+                status(link)
+
+    def test_lock_never_follows_an_existing_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = root / "prefix"
+            prefix.mkdir()
+            outside = root / "outside"
+            outside.write_text("preserve\n")
+            (prefix / ".bootstrap.lock").symlink_to(outside)
+            with self.assertRaisesRegex(BootstrapError, "lock path is unsafe"):
+                with PrefixLock(prefix):
+                    self.fail("unsafe lock acquired")
+            self.assertEqual(outside.read_text(), "preserve\n")
+
+    def test_complete_source_set_is_validated_before_any_build_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            records = {}
+            data = catalog_data()
+            data["cohorts"] = [data["cohorts"][0]]
+            for name in ("protocol", "sdk-typescript"):
+                source = root / name
+                source.mkdir()
+                (source / "payload.txt").write_text(f"{name}\n")
+                record = source_manifest_for(
+                    name, source, REPOSITORIES[name], COMMITS[name]
+                )
+                records[name] = record
+                data["cohorts"][0]["components"][name]["source_sha256"] = record[
+                    "source_sha256"
+                ]
+            selected = select_cohort(
+                parse_catalog(data),
+                records,
+                "2026.36.2",
+                allow_candidates=True,
+                update=False,
+            )
+            validated = []
+            built = []
+
+            def validate(name: str, _source: Path) -> dict:
+                validated.append(name)
+                if name == "sdk-typescript":
+                    raise BootstrapError("synthetic metadata mismatch")
+                return {}
+
+            def build(name: str, _source: Path, _output: Path) -> dict:
+                built.append(name)
+                return {}
+
+            with self.assertRaisesRegex(BootstrapError, "metadata mismatch"):
+                install_cohort(
+                    root / "prefix",
+                    selected,
+                    records,
+                    build,
+                    validate_component=validate,
+                )
+            self.assertEqual(validated, ["protocol", "sdk-typescript"])
+            self.assertEqual(built, [])
+
+    def test_lock_contention_fails_without_waiting(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix = Path(temporary)
+            with PrefixLock(prefix):
+                read_fd, write_fd = os.pipe()
+                child = os.fork()
+                if child == 0:
+                    os.close(read_fd)
+                    try:
+                        with PrefixLock(prefix):
+                            result = b"unexpected"
+                    except BootstrapError:
+                        result = b"busy"
+                    os.write(write_fd, result)
+                    os._exit(0)
+                os.close(write_fd)
+                self.assertEqual(os.read(read_fd, 32), b"busy")
+                os.waitpid(child, 0)
+
+    def test_install_noop_failure_and_rollback_preserve_active_and_data(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = root / "prefix"
+            source = root / "source"
+            source.mkdir()
+            (source / "payload.txt").write_text("v1\n")
+            record = source_manifest_for(
+                "protocol", source, REPOSITORIES["protocol"], COMMITS["protocol"]
+            )
+            data = catalog_data()
+            data["cohorts"] = [data["cohorts"][0]]
+            data["cohorts"][0]["components"] = {
+                "protocol": component(
+                    "protocol", "2026.36.2", digest=record["source_sha256"]
+                )
+            }
+            selected = select_cohort(
+                parse_catalog(data),
+                ("protocol",),
+                "2026.36.2",
+                allow_candidates=True,
+                update=False,
+            )
+            local_sources = {"protocol": record}
+            builds: list[str] = []
+
+            def build(name: str, source_path: Path, output_path: Path) -> dict:
+                builds.append(name)
+                output_path.mkdir()
+                (output_path / "installed.txt").write_text(
+                    (source_path / "payload.txt").read_text()
+                )
+                return {"commands": ["fixture-build"], "dependencies": {}}
+
+            first = install_cohort(prefix, selected, local_sources, build)
+            self.assertEqual(first["status"], "installed")
+            self.assertEqual(
+                json.loads(Path(first["receipt"]).read_text())["hub_version"],
+                "2026.36.2",
+            )
+            first_id = active_release_id(prefix)
+            self.assertEqual(builds, ["protocol"])
+            (prefix / "data" / "edge").mkdir(parents=True)
+            (prefix / "data" / "edge" / "spool").write_text("keep")
+
+            repeated = install_cohort(prefix, selected, local_sources, build)
+            self.assertEqual(repeated["status"], "no-op")
+            self.assertEqual(builds, ["protocol"])
+
+            (source / "payload.txt").write_text("v2\n")
+            record2 = source_manifest_for(
+                "protocol", source, REPOSITORIES["protocol"], "3" * 40
+            )
+            data["cohorts"][0]["components"]["protocol"]["commit"] = "3" * 40
+            data["cohorts"][0]["components"]["protocol"]["source_sha256"] = record2[
+                "source_sha256"
+            ]
+            selected2 = select_cohort(
+                parse_catalog(data),
+                ("protocol",),
+                "2026.36.2",
+                allow_candidates=True,
+                update=False,
+            )
+
+            def fail_build(_name: str, _source: Path, _output: Path) -> dict:
+                raise BootstrapError("synthetic build failure")
+
+            with self.assertRaisesRegex(BootstrapError, "synthetic build failure"):
+                install_cohort(prefix, selected2, {"protocol": record2}, fail_build)
+            self.assertEqual(active_release_id(prefix), first_id)
+            failures = list((prefix / "failures").glob("*/failure.json"))
+            self.assertEqual(len(failures), 1)
+            self.assertEqual(
+                json.loads(failures[0].read_text())["active_release_before"], first_id
+            )
+
+            from companions import core as core_module
+
+            original_activate = core_module._activate
+            activation_calls = 0
+
+            def activate_then_interrupt(target_prefix: Path, release_id: str) -> None:
+                nonlocal activation_calls
+                activation_calls += 1
+                original_activate(target_prefix, release_id)
+                if activation_calls == 1:
+                    raise KeyboardInterrupt
+
+            with (
+                patch("companions.core._activate", side_effect=activate_then_interrupt),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                install_cohort(prefix, selected2, {"protocol": record2}, build)
+            self.assertEqual(active_release_id(prefix), first_id)
+
+            second = install_cohort(prefix, selected2, {"protocol": record2}, build)
+            self.assertEqual(second["status"], "installed")
+            second_id = active_release_id(prefix)
+            self.assertNotEqual(second_id, first_id)
+            self.assertEqual(rollback(prefix)["active_release"], first_id)
+            self.assertEqual(active_release_id(prefix), first_id)
+            self.assertEqual((prefix / "data" / "edge" / "spool").read_text(), "keep")
+
+    def test_published_git_mode_is_distinct_in_input_and_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = root / "prefix"
+            source = root / "source"
+            source.mkdir()
+            (source / "payload.txt").write_text("published\n")
+            record = source_manifest_for(
+                "protocol", source, REPOSITORIES["protocol"], COMMITS["protocol"]
+            )
+            data = catalog_data()
+            published = data["cohorts"][1]
+            published["product_version"] = "2026.36.2"
+            published["admitted_hub_versions"] = []
+            published["components"] = {
+                "protocol": component(
+                    "protocol", "2026.36.2", digest=record["source_sha256"]
+                )
+            }
+            selected = select_cohort(
+                parse_catalog({"schema_version": 1, "cohorts": [published]}),
+                ("protocol",),
+                "2026.36.2",
+                allow_candidates=False,
+                update=False,
+            )
+
+            def build(_name: str, source_path: Path, output_path: Path) -> dict:
+                output_path.mkdir()
+                (output_path / "installed.txt").write_bytes(
+                    (source_path / "payload.txt").read_bytes()
+                )
+                return {"commands": [], "dependencies": {}}
+
+            result = install_cohort(
+                prefix,
+                selected,
+                {"protocol": record},
+                build,
+                installation_mode="production-git",
+            )
+            receipt = json.loads(Path(result["receipt"]).read_text())
+            self.assertEqual(receipt["installation_mode"], "production-git")
+            self.assertEqual(
+                receipt["components"]["protocol"]["source"]["transport"],
+                "git-immutable",
+            )
+            self.assertEqual(
+                receipt["components"]["protocol"]["source"]["public_availability"],
+                "verified",
+            )
+
+    def test_interruption_removes_staging_and_keeps_active(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = root / "prefix"
+            source = root / "source"
+            source.mkdir()
+            (source / "payload.txt").write_text("source\n")
+            record = source_manifest_for(
+                "protocol", source, REPOSITORIES["protocol"], COMMITS["protocol"]
+            )
+            data = catalog_data()
+            data["cohorts"] = [data["cohorts"][0]]
+            data["cohorts"][0]["components"] = {
+                "protocol": component(
+                    "protocol", "2026.36.2", digest=record["source_sha256"]
+                )
+            }
+            selected = select_cohort(
+                parse_catalog(data),
+                ("protocol",),
+                "2026.36.2",
+                allow_candidates=True,
+                update=False,
+            )
+
+            def interrupt(_name: str, _source: Path, _output: Path) -> dict:
+                raise KeyboardInterrupt
+
+            with self.assertRaises(KeyboardInterrupt):
+                install_cohort(prefix, selected, {"protocol": record}, interrupt)
+            self.assertIsNone(active_release_id(prefix))
+            self.assertEqual(list((prefix / ".staging").iterdir()), [])
+
+            def build(_name: str, source_path: Path, output_path: Path) -> dict:
+                output_path.mkdir()
+                (output_path / "installed.txt").write_bytes(
+                    (source_path / "payload.txt").read_bytes()
+                )
+                return {"commands": [], "dependencies": {}}
+
+            resumed = install_cohort(prefix, selected, {"protocol": record}, build)
+            self.assertEqual(resumed["status"], "installed")
+            self.assertEqual(
+                (
+                    prefix
+                    / "active"
+                    / "components"
+                    / "protocol"
+                    / "output"
+                    / "installed.txt"
+                ).read_text(),
+                "source\n",
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
