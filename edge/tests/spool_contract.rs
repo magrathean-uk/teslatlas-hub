@@ -5,9 +5,10 @@ mod support;
 use std::fs::{self, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
-use teslatlas_edge::protocol::{GapReasonV2, HubAckV1, HubAckV2, HubBatchV2};
+use teslatlas_edge::protocol::{GapReasonV2, HubAckV1, HubAckV2, HubBatchV2, ReceiverEnvelope};
 use teslatlas_edge::spool::{EnqueueOutcome, Spool, SpoolConfig, SpoolError, SpoolKey};
 
 use support::{T0, VIN, receiver_envelope};
@@ -512,4 +513,158 @@ fn v2_spool_format_marker_is_persisted_and_validated() {
 
     fs::write(marker, b"1\n").unwrap();
     assert!(Spool::open(spool_config, key(), T0 + 1).is_err());
+}
+
+#[test]
+fn v2_matches_protocol_owned_literal_record_gap_batch_and_ack_vectors() {
+    let temp = TempDir::new().unwrap();
+    let mut long_lived = config(&temp);
+    long_lived.retention_ms = 120_000;
+    long_lived.batch_max_records = 16;
+    let spool = Spool::open(long_lived.clone(), key(), T0 - 20_000).unwrap();
+
+    // Advance the durable sequence with ordinary acknowledged records so the
+    // public vector can exercise u64 big-endian sequence values 10, 11 and 12.
+    for index in 1..=9 {
+        let timestamp = T0 - 20_000 + i64::from(index);
+        spool
+            .enqueue(
+                receiver_envelope(&format!("vector-seed-{index}"), timestamp),
+                timestamp + 100,
+            )
+            .unwrap();
+    }
+    let seed_batch = spool.next_batch_v2(T0 - 10_000).unwrap();
+    let seed_result = spool
+        .acknowledge_v2(&HubAckV2 {
+            version: 2,
+            batch_id: seed_batch.batch_id,
+            accepted_record_ids: seed_batch
+                .records
+                .iter()
+                .map(|record| record.record_id.clone())
+                .collect(),
+            accepted_gap_notice_ids: Vec::new(),
+        })
+        .unwrap();
+    assert_eq!(seed_result.acknowledged_record_ids.len(), 9);
+
+    let projected = ReceiverEnvelope::parse(
+        &serde_json::to_vec(&json!({
+            "version": 1,
+            "vin": VIN,
+            "txid": "edge-projected-0001",
+            "tx_type": "V",
+            "received_at_ms": 1_800_000_000_100_i64,
+            "timestamp_ms": 1_800_000_000_000_i64,
+            "payload": {
+                "vin": VIN,
+                "createdAt": "2027-01-15T08:00:00Z",
+                "data": {"Soc": {"intValue": "80"}}
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    spool.enqueue(projected, 1_800_000_000_100).unwrap();
+    drop(spool);
+
+    let mut short_lived = long_lived;
+    short_lived.retention_ms = 60_000;
+    let spool = Spool::open(short_lived, key(), T0).unwrap();
+    let expired = ReceiverEnvelope::parse(
+        &serde_json::to_vec(&json!({
+            "version": 1,
+            "vin": VIN,
+            "txid": "edge-expired-0002",
+            "tx_type": "V",
+            "received_at_ms": 1_800_000_000_200_i64,
+            "timestamp_ms": 1_800_000_000_100_i64,
+            "payload": {
+                "vin": VIN,
+                "createdAt": "2027-01-15T08:00:00.100Z",
+                "data": {"Soc": {"intValue": "79"}}
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let alert = ReceiverEnvelope::parse(
+        &serde_json::to_vec(&json!({
+            "version": 1,
+            "vin": VIN,
+            "txid": "edge-alert-0003",
+            "tx_type": "alerts",
+            "received_at_ms": 1_800_000_000_300_i64,
+            "timestamp_ms": 1_800_000_000_200_i64,
+            "payload": {
+                "name": "userPresent",
+                "createdAt": "2027-01-15T08:00:00.200Z"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    spool.enqueue(expired, 1_800_000_000_200).unwrap();
+    spool.enqueue(alert, 1_800_000_000_300).unwrap();
+
+    let batch = spool.next_batch_v2(1_800_000_060_201).unwrap();
+    assert_eq!(
+        batch
+            .records
+            .iter()
+            .map(|record| (
+                record.spool_seq,
+                record.record_id.as_str(),
+                record.legacy_record_id.as_str(),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                10,
+                "8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9",
+                "ac89a19968e0d88fe632e2cf59046dd333213da1e4ecd34f97430341bc70a0bd",
+            ),
+            (
+                12,
+                "42424c8baa6532299915b8026625a0dc271769fd97e19647b6366df523866d1f",
+                "e9e9bee52f0bda000acdd63a1d79c245e72bdfeca9c3b9c4932c6f5ec0e8e618",
+            ),
+        ]
+    );
+    assert_eq!(batch.gaps.len(), 1);
+    assert_eq!(batch.gaps[0].spool_seq, 11);
+    assert_eq!(batch.gaps[0].reason, GapReasonV2::RetentionExpired);
+    assert_eq!(
+        batch.gaps[0].evidence_sha256,
+        "c2fceaa38e73c41b78386cad195a383e5ae4505db9f71c0e43e7f669a8380e53"
+    );
+    assert_eq!(
+        batch.gaps[0].notice_id.as_str(),
+        "73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2"
+    );
+    assert_eq!(
+        batch.batch_id,
+        "01d91f49aa9e06ae80070976797616a9ec74cf6ef22c6862f615b5a28371a0ef"
+    );
+
+    let acknowledgement = HubAckV2 {
+        version: 2,
+        batch_id: batch.batch_id,
+        accepted_record_ids: vec![batch.records[0].record_id.clone()],
+        accepted_gap_notice_ids: vec![batch.gaps[0].notice_id.clone()],
+    };
+    assert_eq!(
+        serde_json::to_string(&acknowledgement).unwrap(),
+        "{\"version\":2,\"batch_id\":\"01d91f49aa9e06ae80070976797616a9ec74cf6ef22c6862f615b5a28371a0ef\",\"accepted_record_ids\":[\"8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9\"],\"accepted_gap_notice_ids\":[\"73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2\"]}"
+    );
+    let result = spool.acknowledge_v2(&acknowledgement).unwrap();
+    assert_eq!(
+        serde_json::to_string(&result).unwrap(),
+        "{\"version\":2,\"acknowledged_record_ids\":[\"8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9\"],\"acknowledged_gap_notice_ids\":[\"73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2\"],\"unknown_record_ids\":[],\"unknown_gap_notice_ids\":[]}"
+    );
+    let remaining = spool.next_batch_v2(1_800_000_060_202).unwrap();
+    assert_eq!(remaining.records.len(), 1);
+    assert_eq!(remaining.records[0].spool_seq, 12);
+    assert!(remaining.gaps.is_empty());
 }

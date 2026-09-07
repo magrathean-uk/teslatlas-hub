@@ -2,6 +2,9 @@
 
 Optional user-operated Tesla Fleet Telemetry ingress for a Teslatlas home Hub.
 
+The current release-cohort product version and its compatibility status are
+described in [product versioning](docs/product-versioning.md).
+
 > **Beta:** Wire version 1 remains compatible. The on-disk v2 spool format is a
 > forward-only upgrade. Wire version 2 adds stable retry identity, monotonic
 > spool sequence, and durable loss notices. Hub-side v2 integration and live
@@ -25,6 +28,8 @@ records and gap evidence before acknowledging them.
 
 - [Architecture](docs/architecture.md)
 - [Hub delivery contract](docs/hub-delivery-contract.md)
+- Public contract: `edge-delivery-v2@2.0.0` under the sibling
+  `teslatlas-protocol/profiles/edge-delivery-v2/2.0.0` repository path
 - [Native installation](docs/operations/native-installation.md)
 - [Upgrade, backup, and recovery](docs/operations/upgrade-backup-recovery.md)
 - [Third-party notices](docs/legal/third-party-notices.md)

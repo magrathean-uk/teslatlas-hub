@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "status": "candidate",
+  "product_version": "2026.36.2",
+  "profile": {
+    "id": "edge-delivery-v2",
+    "revision": "2.0.0",
+    "sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+  },
+  "delivery_wire_versions": [1, 2],
+  "required_delivery_wire_version": 2,
+  "automatic_v1_downgrade": false,
+  "spool_format": 2,
+  "tested_hub_versions": [],
+  "tested_hub_source_fingerprints": [],
+  "required_capabilities": ["edge.delivery.v2"],
+  "optional_capabilities": [],
+  "test_receipt_paths": []
+}

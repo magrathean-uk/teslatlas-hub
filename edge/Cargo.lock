@@ -1703,7 +1703,7 @@ dependencies = [
 
 [[package]]
 name = "teslatlas-edge"
-version = "0.1.0"
+version = "2026.36.2"
 dependencies = [
  "axum",
  "axum-server",

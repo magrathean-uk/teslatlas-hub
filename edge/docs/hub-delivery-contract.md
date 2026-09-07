@@ -3,6 +3,14 @@
 Wire version 1 remains compatible for record-only queues. Wire version 2 adds
 stable retry identity, monotonic sequence, and durable gap acknowledgement.
 
+The source-neutral public bundle is `edge-delivery-v2@2.0.0` in the sibling
+`teslatlas-protocol/profiles/edge-delivery-v2/2.0.0` repository path. Its
+`SHA256SUMS` file has SHA-256
+`e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224`.
+The bundle freezes schemas, OpenAPI, stable and legacy IDs, merged sequence
+order, exact acknowledgement bytes, disposition requirements, and positive and
+negative replay vectors without importing Hub implementation.
+
 > **Required:** TLS client authentication and a valid bearer are both
 > mandatory. Hub must persist the record or gap decision before
 > acknowledgement. A green HTTP exchange without that ordering does not
@@ -39,19 +47,23 @@ whole-queue grants; labels are operational names, not vehicle scopes.
 ```json
 {
   "version": 1,
-  "batch_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "batch_id": "6e06fa3b7fcb563eeab98be97b1af913b99e37705c2b5d4f389cdf014cefc8ea",
   "records": [
     {
-      "record_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "record_id": "ac89a19968e0d88fe632e2cf59046dd333213da1e4ecd34f97430341bc70a0bd",
       "received_at_ms": 1800000000100,
       "envelope": {
         "version": 1,
         "vin": "5YJ3E1EA7KF000001",
-        "txid": "receiver-0001",
-        "tx_type": "vehicle_data",
+        "txid": "edge-projected-0001",
+        "tx_type": "V",
         "received_at_ms": 1800000000100,
         "timestamp_ms": 1800000000000,
-        "payload": {"Soc": 80}
+        "payload": {
+          "vin": "5YJ3E1EA7KF000001",
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {"Soc": {"intValue": "80"}}
+        }
       }
     }
   ]
@@ -104,9 +116,9 @@ and non-current batch IDs are rejected.
 ```json
 {
   "version": 1,
-  "batch_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "batch_id": "6e06fa3b7fcb563eeab98be97b1af913b99e37705c2b5d4f389cdf014cefc8ea",
   "accepted_record_ids": [
-    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    "ac89a19968e0d88fe632e2cf59046dd333213da1e4ecd34f97430341bc70a0bd"
   ]
 }
 ```
@@ -117,7 +129,7 @@ Success returns the exact deletion result:
 {
   "version": 1,
   "acknowledged_record_ids": [
-    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    "ac89a19968e0d88fe632e2cf59046dd333213da1e4ecd34f97430341bc70a0bd"
   ],
   "unknown_record_ids": []
 }
@@ -137,31 +149,35 @@ gap notices:
 ```json
 {
   "version": 2,
-  "batch_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "batch_id": "1966d5239605c0b8e9eab5b5ca8105f39df35725ffa6ab12f93cb9e4c35599d1",
   "records": [
     {
-      "record_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "legacy_record_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "spool_seq": 42,
+      "record_id": "8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9",
+      "legacy_record_id": "ac89a19968e0d88fe632e2cf59046dd333213da1e4ecd34f97430341bc70a0bd",
+      "spool_seq": 10,
       "received_at_ms": 1800000000100,
       "envelope": {
         "version": 1,
         "vin": "5YJ3E1EA7KF000001",
-        "txid": "receiver-0001",
+        "txid": "edge-projected-0001",
         "tx_type": "V",
         "received_at_ms": 1800000000100,
         "timestamp_ms": 1800000000000,
-        "payload": {"Soc": 80}
+        "payload": {
+          "vin": "5YJ3E1EA7KF000001",
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {"Soc": {"intValue": "80"}}
+        }
       }
     }
   ],
   "gaps": [
     {
-      "notice_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "spool_seq": 41,
-      "occurred_at_ms": 1800000000000,
+      "notice_id": "73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2",
+      "spool_seq": 11,
+      "occurred_at_ms": 1800000060200,
       "reason": "retention_expired",
-      "evidence_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      "evidence_sha256": "c2fceaa38e73c41b78386cad195a383e5ae4505db9f71c0e43e7f669a8380e53"
     }
   ]
 }
@@ -171,6 +187,20 @@ Every record and gap carries `spool_seq`. Hub merges both arrays by sequence
 before applying them. Each sequence occurs exactly once across both arrays.
 Batch record and byte limits count both kinds. Repeating the GET without
 acknowledgement returns the same current items.
+
+The default batch limits are 256 total items and 1 MiB of encoded item bodies.
+Configuration can raise them only to hard limits of 1,024 total items and
+4 MiB. Including the fixed compact JSON wrapper and at most 1,023 item commas,
+the whole response is at most 4,195,441 bytes. A consumer must bound the entire
+encoded response before parsing and
+must reject duplicate sequences, duplicate stable IDs, or conflicting retained
+v1 aliases without applying or acknowledging any item.
+
+The outer record `received_at_ms` is Edge's durable admission time. The
+envelope's `received_at_ms` is the receiver-supplied field hashed into the v1
+alias and excluded from the v2 stable identity. Neither arrival field is an
+event-time substitute; telemetry event time remains `timestamp_ms` and the
+Fleet protojson `createdAt` value where present.
 
 The v2 batch ID binds that merged order:
 
@@ -211,17 +241,35 @@ identity, sequence, notice ID, reason, occurrence time, and evidence digest
 before acknowledgement. A gap is evidence of missing telemetry, never a
 replacement telemetry event.
 
+Accepted receiver transaction types normalize by removing non-ASCII-
+alphanumeric characters and lowercasing; the result must be one of `v`,
+`data`, `vehicledata`, `connectivity`, `alerts`, or `errors`. A valid `V`,
+`data`, or `vehicle_data` record still projects only when its payload is valid
+Fleet protojson for fields the Hub supports. Valid alerts, errors,
+connectivity, and other valid but unprojectable records require a durable
+non-projection disposition containing the stable identity, retained v1 alias,
+sequence, reason, and canonical payload digest before acknowledgement. They
+must not create fictitious current-state values or disappear silently.
+
+Hub owns one atomic transaction for the application receipt, sequence
+disposition, retained alias, resulting data effect, and recoverable derived
+export work. The permitted durable dispositions are `projected_telemetry`,
+`durable_non_projection_event`, `durable_gap`, and `duplicate`. A malformed
+envelope, identity mismatch, sequence conflict, alias conflict, or failed
+authentication is `rejected_invalid_envelope`: it remains visibly blocked and
+cannot advance the acknowledgement prefix.
+
 `POST /v2/hub/acks` accepts exact IDs from the current v2 batch:
 
 ```json
 {
   "version": 2,
-  "batch_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "batch_id": "1966d5239605c0b8e9eab5b5ca8105f39df35725ffa6ab12f93cb9e4c35599d1",
   "accepted_record_ids": [
-    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    "8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9"
   ],
   "accepted_gap_notice_ids": [
-    "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    "73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2"
   ]
 }
 ```
