@@ -1,0 +1,169 @@
+{
+  "authentication": {
+    "authorization": "Authorization: Bearer tte1.<credential-id>.<secret>",
+    "requirements_are_conjunctive": true,
+    "tls": "mutual TLS with an Edge-configured dedicated Hub client CA"
+  },
+  "consumer_commit": {
+    "invalid": "authentication, identity, alias, sequence or envelope conflict is visible and cannot advance the ACK prefix",
+    "rule": "receipt, sequence disposition, aliases, Hub data effect and recoverable derived-export work commit atomically before ACK",
+    "valid_non_projection": "persist bounded identity, reason and payload digest before ACK"
+  },
+  "examples": [
+    {
+      "kind": "receiver-envelope",
+      "path": "examples/projected-envelope.json"
+    },
+    {
+      "kind": "receiver-envelope",
+      "path": "examples/alert-envelope.json"
+    },
+    {
+      "kind": "receiver-envelope",
+      "path": "examples/error-envelope.json"
+    },
+    {
+      "kind": "batch-v2",
+      "path": "examples/batch.json"
+    },
+    {
+      "kind": "ack-v2",
+      "path": "examples/ack-prefix.json"
+    },
+    {
+      "kind": "ack-result-v2",
+      "path": "examples/ack-result.json"
+    },
+    {
+      "kind": "consumer-disposition",
+      "path": "examples/non-projection-disposition.json"
+    },
+    {
+      "kind": "consumer-gap-disposition",
+      "path": "examples/gap-disposition.json"
+    }
+  ],
+  "hash_parameters": {
+    "batch_item_terminator_hex": "00",
+    "batch_kind_bytes": {
+      "gap": {
+        "ascii": "g",
+        "hex": "67"
+      },
+      "record": {
+        "ascii": "r",
+        "hex": "72"
+      }
+    },
+    "domain_termination": "Each decoded bytes_hex value contains exactly one terminal NUL byte (hex 00); no separator is added after it.",
+    "domains": {
+      "batch": {
+        "bytes_hex": "7465736c61746c61732d656467652d62617463682d763200",
+        "prefix_utf8": "teslatlas-edge-batch-v2",
+        "terminal_hex": "00"
+      },
+      "gap_evidence": {
+        "bytes_hex": "7465736c61746c61732d656467652d6761702d65766964656e63652d763200",
+        "prefix_utf8": "teslatlas-edge-gap-evidence-v2",
+        "terminal_hex": "00"
+      },
+      "gap_notice": {
+        "bytes_hex": "7465736c61746c61732d656467652d6761702d6e6f746963652d763200",
+        "prefix_utf8": "teslatlas-edge-gap-notice-v2",
+        "terminal_hex": "00"
+      },
+      "legacy_record_id": {
+        "bytes_hex": "7465736c61746c61732d656467652d7265636f72642d763100",
+        "prefix_utf8": "teslatlas-edge-record-v1",
+        "terminal_hex": "00"
+      },
+      "stable_record_id": {
+        "bytes_hex": "7465736c61746c61732d656467652d7265636f72642d763200",
+        "prefix_utf8": "teslatlas-edge-record-v2",
+        "terminal_hex": "00"
+      }
+    },
+    "hex_encoding": "bytes_hex and every field ending in _hex represent bytes decoded from lowercase hexadecimal; the hexadecimal text itself is never hashed.",
+    "spool_seq_u64": {
+      "byte_order": "big",
+      "width_bytes": 8
+    }
+  },
+  "identity": {
+    "batch": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.batch.bytes_hex) || each merged item: hex_decode(hash_parameters.batch_kind_bytes[item.kind].hex) || spool_seq_u64_be || item_id_utf8 || hex_decode(hash_parameters.batch_item_terminator_hex)))",
+    "canonicalization": "RFC 8785 JSON Canonicalization Scheme",
+    "excluded_stable_identity_fields": [
+      "received_at_ms"
+    ],
+    "gap_evidence": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.gap_evidence.bytes_hex) || spool_seq_u64_be || stable_record_id_utf8 || reason_utf8))",
+    "gap_notice": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.gap_notice.bytes_hex) || spool_seq_u64_be || reason_utf8 || evidence_sha256_utf8))",
+    "legacy_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.legacy_record_id.bytes_hex) || JCS(receiver_envelope)))",
+    "stable_identity_fields": [
+      "version=2",
+      "vin",
+      "txid",
+      "tx_type",
+      "timestamp_ms",
+      "payload",
+      "device_client_version when present",
+      "firmware_version when present"
+    ],
+    "stable_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.stable_record_id.bytes_hex) || JCS(stable_identity)))"
+  },
+  "license_boundary": "Apache-2.0 source-neutral public contract",
+  "limits": {
+    "accepted_gap_notice_ids": 256,
+    "accepted_record_ids": 256,
+    "ack_body_bytes": 131072,
+    "batch_max_bytes_default": 1048576,
+    "batch_max_bytes_hard": 4194304,
+    "batch_max_bytes_measurement": "sum_of_compact_json_encoded_records_and_gaps",
+    "batch_max_items_default": 256,
+    "batch_max_items_hard": 1024,
+    "batch_response_body_bytes_hard": 4195441,
+    "receiver_body_bytes": 262144
+  },
+  "profile_id": "edge-delivery-v2@2.0.0",
+  "profile_name": "edge-delivery-v2",
+  "retained_wire_versions": [
+    1,
+    2
+  ],
+  "revision": "2.0.0",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/v2/hub/batches/next",
+      "success_status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/v2/hub/acks",
+      "success_status": 200
+    }
+  ],
+  "schemas": [
+    "receiver-envelope.schema.json",
+    "delivery.schema.json",
+    "consumer-disposition.schema.json"
+  ],
+  "selection": {
+    "automatic_v1_downgrade": false,
+    "required_for_hub_consumer": 2
+  },
+  "sequence": {
+    "acknowledgement": "accepted IDs form exactly one contiguous prefix; empty prefix is valid",
+    "lineage": "sequence reset or spool replacement requires a new explicitly configured Edge lineage",
+    "ordering": "ascending spool_seq after merging records and gaps",
+    "replay": "same stable ID at a later spool_seq is a durable duplicate disposition with its new alias, then ACK eligible",
+    "uniqueness": "one item per spool_seq across both arrays"
+  },
+  "spool_format": 2,
+  "status": "candidate",
+  "timestamp_semantics": {
+    "batch_record_received_at_ms": "edge_durable_admission_time",
+    "envelope_received_at_ms": "receiver_supplied_arrival_time_in_v1_alias_only",
+    "envelope_timestamp_ms": "telemetry_event_time"
+  },
+  "vectors": "vectors.json"
+}

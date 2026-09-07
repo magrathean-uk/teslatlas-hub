@@ -606,7 +606,7 @@ wheels = [
 
 [[package]]
 name = "teslatlas-protocol-conformance"
-version = "0.0.0"
+version = "2026.36.2"
 source = { virtual = "." }
 
 [package.dev-dependencies]

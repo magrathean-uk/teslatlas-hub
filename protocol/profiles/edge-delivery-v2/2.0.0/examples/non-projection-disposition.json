@@ -1,0 +1,12 @@
+{
+  "category": "durable_non_projection_event",
+  "committed_at_ms": 1800000001000,
+  "edge_installation_id": "home-edge",
+  "edge_lineage": "spool-2026-09-05",
+  "item_id": "42424c8baa6532299915b8026625a0dc271769fd97e19647b6366df523866d1f",
+  "item_kind": "record",
+  "legacy_record_id": "e9e9bee52f0bda000acdd63a1d79c245e72bdfeca9c3b9c4932c6f5ec0e8e618",
+  "payload_sha256": "2b8aa76b27b1b29810087e1692c1efcfe3b04e340be83700464570f0924e8fd7",
+  "reason": "alert_event_retained",
+  "spool_seq": 12
+}

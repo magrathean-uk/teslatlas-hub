@@ -1,0 +1,153 @@
+{
+  "$id": "https://protocol.teslatlas.example/profiles/edge-delivery-v2/2.0.0/consumer-disposition.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "item_kind": {
+            "const": "record"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "occurred_at_ms"
+              ]
+            },
+            {
+              "required": [
+                "evidence_sha256"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "category": {
+            "enum": [
+              "projected_telemetry",
+              "durable_non_projection_event",
+              "duplicate",
+              "rejected_invalid_envelope"
+            ]
+          }
+        },
+        "required": [
+          "legacy_record_id",
+          "payload_sha256"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "item_kind": {
+            "const": "gap"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "legacy_record_id"
+              ]
+            },
+            {
+              "required": [
+                "payload_sha256"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "category": {
+            "const": "durable_gap"
+          }
+        },
+        "required": [
+          "occurred_at_ms",
+          "evidence_sha256"
+        ]
+      }
+    }
+  ],
+  "description": "A source-neutral persistence contract; this object is not sent to Edge.",
+  "properties": {
+    "category": {
+      "enum": [
+        "projected_telemetry",
+        "durable_non_projection_event",
+        "durable_gap",
+        "duplicate",
+        "rejected_invalid_envelope"
+      ]
+    },
+    "committed_at_ms": {
+      "maximum": 9223372036854775807,
+      "minimum": -9223372036854775808,
+      "type": "integer"
+    },
+    "edge_installation_id": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "edge_lineage": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$",
+      "type": "string"
+    },
+    "evidence_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "item_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "item_kind": {
+      "enum": [
+        "record",
+        "gap"
+      ]
+    },
+    "legacy_record_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "occurred_at_ms": {
+      "maximum": 9223372036854775807,
+      "minimum": -9223372036854775808,
+      "type": "integer"
+    },
+    "payload_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "reason": {
+      "pattern": "^[a-z0-9][a-z0-9_]{0,127}$",
+      "type": "string"
+    },
+    "spool_seq": {
+      "maximum": 18446744073709551615,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "edge_installation_id",
+    "edge_lineage",
+    "spool_seq",
+    "item_id",
+    "item_kind",
+    "category",
+    "reason",
+    "committed_at_ms"
+  ],
+  "title": "Durable Hub consumer disposition evidence",
+  "type": "object"
+}

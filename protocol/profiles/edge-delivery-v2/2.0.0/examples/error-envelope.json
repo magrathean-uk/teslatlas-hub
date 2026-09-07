@@ -1,0 +1,12 @@
+{
+  "payload": {
+    "message": "synthetic malformed field",
+    "name": "invalidData"
+  },
+  "received_at_ms": 1800000000400,
+  "timestamp_ms": 1800000000300,
+  "tx_type": "errors",
+  "txid": "edge-error-0004",
+  "version": 1,
+  "vin": "5YJ3E1EA7KF000001"
+}

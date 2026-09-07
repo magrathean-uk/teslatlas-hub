@@ -1,0 +1,327 @@
+{
+  "components": {
+    "securitySchemes": {
+      "edgeBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "hubMutualTLS": {
+        "type": "mutualTLS"
+      }
+    }
+  },
+  "info": {
+    "title": "Teslatlas Edge delivery v2",
+    "version": "2.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v2/hub/acks": {
+      "post": {
+        "operationId": "acknowledgeEdgeDeliveryBatchV2",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "accepted_gap_notice_ids": {
+                    "items": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "maxItems": 256,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "accepted_record_ids": {
+                    "items": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "maxItems": 256,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "batch_id": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  "version": {
+                    "const": 2
+                  }
+                },
+                "required": [
+                  "version",
+                  "batch_id",
+                  "accepted_record_ids",
+                  "accepted_gap_notice_ids"
+                ],
+                "type": "object",
+                "x-teslatlas-accepted-items": "one contiguous prefix of merged batch spool_seq order",
+                "x-teslatlas-max-encoded-bytes": 131072
+              }
+            }
+          },
+          "required": true,
+          "x-teslatlas-max-encoded-bytes": 131072
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "acknowledged_gap_notice_ids": {
+                      "items": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "acknowledged_record_ids": {
+                      "items": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "unknown_gap_notice_ids": {
+                      "items": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "unknown_record_ids": {
+                      "items": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "version": {
+                      "const": 2
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "acknowledged_record_ids",
+                    "acknowledged_gap_notice_ids",
+                    "unknown_record_ids",
+                    "unknown_gap_notice_ids"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Persisted acknowledgement receipt and exact deletion result"
+          },
+          "400": {
+            "description": "Invalid, non-prefix or stale acknowledgement"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer"
+          },
+          "413": {
+            "description": "Request body exceeds the fixed limit"
+          },
+          "503": {
+            "description": "Spool or credential state unavailable"
+          }
+        }
+      }
+    },
+    "/v2/hub/batches/next": {
+      "get": {
+        "operationId": "nextEdgeDeliveryBatchV2",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "batch_id": {
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "gaps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "evidence_sha256": {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "notice_id": {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "occurred_at_ms": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                          },
+                          "reason": {
+                            "enum": [
+                              "retention_expired",
+                              "integrity_quarantine"
+                            ]
+                          },
+                          "spool_seq": {
+                            "maximum": 18446744073709551615,
+                            "minimum": 1,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "notice_id",
+                          "spool_seq",
+                          "occurred_at_ms",
+                          "reason",
+                          "evidence_sha256"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 1024,
+                      "type": "array"
+                    },
+                    "records": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "envelope": {
+                            "$id": "https://protocol.teslatlas.example/profiles/edge-delivery-v2/2.0.0/receiver-envelope.schema.json",
+                            "$schema": "https://json-schema.org/draft/2020-12/schema",
+                            "additionalProperties": false,
+                            "properties": {
+                              "device_client_version": {
+                                "pattern": "^[!-~]{1,64}$",
+                                "type": "string"
+                              },
+                              "firmware_version": {
+                                "pattern": "^[!-~]{1,64}$",
+                                "type": "string"
+                              },
+                              "payload": {
+                                "type": "object"
+                              },
+                              "received_at_ms": {
+                                "maximum": 9223372036854775807,
+                                "minimum": 946684800000,
+                                "type": "integer"
+                              },
+                              "timestamp_ms": {
+                                "maximum": 9223372036854775807,
+                                "minimum": 946684800000,
+                                "type": "integer"
+                              },
+                              "tx_type": {
+                                "pattern": "^[!-~]{1,64}$",
+                                "type": "string",
+                                "x-teslatlas-accepted-normalized-values": [
+                                  "v",
+                                  "data",
+                                  "vehicledata",
+                                  "connectivity",
+                                  "alerts",
+                                  "errors"
+                                ],
+                                "x-teslatlas-normalize": "remove non-ASCII-alphanumeric bytes, then lowercase"
+                              },
+                              "txid": {
+                                "pattern": "^[!-~]{1,128}$",
+                                "type": "string"
+                              },
+                              "version": {
+                                "const": 1
+                              },
+                              "vin": {
+                                "pattern": "^[A-HJ-NPR-Z0-9]{17}$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "version",
+                              "vin",
+                              "txid",
+                              "tx_type",
+                              "received_at_ms",
+                              "timestamp_ms",
+                              "payload"
+                            ],
+                            "title": "Strict Edge receiver envelope retained by delivery v2",
+                            "type": "object",
+                            "x-teslatlas-event-clock-rule": "timestamp_ms <= received_at_ms + 300000"
+                          },
+                          "legacy_record_id": {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "received_at_ms": {
+                            "maximum": 9223372036854775807,
+                            "minimum": -9223372036854775808,
+                            "type": "integer"
+                          },
+                          "record_id": {
+                            "pattern": "^[0-9a-f]{64}$",
+                            "type": "string"
+                          },
+                          "spool_seq": {
+                            "maximum": 18446744073709551615,
+                            "minimum": 1,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "record_id",
+                          "legacy_record_id",
+                          "spool_seq",
+                          "received_at_ms",
+                          "envelope"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 1024,
+                      "type": "array"
+                    },
+                    "version": {
+                      "const": 2
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "batch_id",
+                    "records",
+                    "gaps"
+                  ],
+                  "type": "object",
+                  "x-teslatlas-distinct-record-and-notice-identities": true,
+                  "x-teslatlas-distinct-spool-sequences": true,
+                  "x-teslatlas-max-encoded-item-bytes-sum": 4194304,
+                  "x-teslatlas-max-encoded-response-bytes": 4195441,
+                  "x-teslatlas-max-total-items": 1024
+                }
+              }
+            },
+            "description": "Current batch, including an empty batch"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer"
+          },
+          "503": {
+            "description": "Spool or credential state unavailable"
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "edgeBearer": [],
+      "hubMutualTLS": []
+    }
+  ]
+}

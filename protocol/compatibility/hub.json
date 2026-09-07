@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "status": "candidate",
+  "product_version": "2026.36.2",
+  "profile": {"id": "hub-http-v1", "revision": "1.0.0", "sha256": null},
+  "tested_hub_versions": [],
+  "tested_hub_source_fingerprints": [],
+  "required_capabilities": [],
+  "optional_capabilities": [],
+  "test_receipt_paths": []
+}

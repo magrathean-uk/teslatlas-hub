@@ -800,6 +800,7 @@ def run() -> int:
     parser = argparse.ArgumentParser(description="Run Teslatlas language-neutral conformance cases")
     parser.add_argument("--profile", action="append", help="protocol profile; repeatable")
     parser.add_argument("--adapter", help="JSONL adapter executable or Python script")
+    parser.add_argument("--config", help="private actual-Hub connection descriptor")
     parser.add_argument(
         "--timeout-seconds",
         type=float,
@@ -810,6 +811,19 @@ def run() -> int:
     args = parser.parse_args()
     if args.timeout_seconds <= 0:
         raise ConformanceError("timeout-seconds must be positive")
+
+    if args.profile and "hub-http-v1@1.0.0" in args.profile:
+        if args.profile != ["hub-http-v1@1.0.0"]:
+            raise ConformanceError("actual-Hub acceptance must run separately from rich profiles")
+        actual = ROOT / "conformance/adapters/actual-hub"
+        if args.adapter is None or Path(args.adapter).resolve() != actual.resolve():
+            raise ConformanceError("current-Hub acceptance requires the actual-hub adapter")
+        command = [str(actual)]
+        if args.config:
+            command += ["--config", args.config]
+        if args.json:
+            command += ["--json"]
+        return subprocess.run(command, check=False).returncode
 
     schemas, registry = load_schemas()
     manifest, profiles, cases = load_contract()
@@ -893,6 +907,7 @@ def run() -> int:
                 if not args.json:
                     print(f"PASS {profile_name} {case_id}")
     summary = {
+        "provenance": "harness-consistency" if args.adapter is None else "adapter-contract",
         "adapter": "reference" if args.adapter is None else args.adapter,
         "profiles": selected_profiles,
         "runs": runs,

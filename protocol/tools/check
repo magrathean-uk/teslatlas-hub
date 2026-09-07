@@ -6,6 +6,8 @@ repo_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 
 cd "$repo_dir"
 uv sync --locked
+uv run python tools/build_hub_http_profile.py --check
+uv run python tools/build_edge_delivery_profile.py --check
 uv run python tools/build_openapi.py --check
 uv run python tools/build_fixtures.py --check
 uv run python tools/build_conformance.py --check

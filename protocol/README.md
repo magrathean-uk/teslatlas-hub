@@ -62,10 +62,13 @@ profiles. It uses no hosted CI.
 - `fixtures/v1/` — deterministic normal, duplicate, delayed, missing, and
   reordered observation scenarios.
 - `compatibility/` — the current and previous two minor profiles.
+- `profiles/edge-delivery-v2/2.0.0/` — Edge pull, stable identity,
+  sequence/gap, acknowledgement, and durable-consumer disposition contract.
 - `conformance/` — JSONL adapter protocol, executable cases, and runner.
 
 ## Read next
 
+- [Product versioning](docs/product-versioning.md)
 - [Architecture](docs/architecture.md)
 - [Client walkthrough](docs/client-quickstart.md)
 - [HTTP contract](docs/http.md)

@@ -1,0 +1,64 @@
+{
+  "$id": "https://protocol.teslatlas.example/profiles/edge-delivery-v2/2.0.0/receiver-envelope.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "device_client_version": {
+      "pattern": "^[!-~]{1,64}$",
+      "type": "string"
+    },
+    "firmware_version": {
+      "pattern": "^[!-~]{1,64}$",
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "received_at_ms": {
+      "maximum": 9223372036854775807,
+      "minimum": 946684800000,
+      "type": "integer"
+    },
+    "timestamp_ms": {
+      "maximum": 9223372036854775807,
+      "minimum": 946684800000,
+      "type": "integer"
+    },
+    "tx_type": {
+      "pattern": "^[!-~]{1,64}$",
+      "type": "string",
+      "x-teslatlas-accepted-normalized-values": [
+        "v",
+        "data",
+        "vehicledata",
+        "connectivity",
+        "alerts",
+        "errors"
+      ],
+      "x-teslatlas-normalize": "remove non-ASCII-alphanumeric bytes, then lowercase"
+    },
+    "txid": {
+      "pattern": "^[!-~]{1,128}$",
+      "type": "string"
+    },
+    "version": {
+      "const": 1
+    },
+    "vin": {
+      "pattern": "^[A-HJ-NPR-Z0-9]{17}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "version",
+    "vin",
+    "txid",
+    "tx_type",
+    "received_at_ms",
+    "timestamp_ms",
+    "payload"
+  ],
+  "title": "Strict Edge receiver envelope retained by delivery v2",
+  "type": "object",
+  "x-teslatlas-event-clock-rule": "timestamp_ms <= received_at_ms + 300000"
+}
