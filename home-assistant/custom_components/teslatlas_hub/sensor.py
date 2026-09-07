@@ -21,6 +21,7 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
@@ -45,32 +46,14 @@ class VehicleSensorDescription(SensorEntityDescription):
     value_fn: Callable[[VehicleState], StateType]
 
 
-HUB_SENSOR_DESCRIPTIONS: Final = (
-    HubSensorDescription(
-        key="collector_health",
-        translation_key="collector_health",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda snapshot: snapshot.status.collector_health,
-    ),
-    HubSensorDescription(
-        key="fleet_cost",
-        translation_key="fleet_cost",
-        device_class=SensorDeviceClass.MONETARY,
-        native_unit_of_measurement="USD",
-        state_class=SensorStateClass.TOTAL,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda snapshot: snapshot.status.fleet_cost_usd,
-    ),
-    HubSensorDescription(
-        key="backup_age",
-        translation_key="backup_age",
-        device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda snapshot: snapshot.status.backup_age_seconds,
-    ),
-)
+HUB_SENSOR_DESCRIPTIONS: Final = ()
+
+RETIRED_SENSOR_KEYS: Final = {
+    "hub_collector_health",
+    "hub_fleet_cost",
+    "hub_backup_age",
+    "data_quality",
+}
 
 VEHICLE_SENSOR_DESCRIPTIONS: Final = (
     VehicleSensorDescription(
@@ -164,12 +147,6 @@ VEHICLE_SENSOR_DESCRIPTIONS: Final = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda vehicle: vehicle.telemetry_age_seconds,
     ),
-    VehicleSensorDescription(
-        key="data_quality",
-        translation_key="data_quality",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda vehicle: vehicle.data_quality,
-    ),
 )
 
 
@@ -250,6 +227,10 @@ async def async_setup_entry(
 ) -> None:
     """Create sensors and add new vehicles observed through push."""
     coordinator = entry.runtime_data
+    registry = er.async_get(hass)
+    for registry_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if any(registry_entry.unique_id.endswith(key) for key in RETIRED_SENSOR_KEYS):
+            registry.async_remove(registry_entry.entity_id)
     hub_added = False
     known_vehicle_ids: set[str] = set()
 

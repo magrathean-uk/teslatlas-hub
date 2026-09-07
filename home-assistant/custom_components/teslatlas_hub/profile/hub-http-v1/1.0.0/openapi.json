@@ -1,0 +1,401 @@
+{
+  "components": {
+    "securitySchemes": {
+      "pairedBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Current Teslatlas Hub public HTTP profile",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/.well-known/teslatlas-hub": {
+      "get": {
+        "operationId": "discovery",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "discovery.schema.json"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Route-specific error or conditional response; see profile cases"
+          }
+        },
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/health"
+                }
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/ready"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/ready"
+                }
+              }
+            },
+            "description": "Route-specific error or conditional response; see profile cases"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/device/rotate": {
+      "post": {
+        "operationId": "rotate",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "auth.schema.json#/$defs/claim"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "404": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "503": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/pairings/{pairing_id}/claim": {
+      "post": {
+        "operationId": "claim",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "auth.schema.json#/$defs/claim_request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "auth.schema.json#/$defs/claim"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "401": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "404": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "415": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "422": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "503": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/vehicles": {
+      "get": {
+        "operationId": "vehicles",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/vehicles"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "503": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/current": {
+      "get": {
+        "operationId": "current",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/current"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "404": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "503": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/drives": {
+      "get": {
+        "operationId": "drives",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_ms",
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_ms",
+            "schema": {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 4096,
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "schema": {
+              "maxLength": 65536,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/drives"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 65536,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Route-specific error or conditional response; see profile cases",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 65536,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "401": {
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Route-specific error or conditional response; see profile cases"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Authentication-store outage: empty response body; query-originated outage: application/json service_unavailable envelope. Nonempty bodies must match the JSON error schema.",
+            "x-empty-body-allowed": true
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    }
+  }
+}

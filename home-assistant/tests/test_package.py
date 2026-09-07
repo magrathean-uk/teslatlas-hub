@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -13,17 +14,17 @@ def _load_json(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_manifest_declares_local_push_hub() -> None:
+def test_manifest_declares_local_poll_hub() -> None:
     """Catch packaging that no longer advertises the approved HA contract."""
     manifest = _load_json(INTEGRATION / "manifest.json")
 
     assert manifest["domain"] == "teslatlas_hub"
     assert manifest["name"] == "Teslatlas Hub"
-    assert manifest["version"] == "0.1.0"
+    assert manifest["version"] == "2026.36.2"
     assert manifest["integration_type"] == "hub"
-    assert manifest["iot_class"] == "local_push"
+    assert manifest["iot_class"] == "local_poll"
     assert manifest["config_flow"] is True
-    assert manifest["zeroconf"] == ["_teslatlas-hub._tcp.local."]
+    assert "zeroconf" not in manifest
     assert manifest["requirements"] == []
 
 
@@ -47,3 +48,15 @@ def test_package_has_no_command_or_service_surface() -> None:
     }
 
     assert not forbidden.intersection(path.name for path in INTEGRATION.glob("*"))
+
+
+def test_embedded_current_profile_matches_approved_bundle() -> None:
+    """Catch stale or partially copied public contract resources."""
+    profile = INTEGRATION / "profile" / "hub-http-v1" / "1.0.0"
+    sums = profile / "SHA256SUMS"
+    assert hashlib.sha256(sums.read_bytes()).hexdigest() == (
+        "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+    )
+    for line in sums.read_text(encoding="utf-8").splitlines():
+        expected, relative = line.split("  ", maxsplit=1)
+        assert hashlib.sha256((profile / relative).read_bytes()).hexdigest() == expected

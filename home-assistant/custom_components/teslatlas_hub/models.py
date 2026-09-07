@@ -15,6 +15,7 @@ class HubEndpoint:
     host: str
     port: int
     use_tls: bool
+    tls_pin: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,8 @@ class PairingResult:
 
     info: HubInfo
     access_token: str = field(repr=False)
+    device_id: str
+    expires_at_ms: int
 
 
 @dataclass(frozen=True, slots=True)

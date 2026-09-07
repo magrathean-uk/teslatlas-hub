@@ -1,0 +1,167 @@
+{
+  "additive_policy": "This version is a frozen bounded shape. Unknown fields fail acceptance; a new profile may explicitly allow optional additions. Clients may ignore unknown fields without assuming new capabilities.",
+  "capabilities": [
+    "query.vehicles",
+    "query.current",
+    "query.drives",
+    "sync.packs"
+  ],
+  "contract_version": "1.0.0",
+  "cursor": {
+    "binding": [
+      "Hub installation cursor key",
+      "vehicle UUID",
+      "exact from_ms",
+      "exact to_ms"
+    ],
+    "handling": "Preserve byte-for-byte, percent-encode once as query value, never parse or log; limit may change. Reuse against another Hub or time window must fail.",
+    "limit": {
+      "default": 100,
+      "max": 500,
+      "min": 1
+    },
+    "opaque": true,
+    "order": [
+      "start_date_ms descending",
+      "id descending"
+    ],
+    "time_window": "from_ms inclusive, to_ms exclusive; default 0 through signed64 maximum"
+  },
+  "integers": {
+    "javascript": "decode losslessly or reject values outside [-9007199254740991,9007199254740991] before normalization; never silently round IDs",
+    "wire": "signed 64-bit JSON integers"
+  },
+  "license": "Apache-2.0",
+  "max_response_bytes": 1048576,
+  "pairing": {
+    "claim_fields": [
+      "secret",
+      "device_name"
+    ],
+    "invitation_command": "teslatlas-hub --config PRIVATE_CONFIG pair --json",
+    "lifetime": "expiresAtMs epoch milliseconds; default invitation lifetime 900 seconds, owner-configurable; single use. Bearer expires_at_ms is returned by claim/rotate. Rotation invalidates prior bearer.",
+    "path_field": "pairingId",
+    "trust": "endpoint plus tlsPin (SHA256 of DER leaf certificate); validate TLS identity before sending secret. Fixture uses a private CA trust file and verifies hostname. pairingUri duplicates secret; keep whole invitation private."
+  },
+  "product_version_binding": "independent; see ecosystem compatibility manifests",
+  "profile_id": "hub-http-v1@1.0.0",
+  "routes": [
+    {
+      "bearer": false,
+      "etag_required": false,
+      "kind": "discovery",
+      "method": "GET",
+      "path": "/.well-known/teslatlas-hub",
+      "statuses": [
+        200,
+        503
+      ]
+    },
+    {
+      "bearer": false,
+      "etag_required": false,
+      "kind": "health",
+      "method": "GET",
+      "path": "/healthz",
+      "statuses": [
+        200
+      ]
+    },
+    {
+      "bearer": false,
+      "etag_required": false,
+      "kind": "ready",
+      "method": "GET",
+      "path": "/readyz",
+      "statuses": [
+        200,
+        503
+      ]
+    },
+    {
+      "bearer": true,
+      "etag_required": false,
+      "kind": "vehicles",
+      "method": "GET",
+      "path": "/v1/vehicles",
+      "statuses": [
+        200,
+        401,
+        503
+      ]
+    },
+    {
+      "bearer": true,
+      "etag_required": false,
+      "kind": "current",
+      "method": "GET",
+      "path": "/v1/vehicles/{vehicle_id}/current",
+      "statuses": [
+        200,
+        401,
+        404,
+        503
+      ]
+    },
+    {
+      "bearer": true,
+      "error_503_forms": [
+        "empty authentication-store failure",
+        "JSON service_unavailable query failure"
+      ],
+      "etag_required": true,
+      "kind": "drives",
+      "method": "GET",
+      "path": "/v1/vehicles/{vehicle_id}/drives",
+      "statuses": [
+        200,
+        304,
+        400,
+        401,
+        404,
+        503
+      ]
+    },
+    {
+      "bearer": false,
+      "etag_required": false,
+      "kind": "claim",
+      "method": "POST",
+      "path": "/v1/pairings/{pairing_id}/claim",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        415,
+        422,
+        503
+      ]
+    },
+    {
+      "bearer": true,
+      "etag_required": false,
+      "kind": "rotate",
+      "method": "POST",
+      "path": "/v1/device/rotate",
+      "statuses": [
+        200,
+        401,
+        404,
+        503
+      ]
+    }
+  ],
+  "schema_dialect": "https://json-schema.org/draft/2020-12/schema",
+  "status": "candidate",
+  "sync_regression_appendix": "sync-regression.json",
+  "unsupported": {
+    "charges": "no public charge query; retained in sync packs",
+    "commands": "no public vehicle command route",
+    "metadata": "no public metadata CRUD",
+    "protocol_version_header": "not emitted or required",
+    "revisions": "no public current or drive snapshot revision",
+    "rich_protocol_versions": "1.0/1.1/1.2 rich profiles are separate contracts",
+    "sse": "no public event stream or epoch"
+  }
+}

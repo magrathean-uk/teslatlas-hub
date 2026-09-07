@@ -106,6 +106,9 @@ class FixtureHubClient:
         self.events: list[HubEvent | HubClientError] = []
         self.event_connections: list[list[HubEvent | HubClientError]] = []
         self.pairing_secrets: list[str] = []
+        self.pairing_ids: list[str] = []
+        self.device_names: list[str] = []
+        self.snapshots: list[HubSnapshot] = []
         self.event_cursors: list[str | None] = []
         self.snapshot_calls = 0
         self.block_after_events = True
@@ -118,19 +121,42 @@ class FixtureHubClient:
             raise self.probe_error
         return self.info
 
-    async def async_pair(self, pairing_secret: str) -> PairingResult:
+    async def async_pair(
+        self,
+        pairing_id: str,
+        pairing_secret: str,
+        device_name: str,
+    ) -> PairingResult:
         """Record one transient secret and return a fixture bearer."""
+        self.pairing_ids.append(pairing_id)
         self.pairing_secrets.append(pairing_secret)
+        self.device_names.append(device_name)
         if self.pair_error is not None:
             raise self.pair_error
-        return PairingResult(info=self.info, access_token=self.access_token)
+        return PairingResult(
+            info=self.info,
+            access_token=self.access_token,
+            device_id="device-fixture",
+            expires_at_ms=1_788_567_300_000,
+        )
 
     async def async_snapshot(self) -> HubSnapshot:
         """Return fixture state or the configured failure."""
         self.snapshot_calls += 1
         if self.snapshot_error is not None:
             raise self.snapshot_error
+        if self.snapshots:
+            return self.snapshots.pop(0)
         return self.snapshot
+
+    async def async_rotate(self) -> PairingResult:
+        """Return a deterministic rotated credential."""
+        return PairingResult(
+            info=self.info,
+            access_token=self.access_token,
+            device_id="device-fixture",
+            expires_at_ms=1_788_567_300_000,
+        )
 
     async def async_events(self, last_event_id: str | None) -> AsyncIterator[HubEvent]:
         """Yield configured events and failures in order."""

@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:matrix:home-assistant:ha-runtime-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "cell_id",
+    "session_input_sha256",
+    "actor_id",
+    "operation",
+    "session_sequence_before",
+    "session_sequence_after",
+    "facts",
+    "requests"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cell_id": {
+      "enum": [
+        "home_assistant__macos_arm64",
+        "home_assistant__debian13_arm64",
+        "home_assistant__debian13_amd64"
+      ]
+    },
+    "session_input_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "actor_id": {
+      "const": "ha_flow"
+    },
+    "operation": {
+      "const": "observe_installed_runtime"
+    },
+    "session_sequence_before": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "session_sequence_after": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "facts": {
+      "$ref": "#/$defs/facts"
+    },
+    "requests": {
+      "type": "array",
+      "maxItems": 0
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "actorHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ha_flow",
+        "ha_client"
+      ],
+      "properties": {
+        "ha_flow": {
+          "$ref": "#/$defs/sha256"
+        },
+        "ha_client": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "expiredFixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixture_expires_at_ms",
+        "observed_after_expiry_ms",
+        "fixture_kind",
+        "pairing_id"
+      ],
+      "properties": {
+        "fixture_expires_at_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observed_after_expiry_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fixture_kind": {
+          "const": "persisted-one-second"
+        },
+        "pairing_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "archive_sha256",
+        "integration_version",
+        "installed_manifest_sha256",
+        "installed_members",
+        "home_assistant_version",
+        "python_version",
+        "iot_class",
+        "actors",
+        "service_mode",
+        "hub_id",
+        "actor_manifest_sha256s",
+        "expired_fixture",
+        "entry_id",
+        "registry_ids",
+        "python_executable",
+        "module_path",
+        "module_sha256",
+        "manifest_domain",
+        "config_entry_loaded",
+        "entity_registry_count",
+        "loaded_modules"
+      ],
+      "properties": {
+        "archive_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "integration_version": {
+          "const": "2026.36.2"
+        },
+        "installed_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "installed_members": {
+          "const": 31
+        },
+        "home_assistant_version": {
+          "const": "2026.8.3"
+        },
+        "python_version": {
+          "const": "3.14.2"
+        },
+        "iot_class": {
+          "const": "local_poll"
+        },
+        "actors": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "ha_client"
+            },
+            {
+              "const": "ha_flow"
+            }
+          ],
+          "items": false
+        },
+        "service_mode": {
+          "enum": [
+            "installed-app-launchagent",
+            "installed-deb-systemd"
+          ]
+        },
+        "hub_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor_manifest_sha256s": {
+          "$ref": "#/$defs/actorHashes"
+        },
+        "expired_fixture": {
+          "$ref": "#/$defs/expiredFixture"
+        },
+        "entry_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "registry_ids": {
+          "type": "array",
+          "minItems": 26,
+          "maxItems": 26,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "python_executable": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "module_path": {
+          "const": "__init__.py"
+        },
+        "module_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "manifest_domain": {
+          "const": "teslatlas_hub"
+        },
+        "config_entry_loaded": {
+          "const": true
+        },
+        "entity_registry_count": {
+          "const": 26
+        },
+        "loaded_modules": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "custom_components.teslatlas_hub",
+            "custom_components.teslatlas_hub.client",
+            "custom_components.teslatlas_hub.config_flow",
+            "custom_components.teslatlas_hub.const",
+            "custom_components.teslatlas_hub.coordinator",
+            "custom_components.teslatlas_hub.current_hub_client",
+            "custom_components.teslatlas_hub.entity",
+            "custom_components.teslatlas_hub.models",
+            "custom_components.teslatlas_hub.sensor"
+          ],
+          "properties": {
+            "custom_components.teslatlas_hub": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            },
+            "custom_components.teslatlas_hub.client": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            },
+            "custom_components.teslatlas_hub.config_flow": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            },
+            "custom_components.teslatlas_hub.const": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            },
+            "custom_components.teslatlas_hub.coordinator": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            },
+            "custom_components.teslatlas_hub.current_hub_client": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            },
+            "custom_components.teslatlas_hub.entity": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            },
+            "custom_components.teslatlas_hub.models": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            },
+            "custom_components.teslatlas_hub.sensor": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            }
+          }
+        }
+      }
+    }
+  }
+}

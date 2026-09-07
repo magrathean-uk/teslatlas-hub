@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from unittest.mock import patch
 
@@ -22,7 +21,7 @@ from custom_components.teslatlas_hub.const import (
 from custom_components.teslatlas_hub.diagnostics import (
     async_get_config_entry_diagnostics,
 )
-from tests.helpers import FixtureHubClient, vehicle_update
+from tests.helpers import FixtureHubClient
 
 
 async def test_diagnostics_redact_secrets_endpoints_identity_and_location(
@@ -46,15 +45,12 @@ async def test_diagnostics_redact_secrets_endpoints_identity_and_location(
     )
     entry.add_to_hass(hass)
     client = FixtureHubClient()
-    client.event_connections = [[vehicle_update()]]
 
     with patch(
         "custom_components.teslatlas_hub.create_client",
         return_value=client,
     ):
         assert await hass.config_entries.async_setup(entry.entry_id) is True
-    await asyncio.wait_for(client.stream_blocked.wait(), timeout=1)
-
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
     serialized = json.dumps(diagnostics, sort_keys=True)
 
@@ -63,11 +59,7 @@ async def test_diagnostics_redact_secrets_endpoints_identity_and_location(
     assert diagnostics["entry_data"][CONF_ACCESS_TOKEN] == REDACTED
     assert diagnostics["entry_data"][CONF_HUB_ID] == REDACTED
     assert diagnostics["runtime"]["vehicle_count"] == 2
-    assert diagnostics["runtime"]["data_quality_counts"] == {
-        "complete": 1,
-        "partial": 1,
-    }
-    assert diagnostics["runtime"]["last_event_id_present"] is True
+    assert diagnostics["runtime"]["transport"] == "local_poll"
 
     for private_value in (
         "sensitive-hub.example",

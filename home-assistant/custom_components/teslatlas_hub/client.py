@@ -1,21 +1,14 @@
-"""Public Teslatlas Hub client boundary.
-
-The protocol repository has not frozen any network routes or payload schemas.
-This module therefore defines only the integration-facing interface and a
-fail-closed production placeholder.
-"""
+"""Public Teslatlas Hub client boundary."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from .models import HubEndpoint, HubEvent, HubInfo, HubSnapshot, PairingResult
+from .models import HubEndpoint, HubInfo, HubSnapshot, PairingResult
 
-PROTOCOL_UNAVAILABLE = (
-    "The Teslatlas public protocol is not frozen; runtime transport is disabled"
-)
+if TYPE_CHECKING:
+    from aiohttp import ClientSession
+    from homeassistant.core import HomeAssistant
 
 
 class HubClientError(Exception):
@@ -30,12 +23,20 @@ class HubAuthenticationError(HubClientError):
     """The scoped device bearer is invalid or expired."""
 
 
+class HubIdentityError(HubAuthenticationError):
+    """The endpoint no longer identifies the expected Hub."""
+
+
 class HubPairingError(HubClientError):
     """The transient pairing secret was rejected."""
 
 
-class ProtocolContractUnavailable(HubClientError):
-    """Released public routes and schemas are not available yet."""
+class HubContractError(HubClientError):
+    """The Hub response violates the selected public contract."""
+
+
+class ProtocolContractUnavailable(HubContractError):
+    """A requested operation is absent from the selected public profile."""
 
 
 class TeslatlasHubClient(Protocol):
@@ -44,57 +45,71 @@ class TeslatlasHubClient(Protocol):
     async def async_probe(self) -> HubInfo:
         """Return stable public Hub identity without pairing."""
 
-    async def async_pair(self, pairing_secret: str) -> PairingResult:
+    async def async_pair(
+        self,
+        pairing_id: str,
+        pairing_secret: str,
+        device_name: str,
+    ) -> PairingResult:
         """Claim a transient secret and return a scoped device bearer."""
 
     async def async_snapshot(self) -> HubSnapshot:
         """Return one bounded current-state snapshot."""
 
-    def async_events(self, last_event_id: str | None) -> AsyncIterator[HubEvent]:
-        """Consume public push events with an optional replay cursor."""
+    async def async_rotate(self) -> PairingResult:
+        """Rotate the current scoped device bearer."""
 
     async def async_close(self) -> None:
         """Release owned network resources."""
 
 
-@dataclass(slots=True, repr=False)
-class _PendingProtocolClient:
-    """Fail closed until released protocol artifacts define transport."""
-
-    endpoint: HubEndpoint
-    _bearer_token: str | None = field(default=None, repr=False)
-
-    def __repr__(self) -> str:
-        """Return a diagnostic representation that never contains credentials."""
-        return (
-            f"{type(self).__name__}(host={self.endpoint.host!r}, "
-            f"port={self.endpoint.port!r}, use_tls={self.endpoint.use_tls!r})"
-        )
-
-    async def async_probe(self) -> HubInfo:
-        """Refuse to probe using an invented route."""
-        raise ProtocolContractUnavailable(PROTOCOL_UNAVAILABLE)
-
-    async def async_pair(self, pairing_secret: str) -> PairingResult:
-        """Refuse to claim a secret using an invented route."""
-        raise ProtocolContractUnavailable(PROTOCOL_UNAVAILABLE)
-
-    async def async_snapshot(self) -> HubSnapshot:
-        """Refuse to query using an invented route."""
-        raise ProtocolContractUnavailable(PROTOCOL_UNAVAILABLE)
-
-    async def async_events(self, last_event_id: str | None) -> AsyncIterator[HubEvent]:
-        """Refuse to stream using an invented route."""
-        raise ProtocolContractUnavailable(PROTOCOL_UNAVAILABLE)
-        yield  # pragma: no cover
-
-    async def async_close(self) -> None:
-        """Release no resources because no transport was opened."""
-
-
 def create_client(
     endpoint: HubEndpoint,
     bearer_token: str | None = None,
+    *,
+    expected_hub_id: str | None = None,
+    bearer_expires_at_ms: int | None = None,
+    hass: HomeAssistant | None = None,
+    session: ClientSession | None = None,
 ) -> TeslatlasHubClient:
-    """Create the fail-closed production client boundary."""
-    return _PendingProtocolClient(endpoint, bearer_token)
+    """Create the bounded production client through HA's session helpers."""
+    from .current_hub_client import (
+        CurrentHubClient,
+        pinned_request_class,
+        tls_pin_bytes,
+    )
+
+    owns_session_wrapper = False
+    transport_pin_bound = False
+    if endpoint.tls_pin is not None:
+        if not endpoint.use_tls:
+            raise HubContractError("tls_pin requires a TLS endpoint")
+        if session is not None:
+            raise TypeError("a pinned endpoint requires hass-managed session creation")
+        if hass is None:
+            raise TypeError("hass is required for a pinned endpoint")
+        from homeassistant.helpers.aiohttp_client import async_create_clientsession
+
+        session = async_create_clientsession(
+            hass,
+            auto_cleanup=False,
+            request_class=pinned_request_class(tls_pin_bytes(endpoint.tls_pin)),
+        )
+        owns_session_wrapper = True
+        transport_pin_bound = True
+    elif session is None:
+        if hass is None:
+            raise TypeError("hass or session is required")
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        session = async_get_clientsession(hass)
+
+    return CurrentHubClient(
+        session,
+        endpoint,
+        bearer_token=bearer_token,
+        bearer_expires_at_ms=bearer_expires_at_ms,
+        expected_hub_id=expected_hub_id,
+        owns_session_wrapper=owns_session_wrapper,
+        transport_pin_bound=transport_pin_bound,
+    )

@@ -1,0 +1,577 @@
+{
+  "current": {
+    "active_route_destination": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "active_route_energy_at_arrival": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "percent state of charge"
+    },
+    "active_route_latitude": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "degrees"
+    },
+    "active_route_longitude": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "degrees"
+    },
+    "active_route_miles_to_arrival": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "miles, provider value unchanged"
+    },
+    "active_route_minutes_to_arrival": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "minutes"
+    },
+    "active_route_traffic_minutes_delay": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "minutes"
+    },
+    "battery_level": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "percent"
+    },
+    "car": {
+      "nullable": true,
+      "unit": "optional materialised identity; source_eid/source_vid/id signed64, efficiency_wh_per_km Wh/km, settings durations minutes"
+    },
+    "center_display_state": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "provider integer state code"
+    },
+    "charge_current_request": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "amperes"
+    },
+    "charge_current_request_max": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "amperes"
+    },
+    "charge_energy_added": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "kWh"
+    },
+    "charge_limit_soc": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "percent"
+    },
+    "charge_port_door_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "charger_actual_current": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "amperes"
+    },
+    "charger_phases": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "count, zero/nonpositive means unknown"
+    },
+    "charger_power": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "kW"
+    },
+    "charger_voltage": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "volts"
+    },
+    "charging_state": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "climate_keeper_mode": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "display_name": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "doors_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "download_perc": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "percent"
+    },
+    "driver_front_door_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "driver_front_window_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "driver_rear_door_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "driver_rear_window_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "elevation": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "metres"
+    },
+    "est_battery_range_km": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "km, provider miles converted and rounded to 0.01 km"
+    },
+    "exterior_color": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "frunk_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "geofence": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "heading": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "degrees"
+    },
+    "healthy": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "ideal_battery_range_km": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "km, provider miles converted and rounded to 0.01 km"
+    },
+    "inside_temp": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "degrees Celsius"
+    },
+    "install_perc": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "percent"
+    },
+    "is_climate_on": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "is_preconditioning": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "is_user_present": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "latitude": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "degrees"
+    },
+    "locked": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "longitude": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "degrees"
+    },
+    "model": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "observed_at_ms": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "epoch milliseconds"
+    },
+    "odometer": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "km, provider miles converted and rounded to 0.01 km"
+    },
+    "outside_temp": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "degrees Celsius"
+    },
+    "passenger_front_door_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "passenger_front_window_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "passenger_rear_door_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "passenger_rear_window_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "plugged_in": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "power": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "kW"
+    },
+    "rated_battery_range_km": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "km, provider miles converted and rounded to 0.01 km"
+    },
+    "scheduled_charging_start_time": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "epoch seconds"
+    },
+    "sentry_mode": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "service_mode": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "shift_state": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "since": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "epoch milliseconds"
+    },
+    "speed": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "km/h, rounded integer from provider mph"
+    },
+    "spoiler_type": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "state": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "sun_roof_installed": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "sun_roof_percent_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "percent"
+    },
+    "sun_roof_state": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "time_to_full_charge": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "hours"
+    },
+    "tpms_pressure_fl": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "bar"
+    },
+    "tpms_pressure_fr": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "bar"
+    },
+    "tpms_pressure_rl": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "bar"
+    },
+    "tpms_pressure_rr": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "bar"
+    },
+    "tpms_soft_warning_fl": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "tpms_soft_warning_fr": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "tpms_soft_warning_rl": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "tpms_soft_warning_rr": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "trim_badging": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "trunk_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "update_available": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    },
+    "update_status": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "update_version": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "usable_battery_level": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "percent"
+    },
+    "vehicle_id": {
+      "nullable": false,
+      "unit": "plain UUID"
+    },
+    "version": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "wheel_type": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "text or provider enum"
+    },
+    "windows_open": {
+      "nullable": true,
+      "source": "Hub admitted observation/lifecycle/materialised identity",
+      "unit": "boolean"
+    }
+  },
+  "drive": {
+    "ascent": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "metres"
+    },
+    "descent": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "metres"
+    },
+    "distance_km": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km"
+    },
+    "duration_min": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "minutes, integer"
+    },
+    "efficiency": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "legacy projection numeric field, no current producer assigns a value; clients must preserve null, no unit claim is made"
+    },
+    "end_address": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "text"
+    },
+    "end_date_ms": {
+      "nullable": false,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "epoch milliseconds"
+    },
+    "end_geofence": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "text"
+    },
+    "end_ideal_range_km": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km"
+    },
+    "end_latitude": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "end_longitude": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "end_rated_range_km": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km"
+    },
+    "end_soc": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "percent"
+    },
+    "id": {
+      "nullable": false,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "signed64 identifier, preserve losslessly"
+    },
+    "inside_temp_avg": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees Celsius"
+    },
+    "outside_temp_avg": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees Celsius"
+    },
+    "power_max": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "kW"
+    },
+    "power_min": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "kW"
+    },
+    "speed_max": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km/h, integer"
+    },
+    "start_address": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "text"
+    },
+    "start_date_ms": {
+      "nullable": false,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "epoch milliseconds"
+    },
+    "start_geofence": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "text"
+    },
+    "start_ideal_range_km": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km"
+    },
+    "start_latitude": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "start_longitude": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "degrees"
+    },
+    "start_rated_range_km": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "km"
+    },
+    "start_soc": {
+      "nullable": true,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "percent"
+    },
+    "vehicle_id": {
+      "nullable": false,
+      "source": "materialised projection; no public-query conversion",
+      "unit": "plain UUID"
+    }
+  },
+  "null_rule": "Null means unavailable, unknown, or not derivable. Preserve null and numeric zero distinctly; never infer a zero timestamp. Current owner/stream merge ignores null overlays. No freshness guarantee beyond observed_at_ms.",
+  "profile_id": "hub-http-v1@1.0.0",
+  "source_trace": [
+    "Hub current_state build_current_vehicle_summary: provider fields, rounded mph/miles conversions, latest admitted epoch milliseconds",
+    "Hub public_query PublicDrive projection: direct materialised values",
+    "Hub runtime/lifecycle drive_and_charge: end-start milliseconds divided by 60000; current speed and odometer conversions feed drive aggregates",
+    "Hub import/teslamate projection: stored km, minutes, Celsius and kW passed through; efficiency is absent in live/import projections"
+  ]
+}

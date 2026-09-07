@@ -26,7 +26,7 @@ async def test_minor_zero_entry_advances_without_invented_data_changes(
 
     assert result is True
     assert entry.version == 1
-    assert entry.minor_version == 1
+    assert entry.minor_version == 2
     assert entry.data == original_data
 
 

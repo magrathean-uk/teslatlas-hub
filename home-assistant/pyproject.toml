@@ -1,6 +1,6 @@
 [project]
 name = "teslatlas-home-assistant"
-version = "0.1.0"
+version = "2026.36.2"
 description = "Home Assistant integration for the public Teslatlas Hub protocol"
 readme = "README.md"
 requires-python = ">=3.14.2"
@@ -22,6 +22,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 88
 target-version = "py314"
+extend-exclude = ["docs/superpowers"]
 
 [tool.ruff.lint]
 select = ["ASYNC", "B", "E", "F", "I", "RUF", "SIM", "UP"]

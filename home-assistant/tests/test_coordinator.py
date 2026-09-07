@@ -1,20 +1,18 @@
-"""Tests for push-only runtime coordination."""
+"""Tests for single-authority current-Hub polling."""
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import replace
-from unittest.mock import patch
+from datetime import timedelta
 
-from homeassistant.config_entries import ConfigEntryState
+import pytest
+from homeassistant.config_entries import ConfigEntryAuthFailed, ConfigEntryState
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.teslatlas_hub.client import (
-    HubAuthenticationError,
-    HubConnectionError,
-)
+from custom_components.teslatlas_hub.client import HubConnectionError
 from custom_components.teslatlas_hub.const import (
     CONF_ACCESS_TOKEN,
     CONF_HUB_ID,
@@ -23,23 +21,12 @@ from custom_components.teslatlas_hub.const import (
     DOMAIN,
 )
 from custom_components.teslatlas_hub.coordinator import TeslatlasDataCoordinator
-from tests.helpers import FixtureHubClient, vehicle_update
-
-
-class ImmediateSleeper:
-    """Record reconnect delays without using wall-clock time."""
-
-    def __init__(self) -> None:
-        self.delays: list[int] = []
-
-    async def __call__(self, delay: int) -> None:
-        self.delays.append(delay)
+from tests.helpers import FixtureHubClient, initial_snapshot
 
 
 def _entry(hass: HomeAssistant) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
-        title="Fixture Hub",
         unique_id="hub-fixture",
         data={
             CONF_HOST: "hub-fixture.local",
@@ -54,158 +41,70 @@ def _entry(hass: HomeAssistant) -> MockConfigEntry:
     return entry
 
 
-async def _coordinator(
-    hass: HomeAssistant,
-    client: FixtureHubClient,
-    sleeper: ImmediateSleeper | None = None,
-) -> TeslatlasDataCoordinator:
-    coordinator = TeslatlasDataCoordinator(
-        hass,
-        _entry(hass),
-        client,
-        sleep=sleeper or ImmediateSleeper(),
-    )
-    await coordinator.async_config_entry_first_refresh()
-    return coordinator
-
-
-async def test_initial_refresh_is_single_bounded_snapshot(
+async def test_initial_refresh_starts_thirty_second_polling(
     hass: HomeAssistant,
 ) -> None:
-    """Catch periodic provider-style polling in the local-push coordinator."""
     client = FixtureHubClient()
-    coordinator = await _coordinator(hass, client)
+    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    await coordinator.async_config_entry_first_refresh()
 
     assert client.snapshot_calls == 1
-    assert coordinator.update_interval is None
-    assert coordinator.data.vehicles["vehicle-alpha"].state_of_charge == 72.5
-
-    await coordinator.async_shutdown()
-
-
-async def test_push_event_updates_state_and_replay_cursor(
-    hass: HomeAssistant,
-) -> None:
-    """Catch event delivery that fails to advance state or replay identity."""
-    client = FixtureHubClient()
-    client.event_connections = [[vehicle_update()]]
-    coordinator = await _coordinator(hass, client)
-
-    coordinator.async_start()
-    await asyncio.wait_for(client.stream_blocked.wait(), timeout=1)
-
-    assert coordinator.data.vehicles["vehicle-alpha"].state_of_charge == 71.0
-    assert coordinator.last_event_id == "fixture-event-2"
-    assert client.event_cursors == [None]
-    assert coordinator.last_update_success is True
+    assert coordinator.update_interval == timedelta(seconds=30)
+    assert coordinator.last_event_id is None
 
     await coordinator.async_shutdown()
     assert client.closed is True
 
 
-async def test_disconnect_marks_unavailable_then_recovers_on_event(
+async def test_outage_backoff_recovers_to_default_interval(
     hass: HomeAssistant,
 ) -> None:
-    """Catch stale available state during reconnect or failed recovery."""
     client = FixtureHubClient()
-    client.event_connections = [
-        [HubConnectionError("offline")],
-        [vehicle_update()],
-    ]
-    sleeper = ImmediateSleeper()
-    coordinator = await _coordinator(hass, client, sleeper)
-    update_states: list[bool] = []
-    coordinator.async_add_listener(
-        lambda: update_states.append(coordinator.last_update_success)
+    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    client.snapshot_error = HubConnectionError("offline")
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+    assert coordinator.update_interval == timedelta(seconds=30)
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+    assert coordinator.update_interval == timedelta(seconds=60)
+
+    client.snapshot_error = None
+    await coordinator._async_update_data()
+    assert coordinator.update_interval == timedelta(seconds=30)
+    await coordinator.async_shutdown()
+
+
+async def test_identity_change_is_authentication_failure_before_publish(
+    hass: HomeAssistant,
+) -> None:
+    client = FixtureHubClient()
+    client.snapshot = replace(
+        initial_snapshot(),
+        info=replace(initial_snapshot().info, hub_id="other-hub"),
     )
+    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
 
-    coordinator.async_start()
-    await asyncio.wait_for(client.stream_blocked.wait(), timeout=1)
-
-    assert sleeper.delays == [1]
-    assert update_states == [False, True]
-    assert coordinator.last_update_success is True
-    assert coordinator.data.vehicles["vehicle-alpha"].state_of_charge == 71.0
-
+    with pytest.raises(ConfigEntryAuthFailed, match="identity"):
+        await coordinator._async_update_data()
     await coordinator.async_shutdown()
 
 
-async def test_reconnect_reuses_last_event_id_and_caps_backoff(
+async def test_vehicle_removal_replaces_prior_mapping(
     hass: HomeAssistant,
 ) -> None:
-    """Catch lost replay continuity or unbounded reconnect delays."""
     client = FixtureHubClient()
-    event = vehicle_update()
-    client.event_connections = [
-        [event, HubConnectionError("drop-1")],
-        [HubConnectionError("drop-2")],
-        [HubConnectionError("drop-3")],
-        [HubConnectionError("drop-4")],
-        [HubConnectionError("drop-5")],
-        [HubConnectionError("drop-6")],
-        [HubConnectionError("drop-7")],
-        [],
-    ]
-    sleeper = ImmediateSleeper()
-    coordinator = await _coordinator(hass, client, sleeper)
-
-    coordinator.async_start()
-    await asyncio.wait_for(client.stream_blocked.wait(), timeout=1)
-
-    assert sleeper.delays == [1, 2, 4, 8, 16, 30, 30]
-    assert client.event_cursors == [
-        None,
-        "fixture-event-2",
-        "fixture-event-2",
-        "fixture-event-2",
-        "fixture-event-2",
-        "fixture-event-2",
-        "fixture-event-2",
-        "fixture-event-2",
-    ]
-
-    await coordinator.async_shutdown()
-
-
-async def test_authentication_loss_starts_one_reauth_and_stops_reconnect(
-    hass: HomeAssistant,
-) -> None:
-    """Catch expired bearer loops that never ask the user to repair access."""
-    client = FixtureHubClient()
-    client.event_connections = [[HubAuthenticationError("expired")]]
-    sleeper = ImmediateSleeper()
-    coordinator = await _coordinator(hass, client, sleeper)
-
-    with patch.object(coordinator.config_entry, "async_start_reauth") as start_reauth:
-        task = coordinator.async_start()
-        await asyncio.wait_for(task, timeout=1)
-
-    start_reauth.assert_called_once_with(hass)
-    assert coordinator.last_update_success is False
-    assert sleeper.delays == []
-    assert client.event_cursors == [None]
-
-    await coordinator.async_shutdown()
-
-
-async def test_newer_event_replaces_only_target_vehicle(
-    hass: HomeAssistant,
-) -> None:
-    """Catch cross-vehicle state loss while consuming multiple events."""
-    client = FixtureHubClient()
-    second = replace(
-        vehicle_update(),
-        event_id="fixture-event-3",
-        vehicle=replace(vehicle_update().vehicle, state_of_charge=70.0),
+    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    await coordinator.async_config_entry_first_refresh()
+    without_beta = initial_snapshot().create(
+        info=initial_snapshot().info,
+        status=initial_snapshot().status,
+        vehicles=[initial_snapshot().vehicles["vehicle-alpha"]],
+        received_at=initial_snapshot().received_at,
     )
-    client.event_connections = [[vehicle_update(), second]]
-    coordinator = await _coordinator(hass, client)
+    client.snapshot = without_beta
 
-    coordinator.async_start()
-    await asyncio.wait_for(client.stream_blocked.wait(), timeout=1)
-
-    assert coordinator.data.vehicles["vehicle-alpha"].state_of_charge == 70.0
-    assert coordinator.data.vehicles["vehicle-beta"].state_of_charge == 44.0
-    assert coordinator.last_event_id == "fixture-event-3"
-
+    coordinator.async_set_updated_data(await coordinator._async_update_data())
+    assert tuple(coordinator.data.vehicles) == ("vehicle-alpha",)
     await coordinator.async_shutdown()

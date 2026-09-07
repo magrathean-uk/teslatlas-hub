@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "adapter_id": "home_assistant",
+  "revision": 1,
+  "required_cases": [
+    "candidate_artifact_identity",
+    "installed_service_runtime",
+    "discovery_identity_profile",
+    "unauthenticated_discovery",
+    "bad_invitation",
+    "expired_invitation",
+    "replayed_invitation",
+    "real_auth",
+    "credential_lifecycle_reauth",
+    "revocation",
+    "unknown_vehicle",
+    "exact_current_values",
+    "endpoint_restart",
+    "outage_recovery",
+    "unsupported_operation_zero_requests",
+    "credential_loss_reauthentication",
+    "installed_home_assistant_runtime",
+    "polling_transport_zero_sse"
+  ],
+  "actors": [
+    {
+      "id": "ha_flow",
+      "kind": "installed_ha_flow",
+      "required": true
+    },
+    {
+      "id": "ha_client",
+      "kind": "installed_ha_client",
+      "required": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "candidate_artifact_identity",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_installed_runtime"
+      ],
+      "raw_schema_ids": [
+        "ha-runtime-v1"
+      ]
+    },
+    {
+      "id": "installed_service_runtime",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_installed_runtime"
+      ],
+      "raw_schema_ids": [
+        "ha-runtime-v1"
+      ]
+    },
+    {
+      "id": "discovery_identity_profile",
+      "actor_ids": [
+        "ha_client"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "probe"
+      ],
+      "raw_schema_ids": [
+        "ha-client-v1"
+      ]
+    },
+    {
+      "id": "unauthenticated_discovery",
+      "actor_ids": [
+        "ha_client"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "probe"
+      ],
+      "raw_schema_ids": [
+        "ha-client-v1"
+      ]
+    },
+    {
+      "id": "bad_invitation",
+      "actor_ids": [
+        "ha_client"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "bad_pair"
+      ],
+      "raw_schema_ids": [
+        "ha-client-v1"
+      ]
+    },
+    {
+      "id": "expired_invitation",
+      "actor_ids": [
+        "ha_client"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "expired_pair"
+      ],
+      "raw_schema_ids": [
+        "ha-client-v1"
+      ]
+    },
+    {
+      "id": "replayed_invitation",
+      "actor_ids": [
+        "ha_client"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "replay_pair"
+      ],
+      "raw_schema_ids": [
+        "ha-client-v1"
+      ]
+    },
+    {
+      "id": "real_auth",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "config_flow_setup"
+      ],
+      "raw_schema_ids": [
+        "ha-flow-v1"
+      ]
+    },
+    {
+      "id": "credential_lifecycle_reauth",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "revocation_refresh",
+        "reauthentication_flow"
+      ],
+      "raw_schema_ids": [
+        "ha-flow-v1"
+      ]
+    },
+    {
+      "id": "revocation",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "revocation_refresh"
+      ],
+      "raw_schema_ids": [
+        "ha-flow-v1"
+      ]
+    },
+    {
+      "id": "unknown_vehicle",
+      "actor_ids": [
+        "ha_client"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "unknown_current"
+      ],
+      "raw_schema_ids": [
+        "ha-client-v1"
+      ]
+    },
+    {
+      "id": "exact_current_values",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "initial_poll",
+        "later_poll"
+      ],
+      "raw_schema_ids": [
+        "ha-initial-v1",
+        "ha-flow-v1"
+      ]
+    },
+    {
+      "id": "endpoint_restart",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "endpoint_restart_poll"
+      ],
+      "raw_schema_ids": [
+        "ha-flow-v1"
+      ]
+    },
+    {
+      "id": "outage_recovery",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "outage_poll"
+      ],
+      "raw_schema_ids": [
+        "ha-flow-v1"
+      ]
+    },
+    {
+      "id": "unsupported_operation_zero_requests",
+      "actor_ids": [
+        "ha_client"
+      ],
+      "evidence_kind": "zero_request",
+      "operations": [
+        "unsupported_surface"
+      ],
+      "raw_schema_ids": [
+        "ha-client-v1"
+      ]
+    },
+    {
+      "id": "credential_loss_reauthentication",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "revocation_refresh",
+        "reauthentication_flow"
+      ],
+      "raw_schema_ids": [
+        "ha-flow-v1"
+      ]
+    },
+    {
+      "id": "installed_home_assistant_runtime",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_installed_runtime"
+      ],
+      "raw_schema_ids": [
+        "ha-runtime-v1"
+      ]
+    },
+    {
+      "id": "polling_transport_zero_sse",
+      "actor_ids": [
+        "ha_flow"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "config_flow_setup",
+        "initial_poll",
+        "later_poll",
+        "reauthentication_flow",
+        "endpoint_restart_poll",
+        "outage_poll",
+        "unload"
+      ],
+      "raw_schema_ids": [
+        "ha-flow-v1",
+        "ha-initial-v1"
+      ]
+    }
+  ],
+  "raw_schemas": [
+    {
+      "id": "ha-runtime-v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-runtime-v1.schema.json",
+        "sha256": "a49e3212ac07a64c8f27de6baa06418013f4ef0f5a3515436973c9969095f31c"
+      }
+    },
+    {
+      "id": "ha-initial-v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-initial-v1.schema.json",
+        "sha256": "5e3525d5523e4162320bfdc2cdd6fc13f0203187d3fe2e141b9cdfe33f37f8e6"
+      }
+    },
+    {
+      "id": "ha-client-v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-client-v1.schema.json",
+        "sha256": "dcf05f837e37fc6541d8d6d0e3c5ce068a0b0eb662d8e6b00cb723171b9b3b92"
+      }
+    },
+    {
+      "id": "ha-flow-v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-flow-v1.schema.json",
+        "sha256": "dd4bd1c39e00e35b11550c20a5f660489cfcd93c15269e3b44799101e84ea189"
+      }
+    }
+  ],
+  "phases": [],
+  "validator": {
+    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_contract.py",
+    "sha256": "0eadb02328913ba91493ff128806a5e62cdbed30efaed7f0392f40c7efe2db6a"
+  }
+}

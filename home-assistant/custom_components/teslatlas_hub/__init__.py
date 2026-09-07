@@ -11,7 +11,10 @@ from homeassistant.core import HomeAssistant
 from .client import create_client
 from .const import (
     CONF_ACCESS_TOKEN,
+    CONF_HUB_ID,
     CONF_PORT,
+    CONF_TLS_PIN,
+    CONF_TOKEN_EXPIRES_AT_MS,
     CONF_USE_TLS,
     CONFIG_ENTRY_MINOR_VERSION,
     CONFIG_ENTRY_VERSION,
@@ -35,15 +38,19 @@ async def async_setup_entry(
     hass: HomeAssistant,
     entry: TeslatlasConfigEntry,
 ) -> bool:
-    """Validate one Hub, create entities, then start local push."""
+    """Validate one Hub and start its bounded polling coordinator."""
     endpoint = HubEndpoint(
         host=entry.data[CONF_HOST],
         port=entry.data[CONF_PORT],
         use_tls=entry.data[CONF_USE_TLS],
+        tls_pin=entry.data.get(CONF_TLS_PIN),
     )
     client = create_client(
         endpoint,
         bearer_token=entry.data[CONF_ACCESS_TOKEN],
+        expected_hub_id=entry.data[CONF_HUB_ID],
+        bearer_expires_at_ms=entry.data.get(CONF_TOKEN_EXPIRES_AT_MS),
+        hass=hass,
     )
     coordinator = TeslatlasDataCoordinator(hass, entry, client)
     entry.runtime_data = coordinator
@@ -53,7 +60,6 @@ async def async_setup_entry(
     except Exception:
         await coordinator.async_shutdown()
         raise
-    coordinator.async_start()
     return True
 
 
@@ -61,7 +67,7 @@ async def async_unload_entry(
     hass: HomeAssistant,
     entry: TeslatlasConfigEntry,
 ) -> bool:
-    """Unload entities and release the event stream."""
+    """Unload entities and release all polling resources."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         await entry.runtime_data.async_shutdown()
     return unload_ok

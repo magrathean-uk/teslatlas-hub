@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+: "${TESLATLAS_HA_LIVE_READY:?TESLATLAS_HA_LIVE_READY is required}"
+: "${TESLATLAS_HA_LIVE_INVITATION:?TESLATLAS_HA_LIVE_INVITATION is required}"
+: "${TESLATLAS_HA_LIVE_SCENARIO:?TESLATLAS_HA_LIVE_SCENARIO is required}"
+: "${TESLATLAS_HA_LIVE_RECEIPT:?TESLATLAS_HA_LIVE_RECEIPT is required}"
+: "${TESLATLAS_HA_LIVE_INITIAL:?TESLATLAS_HA_LIVE_INITIAL is required}"
+: "${TESLATLAS_HA_LIVE_CONTINUE:?TESLATLAS_HA_LIVE_CONTINUE is required}"
+: "${TESLATLAS_HA_LIVE_REAUTH_INVITATION:?TESLATLAS_HA_LIVE_REAUTH_INVITATION is required}"
+: "${TESLATLAS_HA_LIVE_REAUTH_READY:?TESLATLAS_HA_LIVE_REAUTH_READY is required}"
+: "${TESLATLAS_HA_LIVE_REAUTH_REQUEST:?TESLATLAS_HA_LIVE_REAUTH_REQUEST is required}"
+: "${TESLATLAS_HA_LIVE_REAUTH_CONTINUE:?TESLATLAS_HA_LIVE_REAUTH_CONTINUE is required}"
+: "${SSL_CERT_FILE:?SSL_CERT_FILE must name the isolated fixture CA}"
+: "${REQUESTS_CA_BUNDLE:?REQUESTS_CA_BUNDLE must name the same isolated fixture CA for Home Assistant}"
+: "${TESLATLAS_HA_SYSTEM_CA:?TESLATLAS_HA_SYSTEM_CA is required for the trust-negative check}"
+
+test "$SSL_CERT_FILE" = "$REQUESTS_CA_BUNDLE"
+
+export TESLATLAS_HA_LIVE=1
+exec .venv/bin/python -m pytest -q \
+  tests/integration/test_live_hub.py::test_installed_config_entry_polls_and_unloads_real_hub

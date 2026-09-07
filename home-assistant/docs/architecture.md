@@ -2,49 +2,47 @@
 
 ## Responsibility
 
-Map released public Teslatlas Hub data and events to Home Assistant devices and entities. The integration is a read-only, local-push hub client.
-
-## Components
-
-- `client.py`: typed integration-facing boundary. The production placeholder raises `ProtocolContractUnavailable`; it encodes no route or payload.
-- `models.py`: immutable Home Assistant-side snapshot and event model.
-- `config_flow.py`: manual setup, Zeroconf, transient pairing, reauthentication, and same-identity endpoint reconfiguration.
-- `coordinator.py`: one initial snapshot, replayable push events, availability, bounded reconnect, and client lifecycle.
-- `sensor.py`: Hub and per-vehicle read-only sensors with stable registry identities.
-- `diagnostics.py`: redacted aggregate support data only.
+The integration maps the frozen `hub-http-v1@1.0.0` current-state surface to
+Home Assistant vehicle devices and read-only sensors. It does not read Hub
+storage or hold Tesla account credentials.
 
 ## Data path
 
-```text
-released public Hub adapter
-        |
-        | one bounded initial snapshot
-        v
-TeslatlasDataCoordinator ----> Hub and vehicle sensors
-        ^
-        | SSE events + Last-Event-ID replay
-        |
-released public Hub adapter
-```
+`current_hub_client.py` uses Home Assistant's aiohttp session helpers and shared
+verified connector. Every refresh first fetches public discovery without
+authorization and verifies the stored Hub identity. Only then does it send the
+paired device bearer to the vehicle list and per-vehicle current routes. The
+coordinator is the single polling authority: it polls every 30 seconds, never
+overlaps refreshes, backs off boundedly after transient errors, and permits at
+most four current reads in flight. A failed group of reads is cancelled and
+drained before the refresh returns; unload closes dispatch before cancelling
+and draining any request still in progress.
 
-No polling interval exists. Stream loss marks coordinator entities unavailable and reconnects after 1, 2, 4, 8, 16, then 30 seconds. The delay remains capped at 30 seconds. The first replayed event restores availability. Device-bearer failure stops reconnect and starts Home Assistant reauthentication.
+The current profile has no public event stream. The integration creates no SSE
+task and sends no epoch or `Last-Event-ID` traffic.
 
-## Identity and discovery
+## TLS and credentials
 
-The manifest advertises `_teslatlas-hub._tcp.local.`. Home Assistant supplies the discovered address and port. The flow ignores every TXT property because no TXT contract is frozen, and asks the user to confirm TLS before probing.
+TLS always uses normal certificate and hostname validation. A private pairing
+invitation can add the Hub leaf-certificate SHA-256 pin. A pin-aware aiohttp
+request class checks the certificate on the exact pooled or newly established
+HTTP connection before aiohttp writes headers or the invitation body. HTTP
+responses reject redirects, have a ten-second total timeout, are read through
+EOF in bounded chunks, and are limited to one MiB.
 
-A client probe must return stable public Hub identity. Duplicate discovery updates an existing endpoint. Reconfiguration accepts endpoint roaming only when the replacement resolves to the same identity.
+The setup and reauthentication flows consume pairing UUID, secret, and device
+name. Config entries retain Hub identity, device identity, bearer expiry, and
+the bearer. They do not retain the pairing UUID, secret, URI, or device name.
 
-## Entities and availability
+## Entities and absence
 
-One Hub device owns Hub-health sensors. Each public vehicle identifier owns a separate vehicle device and stable sensor set. New vehicles observed through push receive one entity set without duplicates.
+Vehicle identifiers and matching sensor meanings keep stable unique IDs.
+Vehicles removed from a later list remain registered but unavailable; new
+vehicles receive one sensor set. A missing field is unknown while numeric zero
+remains zero and a null lock state stays unknown. Telemetry age comes only from
+`observed_at_ms`; missing time is unknown, and observations more than five
+minutes in the future fail validation.
 
-If the Hub stream is unavailable, its entities are unavailable. If the Hub is available but an individual field is absent, that entity is unknown. No stale missing value is reported as current.
-
-## Privacy
-
-Config-entry diagnostics redact host, port, bearer, Hub identity, pairing secret, latitude, and longitude. Runtime diagnostics return only protocol version, capability names, aggregate data-quality counts, vehicle count, connection state, collector health, timestamp, and whether a replay cursor exists. They omit vehicle IDs/names, raw states, event IDs, coordinates, and provider payloads.
-
-## Boundaries
-
-The integration does not read Hub storage, embed collector logic, require Tesla credentials, call Tesla, or expose commands. Production transport stays disabled until the public protocol gate in [protocol readiness](protocol-readiness.md) closes.
+Collector health, Fleet cost, backup age, data quality, charges, commands, and
+remote device management have no public current-Hub route. Their fixture-era
+entities are retired rather than populated from guessed values.

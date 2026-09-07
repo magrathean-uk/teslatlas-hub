@@ -2353,7 +2353,7 @@ wheels = [
 
 [[package]]
 name = "teslatlas-home-assistant"
-version = "0.1.0"
+version = "2026.36.2"
 source = { virtual = "." }
 
 [package.dev-dependencies]

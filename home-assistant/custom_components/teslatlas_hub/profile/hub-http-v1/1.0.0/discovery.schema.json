@@ -1,0 +1,68 @@
+{
+  "$id": "urn:teslatlas:hub-http-v1:1.0.0:discovery",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "api_versions": {
+      "const": [
+        "1.0"
+      ]
+    },
+    "capabilities": {
+      "oneOf": [
+        {
+          "const": [
+            "query.vehicles",
+            "query.current"
+          ]
+        },
+        {
+          "const": [
+            "query.vehicles",
+            "query.current",
+            "query.drives",
+            "sync.packs"
+          ]
+        }
+      ]
+    },
+    "hub_id": {
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "manifestPublicKey": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "pack_format": {
+      "const": "sqlite-zstd"
+    },
+    "protocol": {
+      "const": "teslatlas-sync"
+    },
+    "protocol_major": {
+      "const": 1
+    },
+    "sourceUrl": {
+      "format": "uri",
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "version": {
+      "maxLength": 65536,
+      "type": "string"
+    }
+  },
+  "required": [
+    "hub_id",
+    "protocol",
+    "protocol_major",
+    "api_versions",
+    "capabilities",
+    "version",
+    "sourceUrl",
+    "pack_format"
+  ],
+  "type": "object"
+}

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import replace
 from unittest.mock import patch
 
@@ -26,7 +25,7 @@ from custom_components.teslatlas_hub.const import (
     CONF_USE_TLS,
     DOMAIN,
 )
-from custom_components.teslatlas_hub.models import HubEvent
+from custom_components.teslatlas_hub.models import HubSnapshot
 from custom_components.teslatlas_hub.sensor import (
     HUB_SENSOR_DESCRIPTIONS,
     VEHICLE_SENSOR_DESCRIPTIONS,
@@ -78,17 +77,12 @@ async def test_setup_creates_hub_and_vehicle_devices_with_stable_entities(
     client = FixtureHubClient()
     entry = await _setup(hass, client)
 
-    hub_device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, "hub-fixture")}
-    )
     alpha_device = dr.async_get(hass).async_get_device(
         identifiers={(DOMAIN, "hub-fixture:vehicle-alpha")}
     )
     beta_device = dr.async_get(hass).async_get_device(
         identifiers={(DOMAIN, "hub-fixture:vehicle-beta")}
     )
-    assert hub_device is not None
-    assert hub_device.name == "Fixture Hub"
     assert alpha_device is not None
     assert alpha_device.name == "Fixture Alpha"
     assert beta_device is not None
@@ -112,13 +106,7 @@ async def test_setup_creates_hub_and_vehicle_devices_with_stable_entities(
     assert inside_state is not None
     assert inside_state.state == STATE_UNKNOWN
 
-    collector_id = _entity_id(
-        hass,
-        "hub-fixture_hub_collector_health",
-    )
-    collector_state = hass.states.get(collector_id)
-    assert collector_state is not None
-    assert collector_state.state == "healthy"
+    assert len(HUB_SENSOR_DESCRIPTIONS) == 0
     assert hass.services.async_services().get(DOMAIN) is None
     assert "impossible considering device class" not in caplog.text
 
@@ -147,24 +135,28 @@ async def test_disconnect_marks_all_entities_unavailable(
     assert await hass.config_entries.async_unload(entry.entry_id) is True
 
 
-async def test_push_adds_new_vehicle_entities_once(
+async def test_poll_adds_new_vehicle_entities_once(
     hass: HomeAssistant,
 ) -> None:
-    """Catch dropped or duplicated entities when a vehicle appears by push."""
+    """Catch dropped or duplicated entities when a vehicle appears on poll."""
     client = FixtureHubClient()
     base = vehicle_update()
-    gamma = HubEvent(
-        event_id="fixture-event-gamma",
-        vehicle=replace(
-            base.vehicle,
-            vehicle_id="vehicle-gamma",
-            name="Fixture Gamma",
-        ),
-        received_at=base.received_at,
+    gamma = replace(
+        base.vehicle,
+        vehicle_id="vehicle-gamma",
+        name="Fixture Gamma",
     )
-    client.event_connections = [[gamma, gamma]]
     entry = await _setup(hass, client)
-    await asyncio.wait_for(client.stream_blocked.wait(), timeout=1)
+    snapshot = entry.runtime_data.data
+    entry.runtime_data.async_set_updated_data(
+        HubSnapshot.create(
+            info=snapshot.info,
+            status=snapshot.status,
+            vehicles=[*snapshot.vehicles.values(), gamma],
+            received_at=base.received_at,
+        )
+    )
+    await hass.async_block_till_done()
 
     gamma_device = dr.async_get(hass).async_get_device(
         identifiers={(DOMAIN, "hub-fixture:vehicle-gamma")}
@@ -177,6 +169,6 @@ async def test_push_adds_new_vehicle_entities_once(
         if entity.unique_id.startswith("hub-fixture_vehicle-gamma_")
     ]
     assert len(gamma_entries) == len(VEHICLE_SENSOR_DESCRIPTIONS)
-    assert len(HUB_SENSOR_DESCRIPTIONS) == 3
+    assert len(HUB_SENSOR_DESCRIPTIONS) == 0
 
     assert await hass.config_entries.async_unload(entry.entry_id) is True

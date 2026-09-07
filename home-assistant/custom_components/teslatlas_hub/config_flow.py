@@ -18,11 +18,12 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .client import (
     HubAuthenticationError,
     HubConnectionError,
+    HubContractError,
+    HubIdentityError,
     HubPairingError,
     ProtocolContractUnavailable,
     TeslatlasHubClient,
@@ -30,9 +31,14 @@ from .client import (
 )
 from .const import (
     CONF_ACCESS_TOKEN,
+    CONF_DEVICE_ID,
+    CONF_DEVICE_NAME,
     CONF_HUB_ID,
+    CONF_PAIRING_ID,
     CONF_PAIRING_SECRET,
     CONF_PORT,
+    CONF_TLS_PIN,
+    CONF_TOKEN_EXPIRES_AT_MS,
     CONF_USE_TLS,
     CONFIG_ENTRY_MINOR_VERSION,
     CONFIG_ENTRY_VERSION,
@@ -65,20 +71,26 @@ def _endpoint_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 CONF_USE_TLS,
                 default=defaults.get(CONF_USE_TLS, True),
             ): BooleanSelector(),
+            vol.Optional(
+                CONF_TLS_PIN,
+                default=defaults.get(CONF_TLS_PIN, ""),
+            ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
         }
     )
 
 
 PAIRING_SCHEMA = vol.Schema(
     {
+        vol.Required(CONF_PAIRING_ID): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
+        ),
         vol.Required(CONF_PAIRING_SECRET): TextSelector(
             TextSelectorConfig(type=TextSelectorType.PASSWORD)
-        )
+        ),
+        vol.Required(CONF_DEVICE_NAME, default="Home Assistant"): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
+        ),
     }
-)
-
-DISCOVERY_SCHEMA = vol.Schema(
-    {vol.Required(CONF_USE_TLS, default=True): BooleanSelector()}
 )
 
 
@@ -90,8 +102,6 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize transient flow state."""
-        self._discovery_host: str | None = None
-        self._discovery_port: int | None = None
         self._endpoint: HubEndpoint | None = None
         self._info: HubInfo | None = None
 
@@ -101,7 +111,10 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         bearer_token: str | None = None,
     ) -> tuple[TeslatlasHubClient | None, HubInfo | None, str | None]:
         """Probe one endpoint and translate client failures for the flow."""
-        client = create_client(endpoint, bearer_token=bearer_token)
+        try:
+            client = create_client(endpoint, bearer_token=bearer_token, hass=self.hass)
+        except HubContractError:
+            return None, None, "invalid_contract"
         try:
             info = await client.async_probe()
         except HubConnectionError:
@@ -110,6 +123,8 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
             error = "invalid_auth"
         except ProtocolContractUnavailable:
             error = "protocol_not_ready"
+        except HubContractError:
+            error = "invalid_contract"
         else:
             return client, info, None
 
@@ -157,6 +172,7 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 host=user_input[CONF_HOST],
                 port=int(user_input[CONF_PORT]),
                 use_tls=user_input[CONF_USE_TLS],
+                tls_pin=user_input.get(CONF_TLS_PIN) or None,
             )
             result = await self._async_accept_endpoint(endpoint)
             if not isinstance(result, str):
@@ -169,47 +185,6 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    @override
-    async def async_step_zeroconf(
-        self,
-        discovery_info: ZeroconfServiceInfo,
-    ) -> ConfigFlowResult:
-        """Collect a discovered address without trusting unfrozen TXT data."""
-        if discovery_info.port is None:
-            return self.async_abort(reason="cannot_connect")
-        self._discovery_host = discovery_info.host
-        self._discovery_port = discovery_info.port
-        self.context["title_placeholders"] = {"name": discovery_info.name}
-        return await self.async_step_discovery()
-
-    async def async_step_discovery(
-        self,
-        user_input: dict[str, Any] | None = None,
-    ) -> ConfigFlowResult:
-        """Confirm transport security before probing a discovered endpoint."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            assert self._discovery_host is not None
-            assert self._discovery_port is not None
-            endpoint = HubEndpoint(
-                host=self._discovery_host,
-                port=self._discovery_port,
-                use_tls=user_input[CONF_USE_TLS],
-            )
-            result = await self._async_accept_endpoint(
-                endpoint,
-                update_existing=True,
-            )
-            if not isinstance(result, str):
-                return result
-            errors["base"] = result
-
-        return self.async_show_form(
-            step_id="discovery",
-            data_schema=DISCOVERY_SCHEMA,
-            errors=errors,
-        )
-
     async def async_step_pair(
         self,
         user_input: dict[str, Any] | None = None,
@@ -219,9 +194,19 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             assert self._endpoint is not None
             assert self._info is not None
-            client = create_client(self._endpoint)
+            client = create_client(
+                self._endpoint,
+                expected_hub_id=self._info.hub_id,
+                hass=self.hass,
+            )
             try:
-                result = await client.async_pair(user_input[CONF_PAIRING_SECRET])
+                result = await client.async_pair(
+                    user_input[CONF_PAIRING_ID],
+                    user_input[CONF_PAIRING_SECRET],
+                    user_input[CONF_DEVICE_NAME],
+                )
+            except HubIdentityError:
+                return self.async_abort(reason="wrong_hub")
             except HubPairingError:
                 errors["base"] = "invalid_pairing_secret"
             except HubConnectionError:
@@ -230,6 +215,8 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except ProtocolContractUnavailable:
                 errors["base"] = "protocol_not_ready"
+            except HubContractError:
+                errors["base"] = "invalid_contract"
             else:
                 if result.info.hub_id != self._info.hub_id:
                     return self.async_abort(reason="wrong_hub")
@@ -239,8 +226,11 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_HOST: self._endpoint.host,
                         CONF_PORT: self._endpoint.port,
                         CONF_USE_TLS: self._endpoint.use_tls,
+                        CONF_TLS_PIN: self._endpoint.tls_pin,
                         CONF_HUB_ID: result.info.hub_id,
                         CONF_ACCESS_TOKEN: result.access_token,
+                        CONF_DEVICE_ID: result.device_id,
+                        CONF_TOKEN_EXPIRES_AT_MS: result.expires_at_ms,
                     },
                 )
             finally:
@@ -272,10 +262,21 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 host=entry.data[CONF_HOST],
                 port=entry.data[CONF_PORT],
                 use_tls=entry.data[CONF_USE_TLS],
+                tls_pin=entry.data.get(CONF_TLS_PIN),
             )
-            client = create_client(endpoint)
+            client = create_client(
+                endpoint,
+                expected_hub_id=entry.data[CONF_HUB_ID],
+                hass=self.hass,
+            )
             try:
-                result = await client.async_pair(user_input[CONF_PAIRING_SECRET])
+                result = await client.async_pair(
+                    user_input[CONF_PAIRING_ID],
+                    user_input[CONF_PAIRING_SECRET],
+                    user_input[CONF_DEVICE_NAME],
+                )
+            except HubIdentityError:
+                return self.async_abort(reason="wrong_hub")
             except HubPairingError:
                 errors["base"] = "invalid_pairing_secret"
             except HubConnectionError:
@@ -284,6 +285,8 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except ProtocolContractUnavailable:
                 errors["base"] = "protocol_not_ready"
+            except HubContractError:
+                errors["base"] = "invalid_contract"
             else:
                 await self.async_set_unique_id(result.info.hub_id)
                 try:
@@ -294,7 +297,11 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 await client.async_close()
                 return self.async_update_reload_and_abort(
                     entry,
-                    data_updates={CONF_ACCESS_TOKEN: result.access_token},
+                    data_updates={
+                        CONF_ACCESS_TOKEN: result.access_token,
+                        CONF_DEVICE_ID: result.device_id,
+                        CONF_TOKEN_EXPIRES_AT_MS: result.expires_at_ms,
+                    },
                 )
             await client.async_close()
 
@@ -324,11 +331,9 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 host=user_input[CONF_HOST],
                 port=int(user_input[CONF_PORT]),
                 use_tls=user_input[CONF_USE_TLS],
+                tls_pin=user_input.get(CONF_TLS_PIN) or None,
             )
-            client, info, error = await self._async_probe(
-                endpoint,
-                bearer_token=entry.data[CONF_ACCESS_TOKEN],
-            )
+            client, info, error = await self._async_probe(endpoint)
             if error is not None:
                 errors["base"] = error
             else:
@@ -347,6 +352,7 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_HOST: endpoint.host,
                         CONF_PORT: endpoint.port,
                         CONF_USE_TLS: endpoint.use_tls,
+                        CONF_TLS_PIN: endpoint.tls_pin,
                     },
                 )
 

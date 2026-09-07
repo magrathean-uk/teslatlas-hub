@@ -1,0 +1,445 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:matrix:home-assistant:ha-flow-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "cell_id",
+    "session_input_sha256",
+    "actor_id",
+    "operation",
+    "session_sequence_before",
+    "session_sequence_after",
+    "facts",
+    "requests"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cell_id": {
+      "enum": [
+        "home_assistant__macos_arm64",
+        "home_assistant__debian13_arm64",
+        "home_assistant__debian13_amd64"
+      ]
+    },
+    "session_input_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "actor_id": {
+      "const": "ha_flow"
+    },
+    "operation": {
+      "enum": [
+        "config_flow_setup",
+        "later_poll",
+        "revocation_refresh",
+        "reauthentication_flow",
+        "endpoint_restart_poll",
+        "outage_poll",
+        "unload"
+      ]
+    },
+    "session_sequence_before": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "session_sequence_after": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "facts": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/setupFacts"
+        },
+        {
+          "$ref": "#/$defs/laterFacts"
+        },
+        {
+          "$ref": "#/$defs/revocationFacts"
+        },
+        {
+          "$ref": "#/$defs/reauthFacts"
+        },
+        {
+          "$ref": "#/$defs/restartFacts"
+        },
+        {
+          "$ref": "#/$defs/outageFacts"
+        },
+        {
+          "$ref": "#/$defs/unloadFacts"
+        }
+      ]
+    },
+    "requests": {
+      "type": "array",
+      "maxItems": 7,
+      "items": {
+        "$ref": "#/$defs/request"
+      }
+    }
+  },
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "route",
+        "status",
+        "request_id"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "route": {
+          "enum": [
+            "/.well-known/teslatlas-hub",
+            "/v1/pairings/{pairing_id}/claim",
+            "/v1/vehicles",
+            "/v1/vehicles/{vehicle_id}/current"
+          ]
+        },
+        "status": {
+          "enum": [
+            200,
+            401
+          ]
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "registryIds": {
+      "type": "array",
+      "minItems": 26,
+      "maxItems": 26,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "setupFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_status",
+        "vehicles",
+        "config_entry_loaded",
+        "entry_id",
+        "registry_ids"
+      ],
+      "properties": {
+        "claim_status": {
+          "const": 200
+        },
+        "vehicles": {
+          "const": 2
+        },
+        "config_entry_loaded": {
+          "const": true
+        },
+        "entry_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "registry_ids": {
+          "$ref": "#/$defs/registryIds"
+        }
+      }
+    },
+    "laterFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "later_battery",
+        "later_inside_temperature_c",
+        "advanced_once",
+        "advance_from_sequence"
+      ],
+      "properties": {
+        "later_battery": {
+          "const": 1
+        },
+        "later_inside_temperature_c": {
+          "const": 22.5
+        },
+        "advanced_once": {
+          "const": true
+        },
+        "advance_from_sequence": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "revocationFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "old_credential_status",
+        "typed_error",
+        "reauth_started",
+        "credential_loss_observed",
+        "device_id"
+      ],
+      "properties": {
+        "old_credential_status": {
+          "const": 401
+        },
+        "typed_error": {
+          "const": "HubAuthenticationError"
+        },
+        "reauth_started": {
+          "const": true
+        },
+        "credential_loss_observed": {
+          "const": true
+        },
+        "device_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "reauthFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fresh_claim_status",
+        "entry_id_preserved",
+        "registry_ids_preserved",
+        "later_poll_status",
+        "reauth_completed",
+        "pairing_id"
+      ],
+      "properties": {
+        "fresh_claim_status": {
+          "const": 200
+        },
+        "entry_id_preserved": {
+          "const": true
+        },
+        "registry_ids_preserved": {
+          "const": true
+        },
+        "later_poll_status": {
+          "const": 200
+        },
+        "reauth_completed": {
+          "const": true
+        },
+        "pairing_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "restartFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "same_hub",
+        "new_service_generation",
+        "poll_status",
+        "before_service_generation",
+        "after_service_generation"
+      ],
+      "properties": {
+        "same_hub": {
+          "const": true
+        },
+        "new_service_generation": {
+          "const": true
+        },
+        "poll_status": {
+          "const": 200
+        },
+        "before_service_generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "after_service_generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "outageFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unavailable_observed",
+        "recovered",
+        "registry_ids_preserved",
+        "before_service_generation",
+        "after_service_generation"
+      ],
+      "properties": {
+        "unavailable_observed": {
+          "const": true
+        },
+        "recovered": {
+          "const": true
+        },
+        "registry_ids_preserved": {
+          "const": true
+        },
+        "before_service_generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "after_service_generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "unloadFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "polling_requests_positive",
+        "vehicle_requests_positive",
+        "current_requests_positive",
+        "sse_requests",
+        "last_event_id_requests",
+        "clean_unload",
+        "post_unload_requests",
+        "attempted_requests",
+        "completed_requests",
+        "failed_requests",
+        "cancelled_requests",
+        "pending_requests",
+        "post_unload_attempts",
+        "scheduled_callback_deadline_ns",
+        "observed_after_deadline_ns",
+        "scheduled_callback_cancelled",
+        "attempts"
+      ],
+      "properties": {
+        "polling_requests_positive": {
+          "const": true
+        },
+        "vehicle_requests_positive": {
+          "const": true
+        },
+        "current_requests_positive": {
+          "const": true
+        },
+        "sse_requests": {
+          "const": 0
+        },
+        "last_event_id_requests": {
+          "const": 0
+        },
+        "clean_unload": {
+          "const": true
+        },
+        "post_unload_requests": {
+          "const": 0
+        },
+        "attempted_requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed_requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cancelled_requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending_requests": {
+          "type": "integer",
+          "const": 0
+        },
+        "post_unload_attempts": {
+          "const": 0
+        },
+        "scheduled_callback_deadline_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observed_after_deadline_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scheduled_callback_cancelled": {
+          "const": true
+        },
+        "attempts": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/attempt"
+          }
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "route",
+        "outcome",
+        "phase"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "route": {
+          "type": "string",
+          "pattern": "^/",
+          "maxLength": 256
+        },
+        "outcome": {
+          "enum": [
+            "completed",
+            "failed",
+            "cancelled",
+            "pending"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "before_unload",
+            "after_unload"
+          ]
+        }
+      }
+    }
+  }
+}
