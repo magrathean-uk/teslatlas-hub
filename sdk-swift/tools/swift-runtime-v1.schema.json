@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "teslatlas://swift/runtime-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "runtime_ref",
+    "runtime_kind",
+    "execution",
+    "platform",
+    "compiler",
+    "test_product",
+    "transport",
+    "artifact",
+    "actor_input_manifest_sha256",
+    "phase_admissions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "runtime_ref": {
+      "enum": [
+        "swift_macos",
+        "swift_linux"
+      ]
+    },
+    "runtime_kind": {
+      "enum": [
+        "native-process",
+        "docker-container"
+      ]
+    },
+    "execution": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/nativeExecution"
+        },
+        {
+          "$ref": "#/$defs/dockerExecution"
+        }
+      ]
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "version",
+        "architecture"
+      ],
+      "properties": {
+        "os": {
+          "enum": [
+            "macOS",
+            "Ubuntu"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "architecture": {
+          "enum": [
+            "arm64",
+            "amd64"
+          ]
+        }
+      }
+    },
+    "compiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "swift_version",
+        "swiftc"
+      ],
+      "properties": {
+        "swift_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "swiftc": {
+          "$ref": "#/$defs/binding"
+        }
+      }
+    },
+    "test_product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executable",
+        "modules",
+        "resources",
+        "dependencies"
+      ],
+      "properties": {
+        "executable": {
+          "$ref": "#/$defs/binding"
+        },
+        "modules": {
+          "$ref": "#/$defs/members"
+        },
+        "resources": {
+          "$ref": "#/$defs/members"
+        },
+        "dependencies": {
+          "$ref": "#/$defs/members"
+        }
+      }
+    },
+    "transport": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "foundation"
+          ],
+          "properties": {
+            "kind": {
+              "const": "URLSession"
+            },
+            "foundation": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "libcurl",
+            "tls_backend",
+            "libssl",
+            "libcrypto"
+          ],
+          "properties": {
+            "kind": {
+              "const": "libcurl"
+            },
+            "libcurl": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256",
+                "version"
+              ],
+              "properties": {
+                "path": {
+                  "$ref": "#/$defs/path"
+                },
+                "sha256": {
+                  "$ref": "#/$defs/sha"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "tls_backend": {
+              "const": "OpenSSL"
+            },
+            "libssl": {
+              "$ref": "#/$defs/binding"
+            },
+            "libcrypto": {
+              "$ref": "#/$defs/binding"
+            }
+          }
+        }
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "sha256",
+        "installed_root",
+        "installed_manifest_sha256",
+        "installed_members"
+      ],
+      "properties": {
+        "role": {
+          "const": "swift_sdk_product"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "installed_root": {
+          "$ref": "#/$defs/path"
+        },
+        "installed_manifest_sha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "installed_members": {
+          "$ref": "#/$defs/members"
+        }
+      }
+    },
+    "actor_input_manifest_sha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "phase_admissions": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "$ref": "#/$defs/phaseAdmission"
+      }
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^/[^\\u0000\\r\\n]+$"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "bytes",
+        "mode"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4095
+        }
+      }
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/member"
+      }
+    },
+    "phaseAdmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "phase_id",
+        "session_sequence_before",
+        "session_sequence_after",
+        "ready_sha256"
+      ],
+      "properties": {
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "phase_id": {
+          "enum": [
+            "bootstrap_pair",
+            "revoke_and_pair",
+            "restart",
+            "outage_stop",
+            "outage_start",
+            "final_verify"
+          ]
+        },
+        "session_sequence_before": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "session_sequence_after": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ready_sha256": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    },
+    "nativeExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "executable",
+        "argv_sha256",
+        "environment_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "const": "native-process"
+        },
+        "executable": {
+          "$ref": "#/$defs/binding"
+        },
+        "argv_sha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "environment_sha256": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    },
+    "dockerExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "container_id",
+        "image_id",
+        "executable",
+        "argv_sha256",
+        "environment_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "const": "docker-exec"
+        },
+        "container_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "image_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "executable": {
+          "$ref": "#/$defs/binding"
+        },
+        "argv_sha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "environment_sha256": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    }
+  }
+}

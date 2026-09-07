@@ -1,0 +1,727 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "teslatlas://swift/raw-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "cell_id",
+    "session_input_sha256",
+    "actor_id",
+    "operation",
+    "actor_manifest_sha256",
+    "session_sequence_before",
+    "session_sequence_after",
+    "facts",
+    "requests",
+    "cleanup"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cell_id": {
+      "enum": [
+        "swift__macos_arm64",
+        "swift__debian13_amd64",
+        "swift__debian13_arm64"
+      ]
+    },
+    "session_input_sha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "actor_id": {
+      "enum": [
+        "swift_macos",
+        "swift_linux"
+      ]
+    },
+    "operation": {
+      "enum": [
+        "observe_identity",
+        "discovery",
+        "unauthenticated_probes",
+        "bad_invitation",
+        "expired_invitation",
+        "replayed_invitation",
+        "real_auth",
+        "reauthentication",
+        "revoked_credential",
+        "unknown_vehicle",
+        "exact_current",
+        "endpoint_restart",
+        "outage_recovery",
+        "unsupported_operations",
+        "credential_rotation",
+        "drives_three_pages",
+        "drives_terminal_cursor",
+        "drives_etag",
+        "wrong_vehicle_cursor",
+        "wrong_filter_cursor",
+        "transport_identity",
+        "transport_cancellation",
+        "transport_body_limit"
+      ]
+    },
+    "actor_manifest_sha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "session_sequence_before": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "session_sequence_after": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "facts": {
+      "anyOf": [
+        {
+          "title": "candidate_artifact_identity",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hub_sha256",
+            "tarball_sha256",
+            "package_version",
+            "installed_members"
+          ],
+          "properties": {
+            "hub_sha256": {
+              "type": "string"
+            },
+            "tarball_sha256": {
+              "type": "string"
+            },
+            "package_version": {
+              "type": "string"
+            },
+            "installed_members": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "title": "installed_service_runtime",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "service_mode"
+          ],
+          "properties": {
+            "service_mode": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "title": "discovery_identity_profile",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hub_id",
+            "api_versions",
+            "protocol",
+            "protocol_major",
+            "pack_format",
+            "version"
+          ],
+          "properties": {
+            "hub_id": {
+              "type": "string"
+            },
+            "api_versions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "protocol": {
+              "type": "string"
+            },
+            "protocol_major": {
+              "type": "string"
+            },
+            "pack_format": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "title": "unauthenticated_discovery",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "discovery",
+            "health",
+            "readiness",
+            "credential_absent"
+          ],
+          "properties": {
+            "discovery": {
+              "type": "integer"
+            },
+            "health": {
+              "type": "integer"
+            },
+            "readiness": {
+              "type": "integer"
+            },
+            "credential_absent": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "title": "bad_invitation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pairing_id",
+            "typed_error",
+            "http_status",
+            "credential_created"
+          ],
+          "properties": {
+            "pairing_id": {
+              "type": "string"
+            },
+            "typed_error": {
+              "type": "string"
+            },
+            "http_status": {
+              "type": "integer"
+            },
+            "credential_created": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "title": "expired_invitation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pairing_id",
+            "expires_at_ms",
+            "observed_after_expiry",
+            "outgoing_requests",
+            "typed_error",
+            "credential_created"
+          ],
+          "properties": {
+            "pairing_id": {
+              "type": "string"
+            },
+            "expires_at_ms": {
+              "type": "integer"
+            },
+            "observed_after_expiry": {
+              "type": "boolean"
+            },
+            "outgoing_requests": {
+              "type": "integer"
+            },
+            "typed_error": {
+              "type": "string"
+            },
+            "credential_created": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "title": "replayed_invitation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pairing_id",
+            "typed_error",
+            "http_status",
+            "credential_created"
+          ],
+          "properties": {
+            "pairing_id": {
+              "type": "string"
+            },
+            "typed_error": {
+              "type": "string"
+            },
+            "http_status": {
+              "type": "integer"
+            },
+            "credential_created": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "title": "real_auth",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pairing_id",
+            "claimed",
+            "vehicles"
+          ],
+          "properties": {
+            "pairing_id": {
+              "type": "string"
+            },
+            "claimed": {
+              "type": "integer"
+            },
+            "vehicles": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "title": "credential_lifecycle_reauth",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pairing_id",
+            "new_device",
+            "vehicles",
+            "fresh_claim"
+          ],
+          "properties": {
+            "pairing_id": {
+              "type": "string"
+            },
+            "new_device": {
+              "type": "boolean"
+            },
+            "vehicles": {
+              "type": "integer"
+            },
+            "fresh_claim": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "title": "revocation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "typed_error",
+            "http_status"
+          ],
+          "properties": {
+            "typed_error": {
+              "type": "string"
+            },
+            "http_status": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "title": "unknown_vehicle",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "typed_error",
+            "http_status",
+            "vehicle_id"
+          ],
+          "properties": {
+            "typed_error": {
+              "type": "string"
+            },
+            "http_status": {
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "title": "exact_current_values",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "battery_level",
+            "inside_temp",
+            "outside_temp",
+            "observed_at_ms",
+            "est_battery_range_km",
+            "odometer",
+            "speed",
+            "scheduled_charging_start_time",
+            "active_route_miles_to_arrival",
+            "empty_vehicle_observed_at_ms"
+          ],
+          "properties": {
+            "battery_level": {
+              "type": "integer"
+            },
+            "inside_temp": {
+              "type": "number"
+            },
+            "outside_temp": {
+              "type": [
+                "number",
+                "integer",
+                "null"
+              ]
+            },
+            "observed_at_ms": {
+              "type": "integer"
+            },
+            "est_battery_range_km": {
+              "type": "number"
+            },
+            "odometer": {
+              "type": "number"
+            },
+            "speed": {
+              "type": "integer"
+            },
+            "scheduled_charging_start_time": {
+              "type": "integer"
+            },
+            "active_route_miles_to_arrival": {
+              "type": "number"
+            },
+            "empty_vehicle_observed_at_ms": {
+              "type": [
+                "number",
+                "integer",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "title": "endpoint_restart",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "same_hub",
+            "new_process",
+            "vehicles"
+          ],
+          "properties": {
+            "same_hub": {
+              "type": "boolean"
+            },
+            "new_process": {
+              "type": "boolean"
+            },
+            "vehicles": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "title": "outage_recovery",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outage_observed",
+            "vehicles"
+          ],
+          "properties": {
+            "outage_observed": {
+              "type": "boolean"
+            },
+            "vehicles": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "title": "unsupported_operation_zero_requests",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outgoing_requests"
+          ],
+          "properties": {
+            "outgoing_requests": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "title": "credential_rotation_api",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rotated",
+            "same_device",
+            "vehicles",
+            "old_credential_error",
+            "old_credential_status"
+          ],
+          "properties": {
+            "rotated": {
+              "type": "boolean"
+            },
+            "same_device": {
+              "type": "boolean"
+            },
+            "vehicles": {
+              "type": "integer"
+            },
+            "old_credential_error": {
+              "type": "string"
+            },
+            "old_credential_status": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "title": "drives_three_page_order",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pages"
+          ],
+          "properties": {
+            "pages": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "drives_terminal_cursor",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "next_cursor",
+            "ids"
+          ],
+          "properties": {
+            "next_cursor": {
+              "type": [
+                "number",
+                "integer",
+                "null"
+              ]
+            },
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "title": "drives_etag_304",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "post_304_ids"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "post_304_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "title": "drives_wrong_vehicle_cursor",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "typed_error",
+            "http_status",
+            "error_code"
+          ],
+          "properties": {
+            "typed_error": {
+              "type": "string"
+            },
+            "http_status": {
+              "type": "integer"
+            },
+            "error_code": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "title": "drives_wrong_filter_cursor",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "typed_error",
+            "http_status",
+            "error_code"
+          ],
+          "properties": {
+            "typed_error": {
+              "type": "string"
+            },
+            "http_status": {
+              "type": "integer"
+            },
+            "error_code": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "title": "native_macos_transport",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "os",
+            "transport",
+            "trusted_tls"
+          ],
+          "properties": {
+            "os": {
+              "type": "string"
+            },
+            "transport": {
+              "type": "string"
+            },
+            "trusted_tls": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "title": "transport_cancellation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cancelled",
+            "typed_error",
+            "bounded"
+          ],
+          "properties": {
+            "cancelled": {
+              "type": "boolean"
+            },
+            "typed_error": {
+              "type": "string"
+            },
+            "bounded": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "title": "transport_body_limit",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "limit_bytes",
+            "oversize_rejected",
+            "typed_error"
+          ],
+          "properties": {
+            "limit_bytes": {
+              "type": "integer"
+            },
+            "oversize_rejected": {
+              "type": "boolean"
+            },
+            "typed_error": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "requests": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/request"
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "transport_resources_closed",
+        "auxiliary_fixture_stopped",
+        "process_exited"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "transport_resources_closed": {
+          "const": true
+        },
+        "auxiliary_fixture_stopped": {
+          "const": true
+        },
+        "process_exited": {
+          "const": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "route",
+        "status",
+        "request_id"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "route": {
+          "type": "string",
+          "pattern": "^/[^?]*$"
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 599
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    }
+  }
+}

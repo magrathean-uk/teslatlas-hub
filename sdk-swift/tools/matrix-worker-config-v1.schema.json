@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "teslatlas://swift/matrix-worker-config-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "actor_id",
+    "session_id",
+    "cell_id",
+    "instance_nonce",
+    "session_input_sha256",
+    "phase_contract",
+    "inputs",
+    "private_root",
+    "coordination_dir",
+    "evidence_path",
+    "log_path"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "matrix-actor-worker"
+    },
+    "actor_id": {
+      "enum": [
+        "swift_macos",
+        "swift_linux"
+      ]
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cell_id": {
+      "enum": [
+        "swift__macos_arm64",
+        "swift__debian13_amd64",
+        "swift__debian13_arm64"
+      ]
+    },
+    "instance_nonce": {
+      "$ref": "#/$defs/sha"
+    },
+    "session_input_sha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "phase_contract": {
+      "$ref": "#/$defs/staged"
+    },
+    "inputs": {
+      "type": "array",
+      "maxItems": 64,
+      "contains": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {"id": {"const": "initial_observation"}}
+      },
+      "minContains": 1,
+      "maxContains": 1,
+      "items": {
+        "$ref": "#/$defs/staged"
+      }
+    },
+    "private_root": {
+      "$ref": "#/$defs/path"
+    },
+    "coordination_dir": {
+      "$ref": "#/$defs/path"
+    },
+    "evidence_path": {
+      "$ref": "#/$defs/path"
+    },
+    "log_path": {
+      "$ref": "#/$defs/path"
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^/(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000\\r\\n]+$"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    },
+    "staged": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "root",
+        "local"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "root": {
+          "$ref": "#/$defs/binding"
+        },
+        "local": {
+          "$ref": "#/$defs/binding"
+        }
+      }
+    }
+  }
+}

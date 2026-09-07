@@ -2,10 +2,13 @@
 
 This repository owns the public Swift client boundary.
 
-- Follow Swift API Design Guidelines and semantic versioning.
+- Follow Swift API Design Guidelines. Use the ecosystem calendar product version;
+  keep SwiftPM/wire semantic versions separate.
 - Use `PascalCase` public types, `camelCase` members, and lowercase-hyphenated documentation names.
 - Keep `TeslatlasHubSDK` and `TeslatlasCommands` strictly derived from released public protocol artifacts.
 - Keep `TeslatlasHubV1Compatibility` independent and limited to its hash-pinned deployed-Hub binding.
+- Keep `TeslatlasCurrentHub` independently bound to the approved `hub-http-v1`
+  profile and its explicit tested Hub product versions.
 - Never share models, routes, capabilities, or conformance claims across those contract boundaries implicitly.
 - Keep credentials, endpoint identity, origins, query limits, and typed errors fail-closed.
 - Do not add product UI, Rust FFI, Hub implementation source, proprietary Teslatlas source, hosted automation, or invented routes.

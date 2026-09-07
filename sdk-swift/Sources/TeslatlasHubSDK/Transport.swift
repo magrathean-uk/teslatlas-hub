@@ -135,6 +135,12 @@ class TeslatlasRejectRedirectsDelegate: NSObject, URLSessionTaskDelegate,
   ) {
     completionHandler(nil)
   }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didCompleteWithError error: Error?
+  ) {}
 }
 
 struct TeslatlasBoundedBodyAccumulator {
@@ -280,7 +286,7 @@ struct TeslatlasBoundedBodyAccumulator {
       }
     }
 
-    func urlSession(
+    override func urlSession(
       _ session: URLSession,
       task: URLSessionTask,
       didCompleteWithError error: Error?

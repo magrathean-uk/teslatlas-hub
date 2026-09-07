@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "teslatlas://swift/worker-evidence-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "cell_id",
+    "session_input_sha256",
+    "actor_id",
+    "raw",
+    "cleanup"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cell_id": {
+      "enum": [
+        "swift__macos_arm64",
+        "swift__debian13_amd64",
+        "swift__debian13_arm64"
+      ]
+    },
+    "session_input_sha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "actor_id": {
+      "enum": [
+        "swift_macos",
+        "swift_linux"
+      ]
+    },
+    "raw": {
+      "type": "array",
+      "minItems": 25,
+      "maxItems": 25,
+      "items": {
+        "$ref": "#/$defs/raw"
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "transport_resources_closed",
+        "auxiliary_fixture_stopped"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "transport_resources_closed": {
+          "const": true
+        },
+        "auxiliary_fixture_stopped": {
+          "const": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "route",
+        "status",
+        "request_id"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "route": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 599
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "raw": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "operation",
+        "actor_manifest_sha256",
+        "session_sequence_before",
+        "session_sequence_after",
+        "facts",
+        "requests"
+      ],
+      "properties": {
+        "case_id": {
+          "enum": [
+            "candidate_artifact_identity",
+            "installed_service_runtime",
+            "discovery_identity_profile",
+            "unauthenticated_discovery",
+            "bad_invitation",
+            "expired_invitation",
+            "replayed_invitation",
+            "real_auth",
+            "credential_lifecycle_reauth",
+            "revocation",
+            "unknown_vehicle",
+            "exact_current_values",
+            "endpoint_restart",
+            "outage_recovery",
+            "unsupported_operation_zero_requests",
+            "credential_rotation_api",
+            "drives_three_page_order",
+            "drives_terminal_cursor",
+            "drives_etag_304",
+            "drives_wrong_vehicle_cursor",
+            "drives_wrong_filter_cursor",
+            "native_macos_transport",
+            "native_linux_transport",
+            "transport_cancellation",
+            "transport_body_limit"
+          ]
+        },
+        "operation": {
+          "enum": [
+            "observe_identity",
+            "discovery",
+            "unauthenticated_probes",
+            "bad_invitation",
+            "expired_invitation",
+            "replayed_invitation",
+            "real_auth",
+            "reauthentication",
+            "revoked_credential",
+            "unknown_vehicle",
+            "exact_current",
+            "endpoint_restart",
+            "outage_recovery",
+            "unsupported_operations",
+            "credential_rotation",
+            "drives_three_pages",
+            "drives_terminal_cursor",
+            "drives_etag",
+            "wrong_vehicle_cursor",
+            "wrong_filter_cursor",
+            "transport_identity",
+            "transport_cancellation",
+            "transport_body_limit"
+          ]
+        },
+        "actor_manifest_sha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "session_sequence_before": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "session_sequence_after": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "facts": {
+          "type": "object"
+        },
+        "requests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/request"
+          }
+        }
+      }
+    }
+  }
+}

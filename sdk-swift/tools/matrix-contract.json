@@ -1,0 +1,483 @@
+{
+  "schema_version": 1,
+  "adapter_id": "swift",
+  "revision": 1,
+  "required_cases": [
+    "candidate_artifact_identity",
+    "installed_service_runtime",
+    "discovery_identity_profile",
+    "unauthenticated_discovery",
+    "bad_invitation",
+    "expired_invitation",
+    "replayed_invitation",
+    "real_auth",
+    "credential_lifecycle_reauth",
+    "revocation",
+    "unknown_vehicle",
+    "exact_current_values",
+    "endpoint_restart",
+    "outage_recovery",
+    "unsupported_operation_zero_requests",
+    "credential_rotation_api",
+    "drives_three_page_order",
+    "drives_terminal_cursor",
+    "drives_etag_304",
+    "drives_wrong_vehicle_cursor",
+    "drives_wrong_filter_cursor",
+    "native_macos_transport",
+    "native_linux_transport",
+    "transport_cancellation",
+    "transport_body_limit"
+  ],
+  "actors": [
+    {
+      "id": "swift_macos",
+      "kind": "current_swift_transport",
+      "required": true
+    },
+    {
+      "id": "swift_linux",
+      "kind": "current_swift_transport",
+      "required": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "candidate_artifact_identity",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_identity"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "installed_service_runtime",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "identity",
+      "operations": [
+        "observe_identity"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "discovery_identity_profile",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "discovery"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "unauthenticated_discovery",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "unauthenticated_probes"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "bad_invitation",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "bad_invitation"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "expired_invitation",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "zero_request",
+      "operations": [
+        "expired_invitation"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "replayed_invitation",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "replayed_invitation"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "real_auth",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "real_auth"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "credential_lifecycle_reauth",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "reauthentication"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "revocation",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "revoked_credential"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "unknown_vehicle",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "unknown_vehicle"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "exact_current_values",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "exact_current"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "endpoint_restart",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "endpoint_restart"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "outage_recovery",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "outage_recovery"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "unsupported_operation_zero_requests",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "zero_request",
+      "operations": [
+        "unsupported_operations"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "credential_rotation_api",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "credential_rotation"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "drives_three_page_order",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "drives_three_pages"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "drives_terminal_cursor",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "drives_terminal_cursor"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "drives_etag_304",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "drives_etag"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "drives_wrong_vehicle_cursor",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "wrong_vehicle_cursor"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "drives_wrong_filter_cursor",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "wrong_filter_cursor"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "native_macos_transport",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "transport_identity"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "native_linux_transport",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "transport_identity"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "transport_cancellation",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "transport_cancellation"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    },
+    {
+      "id": "transport_body_limit",
+      "actor_ids": [
+        "swift_macos",
+        "swift_linux"
+      ],
+      "evidence_kind": "http",
+      "operations": [
+        "transport_body_limit"
+      ],
+      "raw_schema_ids": [
+        "swift-raw-v1"
+      ]
+    }
+  ],
+  "raw_schemas": [
+    {
+      "id": "swift-raw-v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-raw-v1.schema.json",
+        "sha256": "2b6c157883276d359fbcf15d53b6b5220a94674dc15bcb60125bd444b923aa4a"
+      }
+    }
+  ],
+  "phases": [
+    {
+      "actor_id": "swift_macos",
+      "phase_id": "bootstrap_pair",
+      "ordinal": 1,
+      "recipe_id": "swift-bootstrap_pair"
+    },
+    {
+      "actor_id": "swift_macos",
+      "phase_id": "revoke_and_pair",
+      "ordinal": 2,
+      "recipe_id": "swift-revoke_and_pair"
+    },
+    {
+      "actor_id": "swift_macos",
+      "phase_id": "restart",
+      "ordinal": 3,
+      "recipe_id": "swift-restart"
+    },
+    {
+      "actor_id": "swift_macos",
+      "phase_id": "outage_stop",
+      "ordinal": 4,
+      "recipe_id": "swift-outage_stop"
+    },
+    {
+      "actor_id": "swift_macos",
+      "phase_id": "outage_start",
+      "ordinal": 5,
+      "recipe_id": "swift-outage_start"
+    },
+    {
+      "actor_id": "swift_macos",
+      "phase_id": "final_verify",
+      "ordinal": 6,
+      "recipe_id": "swift-final_verify"
+    },
+    {
+      "actor_id": "swift_linux",
+      "phase_id": "bootstrap_pair",
+      "ordinal": 1,
+      "recipe_id": "swift-bootstrap_pair"
+    },
+    {
+      "actor_id": "swift_linux",
+      "phase_id": "revoke_and_pair",
+      "ordinal": 2,
+      "recipe_id": "swift-revoke_and_pair"
+    },
+    {
+      "actor_id": "swift_linux",
+      "phase_id": "restart",
+      "ordinal": 3,
+      "recipe_id": "swift-restart"
+    },
+    {
+      "actor_id": "swift_linux",
+      "phase_id": "outage_stop",
+      "ordinal": 4,
+      "recipe_id": "swift-outage_stop"
+    },
+    {
+      "actor_id": "swift_linux",
+      "phase_id": "outage_start",
+      "ordinal": 5,
+      "recipe_id": "swift-outage_start"
+    },
+    {
+      "actor_id": "swift_linux",
+      "phase_id": "final_verify",
+      "ordinal": 6,
+      "recipe_id": "swift-final_verify"
+    }
+  ],
+  "validator": {
+    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/matrix_contract.py",
+    "sha256": "8fc85c68d4bbdcb7fda615b12bd29004d9d3622d41ad267fbf85791f5a5cb734"
+  }
+}

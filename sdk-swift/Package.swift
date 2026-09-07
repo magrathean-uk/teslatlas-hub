@@ -15,6 +15,10 @@ let package = Package(
       name: "TeslatlasHubV1Compatibility",
       targets: ["TeslatlasHubV1Compatibility"]
     ),
+    .library(
+      name: "TeslatlasCurrentHub",
+      targets: ["TeslatlasCurrentHub"]
+    ),
     .executable(
       name: "TeslatlasHubSDKExample",
       targets: ["TeslatlasHubSDKExample"]
@@ -25,6 +29,23 @@ let package = Package(
     .target(
       name: "TeslatlasHubV1Compatibility",
       resources: [.copy("Binding")]
+    ),
+    .target(
+      name: "TeslatlasCurrentHub",
+      dependencies: [
+        .target(name: "CurrentHubCurlShim", condition: .when(platforms: [.linux]))
+      ],
+      resources: [.copy("Binding")]
+    ),
+    .target(
+      name: "CurrentHubCurlShim",
+      path: "Sources/CurrentHubCurlShim",
+      publicHeadersPath: "include",
+      linkerSettings: [
+        .linkedLibrary("curl", .when(platforms: [.linux])),
+        .linkedLibrary("ssl", .when(platforms: [.linux])),
+        .linkedLibrary("crypto", .when(platforms: [.linux])),
+      ]
     ),
     .target(
       name: "TeslatlasCommands",
@@ -43,6 +64,11 @@ let package = Package(
     .testTarget(
       name: "TeslatlasHubV1CompatibilityTests",
       dependencies: ["TeslatlasHubV1Compatibility"],
+      resources: [.copy("Fixtures")]
+    ),
+    .testTarget(
+      name: "TeslatlasCurrentHubTests",
+      dependencies: ["TeslatlasCurrentHub"],
       resources: [.copy("Fixtures")]
     ),
   ]

@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "kind": "swift-installed-launcher-interface",
+  "entrypoint": "run_installed(session_input_path, launcher)",
+  "launcher_methods": [
+    {
+      "name": "run_worker",
+      "arguments": [
+        "actor_id",
+        "worker_config_binding",
+        "phase_callback"
+      ],
+      "returns": "swift-worker-outcome-v1"
+    },
+    {
+      "name": "controller_observations",
+      "arguments": [
+        "session_id"
+      ],
+      "returns": "root-independent-controller-observation-map-v1"
+    }
+  ],
+  "phase_callback": {
+    "argument": "worker_ready_file_binding",
+    "validates_exact_retained_bytes": true,
+    "ready_keys": [
+      "schema_version",
+      "type",
+      "session_id",
+      "cell_id",
+      "session_input_sha256",
+      "instance_nonce",
+      "sequence",
+      "actor_id",
+      "phase",
+      "observation",
+      "evidence"
+    ],
+    "returns": "worker_ack",
+    "delivery": {
+      "writer": "launcher",
+      "path_template": "<worker_config.coordination_dir>/worker-ack-%06d.json",
+      "encoding": "canonical-json-sorted-keys-compact-utf8-newline",
+      "create": "exclusive",
+      "mode": "0600",
+      "durability": "file-fsync-before-worker-resume"
+    },
+    "ack_keys": [
+      "schema_version",
+      "type",
+      "session_id",
+      "cell_id",
+      "session_input_sha256",
+      "instance_nonce",
+      "sequence",
+      "ready_sha256",
+      "actor_id",
+      "phase",
+      "status",
+      "action",
+      "result"
+    ]
+  },
+  "outcome": {
+    "keys": [
+      "schema_version",
+      "kind",
+      "actor_id",
+      "status",
+      "framework_exit_code",
+      "timed_out",
+      "evidence",
+      "log",
+      "runtime",
+      "cleanup"
+    ],
+    "cleanup_keys": [
+      "process_exited",
+      "stdout_closed",
+      "stderr_closed"
+    ]
+  },
+  "runtime_phase_admissions": {
+    "owner": "launcher",
+    "source": "retained-worker-ready-and-controller-observations",
+    "ordered_phase_ids": [
+      "bootstrap_pair",
+      "revoke_and_pair",
+      "restart",
+      "outage_stop",
+      "outage_start",
+      "final_verify"
+    ],
+    "record_keys": [
+      "ordinal",
+      "phase_id",
+      "session_sequence_before",
+      "session_sequence_after",
+      "ready_sha256"
+    ],
+    "worker_raw_is_authoritative": false
+  },
+  "reserved_worker_inputs": [
+    {
+      "id": "initial_observation",
+      "schema": {
+        "additional_properties": false,
+        "keys": [
+          "session_sequence",
+          "proof_sha256"
+        ]
+      }
+    }
+  ],
+  "schemas": [
+    {
+      "id": "matrix-worker-config-v1",
+      "binding": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/matrix-worker-config-v1.schema.json",
+        "sha256": "f99c7c3f4a48e15919cefa01a1eedf1d051d182d7611c3ca8be2566119888f23"
+      }
+    },
+    {
+      "id": "swift-worker-v1",
+      "binding": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-worker-v1.schema.json",
+        "sha256": "de9a95a1d32e4bc607d45e7f92decc43674cc1ea8c297d245d364f9cbbb6ec1d"
+      }
+    },
+    {
+      "id": "swift-runtime-v1",
+      "binding": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-runtime-v1.schema.json",
+        "sha256": "c0345d119c636fac707022f6d266821e6225cd6fef1dcb4424cecfbd466f8b65"
+      }
+    }
+  ],
+  "forbidden_worker_fields": [
+    "argv",
+    "broker",
+    "command",
+    "docker",
+    "executable",
+    "socket"
+  ]
+}
