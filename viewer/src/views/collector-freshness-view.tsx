@@ -27,7 +27,16 @@ export function CollectorFreshnessView({
       description="Last event age and health are shown separately for each public source."
       state={state}
     >
-      {snapshot.collectors.length === 0 ? (
+      {snapshot.resources.collectors.availability === 'unsupported' ? (
+        <DataState
+          title="Collector details unsupported"
+          detail={
+            snapshot.resources.collectors.detail ??
+            'Collector details are unsupported.'
+          }
+          kind="notice"
+        />
+      ) : snapshot.collectors.length === 0 ? (
         <DataState
           title="No collectors reported"
           detail="The Hub returned no collector-health entries."

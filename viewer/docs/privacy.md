@@ -21,18 +21,22 @@ anything.
 
 ## Live mode
 
-Live mode is disabled while the public protocol and TypeScript SDK remain
-foundation-only. The viewer returns a local `SDK_NOT_RELEASED` error and makes
-no speculative request.
+Live mode uses the packaged public SDK browser entrypoint. Pairing material is
+submitted only to the configured HTTPS Hub. The SDK returns a caller-owned
+credential which this viewer holds only in the live data-source instance; it
+does not persist the invitation or credential in browser storage. Reloading the
+page therefore requires pairing again.
 
-Before live mode can be enabled, the released SDK must define browser-safe,
-caller-owned credential interfaces, safe error diagnostics, Hub identity
-validation, and paired-device scopes. This repository must then document the
-chosen browser credential policy and its threat model.
+The endpoint, expected Hub UUID, invitation TLS identity, and discovery
+manifest key remain separate values. Clearing the local session cancels active
+reads and clears credentials and identity-bound cached data. It does not send a
+remote device-revocation request. An authenticated `401` also clears the local
+session and returns the viewer to pairing.
 
 ## Logs and screenshots
 
-Automated screenshots show only deterministic fixture data. Tests do not log a
-secret, real identifier, precise coordinate, or resource payload. Pairing
+Automated screenshots show only deterministic fixture data. Live acceptance
+uses synthetic Hub records and private owner-only invitations and receipts.
+Tests do not record authorization values or invitation secrets. Pairing
 material must never enter a URL, browser history, console log, copied error,
 support bundle, or screenshot.

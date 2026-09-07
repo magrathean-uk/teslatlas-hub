@@ -2,6 +2,9 @@
 
 Small open-source reference client for Teslatlas Hub.
 
+The current release-cohort product version and its compatibility status are
+described in [product versioning](docs/product-versioning.md).
+
 The viewer proves the public client shape without duplicating the proprietary
 Teslatlas product. It covers Hub discovery and pairing, health, vehicles,
 current state, recent drives and charges, data quality, collector freshness,
@@ -9,20 +12,21 @@ and paired-device management.
 
 ## Current boundary
 
-The sibling `teslatlas-protocol` and `teslatlas-sdk-typescript` repositories
-are foundation-only. They do not yet publish schemas, compatibility fixtures,
-or a runtime SDK. This repository therefore has two explicit modes:
+The viewer has two explicit modes:
 
 - **Fixture mode:** deterministic, redacted, viewer-owned example data. It
   demonstrates client behaviour without a Tesla account, Hub service, secret,
   or network API call.
-- **Live mode:** intentionally unavailable until a released TypeScript SDK and
-  protocol artifacts exist. It fails locally with a useful explanation and
-  does not guess routes or payloads.
+- **Live mode:** uses the verified, project-relative `@teslatlas/sdk`
+  `2026.36.2` artifact through its public browser export. It accepts an HTTPS
+  endpoint, expected Hub UUID, optional invitation TLS identity, and pairing
+  invitation. Credentials stay in memory.
 
-`ViewerDataSource` is an internal application seam, not a proposed public SDK
-API. A future SDK adapter can replace the fixture source without turning the
-viewer model into a competing protocol contract.
+`ViewerDataSource` is an internal display seam, not a proposed public SDK API.
+The live adapter maps public `hub-http-v1@1.0.0` results without copying the
+SDK transport. Charges, quality, collector cost/backup age, and remote device
+management remain visibly unsupported because that profile does not expose
+them.
 
 ## Run locally
 
@@ -50,19 +54,41 @@ states:
 
 The fixture invitation code is `482731`. It is example data, not a credential.
 
+## Run the installed static viewer
+
+The package exposes `teslatlas-viewer`, a small Node HTTP server for the
+packaged production assets. It does not use Vite's development or preview
+server at runtime.
+
+```sh
+npm run build
+npm pack
+npm install --prefix ./viewer-install ./teslatlas-viewer-2026.36.2.tgz
+./viewer-install/node_modules/.bin/teslatlas-viewer --host 127.0.0.1 --port 4173
+```
+
+Use port `0` to request an available port. The command prints the actual bound
+HTTP address. `teslatlas-viewer --help` lists the complete bounded interface.
+
 ## Verify
 
 ```sh
 npm run typecheck
 npm test -- --run
 npm run build
+npm run test:cli
 npx playwright install chromium
 npm run test:e2e
+# Requires the private actual-Hub/browser runtime described in the Task 5 report:
+npm run test:e2e:hub
 ```
 
 Browser verification covers the seven views, all data states, no fixture API
 requests, pairing, confirmed paired-device removal, clearing the local session,
-axe checks, keyboard entry, reduced motion, and 400% equivalent reflow.
+axe checks, keyboard entry, reduced motion, and 400% equivalent reflow. The
+separate live lane exercises the built bundle, packed SDK, normal CA trust,
+pairing, bounded drive pagination, conditional requests, identity failure,
+session loss, and unsupported-resource boundaries.
 
 ## Screenshots
 

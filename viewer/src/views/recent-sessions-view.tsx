@@ -17,6 +17,7 @@ export function RecentSessionsView({
   snapshot,
   state,
 }: RecentSessionsViewProps) {
+  const drivesResource = snapshot.resources.drives;
   const vehicleName = (vehicleId: string) =>
     snapshot.vehicles.find((vehicle) => vehicle.id === vehicleId)?.displayName ??
     'Unknown vehicle';
@@ -37,11 +38,30 @@ export function RecentSessionsView({
           </div>
           <span className="count-chip">{snapshot.drives.length}</span>
         </div>
+        {drivesResource.availability === 'temporarily-unavailable' &&
+          (drivesResource.retained ? (
+            <div className="notice-banner" data-tone="stale" role="status">
+              <strong>Showing retained drive sessions</strong>
+              <span>{drivesResource.detail}</span>
+            </div>
+          ) : (
+            <DataState
+              title={
+                snapshot.drives.length > 0
+                  ? 'Some drive sessions are temporarily unavailable'
+                  : 'Drive sessions temporarily unavailable'
+              }
+              detail={drivesResource.detail ?? 'The Hub drive route could not be read.'}
+              kind="notice"
+            />
+          ))}
         {snapshot.drives.length === 0 ? (
-          <DataState
-            title="No recent drives"
-            detail="The bounded fixture result contains no drive sessions."
-          />
+          drivesResource.availability === 'temporarily-unavailable' ? null : (
+            <DataState
+              title="No recent drives"
+              detail="The bounded result contains no drive sessions."
+            />
+          )
         ) : (
           <div className="session-list">
             {snapshot.drives.map((drive) => (
@@ -54,7 +74,13 @@ export function RecentSessionsView({
                       {drive.endLabel ?? 'Unknown end'}
                     </h3>
                   </div>
-                  <QualityPill level={drive.quality.level} />
+                  {drive.quality === null ? (
+                    <span className="status-pill" data-status="empty">
+                      Quality not provided
+                    </span>
+                  ) : (
+                    <QualityPill level={drive.quality.level} />
+                  )}
                 </header>
                 <dl className="session-metrics">
                   <div>
@@ -63,11 +89,11 @@ export function RecentSessionsView({
                   </div>
                   <div>
                     <dt>Distance</dt>
-                    <dd>{drive.distanceKm} km</dd>
+                    <dd>{valueOrAbsent(drive.distanceKm, ' km')}</dd>
                   </div>
                   <div>
                     <dt>Duration</dt>
-                    <dd>{drive.durationMinutes} min</dd>
+                    <dd>{valueOrAbsent(drive.durationMinutes, ' min')}</dd>
                   </div>
                   <div>
                     <dt>Energy used</dt>
@@ -75,10 +101,13 @@ export function RecentSessionsView({
                   </div>
                 </dl>
                 <p className="evidence-line">
-                  {drive.quality.sources.join(' + ')} · {drive.quality.gapCount}{' '}
-                  gaps
-                  {drive.quality.derivedFields.length > 0 &&
-                    ` · inferred: ${drive.quality.derivedFields.join(', ')}`}
+                  {drive.quality === null
+                    ? 'Session quality is unsupported by this Hub profile.'
+                    : `${drive.quality.sources.join(' + ')} · ${drive.quality.gapCount} gaps${
+                        drive.quality.derivedFields.length > 0
+                          ? ` · inferred: ${drive.quality.derivedFields.join(', ')}`
+                          : ''
+                      }`}
                 </p>
               </article>
             ))}
@@ -94,10 +123,16 @@ export function RecentSessionsView({
           </div>
           <span className="count-chip">{snapshot.charges.length}</span>
         </div>
-        {snapshot.charges.length === 0 ? (
+        {snapshot.resources.charges.availability === 'unsupported' ? (
+          <DataState
+            title="Charge history unsupported"
+            detail={snapshot.resources.charges.detail ?? 'Charge sessions are unsupported.'}
+            kind="notice"
+          />
+        ) : snapshot.charges.length === 0 ? (
           <DataState
             title="No recent charges"
-            detail="The bounded fixture result contains no charging sessions."
+            detail="The bounded result contains no charging sessions."
           />
         ) : (
           <div className="session-list">

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createDataSource } from './create-data-source';
 import { FixtureDataSource } from './fixture-data-source';
-import { ViewerDataError } from './types';
+import { SdkDataSource } from './sdk-data-source';
 
 describe('FixtureDataSource', () => {
   it('returns the fixed complete fixture without sharing mutable values', async () => {
@@ -49,8 +49,8 @@ describe('FixtureDataSource', () => {
   it('exposes unresolved gaps and degraded collectors', async () => {
     const snapshot = await new FixtureDataSource().readSnapshot('degraded');
 
-    expect(snapshot.quality.overall).toBe('degraded');
-    expect(snapshot.quality.gaps).toHaveLength(2);
+    expect(snapshot.quality?.overall).toBe('degraded');
+    expect(snapshot.quality?.gaps).toHaveLength(2);
     expect(snapshot.collectors.map((collector) => collector.status)).toContain(
       'degraded',
     );
@@ -147,17 +147,12 @@ describe('FixtureDataSource', () => {
 });
 
 describe('createDataSource', () => {
-  it('keeps live mode unavailable until a released SDK exists and never fetches', async () => {
+  it('selects the packaged SDK data source for live mode without fetching during construction', () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
     const source = createDataSource('live');
 
-    await expect(source.discover()).rejects.toEqual(
-      new ViewerDataError(
-        'SDK_NOT_RELEASED',
-        'Live Hub access needs a released Teslatlas TypeScript SDK.',
-      ),
-    );
+    expect(source).toBeInstanceOf(SdkDataSource);
     expect(fetchSpy).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();

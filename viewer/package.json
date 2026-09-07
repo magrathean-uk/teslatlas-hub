@@ -1,21 +1,38 @@
 {
   "name": "teslatlas-viewer",
-  "version": "0.1.0",
+  "version": "2026.36.2",
   "private": true,
   "type": "module",
+  "bin": {
+    "teslatlas-viewer": "bin/teslatlas-viewer.mjs"
+  },
+  "files": [
+    "bin/*.mjs",
+    "dist/**"
+  ],
   "scripts": {
     "dev": "vite",
+    "preview": "vite preview",
+    "postinstall": "node bin/verify-source-install.mjs",
+    "prepack": "npm run build",
+    "prebuild": "npm run sdk:verify",
     "build": "tsc -b && vite build",
+    "pretypecheck": "npm run sdk:verify",
     "typecheck": "tsc -b --pretty false",
+    "pretest": "npm run sdk:verify",
     "test": "vitest",
+    "test:sdk-artifact": "node --test scripts/verify-sdk-artifact.test.mjs",
+    "test:cli": "node --test scripts/viewer-cli.test.mjs",
     "test:e2e": "playwright test",
+    "pretest:e2e:hub": "npm run build",
+    "test:e2e:hub": "playwright test e2e/live-hub.spec.ts --config=playwright.hub.config.ts",
+    "sdk:verify": "node scripts/verify-sdk-artifact.mjs",
     "capture:screenshots": "playwright test e2e/screenshots.spec.ts"
   },
-  "dependencies": {
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
-  },
   "devDependencies": {
+    "@teslatlas/sdk": "file:artifacts/teslatlas-sdk-2026.36.2.tgz",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.1",

@@ -10,6 +10,7 @@ interface VehiclesViewProps {
 }
 
 export function VehiclesView({ snapshot, state }: VehiclesViewProps) {
+  const resource = snapshot.resources.vehicles;
   return (
     <ViewFrame
       id="vehicles"
@@ -18,7 +19,19 @@ export function VehiclesView({ snapshot, state }: VehiclesViewProps) {
       description="Vehicles exposed to this paired device and their last reported state."
       state={state}
     >
-      {snapshot.vehicles.length === 0 ? (
+      {resource.availability === 'temporarily-unavailable' && resource.retained && (
+        <div className="notice-banner" data-tone="stale" role="status">
+          <strong>Showing retained vehicles</strong>
+          <span>{resource.detail}</span>
+        </div>
+      )}
+      {resource.availability === 'temporarily-unavailable' && !resource.retained ? (
+        <DataState
+          title="Vehicles temporarily unavailable"
+          detail={resource.detail ?? 'The Hub vehicle route could not be read.'}
+          kind="notice"
+        />
+      ) : snapshot.vehicles.length === 0 ? (
         <DataState
           title="No vehicles available"
           detail="The Hub returned an empty vehicle collection for this device."
@@ -38,7 +51,9 @@ export function VehiclesView({ snapshot, state }: VehiclesViewProps) {
                       ? 'offline'
                       : vehicle.freshness === 'stale'
                         ? 'stale'
-                        : 'complete'
+                        : vehicle.state === 'unknown'
+                          ? 'empty'
+                          : 'complete'
                   }
                   label={vehicle.state}
                 />

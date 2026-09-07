@@ -14,6 +14,7 @@ interface ConnectionPanelProps {
 }
 
 type DiscoveryState =
+  | { phase: 'idle'; hubs: DiscoveredHub[]; error: null }
   | { phase: 'discovering'; hubs: DiscoveredHub[]; error: null }
   | { phase: 'ready'; hubs: DiscoveredHub[]; error: null }
   | { phase: 'error'; hubs: DiscoveredHub[]; error: Error };
@@ -24,7 +25,7 @@ export function ConnectionPanel({
   onPaired,
 }: ConnectionPanelProps) {
   const [discovery, setDiscovery] = useState<DiscoveryState>({
-    phase: 'discovering',
+    phase: mode === 'fixture' ? 'discovering' : 'idle',
     hubs: [],
     error: null,
   });
@@ -34,8 +35,12 @@ export function ConnectionPanel({
   const [pairingError, setPairingError] = useState<Error | null>(null);
   const [isPairing, setIsPairing] = useState(false);
   const [discoveryAttempt, setDiscoveryAttempt] = useState(0);
+  const [endpoint, setEndpoint] = useState('');
+  const [expectedHubId, setExpectedHubId] = useState('');
+  const [tlsIdentity, setTlsIdentity] = useState('');
 
   useEffect(() => {
+    if (mode === 'live' && discoveryAttempt === 0) return;
     const controller = new AbortController();
 
     dataSource
@@ -58,7 +63,7 @@ export function ConnectionPanel({
       });
 
     return () => controller.abort();
-  }, [dataSource, discoveryAttempt]);
+  }, [dataSource, discoveryAttempt, mode]);
 
   const hub =
     discovery.hubs.find((candidate) => candidate.id === selectedHubId) ??
@@ -69,6 +74,28 @@ export function ConnectionPanel({
     setPairingError(null);
     setDiscovery({ phase: 'discovering', hubs: [], error: null });
     setDiscoveryAttempt((attempt) => attempt + 1);
+  }
+
+  function inspectLiveHub(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSelectedHubId('');
+    setPairingError(null);
+    setDiscovery({ phase: 'discovering', hubs: [], error: null });
+    try {
+      dataSource.configure?.({
+        endpoint,
+        expectedHubId,
+        tlsIdentity: tlsIdentity.trim() || null,
+      });
+      setDiscoveryAttempt((attempt) => attempt + 1);
+    } catch (error) {
+      setDiscovery({
+        phase: 'error',
+        hubs: [],
+        error:
+          error instanceof Error ? error : new Error('Hub configuration failed.'),
+      });
+    }
   }
 
   async function submitPairing(event: FormEvent<HTMLFormElement>) {
@@ -99,8 +126,9 @@ export function ConnectionPanel({
         <p className="eyebrow">Public protocol reference</p>
         <h1 id="pairing-title">Pair with a Hub</h1>
         <p className="lede">
-          Discover a Hub, confirm its identity, then use a scoped invitation.
-          Fixture credentials stay in memory.
+          {mode === 'fixture'
+            ? 'Discover a fixture Hub, confirm its identity, then use a scoped invitation. Fixture credentials stay in memory.'
+            : 'Inspect an exact HTTPS Hub identity, then claim a scoped invitation. Live credentials stay in memory and disappear when this session is cleared.'}
         </p>
 
         {mode === 'fixture' && (
@@ -108,6 +136,41 @@ export function ConnectionPanel({
             Demo only: use invitation code <strong>482731</strong>. No network
             request is made.
           </p>
+        )}
+
+        {mode === 'live' && discovery.phase === 'idle' && (
+          <form onSubmit={inspectLiveHub} className="pairing-form">
+            <label>
+              Hub endpoint
+              <input
+                type="url"
+                value={endpoint}
+                onChange={(event) => setEndpoint(event.target.value)}
+                placeholder="https://hub.example:443"
+                autoComplete="off"
+                required
+              />
+            </label>
+            <label>
+              Expected Hub UUID
+              <input
+                value={expectedHubId}
+                onChange={(event) => setExpectedHubId(event.target.value)}
+                autoComplete="off"
+                required
+              />
+            </label>
+            <label>
+              Invitation TLS identity
+              <input
+                value={tlsIdentity}
+                onChange={(event) => setTlsIdentity(event.target.value)}
+                autoComplete="off"
+                placeholder="Optional until invitation claim"
+              />
+            </label>
+            <button type="submit">Inspect live Hub</button>
+          </form>
         )}
 
         {discovery.phase === 'discovering' && (
@@ -171,8 +234,16 @@ export function ConnectionPanel({
                           <dd>{candidate.protocolVersion}</dd>
                         </div>
                         <div>
-                          <dt>Identity</dt>
-                          <dd>{candidate.identityFingerprint}</dd>
+                          <dt>Hub UUID</dt>
+                          <dd>{candidate.id}</dd>
+                        </div>
+                        <div>
+                          <dt>Manifest key</dt>
+                          <dd>{candidate.manifestKey ?? 'Not advertised'}</dd>
+                        </div>
+                        <div>
+                          <dt>TLS identity</dt>
+                          <dd>{candidate.tlsIdentity ?? 'Provided by invitation'}</dd>
                         </div>
                       </dl>
                     </article>
@@ -194,24 +265,41 @@ export function ConnectionPanel({
                   required
                 />
               </label>
-              <label>
-                Invitation code
-                <input
-                  value={invitationCode}
-                  onChange={(event) => setInvitationCode(event.target.value)}
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  autoComplete="one-time-code"
-                  required
-                />
-              </label>
+              {mode === 'fixture' ? (
+                <label>
+                  Invitation code
+                  <input
+                    value={invitationCode}
+                    onChange={(event) => setInvitationCode(event.target.value)}
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    autoComplete="one-time-code"
+                    required
+                  />
+                </label>
+              ) : (
+                <label>
+                  Pairing invitation JSON
+                  <textarea
+                    value={invitationCode}
+                    onChange={(event) => setInvitationCode(event.target.value)}
+                    autoComplete="off"
+                    rows={7}
+                    required
+                  />
+                </label>
+              )}
               {pairingError && (
                 <p role="alert" className="inline-error">
                   {pairingError.message}
                 </p>
               )}
               <button type="submit" disabled={isPairing}>
-                {isPairing ? 'Pairing…' : 'Pair fixture Hub'}
+                {isPairing
+                  ? 'Pairing…'
+                  : mode === 'fixture'
+                    ? 'Pair fixture Hub'
+                    : 'Pair live Hub'}
               </button>
             </form>
           </>

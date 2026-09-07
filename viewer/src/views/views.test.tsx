@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { App } from '../app/App';
 import { FixtureDataSource } from '../data/fixture-data-source';
+import { createFixtureSnapshot } from '../data/fixture-data';
 import type { FixtureScenario } from '../data/types';
 
 function renderScenario(scenario: FixtureScenario = 'complete') {
@@ -27,6 +28,199 @@ async function openView(name: string) {
 }
 
 describe('reference views', () => {
+  it('distinguishes initial resource failures from successful empty results', async () => {
+    const source = new FixtureDataSource();
+    const snapshot = createFixtureSnapshot('complete');
+    snapshot.vehicles = [];
+    snapshot.currentByVehicle = {};
+    snapshot.drives = [];
+    snapshot.charges = [];
+    snapshot.resources.vehicles = {
+      availability: 'temporarily-unavailable',
+      retained: false,
+      detail: 'Vehicle route unavailable.',
+    };
+    snapshot.resources.current = {
+      availability: 'temporarily-unavailable',
+      retained: false,
+      detail: 'Current route unavailable.',
+    };
+    snapshot.resources.drives = {
+      availability: 'temporarily-unavailable',
+      retained: false,
+      detail: 'Drive route unavailable.',
+    };
+    vi.spyOn(source, 'readSnapshot').mockResolvedValue(snapshot);
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+
+    const vehicles = await openView('Vehicles');
+    expect(vehicles).toHaveAttribute('data-view-state', 'offline');
+    expect(within(vehicles).getByText('Vehicles temporarily unavailable')).toBeInTheDocument();
+    expect(within(vehicles).queryByText('No vehicles available')).not.toBeInTheDocument();
+
+    const current = await openView('Current state');
+    expect(current).toHaveAttribute('data-view-state', 'offline');
+    expect(within(current).getByText('Current state temporarily unavailable')).toBeInTheDocument();
+    expect(within(current).queryByText('No current state available')).not.toBeInTheDocument();
+
+    const sessions = await openView('Recent sessions');
+    expect(sessions).toHaveAttribute('data-view-state', 'offline');
+    expect(within(sessions).getByText('Drive sessions temporarily unavailable')).toBeInTheDocument();
+    expect(within(sessions).queryByText('No recent drives')).not.toBeInTheDocument();
+  });
+
+  it('keeps initial mixed current and drive results visible beside unavailable notices, then recovers', async () => {
+    const user = userEvent.setup();
+    const source = new FixtureDataSource();
+    const mixed = createFixtureSnapshot('complete');
+    mixed.currentByVehicle['vehicle-redacted-2'] = null;
+    mixed.drives = mixed.drives.filter(
+      (drive) => drive.vehicleId === 'vehicle-redacted-1',
+    );
+    mixed.resources.current = {
+      availability: 'temporarily-unavailable',
+      retained: false,
+      detail: 'One vehicle current route is unavailable.',
+    };
+    mixed.resources.drives = {
+      availability: 'temporarily-unavailable',
+      retained: false,
+      detail: 'One vehicle drive route is unavailable.',
+    };
+    const recovered = createFixtureSnapshot('complete');
+    vi.spyOn(source, 'readSnapshot')
+      .mockResolvedValueOnce(mixed)
+      .mockResolvedValueOnce(recovered);
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+
+    const current = await openView('Current state');
+    expect(
+      within(current).getByText('Some current state is temporarily unavailable'),
+    ).toBeInTheDocument();
+    expect(
+      within(current).getByRole('heading', { name: 'Northstar' }),
+    ).toBeInTheDocument();
+    expect(within(current).getByText('68%')).toBeInTheDocument();
+    expect(
+      within(current).queryByRole('heading', { name: 'Juniper' }),
+    ).not.toBeInTheDocument();
+
+    const sessions = await openView('Recent sessions');
+    expect(
+      within(sessions).getByText('Some drive sessions are temporarily unavailable'),
+    ).toBeInTheDocument();
+    expect(within(sessions).getByText('22.4 km')).toBeInTheDocument();
+    expect(within(sessions).getAllByText('Northstar').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Refresh Hub data' }));
+    expect(
+      await within(sessions).findByText('29.1 km'),
+    ).toBeInTheDocument();
+    expect(
+      within(sessions).queryByText('Some drive sessions are temporarily unavailable'),
+    ).not.toBeInTheDocument();
+
+    const recoveredCurrent = await openView('Current state');
+    expect(
+      within(recoveredCurrent).getByRole('heading', { name: 'Juniper' }),
+    ).toBeInTheDocument();
+    expect(
+      within(recoveredCurrent).queryByText('Some current state is temporarily unavailable'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('labels retained vehicle, current, and drive resources as stale', async () => {
+    const source = new FixtureDataSource();
+    const snapshot = createFixtureSnapshot('complete');
+    for (const name of ['vehicles', 'current', 'drives'] as const) {
+      snapshot.resources[name] = {
+        availability: 'temporarily-unavailable',
+        retained: true,
+        detail: `${name} route unavailable`,
+      };
+    }
+    vi.spyOn(source, 'readSnapshot').mockResolvedValue(snapshot);
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+
+    const vehicles = await openView('Vehicles');
+    expect(vehicles).toHaveAttribute('data-view-state', 'stale');
+    expect(within(vehicles).getByText('Showing retained vehicles')).toBeInTheDocument();
+    expect(within(vehicles).getByRole('heading', { name: 'Northstar' })).toBeInTheDocument();
+
+    const current = await openView('Current state');
+    expect(current).toHaveAttribute('data-view-state', 'stale');
+    expect(within(current).getByText('Showing retained current state')).toBeInTheDocument();
+    expect(within(current).getByText('68%')).toBeInTheDocument();
+
+    const sessions = await openView('Recent sessions');
+    expect(sessions).toHaveAttribute('data-view-state', 'stale');
+    expect(within(sessions).getByText('Showing retained drive sessions')).toBeInTheDocument();
+    expect(within(sessions).getByText('22.4 km')).toBeInTheDocument();
+  });
+
+  it('keeps healthy Hub status while identifying retained readiness', async () => {
+    const source = new FixtureDataSource();
+    const snapshot = createFixtureSnapshot('complete');
+    snapshot.hub.readiness = 'not-ready';
+    snapshot.hub.readinessReason = 'collector_stale';
+    snapshot.resources.readiness = {
+      availability: 'temporarily-unavailable',
+      retained: true,
+      detail: 'Readiness route unavailable.',
+    };
+    vi.spyOn(source, 'readSnapshot').mockResolvedValue(snapshot);
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+
+    const health = await screen.findByRole('region', { name: 'Hub health' });
+    expect(health).toHaveAttribute('data-view-state', 'complete');
+    expect(within(health).getByText('Healthy')).toBeInTheDocument();
+    expect(within(health).getByText('Showing retained readiness')).toBeInTheDocument();
+    expect(within(health).getByText(/collector_stale/i)).toBeInTheDocument();
+  });
+
+  it('renders a failed health route as offline while retaining prior values', async () => {
+    const source = new FixtureDataSource();
+    const snapshot = createFixtureSnapshot('complete');
+    snapshot.hub.status = 'offline';
+    snapshot.hub.freshness = 'stale';
+    snapshot.resources.health = {
+      availability: 'temporarily-unavailable',
+      retained: true,
+      detail: 'Hub transport unavailable.',
+    };
+    vi.spyOn(source, 'readSnapshot').mockResolvedValue(snapshot);
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+
+    const health = await screen.findByRole('region', { name: 'Hub health' });
+    expect(health).toHaveAttribute('data-view-state', 'offline');
+    expect(within(health).getByText('Cannot reach this Hub.')).toBeInTheDocument();
+  });
+
+  it('removes a retained-drive warning after a successful refresh', async () => {
+    const user = userEvent.setup();
+    const source = new FixtureDataSource();
+    const retained = createFixtureSnapshot('complete');
+    retained.resources.drives = {
+      availability: 'temporarily-unavailable',
+      retained: true,
+      detail: 'Drive route unavailable.',
+    };
+    const recovered = createFixtureSnapshot('complete');
+    vi.spyOn(source, 'readSnapshot')
+      .mockResolvedValueOnce(retained)
+      .mockResolvedValueOnce(recovered);
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+
+    const sessions = await openView('Recent sessions');
+    expect(within(sessions).getByText('Showing retained drive sessions')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Refresh Hub data' }));
+    expect(
+      await within(sessions).findByText('Recent drives'),
+    ).toBeInTheDocument();
+    expect(within(sessions).queryByText('Showing retained drive sessions')).not.toBeInTheDocument();
+    expect(sessions).toHaveAttribute('data-view-state', 'complete');
+  });
+
   it('offers seven keyboard-operable sections with complete fixture data', async () => {
     const user = userEvent.setup();
     renderScenario();
@@ -161,6 +355,65 @@ describe('reference views', () => {
     partialPills.forEach((pill) => {
       expect(pill).toHaveAttribute('data-status', 'degraded');
     });
+  });
+
+  it('labels unsupported live resources and does not offer remote device removal', async () => {
+    const source = new FixtureDataSource();
+    const snapshot = await source.readSnapshot('complete');
+    snapshot.drives[0].quality = null;
+    snapshot.charges = [];
+    snapshot.quality = null;
+    snapshot.collectors = [];
+    snapshot.devices = [];
+    snapshot.resources.charges = {
+      availability: 'unsupported',
+      retained: false,
+      detail: 'Charge sessions are unsupported by hub-http-v1.',
+    };
+    snapshot.resources.quality = {
+      availability: 'unsupported',
+      retained: false,
+      detail: 'Data quality is unsupported by hub-http-v1.',
+    };
+    snapshot.resources.collectors = {
+      availability: 'unsupported',
+      retained: false,
+      detail: 'Collector cost and backup age are unsupported by hub-http-v1.',
+    };
+    snapshot.resources.devices = {
+      availability: 'unsupported',
+      retained: false,
+      detail: 'Remote paired-device management is unsupported by hub-http-v1.',
+    };
+    vi.spyOn(source, 'readSnapshot').mockResolvedValue(snapshot);
+
+    render(<App dataSource={source} mode="live" initialPaired />);
+
+    const sessions = await openView('Recent sessions');
+    expect(within(sessions).getByText('Quality not provided')).toBeInTheDocument();
+    expect(
+      within(sessions).getByText('Charge sessions are unsupported by hub-http-v1.'),
+    ).toBeInTheDocument();
+
+    const quality = await openView('Data quality');
+    expect(
+      within(quality).getByText('Data quality is unsupported by hub-http-v1.'),
+    ).toBeInTheDocument();
+
+    const freshness = await openView('Collector freshness');
+    expect(
+      within(freshness).getByText(
+        'Collector cost and backup age are unsupported by hub-http-v1.',
+      ),
+    ).toBeInTheDocument();
+
+    const devices = await openView('Paired devices');
+    expect(
+      within(devices).getByText(
+        'Remote paired-device management is unsupported by hub-http-v1.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(devices).queryByRole('button', { name: /remove/i })).toBeNull();
   });
 
   it('surfaces degraded quality and every unresolved gap', async () => {

@@ -6,9 +6,9 @@ Demonstrate the public Teslatlas Hub client shape with a deliberately modest,
 independently buildable application.
 
 The viewer is not a protocol authority. `teslatlas-protocol` owns public
-contracts and `teslatlas-sdk-typescript` will own browser transport. Both are
-foundation-only today, so the viewer makes no live request and freezes no
-route, field name, error shape, or credential format.
+contracts and the packaged `@teslatlas/sdk` owns browser transport. The viewer
+maps its public `hub-http-v1@1.0.0` results and defines no route, transport
+error shape, or credential format.
 
 ## Application boundary
 
@@ -16,21 +16,21 @@ route, field name, error shape, or credential format.
 React views
     ↓ viewer-owned display model
 ViewerDataSource
-    ├── FixtureDataSource (available now, local only)
-    └── released SDK adapter (not implemented until artifacts exist)
+    ├── FixtureDataSource (local deterministic examples)
+    └── SdkDataSource (@teslatlas/sdk/browser)
 ```
 
 `ViewerDataSource` is intentionally narrow:
 
 - discover candidate Hubs;
-- pair a fixture device in memory;
+- pair a device while retaining its credential in memory;
 - read one immutable viewer snapshot;
 - remove one fixture paired device.
 
 It is dependency inversion for this app, not a replacement SDK. Transport
-details such as cursors, conditional requests, typed public errors, event
-replay, and caller-owned credential storage remain the future SDK's job.
-The released SDK adapter will be the only network boundary. Views must not
+details such as cursors, conditional requests, typed public errors, and
+caller-owned credential storage remain the SDK's job. The SDK adapter is the
+only network boundary. Views must not
 construct URLs, call transport primitives, retain raw pairing material, merge
 records across sources, or calculate private analytics.
 
@@ -41,10 +41,10 @@ records across sources, or calculate private analytics.
 | Hub health | Discovery identity, health, versions, and capabilities |
 | Vehicles | Vehicle collection and visibility scopes |
 | Current state | Current projection, freshness, absent values, and inference |
-| Recent sessions | Bounded drive and charge summaries with quality evidence |
-| Data quality | Coverage, unresolved gaps, and projection quality |
-| Collector freshness | Independent source health and last-event age |
-| Paired devices | Device scopes, last-seen state, and fixture removal |
+| Recent sessions | Bounded live drive pages; richer fixture charge summaries |
+| Data quality | Fixture evidence; unsupported in the current live profile |
+| Collector freshness | Fixture evidence; unsupported in the current live profile |
+| Paired devices | Fixture removal and local live-session clearing |
 
 ## State semantics
 
@@ -65,15 +65,14 @@ Colour supports these labels but never carries the meaning alone.
 Session records may also carry **Partial** quality. They keep that exact label
 and use a non-complete status cue.
 
-Fixture states use explicit viewer-owned markers. A future SDK adapter may mark
-data stale or inferred only from released metadata or a released public policy;
+Fixture states use explicit viewer-owned markers. The live adapter marks values
+stale only when it retains a previous successful value after a failed route;
 request timing alone is never evidence. A missing timestamp means unknown age.
 
 ## Data flow
 
 1. `main.tsx` reads deterministic mode, scenario, and paired-state query inputs.
-2. `createDataSource` selects fixture or unavailable-live behaviour without
-   making a request.
+2. `createDataSource` selects the fixture source or SDK adapter.
 3. `useViewer` owns abort-safe loading, ready, and error transitions.
 4. `App` derives a state per active view from the immutable snapshot.
 5. Each view renders only its slice and keeps quality evidence next to values.
@@ -88,8 +87,9 @@ Paired-device removal updates only the current in-memory snapshot.
   retry; cancel restores focus to the initiating control.
 - Clearing the local session removes viewer-held in-memory pairing state and
   returns to discovery. It does not claim to revoke a Hub device.
-- Future cursor handling, capability denial, and resource-scoped retries remain
-  release-gated; the viewer does not invent them from fixture fields.
+- Live drive cursors and conditional requests pass through the public SDK.
+  Unsupported resources stay explicit and transient failures retain only the
+  affected last-known values.
 
 ## Accessibility and responsive layout
 

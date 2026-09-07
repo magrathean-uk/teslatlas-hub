@@ -10,7 +10,8 @@ export const discoveredFixtureHub: DiscoveredHub = {
   id: 'hub-redacted-1',
   displayName: 'Hawthorn Hub',
   endpoint: 'https://hub.fixture.invalid',
-  identityFingerprint: 'SHA256:4A:89:71:03:DE:MO',
+  manifestKey: 'fixture-manifest-key-redacted',
+  tlsIdentity: 'SHA256:4A:89:71:03:DE:MO',
   protocolVersion: 'foundation-draft',
   status: 'healthy',
 };
@@ -22,6 +23,8 @@ const completeSnapshot: HubSnapshot = {
     version: 'fixture-1.1.0',
     checkedAt: '2026-08-30T09:59:40.000Z',
     freshness: 'fresh',
+    readiness: 'ready',
+    readinessReason: null,
     capabilities: [
       'current state',
       'session history',
@@ -54,6 +57,7 @@ const completeSnapshot: HubSnapshot = {
       freshness: 'fresh',
       stateOfChargePercent: 68,
       estimatedRangeKm: 242,
+      ratedRangeKm: 236,
       odometerKm: 58_214,
       locationLabel: 'Home',
       locked: true,
@@ -67,6 +71,7 @@ const completeSnapshot: HubSnapshot = {
       freshness: 'fresh',
       stateOfChargePercent: 51,
       estimatedRangeKm: null,
+      ratedRangeKm: null,
       odometerKm: 31_804,
       locationLabel: null,
       locked: true,
@@ -195,6 +200,17 @@ const completeSnapshot: HubSnapshot = {
       status: 'active',
     },
   ],
+  resources: {
+    health: { availability: 'present', retained: false, detail: null },
+    readiness: { availability: 'present', retained: false, detail: null },
+    vehicles: { availability: 'present', retained: false, detail: null },
+    current: { availability: 'present', retained: false, detail: null },
+    drives: { availability: 'present', retained: false, detail: null },
+    charges: { availability: 'present', retained: false, detail: null },
+    quality: { availability: 'present', retained: false, detail: null },
+    collectors: { availability: 'present', retained: false, detail: null },
+    devices: { availability: 'present', retained: false, detail: null },
+  },
 };
 
 function cloneComplete(): HubSnapshot {
@@ -247,15 +263,20 @@ export function createFixtureSnapshot(
       current.estimatedRangeKm = 238;
       current.inferredFields = ['estimatedRangeKm'];
     }
-    snapshot.drives[0].quality.level = 'partial';
-    snapshot.drives[0].quality.derivedFields = ['energyUsedKwh'];
+    const quality = snapshot.drives[0].quality;
+    if (quality) {
+      quality.level = 'partial';
+      quality.derivedFields = ['energyUsedKwh'];
+    }
   }
 
   if (scenario === 'degraded') {
     snapshot.hub.status = 'degraded';
-    snapshot.quality.overall = 'degraded';
-    snapshot.quality.observedCoveragePercent = 91.4;
-    snapshot.quality.gaps = [
+    const quality = snapshot.quality;
+    if (quality === null) throw new Error('complete fixture quality is missing');
+    quality.overall = 'degraded';
+    quality.observedCoveragePercent = 91.4;
+    quality.gaps = [
       {
         id: 'gap-redacted-1',
         vehicleId: 'vehicle-redacted-1',
@@ -277,12 +298,15 @@ export function createFixtureSnapshot(
     ];
     snapshot.collectors[0].status = 'degraded';
     snapshot.collectors[0].detail = 'Events are arriving with intermittent gaps.';
-    snapshot.drives[0].quality = {
-      ...snapshot.drives[0].quality,
-      level: 'degraded',
-      gapCount: 1,
-      largestGapSeconds: 192,
-    };
+    const driveQuality = snapshot.drives[0].quality;
+    if (driveQuality) {
+      snapshot.drives[0].quality = {
+        ...driveQuality,
+        level: 'degraded',
+        gapCount: 1,
+        largestGapSeconds: 192,
+      };
+    }
   }
 
   if (scenario === 'offline') {

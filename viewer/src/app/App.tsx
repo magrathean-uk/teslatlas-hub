@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { ConnectionPanel } from '../components/connection-panel';
 import type { ViewState } from '../components/status-pill';
@@ -9,6 +9,7 @@ import type {
   PairedHub,
   ViewerDataSource,
 } from '../data/types';
+import { ViewerDataError } from '../data/types';
 import { CollectorFreshnessView } from '../views/collector-freshness-view';
 import { CurrentStateView } from '../views/current-state-view';
 import { DataQualityView } from '../views/data-quality-view';
@@ -58,8 +59,20 @@ const scenarios: FixtureScenario[] = [
 function stateForView(view: ViewId, snapshot: HubSnapshot): ViewState {
   const isOffline = snapshot.hub.status === 'offline';
   const isStale = snapshot.hub.freshness === 'stale';
+  const resourceState = (
+    resource: keyof HubSnapshot['resources'],
+  ): ViewState | null => {
+    const state = snapshot.resources[resource];
+    if (state.availability !== 'temporarily-unavailable') return null;
+    return state.retained ? 'stale' : 'offline';
+  };
 
   if (view === 'health') {
+    if (
+      snapshot.resources.health.availability === 'temporarily-unavailable'
+    ) {
+      return 'offline';
+    }
     if (isOffline) return 'offline';
     if (snapshot.hub.status === 'degraded') return 'degraded';
     if (isStale) return 'stale';
@@ -67,6 +80,8 @@ function stateForView(view: ViewId, snapshot: HubSnapshot): ViewState {
   }
 
   if (view === 'vehicles') {
+    const vehiclesState = resourceState('vehicles');
+    if (vehiclesState !== null) return vehiclesState;
     if (snapshot.vehicles.length === 0) return 'empty';
     if (isOffline) return 'offline';
     if (snapshot.vehicles.some((vehicle) => vehicle.freshness === 'stale')) {
@@ -76,6 +91,8 @@ function stateForView(view: ViewId, snapshot: HubSnapshot): ViewState {
   }
 
   if (view === 'current') {
+    const currentState = resourceState('current');
+    if (currentState !== null) return currentState;
     const current = Object.values(snapshot.currentByVehicle).filter(Boolean);
     if (current.length === 0) return 'empty';
     if (isOffline) return 'offline';
@@ -87,14 +104,16 @@ function stateForView(view: ViewId, snapshot: HubSnapshot): ViewState {
   }
 
   if (view === 'sessions') {
+    const drivesState = resourceState('drives');
+    if (drivesState !== null) return drivesState;
     const sessions = [...snapshot.drives, ...snapshot.charges];
     if (sessions.length === 0) return 'empty';
     if (isOffline) return 'offline';
-    if (sessions.some((session) => session.quality.level === 'degraded')) {
+    if (sessions.some((session) => session.quality?.level === 'degraded')) {
       return 'degraded';
     }
     if (
-      sessions.some((session) => session.quality.derivedFields.length > 0)
+      sessions.some((session) => (session.quality?.derivedFields.length ?? 0) > 0)
     ) {
       return 'inferred';
     }
@@ -104,6 +123,7 @@ function stateForView(view: ViewId, snapshot: HubSnapshot): ViewState {
 
   if (view === 'quality') {
     if (isOffline) return 'offline';
+    if (snapshot.quality === null) return 'empty';
     if (snapshot.quality.overall === 'unknown') return 'empty';
     if (snapshot.quality.overall === 'degraded') return 'degraded';
     if (isStale) return 'stale';
@@ -137,13 +157,23 @@ export function App({
   initialPaired = true,
 }: AppProps) {
   const [isPaired, setIsPaired] = useState(initialPaired);
-  const [pairedHub, setPairedHub] = useState<PairedHub | null>(null);
   const [scenario, setScenario] = useState(initialScenario);
   const [activeView, setActiveView] = useState<ViewId>('health');
   const viewer = useViewer(dataSource, scenario, isPaired);
 
-  function completePairing(pairing: PairedHub) {
-    setPairedHub(pairing);
+  useEffect(() => {
+    if (
+      mode === 'live' &&
+      viewer.phase === 'error' &&
+      viewer.error instanceof ViewerDataError &&
+      viewer.error.code === 'AUTH_LOST'
+    ) {
+      setIsPaired(false);
+      void dataSource.logout();
+    }
+  }, [dataSource, mode, viewer.error, viewer.phase]);
+
+  function completePairing(_pairing: PairedHub) {
     setIsPaired(true);
   }
 
@@ -151,11 +181,11 @@ export function App({
     setScenario('complete');
   }
 
-  function clearLocalSession() {
-    setPairedHub(null);
+  async function clearLocalSession() {
     setActiveView('health');
     setScenario('complete');
     setIsPaired(false);
+    await dataSource.logout();
   }
 
   return (
@@ -289,6 +319,14 @@ export function App({
               <button
                 type="button"
                 className="secondary-button"
+                onClick={viewer.reload}
+                disabled={viewer.refreshing}
+              >
+                {viewer.refreshing ? 'Refreshing Hub data…' : 'Refresh Hub data'}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
                 onClick={clearLocalSession}
               >
                 Clear local session
@@ -298,14 +336,25 @@ export function App({
           </aside>
 
           <div className="viewer-content">
+            {(viewer.refreshing || viewer.error) && (
+              <div
+                className="notice-banner"
+                data-tone={viewer.error ? 'stale' : 'neutral'}
+                role="status"
+              >
+                <strong>
+                  {viewer.error ? 'Showing retained data' : 'Refreshing Hub data'}
+                </strong>
+                <span>
+                  {viewer.error?.message ??
+                    'The latest successful values remain visible while reads finish.'}
+                </span>
+              </div>
+            )}
             {activeView === 'health' && (
               <HubHealthView
                 snapshot={viewer.snapshot}
                 state={stateForView('health', viewer.snapshot)}
-                pinnedIdentity={
-                  pairedHub?.identityFingerprint ??
-                  viewer.snapshot.hub.identityFingerprint
-                }
               />
             )}
             {activeView === 'vehicles' && (

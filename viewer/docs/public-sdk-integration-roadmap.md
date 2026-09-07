@@ -1,34 +1,32 @@
 # Public SDK integration roadmap
 
-This roadmap preserves the strongest protocol-first requirements from the
-parallel reference-client design without presenting unreleased APIs as real.
+This roadmap records the packaged SDK boundary now used by the reference
+client and the richer functions that remain outside the current Hub profile.
 
 ## Current gate
 
-`teslatlas-protocol` and `teslatlas-sdk-typescript` are foundation-only. The
-viewer therefore uses its own deterministic display fixtures and keeps live
-mode unavailable. Fixture names, fields, timestamps, and operations are not a
-draft public contract.
-
-Do not enable live mode until released protocol, SDK, and conformance artifacts
-exist.
+Live mode is bound to the verified `@teslatlas/sdk` `2026.36.2` package and
+`hub-http-v1@1.0.0` profile. The repository vendors the exact tarball because
+registry publication is not part of this candidate. Install, typecheck, test,
+and build admission recompute its SHA-256 and the byte-for-byte installed
+78-member manifest. Fixture names and richer display fields remain
+viewer-owned examples rather than additions to the current profile.
 
 ## Contract catalogue
 
-Before adding a live adapter, check in a catalogue derived from the selected
-releases. For each screen action it must record:
+For each live screen action, keep the selected package boundary explicit:
 
 - package versions and fixture-manifest digest;
 - SDK export and released request/response types;
 - required advertised capability and visibility scope;
 - conformance fixture case and expected presentation state.
 
-The catalogue must not contain guessed route strings. The released artifacts,
-not this viewer's fixture model, remain authoritative.
+The adapter contains no route strings or direct `fetch`; the packaged SDK and
+its public types remain authoritative.
 
 ## One network boundary
 
-The future SDK adapter is the only permitted network boundary. Views must not
+The SDK adapter is the only permitted network boundary. Views must not
 construct URLs, call `fetch`, retain raw pairing material, interpret private
 fields, merge records across sources, or calculate proprietary analytics.
 
@@ -50,9 +48,9 @@ The viewer maps released responses into its small display model.
 Fixture mode demonstrates these rules with viewer-owned markers. It does not
 claim they are the eventual protocol fields.
 
-## Release-backed fixture expansion
+## Remaining profile expansion
 
-Add cases only after their released contracts exist:
+Add cases only after their public contracts exist:
 
 - incompatible protocol and missing capability;
 - denied pairing, denied revoke, and revoked-device refresh;
@@ -68,7 +66,7 @@ A real Hub may supplement this suite but cannot replace it as the test oracle.
 
 ## Evidence gate
 
-Live mode needs all of the following from a clean checkout:
+Live acceptance needs all of the following from a clean checkout:
 
 1. conformance-backed adapter and state-mapper tests;
 2. a static boundary check rejecting direct transport imports and route literals

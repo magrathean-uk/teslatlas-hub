@@ -12,6 +12,7 @@ interface CurrentStateViewProps {
 
 const fieldLabels: Record<string, string> = {
   estimatedRangeKm: 'Estimated range',
+  ratedRangeKm: 'Rated range',
   stateOfChargePercent: 'State of charge',
   odometerKm: 'Odometer',
   locationLabel: 'Location',
@@ -24,6 +25,7 @@ export function CurrentStateView({
   snapshot,
   state,
 }: CurrentStateViewProps) {
+  const resource = snapshot.resources.current;
   const available = snapshot.vehicles.filter(
     (vehicle) => snapshot.currentByVehicle[vehicle.id],
   );
@@ -36,11 +38,30 @@ export function CurrentStateView({
       description="Observed values stay separate from absent and inferred values."
       state={state}
     >
+      {resource.availability === 'temporarily-unavailable' &&
+        (resource.retained ? (
+          <div className="notice-banner" data-tone="stale" role="status">
+            <strong>Showing retained current state</strong>
+            <span>{resource.detail}</span>
+          </div>
+        ) : (
+          <DataState
+            title={
+              available.length > 0
+                ? 'Some current state is temporarily unavailable'
+                : 'Current state temporarily unavailable'
+            }
+            detail={resource.detail ?? 'The Hub current-state route could not be read.'}
+            kind="notice"
+          />
+        ))}
       {available.length === 0 ? (
-        <DataState
-          title="No current state available"
-          detail="Vehicles may exist, but the Hub reported no current-state projection."
-        />
+        resource.availability === 'temporarily-unavailable' ? null : (
+          <DataState
+            title="No current state available"
+            detail="Vehicles may exist, but the Hub reported no current-state projection."
+          />
+        )
       ) : (
         <div className="state-stack">
           {available.map((vehicle) => {
@@ -58,14 +79,18 @@ export function CurrentStateView({
                         ? 'stale'
                         : current.inferredFields.length > 0
                           ? 'inferred'
-                          : 'complete'
+                          : current.freshness === 'unknown'
+                            ? 'empty'
+                            : 'complete'
                     }
                     label={
                       current.freshness === 'stale'
                         ? 'Stale'
                         : current.inferredFields.length > 0
                           ? 'Inferred'
-                          : 'Observed'
+                          : current.freshness === 'unknown'
+                            ? 'Freshness unknown'
+                            : 'Observed'
                     }
                   />
                 </header>
@@ -77,6 +102,10 @@ export function CurrentStateView({
                   <Metric
                     label="Estimated range"
                     value={valueOrAbsent(current.estimatedRangeKm, ' km')}
+                  />
+                  <Metric
+                    label="Rated range"
+                    value={valueOrAbsent(current.ratedRangeKm, ' km')}
                   />
                   <Metric
                     label="Odometer"

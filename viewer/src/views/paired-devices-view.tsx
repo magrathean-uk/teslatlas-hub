@@ -77,7 +77,13 @@ export function PairedDevicesView({
       <p className="live-notice" aria-live="polite">
         {notice}
       </p>
-      {snapshot.devices.length === 0 ? (
+      {snapshot.resources.devices.availability === 'unsupported' ? (
+        <DataState
+          title="Remote device management unsupported"
+          detail={snapshot.resources.devices.detail ?? 'Device management is unsupported.'}
+          kind="notice"
+        />
+      ) : snapshot.devices.length === 0 ? (
         <DataState
           title="No paired devices"
           detail="The Hub returned an empty paired-device collection."

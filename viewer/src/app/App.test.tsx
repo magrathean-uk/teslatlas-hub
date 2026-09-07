@@ -1,10 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
-import { createDataSource } from '../data/create-data-source';
 import { FixtureDataSource } from '../data/fixture-data-source';
+import { createFixtureSnapshot } from '../data/fixture-data';
+import type { ViewerDataSource } from '../data/types';
+import { ViewerDataError } from '../data/types';
 
 describe('App discovery and pairing', () => {
   it('finds the redacted fixture Hub and explains the fixture invitation', async () => {
@@ -77,7 +79,8 @@ describe('App discovery and pairing', () => {
         id: 'hub-redacted-1',
         displayName: 'Hawthorn Hub',
         endpoint: 'https://hub.fixture.invalid',
-        identityFingerprint: 'SHA256:4A:89:71:03:DE:MO',
+        manifestKey: null,
+        tlsIdentity: 'SHA256:4A:89:71:03:DE:MO',
         protocolVersion: 'fixture-0.1',
         status: 'healthy',
       },
@@ -85,7 +88,8 @@ describe('App discovery and pairing', () => {
         id: 'hub-redacted-2',
         displayName: 'Birch Hub',
         endpoint: 'https://second.fixture.invalid',
-        identityFingerprint: 'SHA256:7B:21:44:80:DE:MO',
+        manifestKey: null,
+        tlsIdentity: 'SHA256:7B:21:44:80:DE:MO',
         protocolVersion: 'fixture-0.1',
         status: 'healthy',
       },
@@ -94,7 +98,8 @@ describe('App discovery and pairing', () => {
       hubId: input.hubId,
       deviceId: 'device-viewer',
       pairedAt: '2026-08-30T09:55:00.000Z',
-      identityFingerprint: 'SHA256:7B:21:44:80:DE:MO',
+      manifestKey: null,
+      tlsIdentity: 'SHA256:7B:21:44:80:DE:MO',
     }));
 
     render(
@@ -129,7 +134,8 @@ describe('App discovery and pairing', () => {
           id: 'hub-redacted-1',
           displayName: 'Hawthorn Hub',
           endpoint: 'https://hub.fixture.invalid',
-          identityFingerprint: 'SHA256:4A:89:71:03:DE:MO',
+          manifestKey: null,
+          tlsIdentity: 'SHA256:4A:89:71:03:DE:MO',
           protocolVersion: 'fixture-0.1',
           status: 'healthy',
         },
@@ -174,11 +180,26 @@ describe('App discovery and pairing', () => {
     ).toBeInTheDocument();
   });
 
+  it('refreshes a paired snapshot without clearing the visible session', async () => {
+    const user = userEvent.setup();
+    const source = new FixtureDataSource();
+    const readSnapshot = vi.spyOn(source, 'readSnapshot');
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+    await screen.findByRole('region', { name: 'Hub health' });
+
+    await user.click(screen.getByRole('button', { name: 'Refresh Hub data' }));
+
+    expect(readSnapshot).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('navigation', { name: 'Viewer sections' })).toBeVisible();
+  });
+
   it('clears the in-memory viewer session and returns to discovery', async () => {
     const user = userEvent.setup();
+    const source = new FixtureDataSource();
+    const logout = vi.spyOn(source, 'logout');
     render(
       <App
-        dataSource={new FixtureDataSource()}
+        dataSource={source}
         mode="fixture"
         initialPaired
       />,
@@ -197,25 +218,109 @@ describe('App discovery and pairing', () => {
     expect(
       screen.queryByRole('navigation', { name: 'Viewer sections' }),
     ).not.toBeInTheDocument();
+    expect(logout).toHaveBeenCalledOnce();
   });
 
-  it('explains unavailable live mode without making a network request', async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal('fetch', fetchSpy);
+  it('configures an exact live endpoint and expected Hub before claiming the invitation', async () => {
+    const user = userEvent.setup();
+    const configure = vi.fn();
+    const discover = vi.fn(async () => [
+      {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        displayName: 'Hub aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        endpoint: 'https://localhost:18450',
+        manifestKey: 'manifest-key',
+        tlsIdentity: 'sha256:tls-certificate',
+        protocolVersion: 'teslatlas-sync/1',
+        status: 'healthy' as const,
+      },
+    ]);
+    const pair = vi.fn(async () => ({
+      hubId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      deviceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      pairedAt: '2026-09-05T00:00:00.000Z',
+      manifestKey: 'manifest-key',
+      tlsIdentity: 'sha256:tls-certificate',
+    }));
+    const source: ViewerDataSource = {
+      configure,
+      discover,
+      pair,
+      readSnapshot: vi.fn(async () => createFixtureSnapshot('complete')),
+      removePairedDevice: vi.fn(),
+      logout: vi.fn(async () => undefined),
+    };
 
     render(
       <App
-        dataSource={createDataSource('live')}
+        dataSource={source}
         mode="live"
         initialPaired={false}
       />,
     );
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Live Hub access needs a released Teslatlas TypeScript SDK.',
+    expect(screen.getByText(/credentials stay in memory/i)).toBeInTheDocument();
+    await user.type(
+      screen.getByLabelText('Hub endpoint'),
+      'https://localhost:18450',
     );
-    expect(fetchSpy).not.toHaveBeenCalled();
+    await user.type(
+      screen.getByLabelText('Expected Hub UUID'),
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+    await user.type(
+      screen.getByLabelText('Invitation TLS identity'),
+      'sha256:tls-certificate',
+    );
+    await user.click(screen.getByRole('button', { name: 'Inspect live Hub' }));
 
-    vi.unstubAllGlobals();
+    expect(configure).toHaveBeenCalledWith({
+      endpoint: 'https://localhost:18450',
+      expectedHubId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      tlsIdentity: 'sha256:tls-certificate',
+    });
+    expect(await screen.findByText('manifest-key')).toBeInTheDocument();
+
+    const invitation = JSON.stringify({
+      pairing_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      secret: 'test-secret',
+      expires_at_ms: 1_788_600_000_000,
+      endpoint: 'https://localhost:18450',
+      tls_pin: 'sha256:tls-certificate',
+      pairing_uri: 'teslatlas://pair/test',
+    });
+    fireEvent.change(screen.getByLabelText('Pairing invitation JSON'), {
+      target: { value: invitation },
+    });
+    await user.click(screen.getByRole('button', { name: 'Pair live Hub' }));
+
+    expect(pair).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hubId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        invitationCode: invitation,
+      }),
+    );
+  });
+
+  it('returns to pairing when live authorization is lost', async () => {
+    const source: ViewerDataSource = {
+      discover: vi.fn(),
+      pair: vi.fn(),
+      readSnapshot: vi.fn(async () => {
+        throw new ViewerDataError(
+          'AUTH_LOST',
+          'Hub authorization was lost. Pair this viewer again.',
+        );
+      }),
+      removePairedDevice: vi.fn(),
+      logout: vi.fn(async () => undefined),
+    };
+
+    render(<App dataSource={source} mode="live" initialPaired />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Pair with a Hub' }),
+    ).toBeInTheDocument();
+    expect(source.logout).toHaveBeenCalledOnce();
   });
 });

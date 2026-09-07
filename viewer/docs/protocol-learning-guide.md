@@ -1,19 +1,15 @@
 # Protocol learning guide
 
-This guide explains what the viewer demonstrates without pretending that the
-foundation protocol is already frozen.
+This guide explains what the viewer demonstrates through the current public
+Hub profile and what remains richer fixture-only presentation.
 
 ## Contract status
 
-`teslatlas-protocol` currently documents contract layers and candidate
-resources. It contains no released OpenAPI, JSON Schema, event schema,
-compatibility fixture, or conformance runner. `teslatlas-sdk-typescript`
-contains no package or runtime client.
-
-The JSON-like TypeScript values in this viewer are therefore viewer-owned
-display fixtures. They are deterministic and source-neutral, but they are not
-released protocol examples. Do not copy their property names into a Hub or SDK
-implementation.
+The live adapter consumes only public exports from the packaged TypeScript SDK
+for `hub-http-v1@1.0.0`: discovery, pairing, health, readiness, vehicles,
+current state, and bounded drive pages. The richer JSON-like fixture values are
+viewer-owned display examples. Do not copy their property names into a Hub or
+SDK implementation.
 
 ## What each view teaches
 
@@ -23,27 +19,27 @@ implementation.
 | Hub health | Discovery versions and capabilities | Separate reachable, degraded, stale, and offline |
 | Vehicles | Bounded vehicle collection | Treat an empty collection as a valid result |
 | Current state | Latest vehicle projection | Keep absent and inferred fields explicit |
-| Recent sessions | Drive and charge summaries | Keep sources, gaps, and derived fields beside session values |
-| Data quality | Projection coverage and telemetry gaps | Never hide unresolved loss or silently interpolate |
-| Collector freshness | Independent collection paths | One path can degrade or fail without rewriting another path's status |
-| Paired devices | Device lifecycle and scopes | Show least-privilege scope and announce removal |
+| Recent sessions | Bounded drive pages; richer fixture charge summaries | Preserve null distance/duration and label unavailable charge data |
+| Data quality | Richer fixture-only projection evidence | Show unsupported for the current live profile |
+| Collector freshness | Richer fixture-only collection evidence | Show unsupported for the current live profile |
+| Paired devices | Local viewer lifecycle | Clear local credentials without claiming remote revocation |
 
-## The future SDK adapter
+## The SDK adapter
 
-When released artifacts exist, add one adapter that:
+The live adapter:
 
 1. imports types and client functions from the released package;
 2. maps released response types into the viewer-owned display model;
 3. leaves cursors, conditional requests, event replay, typed errors, and
    credential storage with the SDK;
-4. adds conformance-backed adapter tests from released fixtures;
-5. removes the unavailable-live source only after clean-checkout browser proof.
+4. has mapper/lifecycle tests for current-Hub null and failure semantics;
+5. is exercised from the built Viewer against an actual Hub and browser.
 
 Do not retrofit fixture property names into that adapter. The released SDK is
 authoritative even when its names differ.
 
-Before live implementation, build the release-derived contract catalogue and
-fixture matrix in the [public SDK integration roadmap](public-sdk-integration-roadmap.md).
+See the [public SDK integration roadmap](public-sdk-integration-roadmap.md) for
+the artifact and evidence gates.
 
 ## Fixture scenarios
 

@@ -13,6 +13,16 @@ export type Freshness = 'fresh' | 'stale' | 'unknown';
 export type HubStatus = 'healthy' | 'degraded' | 'offline';
 export type QualityLevel = 'complete' | 'partial' | 'degraded' | 'unknown';
 export type CollectorStatus = 'healthy' | 'degraded' | 'offline';
+export type ResourceAvailability =
+  | 'present'
+  | 'unsupported'
+  | 'temporarily-unavailable';
+
+export interface ResourceState {
+  availability: ResourceAvailability;
+  retained: boolean;
+  detail: string | null;
+}
 
 export class ViewerDataError extends Error {
   readonly code: string;
@@ -28,9 +38,16 @@ export interface DiscoveredHub {
   id: string;
   displayName: string;
   endpoint: string;
-  identityFingerprint: string;
+  manifestKey: string | null;
+  tlsIdentity: string | null;
   protocolVersion: string;
   status: HubStatus;
+}
+
+export interface LiveConnectionInput {
+  endpoint: string;
+  expectedHubId: string;
+  tlsIdentity: string | null;
 }
 
 export interface PairingInput {
@@ -43,7 +60,8 @@ export interface PairedHub {
   hubId: string;
   deviceId: string;
   pairedAt: string;
-  identityFingerprint: string;
+  manifestKey: string | null;
+  tlsIdentity: string | null;
 }
 
 export interface HubSummary extends DiscoveredHub {
@@ -51,23 +69,26 @@ export interface HubSummary extends DiscoveredHub {
   checkedAt: string;
   freshness: Freshness;
   capabilities: string[];
+  readiness: 'ready' | 'not-ready' | 'unknown';
+  readinessReason: string | null;
 }
 
 export interface VehicleSummary {
   id: string;
   displayName: string;
-  state: 'online' | 'asleep' | 'driving' | 'charging' | 'offline';
-  visibility: 'full' | 'limited';
-  updatedAt: string;
+  state: 'online' | 'asleep' | 'driving' | 'charging' | 'offline' | 'unknown';
+  visibility: 'full' | 'limited' | 'unknown';
+  updatedAt: string | null;
   freshness: Freshness;
 }
 
 export interface CurrentVehicleState {
   vehicleId: string;
-  updatedAt: string;
+  updatedAt: string | null;
   freshness: Freshness;
   stateOfChargePercent: number | null;
   estimatedRangeKm: number | null;
+  ratedRangeKm: number | null;
   odometerKm: number | null;
   locationLabel: string | null;
   locked: boolean | null;
@@ -91,10 +112,10 @@ export interface DriveSummary {
   endedAt: string;
   startLabel: string | null;
   endLabel: string | null;
-  distanceKm: number;
-  durationMinutes: number;
+  distanceKm: number | null;
+  durationMinutes: number | null;
   energyUsedKwh: number | null;
-  quality: SessionQuality;
+  quality: SessionQuality | null;
 }
 
 export interface ChargeSummary {
@@ -153,12 +174,24 @@ export interface HubSnapshot {
   currentByVehicle: Record<string, CurrentVehicleState | null>;
   drives: DriveSummary[];
   charges: ChargeSummary[];
-  quality: DataQualitySummary;
+  quality: DataQualitySummary | null;
   collectors: CollectorSummary[];
   devices: PairedDevice[];
+  resources: {
+    health: ResourceState;
+    readiness: ResourceState;
+    vehicles: ResourceState;
+    current: ResourceState;
+    drives: ResourceState;
+    charges: ResourceState;
+    quality: ResourceState;
+    collectors: ResourceState;
+    devices: ResourceState;
+  };
 }
 
 export interface ViewerDataSource {
+  configure?(input: LiveConnectionInput): void;
   discover(signal?: AbortSignal): Promise<DiscoveredHub[]>;
   pair(input: PairingInput, signal?: AbortSignal): Promise<PairedHub>;
   readSnapshot(
@@ -169,4 +202,5 @@ export interface ViewerDataSource {
     deviceId: string,
     signal?: AbortSignal,
   ): Promise<PairedDevice[]>;
+  logout(): Promise<void>;
 }

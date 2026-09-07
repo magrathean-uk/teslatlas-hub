@@ -7,13 +7,11 @@ import { formatDateTime } from './view-helpers';
 interface HubHealthViewProps {
   snapshot: HubSnapshot;
   state: ViewState;
-  pinnedIdentity: string;
 }
 
 export function HubHealthView({
   snapshot,
   state,
-  pinnedIdentity,
 }: HubHealthViewProps) {
   const labels: Record<ViewState, string> = {
     complete: 'Healthy',
@@ -53,6 +51,29 @@ export function HubHealthView({
           <span>Review data quality and collector freshness for details.</span>
         </div>
       )}
+      {snapshot.resources.readiness.availability ===
+        'temporarily-unavailable' && (
+        <div
+          className="notice-banner"
+          data-tone={snapshot.resources.readiness.retained ? 'stale' : 'offline'}
+          role="status"
+        >
+          <strong>
+            {snapshot.resources.readiness.retained
+              ? 'Showing retained readiness'
+              : 'Readiness temporarily unavailable'}
+          </strong>
+          <span>
+            {snapshot.resources.readiness.retained
+              ? `Last confirmed readiness: ${snapshot.hub.readiness}${
+                  snapshot.hub.readinessReason === null
+                    ? ''
+                    : ` — ${snapshot.hub.readinessReason}`
+                }. ${snapshot.resources.readiness.detail ?? ''}`
+              : snapshot.resources.readiness.detail}
+          </span>
+        </div>
+      )}
 
       <div className="hub-hero panel">
         <div>
@@ -76,19 +97,30 @@ export function HubHealthView({
         <Metric
           label="Capabilities"
           value={snapshot.hub.capabilities.length}
-          detail="advertised in this fixture"
+          detail="advertised by this Hub"
         />
       </dl>
 
       <div className="panel identity-panel">
         <div>
           <p className="card-kicker">Pinned Hub identity</p>
-          <p className="mono-text identity-value">{pinnedIdentity}</p>
+          <p className="mono-text identity-value">{snapshot.hub.id}</p>
         </div>
-        <p>
-          Endpoint changes must still match this identity. The fixture stores
-          it in memory only.
-        </p>
+        <dl className="identity-list">
+          <div>
+            <dt>TLS identity</dt>
+            <dd>{snapshot.hub.tlsIdentity ?? 'Not supplied'}</dd>
+          </div>
+          <div>
+            <dt>Manifest key</dt>
+            <dd>{snapshot.hub.manifestKey ?? 'Not advertised'}</dd>
+          </div>
+          <div>
+            <dt>Readiness</dt>
+            <dd>{snapshot.hub.readiness}</dd>
+          </div>
+        </dl>
+        <p>Endpoint changes must still match the pinned Hub UUID.</p>
       </div>
 
       <div className="panel">

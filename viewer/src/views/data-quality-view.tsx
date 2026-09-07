@@ -11,7 +11,8 @@ interface DataQualityViewProps {
 }
 
 export function DataQualityView({ snapshot, state }: DataQualityViewProps) {
-  const unresolved = snapshot.quality.gaps.filter((gap) => gap.status === 'open');
+  const quality = snapshot.quality;
+  const unresolved = quality?.gaps.filter((gap) => gap.status === 'open') ?? [];
 
   return (
     <ViewFrame
@@ -21,7 +22,13 @@ export function DataQualityView({ snapshot, state }: DataQualityViewProps) {
       description="Visible coverage and gaps show what the Hub knows and where it does not."
       state={state}
     >
-      {snapshot.quality.overall === 'unknown' ? (
+      {snapshot.resources.quality.availability === 'unsupported' ? (
+        <DataState
+          title="Data quality unsupported"
+          detail={snapshot.resources.quality.detail ?? 'Data quality is unsupported.'}
+          kind="notice"
+        />
+      ) : quality === null || quality.overall === 'unknown' ? (
         <DataState
           title="No data-quality report"
           detail="The Hub returned no quality projection for this fixture state."
@@ -32,7 +39,7 @@ export function DataQualityView({ snapshot, state }: DataQualityViewProps) {
             <Metric
               label="Observed coverage"
               value={valueOrAbsent(
-                snapshot.quality.observedCoveragePercent,
+                quality.observedCoveragePercent,
                 '%',
               )}
             />
@@ -44,12 +51,12 @@ export function DataQualityView({ snapshot, state }: DataQualityViewProps) {
             />
             <Metric
               label="Projection"
-              value={snapshot.quality.overall}
+              value={quality.overall}
               detail="viewer fixture classification"
             />
             <Metric
               label="Generated"
-              value={formatDateTime(snapshot.quality.generatedAt)}
+              value={formatDateTime(quality.generatedAt)}
             />
           </dl>
 

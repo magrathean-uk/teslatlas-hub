@@ -53,7 +53,8 @@ export class FixtureDataSource implements ViewerDataSource {
       hubId: discoveredFixtureHub.id,
       deviceId: 'device-viewer',
       pairedAt: '2026-08-30T09:55:00.000Z',
-      identityFingerprint: discoveredFixtureHub.identityFingerprint,
+      manifestKey: discoveredFixtureHub.manifestKey,
+      tlsIdentity: discoveredFixtureHub.tlsIdentity,
     };
   }
 
@@ -91,5 +92,9 @@ export class FixtureDataSource implements ViewerDataSource {
     const snapshot = createFixtureSnapshot('complete');
     snapshot.devices = snapshot.devices.filter((device) => device.id !== deviceId);
     return snapshot.devices;
+  }
+
+  async logout(): Promise<void> {
+    // Fixture pairing exists only in the owning App state.
   }
 }
