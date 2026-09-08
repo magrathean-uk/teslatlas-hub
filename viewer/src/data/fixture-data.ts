@@ -118,6 +118,18 @@ const completeSnapshot: HubSnapshot = {
       },
     },
   ],
+  drivePaging: {
+    'vehicle-redacted-1': {
+      resource: { availability: 'present', retained: false, detail: null },
+      hasMore: false,
+      loadedCount: 1,
+    },
+    'vehicle-redacted-2': {
+      resource: { availability: 'present', retained: false, detail: null },
+      hasMore: false,
+      loadedCount: 1,
+    },
+  },
   charges: [
     {
       id: 'charge-redacted-51',
@@ -326,6 +338,20 @@ export function createFixtureSnapshot(
       collector.detail = 'Collector is offline; showing last known data.';
     });
   }
+
+  snapshot.drivePaging = Object.fromEntries(
+    snapshot.vehicles.map((vehicle) => {
+      const count = snapshot.drives.filter((drive) => drive.vehicleId === vehicle.id).length;
+      return [
+        vehicle.id,
+        {
+          resource: snapshot.resources.drives,
+          hasMore: false,
+          loadedCount: count,
+        },
+      ];
+    }),
+  );
 
   return snapshot;
 }

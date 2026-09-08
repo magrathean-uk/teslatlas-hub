@@ -23,7 +23,7 @@ const scenarioValue = search.get('scenario');
 const scenario = scenarios.includes(scenarioValue as FixtureScenario)
   ? (scenarioValue as FixtureScenario)
   : 'complete';
-const initialPaired = search.get('paired') !== 'false';
+const initialPaired = mode === 'fixture' && search.get('paired') !== 'false';
 const dataSource = createDataSource(mode);
 
 createRoot(document.getElementById('root')!).render(

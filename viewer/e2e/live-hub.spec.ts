@@ -13,6 +13,16 @@ function required(name: string): string {
   return value;
 }
 
+function redactRequestPath(path: string): string {
+  const url = new URL(path, 'https://receipt.invalid');
+  const safe = new URLSearchParams();
+  const limit = url.searchParams.get('limit');
+  if (limit !== null) safe.set('limit', limit);
+  if (url.searchParams.has('cursor')) safe.set('cursor', '[redacted]');
+  if (url.searchParams.has('if_none_match')) safe.set('if_none_match', '[redacted]');
+  return safe.size === 0 ? url.pathname : `${url.pathname}?${safe.toString()}`;
+}
+
 function field(record: Record<string, unknown>, snake: string, camel: string): string {
   const value = record[snake] ?? record[camel];
   if (typeof value !== 'string' || value.length === 0) {
@@ -244,7 +254,7 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
     await expect(
       drivesSection.getByText('Some drive sessions are temporarily unavailable'),
     ).toBeVisible();
-    await expect(drivesSection.locator('.count-chip')).toHaveText('5');
+    await expect(drivesSection.locator('.section-heading').first().locator('.count-chip')).toHaveText('5');
     await expect(drivesSection.getByText('Not reported').first()).toBeVisible();
     expect(initialMixedCurrentAborts).toBe(1);
     expect(initialMixedDriveAborts).toBe(1);
@@ -257,7 +267,7 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
     await expect(
       drivesSection.getByText('Some drive sessions are temporarily unavailable'),
     ).toHaveCount(0);
-    await expect(drivesSection.locator('.count-chip')).toHaveText('5');
+    await expect(drivesSection.locator('.section-heading').first().locator('.count-chip')).toHaveText('5');
     await navigation.getByRole('button', { name: 'Current state' }).click();
     await expect(
       page.getByText('Some current state is temporarily unavailable'),
@@ -292,9 +302,7 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
       (pageEvidence) => pageEvidence.vehicleId === fiveDriveVehicleId,
     );
     expect(initialFiveDrivePages.map(({ itemIds }) => itemIds)).toEqual([
-      ['105', '104'],
-      ['103', '102'],
-      ['101'],
+      ['105', '104', '103', '102', '101'],
     ]);
     expect(initialFiveDrivePages.at(-1)?.nextCursor).toBeNull();
 
@@ -328,7 +336,7 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
             `/v1/vehicles/${fiveDriveVehicleId}/drives?`,
           ),
       );
-    await expect.poll(() => replayedFiveDriveRequests().length).toBe(3);
+    await expect.poll(() => replayedFiveDriveRequests().length).toBe(1);
     expect(replayedFiveDriveRequests().every(({ hasIfNoneMatch }) => hasIfNoneMatch)).toBe(
       true,
     );
@@ -339,7 +347,7 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
             `/v1/vehicles/${fiveDriveVehicleId}/drives?`,
           ) && (response.status === 200 || response.status === 304),
       );
-    await expect.poll(() => replayedFiveDriveResponses().length).toBe(3);
+    await expect.poll(() => replayedFiveDriveResponses().length).toBe(1);
     expect(replayedFiveDriveResponses()[0].status).toBe(304);
     const replayedFiveDriveRequestEvidence = replayedFiveDriveRequests();
     const replayedFiveDriveResponseEvidence = replayedFiveDriveResponses();
@@ -361,7 +369,7 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
     await page.route(isDriveRoute, abortDriveReads);
     await page.getByRole('button', { name: 'Refresh Hub data' }).click();
     await expect(page.getByText('Showing retained drive sessions')).toBeVisible();
-    await expect(drivesSection.locator('.count-chip')).toHaveText('5');
+    await expect(drivesSection.locator('.section-heading').first().locator('.count-chip')).toHaveText('5');
     expect(selectivelyAbortedDriveGets).toBeGreaterThanOrEqual(1);
     expect(
       responses
@@ -393,7 +401,7 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
     const recoveryResponseStart = responses.length;
     await page.getByRole('button', { name: 'Refresh Hub data' }).click();
     await expect(page.getByText('Showing retained drive sessions')).toHaveCount(0);
-    await expect(drivesSection.locator('.count-chip')).toHaveText('5');
+    await expect(drivesSection.locator('.section-heading').first().locator('.count-chip')).toHaveText('5');
     expect(
       responses.slice(recoveryResponseStart).some(
         (response) =>
@@ -556,7 +564,7 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
         ).length,
       ]),
     );
-    expect(Math.max(...Object.values(drivePageCounts))).toBe(3);
+    expect(Math.max(...Object.values(drivePageCounts))).toBe(1);
 
     const viewerBundle = await hashBundle(resolve('dist'));
     const servedViewerFiles = await page.evaluate(
@@ -617,7 +625,11 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
         drivePageCounts,
         drivePagination: {
           vehicleId: fiveDriveVehicleId,
-          pages: initialFiveDrivePages,
+          pages: initialFiveDrivePages.map(({ vehicleId, itemIds, nextCursor }) => ({
+            vehicleId,
+            itemIds,
+            nextCursorPresent: nextCursor !== null,
+          })),
           flattenedIds: initialFiveDrivePages.flatMap(({ itemIds }) => itemIds),
           terminalCursorObserved: initialFiveDrivePages.at(-1)?.nextCursor === null,
           perPageConditionalRequests: replayedFiveDriveRequestEvidence.length,
@@ -651,8 +663,14 @@ test('built Viewer pairs and reads the real current-Hub SDK path', async () => {
         unsupportedRoutesRequested: 0,
         localLogoutRequestCount,
       },
-      requests,
-      responses,
+      requests: requests.map((request) => ({
+        ...request,
+        path: redactRequestPath(request.path),
+      })),
+      responses: responses.map((response) => ({
+        ...response,
+        path: redactRequestPath(response.path),
+      })),
     };
     const receiptText = `${JSON.stringify(receipt, null, 2)}\n`;
     const receiptPath = required('TESLATLAS_VIEWER_HUB_RECEIPT');

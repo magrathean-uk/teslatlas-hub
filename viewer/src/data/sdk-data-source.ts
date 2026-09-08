@@ -13,6 +13,7 @@ import {
   ViewerDataError,
   type CurrentVehicleState,
   type DiscoveredHub,
+  type DrivePagingState,
   type DriveSummary,
   type FixtureScenario,
   type HubSnapshot,
@@ -25,8 +26,7 @@ import {
   type ViewerDataSource,
 } from './types';
 
-const DRIVE_PAGE_LIMIT = 2;
-const MAX_DRIVE_PAGES = 3;
+const DRIVE_PAGE_LIMIT = 25;
 
 type HubClientFactory = (options: CreateHubClientOptions) => HubClient;
 
@@ -39,6 +39,12 @@ interface DrivePageCache {
 
 interface DriveCache {
   pages: DrivePageCache[];
+}
+
+interface DriveReadResult {
+  items: DriveSummary[];
+  cache: DriveCache;
+  paging: DrivePagingState;
 }
 
 const present = (): ResourceState => ({
@@ -79,6 +85,61 @@ function isAuthorizationLoss(error: unknown): boolean {
   );
 }
 
+function errorCode(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return null;
+  }
+  return typeof error.code === 'string' ? error.code : null;
+}
+
+function isHistoryContinuationReset(error: unknown): boolean {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    (error.status === 403 || error.status === 404)
+  ) {
+    return true;
+  }
+  return new Set([
+    'HISTORY_CHANGED',
+    'INVALID_ETAG_REPLAY',
+    'invalid_cursor',
+    'cursor_expired',
+    'cursor_query_mismatch',
+    'cursor_scope_changed',
+    'vehicle_not_found',
+    'unsupported_method',
+    'missing_capability',
+  ]).has(errorCode(error) ?? '');
+}
+
+function driveKey(drive: DriveSummary): string {
+  return `${drive.vehicleId}:${drive.id}`;
+}
+
+function replaceVehicleDrives(
+  drives: DriveSummary[],
+  vehicleId: string,
+  replacement: DriveSummary[],
+): DriveSummary[] {
+  const firstIndex = drives.findIndex((drive) => drive.vehicleId === vehicleId);
+  if (firstIndex < 0) return [...drives, ...replacement];
+  const result: DriveSummary[] = [];
+  let inserted = false;
+  drives.forEach((drive, index) => {
+    if (drive.vehicleId === vehicleId) {
+      if (!inserted && index === firstIndex) {
+        result.push(...replacement);
+        inserted = true;
+      }
+      return;
+    }
+    result.push(drive);
+  });
+  return result;
+}
+
 function abortError(): DOMException {
   return new DOMException('The operation was aborted.', 'AbortError');
 }
@@ -87,17 +148,36 @@ function isoFromMilliseconds(value: number | null): string | null {
   return value === null ? null : new Date(value).toISOString();
 }
 
+function dedupeDrives(items: DriveSummary[]): DriveSummary[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.vehicleId}:${item.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function normaliseEndpoint(value: string): string {
-  const endpoint = new URL(value);
+  const endpoint = new URL(value.trim());
   if (endpoint.protocol !== 'https:') {
     throw new ViewerDataError(
       'HTTPS_REQUIRED',
       'Live Hub endpoints must use HTTPS.',
     );
   }
-  endpoint.hash = '';
-  endpoint.search = '';
-  endpoint.pathname = endpoint.pathname.replace(/\/+$/u, '') || '/';
+  if (
+    endpoint.username.length > 0 ||
+    endpoint.password.length > 0 ||
+    endpoint.pathname !== '/' ||
+    endpoint.search.length > 0 ||
+    endpoint.hash.length > 0
+  ) {
+    throw new ViewerDataError(
+      'INVALID_ENDPOINT',
+      'Live Hub endpoints must be a root HTTPS origin without a path, query, or fragment.',
+    );
+  }
   return endpoint.href.replace(/\/$/u, '');
 }
 
@@ -229,6 +309,7 @@ export class SdkDataSource implements ViewerDataSource {
     | { accessToken: string; deviceId: string; expiresAtMs: number }
     | undefined;
   private discoveryValue: HubDiscovery | null = null;
+  private acceptedTlsIdentity: string | null = null;
   private previousSnapshot: HubSnapshot | null = null;
   private readonly driveCache = new Map<string, DriveCache>();
   private generation = 0;
@@ -257,6 +338,7 @@ export class SdkDataSource implements ViewerDataSource {
     this.connection = next;
     this.credential = undefined;
     this.discoveryValue = null;
+    this.acceptedTlsIdentity = null;
     this.previousSnapshot = null;
     this.driveCache.clear();
   }
@@ -272,7 +354,7 @@ export class SdkDataSource implements ViewerDataSource {
         mapHubDiscovery(
           response.value,
           connection.endpoint,
-          connection.tlsIdentity,
+          this.acceptedTlsIdentity ?? connection.tlsIdentity,
         ),
       ];
     } finally {
@@ -322,6 +404,7 @@ export class SdkDataSource implements ViewerDataSource {
       });
       this.assertCurrent(generation, controller.signal);
       const discovered = this.discoveryValue;
+      this.acceptedTlsIdentity = invitation.tlsPin;
       return {
         hubId: connection.expectedHubId,
         deviceId: claimed.value.deviceId,
@@ -448,14 +531,25 @@ export class SdkDataSource implements ViewerDataSource {
             );
 
       let drives: DriveSummary[] = [];
+      const drivePaging: Record<string, DrivePagingState> = {};
+      const driveCaches = new Map<string, DriveCache>();
       let drivesState: ResourceState;
       if (!(this.discoveryValue.capabilities as readonly string[]).includes('query.drives')) {
         drivesState = unsupported('This Hub does not advertise drive queries.');
+        vehicles.forEach((vehicle) => {
+          drivePaging[vehicle.id] = {
+            resource: drivesState,
+            hasMore: null,
+            loadedCount: 0,
+          };
+        });
       } else if (vehiclesResult.status === 'rejected' && vehicles.length === 0) {
         drivesState = unavailable(
           vehiclesResult.reason,
           hasRetainedResource(previous, 'drives'),
         );
+        drives = previous?.drives ?? [];
+        Object.assign(drivePaging, previous?.drivePaging ?? {});
       } else {
         const driveResults = await Promise.allSettled(
           vehicles.map((vehicle) =>
@@ -479,22 +573,39 @@ export class SdkDataSource implements ViewerDataSource {
           (result): result is PromiseRejectedResult => result.status === 'rejected',
         );
         drives = driveResults.flatMap((result, index) => {
-          if (result.status === 'fulfilled') return result.value;
+          if (result.status === 'fulfilled') {
+            const value = result.value;
+            driveCaches.set(vehicles[index].id, value.cache);
+            drivePaging[vehicles[index].id] = value.paging;
+            return value.items;
+          }
           return (previous?.drives ?? []).filter(
             (drive) => drive.vehicleId === vehicles[index].id,
           );
         });
+        driveResults.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            const prior = previous?.drivePaging[vehicles[index].id];
+            drivePaging[vehicles[index].id] = {
+              resource: unavailable(
+                result.reason,
+                prior?.loadedCount !== undefined && prior.loadedCount > 0,
+              ),
+              hasMore: null,
+              loadedCount: prior?.loadedCount ?? 0,
+            };
+          }
+        });
+        const previousDriveKeys = new Set(
+          (previous?.drives ?? []).map((drive) => driveKey(drive)),
+        );
         drivesState =
           failures.length === 0
             ? present()
             : unavailable(
                 failures[0].reason,
                 hasRetainedResource(previous, 'drives') &&
-                  drives.some((drive) =>
-                    (previous?.drives ?? []).some(
-                      (oldDrive) => oldDrive.id === drive.id,
-                    ),
-                  ),
+                  drives.some((drive) => previousDriveKeys.has(driveKey(drive))),
               );
       }
 
@@ -502,7 +613,7 @@ export class SdkDataSource implements ViewerDataSource {
       const discoveryMapped = mapHubDiscovery(
         this.discoveryValue,
         connection.endpoint,
-        connection.tlsIdentity,
+        this.acceptedTlsIdentity ?? connection.tlsIdentity,
       );
       const health =
         healthResult.status === 'fulfilled' ? healthResult.value.value : null;
@@ -549,6 +660,7 @@ export class SdkDataSource implements ViewerDataSource {
         vehicles,
         currentByVehicle,
         drives,
+        drivePaging,
         charges: [],
         quality: null,
         collectors: [],
@@ -570,6 +682,17 @@ export class SdkDataSource implements ViewerDataSource {
         },
       };
       this.assertCurrent(generation, controller.signal);
+      const nextDriveCache = new Map(this.driveCache);
+      if (vehiclesResult.status === 'fulfilled') {
+        const currentVehicleIds = new Set(vehicles.map((vehicle) => vehicle.id));
+        for (const vehicleId of nextDriveCache.keys()) {
+          if (!currentVehicleIds.has(vehicleId)) nextDriveCache.delete(vehicleId);
+        }
+      }
+      driveCaches.forEach((cache, vehicleId) => nextDriveCache.set(vehicleId, cache));
+      this.assertCurrent(generation, controller.signal);
+      this.driveCache.clear();
+      nextDriveCache.forEach((cache, vehicleId) => this.driveCache.set(vehicleId, cache));
       this.previousSnapshot = snapshot;
       return snapshot;
     } finally {
@@ -587,11 +710,103 @@ export class SdkDataSource implements ViewerDataSource {
     );
   }
 
+  async loadMoreDrives(
+    vehicleId: string,
+    signal?: AbortSignal,
+  ): Promise<HubSnapshot> {
+    const existing = this.previousSnapshot;
+    if (existing === null) {
+      throw new ViewerDataError(
+        'LIVE_CONNECTION_REQUIRED',
+        'Read the Hub before loading more drive history.',
+      );
+    }
+    const paging = existing.drivePaging[vehicleId];
+    if (paging === undefined || paging.resource.availability === 'unsupported') {
+      return existing;
+    }
+    if (paging.hasMore === false || paging.hasMore === null) {
+      return existing;
+    }
+    const cached = this.driveCache.get(vehicleId);
+    const lastPage = cached?.pages[cached.pages.length - 1];
+    if (cached === undefined || lastPage === undefined || lastPage.nextCursor === null) {
+      return existing;
+    }
+
+    const { client, generation, controller, release } = this.beginRead(signal);
+    try {
+      const response = await client.drives(vehicleId, {
+        cursor: lastPage.nextCursor,
+        limit: DRIVE_PAGE_LIMIT,
+        signal: controller.signal,
+      });
+      this.assertCurrent(generation, controller.signal);
+      if (response.kind === 'notModified') {
+        throw new ViewerDataError(
+          'INVALID_ETAG_REPLAY',
+          'The Hub returned not modified for an uncached history page.',
+        );
+      }
+      const nextCursor = response.value.nextCursor;
+      const priorCursors = new Set(
+        cached.pages.flatMap((page) => [page.cursor, page.nextCursor]),
+      );
+      if (nextCursor !== null && priorCursors.has(nextCursor)) {
+        throw new ViewerDataError(
+          'HISTORY_CHANGED',
+          'History changed; refresh to continue.',
+        );
+      }
+      const page: DrivePageCache = {
+        cursor: lastPage.nextCursor,
+        etag: response.metadata.etag,
+        items: response.value.items.map(mapHubDrive),
+        nextCursor,
+      };
+      const nextCache: DriveCache = { pages: [...cached.pages, page] };
+      const allItems = dedupeDrives(nextCache.pages.flatMap(({ items }) => items));
+      const nextPaging: DrivePagingState = {
+        resource: present(),
+        hasMore: nextCursor !== null,
+        loadedCount: allItems.length,
+      };
+      this.assertCurrent(generation, controller.signal);
+      this.driveCache.set(vehicleId, nextCache);
+      const snapshot: HubSnapshot = {
+        ...existing,
+        generatedAt: new Date().toISOString(),
+        drives: replaceVehicleDrives(existing.drives, vehicleId, allItems),
+        drivePaging: { ...existing.drivePaging, [vehicleId]: nextPaging },
+      };
+      this.previousSnapshot = snapshot;
+      return snapshot;
+    } catch (error) {
+      if (isAuthorizationLoss(error)) {
+        await this.logout();
+        throw new ViewerDataError(
+          'AUTH_LOST',
+          'Hub authorization was lost. Pair this viewer again.',
+        );
+      }
+      if (isHistoryContinuationReset(error)) {
+        this.assertCurrent(generation, controller.signal);
+        const blocked = this.blockDriveContinuation(existing, vehicleId, error);
+        this.previousSnapshot = blocked;
+        return blocked;
+      }
+      throw error;
+    } finally {
+      release();
+    }
+  }
+
   async logout(): Promise<void> {
     const client = this.client;
     this.invalidate();
     this.previousSnapshot = null;
     this.discoveryValue = null;
+    this.acceptedTlsIdentity = null;
     this.driveCache.clear();
     this.credential = undefined;
     if (client !== null) {
@@ -605,13 +820,14 @@ export class SdkDataSource implements ViewerDataSource {
     client: HubClient,
     vehicleId: string,
     signal: AbortSignal,
-  ): Promise<DriveSummary[]> {
+  ): Promise<DriveReadResult> {
     const cached = this.driveCache.get(vehicleId);
     const pages: DrivePageCache[] = [];
-    const items: DriveSummary[] = [];
+    let items: DriveSummary[] = [];
     let cursor: string | null = null;
 
-    for (let page = 0; page < MAX_DRIVE_PAGES; page += 1) {
+    const pageCount = Math.max(cached?.pages.length ?? 0, 1);
+    for (let page = 0; page < pageCount; page += 1) {
       const cachedPage = cached?.pages[page];
       const matchingCache: DrivePageCache | undefined =
         cachedPage !== undefined && cachedPage.cursor === cursor
@@ -633,7 +849,7 @@ export class SdkDataSource implements ViewerDataSource {
           );
         }
         pages.push(matchingCache);
-        items.push(...matchingCache.items);
+        items = dedupeDrives([...items, ...matchingCache.items]);
         cursor = matchingCache.nextCursor;
       } else {
         const pageItems = response.value.items.map(mapHubDrive);
@@ -644,13 +860,53 @@ export class SdkDataSource implements ViewerDataSource {
           nextCursor: response.value.nextCursor,
         };
         pages.push(pageCache);
-        items.push(...pageItems);
+        items = dedupeDrives([...items, ...pageItems]);
         cursor = pageCache.nextCursor;
       }
       if (cursor === null) break;
+      const knownCursors = new Set(
+        pages
+          .slice(0, -1)
+          .flatMap((entry) => [entry.cursor, entry.nextCursor]),
+      );
+      if (knownCursors.has(cursor)) {
+        throw new ViewerDataError(
+          'HISTORY_CHANGED',
+          'History changed; refresh to continue.',
+        );
+      }
     }
-    this.driveCache.set(vehicleId, { pages });
-    return items;
+    const cache: DriveCache = { pages };
+    return {
+      items,
+      cache,
+      paging: {
+        resource: present(),
+        hasMore: cursor !== null,
+        loadedCount: items.length,
+      },
+    };
+  }
+
+  private blockDriveContinuation(
+    snapshot: HubSnapshot,
+    vehicleId: string,
+    error: unknown,
+  ): HubSnapshot {
+    const paging = snapshot.drivePaging[vehicleId];
+    if (paging === undefined) return snapshot;
+    return {
+      ...snapshot,
+      generatedAt: new Date().toISOString(),
+      drivePaging: {
+        ...snapshot.drivePaging,
+        [vehicleId]: {
+          ...paging,
+          resource: unavailable(error, paging.loadedCount > 0),
+          hasMore: null,
+        },
+      },
+    };
   }
 
   private beginRead(signal?: AbortSignal): {
@@ -690,16 +946,18 @@ export class SdkDataSource implements ViewerDataSource {
   private requireClient(): HubClient {
     const connection = this.requireConnection();
     if (this.client === null) {
+      const clientGeneration = this.generation;
       this.client = this.clientFactory({
         endpoint: connection.endpoint,
         expectedHubId: connection.expectedHubId,
         credentials: {
-          load: () => this.credential,
+          load: () =>
+            this.generation === clientGeneration ? this.credential : undefined,
           save: (credential) => {
-            this.credential = credential;
+            if (this.generation === clientGeneration) this.credential = credential;
           },
           clear: () => {
-            this.credential = undefined;
+            if (this.generation === clientGeneration) this.credential = undefined;
           },
         },
       });

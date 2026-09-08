@@ -36,6 +36,40 @@ test('fixture mode traverses every public reference view without API requests', 
   expect(apiRequests).toEqual([]);
 });
 
+test('home route exposes the editable live connection flow without pre-pair reads', async ({
+  page,
+}) => {
+  const apiRequests: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.includes('/.well-known/') || path.startsWith('/v1/')) {
+      apiRequests.push(request.url());
+    }
+  });
+
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Connect to my Hub' }).click();
+  await expect(page.getByRole('heading', { name: 'Pair with a Hub' })).toBeVisible();
+  await expect(page.getByLabel('Hub endpoint')).toBeVisible();
+
+  await page.getByLabel('Hub endpoint').fill('http://hub.example.test');
+  await page.getByLabel('Expected Hub UUID').fill('hub-id');
+  await page.getByRole('button', { name: 'Inspect live Hub' }).click();
+  await expect(page.getByRole('alert')).toContainText('HTTPS');
+  await expect(page.getByLabel('Hub endpoint')).toBeFocused();
+  expect(apiRequests).toEqual([]);
+});
+
+test('fixture history groups expose terminal state per vehicle', async ({ page }) => {
+  await page.goto('/?scenario=complete');
+  await page.getByRole('button', { name: 'Recent sessions' }).click();
+  const groups = page.locator('.session-group');
+  await expect(groups).toHaveCount(2);
+  await expect(groups.nth(0)).toContainText('End of available history');
+  await expect(groups.nth(1)).toContainText('End of available history');
+  await expect(page.getByRole('button', { name: /Load more drives/ })).toHaveCount(0);
+});
+
 test('fixture state matrix keeps empty, stale, inferred, degraded, offline, error, and loading distinct', async ({
   page,
 }) => {

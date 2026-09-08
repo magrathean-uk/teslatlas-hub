@@ -33,7 +33,8 @@ The live adapter:
 3. leaves cursors, conditional requests, event replay, typed errors, and
    credential storage with the SDK;
 4. has mapper/lifecycle tests for current-Hub null and failure semantics;
-5. is exercised from the built Viewer against an actual Hub and browser.
+5. has a managed and installed-Hub browser acceptance path; those runs are
+   recorded separately from the local fixture and unit evidence.
 
 Do not retrofit fixture property names into that adapter. The released SDK is
 authoritative even when its names differ.

@@ -9,6 +9,37 @@ import type { ViewerDataSource } from '../data/types';
 import { ViewerDataError } from '../data/types';
 
 describe('App discovery and pairing', () => {
+  it('offers live connection from the default fixture dashboard', () => {
+    render(
+      <App
+        dataSource={new FixtureDataSource()}
+        mode="fixture"
+        initialPaired
+      />,
+    );
+
+    expect(
+      screen.getByRole('link', { name: /connect to my Hub/i }),
+    ).toHaveAttribute('href', '/?mode=live&paired=false');
+  });
+
+  it('never treats a live URL or prop as already paired', () => {
+    const readSnapshot = vi.fn(async () => createFixtureSnapshot('complete'));
+    const source: ViewerDataSource = {
+      discover: vi.fn(),
+      pair: vi.fn(),
+      readSnapshot,
+      loadMoreDrives: vi.fn(async () => createFixtureSnapshot('complete')),
+      removePairedDevice: vi.fn(),
+      logout: vi.fn(async () => undefined),
+    };
+
+    render(<App dataSource={source} mode="live" initialPaired />);
+
+    expect(screen.getByRole('heading', { name: 'Pair with a Hub' })).toBeInTheDocument();
+    expect(readSnapshot).not.toHaveBeenCalled();
+  });
+
   it('finds the redacted fixture Hub and explains the fixture invitation', async () => {
     render(
       <App
@@ -119,6 +150,7 @@ describe('App discovery and pairing', () => {
 
     expect(pairSpy).toHaveBeenCalledWith(
       expect.objectContaining({ hubId: 'hub-redacted-2' }),
+      expect.any(AbortSignal),
     );
   });
 
@@ -137,7 +169,7 @@ describe('App discovery and pairing', () => {
           manifestKey: null,
           tlsIdentity: 'SHA256:4A:89:71:03:DE:MO',
           protocolVersion: 'fixture-0.1',
-          status: 'healthy',
+          status: 'healthy' as const,
         },
       ]);
 
@@ -247,6 +279,7 @@ describe('App discovery and pairing', () => {
       discover,
       pair,
       readSnapshot: vi.fn(async () => createFixtureSnapshot('complete')),
+      loadMoreDrives: vi.fn(async () => createFixtureSnapshot('complete')),
       removePairedDevice: vi.fn(),
       logout: vi.fn(async () => undefined),
     };
@@ -299,24 +332,104 @@ describe('App discovery and pairing', () => {
         hubId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         invitationCode: invitation,
       }),
+      expect.any(AbortSignal),
     );
   });
 
-  it('returns to pairing when live authorization is lost', async () => {
+  it('lets a live user edit connection details after discovery without reloading', async () => {
+    const user = userEvent.setup();
     const source: ViewerDataSource = {
-      discover: vi.fn(),
+      configure: vi.fn(),
+      discover: vi.fn(async () => [
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          displayName: 'Hub aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          endpoint: 'https://localhost:18450',
+          manifestKey: null,
+          tlsIdentity: null,
+          protocolVersion: 'teslatlas-sync/1',
+          status: 'healthy' as const,
+        },
+      ]),
       pair: vi.fn(),
+      readSnapshot: vi.fn(async () => createFixtureSnapshot('complete')),
+      loadMoreDrives: vi.fn(async () => createFixtureSnapshot('complete')),
+      removePairedDevice: vi.fn(),
+      logout: vi.fn(async () => undefined),
+    };
+
+    render(<App dataSource={source} mode="live" initialPaired={false} />);
+    await user.type(screen.getByLabelText('Hub endpoint'), 'https://localhost:18450');
+    await user.type(
+      screen.getByLabelText('Expected Hub UUID'),
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+    await user.click(screen.getByRole('button', { name: 'Inspect live Hub' }));
+    await screen.findByRole('heading', {
+      name: 'Hub aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    });
+
+    await user.click(screen.getByRole('button', { name: /edit connection/i }));
+
+    expect(screen.getByLabelText('Hub endpoint')).toHaveValue('https://localhost:18450');
+    expect(screen.getByLabelText('Expected Hub UUID')).toHaveValue(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+    expect(screen.getByRole('button', { name: 'Inspect live Hub' })).toBeInTheDocument();
+  });
+
+  it('returns to pairing when live authorization is lost', async () => {
+    const user = userEvent.setup();
+    const hubId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const invitation = JSON.stringify({
+      pairing_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      secret: 'test-secret',
+      expires_at_ms: 1_788_600_000_000,
+      endpoint: 'https://localhost:18450',
+      tls_pin: 'sha256:tls-certificate',
+      pairing_uri: 'teslatlas://pair/test',
+    });
+    const source: ViewerDataSource = {
+      configure: vi.fn(),
+      discover: vi.fn(async () => [
+        {
+          id: hubId,
+          displayName: `Hub ${hubId}`,
+          endpoint: 'https://localhost:18450',
+          manifestKey: null,
+          tlsIdentity: null,
+          protocolVersion: 'teslatlas-sync/1',
+          status: 'healthy' as const,
+        },
+      ]),
+      pair: vi.fn(async () => ({
+        hubId,
+        deviceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        pairedAt: '2026-09-05T00:00:00.000Z',
+        manifestKey: null,
+        tlsIdentity: 'sha256:tls-certificate',
+      })),
       readSnapshot: vi.fn(async () => {
         throw new ViewerDataError(
           'AUTH_LOST',
           'Hub authorization was lost. Pair this viewer again.',
         );
       }),
+      loadMoreDrives: vi.fn(async () => createFixtureSnapshot('complete')),
       removePairedDevice: vi.fn(),
       logout: vi.fn(async () => undefined),
     };
 
     render(<App dataSource={source} mode="live" initialPaired />);
+
+    await user.type(screen.getByLabelText('Hub endpoint'), 'https://localhost:18450');
+    await user.type(screen.getByLabelText('Expected Hub UUID'), hubId);
+    await user.click(screen.getByRole('button', { name: 'Inspect live Hub' }));
+    await screen.findByRole('heading', { name: `Hub ${hubId}` });
+    fireEvent.change(screen.getByLabelText('Pairing invitation JSON'), {
+      target: { value: invitation },
+    });
+    await user.click(screen.getByRole('button', { name: 'Pair live Hub' }));
 
     expect(
       await screen.findByRole('heading', { name: 'Pair with a Hub' }),

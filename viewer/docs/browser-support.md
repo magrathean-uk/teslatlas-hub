@@ -17,15 +17,15 @@ Playwright package on macOS. It verifies:
 - 320px reflow, equivalent to a 1280px layout at 400% zoom;
 - deterministic desktop and mobile screenshots.
 
-The separate built-Viewer acceptance lane connects Playwright to native ARM64
-Chromium `152.0.7977.75` on Debian 13.6. With a private NSS database and normal
-CA validation, it verifies the packaged SDK path against an actual synthetic
-Hub: wrong-Hub rejection, fresh pairing, two bounded drive pages, ETag replay
-with `304`, retained stale data during a transport outage, reconnection,
-authenticated-session loss, local logout, and zero requests for unsupported
-resources. A second browser without the fixture CA fails with
-`ERR_CERT_AUTHORITY_INVALID`. The receipt also hashes browser-fetched Viewer
-files and compares them with the built `dist` files.
+The recorded built-Viewer acceptance lane used native ARM64 Chromium
+`152.0.7977.75` on Debian 13.6 with a private NSS database and normal CA
+validation against a synthetic Hub. That historical receipt covered wrong-Hub
+rejection, pairing, two bounded pages, `304` replay, outage recovery,
+authenticated-session loss, local logout, and unsupported resources. The
+current Viewer requests up to 25 rows per user-driven page; a fresh run is
+required before claiming current paging or installed-Hub compatibility. A
+second browser without the fixture CA failed with
+`ERR_CERT_AUTHORITY_INVALID` in that lane.
 
 ## Design target, not yet a compatibility claim
 

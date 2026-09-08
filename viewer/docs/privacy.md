@@ -11,8 +11,9 @@
 - The app does not write a credential to local storage, session storage,
   IndexedDB, a cookie, or a service worker.
 - Fixture mode makes no Hub API request.
-- The repository contains no analytics, advertising, telemetry, or hosted
-  deployment configuration.
+- The repository contains no analytics, advertising, telemetry, or hosted Hub
+  deployment. Its optional Docker/Compose files serve only static Viewer
+  assets and do not add persistence.
 - The client loads no external font, tracker, embedded map, remote error
   reporter, or third-party analytics script.
 

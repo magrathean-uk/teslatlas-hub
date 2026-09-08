@@ -5,7 +5,19 @@ import { describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { FixtureDataSource } from '../data/fixture-data-source';
 import { createFixtureSnapshot } from '../data/fixture-data';
-import type { FixtureScenario } from '../data/types';
+import type { DriveSummary, FixtureScenario } from '../data/types';
+import { RecentSessionsView } from './recent-sessions-view';
+
+function makeDrives(vehicleId: string, count: number): DriveSummary[] {
+  const template = createFixtureSnapshot('complete').drives[0];
+  return Array.from({ length: count }, (_, index) => ({
+    ...template,
+    id: `fixture-drive-${vehicleId}-${index + 1}`,
+    vehicleId,
+    startedAt: `2026-08-${String(30 - (index % 20)).padStart(2, '0')}T09:00:00.000Z`,
+    endedAt: `2026-08-${String(30 - (index % 20)).padStart(2, '0')}T09:15:00.000Z`,
+  }));
+}
 
 function renderScenario(scenario: FixtureScenario = 'complete') {
   return render(
@@ -304,6 +316,106 @@ describe('reference views', () => {
     expect(within(sessions).getByText('No recent charges')).toBeInTheDocument();
   });
 
+  it('shows per-vehicle counts and bounded continuation through 51 drives', async () => {
+    const user = userEvent.setup();
+    const source = new FixtureDataSource({
+      drives: makeDrives('vehicle-redacted-1', 51),
+    });
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+
+    const sessions = await openView('Recent sessions');
+    const group = within(sessions)
+      .getByRole('heading', { name: 'Northstar' })
+      .closest<HTMLElement>('.session-group');
+    expect(group).not.toBeNull();
+    if (!group) return;
+
+    expect(within(group).getByText('25', { selector: '.count-chip' })).toBeInTheDocument();
+    await user.click(
+      within(group).getByRole('button', { name: 'Load more drives for Northstar' }),
+    );
+    expect(within(group).getByText('50', { selector: '.count-chip' })).toBeInTheDocument();
+    await user.click(
+      within(group).getByRole('button', { name: 'Load more drives for Northstar' }),
+    );
+    expect(within(group).getByText('51', { selector: '.count-chip' })).toBeInTheDocument();
+    expect(within(group).queryByRole('button', { name: /Load more drives/ })).toBeNull();
+    expect(within(group).getByText('End of available history')).toBeInTheDocument();
+  });
+
+  it('keeps an all-empty page actionable when history has continuation', async () => {
+    const user = userEvent.setup();
+    const source = new FixtureDataSource({
+      drivePages: {
+        'vehicle-redacted-1': [[], makeDrives('vehicle-redacted-1', 1)],
+      },
+    });
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+
+    const sessions = await openView('Recent sessions');
+    const group = within(sessions)
+      .getByRole('heading', { name: 'Northstar' })
+      .closest<HTMLElement>('.session-group');
+    expect(group).not.toBeNull();
+    if (!group) return;
+    expect(within(group).getByText('No recent drives for this vehicle.')).toBeInTheDocument();
+    await user.click(
+      within(group).getByRole('button', { name: 'Load more drives for Northstar' }),
+    );
+    expect(within(group).queryByText('No recent drives for this vehicle.')).toBeNull();
+    expect(within(group).getByText('End of available history')).toBeInTheDocument();
+  });
+
+  it('separates unsupported, changed, and terminal history states', async () => {
+    const source = new FixtureDataSource();
+    const snapshot = createFixtureSnapshot('complete');
+    snapshot.resources.drives = {
+      availability: 'unsupported',
+      retained: false,
+      detail: 'Drive history is unsupported by this Hub profile.',
+    };
+    snapshot.drivePaging = Object.fromEntries(
+      snapshot.vehicles.map((vehicle) => [
+        vehicle.id,
+        {
+          resource: snapshot.resources.drives,
+          hasMore: null,
+          loadedCount: 0,
+        },
+      ]),
+    );
+    vi.spyOn(source, 'readSnapshot').mockResolvedValue(snapshot);
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+    const sessions = await openView('Recent sessions');
+    expect(within(sessions).getByText('Drive history is unsupported by this Hub profile.')).toBeInTheDocument();
+    expect(within(sessions).queryByRole('button', { name: /Load more drives/ })).toBeNull();
+
+  });
+
+  it('shows history changed as refresh-only and omits a continuation control', () => {
+    const snapshot = createFixtureSnapshot('complete');
+    snapshot.drives = snapshot.drives.slice(0, 1);
+    snapshot.drivePaging['vehicle-redacted-1'].hasMore = null;
+    snapshot.drivePaging['vehicle-redacted-1'].loadedCount = 1;
+
+    render(
+      <RecentSessionsView
+        snapshot={snapshot}
+        state="complete"
+        onLoadMore={vi.fn()}
+      />,
+    );
+
+    const group = screen
+      .getByRole('heading', { name: 'Northstar' })
+      .closest<HTMLElement>('.session-group');
+    expect(group).not.toBeNull();
+    if (!group) return;
+    expect(within(group).getByText('History changed; refresh to continue.')).toBeInTheDocument();
+    expect(within(group).queryByRole('button', { name: /Load more drives/ })).toBeNull();
+    expect(within(group).queryByText('End of available history')).toBeNull();
+  });
+
   it('labels stale last-known data without presenting it as current', async () => {
     renderScenario('stale');
 
@@ -387,7 +499,7 @@ describe('reference views', () => {
     };
     vi.spyOn(source, 'readSnapshot').mockResolvedValue(snapshot);
 
-    render(<App dataSource={source} mode="live" initialPaired />);
+    render(<App dataSource={source} mode="fixture" initialPaired />);
 
     const sessions = await openView('Recent sessions');
     expect(within(sessions).getByText('Quality not provided')).toBeInTheDocument();

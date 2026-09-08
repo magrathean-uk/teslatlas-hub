@@ -3,6 +3,10 @@
   "version": "2026.36.2",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=26.0.0",
+    "npm": ">=11.0.0"
+  },
   "bin": {
     "teslatlas-viewer": "bin/teslatlas-viewer.mjs"
   },
@@ -26,6 +30,7 @@
     "test:e2e": "playwright test",
     "pretest:e2e:hub": "npm run build",
     "test:e2e:hub": "playwright test e2e/live-hub.spec.ts --config=playwright.hub.config.ts",
+    "test:e2e:installed:hub": "TESLATLAS_VIEWER_EXTERNAL_SERVER=1 playwright test e2e/installed-hub.spec.ts --config=playwright.hub.config.ts",
     "sdk:verify": "node scripts/verify-sdk-artifact.mjs",
     "capture:screenshots": "playwright test e2e/screenshots.spec.ts"
   },

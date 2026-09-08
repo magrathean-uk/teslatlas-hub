@@ -9,7 +9,7 @@ Live mode is bound to the verified `@teslatlas/sdk` `2026.36.2` package and
 `hub-http-v1@1.0.0` profile. The repository vendors the exact tarball because
 registry publication is not part of this candidate. Install, typecheck, test,
 and build admission recompute its SHA-256 and the byte-for-byte installed
-78-member manifest. Fixture names and richer display fields remain
+80-member manifest. Fixture names and richer display fields remain
 viewer-owned examples rather than additions to the current profile.
 
 ## Contract catalogue

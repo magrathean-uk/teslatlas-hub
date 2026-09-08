@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: ['live-hub.spec.ts'],
+  testIgnore: ['live-hub.spec.ts', 'installed-hub.spec.ts'],
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,

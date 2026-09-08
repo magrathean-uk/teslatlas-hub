@@ -25,6 +25,7 @@ ViewerDataSource
 - discover candidate Hubs;
 - pair a device while retaining its credential in memory;
 - read one immutable viewer snapshot;
+- load one additional bounded drive page for a selected vehicle;
 - remove one fixture paired device.
 
 It is dependency inversion for this app, not a replacement SDK. Transport
@@ -73,7 +74,7 @@ request timing alone is never evidence. A missing timestamp means unknown age.
 
 1. `main.tsx` reads deterministic mode, scenario, and paired-state query inputs.
 2. `createDataSource` selects the fixture source or SDK adapter.
-3. `useViewer` owns abort-safe loading, ready, and error transitions.
+3. `useViewer` owns serialized abort-safe refresh/page loading, ready, and error transitions.
 4. `App` derives a state per active view from the immutable snapshot.
 5. Each view renders only its slice and keeps quality evidence next to values.
 
@@ -89,7 +90,9 @@ Paired-device removal updates only the current in-memory snapshot.
   returns to discovery. It does not claim to revoke a Hub device.
 - Live drive cursors and conditional requests pass through the public SDK.
   Unsupported resources stay explicit and transient failures retain only the
-  affected last-known values.
+  affected last-known values. Drive page caches are vehicle-bound and expose
+  `hasMore: null` when continuation is unknown; refresh revalidates the loaded
+  chain before publishing it.
 
 ## Accessibility and responsive layout
 

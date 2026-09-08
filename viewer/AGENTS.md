@@ -10,7 +10,7 @@ This repository is a small public protocol proof, not Teslatlas feature parity.
 
 ## GPT-6 Astra execution
 
-Reference: [OpenAI GPT-6 Astra guide](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra), reviewed 2026-09-05.
+Reference: [OpenAI GPT-6 Astra guide](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra), reviewed 2026-09-08.
 These execution conventions preserve the repository-specific rules above and do
 not change the host's model defaults or API configuration.
 

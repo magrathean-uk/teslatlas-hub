@@ -156,9 +156,12 @@ export function App({
   initialScenario = 'complete',
   initialPaired = true,
 }: AppProps) {
-  const [isPaired, setIsPaired] = useState(initialPaired);
+  const [isPaired, setIsPaired] = useState(
+    mode === 'fixture' && initialPaired,
+  );
   const [scenario, setScenario] = useState(initialScenario);
   const [activeView, setActiveView] = useState<ViewId>('health');
+  const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
   const viewer = useViewer(dataSource, scenario, isPaired);
 
   useEffect(() => {
@@ -169,11 +172,13 @@ export function App({
       viewer.error.code === 'AUTH_LOST'
     ) {
       setIsPaired(false);
+      setConnectionNotice('Access ended; pair again to continue.');
       void dataSource.logout();
     }
   }, [dataSource, mode, viewer.error, viewer.phase]);
 
   function completePairing(_pairing: PairedHub) {
+    setConnectionNotice(null);
     setIsPaired(true);
   }
 
@@ -184,6 +189,7 @@ export function App({
   async function clearLocalSession() {
     setActiveView('health');
     setScenario('complete');
+    setConnectionNotice(null);
     setIsPaired(false);
     await dataSource.logout();
   }
@@ -202,7 +208,21 @@ export function App({
             Teslatlas <strong>viewer</strong>
           </span>
         </a>
-        <span className="mode-chip">{mode === 'fixture' ? 'Fixture mode' : 'Live mode'}</span>
+        <div className="header-actions">
+          <a
+            className="header-action"
+            href={
+              mode === 'fixture'
+                ? '/?mode=live&paired=false'
+                : '/?mode=fixture'
+            }
+          >
+            {mode === 'fixture' ? 'Connect to my Hub' : 'View demo'}
+          </a>
+          <span className="mode-chip">
+            {mode === 'fixture' ? 'Fixture mode' : 'Live mode'}
+          </span>
+        </div>
       </header>
 
       {!isPaired && (
@@ -210,6 +230,7 @@ export function App({
           dataSource={dataSource}
           mode={mode}
           onPaired={completePairing}
+          notice={connectionNotice}
         />
       )}
 
@@ -229,6 +250,9 @@ export function App({
               <span className="spinner" aria-hidden="true" />
               <span>Loading Hub data…</span>
             </span>
+            <button type="button" onClick={clearLocalSession}>
+              Change connection
+            </button>
             {mode === 'fixture' && scenario === 'loading' && (
               <button type="button" onClick={loadCompleteFixture}>
                 Load complete fixture
@@ -249,6 +273,9 @@ export function App({
             <span>{viewer.error.message}</span>
             <button type="button" onClick={viewer.reload}>
               Try again
+            </button>
+            <button type="button" onClick={clearLocalSession}>
+              Change connection
             </button>
             {mode === 'fixture' && scenario === 'error' && (
               <button type="button" onClick={loadCompleteFixture}>
@@ -320,7 +347,7 @@ export function App({
                 type="button"
                 className="secondary-button"
                 onClick={viewer.reload}
-                disabled={viewer.refreshing}
+                disabled={viewer.refreshing || viewer.loadingDriveVehicleId !== null}
               >
                 {viewer.refreshing ? 'Refreshing Hub data…' : 'Refresh Hub data'}
               </button>
@@ -373,6 +400,12 @@ export function App({
               <RecentSessionsView
                 snapshot={viewer.snapshot}
                 state={stateForView('sessions', viewer.snapshot)}
+                onLoadMore={viewer.loadMoreDrives}
+                loadingVehicleId={viewer.loadingDriveVehicleId}
+                pageError={viewer.drivePageError}
+                pagingDisabled={
+                  viewer.refreshing || viewer.loadingDriveVehicleId !== null
+                }
               />
             )}
             {activeView === 'quality' && (

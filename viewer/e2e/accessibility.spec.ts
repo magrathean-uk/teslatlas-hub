@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 for (const target of [
   { name: 'complete viewer', url: '/?scenario=complete' },
   { name: 'pairing flow', url: '/?paired=false' },
+  { name: 'live connection form', url: '/?mode=live' },
   {
     name: 'degraded quality',
     url: '/?scenario=degraded',

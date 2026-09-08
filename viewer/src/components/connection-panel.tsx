@@ -1,4 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 
 import type {
   AppMode,
@@ -11,6 +16,7 @@ interface ConnectionPanelProps {
   dataSource: ViewerDataSource;
   mode: AppMode;
   onPaired: (pairing: PairedHub) => void;
+  notice?: string | null;
 }
 
 type DiscoveryState =
@@ -23,6 +29,7 @@ export function ConnectionPanel({
   dataSource,
   mode,
   onPaired,
+  notice = null,
 }: ConnectionPanelProps) {
   const [discovery, setDiscovery] = useState<DiscoveryState>({
     phase: mode === 'fixture' ? 'discovering' : 'idle',
@@ -38,6 +45,13 @@ export function ConnectionPanel({
   const [endpoint, setEndpoint] = useState('');
   const [expectedHubId, setExpectedHubId] = useState('');
   const [tlsIdentity, setTlsIdentity] = useState('');
+  const [connectionError, setConnectionError] = useState<Error | null>(null);
+  const pairingController = useRef<AbortController | null>(null);
+  const endpointInput = useRef<HTMLInputElement>(null);
+  const expectedHubInput = useRef<HTMLInputElement>(null);
+  const invitationInput = useRef<HTMLInputElement>(null);
+  const invitationTextarea = useRef<HTMLTextAreaElement>(null);
+  const focusEndpointAfterEdit = useRef(false);
 
   useEffect(() => {
     if (mode === 'live' && discoveryAttempt === 0) return;
@@ -65,26 +79,103 @@ export function ConnectionPanel({
     return () => controller.abort();
   }, [dataSource, discoveryAttempt, mode]);
 
+  useEffect(() => {
+    if (mode === 'live' && discovery.phase === 'idle' && focusEndpointAfterEdit.current) {
+      focusEndpointAfterEdit.current = false;
+      endpointInput.current?.focus();
+    }
+  }, [discovery.phase, mode]);
+
+  useEffect(() => {
+    if (pairingError !== null) {
+      invitationInput.current?.focus();
+      invitationTextarea.current?.focus();
+    }
+  }, [pairingError]);
+
+  useEffect(
+    () => () => {
+      pairingController.current?.abort();
+      pairingController.current = null;
+    },
+    [],
+  );
+
   const hub =
     discovery.hubs.find((candidate) => candidate.id === selectedHubId) ??
     discovery.hubs[0];
 
   function retryDiscovery() {
+    setConnectionError(null);
     setSelectedHubId('');
     setPairingError(null);
     setDiscovery({ phase: 'discovering', hubs: [], error: null });
     setDiscoveryAttempt((attempt) => attempt + 1);
   }
 
+  function editConnection() {
+    pairingController.current?.abort();
+    pairingController.current = null;
+    setIsPairing(false);
+    setSelectedHubId('');
+    setInvitationCode('');
+    setConnectionError(null);
+    setPairingError(null);
+    setDiscovery({ phase: 'idle', hubs: [], error: null });
+    setDiscoveryAttempt(0);
+    focusEndpointAfterEdit.current = true;
+  }
+
+  function validateLiveConnection(): Error | null {
+    const value = endpoint.trim();
+    if (value.length === 0) {
+      return new Error('Enter the root HTTPS origin for the Hub.');
+    }
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol !== 'https:') {
+        return new Error('Live Hub endpoints must use HTTPS.');
+      }
+      if (
+        parsed.username.length > 0 ||
+        parsed.password.length > 0 ||
+        parsed.pathname !== '/' ||
+        parsed.search.length > 0 ||
+        parsed.hash.length > 0
+      ) {
+        return new Error(
+          'Enter the root HTTPS origin without a path, query, or fragment.',
+        );
+      }
+    } catch {
+      return new Error('Enter a valid HTTPS Hub origin.');
+    }
+    if (expectedHubId.trim().length === 0) {
+      return new Error('Enter the expected Hub UUID.');
+    }
+    return null;
+  }
+
   function inspectLiveHub(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSelectedHubId('');
     setPairingError(null);
+    const validationError = validateLiveConnection();
+    if (validationError !== null) {
+      setConnectionError(validationError);
+      if (validationError.message.includes('UUID')) {
+        expectedHubInput.current?.focus();
+      } else {
+        endpointInput.current?.focus();
+      }
+      return;
+    }
+    setConnectionError(null);
     setDiscovery({ phase: 'discovering', hubs: [], error: null });
     try {
       dataSource.configure?.({
-        endpoint,
-        expectedHubId,
+        endpoint: endpoint.trim(),
+        expectedHubId: expectedHubId.trim(),
         tlsIdentity: tlsIdentity.trim() || null,
       });
       setDiscoveryAttempt((attempt) => attempt + 1);
@@ -104,19 +195,28 @@ export function ConnectionPanel({
 
     setIsPairing(true);
     setPairingError(null);
+    const controller = new AbortController();
+    pairingController.current = controller;
     try {
       const paired = await dataSource.pair({
         hubId: hub.id,
         invitationCode,
         deviceName,
-      });
-      onPaired(paired);
+      }, controller.signal);
+      if (!controller.signal.aborted && pairingController.current === controller) {
+        onPaired(paired);
+      }
     } catch (error) {
-      setPairingError(
-        error instanceof Error ? error : new Error('Hub pairing failed.'),
-      );
+      if (!controller.signal.aborted) {
+        setPairingError(
+          error instanceof Error ? error : new Error('Hub pairing failed.'),
+        );
+      }
     } finally {
-      setIsPairing(false);
+      if (pairingController.current === controller) {
+        pairingController.current = null;
+        setIsPairing(false);
+      }
     }
   }
 
@@ -125,6 +225,12 @@ export function ConnectionPanel({
       <section className="connection-panel" aria-labelledby="pairing-title">
         <p className="eyebrow">Public protocol reference</p>
         <h1 id="pairing-title">Pair with a Hub</h1>
+        {notice && (
+          <div className="notice-banner" data-tone="stale" role="status" tabIndex={-1}>
+            <strong>Access ended; pair again</strong>
+            <span>{notice}</span>
+          </div>
+        )}
         <p className="lede">
           {mode === 'fixture'
             ? 'Discover a fixture Hub, confirm its identity, then use a scoped invitation. Fixture credentials stay in memory.'
@@ -138,11 +244,19 @@ export function ConnectionPanel({
           </p>
         )}
 
+        {mode === 'live' && (
+          <p className="fixture-note">
+            Connecting to a Hub uses its browser-reachable HTTPS origin.{' '}
+            <a href="/?mode=fixture">View the local demo instead.</a>
+          </p>
+        )}
+
         {mode === 'live' && discovery.phase === 'idle' && (
           <form onSubmit={inspectLiveHub} className="pairing-form">
             <label>
               Hub endpoint
               <input
+                ref={endpointInput}
                 type="url"
                 value={endpoint}
                 onChange={(event) => setEndpoint(event.target.value)}
@@ -154,6 +268,7 @@ export function ConnectionPanel({
             <label>
               Expected Hub UUID
               <input
+                ref={expectedHubInput}
                 value={expectedHubId}
                 onChange={(event) => setExpectedHubId(event.target.value)}
                 autoComplete="off"
@@ -169,6 +284,11 @@ export function ConnectionPanel({
                 placeholder="Optional until invitation claim"
               />
             </label>
+            {connectionError && (
+              <p role="alert" className="inline-error">
+                {connectionError.message}
+              </p>
+            )}
             <button type="submit">Inspect live Hub</button>
           </form>
         )}
@@ -177,6 +297,11 @@ export function ConnectionPanel({
           <div role="status" aria-label="Looking for Hubs" className="state-card">
             <span className="spinner" aria-hidden="true" />
             <span>Looking for Hubs…</span>
+            {mode === 'live' && (
+              <button type="button" onClick={editConnection}>
+                Edit connection
+              </button>
+            )}
           </div>
         )}
 
@@ -187,6 +312,11 @@ export function ConnectionPanel({
             <button type="button" onClick={retryDiscovery}>
               Retry discovery
             </button>
+            {mode === 'live' && (
+              <button type="button" onClick={editConnection}>
+                Edit connection
+              </button>
+            )}
           </div>
         )}
 
@@ -253,6 +383,11 @@ export function ConnectionPanel({
             </fieldset>
 
             <form onSubmit={submitPairing} className="pairing-form">
+              {mode === 'live' && (
+                <button type="button" className="secondary-button" onClick={editConnection}>
+                  Edit connection
+                </button>
+              )}
               <p className="selected-hub-note">
                 Pairing with <strong>{hub.displayName}</strong>
               </p>
@@ -269,6 +404,7 @@ export function ConnectionPanel({
                 <label>
                   Invitation code
                   <input
+                    ref={invitationInput}
                     value={invitationCode}
                     onChange={(event) => setInvitationCode(event.target.value)}
                     inputMode="numeric"
@@ -281,6 +417,7 @@ export function ConnectionPanel({
                 <label>
                   Pairing invitation JSON
                   <textarea
+                    ref={invitationTextarea}
                     value={invitationCode}
                     onChange={(event) => setInvitationCode(event.target.value)}
                     autoComplete="off"

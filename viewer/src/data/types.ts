@@ -24,6 +24,12 @@ export interface ResourceState {
   detail: string | null;
 }
 
+export interface DrivePagingState {
+  resource: ResourceState;
+  hasMore: boolean | null;
+  loadedCount: number;
+}
+
 export class ViewerDataError extends Error {
   readonly code: string;
 
@@ -173,6 +179,7 @@ export interface HubSnapshot {
   vehicles: VehicleSummary[];
   currentByVehicle: Record<string, CurrentVehicleState | null>;
   drives: DriveSummary[];
+  drivePaging: Record<string, DrivePagingState>;
   charges: ChargeSummary[];
   quality: DataQualitySummary | null;
   collectors: CollectorSummary[];
@@ -198,6 +205,7 @@ export interface ViewerDataSource {
     scenario: FixtureScenario,
     signal?: AbortSignal,
   ): Promise<HubSnapshot>;
+  loadMoreDrives(vehicleId: string, signal?: AbortSignal): Promise<HubSnapshot>;
   removePairedDevice(
     deviceId: string,
     signal?: AbortSignal,

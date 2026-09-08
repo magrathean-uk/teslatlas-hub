@@ -1,8 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createDataSource } from './create-data-source';
+import { createFixtureSnapshot } from './fixture-data';
 import { FixtureDataSource } from './fixture-data-source';
 import { SdkDataSource } from './sdk-data-source';
+import type { DriveSummary } from './types';
+
+function drive(vehicleId: string, id: string): DriveSummary {
+  return {
+    id,
+    vehicleId,
+    startedAt: '2026-08-30T09:00:00.000Z',
+    endedAt: '2026-08-30T09:15:00.000Z',
+    startLabel: 'Start',
+    endLabel: 'End',
+    distanceKm: 10,
+    durationMinutes: 15,
+    energyUsedKwh: 2,
+    quality: null,
+  };
+}
 
 describe('FixtureDataSource', () => {
   it('returns the fixed complete fixture without sharing mutable values', async () => {
@@ -143,6 +160,91 @@ describe('FixtureDataSource', () => {
       'device-viewer',
       'device-home-assistant',
     ]);
+  });
+
+  it('pages an optional dataset at 25 rows and keeps vehicle groups independent', async () => {
+    const firstVehicle = 'vehicle-redacted-1';
+    const secondVehicle = 'vehicle-redacted-2';
+    const drives = [
+      ...Array.from({ length: 51 }, (_, index) =>
+        drive(firstVehicle, `drive-${index + 1}`),
+      ),
+      drive(secondVehicle, 'drive-1'),
+    ];
+    const source = new FixtureDataSource({ drives });
+
+    const first = await source.readSnapshot('complete');
+    expect(first.drives.filter((item) => item.vehicleId === firstVehicle)).toHaveLength(25);
+    expect(first.drivePaging[firstVehicle]).toMatchObject({
+      hasMore: true,
+      loadedCount: 25,
+    });
+    expect(first.drivePaging[secondVehicle]).toMatchObject({
+      hasMore: false,
+      loadedCount: 1,
+    });
+
+    const second = await source.loadMoreDrives(firstVehicle);
+    expect(second.drives.filter((item) => item.vehicleId === firstVehicle)).toHaveLength(50);
+    expect(second.drivePaging[firstVehicle]).toMatchObject({
+      hasMore: true,
+      loadedCount: 50,
+    });
+
+    const third = await source.loadMoreDrives(firstVehicle);
+    expect(third.drives.filter((item) => item.vehicleId === firstVehicle)).toHaveLength(51);
+    expect(third.drivePaging[firstVehicle]).toMatchObject({
+      hasMore: false,
+      loadedCount: 51,
+    });
+    expect(
+      third.drives.filter((item) => item.vehicleId === secondVehicle),
+    ).toEqual([drive(secondVehicle, 'drive-1')]);
+  });
+
+  it('preserves an empty page that still has continuation', async () => {
+    const vehicleId = 'vehicle-redacted-1';
+    const source = new FixtureDataSource({
+      drivePages: {
+        [vehicleId]: [[], [drive(vehicleId, 'after-empty')]],
+      },
+    });
+
+    const first = await source.readSnapshot('complete');
+    expect(first.drives.filter((item) => item.vehicleId === vehicleId)).toEqual([]);
+    expect(first.drivePaging[vehicleId]).toMatchObject({
+      hasMore: true,
+      loadedCount: 0,
+    });
+
+    const second = await source.loadMoreDrives(vehicleId);
+    expect(second.drives.filter((item) => item.vehicleId === vehicleId)).toHaveLength(1);
+    expect(second.drivePaging[vehicleId]).toMatchObject({
+      hasMore: false,
+      loadedCount: 1,
+    });
+  });
+
+  it('resets fixture continuation after a fresh read and logout', async () => {
+    const vehicleId = 'vehicle-redacted-1';
+    const source = new FixtureDataSource({
+      drives: Array.from({ length: 26 }, (_, index) =>
+        drive(vehicleId, `drive-${index}`),
+      ),
+    });
+
+    await source.readSnapshot('complete');
+    await source.loadMoreDrives(vehicleId);
+    const refreshed = await source.readSnapshot('complete');
+    expect(refreshed.drivePaging[vehicleId]).toMatchObject({
+      hasMore: true,
+      loadedCount: 25,
+    });
+
+    await source.logout();
+    await expect(source.loadMoreDrives(vehicleId)).rejects.toMatchObject({
+      code: 'FIXTURE_NOT_PAIRED',
+    });
   });
 });
 

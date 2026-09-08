@@ -30,10 +30,13 @@ them.
 
 ## Run locally
 
-Requirements: Node.js 22.12 or later and npm.
+Requirements for a source checkout: Node.js 26.0 or later and npm, plus
+`tar` for the SDK artifact verifier. The browser and a prebuilt container do
+not need Node.js. The locked development toolchain currently runs on Node
+26.8.1.
 
 ```sh
-npm ci
+npm ci --include=dev
 npm run dev
 ```
 
@@ -53,6 +56,26 @@ states:
 ```
 
 The fixture invitation code is `482731`. It is example data, not a credential.
+The home page offers both the labelled fixture demo and the live connection
+form; live mode always starts unpaired. Live drive history loads up to 25 rows
+per vehicle at a time and exposes an explicit continuation control. Cursors
+and credentials remain in memory.
+
+## Run with Docker
+
+The local production image serves the built static Viewer and stores no Hub or
+Viewer data. It binds to loopback by default:
+
+```sh
+docker compose up --build -d
+open http://127.0.0.1:4173/
+docker compose down
+```
+
+For a standalone image use `docker build -t teslatlas-viewer:local .`. HTTPS
+termination and the Hub's exact browser origin/CORS allow-list belong to the
+existing deployment. The browser connects directly to the Hub's trusted HTTPS
+hostname; a Docker service name is not a browser endpoint.
 
 ## Run the installed static viewer
 
@@ -79,16 +102,22 @@ npm run build
 npm run test:cli
 npx playwright install chromium
 npm run test:e2e
-# Requires the private actual-Hub/browser runtime described in the Task 5 report:
+# Requires the Hub-owned disposable target, normal browser trust and private
+# owner-only descriptor described in docs/verification.md:
 npm run test:e2e:hub
+# Against an already serving production Viewer and Hub-owned target:
+npm run test:e2e:installed:hub
 ```
 
 Browser verification covers the seven views, all data states, no fixture API
 requests, pairing, confirmed paired-device removal, clearing the local session,
 axe checks, keyboard entry, reduced motion, and 400% equivalent reflow. The
-separate live lane exercises the built bundle, packed SDK, normal CA trust,
-pairing, bounded drive pagination, conditional requests, identity failure,
-session loss, and unsupported-resource boundaries.
+The separate managed and installed live lanes exercise the built bundle, packed
+SDK, normal CA trust, pairing, bounded drive pagination, conditional requests,
+identity failure, session loss, and unsupported-resource boundaries when the
+Hub-owned target and browser handoff are available.
+Installed-Hub acceptance is tracked separately; fixture and managed synthetic-
+Hub evidence do not promote the ecosystem compatibility candidate.
 
 ## Screenshots
 
