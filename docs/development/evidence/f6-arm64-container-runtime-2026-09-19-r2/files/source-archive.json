@@ -1,0 +1,8 @@
+{
+  "archive_bytes": 17182720,
+  "archive_sha256": "85ce8d032d4d517c711dac94183c0fe674217030d685a0df4a4e3ecc1c791549",
+  "manifest_sha256": "1b16f177c9deab76d8f64b8eb22ea885408144ba87addc5af1e4c93cb89622f7",
+  "member_count": 780,
+  "source_commit": "4102dce1376d725c7959ec71ec46ffdbe47b9c6b",
+  "tree": "561bbb43e5da920df956187d42a6d5dbd3f12ec5"
+}

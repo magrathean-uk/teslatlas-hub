@@ -1,0 +1,10 @@
+{
+  "completed_before_hub": true,
+  "exit_code": 0,
+  "finished_at": "2026-09-19T16:20:52.938583027Z",
+  "hub_first_log_at": "2026-09-19T16:20:53.631285067Z",
+  "manual_second_initializer": false,
+  "restart_count": 0,
+  "started_at": "2026-09-19T16:20:52.928320261Z",
+  "status": "passed"
+}

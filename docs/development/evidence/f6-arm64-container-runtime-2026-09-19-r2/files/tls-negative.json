@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "server_name": "wrong-name.invalid",
+  "wrong_name_rejected": true
+}

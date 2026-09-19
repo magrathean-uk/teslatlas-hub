@@ -1,0 +1,132 @@
+{
+  "catalogue": {
+    "currentObservations": 0,
+    "fleetTokenRows": 0,
+    "foreignKeysEnabled": true,
+    "freelistCount": 0,
+    "installationId": "b58cf990-e766-485a-9829-99bfe60e89dc",
+    "journalMode": "wal",
+    "openLifecycleRows": 0,
+    "pageCount": 182,
+    "pageSize": 4096,
+    "pairedDevices": 0,
+    "physicalPackBytes": 0,
+    "physicalPackFiles": 0,
+    "quarantinedSessions": 0,
+    "rawObservations": 0,
+    "referencedPackBytes": 0,
+    "referencedPacks": 0,
+    "schemaVersion": 59,
+    "sqlitePageBytes": 745472,
+    "synchronous": 2,
+    "teslamateLegacyTokenRows": 0,
+    "vehicles": 0,
+    "walBytes": 0,
+    "walPresent": true
+  },
+  "checks": [
+    {
+      "name": "catalogueIntegrity",
+      "passed": true
+    },
+    {
+      "name": "sqliteJournal",
+      "passed": true
+    },
+    {
+      "name": "selectedProviderCredentials",
+      "passed": true
+    },
+    {
+      "name": "tlsIdentity",
+      "passed": true
+    },
+    {
+      "name": "collectorReadiness",
+      "passed": true
+    },
+    {
+      "name": "streamRecovery",
+      "passed": true
+    },
+    {
+      "name": "tokenPreservation",
+      "passed": true
+    },
+    {
+      "name": "teslamateSource",
+      "passed": true
+    }
+  ],
+  "collector": {
+    "bind": "0.0.0.0:8443",
+    "canStart": false,
+    "edge": null,
+    "geocoderEnabled": false,
+    "initOnly": true,
+    "intervalSeconds": 60,
+    "provider": "legacy",
+    "readiness": "ready",
+    "requestTimeoutSeconds": 20,
+    "terrainEnabled": false
+  },
+  "credentials": {
+    "fleet": {
+      "expiresAt": null,
+      "nextRefreshAt": null,
+      "present": false,
+      "scopeStatus": null,
+      "validForCollection": false,
+      "vehicleChargingCommands": null,
+      "vehicleCommands": null,
+      "vehicleDeviceData": null,
+      "vehicleLocation": null
+    },
+    "legacy": {
+      "expiresAt": null,
+      "nextRefreshAt": null,
+      "present": false,
+      "validForCollection": false
+    },
+    "selectedCredentialsPresent": false,
+    "selectedProvider": "legacy"
+  },
+  "database": "/var/lib/teslatlas-hub/hub.sqlite",
+  "databaseBytes": 745472,
+  "safety": {
+    "doctorIsReadOnly": true,
+    "importDoesNotDeleteFleetTokens": true,
+    "teslamateSourceNeverMutated": true
+  },
+  "schemaVersion": 59,
+  "sqlite": "3.53.2",
+  "status": "ok",
+  "streamAudit": {
+    "authenticationRejections": 0,
+    "cancelledBeforeSubscriptionSessions": 0,
+    "connectAttempts": 0,
+    "failedSessions": 0,
+    "lastFailureAtMs": null,
+    "lastSubscriptionSuccessAtMs": null,
+    "orderlyShutdowns": 0,
+    "protocolErrors": 0,
+    "sessions": 0,
+    "sinceMs": 1789748725243,
+    "subscribeAttempts": 0,
+    "successfulConnects": 0,
+    "successfulSubscriptions": 0,
+    "transportEndedSessions": 0,
+    "transportErrors": 0,
+    "unresolvedAttempts": 0,
+    "unresolvedSessions": 0
+  },
+  "tls": {
+    "certificatePresent": true,
+    "configured": true,
+    "identityValid": true,
+    "privateKeyPresent": true,
+    "publicUrlHost": "hub-f6-4102dce.test"
+  },
+  "vehicles": [],
+  "version": "2026.36.2"
+}

@@ -1,0 +1,136 @@
+{
+  "name": "hub-f6-4102dce-r2",
+  "networks": {
+    "default": {
+      "name": "hub-f6-4102dce-r2_default",
+      "ipam": {}
+    }
+  },
+  "services": {
+    "hub": {
+      "build": {
+        "context": "/var/tmp/hub-f6-4102dce-r2/source",
+        "dockerfile": "Dockerfile",
+        "args": {
+          "TESLATLAS_HUB_SOURCE_COMMIT": "4102dce1376d725c7959ec71ec46ffdbe47b9c6b"
+        }
+      },
+      "cap_drop": [
+        "ALL"
+      ],
+      "command": [
+        "--config",
+        "/etc/teslatlas-hub/config.toml",
+        "serve"
+      ],
+      "depends_on": {
+        "volume-init": {
+          "condition": "service_completed_successfully",
+          "required": true
+        }
+      },
+      "entrypoint": null,
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "/usr/local/bin/teslatlas-hub",
+          "healthcheck",
+          "--ca-file",
+          "/etc/teslatlas-hub/tls/ca.pem",
+          "--server-name",
+          "hub-f6-4102dce.test"
+        ],
+        "timeout": "5s",
+        "interval": "30s",
+        "retries": 3,
+        "start_period": "10s"
+      },
+      "image": "teslatlas-hub:local",
+      "networks": {
+        "default": null
+      },
+      "ports": [
+        {
+          "mode": "ingress",
+          "host_ip": "127.0.0.1",
+          "target": 8443,
+          "published": "8443",
+          "protocol": "tcp"
+        }
+      ],
+      "read_only": true,
+      "restart": "unless-stopped",
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "stop_grace_period": "30s",
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700"
+      ],
+      "user": "10001:10001",
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "hub-data",
+          "target": "/var/lib/teslatlas-hub",
+          "volume": {}
+        },
+        {
+          "type": "bind",
+          "source": "/var/tmp/hub-f6-4102dce-r2/source/config.toml",
+          "target": "/etc/teslatlas-hub/config.toml",
+          "read_only": true,
+          "bind": {
+            "create_host_path": true
+          }
+        },
+        {
+          "type": "bind",
+          "source": "/var/tmp/hub-f6-4102dce-r2/source/tls",
+          "target": "/etc/teslatlas-hub/tls",
+          "read_only": true,
+          "bind": {
+            "create_host_path": true
+          }
+        }
+      ]
+    },
+    "volume-init": {
+      "cap_add": [
+        "CHOWN",
+        "FOWNER",
+        "DAC_OVERRIDE"
+      ],
+      "cap_drop": [
+        "ALL"
+      ],
+      "command": [],
+      "entrypoint": [
+        "/usr/local/libexec/teslatlas-hub-initialize-volume"
+      ],
+      "image": "teslatlas-hub:local",
+      "networks": {
+        "default": null
+      },
+      "read_only": true,
+      "restart": "no",
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "user": "0:0",
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "hub-data",
+          "target": "/var/lib/teslatlas-hub",
+          "volume": {}
+        }
+      ]
+    }
+  },
+  "volumes": {
+    "hub-data": {
+      "name": "teslatlas-hub-data"
+    }
+  }
+}

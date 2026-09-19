@@ -202,6 +202,36 @@ the retained bundle. Container
 upgrade, rollback, backup/restore, failed candidate, removal, image-byte
 reproducibility, F1, F6 and F7 remain open.
 
+The fresh exact-export rerun from published commit
+`4102dce1376d725c7959ec71ec46ffdbe47b9c6b` is now frozen for independent
+review. One native Linux ARM64 image was built through the retained Docker 26
+legacy path without installing tooling. The ordinary single `docker compose up`
+sequence completion-ordered one initializer, preserved the exact
+`10001:10001/0700` volume root and regular sentinel, and reached healthy Hub
+startup. The same synthetic empty cohort passed source/version readback, TLS
+positive and wrong-name checks, doctor/status, non-root/read-only/no-capabilities
+inspection, and explicit restart identity/status/source continuity. The fresh test
+certificate and key were initially staged with ownership/mode that failed Hub's
+inode predicate, causing ten automatic retries; correction of only those one-use
+inputs made the same cohort healthy, so this is not a pristine first-attempt TLS
+startup claim. The retained two-phase bundle reached `READY_FOR_CLEANUP` before
+cleanup and `COMPLETE` afterward, with 25 allowlisted files and aggregate SHA-256
+`ec3ad4ff24ea801e414eeb1f0f1f725cf09a40ffa789a858a621cd15366c382e`.
+The two rejected preparation attempts—raw doctor free text and secret-shaped
+metadata field names—are disclosed with their redaction/rename closures. The exact
+jq filter and raw doctor hashes were not retained, so the redaction is
+runner-reported rather than independently reproducible; only the allowlisted
+derivative is inspectable. Independent review rejected two P2 claim-integrity
+issues: that overstatement, and ambiguity between the removed cohort runtime image
+and a disclosed retained anonymous builder ancestor. The metadata-only closure
+defines the cleanup flag as the exact cohort image ID and tags, while the build
+cache and anonymous ancestor remain explicitly retained. Same-reviewer delta review
+returned `ACCEPT` with no findings for this bounded runtime foundation. No owned
+final runtime image/tag, listener, one-use TLS material or lock remains; the guest
+is stopped. Image-byte reproducibility, pristine first-attempt TLS startup,
+clean-host package lifecycle, upgrade/rollback, backup/restore, failed candidate,
+removal, F1, F6 and F7 remain open.
+
 ## Start and boundaries
 
 The sent full-solution goal authorizes bounded implementation, tests, isolated

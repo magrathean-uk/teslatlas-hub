@@ -1,0 +1,21 @@
+{
+  "discovery_sha256": "bea5129a2dc2d3d7ded377e83dbb7d2b1fe6c21c8d4847febca1f8026818f857",
+  "healthy_after": true,
+  "hub_id": "b58cf990-e766-485a-9829-99bfe60e89dc",
+  "identity_continuity": true,
+  "initial_tls_input_retry": {
+    "cause": "server identity ownership and private-key mode did not meet the runtime inode predicate",
+    "corrected_certificate_file_stat": "10001:10001/0644",
+    "corrected_key_file_stat": "10001:10001/0600",
+    "failed_restarts": 10,
+    "occurred": true,
+    "source_or_image_changed": false
+  },
+  "restart_count_after": 0,
+  "restart_count_before": 10,
+  "source_continuity": true,
+  "started_after": "2026-09-19T16:26:44.276381915Z",
+  "started_before": "2026-09-19T16:22:37.558082069Z",
+  "status_continuity": true,
+  "status_sha256": "3d757bd70f14a8867438c544d9a6d6575cc1db3e641427c551f986c705303171"
+}

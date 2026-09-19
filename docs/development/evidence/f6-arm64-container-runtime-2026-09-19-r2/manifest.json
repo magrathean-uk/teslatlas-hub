@@ -1,0 +1,148 @@
+{
+  "aggregate_manifest_sha256": "ec3ad4ff24ea801e414eeb1f0f1f725cf09a40ffa789a858a621cd15366c382e",
+  "cohort": {
+    "compose_project": "hub-f6-4102dce-r2",
+    "container_names": [
+      "hub-f6-4102dce-r2-hub-1",
+      "hub-f6-4102dce-r2-volume-init-1"
+    ],
+    "guest_runtime_root": "/var/tmp/hub-f6-4102dce-r2",
+    "host_runtime_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-f6-container-4102dce-r2",
+    "image_id": "sha256:10655b74eb91ffa79eca022fc8a3c3b993d73b6badc3829f78e21049c49e4eb4",
+    "network_name": "hub-f6-4102dce-r2_default",
+    "volume_name": "teslatlas-hub-data"
+  },
+  "contains_secrets": false,
+  "evidence_run_id": "efb56bab-6b07-4168-bf00-f187be44e0bc",
+  "files": [
+    {
+      "bytes": 95,
+      "path": "files/binary-sha256.txt",
+      "sha256": "16559e920fcc128520392af2aafdebf46cafd24628d76e7d1f2f748417a56a40"
+    },
+    {
+      "bytes": 1028,
+      "path": "files/build-summary.json",
+      "sha256": "0e33fffb11ae5d735a4f9cd61cbf2015cd38381227437abbfc6a500466f3dbd5"
+    },
+    {
+      "bytes": 1429,
+      "path": "files/cleanup.json",
+      "sha256": "e7d4c3c8272820da6bd7ec4b86a9e9e6a817c8ca406a32b11b03199a6eb2a2d7"
+    },
+    {
+      "bytes": 3130,
+      "path": "files/compose-rendered.json",
+      "sha256": "c0d1c729a004c29e4c90e0b824a3f07d162ea85a371dcbd09c72e61571c4e86a"
+    },
+    {
+      "bytes": 77,
+      "path": "files/database-sha256.txt",
+      "sha256": "226851341a8822c67b20db94f76d760d5c23b35d762a412aaf6710a554e9d4e5"
+    },
+    {
+      "bytes": 3065,
+      "path": "files/doctor-after.json",
+      "sha256": "2d64e4e787c9e11bdd800c371aa5e4f36776f2b33d5b158eecff0747ab006aa1"
+    },
+    {
+      "bytes": 3065,
+      "path": "files/doctor-before.json",
+      "sha256": "f2f2fc8242f2e75e9fd2bafd2f5b24f8399d3b8e5817d45fc341e18ad13762ad"
+    },
+    {
+      "bytes": 93857,
+      "path": "files/guest-source-manifest.sha256",
+      "sha256": "1b16f177c9deab76d8f64b8eb22ea885408144ba87addc5af1e4c93cb89622f7"
+    },
+    {
+      "bytes": 47,
+      "path": "files/health-after.json",
+      "sha256": "27cd5e17b843fd061cdec83140a87f30365f09f1d27704aa5ae98c58d303347b"
+    },
+    {
+      "bytes": 47,
+      "path": "files/health-before.json",
+      "sha256": "27cd5e17b843fd061cdec83140a87f30365f09f1d27704aa5ae98c58d303347b"
+    },
+    {
+      "bytes": 93857,
+      "path": "files/host-source-manifest.sha256",
+      "sha256": "1b16f177c9deab76d8f64b8eb22ea885408144ba87addc5af1e4c93cb89622f7"
+    },
+    {
+      "bytes": 3471,
+      "path": "files/image-inspect.json",
+      "sha256": "118d061734f15930e9d8237099eb1b0c673d9fed724014039a8f27e7696df800"
+    },
+    {
+      "bytes": 847,
+      "path": "files/restart.json",
+      "sha256": "f2a0a1b0c0158922ae3274a3e9917618695e5fee20f0ed696ffd584661989e26"
+    },
+    {
+      "bytes": 338,
+      "path": "files/runtime-security.json",
+      "sha256": "a0bf91f20efa9e9deec4b3b54328e1c13116b535d554f5169646faf435f4708c"
+    },
+    {
+      "bytes": 349,
+      "path": "files/source-archive.json",
+      "sha256": "a2da4b3cbe6c404da158ae1628cfb39cd6d4f3e63949d34fe75d51003e0827f6"
+    },
+    {
+      "bytes": 17182720,
+      "path": "files/source-archive.tar",
+      "sha256": "85ce8d032d4d517c711dac94183c0fe674217030d685a0df4a4e3ecc1c791549"
+    },
+    {
+      "bytes": 93,
+      "path": "files/source-output.txt",
+      "sha256": "6396fe50080e7e2f0d959dc7260c3420abf0d759b233ca6307ddf924cf6f3f03"
+    },
+    {
+      "bytes": 841,
+      "path": "files/status-after.json",
+      "sha256": "70c2c88954f32303168e5f83aae61f1c7005c1a69728255da894a46ebaed3990"
+    },
+    {
+      "bytes": 841,
+      "path": "files/status-before.json",
+      "sha256": "70c2c88954f32303168e5f83aae61f1c7005c1a69728255da894a46ebaed3990"
+    },
+    {
+      "bytes": 91,
+      "path": "files/tls-negative.json",
+      "sha256": "0c6bff45b50a5da12da2f8d1751497dcb40f29589167cbd444ca8e353030a43d"
+    },
+    {
+      "bytes": 127,
+      "path": "files/tls-positive.json",
+      "sha256": "845ddbb8c01a84f179b11e6a3da9d1ccd78ed460c4e989c8bcae734142b999c2"
+    },
+    {
+      "bytes": 376,
+      "path": "files/tooling.json",
+      "sha256": "70f6c63b6d08faa89136e684e9f4ab244515cfda0e57526641a8ef9bd7a9dc4e"
+    },
+    {
+      "bytes": 24,
+      "path": "files/version.txt",
+      "sha256": "76cc4ec162c15ca42cbc53c61d67c569b54eed75bf33f5966d3b390a5d14ca8d"
+    },
+    {
+      "bytes": 292,
+      "path": "files/volume-init.json",
+      "sha256": "136bf22361845cf0f357231e38cd9b4fa8c5d6ffb2437ee6e372f038b99eb3b0"
+    },
+    {
+      "bytes": 238,
+      "path": "files/volume-permissions.json",
+      "sha256": "f1b77c3eeb5507a191e77505e4fae034e911814495754c17eac7d15d53a4d094"
+    }
+  ],
+  "generated_at": "2026-09-19T16:44:11Z",
+  "schema_version": 1,
+  "source_commit": "4102dce1376d725c7959ec71ec46ffdbe47b9c6b",
+  "state": "COMPLETE"
+}

@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-19T20:00:00Z",
+  "product": "Teslatlas Hub",
+  "version": "2026.36.2",
+  "scope": "bounded exact-export Debian 13 ARM64 container image and ordinary one-shot Compose runtime foundation",
+  "verdict": "INDEPENDENTLY_ACCEPTED_BOUNDED_RUNTIME_FOUNDATION",
+  "acceptance_limit": "Independent acceptance is limited to one exact-export native ARM64 image and a fresh empty synthetic Compose runtime with retained independently inspectable evidence. It does not prove image-byte reproducibility, a pristine first-attempt TLS launch, clean-host package lifecycle, upgrade, rollback, backup/restore, failed-candidate handling, removal, companion admission, F1, F6, or F7.",
+  "source": {
+    "commit": "4102dce1376d725c7959ec71ec46ffdbe47b9c6b",
+    "tree": "561bbb43e5da920df956187d42a6d5dbd3f12ec5",
+    "branch": "main",
+    "local_origin_and_ls_remote_equal": true,
+    "corresponding_source_url": "https://github.com/magrathean-uk/teslatlas-hub/tree/4102dce1376d725c7959ec71ec46ffdbe47b9c6b",
+    "archive": {
+      "format": "git archive tar with source/ prefix",
+      "sha256": "85ce8d032d4d517c711dac94183c0fe674217030d685a0df4a4e3ecc1c791549",
+      "bytes": 17182720,
+      "manifest_sha256": "1b16f177c9deab76d8f64b8eb22ea885408144ba87addc5af1e4c93cb89622f7",
+      "member_count": 780,
+      "host_guest_manifests_identical": true,
+      "dirty_checkout_used_as_build_context": false
+    },
+    "staging_calibration": "An initial guest staging assertion used the prior commit's stale expected count 774 and stopped after the host/guest manifest equality check. The current archive was then derived and verified as 780 members before the sole build; no source or artifact was changed."
+  },
+  "platform": {
+    "guest": "debian13-arm64",
+    "os": "Debian GNU/Linux 13.7 (trixie)",
+    "kernel": "6.12.107+deb13-cloud-arm64",
+    "architecture": "aarch64",
+    "cpu_count": 4,
+    "docker_engine": "26.1.5+dfsg1-9+deb13u1",
+    "docker_cli": "26.1.5+dfsg1-9+deb13u1",
+    "docker_compose": "2.26.1-4",
+    "native_platform": "linux/arm64",
+    "emulation_used": false
+  },
+  "immutable_inputs": {
+    "builder_index_digest": "sha256:828077e0f5ed0401fbd9cb5b4d5dedca23bd13c7fe032f3e8b7313e7acd2a57f",
+    "builder_linux_arm64_manifest_digest": "sha256:5b993f23fb69746405496e76f91e511d96c82b5b23304fd5d20b4a80a8b223ea",
+    "runtime_index_digest": "sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a",
+    "runtime_linux_arm64_manifest_digest": "sha256:da496358bd6934d2bd6a563a33176a2e50eff5490c54b4ac6fb051b69fef4071",
+    "runtime_package_manager_invoked": false,
+    "runtime_ca_source": "copied from the digest-pinned builder stage"
+  },
+  "tooling": {
+    "builder": "Docker 26 legacy DOCKER_BUILDKIT=0",
+    "buildx_command_present": false,
+    "docker_buildx_package_status": "un/not installed",
+    "tooling_installed_during_run": false,
+    "package_manager_mutated": false,
+    "baseline_packages": [
+      "containerd 1.7.24~ds1-6+deb13u1",
+      "docker-cli 26.1.5+dfsg1-9+deb13u1",
+      "docker-compose 2.26.1-4",
+      "docker.io 26.1.5+dfsg1-9+deb13u1",
+      "runc 1.1.15+ds1-2+b4"
+    ]
+  },
+  "build": {
+    "count": 1,
+    "command": "DOCKER_BUILDKIT=0 docker build --platform linux/arm64 --build-arg TESLATLAS_HUB_SOURCE_COMMIT=<exact-commit> -t teslatlas-hub:f6-arm64-4102dce-r2 -t teslatlas-hub:local .",
+    "started_at": "2026-09-19T16:18:08Z",
+    "completed_at": "2026-09-19T16:19:45Z",
+    "build_log_sha256": "406da41296a571becb304cd065634a22b7a065387c8de6bd96c68a945f5adc12",
+    "image_config_digest": "sha256:10655b74eb91ffa79eca022fc8a3c3b993d73b6badc3829f78e21049c49e4eb4",
+    "image_size_bytes": 152872056,
+    "binary_sha256": "61e9320412a148543beb49ddbeb1f73d278250fc4bb315c9b1a7f11302f55603",
+    "image_os": "linux",
+    "image_architecture": "arm64",
+    "image_variant": "v8",
+    "image_user": "10001:10001",
+    "working_directory": "/var/lib/teslatlas-hub",
+    "entrypoint": [
+      "/usr/local/bin/teslatlas-hub"
+    ],
+    "default_command": [
+      "--config",
+      "/etc/teslatlas-hub/config.toml",
+      "serve"
+    ],
+    "source_readback_exact": true,
+    "version_readback": "teslatlas-hub 2026.36.2",
+    "cache_reuse_allowed_and_disclosed": true,
+    "network_boundary": [
+      "Docker Hub access for exact digest-pinned official Rust and Debian bases",
+      "crates.io access for Cargo.lock/checksum-bound registry metadata and crates in the builder stage",
+      "no runtime-stage network or package-manager command"
+    ],
+    "not_claimed": [
+      "registry manifest digest for this local image",
+      "image tar byte reproducibility",
+      "package-byte reproducibility"
+    ]
+  },
+  "compose_runtime": {
+    "compose_project": "hub-f6-4102dce-r2",
+    "published_listener": "guest loopback 127.0.0.1:8443 only",
+    "tls_server_name": "hub-f6-4102dce.test",
+    "tls_material": "fresh one-use local CA and DNS-only server certificate; key bytes were never retained and all one-use material was purged",
+    "ordinary_start_command_count": 1,
+    "manual_second_initializer": false,
+    "volume_init": {
+      "exit_code": 0,
+      "restart_count": 0,
+      "completed_before_hub": true,
+      "started_at": "2026-09-19T16:20:52.928320261Z",
+      "finished_at": "2026-09-19T16:20:52.938583027Z",
+      "hub_first_log_at": "2026-09-19T16:20:53.631285067Z",
+      "volume_root": "10001:10001/0700",
+      "sentinel": "regular 10001:10001/0600, 0 bytes, link count 1",
+      "state_directories": "packs and secrets 10001:10001/0700",
+      "database": "10001:10001/0600, 745472 bytes, link count 1"
+    },
+    "tls_input_correction": {
+      "occurred": true,
+      "cause": "The fresh test server certificate and key were initially staged root-owned with 0640, which did not meet Hub's no-follow same-UID private-key predicate.",
+      "failed_restarts_before_correction": 10,
+      "corrected_certificate_file_stat": "10001:10001/0644",
+      "corrected_key_file_stat": "10001:10001/0600",
+      "source_or_image_changed": false,
+      "claim_limit": "The same Compose cohort recovered and became healthy after correcting only the one-use test input. This is not a pristine first-attempt startup claim."
+    },
+    "health_before_restart": {
+      "status": "ok",
+      "version": "2026.36.2"
+    },
+    "doctor_before_restart": "all eight named checks passed; schema 59; SQLite 3.53.2; zero vehicles, observations and token rows; TLS identity valid; collector init-only and ready",
+    "status_before_restart": "status ok; no credentials or vehicles; ready=false with collector_absent, as expected for init-only synthetic setup",
+    "tls_wrong_name": {
+      "server_name": "wrong-name.invalid",
+      "exit_code": 1,
+      "rejected": true
+    },
+    "security": {
+      "uid": 10001,
+      "gid": 10001,
+      "read_only_root": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "effective_capabilities_hex": "0000000000000000",
+      "bounding_capabilities_hex": "0000000000000000",
+      "no_new_privileges": true,
+      "tmp_mode": "10001:10001/0700",
+      "root_write_attempt_exit": 1
+    },
+    "restart_continuity": {
+      "command": "docker compose restart hub",
+      "healthy_after": true,
+      "hub_id": "b58cf990-e766-485a-9829-99bfe60e89dc",
+      "identity_continuity": true,
+      "discovery_byte_identical": true,
+      "status_byte_identical": true,
+      "source_continuity": true,
+      "started_before": "2026-09-19T16:22:37.558082069Z",
+      "started_after": "2026-09-19T16:26:44.276381915Z",
+      "final_database_sha256": "12aef359831c7fe7cf1c549e4eab142cc91b47edccc37f590ff1743faf3943b9"
+    },
+    "synthetic_scope": "production init plus health/doctor/status readback against a fresh empty store; no credentials, account, vehicle, import, companion, private input or production endpoint"
+  },
+  "evidence": {
+    "path": "docs/development/evidence/f6-arm64-container-runtime-2026-09-19-r2",
+    "state": "COMPLETE",
+    "evidence_run_id": "efb56bab-6b07-4168-bf00-f187be44e0bc",
+    "manifest_sha256": "1d44e746942ee4652bb1c2310a4c9d72a252daad3e2d66dbd44e379a554fbe88",
+    "aggregate_manifest_sha256": "ec3ad4ff24ea801e414eeb1f0f1f725cf09a40ffa789a858a621cd15366c382e",
+    "retained_file_count": 25,
+    "contains_secrets": false,
+    "prepare_attempts": [
+      {
+        "result": "rejected",
+        "reason": "Raw doctor detail text contained privateKey=true and was rejected by the published scanner.",
+        "closure": "The runtime command remained teslatlas-hub doctor --format json. The runner produced a structured jq derivative retaining status, schema, named check IDs and pass flags, non-secret catalogue/collector/credential-state/safety/stream/TLS booleans, vehicles and version while deleting every free-text check detail. Raw doctor output, its hash and the exact jq program were not retained, so the transformation is runner-reported rather than independently reproducible; only the resulting allowlisted derivative is independently inspectable."
+      },
+      {
+        "result": "rejected",
+        "reason": "Restart metadata used secret-shaped field names for certificate/key stat strings.",
+        "closure": "Only the metadata fields were renamed to corrected_key_file_stat and corrected_certificate_file_stat; the exact non-secret stat strings were preserved and no source/runtime evidence changed."
+      },
+      {
+        "result": "READY_FOR_CLEANUP",
+        "pre_cleanup_aggregate_manifest_sha256": "6b746c03c2f12213c882bb437bbd297135fbc117d1080ded930367c744729f0c",
+        "retained_file_count": 24
+      }
+    ],
+    "finalization": "Cleanup began only after READY_FOR_CLEANUP. The cohort-bound cleanup receipt was added by the published finalizer, which rechecked every prepared file and emitted COMPLETE. After independent review found the image-scope wording ambiguous, cleanup.json gained only an exact scope/classification for the already-recorded final-image removal and retained anonymous builder intermediate; its file record, COMPLETE aggregate and manifest hash were recomputed. No runtime assertion changed."
+  },
+  "timeline_and_lock": {
+    "initial_lock_acquired_at": "2026-09-19T16:15:15Z",
+    "lock_shell_recovery": "The first holder shell PID 53820 exited after a nonzero guest command under set -e. Its absence and exact owner record were verified, the owned stale lock was removed, and no second heavy job was started.",
+    "active_lock_acquired_at": "2026-09-19T16:16:25Z",
+    "active_lock_holder_pid": 55422,
+    "guest_stopped_at": "2026-09-19T16:31:57Z",
+    "lock_released_at": "2026-09-19T16:32:06Z"
+  },
+  "cleanup": {
+    "owned_containers_removed": true,
+    "owned_network_removed": true,
+    "owned_volume_removed": true,
+    "owned_final_runtime_image_and_tags_removed": true,
+    "cleanup_field_semantics": "The evidence harness cleanup.json field owned_images_removed is bound to the cohort image_id and its two runtime tags. That exact final runtime image and both tags were removed. It does not assert pruning anonymous legacy-builder ancestors or the Docker build cache, which were intentionally retained and disclosed below.",
+    "one_use_tls_removed": true,
+    "guest_runtime_root_removed": true,
+    "host_runtime_root_removed": true,
+    "guest_stopped": true,
+    "guest_listener_8443_absent": true,
+    "host_listener_8443_absent": true,
+    "teslatlas_hub_process_absent": true,
+    "heavy_build_lock_released": true,
+    "build_cache_preserved": true,
+    "build_cache_reported_bytes": 889300000,
+    "pinned_base_and_legacy_intermediate_images_preserved": true,
+    "retained_image_inventory_after_cleanup": [
+      "rust pinned-base image sha256:c1999f81da8e1f787006d58cbaece8ac4837d7ae04ad16784d829470f4bebc8d",
+      "debian pinned-base image sha256:3fde68c8327d49ce5f747c72d9742ec63d27dee28515807ef0ca5259c3e01120",
+      "untagged legacy-builder intermediate sha256:8e5e41ae96170bc65f41cfb220130ecb1dd96ccac1d4ea989a957475c910f262"
+    ],
+    "pre_existing_untracked_paths_preserved": [
+      ".serena/",
+      "target/"
+    ]
+  },
+  "remaining": [
+    "A second clean export build for image-byte reproducibility, if that is required by the final F6 claim.",
+    "Container upgrade, rollback, backup/restore, failed candidate and data-preserving removal.",
+    "Clean-host Debian and macOS lifecycle closure, exact populated five-companion catalog, combined installed ecosystem, F1, F6 and F7.",
+    "F5 fresh separately authorized real inputs."
+  ],
+  "independent_review": {
+    "reviewer": "gpt-5.6-sol/high",
+    "current_verdict": "ACCEPT",
+    "reviews": [
+      {
+        "verdict": "REJECT",
+        "findings": [
+          "P2 cleanup image wording appeared to contradict the disclosed retained untagged legacy-builder intermediate",
+          "P2 deterministic jq doctor-redaction claim was not independently reproducible because the exact filter and raw-input hashes were not retained"
+        ]
+      },
+      {
+        "verdict": "ACCEPT",
+        "scope": "two-P2 metadata delta",
+        "findings": [],
+        "verified": "Cleanup is bounded to the named/tagged cohort and runnable final image ID while the anonymous builder intermediate remains disclosed; doctor transformation is runner-reported and explicitly non-reproducible; cleanup SHA e7d4c3c8272820da6bd7ec4b86a9e9e6a817c8ca406a32b11b03199a6eb2a2d7, COMPLETE aggregate ec3ad4ff24ea801e414eeb1f0f1f725cf09a40ffa789a858a621cd15366c382e, manifest SHA 1d44e746942ee4652bb1c2310a4c9d72a252daad3e2d66dbd44e379a554fbe88 and 25 files recompute cleanly."
+      }
+    ],
+    "verified_without_findings": "Live remote/local/origin identity; exact source archive/tree/780-member manifest; COMPLETE 25-file manifest and aggregate; image/config/source/version; generic Compose initializer ordering; volume/sentinel modes; TLS retry calibration and corrected stat names; health/status/security/restart; cohort-bound cleanup.",
+    "acceptance_limit": "Accepted only as the bounded exact-export ARM64 container runtime foundation. Image-byte reproducibility, pristine first-attempt TLS startup, upgrade/rollback, backup/restore, failed candidate, removal, full clean-host lifecycle, F1, F6 and F7 remain open."
+  }
+}

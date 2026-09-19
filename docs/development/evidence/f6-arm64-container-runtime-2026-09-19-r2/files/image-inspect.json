@@ -1,0 +1,71 @@
+[
+    {
+        "Id": "sha256:10655b74eb91ffa79eca022fc8a3c3b993d73b6badc3829f78e21049c49e4eb4",
+        "RepoTags": [
+            "teslatlas-hub:f6-arm64-4102dce-r2",
+            "teslatlas-hub:local"
+        ],
+        "RepoDigests": [],
+        "Parent": "sha256:2dbe6c88ae33d1c1f84dc881933a2dd842e0c0a57f30f0fbc2a36317f30edb0f",
+        "Comment": "",
+        "Created": "2026-09-19T16:19:45.251350674Z",
+        "DockerVersion": "26.1.5+dfsg1",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "10001:10001",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+            ],
+            "Cmd": [
+                "--config",
+                "/etc/teslatlas-hub/config.toml",
+                "serve"
+            ],
+            "Image": "sha256:2dbe6c88ae33d1c1f84dc881933a2dd842e0c0a57f30f0fbc2a36317f30edb0f",
+            "Volumes": null,
+            "WorkingDir": "/var/lib/teslatlas-hub",
+            "Entrypoint": [
+                "/usr/local/bin/teslatlas-hub"
+            ],
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "arm64",
+        "Variant": "v8",
+        "Os": "linux",
+        "Size": 152872056,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/95dcf2cb700b61a9296b62a9e8c0c30c8fb520f6a0510660eb8c8e3157df8824/diff:/var/lib/docker/overlay2/f09fe1558f663c87605ae6e301852a541ff6a686b0b0981ad25015a15649d59e/diff:/var/lib/docker/overlay2/16b9c3a3812ee56bca96d6bcee43aec760ae71abebbcf62765242e282e725aa4/diff:/var/lib/docker/overlay2/517a6b2e763fafd2daf38e97e0b9fb598cd6f5a2082635e4b058f5fa762de5b7/diff:/var/lib/docker/overlay2/69eac9e1ae12379d5f62c7bdf48272fe291db87f0cdedb98e093057897230671/diff:/var/lib/docker/overlay2/d91473f82345266994e5c623deb23f44ba6b0a420964a111d981e879a24ae03a/diff",
+                "MergedDir": "/var/lib/docker/overlay2/f69ebfe7d5f2660ec5d2dcb3c73e541cacd645231bb8b93c38587c32f662852d/merged",
+                "UpperDir": "/var/lib/docker/overlay2/f69ebfe7d5f2660ec5d2dcb3c73e541cacd645231bb8b93c38587c32f662852d/diff",
+                "WorkDir": "/var/lib/docker/overlay2/f69ebfe7d5f2660ec5d2dcb3c73e541cacd645231bb8b93c38587c32f662852d/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:8227a1264c7ff2f8bd125b585e62c1cec77dd2099c985c33e08d34292d06144f",
+                "sha256:fcc6576f1209173c51d1169890e2f1c1de54d7249f2e80c684650a36aa510109",
+                "sha256:f91f2c66611f09d6296a87f2299860f0c1790838fa2af09441e448e44ebe3880",
+                "sha256:f66904e79fee90faae7caa5e5049aa3ac815b34d83208aab485aefc84f243b4a",
+                "sha256:958f22b68079400fc5fd811b5e408a46c295cfb2fb0da0be8fae20c352914730",
+                "sha256:d36213570ef82d520e9cbb403b5d3f227bcd622cd9010371834880cc8ec6f4ce",
+                "sha256:0346345802cd2ef6b2c88243104b5e1072c9ce4a384b31546e1ae3293d30bcb8"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-09-19T17:19:45.263308068+01:00"
+        }
+    }
+]

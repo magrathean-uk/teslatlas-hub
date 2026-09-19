@@ -1,0 +1,41 @@
+{
+  "collector": null,
+  "credentials": {
+    "present": false
+  },
+  "database": {
+    "bytes": 745472,
+    "path": "/var/lib/teslatlas-hub/hub.sqlite"
+  },
+  "edgeDelivery": {
+    "configured": false,
+    "state": "disabled"
+  },
+  "fleetCredentials": {
+    "expiresAt": null,
+    "nextRefreshAt": null,
+    "present": false,
+    "scopeStatus": null,
+    "scopes": null
+  },
+  "fleetTelemetry": {
+    "configured": false,
+    "deliveryPolicy": null,
+    "enabled": false,
+    "mode": "disabled",
+    "operationalState": "disabled",
+    "paidVehicleDataPolling": false
+  },
+  "legacyCredentials": {
+    "expiresAt": null,
+    "nextRefreshAt": null,
+    "present": false
+  },
+  "provider": "legacy",
+  "readinessReason": "collector_absent",
+  "ready": false,
+  "status": "ok",
+  "vehicle": null,
+  "vehicles": [],
+  "version": "2026.36.2"
+}

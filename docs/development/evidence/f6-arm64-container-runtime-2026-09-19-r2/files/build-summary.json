@@ -1,0 +1,26 @@
+{
+  "build_log_sha256": "406da41296a571becb304cd065634a22b7a065387c8de6bd96c68a945f5adc12",
+  "builder": "Docker 26 legacy DOCKER_BUILDKIT=0",
+  "cohort": {
+    "compose_project": "hub-f6-4102dce-r2",
+    "container_names": [
+      "hub-f6-4102dce-r2-hub-1",
+      "hub-f6-4102dce-r2-volume-init-1"
+    ],
+    "guest_runtime_root": "/var/tmp/hub-f6-4102dce-r2",
+    "host_runtime_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-f6-container-4102dce-r2",
+    "image_id": "sha256:10655b74eb91ffa79eca022fc8a3c3b993d73b6badc3829f78e21049c49e4eb4",
+    "network_name": "hub-f6-4102dce-r2_default",
+    "volume_name": "teslatlas-hub-data"
+  },
+  "completed_at": "2026-09-19T16:19:45Z",
+  "network_boundary": [
+    "digest-pinned Docker Hub base retrieval",
+    "Cargo.lock/checksum-bound crates.io registry and crate retrieval",
+    "no runtime-stage network"
+  ],
+  "platform": "linux/arm64",
+  "source_commit": "4102dce1376d725c7959ec71ec46ffdbe47b9c6b",
+  "started_at": "2026-09-19T16:18:08Z",
+  "status": "passed"
+}

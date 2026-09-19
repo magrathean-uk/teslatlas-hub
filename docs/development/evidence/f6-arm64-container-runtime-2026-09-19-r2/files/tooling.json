@@ -1,0 +1,13 @@
+{
+  "docker_buildx_command_present": false,
+  "docker_buildx_package_status": "un",
+  "package_manager_mutated": false,
+  "packages": {
+    "containerd": "1.7.24~ds1-6+deb13u1",
+    "docker-cli": "26.1.5+dfsg1-9+deb13u1",
+    "docker-compose": "2.26.1-4",
+    "docker.io": "26.1.5+dfsg1-9+deb13u1",
+    "runc": "1.1.15+ds1-2+b4"
+  },
+  "tooling_installed_during_run": false
+}

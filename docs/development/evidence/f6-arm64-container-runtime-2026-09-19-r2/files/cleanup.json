@@ -1,0 +1,30 @@
+{
+  "cleanup_verified_at": "2026-09-19T16:32:20Z",
+  "cohort": {
+    "compose_project": "hub-f6-4102dce-r2",
+    "container_names": [
+      "hub-f6-4102dce-r2-hub-1",
+      "hub-f6-4102dce-r2-volume-init-1"
+    ],
+    "guest_runtime_root": "/var/tmp/hub-f6-4102dce-r2",
+    "host_runtime_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-f6-container-4102dce-r2",
+    "image_id": "sha256:10655b74eb91ffa79eca022fc8a3c3b993d73b6badc3829f78e21049c49e4eb4",
+    "network_name": "hub-f6-4102dce-r2_default",
+    "volume_name": "teslatlas-hub-data"
+  },
+  "evidence_run_id": "efb56bab-6b07-4168-bf00-f187be44e0bc",
+  "guest_runtime_root_removed": true,
+  "guest_stopped": true,
+  "heavy_build_lock_released": true,
+  "host_runtime_root_removed": true,
+  "hub_process_absent": true,
+  "listeners_absent": true,
+  "one_use_tls_removed": true,
+  "owned_containers_removed": true,
+  "owned_images_removed": true,
+  "owned_images_removed_scope": "The named/tagged candidate cohort and its runnable final image ID were removed.",
+  "owned_network_removed": true,
+  "owned_volume_removed": true,
+  "retained_untagged_legacy_builder_intermediate": "sha256:8e5e41ae96170bc65f41cfb220130ecb1dd96ccac1d4ea989a957475c910f262 is an anonymous builder-stage intermediate outside the cohort final runtime image identity and was intentionally retained with the build cache.",
+  "source_commit": "4102dce1376d725c7959ec71ec46ffdbe47b9c6b"
+}
