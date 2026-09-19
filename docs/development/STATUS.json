@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-19T14:56:02Z",
-  "update_scope": "f6_arm64_container_source_static_partial_foundation_independently_accepted",
+  "updated_at": "2026-09-19T16:12:01Z",
+  "update_scope": "f6_container_runtime_rejected_source_fix_independently_accepted",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "099fe01b0c1ce069213e4d76f0a480b3c7cf21f9",
+    "head": "afae80a3aa5d3d440eb7d89d5d38b7d87fb37184",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-19T14:56:02Z"
+    "checked_at": "2026-09-19T15:27:00Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -56,7 +56,11 @@
     "Active companion bootstrap/catalog surfaces now contain exactly Protocol, TypeScript SDK, Swift SDK, Home Assistant and Edge; Hub is the separately identified sixth repository. The shipped current catalog remains empty pending exact final companion identities and artifacts.",
     "The current TypeScript package foundation records SHA-256 42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7 and 83 members, but its exact archive bytes are not staged here, so runtime admission remains pending. Historical D1 records and Viewer R1 fixture sources remain unchanged.",
     "Initial independent Sol/high review rejected the partial source/catalog foundation with three P2 findings. The historical D1 manifest was restored exactly, catalog JSON Schema now binds all five keys to repository-specific artifact shapes, and finalization binds a syntactically valid source commit to the tested Hub cohort head while allowing UNBOUND only for an unpublished candidate. Focused closure tests passed 61/61 and 31/31; the delta review returned ACCEPT with no findings for this partial foundation only.",
-    "The bounded F6 container slice retained its verified official image digests and zero-package-manager runtime after initial Sol/high REJECT. Three P1 and one P2 findings are closed: complete production embedded inputs now compile from the isolated Docker COPY set, the Hub health probe validates the declared DNS certificate name over loopback with real TLS positive/mismatch coverage, a capability-bounded initializer verifies 10001:10001/0700 while normal Hub drops all capabilities, and private key/certificate extensions are excluded. A delta P2 claim mismatch about the ephemeral test listener was corrected; final metadata-only review returned ACCEPT with no findings for this partial source/static foundation."
+    "The bounded F6 container slice retained its verified official image digests and zero-package-manager runtime after initial Sol/high REJECT. Three P1 and one P2 findings are closed: complete production embedded inputs now compile from the isolated Docker COPY set, the Hub health probe validates the declared DNS certificate name over loopback with real TLS positive/mismatch coverage, a capability-bounded initializer verifies 10001:10001/0700 while normal Hub drops all capabilities, and private key/certificate extensions are excluded. A delta P2 claim mismatch about the ephemeral test listener was corrected; final metadata-only review returned ACCEPT with no findings for this partial source/static foundation.",
+    "The exact afae80a exported source produced one native Linux ARM64 image and runner-reported health, doctor, status, restart continuity and security results, but cleanup removed the raw evidence without retaining an independently inspectable redacted bundle. Independent review rejected Scope A as unauditable; no image/runtime acceptance is claimed and afae80a will not be rerun.",
+    "The runtime build is not clean-host acceptance: Buildx was absent, exact Debian arm64 docker-buildx 0.13.1+ds1-3 (download SHA-256 6cf361ab892b55753b728adcbd1a99f0616711df853dba64a5297a4a676d96b0) was installed before the later stop instruction arrived, then removed. Docker/Compose baseline packages and pinned base images are unchanged; the 889.3 MB BuildKit cache was retained.",
+    "Ordinary one-shot Compose volume preparation is rejected: an empty prepared volume loses its 0700 root mode when the next mount reapplies image WORKDIR metadata. Independent review also rejected the first sentinel correction because it could follow a pre-existing symlink and generic Compose startup could race Hub.",
+    "The first source-fix delta review rejected a post-publication sentinel mutation race, foreign cleanup acceptance, incomplete secret screening and self-asserted archive identities. The second delta review verified those closures but found generic token/secret/apiToken structured-key bypasses. The final closure normalizes nested keys across case/separators and fails closed on broad credential suffixes; same-reviewer final recheck returned ACCEPT with no findings for the bounded source/static correction only. It is not part of an image."
   ],
   "evidence_paths": [
     "docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json",
@@ -69,13 +73,14 @@
     "docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json",
     "docs/development/f1-f6-debian13-arm64-package-lifecycle-2026-09-19-r1.json",
     "docs/development/f6-source-catalog-foundation-2026-09-19-r1.json",
-    "docs/development/f6-arm64-container-foundation-2026-09-19-r1.json"
+    "docs/development/f6-arm64-container-foundation-2026-09-19-r1.json",
+    "docs/development/f6-arm64-container-runtime-foundation-2026-09-19-r1.json"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed claim-by-claim ledger is docs/development/F0_ACCEPTANCE_LEDGER.md at workspace root.",
     "F1-F4: complete standalone Hub, Edge, Protocol/SDK and required Home Assistant behavior on every active documented path.",
     "F5: fresh read-only named-source export and fresh authorized passive capture evidence are mandatory input-dependent acceptance gates.",
-    "F6: independently review and publish the validated Hub source commit, rebuild exact clean-export native/container artifacts from it, populate the exact five-companion catalog only after all identities are stable, and prove ordinary lifecycle without Viewer.",
+    "F6: rebuild the accepted no-follow sentinel, completion dependency, legacy-builder and retained-evidence source correction from its exact published clean export; retain auditable evidence; prove the ordinary one-shot ARM64 Compose lifecycle without temporary undeclared tooling; populate the exact five-companion catalog only after all identities are stable; and prove ordinary lifecycle without Viewer.",
     "F7: pass one combined installed end-to-end ecosystem journey from F6 artifacts."
   ],
   "next_goal_draft": {
@@ -163,6 +168,25 @@
     "independent_review": "ACCEPT by gpt-5.6-sol/high with no findings after three P1 and two P2 closures across initial, delta and metadata-only reviews",
     "acceptance_limit": "Accepted static container-input and exact-export evidence preparation only; no image build, runtime, lifecycle, reproducibility or F6 acceptance."
   },
+  "current_f6_container_runtime_slice": {
+    "state": "REJECTED_UNAUDITABLE_AFTER_CLEANUP_SOURCE_FIX_INDEPENDENTLY_ACCEPTED",
+    "receipt": "docs/development/f6-arm64-container-runtime-foundation-2026-09-19-r1.json",
+    "source_head": "afae80a3aa5d3d440eb7d89d5d38b7d87fb37184",
+    "source_archive_sha256": "499d4073d3ee05a2b493b13fc73f7bb90a442bea4c8e89f3e6bfaf824b1a07eb",
+    "source_manifest_sha256": "b83d750bc457c19f02584659cb11dff48af4cc3fe9acbe7c6766b82ed463a5aa",
+    "image_config_digest": "sha256:569f509189ca3d6dad5b1ee291a8201f1b638143f5dd48fe849c9a21590af318",
+    "binary_sha256": "ccf8e8e24f19f7891a10b7f4fd6de20783434c486613219a2280fa00c5cc8395",
+    "source_readback": "https://github.com/magrathean-uk/teslatlas-hub/tree/afae80a3aa5d3d440eb7d89d5d38b7d87fb37184",
+    "image_runtime": "Runner-reported workaround-backed empty synthetic init, TLS health, doctor, status, restart identity/data continuity, non-root/read-only/all-cap-drop checks and clean shutdown on Debian 13.7 ARM64; rejected as unauditable because no retained redacted evidence bundle survived cleanup.",
+    "ordinary_compose_volume_handoff": "REJECTED: empty prepared volume root reverted from 10001:10001/0700 to image WORKDIR 10001:10001/0755 on the next mount.",
+    "runtime_workaround": "Initializer was rerun only after state existed; this proves the image runtime but receives no ordinary lifecycle credit.",
+    "source_fix": "Independently accepted source correction root-quarantines the volume, fully prepares/verifies a private inode and publishes it by ln -T as the final sentinel mutation; completion-orders volume-init; replaces COPY --chmod with explicit runtime-stage permissions; and adds a two-phase exact-source, secret-screened, run/cohort/resource-bound evidence bundle harness. It is excluded from afae80a and requires exact-export rebuild and runtime recheck.",
+    "source_fix_validation": "Shell syntax, idempotent plus existing/raced-symlink/hardlink/wrong-entry sentinel preservation, seven evidence-harness unit tests, real afae80a git-archive commit/tree/774-member derivation, safe/missing-dependency Compose-model checker fixtures, actual docker-compose 5.5.1 rendered-model validation, JSON parse and diff check pass. Cargo compile, Docker build and runtime were not run in the no-build source-review slice.",
+    "clean_host_build": "NOT_ACCEPTED: exact docker-buildx 0.13.1+ds1-3 was temporarily installed because the retained guest lacked Buildx.",
+    "cleanup_complete": true,
+    "independent_review": "gpt-5.6-sol/high final ACCEPT with no findings for the bounded source/static correction after the recorded Scope A and two delta REJECT rounds. The acceptance verifies the normalized recursive secret-screening closure and retains all prior sentinel, cleanup-binding, archive, Compose and legacy-builder closures.",
+    "acceptance_limit": "afae80a remains a failed unauditable runtime attempt. The independently accepted source correction is unbuilt; ordinary Compose lifecycle, exact corrected image, clean-host tooling, reproducibility, upgrade/rollback, backup/restore, removal, F1, F6 and F7 remain open."
+  },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/hub/docs/development/STATUS.json",
     "sha256": "3aca24b6bd9560dbd00c0635dbdb948034b9319600dfb3806c3a14dc819bfefe",
@@ -174,7 +198,7 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the F1/F6 Debian package cohort is purged; the F6 source/catalog and container-preparation foundations started no image, container, VM or persistent service; the sole ephemeral local TLS test listener was stopped and is absent; debian13-arm64 is stopped; the heavy-build lock is absent; reusable target cache remains",
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the F1/F6 Debian package cohort is purged. The afae80a exact-export ARM64 attempt is rejected unauditable after cleanup; no container, volume, network, Hub process, 8443 listener, TLS material or runtime root remains. The temporarily installed Buildx package is absent, pinned base images and BuildKit cache remain, debian13-arm64 is stopped, and the heavy-build lock is absent. The replacement candidate is source-only and starts no runtime.",
   "acceptance_limits": [
     "G2 is source-built synthetic runtime evidence, not macOS installer/notarization/service acceptance",
     "Current macOS 27.0 was exercised; the documented macOS 13 minimum floor was not independently run",
@@ -183,7 +207,7 @@
     "G6 is current macOS 27 arm64 external-consumer evidence; declared minimum floors were not independently exercised",
     "The F1/F6 Debian package receipt is a bounded partial pass: no package-byte reproducibility, deliberate corruption/retention recovery, credential/config/TLS clean-host restore, Fleet sidecars or final clean-export source-bound artifact",
     "The F6 source/catalog receipt is an independently accepted partial source foundation: pushed-commit artifact rebuilds, ARM64 container runtime source proof, exact five-companion catalog population and installed lifecycle remain pending",
-    "The F6 container receipt is an independently accepted partial source/static foundation: exact clean-export ARM64 image build, source readback, health/security posture, lifecycle and reproducibility remain pending",
+    "The F6 container source/static receipt remains independently accepted. The afae80a runtime receipt is rejected unauditable after cleanup and proves no image/runtime claim; ordinary one-shot volume handoff, source-fix review, clean-host build, corrected-image rebuild, retained evidence, lifecycle and reproducibility remain pending",
     "No App integration acceptance",
     "Viewer excluded; x86/Intel paused"
   ]

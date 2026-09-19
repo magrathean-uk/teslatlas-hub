@@ -13,6 +13,8 @@ test -s packaging/docker/config.toml.example
 test -s packaging/docker/base-images.json
 test -s docs/guides/install-docker.md
 test -x packaging/docker/prepare-volumes.sh
+test -x packaging/docker/initialize-volume.sh
+test -x scripts/finalize-container-runtime-evidence.py
 
 # Compose is optional on source-build hosts; when present, validate the
 # resolved service definition without creating containers or touching volumes.
@@ -20,10 +22,18 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
     TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker compose -f compose.yaml config --quiet
+    TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
+        docker compose -f compose.yaml config --format json \
+        | python3 scripts/check-docker-compose-render.py
 elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
     TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker-compose -f compose.yaml config --quiet
+    TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
+        docker-compose -f compose.yaml config --format json \
+        | python3 scripts/check-docker-compose-render.py
 fi
 
 python3 - <<'PY'
@@ -64,12 +74,13 @@ PY
 # present in the worktree but absent from a clean Docker build context.
 context_root=$(mktemp -d)
 trap 'find "$context_root" -depth -delete' EXIT HUP INT TERM
-mkdir -p "$context_root/fixtures/teslamate-corpus/v1" "$context_root/packaging"
+mkdir -p "$context_root/fixtures/teslamate-corpus/v1" "$context_root/packaging/docker"
 cp Cargo.toml Cargo.lock build.rs source_identity.rs "$context_root/"
 cp -R src examples tests "$context_root/"
 cp fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql \
     "$context_root/fixtures/teslamate-corpus/v1/"
 cp packaging/com.teslatlas.hub.plist.in "$context_root/packaging/"
+cp packaging/docker/initialize-volume.sh "$context_root/packaging/docker/"
 TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     CARGO_TARGET_DIR="$root/target/docker-context-check" \
     cargo check --locked --offline --manifest-path "$context_root/Cargo.toml" \
@@ -80,7 +91,14 @@ grep -F 'COPY fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql ./f
 grep -F 'COPY packaging/com.teslatlas.hub.plist.in ./packaging/com.teslatlas.hub.plist.in' Dockerfile >/dev/null
 grep -F 'TESLATLAS_HUB_SOURCE_COMMIT="${TESLATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
 grep -F 'cargo build --locked --release --bin teslatlas-hub' Dockerfile >/dev/null
-grep -F 'COPY --from=builder --chown=0:0 --chmod=0644 /etc/ssl/certs/ca-certificates.crt' Dockerfile >/dev/null
+grep -F 'COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt' Dockerfile >/dev/null
+grep -F 'COPY packaging/docker/initialize-volume.sh /usr/local/libexec/teslatlas-hub-initialize-volume' Dockerfile >/dev/null
+if grep -F -- '--chmod=' Dockerfile >/dev/null; then
+    printf '%s\n' 'Dockerfile must remain compatible with the retained legacy builder' >&2
+    exit 1
+fi
+grep -F 'RUN chown 0:0' Dockerfile >/dev/null
+grep -F 'chmod 0755' Dockerfile >/dev/null
 grep -F 'TESLATLAS_HUB_SOURCE_COMMIT: ${TESLATLAS_HUB_SOURCE_COMMIT:?' compose.yaml >/dev/null
 grep -F 'USER ${HUB_UID}:${HUB_GID}' Dockerfile >/dev/null
 grep -F 'read_only: true' compose.yaml >/dev/null
@@ -104,9 +122,11 @@ fi
 grep -F '0.0.0.0:8443' packaging/docker/config.toml >/dev/null
 grep -F 'volume-init' packaging/docker/prepare-volumes.sh >/dev/null
 grep -F 'cap_add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]' compose.yaml >/dev/null
-grep -F 'stat -c' compose.yaml >/dev/null
-grep -F '10001:10001:700' compose.yaml >/dev/null
+grep -F 'condition: service_completed_successfully' compose.yaml >/dev/null
+grep -F '/usr/local/libexec/teslatlas-hub-initialize-volume' compose.yaml >/dev/null
 test "$(grep -Fc 'cap_drop: ["ALL"]' compose.yaml)" -eq 2
+
+sh scripts/test-docker-volume-init.sh
 grep -F 'setup --tokens-stdin' docs/guides/install-docker.md >/dev/null
 grep -F 'docker compose run --rm hub source' docs/guides/install-docker.md >/dev/null
 grep -F 'packaging/docker/base-images.json' docs/guides/install-docker.md >/dev/null
@@ -120,4 +140,5 @@ grep -Fx '*.pem' .dockerignore >/dev/null
 grep -Fx '*.p12' .dockerignore >/dev/null
 grep -Fx '*.pfx' .dockerignore >/dev/null
 grep -Fx 'target/' .dockerignore >/dev/null
+python3 -m unittest scripts/test_finalize_container_runtime_evidence.py
 printf '%s\n' 'docker packaging static checks passed'

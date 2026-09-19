@@ -19,6 +19,12 @@ Assistant, and Edge services require their own reviewed source cohort and
 acceptance evidence. An empty public companion catalog does not make those
 services available automatically.
 
+The Dockerfile deliberately avoids BuildKit-only `COPY --chmod` flags. File
+ownership and modes are applied in an explicit runtime-stage `RUN`, so the
+retained Docker 26 legacy builder can assemble the pinned multi-stage image
+without installing a separate Buildx component. This source path still needs a
+new exact-export runtime recheck before it receives lifecycle credit.
+
 ## Prepare a private configuration
 
 Install Docker Engine or Docker Desktop with Compose v2, then copy the example
@@ -71,9 +77,17 @@ build.
 The one-shot volume initializer runs only after the image exists. It drops all
 capabilities and adds back only `CHOWN`, `FOWNER`, and `DAC_OVERRIDE`, changes
 only `/var/lib/teslatlas-hub` in the named volume, and fails unless the result
-is exactly UID/GID `10001:10001` with mode `0700`. The normal Hub service still
-drops every capability and never recursively changes ownership. Bind-mounted
-data must already have the private ownership and modes required by Hub.
+is exactly UID/GID `10001:10001` with mode `0700`. It atomically publishes an
+empty regular `.teslatlas-volume-initialized` sentinel with UID/GID
+`10001:10001` and mode `0600`, so Docker does not treat the volume as empty and
+replace those root-directory permissions from the image on the next mount. A
+pre-existing symlink, non-regular entry, non-empty file, or wrong sentinel
+metadata/link count fails without following or rewriting that entry. Compose completion-
+orders this initializer before Hub, including a generic `docker compose up`, so
+the privileged one-shot service cannot race normal startup. The normal Hub
+service still drops every capability and never recursively changes ownership.
+Bind-mounted data must already have the private ownership and modes required by
+Hub.
 
 Replace the placeholders from a protected local secret source. Do not put the
 tokens in Compose environment values, build arguments, command history, the
@@ -111,12 +125,70 @@ Restore data into a new volume, keep the original volume until verification,
 and re-pair clients after a data restore. Removing containers is not data
 deletion; removing the named volume is destructive.
 
+## Retain runtime evidence before cleanup
+
+The next exact-export runtime must stage only the redacted files required by
+`scripts/finalize-container-runtime-evidence.py`. Its `prepare` phase rejects a
+missing or extra file, symlink, empty/oversized result, known secret-shaped
+content, source mismatch, non-ARM64 image, unequal host/guest source manifest,
+manifest digest/member-count mismatch, unsafe manifest path, or Compose model
+that does not completion-order `volume-init`. The input must include the exact
+uncompressed `source-archive.tar`; the harness reads its PAX commit, derives its
+Git tree and file manifest, and compares its actual bytes and SHA-256 with
+`source-archive.json`. Host and guest manifests use sorted
+`<sha256>  <path>` lines relative to `source/` for every non-directory archive
+member (a symlink hashes its link text). It copies only
+that allowlist into a new owner-only bundle and records every relative path,
+byte count and SHA-256 plus an aggregate manifest hash:
+
+```sh
+python3 scripts/finalize-container-runtime-evidence.py prepare \
+  --input /absolute/redacted-pre-cleanup \
+  --output /absolute/retained-evidence-bundle \
+  --source-commit "$TESLATLAS_HUB_SOURCE_COMMIT"
+jq -e '.state == "READY_FOR_CLEANUP"' \
+  /absolute/retained-evidence-bundle/manifest.json
+```
+
+The prepare manifest generates an `evidence_run_id` and copies the exact
+`source_commit` and `cohort` object from the validated build summary. The cohort
+identifies the Compose project, image ID, container names, network, volume, and
+guest/host runtime roots through the exact keys `compose_project`, `image_id`,
+`container_names`, `network_name`, `volume_name`, `guest_runtime_root`, and
+`host_runtime_root`. Do not remove the image, cohort, guest root, or lock
+unless the ready check passes. After cleanup, write the separate redacted
+`cleanup.json` with the same `evidence_run_id`, `source_commit`, and complete
+`cohort` object plus every required resource assertion true. Foreign-cohort or
+partial cleanup cannot finalize the bundle. Retain the result with the review
+receipt:
+
+```sh
+python3 scripts/finalize-container-runtime-evidence.py finalize \
+  --bundle /absolute/retained-evidence-bundle \
+  --cleanup /absolute/cleanup.json
+jq -e '.state == "COMPLETE" and .contains_secrets == false' \
+  /absolute/retained-evidence-bundle/manifest.json
+```
+
+The allowlist covers the exact source tar and matching host/guest manifests,
+build/tooling summary, image inspect, binary/source/version readbacks, rendered
+Compose model, volume permissions, process security, TLS positive/negative
+results, pre/post-restart health/doctor/status, restart, database hash, and
+cleanup. Case-insensitive structured credential keys, token assignments,
+Bearer credentials, and private-key PEM headers are rejected. Private keys,
+tokens, invitations, private configuration, raw
+credentials, and unredacted logs must never enter its input.
+
 ## Current acceptance boundary
 
 The checked-in packaging script validates immutable base references, absence of
-runtime package-manager inputs, source binding, the health command, and Compose
-security shape without creating containers. A Docker build, health response or
-local synthetic test does not establish native Linux ARM64/AMD64 support,
-Fleet telemetry, public companion availability, or live Tesla collection.
-Those claims require the isolated runtime, upgrade, recovery and consumer
-acceptance records described by the compatibility plan.
+runtime package-manager inputs, legacy-builder-compatible copy/permission
+steps, source binding, the health command, adversarial sentinel preservation,
+and the rendered Compose dependency/security topology without creating
+containers. The first exact-export ARM64 runtime attempt was rejected after
+cleanup because its raw evidence was not retained for independent inspection
+and its original empty-volume handoff was unsafe. A Docker build, health
+response or local synthetic test does not establish native Linux ARM64/AMD64
+support, Fleet telemetry, public companion availability, or live Tesla
+collection. Those claims require the isolated runtime, upgrade, recovery and
+consumer acceptance records described by the compatibility plan.

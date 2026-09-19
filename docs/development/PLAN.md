@@ -153,6 +153,55 @@ delta REJECT findings were closed. This is not a built image or a runtime accept
 claim. Exact clean-export ARM64 image identity, source readback, health, security
 posture, persistence, recovery, upgrade/rollback and removal remain pending.
 
+Exact-export container runtime attempt: commit
+`afae80a3aa5d3d440eb7d89d5d38b7d87fb37184` produced one native Linux ARM64
+image from an archive whose host and guest manifests were reported matching. The
+image reports the exact immutable source tree, runs as `10001:10001` with a read-only root, no
+capabilities and `no-new-privileges`, and passed one-use DNS-validating TLS health,
+doctor, status, restart and empty synthetic identity/data continuity. The build is not
+a clean-host acceptance: the guest lacked Buildx, so exact Debian package
+`docker-buildx 0.13.1+ds1-3` was downloaded and temporarily installed before the
+later stop instruction arrived, then removed without changing the retained
+Docker/Compose baseline or pruning the 889.3 MB BuildKit cache. These image/runtime
+results are runner-reported, not accepted: cleanup removed the raw evidence root
+without first retaining a redacted path/size/SHA-256 bundle, so independent review
+could reproduce the source archive but could not inspect the image, binary or runtime
+outputs. Scope A is `REJECTED_UNAUDITABLE_AFTER_CLEANUP`; it will not be rerun from
+`afae80a`.
+
+The runtime also rejected the ordinary one-shot Compose volume handoff. The accepted
+source initializer left a newly prepared volume empty, allowing Docker's next mount
+to replace its `10001:10001/0700` root metadata with the image WORKDIR's `0755`
+metadata. Re-running the initializer only after synthetic state existed enabled the
+bounded image-runtime evidence; that workaround receives no ordinary lifecycle
+credit. Independent source review rejected the first sentinel correction because it
+could follow a pre-existing symlink and because generic Compose startup did not order
+the privileged initializer before Hub. Delta review then found a remaining
+post-publication root-mutation race, cleanup evidence not bound to its prepared cohort,
+incomplete secret screening, and self-asserted archive/tree fields. The accepted
+closure temporarily quarantines the mounted directory to root, fully prepares
+and verifies a private inode, and publishes the fresh regular sentinel as its final
+sentinel mutation through `ln -T`. It accepts only an exact existing non-symlink regular
+sentinel and adversarially proves that symlink, raced-destination and wrong-regular
+targets are unchanged. Hub now depends on
+successful initializer completion, and the test checks the rendered Compose JSON
+topology when Compose v2 is available. BuildKit-only `COPY --chmod` flags are replaced
+by ordinary COPY plus explicit root ownership/mode application for the retained
+Docker 26 legacy builder. A two-phase allowlisted evidence harness must reach
+`READY_FOR_CLEANUP` before cleanup and `COMPLETE` afterward. It retains and derives the
+commit/tree/archive/manifest identities from the exact source tar, records per-file and
+aggregate hashes, rejects common structured/text credential forms, generates an
+evidence-run ID, and requires cleanup to match the source and complete cohort/resource
+identity. This candidate is source-only. A second delta review verified those four closures but
+found one remaining generic structured-key bypass (`token`, `secret`, and camel-case
+`apiToken`); normalized nested key screening and exact regressions were then checked.
+That final narrow review returned `ACCEPT` with no
+findings for the bounded source/static correction only. The corrected source must be
+rebuilt from this publication's exact export and exercised in the ordinary sequence with
+the retained bundle. Container
+upgrade, rollback, backup/restore, failed candidate, removal, image-byte
+reproducibility, F1, F6 and F7 remain open.
+
 ## Start and boundaries
 
 The sent full-solution goal authorizes bounded implementation, tests, isolated

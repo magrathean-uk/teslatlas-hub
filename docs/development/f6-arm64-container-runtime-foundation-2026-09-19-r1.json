@@ -1,0 +1,286 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-19T16:12:01Z",
+  "product": "Teslatlas Hub",
+  "version": "2026.36.2",
+  "scope": "bounded exact-export Debian 13 ARM64 container image and synthetic runtime foundation",
+  "verdict": "REJECTED_UNAUDITABLE_AFTER_CLEANUP",
+  "acceptance_limit": "The exact source archive is reproducible, but the image/runtime assertions are runner-reported only because no redacted evidence bundle survived cleanup. Independent review rejected both that unauditable runtime scope and the original one-shot Compose volume implementation. This receipt accepts no image, runtime, lifecycle, clean-host build, F1, F6, or F7 claim.",
+  "source": {
+    "commit": "afae80a3aa5d3d440eb7d89d5d38b7d87fb37184",
+    "tree": "d3df81ccafe70a12392ab872dc121dda218908ba",
+    "branch": "main",
+    "local_origin_and_ls_remote_equal": true,
+    "corresponding_source_url": "https://github.com/magrathean-uk/teslatlas-hub/tree/afae80a3aa5d3d440eb7d89d5d38b7d87fb37184",
+    "archive": {
+      "format": "git archive tar with source/ prefix",
+      "sha256": "499d4073d3ee05a2b493b13fc73f7bb90a442bea4c8e89f3e6bfaf824b1a07eb",
+      "bytes": 17100800,
+      "manifest_sha256": "b83d750bc457c19f02584659cb11dff48af4cc3fe9acbe7c6766b82ed463a5aa",
+      "member_count": 774,
+      "host_guest_manifests_identical": true,
+      "host_guest_manifest_evidence_status": "runner-reported; raw manifests were not retained for independent review",
+      "dirty_checkout_used_as_build_context": false
+    }
+  },
+  "platform": {
+    "guest": "debian13-arm64",
+    "os": "Debian GNU/Linux 13.7 (trixie)",
+    "kernel": "6.12.107+deb13-cloud-arm64",
+    "architecture": "aarch64",
+    "cpu_count": 4,
+    "docker_engine": "26.1.5+dfsg1-9+deb13u1",
+    "docker_cli": "26.1.5+dfsg1-9+deb13u1",
+    "docker_compose": "2.26.1-4",
+    "rust_toolchain": "official rust:1.98-bookworm image bound to the recorded immutable index; compiler version was not separately printed",
+    "native_platform": "linux/arm64",
+    "emulation_used": false
+  },
+  "immutable_inputs": {
+    "builder_index_digest": "sha256:828077e0f5ed0401fbd9cb5b4d5dedca23bd13c7fe032f3e8b7313e7acd2a57f",
+    "builder_linux_arm64_manifest_digest": "sha256:5b993f23fb69746405496e76f91e511d96c82b5b23304fd5d20b4a80a8b223ea",
+    "runtime_index_digest": "sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a",
+    "runtime_linux_arm64_manifest_digest": "sha256:da496358bd6934d2bd6a563a33176a2e50eff5490c54b4ac6fb051b69fef4071",
+    "runtime_package_manager_invoked": false,
+    "runtime_ca_source": "copied from the digest-pinned builder stage"
+  },
+  "build": {
+    "evidence_status": "RUNNER_REPORTED_NOT_INDEPENDENTLY_AUDITABLE_AFTER_CLEANUP",
+    "source_argument": "TESLATLAS_HUB_SOURCE_COMMIT=afae80a3aa5d3d440eb7d89d5d38b7d87fb37184",
+    "command": "docker buildx build --platform linux/arm64 --load --build-arg TESLATLAS_HUB_SOURCE_COMMIT=<exact-commit> -t teslatlas-hub:f6-arm64-afae80a-r1 .",
+    "started_at": "2026-09-19T15:09:18Z",
+    "completed_at": "2026-09-19T15:11:00Z",
+    "build_log_sha256": "42320b33c5900860a9e59642dd38333d54d09c0231467d55bf4492862b5a896b",
+    "image_config_digest": "sha256:569f509189ca3d6dad5b1ee291a8201f1b638143f5dd48fe849c9a21590af318",
+    "binary_sha256": "ccf8e8e24f19f7891a10b7f4fd6de20783434c486613219a2280fa00c5cc8395",
+    "image_os": "linux",
+    "image_architecture": "arm64",
+    "image_user": "10001:10001",
+    "working_directory": "/var/lib/teslatlas-hub",
+    "entrypoint": [
+      "/usr/local/bin/teslatlas-hub"
+    ],
+    "default_command": [
+      "--config",
+      "/etc/teslatlas-hub/config.toml",
+      "serve"
+    ],
+    "source_readback_exact": true,
+    "version_readback": "teslatlas-hub 2026.36.2",
+    "missing_source_argument": {
+      "result": "failed closed during build.rs with exit 101; no image",
+      "diagnostic": "TESLATLAS_HUB_SOURCE_COMMIT must be exactly 40 lowercase hexadecimal characters",
+      "log_sha256": "442bacc3ec6fbbe037dc6e8b59a63f7e00b857d9fb453c9d8de655c93f770a59"
+    },
+    "invalid_source_argument": {
+      "value": "NOT-A-COMMIT",
+      "result": "failed closed during build.rs with exit 101; no image",
+      "diagnostic": "TESLATLAS_HUB_SOURCE_COMMIT must be exactly 40 lowercase hexadecimal characters",
+      "log_sha256": "cc3a46b9fa95ff010a8aadd6ba2ecc58906a3220f8339805be438227739ec344"
+    },
+    "network_boundary": [
+      "Docker Hub access for the exact digest-pinned official Rust and Debian bases",
+      "crates.io access for Cargo.lock-bound crate versions and registry checksums during the builder stage",
+      "no network or package-manager command in the runtime stage"
+    ],
+    "not_claimed": [
+      "registry manifest digest for this local image",
+      "image tar byte reproducibility",
+      "package-byte reproducibility",
+      "clean-host build acceptance"
+    ]
+  },
+  "ordinary_tooling_gap": {
+    "preflight_state": "Docker and Compose were present; the Buildx CLI component was absent",
+    "legacy_builder_result": "the release binary compiled, then the image assembly failed because COPY --chmod requires BuildKit",
+    "buildkit_environment_result": "DOCKER_BUILDKIT=1 failed because the Buildx component was missing",
+    "installed_before_stop_instruction_arrived": true,
+    "installed_package": "docker-buildx 0.13.1+ds1-3 arm64",
+    "download_sha256": "6cf361ab892b55753b728adcbd1a99f0616711df853dba64a5297a4a676d96b0",
+    "dpkg_install_time_guest_local": "2026-09-19T16:09:02+01:00",
+    "dpkg_remove_time_guest_local": "2026-09-19T16:24:29+01:00",
+    "apt_history_entry_present": false,
+    "apt_archive_residual_present": false,
+    "post_cleanup_state": "dpkg status un/not-installed, docker buildx command absent",
+    "baseline_packages_unchanged": [
+      "containerd 1.7.24~ds1-6+deb13u1",
+      "docker-cli 26.1.5+dfsg1-9+deb13u1",
+      "docker-compose 2.26.1-4",
+      "docker.io 26.1.5+dfsg1-9+deb13u1",
+      "runc 1.1.15+ds1-2+b4"
+    ],
+    "calibration": "The build is exact-export and native ARM64, but it is not accepted as a clean-host ordinary build because an undeclared Buildx component had to be downloaded and temporarily installed."
+  },
+  "runtime": {
+    "evidence_status": "RUNNER_REPORTED_NOT_INDEPENDENTLY_AUDITABLE_AFTER_CLEANUP",
+    "compose_project": "hub-f6-afae80a-r1",
+    "published_listener": "guest loopback 127.0.0.1:8443 only",
+    "tls_server_name": "hub-f6-afae80a.test",
+    "tls_material": "fresh one-use local CA and DNS-only server certificate; keys were never copied into source or receipt and were purged",
+    "tls_positive": true,
+    "tls_wrong_name_exit": 1,
+    "tls_wrong_name_result": "rejected because the certificate is valid only for hub-f6-afae80a.test",
+    "synthetic_setup": "production `init` command against a fresh empty store; no credentials, account, vehicle, import, companion, or private input",
+    "health_before_restart": "healthy",
+    "health_after_restart": "healthy",
+    "https_health": {
+      "status": "ok",
+      "version": "2026.36.2"
+    },
+    "doctor": "all eight reported checks passed before and after restart; schema version 59",
+    "status": "ready=true, zero vehicles, no Legacy or Fleet credentials, collector disabled",
+    "security": {
+      "uid": 10001,
+      "gid": 10001,
+      "read_only_root": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "effective_capabilities_hex": "0000000000000000",
+      "bounding_capabilities_hex": "0000000000000000",
+      "no_new_privileges": true,
+      "tmp_mode": "10001:10001/0700",
+      "root_write_attempt_exit": 1
+    },
+    "restart_continuity": {
+      "hub_id": "8ed67365-6699-4a16-95b4-3eee62a71cc7",
+      "discovery_before_after_byte_identical": true,
+      "status_before_after_byte_identical": true,
+      "source_url_before_after_exact": true,
+      "final_database_sha256": "5890d53ab762638ae9f8c946a2f6ee963768e8ecf3f93a0a9ea573d8d88dd736",
+      "final_database_bytes": 745472,
+      "final_database_mode": "10001:10001/0600",
+      "final_data_directory_mode": "10001:10001/0700",
+      "clean_stop_exit": 0
+    }
+  },
+  "observed_defect": {
+    "id": "compose-empty-volume-mode-handoff",
+    "severity": "blocks ordinary Compose lifecycle credit",
+    "reproduction": [
+      "The volume initializer changed the empty named-volume root to 10001:10001/0700.",
+      "It left the volume empty.",
+      "The next Hub mount treated the volume as empty and restored the image WORKDIR metadata 10001:10001/0755.",
+      "A deliberately root-owned 0700 nonempty volume failed closed with `Hub lifetime lock filesystem operation failed`.",
+      "After state existed, re-running the initializer made 10001:10001/0700 durable and enabled the bounded image-runtime proof."
+    ],
+    "workaround_scope": "runtime evidence only; initializer was run again after state creation",
+    "ordinary_one_shot_compose_result": "REJECTED",
+    "source_fix_outside_receipt": "The independently accepted source correction temporarily quarantines the mount root, fully prepares and verifies a private inode before publishing the sentinel with a no-follow hard link as the final sentinel mutation, fails closed on every unexpected or raced entry, completion-orders the initializer before Hub, removes BuildKit-only COPY flags, and adds a two-phase retained-evidence contract. Those unbuilt changes are excluded from this afae80a runtime receipt and require exact-export rebuild, retained evidence, and runtime recheck."
+  },
+  "post_run_source_fix_validation": {
+    "scope": "unbuilt independently accepted source correction published with this receipt; not afae80a image/runtime evidence",
+    "sentinel": "root-only mount quarantine, fully prepared and verified private inode, then final ln -T publication; exact existing regular sentinel only; adversarial existing/raced symlink, hardlink and wrong-regular target preservation tests",
+    "compose": "hub depends on successful completion of the unprofiled bounded initializer; the test validates rendered Compose JSON when Compose v2 is available",
+    "legacy_builder": "all COPY --chmod flags removed; explicit root RUN owns and modes copied files; isolated COPY-only context includes the initializer",
+    "evidence_contract": "two-phase allowlisted redacted bundle retains the exact source tar; derives and verifies commit/tree/archive/manifest identities; rejects structured/text credentials; must reach READY_FOR_CLEANUP before cleanup; binds a generated evidence-run ID, source and exact cohort/resources to cleanup; and reaches COMPLETE only with unchanged per-file and aggregate hashes",
+    "validation": {
+      "shell_syntax": "passed",
+      "sentinel_adversarial": "passed idempotency plus existing symlink, raced-destination symlink, hardlink and wrong-regular target preservation",
+      "evidence_harness_unit_tests": "7 passed, including retained-archive/tree/manifest binding, foreign-cleanup rejection, nested generic/camel-case/separator credential rejection and tamper detection",
+      "real_git_archive_derivation": "passed against afae80a: derived tree d3df81ccafe70a12392ab872dc121dda218908ba and 774 members from the 17100800-byte git archive",
+      "compose_model_checker": "accepted a safe synthetic rendered model and rejected a model without the completion dependency",
+      "actual_compose_render": "passed: host docker-compose 5.5.1 rendered compose.yaml as JSON and scripts/check-docker-compose-render.py accepted its completion dependency and security topology without starting Docker or a runtime",
+      "json_parse": "passed",
+      "diff_check": "passed",
+      "full_packaging_script": "not run because it performs a Cargo compile outside this no-build source-review slice"
+    },
+    "runtime_recheck": "pending exact pushed-commit rebuild; no VM, Docker build, container, or runtime was used for this source candidate"
+  },
+  "evidence_retention": {
+    "raw_runtime_root_retained": false,
+    "redacted_evidence_bundle_retained": false,
+    "log_hashes_without_retained_files": true,
+    "independent_consequence": "Image digest, binary digest, host/guest manifest equality and runtime outputs cannot be independently inspected after cleanup; Scope A is rejected rather than inferred from runner assertions.",
+    "next_run_contract": "scripts/finalize-container-runtime-evidence.py must retain and validate the exact source tar, prepare a complete secret-screened cohort-bound bundle before cleanup, and finalize it only with matching resource cleanup readback afterward."
+  },
+  "timeline": {
+    "lock_acquired_at": "2026-09-19T14:59:00Z",
+    "cohort_started_at": "2026-09-19T15:19:55Z",
+    "restart_started_at": "2026-09-19T15:21:42Z",
+    "cohort_stop_started_at": "2026-09-19T15:23:40Z",
+    "runtime_resources_cleaned_at": "2026-09-19T15:24:29Z",
+    "guest_evidence_frozen_at": "2026-09-19T15:25:02Z",
+    "guest_stopped_at": "2026-09-19T15:25:29Z",
+    "host_root_and_lock_released_at": "2026-09-19T15:27:00Z"
+  },
+  "cleanup": {
+    "owned_containers_removed": true,
+    "owned_network_removed": true,
+    "owned_volume_removed": true,
+    "owned_runtime_and_intermediate_images_removed": true,
+    "build_cache_preserved": true,
+    "build_cache_reported_bytes": 889300000,
+    "pinned_base_images_preserved": true,
+    "one_use_tls_removed": true,
+    "guest_runtime_root_removed": true,
+    "host_runtime_root_removed": true,
+    "guest_stopped": true,
+    "guest_listener_8443_absent": true,
+    "host_listener_8443_absent": true,
+    "teslatlas_hub_process_absent": true,
+    "heavy_build_lock_released": true,
+    "pre_existing_untracked_paths_preserved": [
+      ".serena/",
+      "target/"
+    ]
+  },
+  "remaining": [
+    "Rebuild the accepted no-follow sentinel, completion dependency, legacy-builder and retained-evidence source correction and repeat the ordinary one-shot Compose lifecycle from its exact pushed commit.",
+    "Use the retained Docker 26 legacy builder path without installing Buildx, and retain the complete redacted hash-bound evidence bundle through independent review.",
+    "Prove image-byte reproducibility, upgrade, rollback, backup/restore, failed candidate, data-preserving removal, final companion cohort, installed ecosystem, F1, F6, and F7.",
+    "F5 still requires fresh separately authorized real inputs."
+  ],
+  "independent_review": {
+    "reviewer": "gpt-5.6-sol/high",
+    "current_verdict": "ACCEPT_SOURCE_ONLY_CORRECTION",
+    "reviews": [
+      {
+        "verdict": "REJECT",
+        "scope_a": "No independently inspectable retained runtime evidence survived cleanup, so image, binary and runtime assertions cannot be accepted.",
+        "scope_b": "The original sentinel write could follow an existing symlink and volume-init was not completion-ordered before generic Compose startup.",
+        "findings": [
+          "P1 retain a redacted path/size/SHA-256 evidence bundle or rerun exact source",
+          "P1 never follow or overwrite an existing sentinel entry and adversarially prove target preservation",
+          "P1 completion-order the privileged initializer so generic Compose startup cannot race Hub"
+        ]
+      },
+      {
+        "verdict": "REJECT",
+        "scope": "first source-fix delta",
+        "findings": [
+          "P1 sentinel publication was followed by path-based root chown/chmod in the UID-10001-owned directory",
+          "P1 cleanup was not bound to the generated run, source commit and exact cohort/resource identities",
+          "P1 secret screening missed common case and spelling variants while declaring contains_secrets false",
+          "P2 archive tree and archive SHA were only shape-checked self-assertions"
+        ],
+        "closures_pending_rereview": [
+          "root-only quarantine plus fully prepared inode and final atomic publication, with deterministic raced-symlink preservation",
+          "generated evidence-run UUID plus exact source/cohort/resource cleanup comparison",
+          "case-insensitive structured/text credential and comprehensive private-key header rejection",
+          "retained exact tar with derived PAX commit, archive digest/bytes, Git tree and member manifest/count"
+        ]
+      },
+      {
+        "verdict": "REJECT",
+        "scope": "second source-fix delta",
+        "findings": [
+          "P1 structured secret screening still accepted populated generic token, secret and camel-case apiToken keys"
+        ],
+        "closures_pending_rereview": [
+          "structured keys are normalized across case and separators, then fail closed on token, secret, password, credential, authorization, invitation, private-key and API-key suffixes, including nested objects"
+        ],
+        "verified_previous_closures": "Sentinel publication, foreign-cleanup rejection, exact retained archive/tree/SHA derivation, Compose ordering/security and legacy Docker compatibility passed."
+      },
+      {
+        "verdict": "ACCEPT",
+        "scope": "final bounded source-only correction",
+        "findings": [],
+        "verified": "Normalized recursive structured-key screening closes the sole remaining P1; evidence 7/7, sentinel adversarial checks, retained archive/cohort cleanup binding, Compose ordering/security and legacy Docker compatibility remain coherent.",
+        "acceptance_limit": "Source/static correction only. afae80a runtime remains rejected; exact-export rebuild, retained runtime evidence, ordinary Compose lifecycle, F1, F6 and F7 remain open."
+      }
+    ],
+    "positive_readback": "Commit, tree, archive SHA and 774-file source count reproduced; Compose/Dockerfile closures, pinned bases, Buildx timing/removal disclosure, workaround calibration, retained cache disclosure and final cleanup were coherent.",
+    "acceptance_limit": "The afae80a attempt remains a failed runtime receipt. Independent review accepts only the corrected source/static foundation; it grants no image, runtime or lifecycle acceptance."
+  }
+}

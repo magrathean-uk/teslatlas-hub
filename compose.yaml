@@ -9,6 +9,9 @@ services:
       args:
         TESLATLAS_HUB_SOURCE_COMMIT: ${TESLATLAS_HUB_SOURCE_COMMIT:?set TESLATLAS_HUB_SOURCE_COMMIT to the exact pushed 40-hex Hub commit}
     image: teslatlas-hub:local
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
     command: ["--config", "/etc/teslatlas-hub/config.toml", "serve"]
     user: "10001:10001"
     read_only: true
@@ -40,11 +43,8 @@ services:
 
   volume-init:
     image: teslatlas-hub:local
-    entrypoint: ["/bin/sh", "-eu", "-c"]
-    command:
-      - >-
-        install -d -o 10001 -g 10001 -m 0700 /var/lib/teslatlas-hub
-        && test "$(stat -c '%u:%g:%a' /var/lib/teslatlas-hub)" = "10001:10001:700"
+    entrypoint: ["/usr/local/libexec/teslatlas-hub-initialize-volume"]
+    command: []
     user: "0:0"
     read_only: true
     cap_drop: ["ALL"]

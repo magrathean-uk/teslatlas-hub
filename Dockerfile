@@ -22,9 +22,23 @@ ARG HUB_GID=10001
 # Keep the runtime independent of mutable package repositories. The pinned
 # builder supplies the public root bundle needed by Hub's outbound TLS clients;
 # the private Compose health probe trusts only its explicitly mounted CA.
-COPY --from=builder --chown=0:0 --chmod=0644 /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder --chown=0:0 --chmod=0755 /build/target/release/teslatlas-hub /usr/local/bin/teslatlas-hub
-COPY --chown=0:0 --chmod=0644 LICENSE NOTICE /usr/share/doc/teslatlas-hub/
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /build/target/release/teslatlas-hub /usr/local/bin/teslatlas-hub
+COPY LICENSE NOTICE /usr/share/doc/teslatlas-hub/
+COPY packaging/docker/initialize-volume.sh /usr/local/libexec/teslatlas-hub-initialize-volume
+RUN chown 0:0 \
+        /etc/ssl/certs/ca-certificates.crt \
+        /usr/local/bin/teslatlas-hub \
+        /usr/local/libexec/teslatlas-hub-initialize-volume \
+        /usr/share/doc/teslatlas-hub/LICENSE \
+        /usr/share/doc/teslatlas-hub/NOTICE \
+    && chmod 0644 \
+        /etc/ssl/certs/ca-certificates.crt \
+        /usr/share/doc/teslatlas-hub/LICENSE \
+        /usr/share/doc/teslatlas-hub/NOTICE \
+    && chmod 0755 \
+        /usr/local/bin/teslatlas-hub \
+        /usr/local/libexec/teslatlas-hub-initialize-volume
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 USER ${HUB_UID}:${HUB_GID}
