@@ -1,17 +1,20 @@
 {
   "schema_version": 2,
   "product": "Protocol",
-  "updated_at": "2026-09-19T10:30:43Z",
-  "update_scope": "post_adoption_next_phase_planning_no_execution",
-  "programme": "2026-09-18-app-v7-readiness",
+  "updated_at": "2026-09-19T11:04:10Z",
+  "update_scope": "full_product_completion_planning_no_execution",
+  "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_ACCEPTED",
   "source_objective_state": "EXACT_BINDING_ACCEPTED",
   "current_gate_ids": [],
+  "completion_gate_ids": ["F0", "F3", "F5", "F6", "F7"],
+  "accepted_receipts_immutable": true,
+  "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": [
     "G3"
   ],
-  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
-  "objective": "Preserve accepted exact bindings and prepare a deterministic unpublished Protocol developer bundle.",
+  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Complete every documented Protocol profile and conformance surface, real-input semantic evidence, reproducible developer distribution and final ecosystem admission.",
   "source": {
     "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
     "branch": "main",
@@ -36,19 +39,21 @@
     "docs/development/g3-compatibility-admission-2026-09-19-r2.json"
   ],
   "remaining": [
-    "Preserve the accepted exact bindings; rerun admission only for a source, profile, product-version or accepted-evidence delta.",
-    "L3: deterministic unpublished developer bundle with ordered manifest, archive hash and clean offline extraction/check.",
-    "Named-source semantic evidence requires fresh owner input; on a concrete contract gap, update all affected machine-readable artifacts and conformance."
+    "F0: reconcile every rich, current-Hub and Edge normative/machine-readable contract claim.",
+    "F3: prove independent adapters and fail-closed compatibility for all active consumers.",
+    "F5: mandatory fresh named-source and passive evidence must validate real semantics and any resulting contract delta.",
+    "F6-F7: deliver the reproducible developer bundle/catalog lifecycle and final product admission."
   ],
   "next_goal_draft": {
-    "id": "L3_PROTOCOL_REPRODUCIBLE_BUNDLE",
+    "id": "FULL_PROTOCOL_F0_F7",
     "state": "DRAFT_NOT_STARTED",
-    "objective": "Create an unpublished source-neutral contract archive for the accepted profile without changing runtime bindings.",
+    "objective": "Complete all documented source-neutral profiles and conformance surfaces, real-input semantics, reproducible distribution and final ecosystem admission.",
     "acceptance_evidence": [
-      "Ordered archive manifest and SHA-256 tied to exact source and G3",
-      "Reproducible generated artifacts and checksum maps",
-      "Clean offline extraction/check with no service, listener or credential",
-      "Required byte agreement with the TypeScript vendored profile"
+      "F0 conflict-free normative and machine-readable ledger",
+      "F3 independent adapter and compatibility receipts",
+      "F5 redacted real-source/import/passive semantic evidence",
+      "F6 reproducible native/Docker bundle and catalog lifecycle receipt",
+      "F7 exact final product admission/readback receipt"
     ],
     "execution_authorized": false
   },

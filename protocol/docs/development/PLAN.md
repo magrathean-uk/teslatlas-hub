@@ -1,57 +1,52 @@
-# Protocol post-adoption plan — 2026-09-19
+# Protocol full-product completion plan — 2026-09-19
 
-Objective: Preserve the accepted exact bindings and prepare a deterministic,
-unpublished Protocol developer bundle.
+Objective: complete the source-neutral Protocol as the reproducible authority for every
+supported Hub, SDK, Edge and Home Assistant contract used by the finished ecosystem.
 
 Authority: [master plan](../../../docs/development/MASTER_PLAN.md),
-[coordination](../../../docs/development/COORDINATION.md),
-[App v7 handoff](../../../docs/development/APP_V7_READINESS.md), and
-[STATUS.json](STATUS.json).
+[product specification](../../../docs/development/PRODUCT_SPEC.md),
+[coordination](../../../docs/development/COORDINATION.md), and [STATUS.json](STATUS.json).
 
 ## Current position
 
-G3 is accepted for product `2026.36.2`. The five active compatibility records
-bind `hub-http-v1@1.0.0` at SHA-256
-`b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`
-and Edge's separate `edge-delivery-v2@2.0.0` identity to accepted runtime
-receipts. The scoped admission checker is fail-closed and does not inspect
-Viewer.
+G3 remains accepted for the exact five-product current-Hub/Edge compatibility binding.
+Keep its receipt immutable. It does not prove every rich profile, distributable bundle,
+independent implementation, named-source semantics or final installed ecosystem.
+`full_solution_state` is `NOT_ACCEPTED`; this plan is not started.
 
-Protocol is a source-neutral developer resource, not a daemon. Existing source,
-fixture and conformance passes do not constitute a packaged distribution or
-real-data parity proof. Do not change the profile or rerun admission without a
-concrete contract, source, product-version or evidence delta.
+## Required completion
 
-## Next goal draft — not started
+- **F0:** inventory every normative and machine-readable claim across rich semantic
+  profiles `1.0.0`–`1.2.0`, `hub-http-v1@1.0.0`, `edge-delivery-v2@2.0.0`, schemas,
+  OpenAPI, events/SSE, commands/metadata, examples, fixtures, compatibility policy,
+  conformance cases and Python/Docker tooling. Conflicts block acceptance and must be
+  resolved in every affected artifact and consumer binding.
+- **F3:** prove clean independent adapters for Hub, TypeScript, Swift, Edge and HA use
+  the exact public profile bytes and fail closed on unsupported versions, capabilities,
+  malformed data, identity/trust errors, bounds and recovery cases. Preserve separate
+  profile identities and the current-plus-two-minors compatibility policy where claimed.
+- **F5:** turn the fresh named-source export and authorized passive capture into
+  redacted semantic evidence for units, field presence, null/zero, timestamps, history,
+  import and Edge dispositions. Update profiles only for real observed contract gaps.
+  This input-dependent evidence is mandatory for full acceptance.
+- **F6:** produce a deterministic, unpublished developer bundle containing all required
+  schemas, OpenAPI, profiles, checksum maps, redacted fixtures, conformance tooling,
+  licences and usable docs. Prove Python 3.11+ native checks, the documented ARM64
+  Docker checker, clean offline extraction and Hub-catalog install/update/status/
+  rollback/removal. No daemon or hidden Hub source dependency is allowed.
+- **F7:** admit exact final product artifacts and run conformance/readback in the
+  combined installed ecosystem without weakening validators to fit observations.
 
-L3: produce a deterministic, unpublished Protocol contract bundle for the
-accepted profile. Include only public schemas, OpenAPI, profile metadata,
-checksum maps, redacted fixtures, conformance entry points, compatibility
-record, licence and documentation needed by an independent implementer. Keep
-rich Protocol and Edge delivery identities separate from the current-Hub
-profile.
+## Work slices
 
-Acceptance requires:
+1. **L1:** complete F0 and close contract/artifact conflicts required by F3.
+2. **L2:** prove independent consumer bindings and active platform/tool floors.
+3. **L3:** finish F5 evidence, deterministic distribution/catalog/docs for F6, and
+   final compatibility admission for F7.
 
-- ordered member manifest and archive SHA-256 tied to exact source and G3;
-- generated files and checksum maps reproducing without drift;
-- a clean offline extraction/check that creates no service, listener,
-  credential or Hub state;
-- byte agreement with the TypeScript vendored profile where G3 requires it;
-- explicit `not published` and developer-resource-only status.
+## Start and boundaries
 
-This draft does not authorize source changes, archive generation, checks,
-publication, or runtime work. The coordinator must create and start a new goal.
-
-## Later work
-
-Named-source field, unit, null/zero and passive recovery evidence may be added
-only from a fresh owner-authorized real-data lane. Any real contract gap must
-update all affected machine-readable artifacts, fixtures, conformance and
-consumers; do not invent routes to create work.
-
-## Boundaries
-
-Preserve the dirty `main` checkout and source-neutral contract discipline. No
-Hub implementation, App or Viewer work, x86/Intel/Azure, production or vehicle
-action, commit, push, CI, release, publication, or private credential content.
+This plan does not authorize contract changes, generation, archive creation, checks,
+runtime, commit, push or publication. Preserve the dirty `main` tree and G3 receipt.
+Protocol remains source-neutral and owns no service. Exclude App, Viewer,
+x86/amd64/Intel and Azure; never include credentials or identifiable source/capture data.
