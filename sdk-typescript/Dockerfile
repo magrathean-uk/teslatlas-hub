@@ -1,53 +1,38 @@
 # syntax=docker/dockerfile:1
 
-# Keep the image identity explicit.  The build installs the lock-pinned npm
-# release because the upstream Node image's bundled npm can change.
-FROM node:26.7.0-bookworm-slim AS toolchain
+# This Dockerfile is intentionally package-only. scripts/run-docker-package-gate.mjs
+# creates a private temporary context containing the exact reviewed npm archive and
+# bounded consumer files; repository source is never part of the build context.
+FROM --platform=linux/arm64 node:26.7.0-bookworm-slim@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32 AS package-check
 
-ENV NODE_ENV=development \
-    npm_config_audit=false \
-    npm_config_fund=false \
-    npm_config_engine_strict=true
-WORKDIR /workspace
-
-RUN npm install --global npm@11.19.0 \
-    && test "$(node --version)" = "v26.7.0" \
-    && test "$(npm --version)" = "11.19.0"
-
-COPY package.json package-lock.json .npmrc tsconfig.json tsconfig.build.json biome.json vitest.config.ts ./
-RUN npm ci
-
-FROM toolchain AS source
-COPY protocol ./protocol
-COPY src ./src
-COPY scripts ./scripts
-COPY tests ./tests
-COPY examples/node.mjs ./examples/node.mjs
-COPY examples/browser ./examples/browser
-COPY examples/hub ./examples/hub
-COPY docs ./docs
-COPY README.md LICENSE ./
-RUN npm run build \
-    && mkdir -p /tmp/teslatlas-sdk-package \
-    && npm pack --pack-destination /tmp/teslatlas-sdk-package >/tmp/teslatlas-sdk-pack.log \
-    && set -- /tmp/teslatlas-sdk-package/*.tgz \
-    && test "$#" -eq 1 \
-    && mv "$1" /tmp/teslatlas-sdk.tgz
-
-FROM source AS test
-RUN npx playwright install --with-deps chromium \
-    && npm run verify
-
-FROM node:26.7.0-bookworm-slim AS consumer
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
+ARG SDK_TARBALL_SHA256
 ENV npm_config_audit=false \
-    npm_config_fund=false \
-    npm_config_engine_strict=true
+    npm_config_engine_strict=true \
+    npm_config_fund=false
 WORKDIR /consumer
-RUN npm install --global npm@11.19.0 \
+
+# Cross-architecture emulation is outside the supported lane. BUILDPLATFORM is
+# supplied by BuildKit and must describe the native Linux ARM64 builder.
+RUN test "$BUILDPLATFORM" = "linux/arm64" \
+    && test "$TARGETPLATFORM" = "linux/arm64" \
+    && test "$(uname -m)" = "aarch64" \
     && test "$(node --version)" = "v26.7.0" \
+    && npm install --global npm@11.19.0 \
     && test "$(npm --version)" = "11.19.0"
-COPY --from=source /tmp/teslatlas-sdk.tgz /tmp/teslatlas-sdk.tgz
-COPY examples/hub/package.json examples/hub/node.mjs examples/hub/index.html examples/hub/app.js examples/hub/serve.mjs ./
-RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund /tmp/teslatlas-sdk.tgz
+
+COPY teslatlas-sdk.tgz /tmp/teslatlas-sdk.tgz
+COPY package-smoke.mjs ./package-smoke.mjs
+RUN test -n "$SDK_TARBALL_SHA256" \
+    && printf '%s  %s\n' "$SDK_TARBALL_SHA256" /tmp/teslatlas-sdk.tgz | sha256sum --check --strict - \
+    && npm install --omit=dev --ignore-scripts --no-audit --no-fund /tmp/teslatlas-sdk.tgz \
+    && node package-smoke.mjs "$SDK_TARBALL_SHA256"
+
+FROM package-check AS test
+
+FROM package-check AS consumer
+COPY consumer/package.json consumer/node.mjs consumer/index.html consumer/app.js consumer/serve.mjs ./
+RUN rm -f /tmp/teslatlas-sdk.tgz package-smoke.mjs
 USER 1000:1000
 ENTRYPOINT ["node", "node.mjs"]

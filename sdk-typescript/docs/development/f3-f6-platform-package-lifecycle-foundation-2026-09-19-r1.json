@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "receipt_id": "f3-f6-platform-package-lifecycle-foundation-2026-09-19-r1",
+  "generated_at": "2026-09-19T16:06:01Z",
+  "result": "SOURCE_FOUNDATION_ACCEPTED_NO_FINDINGS_RUNTIME_OPEN",
+  "source": {
+    "branch": "main",
+    "baseline_commit": "d94a80a2ccc30e7ace9688b74a1ff444ac149082",
+    "working_tree": "dirty task-owned candidate plus pre-existing untracked .DS_Store and .serena",
+    "commit_or_push_performed_when_generated": false
+  },
+  "accepted_foundation": {
+    "package": "@teslatlas/sdk@2026.36.2",
+    "archive_sha256": "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7",
+    "member_count": 83,
+    "source_commit": "d94a80a2ccc30e7ace9688b74a1ff444ac149082",
+    "boundary": "Accepted prior foundation only; later packaged documentation/metadata edits need a new exact-toolchain archive identity."
+  },
+  "node_image_provenance": {
+    "registry": "registry-1.docker.io",
+    "repository": "library/node",
+    "tag_observed": "26.7.0-bookworm-slim",
+    "observed_at": "2026-09-19T15:14:35Z",
+    "index_digest": "sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32",
+    "linux_arm64_v8_child_digest": "sha256:2b028cd57303b2761d24173789c85a013558d6cf20e78f51723385f368b6e34d",
+    "result": "REGISTRY_READBACK_ONLY"
+  },
+  "prepared_gates": {
+    "docker": "Exact independently admitted candidate archive and frozen source export, strict tar/JSON/catalog admission, package-only temporary context, official immutable image index, proven ARM64 child, native linux/arm64 checks and aggregate-safe task-owned image/context cleanup.",
+    "lifecycle": "Separate immutable independently accepted candidate and predecessor receipts bind exact source commits/manifests/file counts, archive hashes/member counts, versions and toolchains to exact catalog cohorts before fresh install/update/rollback/removal in a temporary external consumer.",
+    "final_consumers": "Fresh external Node install plus existing strict Node-pin and real-browser gates, bound to an independently admitted current package, frozen source export, exact future F1 Hub descriptor and strict five-companion catalog; Hub is not started by this gate.",
+    "support": "Only Node 26.7.0/npm 11.19.0 and Chrome 153.0.8010.52 on macOS 27 ARM64 are accepted evidence; broader floors are explicit nulls."
+  },
+  "validation": [
+    {
+      "command": "node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
+      "result": "PASS"
+    },
+    {
+      "command": "node_modules/.bin/biome check <review-delta JS/TS/JSON files>",
+      "result": "PASS"
+    },
+    {
+      "command": "node_modules/.bin/vitest run tests/unit/platform-package-gates.test.ts tests/unit/package-lifecycle-gate.test.ts",
+      "result": "PASS",
+      "detail": "2 files, 20 tests; includes dirty source bytes, historical archive, missing/unaccepted predecessor, absent predecessor catalog cohort, duplicate-key JSON, duplicate/link/special/unsafe tar entries, five-companion placeholder rejection, separate final Hub binding, dual cleanup aggregation and strict Ajv zero-warning schema compilation"
+    },
+    {
+      "command": "node_modules/.bin/vitest run tests/unit/package-surface.test.ts -t <three non-pack tests>",
+      "result": "PASS",
+      "detail": "3 tests passed and the npm pack --dry-run test was explicitly skipped"
+    },
+    {
+      "command": "node --check <four gate scripts and package smoke>; Ajv 2020 compile both new schemas with formats",
+      "result": "PASS"
+    }
+  ],
+  "not_run": [
+    "Docker build or run",
+    "browser or Hub runtime",
+    "VM work",
+    "npm package install",
+    "exact-toolchain package rebuild",
+    "predecessor lifecycle",
+    "non-empty final catalog admission",
+    "F3, F6 or F7 acceptance"
+  ],
+  "non_accepting_diagnostics": [
+    "The existing package-surface suite invoked npm pack --dry-run once; exact devEngines rejected local Node 26.8.2 before packing, so no archive or dry-run report was produced and the pack-bearing test is not acceptance evidence."
+  ],
+  "blocking_inputs": [
+    "Exact Node 26.7.0/npm 11.19.0 rebuild for the post-d94 packaged bytes",
+    "Native Linux ARM64 Docker engine lane",
+    "Exact older reachable predecessor npm archive and SHA-256",
+    "Non-empty final five-companion catalog plus separate exact Hub identity and exact source/package/admission metadata",
+    "Exact final F1 Hub artifact handoff for Node/browser runtime",
+    "Evidence-backed active Node/npm/browser/OS floors",
+    "F5 named-source inputs and F7 combined installed ecosystem"
+  ],
+  "independent_review": {
+    "state": "ACCEPTED",
+    "initial_verdict": "REJECT",
+    "initial_findings": [
+      {
+        "priority": "P1",
+        "id": "candidate-provenance",
+        "closure": "Deterministic frozen source manifest plus immutable independently accepted admission receipt/catalog binding; historical accepted archive explicitly rejected for the changed candidate."
+      },
+      {
+        "priority": "P1",
+        "id": "predecessor-provenance",
+        "closure": "Separate immutable independently accepted predecessor receipt, frozen source manifest, exact archive identity and exact catalog cohort are mandatory."
+      },
+      {
+        "priority": "P2",
+        "id": "catalog-schema",
+        "closure": "Strict Hub-owned schema-1 validator requires exact Protocol, TypeScript, Swift, Home Assistant and Edge metadata; the final target separately validates exact Hub identity and placeholders fail."
+      },
+      {
+        "priority": "P2",
+        "id": "json-tar-admission",
+        "closure": "Duplicate-key JSON and duplicate/link/special/unsafe tar inputs are rejected before npm or Docker."
+      },
+      {
+        "priority": "P2",
+        "id": "cleanup-aggregation",
+        "closure": "Both task-owned image and context cleanup are always attempted and failures are aggregated."
+      }
+    ],
+    "closure_state": "ACCEPTED_NO_P1_P2_FINDINGS",
+    "delta_verdict": "ACCEPT",
+    "delta_findings": [],
+    "post_acceptance_advisory": "Three Ajv strictTypes warnings in the Protocol, Swift and Edge allOf refinement schemas.",
+    "post_acceptance_cleanup": "Added type object to all three refinements and a strict:true Ajv 2020 zero-warning compile regression.",
+    "post_acceptance_cleanup_verdict": "ACCEPT",
+    "post_acceptance_cleanup_findings": [],
+    "reviewer_policy": "GPT-5.6 Sol / high",
+    "approval_required_before_commit_or_push": false
+  }
+}

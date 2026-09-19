@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Teslatlas TypeScript package admission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "role",
+    "state",
+    "product_version",
+    "source",
+    "package",
+    "toolchain",
+    "review"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "teslatlas.sdk-package-admission" },
+    "role": { "enum": ["candidate", "predecessor"] },
+    "state": { "const": "independently-reviewed" },
+    "product_version": { "type": "string", "pattern": "^[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+$" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "manifest_sha256", "file_count"],
+      "properties": {
+        "repository": { "const": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "file_count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "archive_sha256", "member_count"],
+      "properties": {
+        "name": { "const": "@teslatlas/sdk" },
+        "version": { "type": "string", "pattern": "^[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+$" },
+        "archive_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "member_count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node", "npm"],
+      "properties": {
+        "node": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "npm": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "reviewer_model", "reasoning", "reviewed_at"],
+      "properties": {
+        "verdict": { "const": "ACCEPT" },
+        "reviewer_model": { "const": "GPT-5.6 Sol" },
+        "reasoning": { "const": "high" },
+        "reviewed_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

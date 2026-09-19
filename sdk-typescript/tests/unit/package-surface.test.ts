@@ -24,7 +24,12 @@ describe("package surface", () => {
     ]);
     expect(manifest.files).toContain("docs/compatibility.md");
     expect(manifest.files).toContain("docs/docker.md");
+    expect(manifest.files).toContain("docs/package-lifecycle.md");
     expect(manifest.files).toContain("docs/product-versioning.md");
+    expect(manifest.files).toContain("tools/node-image-lock.json");
+    expect(manifest.files).toContain("tools/f3-f6-catalog.schema.json");
+    expect(manifest.files).toContain("tools/package-admission.schema.json");
+    expect(manifest.files).toContain("tools/platform-support.json");
   });
 
   it("runtime-imports only the closed package entry points", async () => {
@@ -78,6 +83,7 @@ describe("package surface", () => {
 
     expect(files.has("docs/compatibility.md")).toBe(true);
     expect(files.has("docs/docker.md")).toBe(true);
+    expect(files.has("docs/package-lifecycle.md")).toBe(true);
     expect(files.has("docs/product-versioning.md")).toBe(true);
     expect(files.has("dist/generated/validators.js")).toBe(true);
     expect(files.has("dist/generated/validators.d.ts")).toBe(true);
@@ -86,6 +92,10 @@ describe("package surface", () => {
     expect(files.has("dist/hub/client.js")).toBe(true);
     expect(files.has("dist/hub/node-claim-transport.js")).toBe(true);
     expect(files.has("dist/hub/node-claim-transport.d.ts")).toBe(true);
+    expect(files.has("tools/node-image-lock.json")).toBe(true);
+    expect(files.has("tools/f3-f6-catalog.schema.json")).toBe(true);
+    expect(files.has("tools/package-admission.schema.json")).toBe(true);
+    expect(files.has("tools/platform-support.json")).toBe(true);
     expect([...files].filter((path) => path.endsWith(".map"))).toEqual([]);
     expect(
       [...files].filter((path) =>

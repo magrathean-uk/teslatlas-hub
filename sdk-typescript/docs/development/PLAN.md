@@ -17,6 +17,12 @@ support floors, named-source semantics or a combined installed ecosystem.
 
 `full_solution_state` is `NOT_ACCEPTED`. F0 passed independent review; F3 and F6 are active.
 
+Commit `d94a80a2ccc30e7ace9688b74a1ff444ac149082` is the accepted source
+foundation. Its exact Node `26.7.0`/npm `11.19.0` clean archive has 83 members
+and SHA-256 `42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7`.
+The follow-on platform/package-lifecycle harness is independently accepted and does not
+replace that accepted identity until the exact toolchain rebuild is reviewed.
+
 ## Required completion
 
 - **F0:** produce a support ledger for root, Node and browser exports; current-Hub and
@@ -52,6 +58,52 @@ already accepted Chrome/Node tuple.
 2. **L2:** prove all declared ARM64/macOS browser and Node support floors against F1.
 3. **L3:** finish deterministic distribution/docs and catalog integration for F6,
    consume F5 real-input semantics, then pass F7.
+
+## Accepted platform/package foundation
+
+The first independent Sol/high review returned `REJECT` with two P1 and three
+P2 findings. The same reviewer then accepted the closure delta with no P1/P2
+findings. Three non-semantic Ajv `strictTypes` warnings remained in catalog
+refinement schemas; explicit object types plus a strict, zero-warning compile
+regression were then accepted by the same reviewer with no findings:
+
+- **P1 candidate provenance:** the gates now derive a deterministic manifest
+  from an exact frozen source export and require a separate independently
+  accepted receipt binding source commit/digest/file count, archive
+  hash/member count, package version and exact toolchain. The historical
+  `42348d...91f7` archive is explicitly rejected as the changed candidate.
+- **P1 predecessor provenance:** lifecycle admission now requires a separate
+  independently accepted predecessor receipt, frozen source export and exact
+  predecessor catalog cohort. Missing, draft or self-asserted evidence fails
+  before a temporary consumer or npm work exists.
+- **P2 catalog:** the Hub-owned schema-1 shape and its stricter validator
+  require exact Protocol, TypeScript SDK, Swift SDK, Home Assistant and Edge
+  identities, while the final target separately validates exact Hub
+  source/artifact identity; placeholders, missing/extra fields and mismatches
+  fail.
+- **P2 input admission:** the JSON reader rejects duplicate keys, while the
+  bounded tar reader rejects duplicate members, links, special entries, unsafe
+  paths/modes and malformed payloads before npm or Docker.
+- **P2 cleanup:** Docker cleanup always attempts task-owned image cleanup and
+  temporary-context cleanup, aggregating failures from both.
+
+- The official Node OCI index is immutable and its Linux ARM64/v8 child is
+  recorded from a registry readback. The package-only Docker lane rejects any
+  non-native Linux ARM64 engine and contains no SDK repository source.
+- Node `26.7.0`, npm `11.19.0`, and Chrome `153.0.8010.52` on macOS 27 ARM64 are
+  recorded as the accepted evidence tuple. Node/npm/browser floors remain null
+  and open; null does not mean unbounded support.
+- The lifecycle gate requires exact candidate and predecessor admissions,
+  frozen source manifests and catalog cohorts before any npm work. It covers
+  fresh install, update, rollback and removal, and cannot turn same-candidate
+  reinstall into a predecessor lifecycle claim.
+- The final consumer gate installs the exact archive into a fresh external
+  Node consumer and reuses the existing strict Node-pin and real-browser gates.
+  It requires the future F1 Hub descriptor to bind an exact final artifact and
+  does not start Hub.
+- F3 runtime/platform floors, F5 input semantics, F6 native ARM64 Docker,
+  exact predecessor, non-empty final catalog and source bootstrap, and F7
+  combined installed Node/browser acceptance all remain open.
 
 ## Start and boundaries
 

@@ -1,54 +1,63 @@
-# Docker setup
+# Docker package gate
 
-The repository contains one small Dockerfile with separate `test` and
-`consumer` targets. It is a local build and test workflow for the private SDK;
-it does not publish an image or start a Hub service.
+Docker is a native Linux ARM64 package-consumer lane for this private SDK. It
+does not build from repository source, publish an image, or start a Hub.
 
-The image identity is pinned to the official `node:26.7.0-bookworm-slim`
-image. Each target installs and checks npm `11.19.0`. The `test` target also
-installs the Playwright Chromium browser and its Debian dependencies because
-the existing unit and conformance suite includes browser launches.
+The base is the official Node `26.7.0-bookworm-slim` OCI index pinned at
+`sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32`.
+The registry index readback contains Linux ARM64/v8 child
+`sha256:2b028cd57303b2761d24173789c85a013558d6cf20e78f51723385f368b6e34d`.
+[`tools/node-image-lock.json`](../tools/node-image-lock.json) records that
+provenance. This registry readback is not a build or runtime pass.
 
-Build the targets from the SDK root:
+## Run the lane
 
-```bash
-docker build --target test -t teslatlas-sdk-test .
-docker build --target consumer -t teslatlas-sdk-consumer .
-```
-
-The test target runs `npm run verify`, including the package, Node fixture and
-Chromium checks. A green local image is still source and fixture evidence; it
-does not prove an installed Hub service, trusted TLS, or browser CORS policy.
-
-The consumer target contains only the five source files in `examples/hub/`, a
-freshly packed SDK, and its production dependencies. It runs as the non-root
-image user by default. Match the container UID and GID to a private input
-directory when using mode `0700` directories and mode `0600` files:
+First create the clean deterministic archive with the exact Node `26.7.0` and
+npm `11.19.0` toolchain and record its SHA-256. Then, on a native Linux ARM64
+Docker engine, run:
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" \
-  --mount type=bind,src="$PWD/private",dst=/run/teslatlas,readonly \
-  -e NODE_EXTRA_CA_CERTS=/run/teslatlas/ca.pem \
-  teslatlas-sdk-consumer \
-  --endpoint "$HUB_ENDPOINT" --hub-id "$HUB_ID" \
-  --credential-file /run/teslatlas/credential.json
+npm run gate:docker-package -- \
+  --tarball /absolute/private/teslatlas-sdk-2026.36.2.tgz \
+  --sha256 EXACT_LOWERCASE_SHA256 \
+  --candidate-receipt /absolute/private/candidate-admission.json \
+  --candidate-receipt-sha256 EXACT_RECEIPT_SHA256 \
+  --source-export /absolute/private/candidate-source-export \
+  --catalog /absolute/private/catalog.json \
+  --catalog-sha256 EXACT_CATALOG_SHA256
 ```
 
-Use `--invitation-file /run/teslatlas/invitation.json` for a fresh pair. The
-credential and invitation files remain private inputs and are never copied into
-an image layer. To persist a newly claimed credential, mount a separate private
-writable directory and pass `--credential-out
-/run/teslatlas-output/new-credential.json`.
+The runner validates the archive, frozen source export, independently accepted
+admission receipt and exact five-companion catalog before contacting Docker. Its
+strict tar admission rejects duplicate members, links, special entries, unsafe
+paths and unsafe modes before npm or Docker can consume the archive. It refuses
+a Docker engine whose server platform is not `linux/arm64`, and the Dockerfile separately
+requires `BUILDPLATFORM`, `TARGETPLATFORM`, and `uname -m` to be native ARM64.
+Emulation and cross-architecture builds are outside this lane.
 
-Container `localhost` refers to the container. Use a routable Hub hostname,
-Docker Desktop host access, or a documented Linux host-gateway mapping. The
-server certificate must cover that hostname, and `NODE_EXTRA_CA_CERTS` is only
-needed when the CA is absent from the image trust store. The Node consumer does
-not need a published container port or a database volume.
+The runner creates a private temporary context containing only:
 
-The browser example remains a separately served origin. Hub must allow its
-exact scheme, host, and port and the browser must trust the endpoint
-certificate. Provision its endpoint- and Hub-bound credential envelope through
-the pin-capable Node path or a trusted native bridge; ordinary browser Fetch
-cannot enforce the invitation's raw leaf pin and therefore does not claim directly. Docker does
-not remove those CORS and TLS requirements.
+- the exact admitted `teslatlas-sdk.tgz` archive;
+- the bounded installed-package smoke check;
+- the five external Hub consumer files; and
+- the package-only Dockerfile.
+
+No `src/`, `protocol/`, build output, lock install, test tree, or other live
+repository source enters the context. The Dockerfile verifies the archive hash,
+installs it with scripts disabled, reads back package metadata and imports all
+three public entry points. The runner reads the resulting image identity, then
+always attempts both task-owned image and temporary-context cleanup. Cleanup
+failures are aggregated so one cannot prevent the other; any cleanup failure
+fails the lane.
+
+## Runtime boundary
+
+The final Node and browser Hub journey is separate. Use
+`gate:final-hub-consumers` only after Hub supplies an exact final-artifact
+handoff and the non-empty exact companion catalog is available. That gate
+installs the same archive into a fresh external consumer and reuses the strict
+Node pin and real-browser Web PKI/CORS gates. It does not start Hub.
+
+Current accepted runtime evidence is limited to Node `26.7.0`, npm `11.19.0`
+and Chrome `153.0.8010.52` on macOS 27 ARM64. No broader Node, npm, browser, or
+operating-system floor is claimed. Docker ARM64 execution remains pending.

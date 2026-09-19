@@ -59,6 +59,10 @@ background polling, or automatic reconnect/rotation.
 The exact reproducibility tuple is Node 26.7.0 and npm 11.19.0. Current accepted
 runtime evidence is Node 26.7.0 and Chrome 153 on macOS 27; no broader Node,
 browser, or operating-system floor is claimed by that evidence.
+`tools/platform-support.json` encodes this as evidence with null declared
+Node/npm/browser floors; null means unaccepted, not unlimited support. The
+native Debian ARM64 Docker lane and both active-platform final-Hub journeys
+remain mandatory and unrun.
 
 `logout()` is the local credential-store operation and is distinct from server
 revocation. Consumers await it before `dispose()` and must pair again after a

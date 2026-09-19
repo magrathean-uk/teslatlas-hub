@@ -7,6 +7,27 @@
   "type": "module",
   "sideEffects": false,
   "packageManager": "npm@11.19.0",
+  "teslatlasSupport": {
+    "policy": "evidence-only",
+    "reproducibilityToolchain": {
+      "node": "26.7.0",
+      "npm": "11.19.0"
+    },
+    "acceptedRuntimeEvidence": [
+      {
+        "os": "macOS 27",
+        "architecture": "arm64",
+        "node": "26.7.0",
+        "npm": "11.19.0",
+        "browser": "Chrome 153.0.8010.52"
+      }
+    ],
+    "declaredFloors": {
+      "node": null,
+      "npm": null,
+      "browser": null
+    }
+  },
   "devEngines": {
     "runtime": {
       "name": "node",
@@ -45,10 +66,15 @@
     "docs/architecture.md",
     "docs/compatibility.md",
     "docs/docker.md",
+    "docs/package-lifecycle.md",
     "docs/product-versioning.md",
     "docs/protocol-dependency-gate.md",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "tools/node-image-lock.json",
+    "tools/f3-f6-catalog.schema.json",
+    "tools/package-admission.schema.json",
+    "tools/platform-support.json"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -56,6 +82,9 @@
     "example:node": "npm run build && node examples/node.mjs",
     "example:hub:node": "npm --prefix examples/hub run node --",
     "example:hub:browser": "npm --prefix examples/hub run browser",
+    "gate:docker-package": "node scripts/run-docker-package-gate.mjs",
+    "gate:final-hub-consumers": "node scripts/run-final-hub-consumers.mjs",
+    "gate:package-lifecycle": "node scripts/package-lifecycle-gate.mjs",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",

@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Teslatlas exact five-companion F3/F6 catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "cohorts"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "cohorts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "product_version",
+          "publication_status",
+          "admitted_hub_versions",
+          "components"
+        ],
+        "properties": {
+          "product_version": { "$ref": "#/$defs/version" },
+          "publication_status": { "enum": ["published", "local-unpublished"] },
+          "admitted_hub_versions": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/version" }
+          },
+          "components": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["protocol", "sdk-typescript", "sdk-swift", "home-assistant", "edge"],
+            "properties": {
+              "protocol": { "$ref": "#/$defs/protocol" },
+              "sdk-typescript": { "$ref": "#/$defs/typescript" },
+              "sdk-swift": { "$ref": "#/$defs/swift" },
+              "home-assistant": { "$ref": "#/$defs/homeAssistant" },
+              "edge": { "$ref": "#/$defs/edge" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "version": { "type": "string", "pattern": "^[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "sha256"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "source_sha256", "product_version", "profile"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^https://github\\.com/magrathean-uk/teslatlas-[a-z-]+\\.git$"
+        },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "source_sha256": { "$ref": "#/$defs/sha256" },
+        "product_version": { "$ref": "#/$defs/version" },
+        "profile": { "$ref": "#/$defs/profile" }
+      }
+    },
+    "protocol": {
+      "allOf": [
+        { "$ref": "#/$defs/component" },
+        {
+          "type": "object",
+          "properties": {
+            "repository": { "const": "https://github.com/magrathean-uk/teslatlas-protocol.git" }
+          }
+        }
+      ]
+    },
+    "swift": {
+      "allOf": [
+        { "$ref": "#/$defs/component" },
+        {
+          "type": "object",
+          "properties": {
+            "repository": { "const": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git" }
+          }
+        }
+      ]
+    },
+    "edge": {
+      "allOf": [
+        { "$ref": "#/$defs/component" },
+        {
+          "type": "object",
+          "properties": {
+            "repository": { "const": "https://github.com/magrathean-uk/teslatlas-edge.git" }
+          }
+        }
+      ]
+    },
+    "typescript": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "source_sha256",
+        "product_version",
+        "profile",
+        "artifacts"
+      ],
+      "properties": {
+        "repository": { "const": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "source_sha256": { "$ref": "#/$defs/sha256" },
+        "product_version": { "$ref": "#/$defs/version" },
+        "profile": { "$ref": "#/$defs/profile" },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["package_filename", "package_sha256"],
+          "properties": {
+            "package_filename": { "type": "string", "pattern": "^teslatlas-sdk-[0-9.]+\\.tgz$" },
+            "package_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    },
+    "homeAssistant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "source_sha256",
+        "product_version",
+        "profile",
+        "artifacts"
+      ],
+      "properties": {
+        "repository": { "const": "https://github.com/magrathean-uk/teslatlas-home-assistant.git" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "source_sha256": { "$ref": "#/$defs/sha256" },
+        "product_version": { "$ref": "#/$defs/version" },
+        "profile": { "$ref": "#/$defs/profile" },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["payload_manifest_sha256", "selection_receipt_sha256"],
+          "properties": {
+            "payload_manifest_sha256": { "$ref": "#/$defs/sha256" },
+            "selection_receipt_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    }
+  }
+}

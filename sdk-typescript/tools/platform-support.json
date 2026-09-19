@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "policy": "evidence-only",
+  "reproducibility_toolchain": {
+    "node": "26.7.0",
+    "npm": "11.19.0"
+  },
+  "accepted_runtime_evidence": [
+    {
+      "os": "macOS 27",
+      "architecture": "arm64",
+      "node": "26.7.0",
+      "npm": "11.19.0",
+      "browser": "Chrome 153.0.8010.52"
+    }
+  ],
+  "declared_floors": {
+    "node": null,
+    "npm": null,
+    "browser": null
+  },
+  "floor_state": "No broader Node, npm, browser, or operating-system floor is currently claimed; additional active-floor evidence remains mandatory for F3.",
+  "active_platform_lanes": ["Apple-silicon macOS", "Debian 13 ARM64"],
+  "docker_lane": "native linux/arm64 only",
+  "acceptance_boundary": "The Docker lane and both active-platform final Hub journeys remain unrun."
+}

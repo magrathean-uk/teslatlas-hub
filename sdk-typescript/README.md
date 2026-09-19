@@ -106,6 +106,18 @@ npm run verify
 The reproducibility toolchain is exactly Node.js `26.7.0` and npm `11.19.0`.
 Current runtime evidence covers that Node version and Chrome 153 on macOS 27;
 this package does not yet claim a broader accepted runtime or browser floor.
+The machine-readable evidence boundary is in
+[`tools/platform-support.json`](tools/platform-support.json) and the same
+evidence-only tuple is embedded in `package.json` as `teslatlasSupport`.
+
+Package lifecycle acceptance requires two different exact archives, their
+separate independently accepted source/package admission receipts and the exact
+non-empty five-companion catalog. `gate:package-lifecycle` validates every input
+before creating a consumer, then exercises candidate fresh install and removal,
+predecessor install, candidate update, predecessor rollback and final removal.
+It fails closed when either receipt, frozen source export or exact catalog cohort
+is absent; reinstalling the same candidate is not an update or rollback claim.
+See the [Docker/package gate](docs/docker.md) for the native ARM64 and final-Hub lanes.
 
 ## Examples
 
@@ -136,6 +148,7 @@ Teslatlas SDK browser client: 1 vehicle, protocol 1.2.0
 - [API reference](docs/api.md)
 - [Compatibility](docs/compatibility.md)
 - [Docker setup](docs/docker.md)
+- [Package lifecycle and final consumers](docs/package-lifecycle.md)
 - [Protocol dependency gate](docs/protocol-dependency-gate.md)
 
 ## Licence
