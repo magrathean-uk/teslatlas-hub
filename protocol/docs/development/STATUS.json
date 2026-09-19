@@ -1,25 +1,27 @@
 {
   "schema_version": 2,
   "product": "Protocol",
-  "updated_at": "2026-09-19T11:04:10Z",
-  "update_scope": "full_product_completion_planning_no_execution",
+  "updated_at": "2026-09-19T13:20:50Z",
+  "update_scope": "f3_f6_native_developer_bundle_foundation_independently_accepted",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_ACCEPTED",
-  "source_objective_state": "EXACT_BINDING_ACCEPTED",
-  "current_gate_ids": [],
+  "source_objective_state": "NATIVE_BUNDLE_FOUNDATION_ACCEPTED",
+  "current_gate_ids": ["F3", "F6"],
   "completion_gate_ids": ["F0", "F3", "F5", "F6", "F7"],
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": [
     "G3"
   ],
-  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "planning_state": "F3_F6_NATIVE_FOUNDATION_ACCEPTED_REMAINING_GATES_OPEN",
   "objective": "Complete every documented Protocol profile and conformance surface, real-input semantic evidence, reproducible developer distribution and final ecosystem admission.",
   "source": {
-    "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+    "head": "1e46a240826bb8e88e409bac6f2902e08c7785c5",
     "branch": "main",
-    "dirty_entries": 39,
-    "checked_at": "2026-09-19T10:30:43Z"
+    "dirty_entries_at_goal_activation": 1,
+    "tracked_dirty_entries_at_goal_activation": 0,
+    "accepted_runtime_source_head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+    "checked_at": "2026-09-19T11:30:21Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -33,20 +35,27 @@
     "Current scoped developer-resource objective complete; no new Protocol correction is ready.",
     "G3 accepted the exact product 2026.36.2 bindings from final G2/G4, G5 and G6 evidence: hub-http-v1@1.0.0 remains b80d940e...d926 across Protocol, TypeScript and Swift while Edge retains edge-delivery-v2@2.0.0 e304fb6e...d224.",
     "All five compatibility records passed the scoped G3 admission/readback checker; its 6 focused cases prove active-only operation, idempotence and fail-closed identity/divergence handling without reading Viewer. The TypeScript vendored Protocol copy is byte-identical and its focused lock/readback check passes.",
-    "The repaired checker is bound by r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865."
+    "The repaired checker is bound by r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865.",
+    "A deterministic 172-member developer archive now closes 170 public source payload members plus its canonical manifest and checksum map; two post-review builds were byte-identical at SHA-256 6368e2f59303b8ed7623c7817492269fc869e77754909ab47bd4cc6aefb196ec.",
+    "A verified clean extraction on macOS 27 arm64 used Python 3.11.16 and uv 0.12.12: a fresh locked install seeded an isolated cache, then a deleted environment reinstalled with UV_OFFLINE=1 and passed 142 tests plus 31 rich-profile conformance runs.",
+    "The first independent review requested four verifier corrections. The frozen delta now rejects raw or concatenated gzip tails, decoded post-tar bytes, renamed extraction roots before destination creation, unknown/mutated/reordered manifest data, and setuid/setgid/sticky modes.",
+    "Archive verification also continues to fail closed on links, traversal, duplicate members, parent/file conflicts, non-canonical metadata or order, extra/missing members, changed modes, content divergence and dependency-lock divergence.",
+    "Independent Sol/high recheck returned ACCEPT after reproducing the final archive identity/counts, all eight focused regressions, the 142-test native gate and 31/31 conformance runs; the acceptance is explicitly bounded to the native bundle foundation."
   ],
   "evidence_paths": [
-    "docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+    "docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+    "docs/development/f3-f6-native-developer-bundle-foundation-2026-09-19-r1.json"
   ],
   "remaining": [
-    "F0: reconcile every rich, current-Hub and Edge normative/machine-readable contract claim.",
-    "F3: prove independent adapters and fail-closed compatibility for all active consumers.",
+    "F0 accepted: the independently reviewed workspace ledger maps every rich, current-Hub and Edge contract claim.",
+    "F3: the native bundle foundation is independently accepted; prove independent adapters and fail-closed compatibility for all final active consumers.",
     "F5: mandatory fresh named-source and passive evidence must validate real semantics and any resulting contract delta.",
-    "F6-F7: deliver the reproducible developer bundle/catalog lifecycle and final product admission."
+    "F6: run the unchanged ARM64 Docker gate and Hub catalog install/update/status/rollback/removal against exact admitted commits; the native source archive alone does not close F6.",
+    "F7: admit exact final product artifacts and pass combined readback without validator weakening."
   ],
   "next_goal_draft": {
     "id": "FULL_PROTOCOL_F0_F7",
-    "state": "DRAFT_NOT_STARTED",
+    "state": "READY_F3_F6",
     "objective": "Complete all documented source-neutral profiles and conformance surfaces, real-input semantics, reproducible distribution and final ecosystem admission.",
     "acceptance_evidence": [
       "F0 conflict-free normative and machine-readable ledger",
@@ -55,7 +64,7 @@
       "F6 reproducible native/Docker bundle and catalog lifecycle receipt",
       "F7 exact final product admission/readback receipt"
     ],
-    "execution_authorized": false
+    "execution_authorized": true
   },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json",
@@ -68,10 +77,12 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G3 metadata admission complete; no new runtime or private handoff was created",
+  "runtime_state": "Native source bundle built and checked from a disposable clean extraction only; no service, listener, Docker run, shared runtime or private handoff was created",
   "acceptance_limits": [
     "No App integration acceptance",
     "No real-data parity or production acceptance",
+    "ARM64 Docker, Hub catalog lifecycle, downstream final-product admission and F5 named/passive inputs remain open",
+    "No cold-cache offline dependency install is claimed; offline reinstall used an exact cache seeded from uv.lock",
     "Viewer excluded; x86/Intel paused"
   ]
 }

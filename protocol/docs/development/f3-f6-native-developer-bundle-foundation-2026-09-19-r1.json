@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "receipt_id": "protocol-f3-f6-native-developer-bundle-foundation-2026-09-19-r1",
+  "recorded_at": "2026-09-19T12:34:20Z",
+  "updated_at": "2026-09-19T13:20:50Z",
+  "state": "INDEPENDENTLY_ACCEPTED_NATIVE_FOUNDATION",
+  "scope": "Bounded Protocol F3/F6 native source foundation: deterministic unpublished developer bundle, fail-closed verification, clean Python 3.11 install, verified extraction and cache-seeded offline reinstall/check.",
+  "source_identity": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+    "branch": "main",
+    "baseline_head": "1e46a240826bb8e88e409bac6f2902e08c7785c5",
+    "baseline_remote_relation": "main matched origin/main before this slice",
+    "worktree_identity": "Task-owned source changes layered over the baseline; archive bytes are identified separately. The eventual source publication commit is recorded externally after commit to avoid a self-referential receipt.",
+    "pre_existing_changes_preserved": [
+      "Coordinator-authored docs/development/PLAN.md activation update",
+      "Coordinator-authored docs/development/STATUS.json activation update",
+      "Untracked .serena/ cache"
+    ],
+    "immutable_evidence_preserved": "docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+  },
+  "bundle": {
+    "builder": "tools/developer_bundle.py",
+    "artifact_name": "teslatlas-protocol-2026.36.2.tar.gz",
+    "publication": "unpublished",
+    "archive_sha256": "6368e2f59303b8ed7623c7817492269fc869e77754909ab47bd4cc6aefb196ec",
+    "archive_bytes": 279097,
+    "archive_members": 172,
+    "payload_members": 170,
+    "manifest_sha256": "bf91618736fca0d5f95be60254e88131662dda3a33b45b2794c6ab542d4f5153",
+    "checksum_map_sha256": "951a7118999a4f325659318af380f1f088347769d796236885ef8b00cf97c0f6",
+    "uv_lock_sha256": "1c9c22f18a85c1ae18c0f2166caba69f41fbac9f5001b9ce04b947540e2c2157",
+    "determinism": "Two independent builds from the same source bytes were byte-identical.",
+    "canonical_metadata": "gzip filename absent and mtime zero; sorted GNU tar regular-file members use uid/gid 0, empty uname/gname, mtime zero, and manifest-bound 0644/0755 modes.",
+    "contents": [
+      "Rich schemas, OpenAPI 3.1.1, SSE contract and compatibility 1.0.0 through 1.2.0",
+      "hub-http-v1@1.0.0 and edge-delivery-v2@2.0.0 complete profile directories and checksum maps",
+      "Deterministic redacted examples and fixtures",
+      "Conformance cases, adapters, generators, local tests and check entrypoints",
+      "Apache-2.0 licence, third-party locked-dependency notices and usable top-level documentation",
+      "pyproject.toml and exact uv.lock"
+    ],
+    "excluded": [
+      "Development receipts and planning history",
+      "Private runtime material, credentials and captured data",
+      "Third-party wheels and platform-specific virtual environments",
+      "Hub, App and downstream implementation source"
+    ]
+  },
+  "verification": {
+    "host": {
+      "os": "macOS 27.0 (26A428)",
+      "architecture": "arm64",
+      "python": "CPython 3.11.16",
+      "uv": "0.12.12"
+    },
+    "focused_tests": {
+      "command": "uv run --python 3.11 python -m unittest discover -s tests -p test_developer_bundle.py -v",
+      "result": "PASS",
+      "cases": 8,
+      "assertions": [
+        "Byte-identical builds and adjacent archive checksum",
+        "Closed manifest, exact lock identity and verified extraction",
+        "Tampered, missing or extra payload members fail",
+        "Links, parent traversal, duplicate names and parent/file conflicts fail",
+        "Raw gzip tails, concatenated gzip members and decoded post-tar bytes fail",
+        "A renamed archive root fails before destination or temporary extraction creation",
+        "Unknown manifest keys, changed contract identities and reordered file entries fail",
+        "Setuid, setgid and sticky mode variants fail"
+      ]
+    },
+    "clean_native_and_offline_reinstall": {
+      "result": "PASS",
+      "procedure": [
+        "Built the source archive twice and compared exact bytes",
+        "Extracted through the standard-library safe extractor into a fresh temporary root",
+        "Set a fresh isolated UV_CACHE_DIR and ran uv sync --locked --python 3.11",
+        "Moved the created .venv out of the extracted source root",
+        "Ran UV_OFFLINE=1 uv sync --locked --python 3.11 against only the seeded exact cache",
+        "Ran UV_OFFLINE=1 ./tools/check from the verified extracted bundle"
+      ],
+      "tests": 142,
+      "rich_profile_conformance_runs": 31,
+      "profiles": 3,
+      "profile_identities": {
+        "hub-http-v1@1.0.0": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "edge-delivery-v2@2.0.0": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+      }
+    },
+    "fail_closed_boundaries": [
+      "Archive verification rejects non-canonical gzip/tar metadata, ordering and modes",
+      "Only regular files under the single expected versioned root are accepted",
+      "Manifest membership, every size/hash, checksum map, VERSION and uv.lock identity must agree",
+      "Extraction refuses an existing target and uses a verified temporary directory before atomic placement",
+      "Exactly one complete gzip member must decode to the byte-canonical tar stream with no trailing input",
+      "Manifest top-level and contract maps are closed, file entries are path-sorted and modes are exact 0644 or 0755"
+    ],
+    "source_neutrality_audit": "No machine/prose conflict was encountered in the changed bundle surface. The complete unchanged schema/OpenAPI/profile/generator/conformance gate passed; the bundle adds no daemon, Hub implementation import, hidden Hub source dependency or private data."
+  },
+  "acceptance": {
+    "accepted_by_this_receipt": [
+      "Deterministic native developer source archive construction and verification",
+      "Complete public-resource inventory for this bounded bundle",
+      "Clean native Python 3.11 locked installation and complete local check",
+      "Network-free extraction and verification",
+      "Offline environment recreation and full check after exact-cache seeding"
+    ],
+    "not_accepted": [
+      "Full Protocol F3 or F6",
+      "Cold-cache offline dependency installation; dependency wheels are intentionally not redistributed",
+      "ARM64 Docker build/check",
+      "Hub catalog install, update, status, rollback or removal",
+      "Final Hub, TypeScript, Swift, Edge or Home Assistant artifact admission",
+      "F5 named-source import/parity or authorized passive evidence",
+      "F7 combined installed acceptance",
+      "App, Viewer, x86, x86_64, amd64, Intel, Azure, CI, release, tag, binary publication or production"
+    ],
+    "independent_review": {
+      "status": "ACCEPT",
+      "reviewer": "independent Sol/high",
+      "otherwise_reproduced": "The reviewer reproduced the archive inventory/determinism and accepted the receipt's bounded claim calibration apart from the four verifier blockers.",
+      "findings_fixed": [
+        "Reject raw bytes after gzip, concatenated gzip members and decompressed bytes after tar termination",
+        "Validate the exact versioned root before extraction target or temporary-directory creation",
+        "Close manifest top-level/contracts schemas and require canonical file-entry ordering",
+        "Reject setuid, setgid, sticky and all other non-exact archive modes"
+      ],
+      "recheck": {
+        "status": "ACCEPT",
+        "recorded_at": "2026-09-19T13:20:50Z",
+        "model": "gpt-5.6-sol/high",
+        "closures": {
+          "single_gzip_and_canonical_tar": "ACCEPT: raw post-gzip bytes, concatenated gzip members and decoded post-tar bytes are rejected.",
+          "versioned_root_before_extraction": "ACCEPT: renamed roots fail before destination creation and leave no temporary residue.",
+          "closed_manifest_and_contracts": "ACCEPT: exact top-level/contract keys and values plus canonical file-entry ordering are enforced.",
+          "exact_archive_modes": "ACCEPT: only raw 0644/0755 modes pass; setuid, setgid and sticky variants fail."
+        },
+        "reproduced": {
+          "archive_sha256": "6368e2f59303b8ed7623c7817492269fc869e77754909ab47bd4cc6aefb196ec",
+          "archive_bytes": 279097,
+          "archive_members": 172,
+          "payload_members": 170,
+          "focused_cases": 8,
+          "native_tests": 142,
+          "rich_profile_conformance_runs": 31,
+          "rich_profile_conformance_result": "31/31 PASS"
+        },
+        "bounded_scope": "Accepts only the deterministic native developer-bundle foundation and its calibrated receipt. Full F3/F6, ARM64 Docker, Hub catalog lifecycle, final consumer admission, F5 and F7 remain open."
+      }
+    }
+  },
+  "cleanup": {
+    "service_or_listener_created": false,
+    "shared_runtime_used": false,
+    "docker_run": false,
+    "private_handoff_created": false,
+    "disposable_test_roots_removed": true,
+    "repository_archive_output": "No archive is tracked or published; dist/ is ignored and the evidence artifact was built under a disposable temporary root."
+  }
+}

@@ -12,7 +12,7 @@ Authority: [master plan](../../../docs/development/MASTER_PLAN.md),
 G3 remains accepted for the exact five-product current-Hub/Edge compatibility binding.
 Keep its receipt immutable. It does not prove every rich profile, distributable bundle,
 independent implementation, named-source semantics or final installed ecosystem.
-`full_solution_state` is `NOT_ACCEPTED`; this plan is not started.
+`full_solution_state` is `NOT_ACCEPTED`. F0 passed independent review; F3/F6 are ready.
 
 ## Required completion
 
@@ -44,9 +44,32 @@ independent implementation, named-source semantics or final installed ecosystem.
 3. **L3:** finish F5 evidence, deterministic distribution/catalog/docs for F6, and
    final compatibility admission for F7.
 
+## Current F3/F6 source foundation
+
+The bounded native source slice passed independent Sol/high review. This accepts
+only the native developer-bundle foundation, not full F3 or F6.
+`tools/developer_bundle.py` builds a byte-deterministic, unpublished archive with
+canonical gzip/tar metadata, a closed manifest, payload checksum map, exact
+`uv.lock`, public schemas/OpenAPI/profiles, redacted fixtures, conformance tooling,
+licence notices and top-level operator documentation. Verification rejects unsafe
+paths, links, duplicate names, parent/file conflicts, extra or missing files,
+renamed roots, non-canonical metadata, special or changed modes, content or lock
+divergence, unknown or mutated manifest contracts, and all compressed or decoded
+trailing input.
+
+On macOS 27 arm64, Python 3.11.16 and uv 0.12.12, two builds produced identical
+archive SHA-256 `6368e2f59303b8ed7623c7817492269fc869e77754909ab47bd4cc6aefb196ec`.
+A fresh locked install seeded an isolated cache; deleting that environment and
+reinstalling from the cache with `UV_OFFLINE=1` passed the complete 142-test gate
+and all 31 conformance runs from the verified extracted archive. This proves the
+native bundle foundation only. It does not prove a cold-cache offline dependency
+install, ARM64 Docker, Hub catalog install/update/status/rollback/removal, downstream
+final-product admission, or the F5 real-input assertions.
+
 ## Start and boundaries
 
-This plan does not authorize contract changes, generation, archive creation, checks,
-runtime, commit, push or publication. Preserve the dirty `main` tree and G3 receipt.
+The sent goal authorizes bounded contract work, generation, checks and validated
+source commits/pushes. It does not authorize releases, tags, binary publication,
+CI, production or private-input reuse. Preserve the dirty `main` tree and G3 receipt.
 Protocol remains source-neutral and owns no service. Exclude App, Viewer,
 x86/amd64/Intel and Azure; never include credentials or identifiable source/capture data.

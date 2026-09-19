@@ -64,6 +64,12 @@ The gate validates every JSON Schema, OpenAPI, SSE example, valid and invalid
 example, deterministic fixture, conformance vector, and all three compatibility
 profiles. It uses no hosted CI.
 
+To build and verify the deterministic, unpublished source bundle, follow
+[`docs/developer-bundle.md`](docs/developer-bundle.md). The bundle includes the
+exact dependency lock and public contract resources but does not claim a
+service, release, cold-cache offline dependency install, or downstream product
+acceptance.
+
 ## Artifacts
 
 - `openapi/teslatlas-v1.openapi.json` — self-contained OpenAPI 3.1.1 rich query API.
@@ -86,6 +92,7 @@ profiles. It uses no hosted CI.
 - [Architecture](docs/architecture.md)
 - [Current-Hub walkthrough](docs/current-hub.md)
 - [Docker checker and read-only smoke](docs/docker.md)
+- [Deterministic developer bundle](docs/developer-bundle.md)
 - [Compatibility record](docs/compatibility.md)
 - [Verification status](docs/verification.md)
 - [Rich-profile client walkthrough](docs/client-quickstart.md)
