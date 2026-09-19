@@ -1,19 +1,31 @@
 {
   "schema_version": 1,
-  "status": "candidate",
+  "status": "accepted",
   "product_version": "2026.36.2",
   "profile": {
     "id": "edge-delivery-v2",
     "revision": "2.0.0",
     "sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
   },
-  "delivery_wire_versions": [1, 2],
+  "delivery_wire_versions": [
+    1,
+    2
+  ],
   "required_delivery_wire_version": 2,
   "automatic_v1_downgrade": false,
-  "spool_format": 2,
-  "tested_hub_versions": [],
-  "tested_hub_source_fingerprints": [],
-  "required_capabilities": ["edge.delivery.v2"],
+  "spool_format": 3,
+  "tested_hub_versions": [
+    "2026.36.2"
+  ],
+  "tested_hub_source_fingerprints": [
+    "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;snapshot-manifest-sha256:f3e9f240930c72909d982ad2f6429c4f6ab390eb34818505e92236f6027d443b"
+  ],
+  "required_capabilities": [
+    "edge.delivery.v2"
+  ],
   "optional_capabilities": [],
-  "test_receipt_paths": []
+  "test_receipt_paths": [
+    "hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+    "teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json"
+  ]
 }

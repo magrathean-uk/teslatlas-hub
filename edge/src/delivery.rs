@@ -92,10 +92,19 @@ async fn acknowledge(
     };
     match state.spool.acknowledge(&acknowledgement) {
         Ok(result) => axum::Json(result).into_response(),
-        Err(crate::spool::SpoolError::InvalidAcknowledgement) => {
+        Err(error) => acknowledgement_error(error),
+    }
+}
+
+fn acknowledgement_error(error: crate::spool::SpoolError) -> Response {
+    match error {
+        crate::spool::SpoolError::InvalidAcknowledgement => {
             error_response(StatusCode::BAD_REQUEST, "invalid_acknowledgement")
         }
-        Err(_) => error_response(StatusCode::SERVICE_UNAVAILABLE, "spool_unavailable"),
+        crate::spool::SpoolError::V1AcknowledgementHistoryPruned => {
+            error_response(StatusCode::CONFLICT, "protocol_upgrade_required")
+        }
+        _ => error_response(StatusCode::SERVICE_UNAVAILABLE, "spool_unavailable"),
     }
 }
 
@@ -150,6 +159,18 @@ fn authorization_error(failure: AuthorizationFailure) -> Response {
             StatusCode::SERVICE_UNAVAILABLE,
             "credential_store_unavailable",
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pruned_v1_history_is_an_explicit_upgrade_response() {
+        let response =
+            acknowledgement_error(crate::spool::SpoolError::V1AcknowledgementHistoryPruned);
+        assert_eq!(response.status(), StatusCode::CONFLICT);
     }
 }
 

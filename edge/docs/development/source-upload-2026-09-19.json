@@ -1,0 +1,577 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-19T10:48:06.233821+00:00",
+  "purpose": "Owner-authorized source snapshot and planning upload; not a release or new runtime acceptance",
+  "branch": "main",
+  "before_head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+  "authorization": "2026-09-19 owner: Commit and push current work",
+  "acceptance_receipts": "Retained unchanged; original tested source/dirty-tree identities remain historical",
+  "included_changes": [
+    {
+      "path": ".dockerignore",
+      "sha256": "377733b542849e575e5e0e497119529110ad5970806064f1ccf2c564145de4a8",
+      "disposition": "included"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "669f026d265903b9aa0ce2430ae932433b1c20954f50a87bd6b834fbb21688b1",
+      "disposition": "included"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "66f92563b554151d930903a1ba29009e81c02e280231add7b927b28216978177",
+      "disposition": "included"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "aca4cc8acd30b366299ed732e7ba86af77d41adda8a2865c1804e1c1255bdd09",
+      "disposition": "included"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "bd048534f861ecb031d46adc7f1ba7d4754f091076ac83870d8d4b0aabced786",
+      "disposition": "included"
+    },
+    {
+      "path": "Dockerfile",
+      "sha256": "d0b3b47f04afdf049ad2bd0b06e134401d73031e6224c9759282615069a4632a",
+      "disposition": "included"
+    },
+    {
+      "path": "README.md",
+      "sha256": "1a45b18125685b8f3c82073955e4e9bd0a6e8cf59b0d61d899ba0e1da44a3444",
+      "disposition": "included"
+    },
+    {
+      "path": "compatibility/hub.json",
+      "sha256": "2fb1add6e04df0c1d8bba1dd2763c593a35b5d4f6d36db71e0654f8676c8ec71",
+      "disposition": "included"
+    },
+    {
+      "path": "compose.yaml",
+      "sha256": "9b43d123303c3e296891fb25a916f622371d1b6f687ef8bdbba0239563defc66",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/architecture.md",
+      "sha256": "0434f1bf0cacc5d30f0bc268f3b5d3646d9ca53c0441a401ef197229b0dbbde6",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/PLAN.md",
+      "sha256": "90cc2e28baa2655a9c30d6253c1571b4c3948ccb3ff2f8f1866fe12f17983de1",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/STATUS.json",
+      "sha256": "dffb506912f1c78bfb7ba10d5960c95f3310a4a4ce0b2e356a8cc2b5d84890aa",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/plans/2026-08-30-fleet-telemetry-ingress-implementation.md",
+      "sha256": "a12a1f0f0fb7c7ef7b5007fe73f96d9fffa0245e62d7cb918e0e554a8fd1a5b7",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+      "sha256": "1ca65f694a749ee87f90b2778e87288db3b36cf1b56a888e047fc156903be173",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+      "sha256": "738ca18e9bb3da9cddb0517abeaa4c354a2d72cb7642cb119e29b234ddbc4e51",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "sha256": "6e2a3300d808fd52ce8a4c6cf92ae5549774cf0ffc1859c2281d5b8b011b6f7e",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/README.md",
+      "sha256": "6711fe306537c214ccb16bdc43742b079849de9306868a3fad1eb829b23370a1",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-d1-component-manifest-handoff-2026-09-09.json",
+      "sha256": "4adc9bd9cfd18e09798ffe44129e6415d46d0f771de0f1bd4ca3a474681c7ee5",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-arm64-source-binary-receipt-2026-09-12-r1.json",
+      "sha256": "2344d42e1d43199eca57263aae50e7ffa7f68abdd85c7d7fb37d234f26202e5f",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+      "sha256": "aead774fcec533eb65f71e48bd0f38d141aa7be63cd9beb195420d304406a309",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-forwarding-contract-proposal-2026-09-12-r1.json",
+      "sha256": "9bf4c2f85911f94a35a19353b024f6a59f6eb39635f8a89b8159aa2b64ee4bd8",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-forwarding-contract-proposal-2026-09-12-r2.json",
+      "sha256": "cc21ae3f0480f0f574502f7a7d69aa1f4fcbeb50d2255946471b6026d5288928",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-forwarding-handoff-proposal-2026-09-09.json",
+      "sha256": "04c130f8e83273da485656dee5bf2403256160eb8c9788d994528bc4d5d1bb90",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r3.json",
+      "sha256": "5c327fdd47379e865a30c93cb7a269184546118d08c9acdb435cfa77c5d83026",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r4.json",
+      "sha256": "2358982834062f8df894de76ce85e92b7563cebac3ba66fc19bb48f4660c8771",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r5.json",
+      "sha256": "d205d56076798696715d501252f5f67f83fc6e6e07143ed2683ecc4f495ff49f",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-guard-correction-receipt-2026-09-12-r5.json",
+      "sha256": "26d93e0085e52dfca25517a7b8c613c846a3f64dc98e1beff0f7dae35a9bad2b",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-r4/README.md",
+      "sha256": "9d37737382cf25001f006ce105d58102ad4615863cb2b13bcb4c18d0ced29b19",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-r4/guard/invoke_one_event.py",
+      "sha256": "4b072a2bc51d27c78fe1db84c9535d0fae7b4dc413b5e4c1eb9dc76a0e28084a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-r4/guard/test_invoke_one_event.py",
+      "sha256": "1a48c87c90eedd32c7027dd6c06621a546b9d421274ac207fcddd931481e4fff",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-r4/producer/main.go",
+      "sha256": "b908b02c51afc414e7fe7131f85691f80954138077eee9f2b168a1d2dc4bb378",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-r4/producer/main_test.go",
+      "sha256": "67aeb56b93978bca4dd1d2de159483cd0ec2d1b13e609ec4d7d35ecb9b3995a5",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-r5/README.md",
+      "sha256": "d4f46851117a64a4caf898c480891970ac5f0a47bb13ff1d4fec27e8b6f92349",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-r5/guard/invoke_one_event.py",
+      "sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-actor-r5/guard/test_invoke_one_event.py",
+      "sha256": "ab95b8f1eb2bc8ed922209c3e648fdfd4b28d4646ce6d5a18ed405b0c296a983",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-r11-concrete-profile-acceptance-2026-09-18.json",
+      "sha256": "a3386134b0271574b7e908592df2590c3fce18f879ef484c988bc8d4c1754c4c",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-one-event-r11-restart-cross-owner-acceptance-2026-09-18.json",
+      "sha256": "4d8b4449de277fbbd47b755ceffa6559fb0269a2ce0bb08fe318d26eed7b4bc8",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-producer-certificate-profile-verification-2026-09-12-r1.json",
+      "sha256": "b8e64d764252581c50a13b6e046399729aa3a755e317dfc64a8f856862658407",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-r2-certificate-profile-receipt-2026-09-12.json",
+      "sha256": "6897a292b5a0d11081319be7bc53b1d13272bc81b3800d8748fe1805b421740e",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-r2-receiver-candidate-receipt-2026-09-12.json",
+      "sha256": "45a7e4b14fae9f6caade094831abd1a760299116b97a5c76b129de61aa71c2f9",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos-r2-source-candidate-inventory-2026-09-12.json",
+      "sha256": "1a46d6057d52c82198393bfba2d9908c44edd136216af6b57f49abd1a33e2584",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-macos13-receiver-readiness-proposal-2026-09-12-c2ace-r1.json",
+      "sha256": "d629e3dfc55bbe750ec416a56889175fd7efdca782fcc541eeec3daaf8348aa6",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-r1-primary-producer-handoff-2026-09-09.json",
+      "sha256": "0fb5e55e854a1fe59192f1e18bbed4265c4c4fdf8f34ca974c0a1baa26c957d9",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-r11-diagnostic-20260909.json",
+      "sha256": "47b937832ec69e5c765c304f284620e97917f65e6abf03efcd83e0922caeba2a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-r12-fresh-20260909.json",
+      "sha256": "249d49f4e75127f17e05214729edbbaffb1fffc5bfae539323749c7701cb73fb",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/edge-r13-authorized-20260909.json",
+      "sha256": "dad7bac64a5d27344205b565b1872322646acdb0740740c25e0017d223a222a3",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+      "sha256": "42209a8231e4ac6881a3fc4896a95573e8ba032dbb990ea747ea877e19e485f7",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/hub-delivery-contract.md",
+      "sha256": "b224709fbae1d49976b64230286ffd65f250d2c15cb4bc560d02c8cb0093a974",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/operations/docker.md",
+      "sha256": "ba91f072583e7b2b8d0b7d0ab6e1af8a3dab7aca51ea8e25a6176e8a9a09836d",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/operations/native-installation.md",
+      "sha256": "d59fe4ebc0097d243605f118312c3a25d5256335c2b4da4e934f15910cec1802",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/operations/upgrade-backup-recovery.md",
+      "sha256": "450085f2392e6568550714cba99b3a1b816e09f19292d2e095557492b023fe57",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/plans/2026-08-30-fleet-telemetry-ingress-implementation.md",
+      "sha256": "fc6b41f6f3209c405e874784112c6fde73f2319a7a5526e8199ab55a5ac396d9",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/plans/2026-08-30-foundation.md",
+      "sha256": "cdf487af473381157ac19ec261f3b1c129553e3de60f51c9d530991eae0338f8",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/product-versioning.md",
+      "sha256": "abf8fd2300ed08f7105d407c4218ffd2c027502898236a9b02fc45645442b53a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/azure-debian-dual-architecture-acceptance-contract-v1.md",
+      "sha256": "e685aaac8e46bb5ba8cafaa71d053453b460e88ede5b3e443febd421fd0ce096",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/edge-matrix-contract-handoff-2026-09-08.md",
+      "sha256": "089588d6947e64bbb3c6f9d91c401df3ac3765878a48996b0ec12baa59dbab86",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+      "sha256": "52336a729f6be4c9df1e27a910979ed2641c33865c52ee39f655e9f6d645fb25",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "sha256": "01134ddae63bbc47f9b22b795bde105eaa3ac4e05d65fb182dd53129d2689841",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/vps-amd64-isolated-candidate-v1.md",
+      "sha256": "045ede5b3b38001e7f78a92e40ff6b850014a5fbdc5df91eb905601a8002e075",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/docker/config.toml.example",
+      "sha256": "6c075bf90570d14c6e2916f79cef8a39407079fda53b22195ab7badff1bc1eae",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/docker/fleet-telemetry.json.example",
+      "sha256": "9ed5ff41465584b76cc91f00cc76e653e983a0921ca32fb3b8102bd129e3399d",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/fleet-telemetry.json.example",
+      "sha256": "3876e7cb31faf07e7b135c3d7375f9b52a58091f86336c3577dabe45738fad8f",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/linux/control.in",
+      "sha256": "8d37734f71014a540b18362ac9a5cef4ec6ac9bf781903586e42627394ef2b85",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/linux/postinst",
+      "sha256": "eca2652b5eb2fb2cfb898e7939969ac2ae15f870df324d31233143d7d8ee4f16",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/linux/postrm",
+      "sha256": "cc856f9d2a288e7f0779cfeb2dcc0f2a6c45e843d40b5527bc30498cc68255eb",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/linux/preinst",
+      "sha256": "be10022cebdb04fb3d7506abbe6073e26e6b18ec12b719082700854ea1aa3013",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/linux/prerm",
+      "sha256": "1a36caa0a018514347d9c512ea074515265c2ff0f1550a99c576002e0b695695",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/linux/teslatlas-edge.service",
+      "sha256": "684a5b9da934e606984949b8549ce6173f0d577ca0333029761618f6bfaf4bad",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/linux/teslatlas-fleet-telemetry.service",
+      "sha256": "b8f4472a34bd4ad329a91399de2cf10fa80e191669c72650744b868446464a8e",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/macos/Distribution.xml",
+      "sha256": "43e343fb323732882322874005c42db305bfbeaa35fb553857b9c7c2244823c5",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/macos/resources/Welcome.html",
+      "sha256": "5ebb226185ba779bfdd7ed424bbcb0b06c08100ed17f6ec42a07b87c1c9e242f",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/macos/scripts/teslatlas-edge-service.sh",
+      "sha256": "5aed3c1a3b1e8d89673abf45218f54fe46497122dff4d18e37a2052ba1e8c600",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/macos/scripts/uninstall-teslatlas-edge.sh",
+      "sha256": "4b82ac8bba5240641a4134d86ecc9c2ccd312deb0a47273dddd375cf04a7f3f1",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/macos/uk.co.magrathean.teslatlas-edge.plist",
+      "sha256": "693f2a7f7664fcec1bd3a527c34d5f9d5c823fdb0a576e0190ee3b785302e359",
+      "disposition": "included"
+    },
+    {
+      "path": "packaging/macos/uk.co.magrathean.teslatlas-fleet-telemetry.plist",
+      "sha256": "d1af824320a3bd7459f4800ac2b7f8dc8e097fb5d1242b89a7551b276767b949",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/build-deb.sh",
+      "sha256": "99948a4b0e7479ef965905fdb96b496adcf9ce4d53581f7892a035798af63bd0",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/build-macos-pkg.sh",
+      "sha256": "803b8e6692d24ac95e02fb4da78782180c5ec82f74f7464347633c49226bb249",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/run-with-spool-format-guard.sh",
+      "sha256": "74acbcf9523e5c32eaab3c626d96916ab42ee859f9c888e5e1f09bd13d6f2d36",
+      "disposition": "included"
+    },
+    {
+      "path": "src/admission.rs",
+      "sha256": "ec65888a4cc8e44c649b62474bad5bfa87f16dce90618719b32a46cad97ab7c2",
+      "disposition": "included"
+    },
+    {
+      "path": "src/config.rs",
+      "sha256": "be8b87e7c8998fa8f14cf2e2e0fe2492591d255329b688621076b91d6ee5eb39",
+      "disposition": "included"
+    },
+    {
+      "path": "src/delivery.rs",
+      "sha256": "68bc2f897d253a7986c5a1eafd1ebc261e8f148525d084129ec73d8ebe376fb5",
+      "disposition": "included"
+    },
+    {
+      "path": "src/health.rs",
+      "sha256": "e3d6242314916feb910b05d0875105746961c3f7dd39016530cf0fc6d386154b",
+      "disposition": "included"
+    },
+    {
+      "path": "src/protocol.rs",
+      "sha256": "8114af8e64cdd939655b7b1a353a88738e0f933040448ef2ecb4b476a980a7a3",
+      "disposition": "included"
+    },
+    {
+      "path": "src/spool.rs",
+      "sha256": "f58780c8cd2390fd31fa7f76ac12c562a9fbb55650c9f17321d2e03a9c0d25eb",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/admission_contract.rs",
+      "sha256": "2172d9b00b8ed410118bb08297fc03ef53d8adc0fa13377f49bc617239e445ec",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/config_contract.rs",
+      "sha256": "9587e270d6e45828c8feec38961e99649c2c9f8383b9c3af604537869afc9d6d",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/packaging_contract.rs",
+      "sha256": "414c730f34d7b8d3b99b576ee7a9c9e3c9c5e7ffada4c020defb69d65340a983",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/spool_contract.rs",
+      "sha256": "d8ceaba384f59f1b04f243550917512292b8a27fa8ce2fa19401df76f052a953",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/README.md",
+      "sha256": "3de92fcd493cb56cdc99e4a6d9b49b8087910bb2fbc6c7286f63f171e91566cc",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge.py",
+      "sha256": "926a0b876a9d06a28474ef4d43ec04d3f7414f0d16c9e25b0e66ff8a86cc19be",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/edge-installed-vectors.json",
+      "sha256": "d40a853cd02111ff200083be81588526dc7d2cf28c3daa168d2ea7dd9dda6eb1",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/edge_checkpoint_v1.schema.json",
+      "sha256": "859d2a6f90a8c610c6810608e9bf63cf1e0f0670e6e50262c88f7190a31d2f41",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/edge_cleanup_v1.schema.json",
+      "sha256": "3d6d1fcece6772bb1125c5a79027caab7b2a12726063a291b231317b10ce1ce8",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/edge_fault_v1.schema.json",
+      "sha256": "9eba37bec670157bd9641be14ee8cea446162c4c822ed503f95cf8b2909e4152",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/edge_fixture_v1.schema.json",
+      "sha256": "5f65a6a91e8a580ffe81bb5ee922ef39505ebaa19c232a80603efe822c9c9db6",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/edge_http_v1.schema.json",
+      "sha256": "bb4e3c87df84053fe7a298ca5fc42c99424533b5da83d89372a50dcd75d2be0a",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/edge_snapshot_v1.schema.json",
+      "sha256": "6279358ff76721ca0b97bba86bfc5573bf83e4dd88779b5c94d375d0ebf7b19e",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/matrix-contract.json",
+      "sha256": "328c62d724c96011ba06c4d4d1fae6b362dae4e0e740323bf17e8ad3d8cf8915",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/matrix_contract.py",
+      "sha256": "bf1219b1766e3f2af0f90d45903e961117bcce3275fc2e0424dd6e146851605f",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/phases.json",
+      "sha256": "15000c3bfdc02578426c8484f2cc96f2152f9a89d66cb70a1862ef675a98dbf5",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/edge_contract/test_contract.py",
+      "sha256": "533a47d2578144a3ed6e5a399ef7e26135ffd932e0f3b9a014aa2fdf97d4580d",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/one_event_receiver_bridge_integration.py",
+      "sha256": "336dbea38fa2105a250fed61b53f371fdc589c6875dc2eb8d7cbde0a399bdaa9",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/prepare_hub_consumer_inputs.sh",
+      "sha256": "3f6dd002485f8f93e5c293237244dd9959f472686a207597559acb03b873e124",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/synthetic_vehicle.py",
+      "sha256": "a4eb195334de5f0188203cc5948d21db15eb1448cc563a46d05ce81bcc2e84ba",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/synthetic_vehicle_identity.py",
+      "sha256": "878d98acb8f9d3aacf496d6d74f55daa732af800e38afce72a2a166150383b2d",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/test_edge.py",
+      "sha256": "4fd17d1e5c0613d7cb526746db614f5559f554a4e837a830810845dd8f99a29f",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/test_pinned_receiver_identity.py",
+      "sha256": "d2460a4813017076b00804930e4e098312bdea4189b79bbfe020035432f8cad8",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/test_prepare_hub_consumer_inputs.py",
+      "sha256": "501458b88eb23639d8d41320d2c8fb264a09ae6154caf2724987f95249bf360a",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/test_synthetic_vehicle.py",
+      "sha256": "bc1e0acb39f3c8563d378e365d59add0218aa10d94a28c84ec0d997eb7622529",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/interop/client_lanes/test_synthetic_vehicle_identity.py",
+      "sha256": "31290e9761c557d6ea6c2b0a989fc82e80fe6eb02dc047ba4f10f8827b3978af",
+      "disposition": "included"
+    }
+  ],
+  "excluded_local_paths": [
+    ".serena/.gitignore",
+    ".serena/project.yml",
+    "target",
+    "tools/interop/client_lanes/__pycache__/edge.cpython-314.pyc",
+    "tools/interop/client_lanes/__pycache__/synthetic_vehicle.cpython-314.pyc",
+    "tools/interop/client_lanes/__pycache__/synthetic_vehicle_identity.cpython-314.pyc",
+    "tools/interop/client_lanes/__pycache__/test_edge.cpython-314.pyc",
+    "tools/interop/client_lanes/__pycache__/test_pinned_receiver_identity.cpython-314.pyc",
+    "tools/interop/client_lanes/__pycache__/test_prepare_hub_consumer_inputs.cpython-314.pyc",
+    "tools/interop/client_lanes/__pycache__/test_synthetic_vehicle.cpython-314.pyc",
+    "tools/interop/client_lanes/__pycache__/test_synthetic_vehicle_identity.cpython-314.pyc",
+    "tools/interop/client_lanes/edge_contract/__pycache__/matrix_contract.cpython-314.pyc",
+    "tools/interop/client_lanes/edge_contract/__pycache__/test_contract.cpython-314.pyc"
+  ],
+  "no_ci_release_tag_deployment": true
+}

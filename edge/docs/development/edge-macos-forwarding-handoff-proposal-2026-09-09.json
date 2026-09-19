@@ -1,0 +1,343 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_arm64_forwarding_handoff_proposal",
+  "date": "2026-09-09",
+  "status": "source_repair_complete_preserved_waiting_for_fresh_target_and_hub_handoff; producer_submit_pending",
+  "purpose": "Close the first remaining active-target Edge gap: one fresh synthetic receiver-to-Edge-to-Hub durable forwarding receipt on supported Apple-silicon macOS, using an isolated Hub-owned handoff and a fresh reachable target.",
+  "scope": {
+    "active_target": "supported Apple-silicon macOS",
+    "preferred_target": "existing macos13-arm64 target; no new VM",
+    "deferred": [
+      "x86/x86_64/amd64",
+      "Intel Mac",
+      "Azure",
+      "complete cross-architecture matrix",
+      "named-source TeslaMate parity and passive provenance"
+    ]
+  },
+  "isolated_topology_proposal": {
+    "edge_health": "127.0.0.1:8080",
+    "edge_hub_delivery": "192.168.64.10:21443; exact non-loopback private guest address observed in the Hub-owned target preflight",
+    "edge_receiver": "127.0.0.1:21444",
+    "hub_fixture": "A fresh Hub-owned process on the same target at 127.0.0.1:18488; this endpoint was observed free in the target preflight and any change requires a new exact endpoint in the handoff before launch.",
+    "forbidden_reuse": "Do not attach to, alter, or reuse any retained pre-existing Hub process, root, credentials, invitation or session; use only the fresh exact endpoint and inputs in a newly authorized handoff."
+  },
+  "target_binding": {
+    "status": "selected_and_preflight_verified_preparation_only",
+    "guest_alias": "macos13-arm64",
+    "os": "macOS 13.7.4",
+    "architecture": "arm64",
+    "target_role": "supported Apple-silicon Mac only; no new VM",
+    "exact_private_address": "192.168.64.10; wildcard 0.0.0.0 and loopback 127.0.0.1 remain forbidden for the Edge Hub-delivery bind by the config validator.",
+    "edge_process_user": "admin",
+    "listener_bindings": {
+      "health": "127.0.0.1:8080",
+      "hub_delivery": "192.168.64.10:21443",
+      "receiver": "127.0.0.1:21444",
+      "hub_fixture": "127.0.0.1:18488"
+    },
+    "preflight_receipt": "Hub target preflight verified macos13-arm64, macOS 13.7.4, arm64, guest UID 501/admin, private address 192.168.64.10, and free 127.0.0.1:8080, 192.168.64.10:21443, 127.0.0.1:21444 and 127.0.0.1:18488 bindings. No Edge process, LaunchAgent, file, PKI input or listener was created.",
+    "fresh_runtime_root": {
+      "path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909",
+      "owner": "admin (uid 501)",
+      "mode": "0700",
+      "children": {
+        "state": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/state",
+        "inputs": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs",
+        "handoff": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/handoff"
+      },
+      "preparation_receipt": "Hub created the root only after an absent-before-create check; root and children are non-symlinked 0700 directories. No files have been created. The retained /Users/Shared/TeslatlasEdge root remains untouched and ineligible for this run."
+    }
+  },
+  "edge_candidate_boundary": {
+    "source_head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "product_version": "2026.36.2",
+    "profile": "edge-delivery-v2@2.0.0",
+    "artifact_rule": "This preparation binds the existing current-source Apple-silicon candidate by its recorded hashes; no build or package installation is authorized in this handoff. A later runtime receipt must reverify the candidate bytes before staging.",
+    "source_identities": {
+      "edge_source_head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+      "edge_coordinator": {
+        "path": "tools/interop/client_lanes/edge.py",
+        "sha256": "926a0b876a9d06a28474ef4d43ec04d3f7414f0d16c9e25b0e66ff8a86cc19be"
+      },
+      "receiver_lock": {
+        "path": "packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json",
+        "sha256": "b6ab33bff684bb597fff75c714c1bcb77579d166701a3bc89f26c58293bc01ec",
+        "upstream": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+        "upstream_archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9",
+        "dispatcher_patch_sha256": "828a98fe3b36bf07c3d2d32041be45efad7594c6c580a982b588875a10898b98"
+      },
+      "receiver_identity_verifier": {
+        "file": "messages/identity.go",
+        "source_revision": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+        "sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5"
+      }
+    },
+    "artifacts": {
+      "package": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-arm64-20260909-config-hardening/TeslatlasEdge-2026.36.2-config-hardening.pkg",
+      "package_sha256": "68b96e8f111f7d21df75279fa75f017a2a1697d18ba09a00961da91c195954e8",
+      "package_bytes": 11414094,
+      "edge_binary_sha256": "880ee095f6d96f465a73dfc5285851ffadb102494a624d654802f108fda2a882",
+      "receiver_binary_sha256": "8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1",
+      "receiver_version": "v0.9.4",
+      "target": "darwin-arm64",
+      "verification": "Recorded candidate build used Rust 1.98.0 and the pinned Go 1.27.0 bridge; package, Edge Mach-O and receiver Mach-O hashes were rechecked before this preparation."
+    },
+    "fresh_config_binding": {
+      "config_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/config.toml",
+      "receiver_config_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/fleet-telemetry.json",
+      "edge_argv": [
+        "/usr/local/libexec/teslatlas-edge/teslatlas-edge",
+        "--config",
+        "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/config.toml",
+        "serve"
+      ],
+      "receiver_argv": [
+        "/usr/local/libexec/teslatlas-edge/teslatlas-fleet-telemetry",
+        "-config=/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/fleet-telemetry.json"
+      ],
+      "edge_config": {
+        "version": 1,
+        "state_directory": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/state",
+        "receiver_bind": "127.0.0.1:8080",
+        "hub_bind": "192.168.64.10:21443",
+        "receiver_bearer_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/state/receiver-token",
+        "spool_key_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/state/spool-key",
+        "credential_store_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/state/hub-credentials.json",
+        "hub_server_certificate_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/hub-tls/hub-server.crt",
+        "hub_server_private_key_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/hub-tls/hub-server.key",
+        "hub_client_ca_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/hub-tls/hub-client-ca.crt",
+        "spool": {
+          "max_bytes": 536870912,
+          "max_records": 100000,
+          "retention_seconds": 604800,
+          "batch_max_bytes": 1048576,
+          "batch_max_records": 256
+        }
+      },
+      "receiver_config": {
+        "host": "127.0.0.1",
+        "port": 21444,
+        "status_port": 0,
+        "log_level": "info",
+        "json_log_enable": true,
+        "namespace": "teslatlas-edge",
+        "teslatlas": {
+          "timeout_ms": 2000
+        },
+        "reliable_ack_sources": {
+          "V": "teslatlas",
+          "alerts": "teslatlas",
+          "errors": "teslatlas"
+        },
+        "records": {
+          "V": ["teslatlas"],
+          "connectivity": ["teslatlas"],
+          "alerts": ["teslatlas"],
+          "errors": ["teslatlas"]
+        },
+        "tls": {
+          "server_cert": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls/vehicle-tls.crt",
+          "server_key": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls/vehicle-tls.key",
+          "ca_file": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls/vehicle-client-ca.crt"
+        }
+      },
+      "receiver_environment": {
+        "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/state/receiver-token"
+      },
+      "dispatcher_binding": {
+        "endpoint": "http://127.0.0.1:8080/v1/internal/fleet-telemetry",
+        "source": "Fixed by the pinned Teslatlas dispatcher patch; it is not a receiver JSON key."
+      },
+      "root_selection": "EdgeConfig accepts these separate canonical absolute paths through --config. The shipped macOS helper and LaunchAgents intentionally remain fixed to /Users/Shared/TeslatlasEdge; they must not be loaded for this fresh-root preparation. No source fix is required for the direct CLI binding."
+    },
+    "fixed_service_paths": [
+      "/Users/Shared/TeslatlasEdge",
+      "/usr/local/libexec/teslatlas-edge",
+      "/Library/Application Support/Teslatlas Edge/launchagents"
+    ],
+    "empty_root_rule": "Use a genuinely fresh disposable state root, or obtain an explicit owner-approved disposal receipt for the retained prior macOS subset root. Do not delete or overwrite an occupied root."
+  },
+  "fresh_synthetic_contract": {
+    "allocator": "Hub and coordinator",
+    "exact_submission_binding": {
+      "status": "fresh values bound only by private Hub handoff; producer submission remains unauthorized",
+      "private_identity_handoff": {
+        "binding": "A separately versioned owner-only identity binding is supplied by Hub in the runtime handoff after this proposal is frozen; this proposal intentionally carries no private identity path or digest.",
+        "contents": "Hub-owned private identity and transaction binding; values are not echoed or duplicated in this descriptor"
+      },
+      "producer": {
+        "source_revision": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+        "source_sha256": "Hub must supply the exact fresh producer source/manifest SHA-256; the Edge receiver binary hash is not a producer-helper identity",
+        "helper_binary_sha256": "Hub must supply the exact fresh darwin-arm64 synthetic producer helper SHA-256; no helper is present in the Edge package candidate",
+        "exact_argv": [
+          "<Hub-supplied canonical darwin-arm64 helper from private handoff>",
+          "-endpoint",
+          "<private handoff receiver endpoint>",
+          "-cert",
+          "<private handoff client certificate path>",
+          "-key",
+          "<private handoff client key path>",
+          "-server-ca",
+          "<private handoff receiver server CA path>",
+          "-vin",
+          "<private handoff synthetic VIN>",
+          "-txid",
+          "<private handoff transaction ID>",
+          "-created-at-ms",
+          "<private handoff creation timestamp>"
+        ]
+      },
+      "transaction": {
+        "transaction_id": "Sealed in the private Hub handoff; not recorded in this descriptor",
+        "synthetic_vehicle_name": "Sealed in the private Hub handoff; not recorded in this descriptor",
+        "created_at_ms": "Sealed in the private Hub handoff; not recorded in this descriptor",
+        "transaction_type": "V",
+        "payload": "Exactly one VehicleName-only datum; no numeric telemetry, units, account credential, vehicle command or passive-vehicle field"
+      },
+      "receiver_server_pki": {
+        "server_ca_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls/vehicle-server-ca.crt",
+        "server_leaf_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls/vehicle-tls.crt",
+        "server_private_key_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls/vehicle-tls.key",
+        "server_ca_sha256": "Hub must supply the exact fresh owner-only server CA certificate SHA-256",
+        "server_leaf_sha256": "Hub must supply the exact fresh owner-only receiver server leaf SHA-256",
+        "server_leaf_issuer_ca_sha256": "Must equal the supplied server_ca_sha256",
+        "server_leaf_san": "Must contain IP:127.0.0.1 for wss://127.0.0.1:21444/",
+        "server_leaf_key_correspondence": "Must be verified against the supplied server private key without exposing the key"
+      },
+      "receiver_client_pki": {
+        "issuing_ca": {
+          "certificate_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls/vehicle-client-ca.crt",
+          "certificate_sha256": "Hub must supply the exact fresh owner-only client issuing CA certificate SHA-256",
+          "common_name": "Tesla Motors Products CA",
+          "role": "Issuer CA only; never confused with or substituted for the client leaf"
+        },
+        "client_leaf": {
+          "certificate_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls/vehicle-client.crt",
+          "private_key_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls/vehicle-client.key",
+          "certificate_sha256": "Hub must supply the exact fresh owner-only client leaf SHA-256",
+          "issuer_ca_sha256": "Must equal the supplied issuing CA certificate SHA-256",
+          "subject_common_name": "Sealed in the private Hub handoff; not recorded in this descriptor",
+          "san": "Record the exact SAN; no implicit identity substitution",
+          "key_correspondence": "Must be verified against the supplied client private key without exposing the key",
+          "profile": "CA:FALSE; critical digitalSignature/keyEncipherment; TLS Web Client Authentication"
+        },
+        "accepted_identity_profile": "The pinned receiver verifier must accept the exact leaf/profile; wrong issuer, missing identity metadata or mismatched SAN/key is a pre-submit failure."
+      },
+      "process_and_readability": {
+        "edge_uid": "Record the actual UID running Edge; expected owner admin",
+        "receiver_uid": "Record the actual UID running the receiver; expected owner admin",
+        "hub_uid": "Record the actual UID running the fresh Hub fixture",
+        "private_input_paths": "Record exact paths, owners and modes for state, bearer, server/client certificates and keys without printing values; fresh paths are under the Hub-created root above",
+        "readability": "Verify each process can read only its required inputs before launch; retain a redacted path/mode/UID receipt"
+      }
+    },
+    "identity": {
+        "source_id": "Sealed in the separately versioned Hub runtime handoff; path and digest are intentionally omitted from this frozen proposal",
+        "vehicle_id": "Sealed in the separately versioned Hub runtime handoff; path and digest are intentionally omitted from this frozen proposal",
+        "vin": "Sealed in the separately versioned Hub runtime handoff; path and digest are intentionally omitted from this frozen proposal",
+        "car_id": "Sealed in the separately versioned Hub runtime handoff; path and digest are intentionally omitted from this frozen proposal",
+        "installation_id": "Sealed in the separately versioned Hub runtime handoff; path and digest are intentionally omitted from this frozen proposal",
+        "lineage": "Sealed in the separately versioned Hub runtime handoff; path and digest are intentionally omitted from this frozen proposal",
+        "distinctness": "Hub must confirm fresh values in the separately versioned private runtime handoff; this frozen proposal records no identity path or digest."
+    },
+    "transaction_type": "V",
+    "payload": "Exactly one VehicleName-only synthetic record; no numeric telemetry, account credential, vehicle command or passive-vehicle claim.",
+    "invocation_count": 1,
+    "retry_or_replay": false,
+    "cross_product_attachment": "None required for this minimal Edge forwarding receipt."
+  },
+  "required_hub_handoff": {
+    "fixture": [
+      "fresh private root and exact launch/stop invocation",
+      "exact collector.edge URL bound only to this Edge candidate",
+      "fresh source/vehicle/VIN/car/installation/lineage contract",
+      "Hub-side cleanup owner and retained redacted stop receipt"
+    ],
+    "fresh_root": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909",
+    "retained_root_preservation": "/Users/Shared/TeslatlasEdge remains untouched; no package helper or LaunchAgent may bind it to this preparation.",
+    "candidate_confirmation": "Confirm the recorded darwin-arm64 package, Edge binary and receiver binary hashes before staging; no build is authorized by this preparation.",
+    "consumer_inputs": "Owner-only paths for the Edge server CA, Hub client certificate/key and delivery bearer, with distinct regular files, modes and hashes recorded without exposing values; invoke the Edge-owned preparer with the explicit expected server IP 192.168.64.10 and reject wildcard, loopback or other IP SANs.",
+    "authorization": "Hub may stage the fresh root, PKI/config, init/doctor, and a bounded empty receiver/Hub baseline after recording this handoff. One synthetic V submission remains separately unauthorized until a new readiness decision.",
+    "shared_runtime_rule": "Hub owns the fixture, shared target process, Hub credentials and cleanup. Edge owns no shared-target launch action; the retained root and prior inputs remain untouched."
+  },
+  "pre_submit_empty_state_gate": {
+    "edge": {
+      "health_endpoint": "http://127.0.0.1:8080/healthz",
+      "ready_endpoint": "http://127.0.0.1:8080/readyz",
+      "required": "Stable for at least five seconds with status ok/ready and records=0, bytes=0, corrupt=0, expired=0, pending_gap_notices=0, capacity_exhausted=false"
+    },
+    "hub": {
+      "control_poll": "A trusted mTLS/bearer empty control poll against the exact fresh fixture must return HTTP 200 with zero records and zero gaps",
+      "required_zero_state": {
+        "lineage": 0,
+        "applications": 0,
+        "sequences": 0,
+        "pending": 0,
+        "accumulator": 0,
+        "ack_frontier": null
+      },
+      "failure_rule": "No actor/helper invocation if any control-poll, ledger, pending, accumulator or frontier field is non-empty or unknown."
+    },
+    "coordination": "Hub and HA/coordination must acknowledge the same fresh contract and these receipts before the coordinator sends the explicit submit-once instruction."
+  },
+  "single_submission_and_projection_rules": {
+    "actor_invocations": 1,
+    "actor_retry_or_replay": false,
+    "expected_projection": "Exactly one VehicleName projection for the fresh bound synthetic name",
+    "forbidden_projection": "Any numeric telemetry, unit-bearing value, account credential, vehicle command or passive-vehicle claim",
+    "sequence_classification": "Classify every Hub sequence by its recorded disposition. Lifecycle sequences are reported separately; any unexplained sequence or numeric projection fails this handoff.",
+    "r13_boundary": "The historical r13 three-sequence caveat is not an acceptance expectation for this run and must not be used to justify unexplained output."
+  },
+  "bounded_drain_and_cleanup": {
+    "actor_timeout_seconds": 30,
+    "hub_drain_timeout_seconds": 60,
+    "no_actor_retry_on_timeout": true,
+    "timeout_action": "Record the exact boundary, stop only owned disposable processes in order and do not replay the producer record.",
+    "listener_ownership": {
+      "edge_health": "Edge-owned 127.0.0.1:8080",
+      "edge_delivery": "Edge-owned 192.168.64.10:21443",
+      "receiver": "Edge-owned 127.0.0.1:21444",
+      "hub": "Hub-owned 127.0.0.1:18488",
+      "shared_listener_rule": "No wildcard bind, listener reuse or process replacement."
+    },
+    "stop_order": [
+      "Hub records its durable/timeout outcome and stops only its fresh fixture process",
+      "Edge stops the receiver first",
+      "Edge stops the Edge core second",
+      "Verify 127.0.0.1:8080, 127.0.0.1:21443 and 127.0.0.1:21444 are closed, while any pre-existing shared listener remains untouched"
+    ],
+    "required_stop_receipts": "Record exact process IDs/UIDs, exit results, listener closure, retained state-root mode and no-secret/no-payload log scan for Edge, receiver and Hub."
+  },
+  "edge_action_sequence": [
+    "Read-only verify the exact macos13-arm64 target/address, fresh-root paths, listeners, process UIDs and private-input readability; abort if any binding is wildcard, occupied or ambiguous.",
+    "No Edge build or package install is authorized in this source-repair handoff. If a later source rebuild or package install is approved, acquire the shared heavy-build lock first, record the task and PID, and release it on exit.",
+    "For the separately authorized Hub empty-baseline phase, Hub may stage the recorded darwin-arm64 candidate without automatic start, use the direct canonical argv above, and configure only the fresh owner-only TLS, bearer and state inputs; Edge does not launch the shared target.",
+    "Hub runs Edge init and doctor, then starts the Edge core and receiver independently with the Edge helper; it verifies readyz before any producer submission.",
+    "Hub captures the stable Edge empty-state and trusted Hub empty control-poll receipts; no actor invocation is permitted until both are complete and the coordinator separately authorizes submit once.",
+    "Only after that separate authorization may the exact pinned ARM64 synthetic producer be invoked exactly once over receiver mTLS at the handoff endpoint; this proposal update itself does not authorize the event.",
+    "If the producer is later authorized, let the fresh Hub fixture pull, durably commit and acknowledge within the bounded drain window; classify every sequence, require exactly one VehicleName projection and verify Edge queue returns to zero without payload or credential values.",
+    "Apply the recorded cleanup order and stop receipts, verify 8080/21443/21444 are closed, retain the redacted evidence root and leave any pre-existing shared process untouched."
+  ],
+  "acceptance_receipts": [
+    "Exact macOS target/address, architecture, package/source/binary/helper identities, certificate CA-versus-leaf bindings, SAN/key correspondence, process UIDs and service-manager state",
+    "Empty-state inventory before init/doctor and stable Edge health/ready plus trusted Hub control-poll zero-state receipts",
+    "receiver mTLS ACK and Edge encrypted queue before and after Hub drain",
+    "Hub durable commit, per-sequence disposition, exactly one VehicleName projection and exact ACK/frontier receipt",
+    "separate Edge/receiver input custody and no secret/payload log exposure",
+    "bounded timeout/no-retry behavior and ordered process/listener cleanup with pre-existing shared processes preserved"
+  ],
+  "ownership_and_safety": {
+    "edge_owns": "Edge source, current ARM64 candidate, fixed service payload, receiver input shape, encrypted spool and Edge-side redacted receipt.",
+    "hub_owns": "Fresh Hub fixture, collector descriptor, Hub credentials, shared target process and cleanup receipt.",
+    "coordinator_owns": "One-shot authorization and cross-product acceptance boundary.",
+    "synthetic_only": true,
+    "tesla_account_credentials": false,
+    "vehicle_commands": false,
+    "production_state": false,
+    "publication_authorized": false,
+    "preparation_only": false,
+    "empty_baseline_authorized_to_hub": true,
+    "current_action_authorized": "Provide this exact binding to Hub/coordinator. The source-repair prerequisite is complete; Hub may now perform only the recorded fresh-root staging, PKI/config, init/doctor and empty receiver/Hub baseline. No synthetic producer event is authorized, and Edge must not launch or mutate the shared target."
+  }
+}

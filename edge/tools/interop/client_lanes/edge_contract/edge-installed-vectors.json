@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "stream_id": "task9-first-eight-then-gap",
+  "binding": {
+    "vehicle_id": "11111111-1111-4111-8111-111111111111",
+    "vin": "5YJ3E1EA7KF000001",
+    "car_id": 9
+  },
+  "records": [
+    {"sequence": 1, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-projected-0001", "tx_type": "V", "received_at_ms": 1788566400100, "timestamp_ms": 1788566400000, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-05T00:00:00Z", "data": {"Soc": {"intValue": "81"}}}}, "stable_id": "37b6ac0f3288d84fc45bea42e645d8fdc44e4ba796e7e66891573487a9e19fca", "legacy_id": "c0c8716b98cf72be50ea7cdd6868b946b4220a3a2cb0425e5e05bda66dd751d0", "payload_sha256": "9458aec30d7b58765cd3aa3d6ae8b0aa6c9150e43cbb351616766bc18e76b806", "category": "projected_telemetry"},
+    {"sequence": 2, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-projected-0001", "tx_type": "V", "received_at_ms": 1788566400200, "timestamp_ms": 1788566400000, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-05T00:00:00Z", "data": {"Soc": {"intValue": "81"}}}}, "stable_id": "37b6ac0f3288d84fc45bea42e645d8fdc44e4ba796e7e66891573487a9e19fca", "legacy_id": "1692dcb326995ff330f2bb548e13c05a11b90d485f555326b72bef91c774aa22", "payload_sha256": "9458aec30d7b58765cd3aa3d6ae8b0aa6c9150e43cbb351616766bc18e76b806", "category": "duplicate"},
+    {"sequence": 3, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-process-0002", "tx_type": "V", "received_at_ms": 1788566401100, "timestamp_ms": 1788566401000, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-05T00:00:01Z", "data": {"Soc": {"intValue": "82"}}}}, "stable_id": "9f69b3f155de02e48e6bf497306022f5fe117e69a6e023d48498c7cfef0794c5", "legacy_id": "660d3c2bd43cb4908c5bddec55a56bfbc733e22e6a5d1314310b094db78bd7e7", "payload_sha256": "83e8956c3a1a7039aa6d5aee61398e1b8a6d3bfa367bbb31de9799d3d8adc8a3", "category": "projected_telemetry"},
+    {"sequence": 4, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-unsupported-0003", "tx_type": "V", "received_at_ms": 1788566402200, "timestamp_ms": 1788566401500, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-05T00:00:00Z", "data": {"futureObject": {"futureValue": "bounded-public-event"}}}}, "stable_id": "be0a81a83149a2d4d24065044b507e65ac0123cd8ada03a78c10202ce0769e11", "legacy_id": "f8124337b7a17745d0e5b888a05f32df69a478508ee41d3bc7e4458f1af0e877", "payload_sha256": "83d3599dc3e75043788c67318df6a1dd1520a27c97a817792315ba321029edf7", "category": "durable_non_projection_event"},
+    {"sequence": 5, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-delayed-temperature-0004", "tx_type": "V", "received_at_ms": 1788566402200, "timestamp_ms": 1788566399000, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-04T23:59:59Z", "data": {"InsideTemp": {"doubleValue": 22.75}}}}, "stable_id": "ef0674d510847afff7269fe1a609ce7c5be9037718f2b8c6e8f9a946b4f995ff", "legacy_id": "2ba3e905a9b5473e1428dca15e9d161c74cde28ebe9500381a76db768f6ad3ab", "payload_sha256": "6dba02d902ccbcf69c53469eb3e880d50cb417b88240511da7b70dba1ea37a26", "category": "projected_telemetry"},
+    {"sequence": 6, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-pack-voltage-0005", "tx_type": "V", "received_at_ms": 1788566403100, "timestamp_ms": 1788566403000, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-05T00:00:03Z", "data": {"PackVoltage": {"doubleValue": 400.0}}}}, "stable_id": "c95181b9568fe1f7ef4e9a4a60aa6e225af2a71b0bb071bd62472bbd72b51850", "legacy_id": "e4da3c255e8d971273e2ef5b20ee4bfa49d33dad49157795eb6a6bff40e889f7", "payload_sha256": "583790d5e615b90d1c2da0a3eb1007537e01dc8555489a2cdcf71502650fd087", "category": "projected_telemetry"},
+    {"sequence": 7, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-pack-current-0006", "tx_type": "V", "received_at_ms": 1788566403200, "timestamp_ms": 1788566403100, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-05T00:00:03Z", "data": {"PackCurrent": {"doubleValue": 10.0}}}}, "stable_id": "c257250259fa98d21aeee7b05cd34a353efc0302dd10bcfa3409003b0e6fe1af", "legacy_id": "3bd4fc7bc54833e6aa4e338ac98baef8d05ef7b9c5e3a0d53e5d47832b65d790", "payload_sha256": "784c62d7653e81b1ba8ee1752fc677fbf848d5da4e3a13b6677fbd33b93650ce", "category": "projected_telemetry"},
+    {"sequence": 8, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-projected-0001", "tx_type": "V", "received_at_ms": 1788566404000, "timestamp_ms": 1788566400000, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-05T00:00:00Z", "data": {"Soc": {"intValue": "81"}}}}, "stable_id": "37b6ac0f3288d84fc45bea42e645d8fdc44e4ba796e7e66891573487a9e19fca", "legacy_id": "4bfab8da49e0ee34c63fef865c1051c86a80104d44a6c05729378c82535ca1c2", "payload_sha256": "9458aec30d7b58765cd3aa3d6ae8b0aa6c9150e43cbb351616766bc18e76b806", "category": "duplicate"},
+    {"sequence": 9, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-gap-source-0009", "tx_type": "V", "received_at_ms": 1788566404200, "timestamp_ms": 1788566404150, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-05T00:00:04.150Z", "data": {"Soc": {"intValue": "83"}}}}, "stable_id": "f05a103c7e5e24b14a60935de35d3021a6b047a984bd0392dd17569e16c2b0dd", "legacy_id": "fb77b0ccac7be19ac00d7e3754aaa50277e61cb48a41b68f69530f57d28328aa", "payload_sha256": "a1085bd57896ce31e53ff01ea89e7e9ac11dc9c5944a811c567f419c41b9004d", "category": "projected_telemetry"},
+    {"sequence": 10, "envelope": {"version": 1, "vin": "5YJ3E1EA7KF000001", "txid": "task9-stale-soc-0010", "tx_type": "V", "received_at_ms": 1788566405000, "timestamp_ms": 1788566400500, "payload": {"vin": "5YJ3E1EA7KF000001", "createdAt": "2026-09-05T00:00:00.500Z", "data": {"Soc": {"intValue": "70"}}}}, "stable_id": "3151fed2cdfd5fb4998b8bd4d274de75111e18049f7e89a52cecdc3ddb9e0cdb", "legacy_id": "d8ec818d20ed68679960b9dab6f4ac07d41d3bd3da0d6099dcd6fabb78b6e95a", "payload_sha256": "fc9b0af1fb64299be997fb610c5751ba14e24557de949080cd14e19f5bdfac57", "category": "projected_telemetry"}
+  ],
+  "gap": {
+    "sequence": 9,
+    "source_stable_id": "f05a103c7e5e24b14a60935de35d3021a6b047a984bd0392dd17569e16c2b0dd",
+    "source_legacy_id": "fb77b0ccac7be19ac00d7e3754aaa50277e61cb48a41b68f69530f57d28328aa",
+    "evidence_sha256": "f04c2080bb9f7877a39003b0ad9cc458431e47e7af9777e96ae0c6b9b3290c6f",
+    "notice_id": "bd331d62a7d1cbe93a7eb3258b0469b9aaa7fa690c74f18b7d1cb4559c9150e1",
+    "batch_id": "8aab0c0de41572fc0cb41d5f0f9685832d5206e13be93e9aae0464ed28704a85",
+    "later_stable_id": "3151fed2cdfd5fb4998b8bd4d274de75111e18049f7e89a52cecdc3ddb9e0cdb"
+  },
+  "expected_checkpoints": [
+    {"sequence": 1, "applications": 1, "sequences": 1, "pending_publications": 0, "ack_frontier": 1},
+    {"sequence": 2, "applications": 1, "sequences": 2, "pending_publications": 0, "ack_frontier": 2},
+    {"sequence": 3, "applications": 2, "sequences": 3, "pending_publications": 0, "ack_frontier": 3},
+    {"sequence": 6, "applications": 5, "sequences": 6, "pending_publications": 0, "ack_frontier": 6},
+    {"sequence": 8, "applications": 6, "sequences": 8, "pending_publications": 0, "ack_frontier": 8},
+    {"sequence": 10, "applications": 7, "sequences": 10, "pending_publications": 0, "ack_frontier": 10}
+  ]
+}

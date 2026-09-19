@@ -50,32 +50,60 @@ launchctl bootout "gui/$UID/uk.co.magrathean.teslatlas-edge"
 1. Build and verify both new binaries before stopping the old version.
 2. Create and verify a consistent backup.
 3. Record whether each service was active and enabled.
-4. Stop sidecar, then Edge, with the five-second service deadline.
+4. Stop sidecar, then Edge. The application drains for up to five seconds and
+   the supplied service managers allow ten seconds for the drain and final
+   spool sync.
 5. Install both binaries atomically from the same tested build.
-6. Run `teslatlas-edge --config /etc/teslatlas-edge/config.toml doctor`.
+6. Run `sudo -u teslatlas-edge /usr/bin/teslatlas-edge --config
+   /etc/teslatlas-edge/config.toml doctor`.
 7. Start Edge, verify readiness, then start the sidecar.
 8. Confirm intended listeners and prove one test record in a separate staging
    installation; never inject invented telemetry into a live user's Hub.
 
-This release atomically wraps pending v1 records with stable v2 identity and a
-persistent spool sequence on first open. It preserves each v1 delivery ID but
-renames pending files, writes encrypted sequence state, and creates a plain
-`spool/FORMAT` marker containing `2`. Backup before first start. Wire v1 remains
-available, but storage rollback is not compatible: do not run an older binary
-against a spool once that marker exists. The supplied systemd unit and macOS
-LaunchAgent execute `run-with-spool-format-guard.sh`; it compares the marker to
-the candidate binary's `storage-format` output before launching Edge.
+This release uses spool format `3`. It preserves the existing pending envelopes
+and sequence history, and persists each new acknowledgement receipt with the
+accepted `(spool_seq, stable_record_id, legacy_record_id)` occurrence. A replay
+therefore cannot delete a later admission of the same stable event. The plain
+`spool/FORMAT` marker is replaced atomically from `2` to `3` only after recovery
+succeeds. Backup before first start. Wire v1 remains available, but storage
+rollback is not compatible: do not run an older binary against a spool once
+that marker exists. The supplied systemd unit and macOS LaunchAgent execute
+`run-with-spool-format-guard.sh`; it allows the explicit `2` to `3` migration
+and otherwise compares the marker to the candidate binary's `storage-format`
+output before launching Edge.
+
+Format-2 acknowledgement receipts contain only stable or legacy IDs and do
+not prove which admission occurrence was acknowledged. If any receipt exists,
+the v3 binary fails with `ReceiptRecoveryRequired` before recovery or marker
+replacement, preserving the receipt and pending bytes for a reviewed Hub
+lineage reconciliation. Do not delete receipts, reset the Hub frontier, or
+retry with an older binary to bypass this error. A format-2 spool with no
+receipts may migrate through the normal guarded start; keep the original
+backup until the v3 marker and readiness have been verified. When the old
+marker has no receipts, the migration conservatively marks the v1 receipt
+history as unknown/pruned; v1 acknowledgements then return the same explicit
+upgrade response until the Hub uses v2.
+
+V1 receipt idempotency is intentionally bounded by the 1,024 retained receipt
+files. If pruning removes a v1 receipt, Edge persists that history boundary and
+rejects subsequent v1 acknowledgements with
+`V1AcknowledgementHistoryPruned`; use the v2 endpoint, whose sequence-bound
+receipt carries the original admission identity. This prevents an old v1 ACK
+from deleting a later event whose legacy ID produces the same public batch
+digest. Retained v1 receipts continue to support exact replay.
 
 ## Roll back a failed upgrade
 
 Stop sidecar then Edge. Restore the previous binaries. Restore the pre-upgrade
 state only into a new empty directory; never merge two live spool directories.
 For rollback to a pre-v2 binary, verify that the restored spool has no `FORMAT`
-marker. Pre-v2 binaries do not understand the marker themselves, so never
-restore a legacy unit or plist that bypasses the supplied launch guard. The
-guard rejects a pre-v2 binary before it can open a v2 spool. Run `doctor`, start
-Edge, verify readiness, then start the sidecar. Preserve the failed upgrade
-state until delivery and record counts have been reconciled.
+marker. To roll back from v3, restore the complete pre-upgrade backup into a new
+empty directory; never point a v2 or older binary at a v3 spool. Pre-v2 binaries
+do not understand the marker themselves, so never restore a legacy unit or
+plist that bypasses the supplied launch guard. The guard rejects an older
+binary before it can open a v3 spool. Run `doctor`, start Edge, verify
+readiness, then start the sidecar. Preserve the failed upgrade state until
+delivery and record counts have been reconciled.
 
 ## Restore onto an empty host
 

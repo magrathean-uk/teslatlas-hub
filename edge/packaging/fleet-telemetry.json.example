@@ -21,6 +21,7 @@
   },
   "tls": {
     "server_cert": "/etc/teslatlas-edge/vehicle-tls.crt",
-    "server_key": "/etc/teslatlas-edge/vehicle-tls.key"
+    "server_key": "/etc/teslatlas-edge/vehicle-tls.key",
+    "ca_file": "/etc/teslatlas-edge/vehicle-client-ca.crt"
   }
 }

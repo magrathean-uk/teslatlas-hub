@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teslatlas.dev/schemas/edge-fixture-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "cell_id", "instance_nonce", "session_input_sha256", "actor_id", "invocation_id", "stage", "observation", "payload"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "session_id": {"$ref": "#/$defs/uuid"},
+    "cell_id": {"type": "string", "pattern": "^edge_v2__(macos_arm64|debian13_amd64|debian13_arm64)$"},
+    "instance_nonce": {"$ref": "#/$defs/sha256"},
+    "session_input_sha256": {"$ref": "#/$defs/sha256"},
+    "actor_id": {"type": "string", "enum": ["installed_controller", "edge_normal", "edge_producer", "edge_reference", "edge_fault", "edge_transport"]},
+    "invocation_id": {"$ref": "#/$defs/token"},
+    "stage": {"$ref": "#/$defs/token"},
+    "observation": {"$ref": "#/$defs/observation"},
+    "payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["seal_sha256", "http_profile_sha256", "edge_profile_sha256", "primary_context_sha256", "baseline_clone_equal", "custody_manifest_sha256", "root_runtime_observation", "root_transport_observation"],
+      "properties": {
+        "seal_sha256": {"$ref": "#/$defs/sha256"}, "http_profile_sha256": {"$ref": "#/$defs/sha256"}, "edge_profile_sha256": {"$ref": "#/$defs/sha256"}, "primary_context_sha256": {"$ref": "#/$defs/sha256"}, "baseline_clone_equal": {"type": "boolean"}, "custody_manifest_sha256": {"$ref": "#/$defs/sha256"}, "root_runtime_observation": {"$ref": "#/$defs/binding"}, "root_transport_observation": {"$ref": "#/$defs/binding"}
+      }
+    }
+  },
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "token": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "binding": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "pattern": "^/[^\\u0000\\r\\n]*$"}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "observation": {"type": "object", "additionalProperties": false, "required": ["session_sequence", "proof_sha256"], "properties": {"session_sequence": {"type": "integer", "minimum": 1}, "proof_sha256": {"$ref": "#/$defs/sha256"}}}
+  }
+}

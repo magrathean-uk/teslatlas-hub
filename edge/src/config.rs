@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::net::SocketAddr;
@@ -121,6 +122,20 @@ impl EdgeConfig {
                 return Err(ConfigError::InvalidPath);
             }
         }
+        let runtime_paths = [
+            &self.receiver_bearer_path,
+            &self.spool_key_path,
+            &self.credential_store_path,
+            &self.hub_server_certificate_path,
+            &self.hub_server_private_key_path,
+            &self.hub_client_ca_path,
+        ];
+        let mut distinct_paths = HashSet::new();
+        if runtime_paths.iter().any(|path| {
+            path.as_path() == self.state_directory.as_path() || !distinct_paths.insert(*path)
+        }) {
+            return Err(ConfigError::InvalidPath);
+        }
         if !self.receiver_bind.ip().is_loopback()
             || self.hub_bind.ip().is_loopback()
             || self.receiver_bind.port() == 0
@@ -218,6 +233,9 @@ impl IssuedReceiverToken {
 }
 
 fn create_private_directory(path: &Path) -> Result<(), ConfigError> {
+    if path_contains_symlink(path)? {
+        return Err(ConfigError::InvalidPath);
+    }
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if metadata.file_type().is_symlink() || !metadata.is_dir() {

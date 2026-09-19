@@ -1,7 +1,7 @@
 [Unit]
 Description=Teslatlas Edge Fleet Telemetry ingress
 After=network-online.target
-Wants=network-online.target teslatlas-fleet-telemetry.service
+Wants=network-online.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -14,7 +14,7 @@ StateDirectoryMode=0700
 ExecStart=/usr/lib/teslatlas-edge/run-with-spool-format-guard.sh /usr/bin/teslatlas-edge /var/lib/teslatlas-edge/spool -- --config /etc/teslatlas-edge/config.toml serve
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=5
+TimeoutStopSec=10
 KillMode=mixed
 UMask=0077
 CapabilityBoundingSet=

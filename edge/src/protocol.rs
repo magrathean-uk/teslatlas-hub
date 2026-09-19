@@ -128,7 +128,7 @@ impl ReceiverEnvelope {
         RecordId(hex::encode(digest.finalize()))
     }
 
-    fn validate(&self) -> Result<(), ProtocolError> {
+    pub(crate) fn validate(&self) -> Result<(), ProtocolError> {
         if self.version != 1 {
             return Err(ProtocolError::UnsupportedVersion);
         }

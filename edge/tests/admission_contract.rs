@@ -161,6 +161,7 @@ async fn full_spool_returns_507_without_acknowledging_second_record() {
     );
     assert_eq!(
         router
+            .clone()
             .oneshot(post(second, Some("receiver-secret-123")))
             .await
             .unwrap()
@@ -168,6 +169,24 @@ async fn full_spool_returns_507_without_acknowledging_second_record() {
         StatusCode::INSUFFICIENT_STORAGE
     );
     assert_eq!(service.spool().snapshot(T0).pending_records, 1);
+    assert!(service.spool().snapshot(T0).capacity_exhausted);
+    assert_eq!(
+        router
+            .clone()
+            .oneshot(Request::get("/readyz").body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(
+        router
+            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
 }
 
 #[tokio::test]

@@ -4,6 +4,10 @@ mod support;
 
 use std::fs::{self, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -14,8 +18,12 @@ use teslatlas_edge::spool::{EnqueueOutcome, Spool, SpoolConfig, SpoolError, Spoo
 use support::{T0, VIN, receiver_envelope};
 
 fn config(temp: &TempDir) -> SpoolConfig {
+    config_for_directory(temp.path().join("spool"))
+}
+
+fn config_for_directory(directory: PathBuf) -> SpoolConfig {
     SpoolConfig {
-        directory: temp.path().join("spool"),
+        directory,
         max_bytes: 1_048_576,
         max_records: 16,
         retention_ms: 60_000,
@@ -116,6 +124,32 @@ fn duplicate_enqueue_is_idempotent_and_ack_deletes_only_named_records() {
     let remaining = spool.next_batch(T0 + 4).unwrap();
     assert_eq!(remaining.records.len(), 1);
     assert_eq!(remaining.records[0].record_id, first.record_id());
+}
+
+#[test]
+fn old_v1_ack_cannot_delete_an_identical_legacy_reenqueue() {
+    let temp = TempDir::new().unwrap();
+    let spool_config = config(&temp);
+    let spool = Spool::open(spool_config, key(), T0).unwrap();
+    let event = receiver_envelope("tx-v1-reenqueue", T0);
+    spool.enqueue(event.clone(), T0).unwrap();
+
+    let first_batch = spool.next_batch(T0 + 1).unwrap();
+    let old_ack = HubAckV1 {
+        version: 1,
+        batch_id: first_batch.batch_id.clone(),
+        accepted_record_ids: vec![first_batch.records[0].record_id.clone()],
+    };
+    spool.acknowledge(&old_ack).unwrap();
+
+    spool.enqueue(event.clone(), T0 + 2).unwrap();
+    assert_eq!(
+        spool.acknowledge(&old_ack).unwrap().acknowledged_record_ids,
+        vec![event.record_id()]
+    );
+    let remaining = spool.next_batch(T0 + 3).unwrap();
+    assert_eq!(remaining.records.len(), 1);
+    assert_eq!(remaining.records[0].record_id, event.record_id());
 }
 
 #[test]
@@ -340,7 +374,14 @@ fn durable_gap_wins_over_reappearing_source_and_sequence_stays_unique() {
     drop(spool);
 
     fs::copy(&saved_path, &pending_path).unwrap();
-    fs::remove_file(temp.path().join("spool/sequence.tlem")).unwrap();
+    let sequence_path = temp.path().join("spool/sequence.tlem");
+    let saved_sequence = fs::read(&sequence_path).unwrap();
+    fs::remove_file(&sequence_path).unwrap();
+    assert!(matches!(
+        Spool::open(spool_config.clone(), key(), T0 + 2),
+        Err(SpoolError::SequenceStateMissing)
+    ));
+    fs::write(&sequence_path, saved_sequence).unwrap();
     let recovered = Spool::open(spool_config, key(), T0 + 2).unwrap();
     let replay = recovered.next_batch_v2(T0 + 2).unwrap();
     assert!(replay.records.is_empty());
@@ -452,6 +493,198 @@ fn spool_sequence_remains_monotonic_after_empty_restart() {
 }
 
 #[test]
+fn second_spool_opener_fails_before_touching_existing_state() {
+    let temp = TempDir::new().unwrap();
+    let spool_config = config(&temp);
+    let spool = Spool::open(spool_config.clone(), key(), T0).unwrap();
+    spool
+        .enqueue(receiver_envelope("tx-lock-owner", T0), T0)
+        .unwrap();
+    let pending_before = fs::read_dir(temp.path().join("spool/pending"))
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            (
+                path.file_name().unwrap().to_owned(),
+                fs::read(path).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let sequence_before = fs::read(temp.path().join("spool/sequence.tlem")).unwrap();
+    assert!(matches!(
+        Spool::open(spool_config.clone(), key(), T0 + 1),
+        Err(SpoolError::AlreadyOpen)
+    ));
+    assert_eq!(
+        fs::read(temp.path().join("spool/sequence.tlem")).unwrap(),
+        sequence_before
+    );
+    let pending_after = fs::read_dir(temp.path().join("spool/pending"))
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            (
+                path.file_name().unwrap().to_owned(),
+                fs::read(path).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(pending_after, pending_before);
+    drop(spool);
+    let reopened = Spool::open(spool_config, key(), T0 + 2).unwrap();
+    assert_eq!(reopened.snapshot(T0 + 2).pending_records, 1);
+}
+
+#[test]
+fn second_spool_opener_fails_in_a_separate_process() {
+    let temp = TempDir::new().unwrap();
+    let spool_config = config(&temp);
+    let owner = Spool::open(spool_config.clone(), key(), T0).unwrap();
+    owner
+        .enqueue(receiver_envelope("tx-cross-process-lock", T0), T0)
+        .unwrap();
+
+    let ready = temp.path().join("child-ready");
+    let release = temp.path().join("child-release");
+    let child_exe = std::env::current_exe().unwrap();
+    let mut child = Command::new(child_exe)
+        .arg("--exact")
+        .arg("second_spool_opener_child")
+        .arg("--nocapture")
+        .env("TESLATLAS_EDGE_LOCK_CHILD", "1")
+        .env("TESLATLAS_EDGE_LOCK_SPOOL", &spool_config.directory)
+        .env("TESLATLAS_EDGE_LOCK_READY", &ready)
+        .env("TESLATLAS_EDGE_LOCK_RELEASE", &release)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut child_ready = false;
+    while Instant::now() < deadline {
+        if ready.exists() {
+            child_ready = true;
+            break;
+        }
+        if let Some(status) = child.try_wait().unwrap() {
+            let _ = fs::write(&release, b"stop");
+            let _ = child.wait();
+            panic!("lock-holder child exited before readiness: {status}");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    if !child_ready {
+        let _ = fs::write(&release, b"stop");
+        let _ = child.wait();
+        panic!("lock-holder child did not become ready");
+    }
+
+    assert!(matches!(
+        Spool::open(spool_config.clone(), key(), T0 + 1),
+        Err(SpoolError::AlreadyOpen)
+    ));
+
+    drop(owner);
+    fs::write(&release, b"stop").unwrap();
+    let status = child.wait().unwrap();
+    assert!(status.success(), "lock-holder child failed: {status}");
+    assert_eq!(
+        Spool::open(spool_config, key(), T0 + 2)
+            .unwrap()
+            .snapshot(T0 + 2)
+            .pending_records,
+        1
+    );
+}
+
+#[test]
+fn second_spool_opener_child() {
+    let Some(spool_directory) = std::env::var_os("TESLATLAS_EDGE_LOCK_SPOOL") else {
+        return;
+    };
+    let ready = PathBuf::from(std::env::var_os("TESLATLAS_EDGE_LOCK_READY").unwrap());
+    let release = PathBuf::from(std::env::var_os("TESLATLAS_EDGE_LOCK_RELEASE").unwrap());
+    let attempted = Spool::open(
+        config_for_directory(PathBuf::from(spool_directory)),
+        key(),
+        T0 + 1,
+    );
+    assert!(matches!(attempted, Err(SpoolError::AlreadyOpen)));
+    fs::write(ready, b"ready").unwrap();
+    while !release.exists() {
+        thread::sleep(Duration::from_millis(10));
+    }
+    let reopened = Spool::open(
+        config_for_directory(PathBuf::from(
+            std::env::var_os("TESLATLAS_EDGE_LOCK_SPOOL").unwrap(),
+        )),
+        key(),
+        T0 + 2,
+    )
+    .unwrap();
+    assert_eq!(reopened.snapshot(T0 + 2).pending_records, 1);
+}
+
+#[test]
+fn established_spool_missing_or_corrupt_sequence_state_fails_without_recovery_mutation() {
+    let temp = TempDir::new().unwrap();
+    let spool_config = config(&temp);
+    let spool = Spool::open(spool_config.clone(), key(), T0).unwrap();
+    spool
+        .enqueue(receiver_envelope("tx-sequence-state", T0), T0)
+        .unwrap();
+    drop(spool);
+    let sequence_path = temp.path().join("spool/sequence.tlem");
+    let sequence_backup = fs::read(&sequence_path).unwrap();
+    let pending_before = fs::read_dir(temp.path().join("spool/pending"))
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            (
+                path.file_name().unwrap().to_owned(),
+                fs::read(path).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    fs::remove_file(&sequence_path).unwrap();
+    assert!(matches!(
+        Spool::open(spool_config.clone(), key(), T0 + 1),
+        Err(SpoolError::SequenceStateMissing)
+    ));
+    assert!(!sequence_path.exists());
+    assert_eq!(
+        fs::read_dir(temp.path().join("spool/pending"))
+            .unwrap()
+            .map(|entry| {
+                let path = entry.unwrap().path();
+                (
+                    path.file_name().unwrap().to_owned(),
+                    fs::read(path).unwrap(),
+                )
+            })
+            .collect::<Vec<_>>(),
+        pending_before
+    );
+
+    fs::write(&sequence_path, b"corrupt-sequence-state").unwrap();
+    assert!(matches!(
+        Spool::open(spool_config.clone(), key(), T0 + 2),
+        Err(SpoolError::CorruptRecord)
+    ));
+    assert_eq!(fs::read(&sequence_path).unwrap(), b"corrupt-sequence-state");
+    fs::write(&sequence_path, sequence_backup).unwrap();
+    assert_eq!(
+        Spool::open(spool_config, key(), T0 + 3)
+            .unwrap()
+            .snapshot(T0 + 3)
+            .pending_records,
+        1
+    );
+}
+
+#[test]
 fn acknowledgement_receipt_survives_restart_and_makes_retry_idempotent() {
     let temp = TempDir::new().unwrap();
     let spool_config = config(&temp);
@@ -478,6 +711,224 @@ fn acknowledgement_receipt_survives_restart_and_makes_retry_idempotent() {
             .count(),
         1
     );
+}
+
+#[test]
+fn old_v2_ack_cannot_delete_a_reenqueued_stable_event() {
+    let temp = TempDir::new().unwrap();
+    let spool_config = config(&temp);
+    let spool = Spool::open(spool_config, key(), T0).unwrap();
+    let first = receiver_envelope("tx-reenqueued", T0);
+    spool.enqueue(first.clone(), T0).unwrap();
+
+    let first_batch = spool.next_batch_v2(T0 + 1).unwrap();
+    let old_ack = HubAckV2 {
+        version: 2,
+        batch_id: first_batch.batch_id.clone(),
+        accepted_record_ids: vec![first_batch.records[0].record_id.clone()],
+        accepted_gap_notice_ids: Vec::new(),
+    };
+    spool.acknowledge_v2(&old_ack).unwrap();
+
+    let mut retry = first;
+    retry.received_at_ms += 5_000;
+    assert!(matches!(
+        spool.enqueue(retry.clone(), T0 + 5_000).unwrap(),
+        EnqueueOutcome::Stored(_)
+    ));
+    let requeued = spool.next_batch_v2(T0 + 5_001).unwrap();
+    assert_eq!(requeued.records.len(), 1);
+    assert_eq!(requeued.records[0].spool_seq, 2);
+    assert_eq!(requeued.records[0].record_id, retry.stable_record_id());
+    assert_ne!(
+        requeued.records[0].legacy_record_id,
+        old_ack.accepted_record_ids[0]
+    );
+
+    assert_eq!(
+        spool
+            .acknowledge_v2(&old_ack)
+            .unwrap()
+            .acknowledged_record_ids,
+        vec![old_ack.accepted_record_ids[0].clone()]
+    );
+    let after_old_retry = spool.next_batch_v2(T0 + 5_002).unwrap();
+    assert_eq!(after_old_retry.records.len(), 1);
+    assert_eq!(after_old_retry.records[0].spool_seq, 2);
+    assert_eq!(
+        after_old_retry.records[0].record_id,
+        retry.stable_record_id()
+    );
+}
+
+#[test]
+fn receipt_recovery_preserves_reenqueued_stable_event_and_sequence() {
+    let temp = TempDir::new().unwrap();
+    let spool_config = config(&temp);
+    let spool = Spool::open(spool_config.clone(), key(), T0).unwrap();
+    let first = receiver_envelope("tx-recovered-reenqueue", T0);
+    spool.enqueue(first.clone(), T0).unwrap();
+
+    let first_batch = spool.next_batch_v2(T0 + 1).unwrap();
+    let old_ack = HubAckV2 {
+        version: 2,
+        batch_id: first_batch.batch_id.clone(),
+        accepted_record_ids: vec![first_batch.records[0].record_id.clone()],
+        accepted_gap_notice_ids: Vec::new(),
+    };
+    spool.acknowledge_v2(&old_ack).unwrap();
+
+    let mut retry = first;
+    retry.received_at_ms += 5_000;
+    spool.enqueue(retry.clone(), T0 + 5_000).unwrap();
+    drop(spool);
+
+    let restarted = Spool::open(spool_config, key(), T0 + 5_001).unwrap();
+    let second = receiver_envelope("tx-distinct-after-restart", T0 + 5_001);
+    restarted.enqueue(second.clone(), T0 + 5_001).unwrap();
+    assert_eq!(
+        restarted
+            .acknowledge_v2(&old_ack)
+            .unwrap()
+            .acknowledged_record_ids,
+        vec![old_ack.accepted_record_ids[0].clone()]
+    );
+
+    let remaining = restarted.next_batch_v2(T0 + 5_002).unwrap();
+    assert_eq!(remaining.records.len(), 2);
+    assert_eq!(remaining.records[0].spool_seq, 2);
+    assert_eq!(remaining.records[0].legacy_record_id, retry.record_id());
+    assert_eq!(remaining.records[1].spool_seq, 3);
+    assert_eq!(remaining.records[1].legacy_record_id, second.record_id());
+}
+
+#[test]
+fn v2_receipt_binding_handles_identical_legacy_reenqueue() {
+    let temp = TempDir::new().unwrap();
+    let spool_config = config(&temp);
+    let spool = Spool::open(spool_config, key(), T0).unwrap();
+    let event = receiver_envelope("tx-identical-reenqueue", T0);
+    spool.enqueue(event.clone(), T0).unwrap();
+
+    let first_batch = spool.next_batch_v2(T0 + 1).unwrap();
+    let old_ack = HubAckV2 {
+        version: 2,
+        batch_id: first_batch.batch_id.clone(),
+        accepted_record_ids: vec![first_batch.records[0].record_id.clone()],
+        accepted_gap_notice_ids: Vec::new(),
+    };
+    spool.acknowledge_v2(&old_ack).unwrap();
+
+    spool.enqueue(event.clone(), T0 + 2).unwrap();
+    let requeued = spool.next_batch_v2(T0 + 3).unwrap();
+    assert_eq!(requeued.records[0].spool_seq, 2);
+    assert_eq!(requeued.records[0].legacy_record_id, event.record_id());
+
+    spool.acknowledge_v2(&old_ack).unwrap();
+    let remaining = spool.next_batch_v2(T0 + 4).unwrap();
+    assert_eq!(remaining.records.len(), 1);
+    assert_eq!(remaining.records[0].spool_seq, 2);
+    assert_eq!(remaining.records[0].legacy_record_id, event.record_id());
+}
+
+#[test]
+fn v2_receipt_with_maximum_admissions_stays_within_encrypted_limit() {
+    let temp = TempDir::new().unwrap();
+    let mut spool_config = config(&temp);
+    spool_config.max_records = 256;
+    spool_config.batch_max_records = 256;
+    spool_config.batch_max_bytes = 512 * 1024;
+    let spool = Spool::open(spool_config, key(), T0).unwrap();
+    for index in 0..256 {
+        let timestamp = T0 + i64::from(index);
+        spool
+            .enqueue(
+                receiver_envelope(&format!("tx-receipt-size-{index}"), timestamp),
+                timestamp,
+            )
+            .unwrap();
+    }
+    let batch = spool.next_batch_v2(T0 + 1_000).unwrap();
+    assert_eq!(batch.records.len(), 256);
+    spool
+        .acknowledge_v2(&HubAckV2 {
+            version: 2,
+            batch_id: batch.batch_id,
+            accepted_record_ids: batch
+                .records
+                .iter()
+                .map(|record| record.record_id.clone())
+                .collect(),
+            accepted_gap_notice_ids: Vec::new(),
+        })
+        .unwrap();
+    let receipt = fs::read_dir(temp.path().join("spool/receipts"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert!(fs::metadata(receipt).unwrap().len() <= 160 * 1_024);
+}
+
+#[test]
+fn v2_queue_over_ack_cap_drains_in_valid_prefixes() {
+    let temp = TempDir::new().unwrap();
+    let mut spool_config = config(&temp);
+    spool_config.max_bytes = 8 * 1_024 * 1_024;
+    spool_config.max_records = 1_024;
+    spool_config.batch_max_bytes = 4 * 1_024 * 1_024;
+    spool_config.batch_max_records = 257;
+    let spool = Spool::open(spool_config, key(), T0).unwrap();
+    for index in 0..1_024 {
+        let timestamp = T0 + i64::from(index);
+        spool
+            .enqueue(
+                receiver_envelope(&format!("tx-boundary-{index}"), timestamp),
+                timestamp,
+            )
+            .unwrap();
+    }
+
+    let mut acknowledged = 0_usize;
+    loop {
+        let batch = spool.next_batch_v2(T0 + 2_000).unwrap();
+        if batch.records.is_empty() && batch.gaps.is_empty() {
+            break;
+        }
+        assert!(batch.records.len() <= 257);
+        assert!(batch.gaps.is_empty());
+        let accepted_count = batch.records.len().min(256);
+        spool
+            .acknowledge_v2(&HubAckV2 {
+                version: 2,
+                batch_id: batch.batch_id,
+                accepted_record_ids: batch
+                    .records
+                    .iter()
+                    .take(accepted_count)
+                    .map(|record| record.record_id.clone())
+                    .collect(),
+                accepted_gap_notice_ids: Vec::new(),
+            })
+            .unwrap();
+        acknowledged = acknowledged.saturating_add(accepted_count);
+    }
+    assert_eq!(acknowledged, 1_024);
+    assert_eq!(spool.snapshot(T0 + 2_000).pending_records, 0);
+}
+
+#[test]
+fn legal_receiver_input_is_rejected_before_storage_when_batch_item_cannot_fit() {
+    let temp = TempDir::new().unwrap();
+    let mut spool_config = config(&temp);
+    spool_config.batch_max_bytes = 64;
+    let spool = Spool::open(spool_config, key(), T0).unwrap();
+    assert_eq!(
+        spool.enqueue(receiver_envelope("tx-too-large-for-batch", T0), T0),
+        Err(SpoolError::BatchItemTooLarge)
+    );
+    assert_eq!(spool.snapshot(T0).pending_records, 0);
 }
 
 #[test]
@@ -509,10 +960,71 @@ fn v2_spool_format_marker_is_persisted_and_validated() {
     let spool_config = config(&temp);
     drop(Spool::open(spool_config.clone(), key(), T0).unwrap());
     let marker = temp.path().join("spool/FORMAT");
-    assert_eq!(fs::read(&marker).unwrap(), b"2\n");
+    assert_eq!(fs::read(&marker).unwrap(), b"3\n");
+
+    fs::write(&marker, b"2\n").unwrap();
+    drop(Spool::open(spool_config.clone(), key(), T0 + 1).unwrap());
+    assert_eq!(fs::read(&marker).unwrap(), b"3\n");
 
     fs::write(marker, b"1\n").unwrap();
     assert!(Spool::open(spool_config, key(), T0 + 1).is_err());
+}
+
+#[test]
+fn format2_receipt_migration_fails_before_marker_change_or_receipt_recovery() {
+    let temp = TempDir::new().unwrap();
+    let spool_config = config(&temp);
+    let spool = Spool::open(spool_config.clone(), key(), T0).unwrap();
+    let first = receiver_envelope("tx-format2-receipt", T0);
+    spool.enqueue(first.clone(), T0).unwrap();
+    let batch = spool.next_batch_v2(T0 + 1).unwrap();
+    spool
+        .acknowledge_v2(&HubAckV2 {
+            version: 2,
+            batch_id: batch.batch_id,
+            accepted_record_ids: vec![batch.records[0].record_id.clone()],
+            accepted_gap_notice_ids: Vec::new(),
+        })
+        .unwrap();
+    let mut later = first;
+    later.received_at_ms += 5_000;
+    spool.enqueue(later, T0 + 5_000).unwrap();
+    drop(spool);
+
+    let marker = temp.path().join("spool/FORMAT");
+    fs::write(&marker, b"2\n").unwrap();
+    let pending_before = fs::read_dir(temp.path().join("spool/pending"))
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            (
+                path.file_name().unwrap().to_owned(),
+                fs::read(path).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        Spool::open(spool_config.clone(), key(), T0 + 5_001),
+        Err(SpoolError::ReceiptRecoveryRequired)
+    ));
+    assert_eq!(fs::read(&marker).unwrap(), b"2\n");
+    assert_eq!(
+        fs::read_dir(temp.path().join("spool/receipts"))
+            .unwrap()
+            .count(),
+        1
+    );
+    let pending_after = fs::read_dir(temp.path().join("spool/pending"))
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            (
+                path.file_name().unwrap().to_owned(),
+                fs::read(path).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(pending_after, pending_before);
 }
 
 #[test]

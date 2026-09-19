@@ -1,0 +1,318 @@
+{
+  "schema_version": 1,
+  "kind": "d1_edge_component_manifest_handoff",
+  "status": "prepared_for_hub_aggregate_manifest_review_source_only",
+  "verified_at": "2026-09-09",
+  "owner": "teslatlas-edge",
+  "source": {
+    "repository": "teslatlas-edge",
+    "origin": "https://github.com/magrathean-uk/teslatlas-edge.git",
+    "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "working_tree": "dirty; the frozen snapshot is a selected source candidate and unrelated checkout changes remain preserved",
+    "product_version": "2026.36.2",
+    "profile": {
+      "id": "edge-delivery-v2",
+      "revision": "2.0.0",
+      "sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+    },
+    "frozen_snapshot": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-edge-d1-20260909-immutable/frozen-source",
+      "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-edge-d1-20260909-immutable/local-sources.json",
+      "manifest_schema": "teslatlas.candidate-source-manifest/v1",
+      "manifest_sha256": "b178a64de064c8e95cbf7e2d36811bb720084924e81f4eb359a4e6da629b6eb9",
+      "source_sha256": "301ed74968778298619afeb9b9db90b55837b16304aac5f7a68da4684fd28fe1",
+      "file_count": 87,
+      "owner_only": true,
+      "filesystem_custody": "Replacement artifact root and source directories are mode 0500; regular source files are mode 0400 except executable files mode 0500; local-sources.json is mode 0400. Owner bolyki may read/execute but cannot modify the retained snapshot without an explicit permission change.",
+      "snapshot_policy": "The manifest covers the selected source candidate bytes and executable bits. It excludes .git, target, Python caches, .DS_Store, AGENTS.md, docs/development, docs/plans, docs/superpowers, and .superpowers. No package, image, runtime state, credential, certificate, key, bearer or vehicle-data bytes are included."
+    },
+    "supporting_source_identities": {
+      "Dockerfile": "d0b3b47f04afdf049ad2bd0b06e134401d73031e6224c9759282615069a4632a",
+      "compose.yaml": "9b43d123303c3e296891fb25a916f622371d1b6f687ef8bdbba0239563defc66",
+      "scripts/build-deb.sh": "99948a4b0e7479ef965905fdb96b496adcf9ce4d53581f7892a035798af63bd0",
+      "scripts/build-macos-pkg.sh": "803b8e6692d24ac95e02fb4da78782180c5ec82f74f7464347633c49226bb249",
+      "packaging/linux/control.in": "8d37734f71014a540b18362ac9a5cef4ec6ac9bf781903586e42627394ef2b85",
+      "packaging/linux/preinst": "be10022cebdb04fb3d7506abbe6073e26e6b18ec12b719082700854ea1aa3013",
+      "packaging/linux/postinst": "eca2652b5eb2fb2cfb898e7939969ac2ae15f870df324d31233143d7d8ee4f16",
+      "packaging/linux/prerm": "1a36caa0a018514347d9c512ea074515265c2ff0f1550a99c576002e0b695695",
+      "packaging/linux/postrm": "cc856f9d2a288e7f0779cfeb2dcc0f2a6c45e843d40b5527bc30498cc68255eb",
+      "packaging/linux/teslatlas-edge.service": "684a5b9da934e606984949b8549ce6173f0d577ca0333029761618f6bfaf4bad",
+      "packaging/linux/teslatlas-fleet-telemetry.service": "b8f4472a34bd4ad329a91399de2cf10fa80e191669c72650744b868446464a8e",
+      "packaging/macos/Distribution.xml": "43e343fb323732882322874005c42db305bfbeaa35fb553857b9c7c2244823c5",
+      "packaging/macos/uk.co.magrathean.teslatlas-edge.plist": "693f2a7f7664fcec1bd3a527c34d5f9d5c823fdb0a576e0190ee3b785302e359",
+      "packaging/macos/uk.co.magrathean.teslatlas-fleet-telemetry.plist": "d1af824320a3bd7459f4800ac2b7f8dc8e097fb5d1242b89a7551b276767b949"
+    }
+  },
+  "payload": {
+    "kind": "edge_source_candidate",
+    "status": "available_source_only",
+    "source_manifest_sha256": "301ed74968778298619afeb9b9db90b55837b16304aac5f7a68da4684fd28fe1",
+    "includes": [
+      "Cargo.toml, Cargo.lock, compatibility/hub.json, src/**",
+      "Pinned Fleet Telemetry lock, patch, and bridge build/test scripts",
+      "Debian and macOS package recipes, service units, hooks, plists, and support files",
+      "Dockerfile, Compose file, Docker examples, and operational documentation",
+      "Owned Rust contract tests and the source-controlled interop/matrix contract"
+    ],
+    "excludes": [
+      "Git metadata, build output, caches and generated reports",
+      "Private development status, historical runtime handoffs and guest evidence",
+      "TLS certificates and private keys, bearer values, credential stores and fixture/session inputs",
+      "Tesla account credentials, vehicle commands and passive vehicle data"
+    ],
+    "build_inputs": {
+      "rust": "1.98.0",
+      "go": "1.27.0",
+      "profile": "edge-delivery-v2@2.0.0",
+      "spool_format": 3,
+      "wire_versions": [1, 2],
+      "automatic_v1_downgrade": false
+    }
+  },
+  "artifacts": {
+    "native_arm64_binaries": {
+      "status": "retained_uninstalled_candidate",
+      "target": "linux/arm64",
+      "edge_sha256": "353551aa111be7959b18c907f4df860ea5086e1a0b770af212b6a2102d30265b",
+      "receiver_sha256": "22577092beac3622403328f3d0c6f13c4b7656e4ccfd80a75aa9bdedfada6b3b",
+      "evidence": "STATUS.json#primary_arm64_candidate_build",
+      "limit": "Private candidate build identity only; not an aggregate installed receipt."
+    },
+    "receiver_bridge_builds": {
+      "status": "retained_build_identities",
+      "source": "Pinned Fleet Telemetry v0.9.4",
+      "go": "1.27.0",
+      "darwin_arm64_sha256": "8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1",
+      "linux_arm64_sha256": "22577092beac3622403328f3d0c6f13c4b7656e4ccfd80a75aa9bdedfada6b3b",
+      "linux_amd64_sha256": "bf9a1ace1e8af4b8f8c290155ec94858f9bd4fc145acf1dc6e8d258b99d38f99",
+      "evidence": "STATUS.json#pinned_receiver_bridge_build",
+      "limit": "Build evidence; no target-installed receiver acceptance is implied."
+    },
+    "debian_arm64_package": {
+      "status": "candidate_identity_only_not_installed",
+      "format": "2.0",
+      "architecture": "arm64",
+      "version": "2026.36.2-1",
+      "filename": null,
+      "sha256": "64e78d1c3ff22871b840c72023a0702773900edab1cb3acce4f0cecda52027cc",
+      "retained_path": null,
+      "evidence": "STATUS.json#debian_package_candidate",
+      "limit": "The retained receipt has no package filename/path and records this as an uninstalled package candidate. The later ARM64 installed lifecycle receipt must not be inferred from this hash."
+    },
+    "macos_arm64_package": {
+      "status": "candidate_identity_only_not_installed",
+      "version": "2026.36.2",
+      "product_sha256": "38cedc9dba8cd2000f4bf52629ade3c5374ee6bcf9b50f5eb32af2f8f9d7d3b3",
+      "retained_path": null,
+      "inputs": {
+        "edge_sha256": "6e7eae6c95cbafe7a2e4930cae559830a9386d51db8d274fe9790455c140bf3c",
+        "receiver_sha256": "8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1"
+      },
+      "evidence": "STATUS.json#macos_package_candidate",
+      "limit": "The package candidate was not installed; LaunchAgent lifecycle is represented only by its separate target receipt."
+    },
+    "macos_arm64_lifecycle_identity": {
+      "status": "observed_installed_lifecycle_subset",
+      "os": "macOS 13.7.4",
+      "build": "22H420",
+      "architecture": "arm64",
+      "product_sha256": "b74163fe6c67b28e8eeb6f0ee965c8b5016b1db1dd234fc5dc2acfb2cecd8650",
+      "receiver_sha256": "8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1",
+      "wire_helper_sha256": "d2440e1043a22701ff086532f3b520af153e9098ad19a55e0ad214061370151e",
+      "evidence": "STATUS.json#macos_arm64_package_lifecycle",
+      "limit": "This is an installed ARM64 lifecycle subset, not full X1, x86_64, upgrade/rollback, passive provenance or aggregate profile acceptance."
+    },
+    "docker_arm64_image": {
+      "status": "observed_isolated_runtime_shape",
+      "reference": "teslatlas-edge:local",
+      "sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+      "architecture": "linux/arm64",
+      "os": "linux",
+      "bytes": 193858125,
+      "layers": 8,
+      "project": "edge-d1-arm64-20260909",
+      "evidence": "STATUS.json#docker_arm64_runtime",
+      "limit": "The isolated image/runtime shape, mount separation, health, restart and receiver-wire subset passed; Docker-to-Hub durable ACK and cross-platform lifecycle are not claimed."
+    },
+    "docker_amd64_image": {
+      "status": "not_retained",
+      "sha256": null,
+      "limit": "The target-aware source recipe and linux-amd64 bridge build exist, but no amd64 image identity or runtime receipt is available."
+    }
+  },
+  "selectors": [
+    {
+      "id": "debian13-arm64-native",
+      "status": "runtime_subset_passed_not_final_acceptance",
+      "source_candidate": {
+        "status": "available",
+        "package_sha256": "64e78d1c3ff22871b840c72023a0702773900edab1cb3acce4f0cecda52027cc",
+        "native_edge_sha256": "353551aa111be7959b18c907f4df860ea5086e1a0b770af212b6a2102d30265b",
+        "native_receiver_sha256": "22577092beac3622403328f3d0c6f13c4b7656e4ccfd80a75aa9bdedfada6b3b"
+      },
+      "runtime": {
+        "status": "passed_installed_lifecycle_subset",
+        "os": "Debian 13 trixie",
+        "architecture": "aarch64",
+        "service_manager": "systemd 257.13",
+        "roles": "Edge core and Fleet receiver are independently selectable systemd units",
+        "evidence": "STATUS.json#debian_package_installed_lifecycle"
+      },
+      "runtime_receipt_required": true,
+      "limit": "The receipt covers ARM64 package lifecycle and receiver-wire subset only; it does not cover native amd64, full R1, passive provenance or X1."
+    },
+    {
+      "id": "debian13-arm64-docker",
+      "status": "runtime_shape_passed_no_durable_hub_ack",
+      "source_candidate": {
+        "status": "available",
+        "Dockerfile_sha256": "d0b3b47f04afdf049ad2bd0b06e134401d73031e6224c9759282615069a4632a",
+        "compose_sha256": "9b43d123303c3e296891fb25a916f622371d1b6f687ef8bdbba0239563defc66",
+        "target_aware_bridge": true
+      },
+      "runtime": {
+        "status": "passed_isolated_runtime_shape",
+        "image_sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+        "architecture": "linux/arm64",
+        "roles": "One image with separately selectable Edge and receiver services",
+        "evidence": "STATUS.json#docker_arm64_runtime"
+      },
+      "runtime_receipt_required": true,
+      "limit": "No Docker-to-Hub durable commit/ACK receipt is bound to this selector."
+    },
+    {
+      "id": "macos13-arm64-launchagent",
+      "status": "runtime_subset_passed_not_final_acceptance",
+      "source_candidate": {
+        "status": "available",
+        "package_sha256": "38cedc9dba8cd2000f4bf52629ade3c5374ee6bcf9b50f5eb32af2f8f9d7d3b3",
+        "core_and_receiver_selectable": true
+      },
+      "runtime": {
+        "status": "passed_installed_lifecycle_subset",
+        "os": "macOS 13.7.4",
+        "architecture": "arm64",
+        "service_manager": "per-user LaunchAgents",
+        "roles": "Core and Fleet receiver LaunchAgents start, stop and restart independently",
+        "evidence": "STATUS.json#macos_arm64_package_lifecycle"
+      },
+      "runtime_receipt_required": true,
+      "limit": "Upgrade/rollback, Docker-on-macOS, native amd64, passive provenance and full X1 remain unproven."
+    },
+    {
+      "id": "debian13-x86_64-native",
+      "status": "blocked_no_fresh_authorized_target",
+      "source_candidate": {
+        "status": "available_recipe_and_bridge_only",
+        "native_package_sha256": null,
+        "linux_amd64_bridge_sha256": "bf9a1ace1e8af4b8f8c290155ec94858f9bd4fc145acf1dc6e8d258b99d38f99"
+      },
+      "runtime": {
+        "status": "not_started",
+        "required": "Fresh authorized Debian 13 x86_64 target and package/runtime receipt"
+      },
+      "runtime_receipt_required": true,
+      "blocked_reason": "No fresh target receipt is available; retained or quarantined guests cannot be promoted."
+    },
+    {
+      "id": "debian13-x86_64-docker",
+      "status": "source_candidate_runtime_pending",
+      "source_candidate": {
+        "status": "available_target_aware_recipe",
+        "Dockerfile_sha256": "d0b3b47f04afdf049ad2bd0b06e134401d73031e6224c9759282615069a4632a",
+        "linux_amd64_bridge_sha256": "bf9a1ace1e8af4b8f8c290155ec94858f9bd4fc145acf1dc6e8d258b99d38f99"
+      },
+      "runtime": {
+        "status": "not_started",
+        "image_sha256": null,
+        "required": "Fresh authorized Docker daemon and target-specific image/runtime receipt"
+      },
+      "runtime_receipt_required": true,
+      "limit": "The architecture mapping is source/build evidence only; no amd64 image, mount, service or lifecycle acceptance is claimed."
+    }
+  ],
+  "ownership": {
+    "edge": {
+      "owns": [
+        "Edge core binary and encrypted spool",
+        "Receiver sidecar payload, pinned bridge lock/patch and receiver configuration",
+        "Edge package recipes, service units, LaunchAgents, Docker image/Compose source and operational docs"
+      ],
+      "never_owns": [
+        "Tesla account credentials or vehicle commands",
+        "Hub ledger, registry, fixture, Hub credentials or ACK policy",
+        "Home Assistant database, registry, configuration or native service"
+      ]
+    },
+    "receiver": {
+      "owns": ["Vehicle Fleet Telemetry mTLS/WebSocket inputs and receiver process"],
+      "must_not_read": ["Edge spool key, Edge state, Hub client identity, Hub bearer"]
+    },
+    "hub": {
+      "owns": ["Aggregate component manifest, selectors, installer orchestration, Hub credentials, fixture, ledger and runtime receipts"],
+      "must_not_promote": ["A source snapshot, static Compose parse, package build or isolated runtime-shape result into installed acceptance"]
+    }
+  },
+  "paths_and_modes": {
+    "debian_native": {
+      "state": "/var/lib/teslatlas-edge",
+      "state_mode": "0700",
+      "state_owner": "teslatlas-edge:teslatlas-edge",
+      "config": "/etc/teslatlas-edge",
+      "config_mode": "0750 directory; 0640 root:teslatlas-edge files",
+      "receiver_private_key": "owner-only 0600 and readable only by the receiver service identity"
+    },
+    "docker": {
+      "runtime_uid_gid": "10001:10001",
+      "state_mount": "/var/lib/teslatlas-edge rw",
+      "receiver_secret_mount": "/run/teslatlas-edge-receiver",
+      "hub_tls_mount": "Edge-only read-only mount",
+      "vehicle_tls_mount": "receiver-only read-only mount",
+      "health_bind": "127.0.0.1:8080",
+      "delivery_bind": "selected loopback host port"
+    },
+    "macos": {
+      "state": "/Users/Shared/TeslatlasEdge",
+      "state_mode": "0700",
+      "core_label": "uk.co.magrathean.teslatlas-edge",
+      "receiver_label": "uk.co.magrathean.teslatlas-fleet-telemetry"
+    }
+  },
+  "lifecycle": {
+    "selection": "The aggregate installer must require an explicit Edge selector and preserve core-only versus core-plus-receiver selection; no receiver is silently enabled by Hub core.",
+    "install": "Verify the external source manifest and exact candidate identities before building or staging. Source/bootstrap preparation never starts a service. Native and macOS package installation must preserve explicit selection and service state.",
+    "start": "Start Edge core first; start the receiver only after its selected configuration and vehicle mTLS inputs pass ownership checks. Docker uses the named Compose project and selected services.",
+    "stop": "Stop the receiver before Edge with the bounded supervisor allowance. Verify listeners are closed while retaining state for a data-preserving uninstall or rollback.",
+    "upgrade_rollback": "Debian maintainer hooks capture prior payload/service state and restore it on abort or failure. The spool and `/var/lib/teslatlas-edge` are never deleted by upgrade/rollback.",
+    "remove": "Disable and stop selected services, remove only owned payloads, preserve Edge state by default, and require an explicit destructive data option for deletion. Never use a volume-deleting Docker cleanup for acceptance.",
+    "acceptance": "Every selected target requires a redacted runtime receipt bound to the source manifest, artifact identity, target identity, state before/after, readiness/function result and ordered cleanup."
+  },
+  "receipt_schema": {
+    "kind": "teslatlas.d1-component-selection-receipt/v1",
+    "required_fields": [
+      "selector_id",
+      "status",
+      "source_head",
+      "source_manifest_sha256",
+      "candidate_source_and_artifact_identities",
+      "runtime_os_architecture_and_version",
+      "selected_roles_and_paths",
+      "ownership_and_mount_modes",
+      "install_remove_restart_actions",
+      "readiness_and_function_result",
+      "data_identity_before_after",
+      "redaction_and_secret_presence_check",
+      "cleanup_and_listener_state"
+    ],
+    "promotion_rule": "A source payload, static check, package build, image digest or isolated runtime shape is never an installed selector acceptance result without the target receipt.",
+    "secret_policy": "Never record private key, bearer, invitation, certificate bytes, database password, raw response, vehicle identity, transaction payload or credential-store contents. Hashes, versions, architecture, counts, modes, owners, listener scope and redacted status are permitted.",
+    "failure_rule": "An interrupted or partially observed selector remains failed or pending; do not synthesize missing phases or retry a consumed runtime action."
+  },
+  "evidence": {
+    "source_checks": "STATUS.json#local_contract_suite, #matrix_contract_suite, #source_static_checks, #debian_package_source, #macos_package_source, #docker_source_correction",
+    "candidate_artifacts": "STATUS.json#primary_arm64_candidate_build, #pinned_receiver_bridge_build, #debian_package_candidate, #macos_package_candidate",
+    "runtime_subsets": "STATUS.json#debian_package_installed_lifecycle, #docker_arm64_runtime, #macos_arm64_package_lifecycle, #r1_live_auth_subset, #r1_live_credential_lifecycle",
+    "security_boundary": "The successful r13 runtime receipt is retained separately and is not reused or promoted as a D1 aggregate receipt."
+  },
+  "hub_action_requested": "Verify the replacement owner-only read-only snapshot and local-sources manifest, bind this Edge handoff into the Hub-owned aggregate manifest without widening any selector status, and require fresh target receipts for every pending or source-only selector."
+}

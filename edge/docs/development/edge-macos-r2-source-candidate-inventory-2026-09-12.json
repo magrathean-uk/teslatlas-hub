@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "kind": "macos_edge_r2_source_candidate_inventory",
+  "date": "2026-09-12",
+  "cohort_id": "edge-hub-empty-baseline-20260912-r2",
+  "state": "pre_runtime_identity_profile_verified_no_runtime",
+  "authorization": {
+    "guest_started": false,
+    "listeners_started": false,
+    "edge_started": false,
+    "receiver_started": false,
+    "hub_started": false,
+    "credentials_created_or_expired": false,
+    "producer_invoked": false,
+    "event_sent": false,
+    "r1_material_reused": false
+  },
+  "r2_roots": {
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2",
+    "host_staging_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2",
+    "created": false,
+    "purpose": "Reserved fresh paths only; Hub must create and own any future runtime root."
+  },
+  "edge_source": {
+    "repository": "teslatlas-edge",
+    "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "current_tree_status": {
+      "command": "git status --porcelain=v1 --untracked-files=all",
+      "captured": "Before writing this r2 inventory and proposal",
+      "path_count": 99,
+      "sha256": "93bf445b8c0528fee13ec33e7c26a42948a58db65cb9d8c329bc117a210c0beb"
+    },
+    "source_binary_receipt": {
+      "path": "docs/development/edge-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+      "sha256": "aead774fcec533eb65f71e48bd0f38d141aa7be63cd9beb195420d304406a309",
+      "build_target": "aarch64-apple-darwin",
+      "toolchain": "rustc/cargo 1.98.0",
+      "manifest_count": 15,
+      "current_manifest_revalidation": "PASS; every listed compilation input hash matches its current file bytes; no new Cargo/Rust compilation input was found"
+    },
+    "compilation_inputs": [
+      {"path": "Cargo.lock", "status": "modified", "sha256": "aca4cc8acd30b366299ed732e7ba86af77d41adda8a2865c1804e1c1255bdd09"},
+      {"path": "Cargo.toml", "status": "modified", "sha256": "bd048534f861ecb031d46adc7f1ba7d4754f091076ac83870d8d4b0aabced786"},
+      {"path": "src/admission.rs", "status": "modified", "sha256": "ec65888a4cc8e44c649b62474bad5bfa87f16dce90618719b32a46cad97ab7c2"},
+      {"path": "src/config.rs", "status": "modified", "sha256": "be8b87e7c8998fa8f14cf2e2e0fe2492591d255329b688621076b91d6ee5eb39"},
+      {"path": "src/credentials.rs", "status": "clean", "sha256": "eaa0431149e2527e5714855a08ed728adbc2c13fbac2c26b2ba26516fa3549b8"},
+      {"path": "src/crypto.rs", "status": "clean", "sha256": "04d5e4138bac166048b2d3f26781f696edf944179e5ad3fb1c939fd16f11eee2"},
+      {"path": "src/delivery.rs", "status": "modified", "sha256": "68bc2f897d253a7986c5a1eafd1ebc261e8f148525d084129ec73d8ebe376fb5"},
+      {"path": "src/health.rs", "status": "modified", "sha256": "e3d6242314916feb910b05d0875105746961c3f7dd39016530cf0fc6d386154b"},
+      {"path": "src/lib.rs", "status": "clean", "sha256": "6125ec4019237ec1d674d6596c4e1fcb2c1c9632189c78cc2f82ba31a2ea24d3"},
+      {"path": "src/main.rs", "status": "clean", "sha256": "b3f47d3d6d11174f8e3219084915648dfa1bba307234f29861fe20dce825b2df"},
+      {"path": "src/metrics.rs", "status": "clean", "sha256": "cbf1b609f7b344c6daec9ddf28584440aa993b6f20d0b224e202696ebe033259"},
+      {"path": "src/protocol.rs", "status": "modified", "sha256": "8114af8e64cdd939655b7b1a353a88738e0f933040448ef2ecb4b476a980a7a3"},
+      {"path": "src/runtime.rs", "status": "clean", "sha256": "9452b8d733f2d1082f94209c8547089515ac420c6875a5ab6b70e4ed7356ba21"},
+      {"path": "src/spool.rs", "status": "modified", "sha256": "f58780c8cd2390fd31fa7f76ac12c562a9fbb55650c9f17321d2e03a9c0d25eb"},
+      {"path": "src/tls.rs", "status": "clean", "sha256": "9887aaede9950b6583cbaed2e8dbf0d464b4ac32ff22d6548688a34c34fa3f27"}
+    ],
+    "candidate_binary": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/build/teslatlas-edge/source-binary-20260912-r2/aarch64-apple-darwin/release/teslatlas-edge",
+      "sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+      "bytes": 5730352,
+      "type": "Mach-O 64-bit executable arm64",
+      "minimum_macos": "11.0",
+      "sdk": "27.0",
+      "source_binding": "Existing locked receipt plus current 15-input revalidation; no rebuild or package installation was performed for r2 preparation."
+    }
+  },
+  "receiver_source": {
+    "candidate_path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-receiver-r2-20260912/teslatlas-fleet-telemetry",
+    "candidate_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "candidate_type": "Mach-O 64-bit executable arm64",
+    "candidate_receipt": {
+      "path": "docs/development/edge-macos-r2-receiver-candidate-receipt-2026-09-12.json",
+      "sha256": "45a7e4b14fae9f6caade094831abd1a760299116b97a5c76b129de61aa71c2f9"
+    },
+    "pinned_upstream": {
+      "repository": "teslamotors/fleet-telemetry",
+      "version": "v0.9.4",
+      "commit": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+      "archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9"
+    },
+    "lock": {
+      "path": "packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json",
+      "sha256": "b6ab33bff684bb597fff75c714c1bcb77579d166701a3bc89f26c58293bc01ec"
+    },
+    "dispatcher_overlay": {
+      "path": "packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch",
+      "sha256": "828a98fe3b36bf07c3d2d32041be45efad7594c6c580a982b588875a10898b98"
+    },
+    "receiver_template": {
+      "path": "packaging/fleet-telemetry.json.example",
+      "sha256": "3876e7cb31faf07e7b135c3d7375f9b52a58091f86336c3577dabe45738fad8"
+    },
+    "r2_receipt_boundary": "The r1 receiver proposal/readiness receipts are historical only. This inventory revalidates the immutable candidate and source locks but claims no r2 receiver startup or readiness."
+  },
+  "pinned_identity_policy": {
+    "source": "teslamotors/fleet-telemetry/messages/identity.go",
+    "revision": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "source_sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+    "source_revalidation": "PASS; exact pinned file fetched read-only and rehashed",
+    "known_issuer": "Tesla Motors Products CA maps to vehicle_device",
+    "identity_rule": "Subject.CommonName becomes deviceID with dots replaced by hyphens; SAN is not required or read for this known issuer",
+    "client_id_rule": "BuildClientID composes <clientType>.<deviceID>",
+    "generator_source": "tools/interop/client_lanes/synthetic_vehicle_identity.py",
+    "generator_sha256": "878d98acb8f9d3aacf496d6d74f55daa732af800e38afce72a2a166150383b2d",
+    "pinned_identity_test": "tools/interop/client_lanes/test_pinned_receiver_identity.py",
+    "pinned_identity_test_sha256": "d2460a4813017076b00804930e4e098312bdea4189b79bbfe020035432f8cad8",
+    "future_gate": "Before any r2 guest/runtime/credential/expiry start, independently verify sealed CommonName identity, issuer, basic constraints, key usage, clientAuth EKU, key correspondence and exact receiver CA trust."
+  },
+  "fresh_identity_set": {
+    "status": "Fresh Hub r2 staging independently verified pre-runtime; no r1 certificate, key, binding, transaction or credential is reused",
+    "host_public_certificate": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client.crt",
+      "pem_sha256": "44a7c93772422f29cab0574fb9a224a07228fd94a4f0f2b71f9095f7e49cd58a",
+      "der_sha256": "27a772da81b8d73f135e8234a005f2b6368a4b92f79bebf327842c0138ba1e3c",
+      "mode": "0600",
+      "inventory_status": "PASS; exact host-staged public PEM and independently derived DER bytes were machine-hashed"
+    },
+    "host_receiver_ca": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client-ca.crt",
+      "pem_sha256": "0ab9ee01765c8d72d0b180948ebc4823f48d160c0c2d100b951ce97e2932e5f6",
+      "mode": "0644",
+      "inventory_status": "PASS; exact host-staged receiver trust anchor was machine-hashed and used for sslclient verification"
+    },
+    "host_private_key": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client.key",
+      "mode": "0600",
+      "hash": "withheld; key correspondence is checked without emitting key material",
+      "inventory_status": "Hub-owned fresh private input; public-key correspondence independently verified PASS; private value and hash withheld"
+    },
+    "sealed_binding": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/binding.json",
+      "guest_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2/staging/binding.json",
+      "sha256": "245d96da6a34f671759de0296d24efd33b7244ca6df24a9c5486f78bdb020091",
+      "inventory_status": "PASS; exact fresh Hub-owned binding was machine-hashed; identity value withheld"
+    },
+    "reserved_transaction": "edge-r2-fresh-20260912-v-001",
+    "transaction_authority": "Reserved identifier only; no producer or event authorization"
+  },
+  "fresh_staging_inputs": {
+    "hub_pre_runtime_staging_receipt": {
+      "path": "../../../hub/docs/development/edge-macos-r2-pre-runtime-staging-2026-09-12.json",
+      "sha256": "f848a8717602947b3e0f8641e9c593c8fe71baddc2221375800a90e35275aae1",
+      "status": "Frozen Hub-owned pre-runtime staging input; guest/runtime remains inert"
+    },
+    "hub_source_binary_receipt": {
+      "path": "../../../hub/docs/development/hub-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+      "sha256": "d7d3d2499370c4c344e3db77e06cd5db14ff954d86e29bd1ef68745a17767103"
+    },
+    "source_candidate_manifest": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/source-candidate-manifest.json",
+      "sha256": "a74718fb5f99db1f22004b155e503886cfd2ced0528fa18dbef7e2c3a4ab55d0",
+      "state": "fresh_host_staging_only_no_runtime"
+    },
+    "staging_manifest": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging-manifest.json",
+      "sha256": "807e3d5fe305f4b2a387c29232dc8a7c7be72377787a6abbf8445b0f91d8a93d",
+      "public_inventory_check": "PASS; exact manifest-listed public file hashes matched; private-key hashes withheld"
+    },
+    "certificate_profile_receipt": {
+      "path": "docs/development/edge-macos-r2-certificate-profile-receipt-2026-09-12.json",
+      "sha256": "6897a292b5a0d11081319be7bc53b1d13272bc81b3800d8748fe1805b421740e",
+      "status": "PASS; pre-runtime profile gate complete"
+    },
+    "fresh_ports": {
+      "edge_internal": 8081,
+      "edge_hub": 21844,
+      "receiver_data": 21446,
+      "receiver_status": 21447,
+      "hub": 18526,
+      "status": "Future Hub-owned runtime ports recorded from staging; no listener started"
+    }
+  },
+  "machine_digest_contract": {
+    "pem": "shasum -a 256 <R2_HOST_ROOT>/staging/vehicle-tls/vehicle-client.crt",
+    "der": "openssl x509 -in <R2_HOST_ROOT>/staging/vehicle-tls/vehicle-client.crt -outform DER | shasum -a 256",
+    "byte_identity": "Compare the exact staged public PEM bytes and independently compare DER digest output; record both in a new r2 receipt without hand entry",
+    "private_key_correspondence": "Compare certificate and private-key public-key derivations in a temporary pipe; record PASS/FAIL only and never record key bytes or private hash",
+    "receiver_ca_trust": "openssl verify -purpose sslclient -CAfile <R2_HOST_ROOT>/staging/vehicle-tls/vehicle-client-ca.crt <R2_HOST_ROOT>/staging/vehicle-tls/vehicle-client.crt",
+    "profile": "Inspect issuer, CA:FALSE, critical digitalSignature/keyEncipherment and clientAuth EKU without recording the sealed identity value"
+  },
+  "runtime_follow_up": {
+    "status": "hub_coordinator_empty_baseline_closed_zero_event_reviewed",
+    "coordinator_preparation_receipt_sha256": "e7c414bb60665e4b9a9e26b639e37b38f60ce4eb5a7ce03c9f35aeb8d2a20a16",
+    "credential_metadata_sha256": "cdcf8b722bff3993e334cf4b333abb006131cececfdc3a69d4911f9044e43dc3",
+    "credential_value": "withheld; raw value was not recorded",
+    "guest_root_created_after_inventory": true,
+    "ready_receipt": {
+      "path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2/handoff/empty-baseline-ready-r2.json",
+      "sha256": "993504550afff9d71441c288793f300ad4ddffdfa7a06f3217908018b18c00c3"
+    },
+    "final_closed_handoff": {
+      "path": "../../../hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r2.json",
+      "sha256": "21f46025eb51344e5403b94e37aa937eb2e7f86c2ecf301ddd72821d1b352867",
+      "result": "PASS; Hub-owned empty baseline closed and cleanup completed"
+    },
+    "candidate_hashes": {
+      "edge": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+      "receiver": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+      "hub": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+      "interop_fixture": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+      "independent_match": true
+    },
+    "listeners": {
+      "edge_internal": {"address": "127.0.0.1", "port": 8081, "pid": 494},
+      "edge_hub": {"address": "192.168.64.10", "port": 21844, "pid": 494},
+      "receiver_data": {"address": "127.0.0.1", "port": 21446, "pid": 496},
+      "receiver_status": {"address": "127.0.0.1", "port": 21447, "pid": 496},
+      "hub": {"address": "127.0.0.1", "port": 18526, "pid": 497}
+    },
+    "baseline": {
+      "stable_seconds": 5,
+      "edge_health": "PASS; status ok on both reads; queue records/bytes/corrupt/expired/gap values zero",
+      "receiver_status": "PASS; HTTP 200/ok",
+      "trusted_delivery": "PASS; HTTP 200, records 0, gaps 0",
+      "hub": "PASS; doctor checks passed, ready true, raw/current observations 0 and quarantined sessions 0",
+      "zero_metrics": "PASS; admission, duplicate, rejection, spool and gap metrics all zero"
+    },
+    "event_authorized": false,
+    "edge_review": "PASS; accepted for zero-event readiness closure only. This does not claim forwarding, commit/ACK/frontier, HA acceptance or producer/event authorization.",
+    "cleanup": {
+      "status": "COMPLETE; Hub/coordinator-owned stop and cleanup verified in the final handoff",
+      "processes": [
+        {"pid": 494, "role": "edge", "exit_code": 0},
+        {"pid": 496, "role": "receiver", "exit_code": -15},
+        {"pid": 497, "role": "hub", "exit_code": 0}
+      ],
+      "ports_closed": [8081, 21844, 21446, 21447, 18526],
+      "guest_stopped": true,
+      "shared_heavy_build_lock_absent": true
+    }
+  },
+  "r1_nonreuse_boundary": [
+    "Do not use the r1 guest root, host root, credentials, certificate or private key.",
+    "Do not use the r1 binding, transaction, runtime descriptor, readiness receipt or hand-recorded digest as r2 input.",
+    "The immutable c2ace receiver executable and pinned source locks are revalidated source artifacts only; no r1 runtime receipt is carried forward."
+  ],
+  "runtime_boundary": "The source and identity/profile inventory was collected before runtime. The later guest, listener, credential, stop and cleanup actions were Hub/coordinator-owned; Edge only performed a read-only zero-event readiness review and final-handoff verification recorded in runtime_follow_up and did not start, stop or mutate the runtime, invoke a producer or send an event."
+}

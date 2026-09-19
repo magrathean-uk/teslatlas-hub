@@ -50,8 +50,14 @@ metrics. It must not be exposed by a reverse proxy or firewall rule.
   survive.
 - Disconnect before acknowledgement returns the same oldest-first batch.
 - Hub persists its unique `record_id` decision before it acknowledges.
-- Edge deletes accepted records only after a valid acknowledgement for the
-  current batch.
+- Edge persists an encrypted receipt containing the accepted
+  `(spool_seq, stable_record_id, legacy_record_id)` occurrence before deleting
+  an accepted record. A replay can therefore delete only the original
+  admission, even if the same stable event is admitted later.
+- V1 receipt replay remains idempotent while its bounded receipt is retained.
+  When v1 receipt history is pruned, Edge records that boundary durably and
+  rejects further v1 acknowledgements with an explicit v2-upgrade error rather
+  than risk deleting an indistinguishable later legacy-ID occurrence.
 - Capacity or storage-full admission fails with 507; Edge never evicts an
   unexpired pending record to make space.
 - Before deleting an expired or sequenced-corrupt record, Edge durably writes a
@@ -66,14 +72,20 @@ metrics. It must not be exposed by a reverse proxy or firewall rule.
   record-and-gap sequence.
 - Pending records, gaps, acknowledgement receipts, and quarantine are all
   independently bounded. Full auxiliary storage fails closed.
+- The spool has one advisory process lock. A second opener fails before
+  recovery or metadata mutation; an established format-3 spool with missing or
+  corrupt sequence state fails visibly rather than resetting its lineage.
 - Shutdown asks both listeners to drain for at most five seconds, aborts any
-  remaining task, then syncs spool directories.
+  remaining task, then syncs spool directories. Native supervisors allow ten
+  seconds for that whole process stop and final sync.
 
-The spool root contains a `FORMAT` marker with value `2`. This makes the
-forward-only storage transition visible to the supplied launch guard. The guard
-queries the candidate binary's supported format before allowing it to open the
-spool. An older binary must use a restored pre-upgrade state directory, never
-the v2 directory.
+The spool root contains a `FORMAT` marker with value `3`. This makes the
+forward-only storage transition visible to the supplied launch guard. A v3
+binary may open a v2 marker only for its guarded migration: it validates the
+spool and refuses migration when any v2 acknowledgement receipt exists,
+because v2 receipts lack original admission identity. The marker is replaced
+atomically only after recovery succeeds. An older binary must use a restored
+pre-upgrade state directory, never the v3 directory.
 
 ## Privacy boundary
 

@@ -95,6 +95,39 @@ fn strict_configuration_rejects_unknown_keys_and_unsafe_network_shapes() {
 }
 
 #[test]
+fn configuration_rejects_colliding_runtime_paths_before_initialization() {
+    let temp = TempDir::new().unwrap();
+    let valid = config_text(&temp);
+    let receiver_path = temp.path().join("receiver-token").display().to_string();
+    let colliding = valid.replace(
+        &temp.path().join("spool-key").display().to_string(),
+        &receiver_path,
+    );
+
+    assert_eq!(
+        EdgeConfig::from_toml(colliding.as_bytes()).unwrap_err(),
+        ConfigError::InvalidPath
+    );
+}
+
+#[test]
+fn configuration_rejects_a_runtime_file_path_equal_to_the_state_directory() {
+    let temp = TempDir::new().unwrap();
+    let valid = config_text(&temp);
+    let old_state = format!("state_directory = \"{}\"", temp.path().display());
+    let colliding_state = format!(
+        "state_directory = \"{}\"",
+        temp.path().join("receiver-token").display()
+    );
+    let colliding = valid.replacen(&old_state, &colliding_state, 1);
+
+    assert_eq!(
+        EdgeConfig::from_toml(colliding.as_bytes()).unwrap_err(),
+        ConfigError::InvalidPath
+    );
+}
+
+#[test]
 fn configuration_rejects_relative_and_symlinked_secret_paths() {
     let temp = TempDir::new().unwrap();
     create_runtime_files(&temp);
@@ -137,6 +170,33 @@ fn configuration_rejects_relative_and_symlinked_secret_paths() {
             ConfigError::InvalidPath
         );
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn initialization_rejects_a_symlinked_parent_of_the_state_directory() {
+    let temp = TempDir::new().unwrap();
+    fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    private_file(&temp.path().join("server.key"), b"test-key");
+    fs::write(temp.path().join("server.crt"), b"test-cert").unwrap();
+    fs::write(temp.path().join("hub-ca.crt"), b"test-ca").unwrap();
+
+    let real_parent = temp.path().join("real-state-parent");
+    fs::create_dir(&real_parent).unwrap();
+    fs::set_permissions(&real_parent, fs::Permissions::from_mode(0o700)).unwrap();
+    let linked_parent = temp.path().join("linked-state-parent");
+    symlink(&real_parent, &linked_parent).unwrap();
+    let linked_state = linked_parent.join("edge-state");
+    let valid = config_text(&temp);
+    let old_state = format!("state_directory = \"{}\"", temp.path().display());
+    let linked = format!("state_directory = \"{}\"", linked_state.display());
+    let config = EdgeConfig::from_toml(valid.replacen(&old_state, &linked, 1).as_bytes()).unwrap();
+
+    assert_eq!(initialize(&config).unwrap_err(), ConfigError::InvalidPath);
+    assert!(!real_parent.join("edge-state").exists());
+    assert!(!config.receiver_bearer_path.exists());
+    assert!(!config.spool_key_path.exists());
+    assert!(!config.credential_store_path.exists());
 }
 
 #[test]

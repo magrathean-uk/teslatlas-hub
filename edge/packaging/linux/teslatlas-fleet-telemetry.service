@@ -8,6 +8,7 @@ StartLimitBurst=5
 ConditionPathExists=/var/lib/teslatlas-edge/receiver-token
 ConditionPathExists=/etc/teslatlas-edge/vehicle-tls.crt
 ConditionPathExists=/etc/teslatlas-edge/vehicle-tls.key
+ConditionPathExists=/etc/teslatlas-edge/vehicle-client-ca.crt
 
 [Service]
 Type=simple
@@ -17,7 +18,7 @@ Environment=TESLATLAS_FLEET_TELEMETRY_BEARER_FILE=/var/lib/teslatlas-edge/receiv
 ExecStart=/usr/lib/teslatlas-edge/fleet-telemetry -config=/etc/teslatlas-edge/fleet-telemetry.json
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=5
+TimeoutStopSec=10
 KillMode=mixed
 UMask=0077
 AmbientCapabilities=CAP_NET_BIND_SERVICE

@@ -1,0 +1,94 @@
+{
+  "schema_version": 2,
+  "product": "Edge",
+  "updated_at": "2026-09-19T10:30:43Z",
+  "update_scope": "post_adoption_next_phase_planning_no_execution",
+  "programme": "2026-09-18-app-v7-readiness",
+  "state": "G3_G5_ACCEPTED",
+  "source_objective_state": "DURABLE_FORWARDING_AND_BINDING_ACCEPTED",
+  "current_gate_ids": [],
+  "accepted_gate_ids": [
+    "G3",
+    "G5"
+  ],
+  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Preserve accepted durable forwarding and prepare the first installed Edge/receiver lifecycle on Debian ARM64.",
+  "source": {
+    "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "branch": "main",
+    "dirty_entries": 49,
+    "checked_at": "2026-09-19T10:30:43Z"
+  },
+  "current_worker": null,
+  "model_policy": {
+    "implementation": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/max",
+    "coordinator": "gpt-5.6-sol/max",
+    "fast_mode": false
+  },
+  "evidence_summary": [
+    "r11 exact source/preparation was independently accepted as inactive; no guest runtime or event exists for that cohort.",
+    "Prior narrow forwarding/recovery results remain historical; expired r11 credentials and closed cohorts cannot be reused.",
+    "G5 accepted on fresh Debian 13 ARM64 cohort r5: exactly one guarded V event produced one encrypted admission, survived Hub outage and Edge restart with stable batch/record identity, committed before occurrence-bound ACK, projected one synthetic-b2 vehicle, advanced frontier 0 to 1, drained pending/gaps to zero, and remained durable through Hub restart.",
+    "The r4 helper/receiver mismatch was closed without replay; the exact pinned empty-MessageID ACK contract and lane-only V mapping passed focused Go and live receiver/bridge tests before r5.",
+    "G3 final admission retains Edge's distinct edge-delivery-v2@2.0.0 binding e304fb6e...d224 for product 2026.36.2 and binds it to the accepted content-bound G5 Hub fingerprint and both G5 receipts; scoped admission/readback passes under r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865."
+  ],
+  "evidence_paths": [
+    "docs/development/edge-macos-one-event-r11-concrete-profile-acceptance-2026-09-18.json",
+    "docs/development/edge-macos-one-event-r11-restart-cross-owner-acceptance-2026-09-18.json",
+    "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+    "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+  ],
+  "remaining": [
+    "L1: Debian ARM64 installed Edge/receiver upgrade, rollback and spool-preserving removal after the installed Hub baseline is ready.",
+    "L2: Apple-silicon package and LaunchAgent lifecycle.",
+    "Passive or real telemetry requires fresh owner authorization and inputs; never reuse the synthetic r5 cohort."
+  ],
+  "next_goal_draft": {
+    "id": "L1_EDGE_DEBIAN_ARM64_INSTALLED_LIFECYCLE",
+    "state": "DRAFT_NOT_STARTED",
+    "objective": "Install exact baseline packages, upgrade to the candidate, prove one fresh installed-path synthetic delivery, roll back a failed candidate, then remove services while preserving spool/configuration.",
+    "prerequisites": [
+      "Installed Hub L1 baseline and a fresh Hub-owned handoff",
+      "Frozen Edge and receiver packages, units, profile and legal/lock identities",
+      "Fresh receiver, Edge and Hub credentials and roots"
+    ],
+    "acceptance_evidence": [
+      "Package hashes, dpkg-query identity and actual service units",
+      "Correct users, modes, listeners, loopback admission and service order",
+      "Occurrence-bound committed/readable event with stable spool identity and no duplicate",
+      "Failed-candidate rollback and spool/configuration-preserving removal"
+    ],
+    "execution_authorized": false
+  },
+  "last_acceptance": {
+    "gate_id": "G5",
+    "state": "ACCEPTED",
+    "receipt": "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+    "source_head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "edge_binary_sha256": "1ef857221eb83d67f96fd58d6f25a4b20d8f8b25ff9189cca1a6df4436997910",
+    "receiver_binary_sha256": "22577092beac3622403328f3d0c6f13c4b7656e4ccfd80a75aa9bdedfada6b3b",
+    "helper_binary_sha256": "89ba4d2d7af917a8bd7455861d10dc43fdb9d752a9d0815fb8de72baf33422a5",
+    "platform": "Debian GNU/Linux 13.6 aarch64",
+    "runtime_kind": "source-built synthetic receiver, Edge and Hub durable forwarding lane",
+    "cleanup_complete": true
+  },
+  "historical_status": {
+    "path": "docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/STATUS.json",
+    "sha256": "d421f8d36c02419ade13d017dc043832edc159e7e5d1511cd2ff1eec2388932a",
+    "note": "Exact pre-reset STATUS with detailed receipt keys, historical goals and assertions; not live execution authority."
+  },
+  "legacy_task": {
+    "thread_id": "01a082b7-9723-7211-b9f0-8b505e450b7e",
+    "state": "ARCHIVED",
+    "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+    "native_goal_state": "historical_not_mutated_by_archival"
+  },
+  "runtime_state": "G5 r5 closed after receiver-first/Edge/Hub stop; G3 metadata admitted; exact private root and runtime scripts removed; Debian guest stopped; no current handoff",
+  "acceptance_limits": [
+    "No App integration acceptance",
+    "No real-data parity or production acceptance",
+    "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
+    "Viewer excluded; x86/Intel paused"
+  ]
+}

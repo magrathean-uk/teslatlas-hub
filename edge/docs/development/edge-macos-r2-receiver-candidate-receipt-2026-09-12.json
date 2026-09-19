@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_r2_receiver_candidate_receipt",
+  "date": "2026-09-12",
+  "status": "passed_fresh_arm64_candidate_copy_and_source_lock_revalidation",
+  "cohort_id": "edge-hub-empty-baseline-20260912-r2",
+  "source": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-receiver-status-loopback-macos13-20260910/teslatlas-fleet-telemetry",
+    "sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "bytes": 29251922,
+    "mode_uid_gid": "0755 501:20",
+    "file_type": "Mach-O 64-bit executable arm64"
+  },
+  "fresh_r2_copy": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-receiver-r2-20260912/teslatlas-fleet-telemetry",
+    "sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "bytes": 29251922,
+    "mode_uid_gid": "0755 501:20",
+    "file_type": "Mach-O 64-bit executable arm64",
+    "byte_compare": "PASS; cmp reported identical bytes",
+    "new_path": true
+  },
+  "pinned_source_lock": {
+    "upstream_repository": "https://github.com/teslamotors/fleet-telemetry",
+    "upstream_version": "v0.9.4",
+    "upstream_commit": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "upstream_archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9",
+    "lock_path": "packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json",
+    "lock_sha256": "b6ab33bff684bb597fff75c714c1bcb77579d166701a3bc89f26c58293bc01ec",
+    "dispatcher_overlay_path": "packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch",
+    "dispatcher_overlay_sha256": "828a98fe3b36bf07c3d2d32041be45efad7594c6c580a982b588875a10898b98",
+    "receiver_template_path": "packaging/fleet-telemetry.json.example",
+    "receiver_template_sha256": "3876e7cb31faf07e7b135c3d7375f9b52a58091f86336c3577dabe45738fad8",
+    "source_identity_policy_path": "teslamotors/fleet-telemetry/messages/identity.go",
+    "source_identity_policy_sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5"
+  },
+  "r2_receipt_boundary": {
+    "r1_runtime_receipt_reused": false,
+    "r1_runtime_descriptor_reused": false,
+    "r1_identity_or_credential_reused": false,
+    "purpose": "Fresh immutable receiver candidate copy and source-lock evidence only; Hub must bind this copy to a new r2 runtime descriptor if later authorized.",
+    "runtime_started": false,
+    "listener_started": false,
+    "credential_created_or_expired": false,
+    "producer_invoked": false,
+    "event_sent": false
+  }
+}

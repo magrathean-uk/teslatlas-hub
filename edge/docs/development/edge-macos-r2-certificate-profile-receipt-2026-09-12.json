@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "kind": "macos_edge_r2_certificate_profile_receipt",
+  "date": "2026-09-12",
+  "status": "passed_pre_runtime_profile_and_staged_inventory",
+  "authority": "Coordinator-authorized wholly fresh r2 preparation; this receipt is a pre-runtime certificate/profile gate only. No guest, runtime, credential, expiry, listener, producer or event action is authorized by it.",
+  "cohort": {
+    "id": "edge-hub-empty-baseline-20260912-r2",
+    "target": "macOS 13.7.4 arm64",
+    "host_staging_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2",
+    "root_status": "Fresh Hub-owned staging root exists for exact pre-runtime reads; Edge did not create or mutate the guest root."
+  },
+  "source_receipts": {
+    "edge": {
+      "path": "docs/development/edge-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+      "sha256": "aead774fcec533eb65f71e48bd0f38d141aa7be63cd9beb195420d304406a309",
+      "candidate_path": "/Users/bolyki/dev/teslatlas-lab/build/teslatlas-edge/source-binary-20260912-r2/aarch64-apple-darwin/release/teslatlas-edge",
+      "candidate_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a"
+    },
+    "receiver": {
+      "receipt_path": "docs/development/edge-macos-r2-receiver-candidate-receipt-2026-09-12.json",
+      "receipt_sha256": "45a7e4b14fae9f6caade094831abd1a760299116b97a5c76b129de61aa71c2f9",
+      "candidate_path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-receiver-r2-20260912/teslatlas-fleet-telemetry",
+      "candidate_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6"
+    },
+    "hub": {
+      "receipt_path": "hub/docs/development/hub-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+      "receipt_sha256": "d7d3d2499370c4c344e3db77e06cd5db14ff954d86e29bd1ef68745a17767103"
+    },
+    "source_candidate_manifest": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/source-candidate-manifest.json",
+      "sha256": "a74718fb5f99db1f22004b155e503886cfd2ced0528fa18dbef7e2c3a4ab55d0",
+      "state": "fresh_host_staging_only_no_runtime"
+    },
+    "staging_manifest": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging-manifest.json",
+      "sha256": "807e3d5fe305f4b2a387c29232dc8a7c7be72377787a6abbf8445b0f91d8a93d",
+      "public_file_inventory_check": "PASS; every manifest-listed public file hash matched the exact host-staged bytes; private-key hashes remain withheld"
+    }
+  },
+  "staged_identity": {
+    "public_certificate": {
+      "host_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client.crt",
+      "guest_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client.crt",
+      "bytes": 1090,
+      "mode": "0600",
+      "pem_sha256": "44a7c93772422f29cab0574fb9a224a07228fd94a4f0f2b71f9095f7e49cd58a",
+      "der_sha256": "27a772da81b8d73f135e8234a005f2b6368a4b92f79bebf327842c0138ba1e3c",
+      "exact_host_bytes_verified": true
+    },
+    "receiver_ca": {
+      "host_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client-ca.crt",
+      "guest_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client-ca.crt",
+      "bytes": 1078,
+      "mode": "0644",
+      "pem_sha256": "0ab9ee01765c8d72d0b180948ebc4823f48d160c0c2d100b951ce97e2932e5f6",
+      "exact_host_bytes_verified": true
+    },
+    "private_key": {
+      "host_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client.key",
+      "guest_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client.key",
+      "bytes": 1675,
+      "mode": "0600",
+      "hash": "withheld",
+      "material_disclosure": "No private bytes or private hash emitted; public-key derivation was compared only."
+    },
+    "sealed_binding": {
+      "host_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/binding.json",
+      "guest_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2/staging/binding.json",
+      "sha256": "245d96da6a34f671759de0296d24efd33b7244ca6df24a9c5486f78bdb020091",
+      "value_disclosure": "Identity value withheld."
+    }
+  },
+  "profile_checks": {
+    "common_name_to_sealed_binding": {
+      "result": "PASS",
+      "matched_binding_field": "vin",
+      "identity_value": "withheld"
+    },
+    "issuer": {
+      "result": "PASS",
+      "expected": "Tesla Motors Products CA"
+    },
+    "basic_constraints": {
+      "result": "PASS",
+      "expected": "CA:FALSE"
+    },
+    "key_usage": {
+      "result": "PASS",
+      "critical": true,
+      "required": [
+        "digitalSignature",
+        "keyEncipherment"
+      ]
+    },
+    "extended_key_usage": {
+      "result": "PASS",
+      "required": "clientAuth"
+    },
+    "key_correspondence": {
+      "result": "PASS",
+      "method": "Certificate public-key derivation equals the staged private-key public derivation",
+      "private_material": "withheld"
+    },
+    "receiver_ca_trust": {
+      "result": "PASS",
+      "purpose": "sslclient",
+      "leaf": "vehicle-client.crt",
+      "trust_anchor": "vehicle-client-ca.crt",
+      "trust_anchor_sha256": "0ab9ee01765c8d72d0b180948ebc4823f48d160c0c2d100b951ce97e2932e5f6"
+    },
+    "subject_alt_name": {
+      "result": "ABSENT_NOT_REQUIRED_BY_PINNED_PARSER_POLICY",
+      "required": false,
+      "observed": "No X509v3 Subject Alternative Name extension",
+      "policy": "For the known Tesla Motors Products CA issuer, the pinned receiver derives identity from Subject.CommonName and does not require or read SAN."
+    }
+  },
+  "pinned_receiver_identity_policy": {
+    "source": "teslamotors/fleet-telemetry/messages/identity.go",
+    "revision": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "source_sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+    "known_issuer_rule": "Tesla Motors Products CA maps to vehicle_device",
+    "identity_rule": "Subject.CommonName becomes deviceID with dots replaced by hyphens",
+    "san_rule": "SAN is not required or read for this known issuer",
+    "parser_mismatch": false
+  },
+  "machine_verification": {
+    "pem_hash": "shasum -a 256 <R2_HOST_ROOT>/staging/vehicle-tls/vehicle-client.crt",
+    "der_hash": "openssl x509 -in <R2_HOST_ROOT>/staging/vehicle-tls/vehicle-client.crt -outform DER | shasum -a 256",
+    "profile": "openssl x509 issuer/basicConstraints/keyUsage/extendedKeyUsage inspection; identity value withheld",
+    "key_correspondence": "openssl x509 -pubkey compared with openssl pkey -pubout; PASS/FAIL only",
+    "trust": "openssl verify -purpose sslclient -CAfile <R2_HOST_ROOT>/staging/vehicle-tls/vehicle-client-ca.crt <R2_HOST_ROOT>/staging/vehicle-tls/vehicle-client.crt",
+    "manifest": "All manifest-listed public staged file hashes compared; private-key hashes withheld"
+  },
+  "fresh_ports_for_future_hub_owned_runtime": {
+    "edge_internal": 8081,
+    "edge_hub": 21844,
+    "receiver_data": 21446,
+    "receiver_status": 21447,
+    "hub": 18526,
+    "status": "Recorded from fresh Hub staging only; no listener was started."
+  },
+  "runtime_boundary": {
+    "guest_started": false,
+    "runtime_started": false,
+    "credentials_created_or_expired": false,
+    "listeners_started": false,
+    "producer_invoked": false,
+    "event_sent": false,
+    "hub_or_ha_mutated": false,
+    "r1_material_reused": false,
+    "scope": "Edge read and hashed exact host-staged public certificate, CA and binding; it read the private key only for public-key correspondence without emitting material."
+  },
+  "limitations": [
+    "This receipt proves the fresh r2 staged certificate/profile and public inventory gate only.",
+    "It does not prove Edge forwarding, receiver readiness, Hub empty-baseline acceptance, durable commit/ACK/frontier advancement, HA observation, user acceptance or Apple acceptance.",
+    "The reserved transaction edge-r2-fresh-20260912-v-001 remains an identifier only; a separate coordinator decision is required before any producer event."
+  ]
+}

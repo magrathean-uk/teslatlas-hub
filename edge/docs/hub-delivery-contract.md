@@ -30,9 +30,10 @@ Authorization: Bearer tte1.<credential-id>.<secret>
 Create, rotate, and revoke the bearer locally:
 
 ```bash
-teslatlas-edge --config /etc/teslatlas-edge/config.toml credential enrol home-hub
-teslatlas-edge --config /etc/teslatlas-edge/config.toml credential rotate 123e4567-e89b-12d3-a456-426614174000 --overlap-seconds 300
-teslatlas-edge --config /etc/teslatlas-edge/config.toml credential revoke 123e4567-e89b-12d3-a456-426614174000
+# On a native Linux installation, run these as the Edge service identity.
+sudo -u teslatlas-edge /usr/bin/teslatlas-edge --config /etc/teslatlas-edge/config.toml credential enrol home-hub
+sudo -u teslatlas-edge /usr/bin/teslatlas-edge --config /etc/teslatlas-edge/config.toml credential rotate 123e4567-e89b-12d3-a456-426614174000 --overlap-seconds 300
+sudo -u teslatlas-edge /usr/bin/teslatlas-edge --config /etc/teslatlas-edge/config.toml credential revoke 123e4567-e89b-12d3-a456-426614174000
 ```
 
 The enrol and rotate commands print the new bearer once. Edge stores only its
@@ -196,6 +197,22 @@ encoded response before parsing and
 must reject duplicate sequences, duplicate stable IDs, or conflicting retained
 v1 aliases without applying or acknowledging any item.
 
+The default encrypted spool budget is 512 MiB, 100,000 pending records, and
+seven-day retention. Configuration hard limits are 8 GiB, 1,000,000 records,
+30-day retention, 1,024 batch items, and 4 MiB of item bodies. The receiver
+body is capped at 256 KiB and each acknowledgement body at 128 KiB; each ACK
+category independently caps at 256 IDs. Pending records, durable gaps, and
+quarantine consume separate record/byte budgets, and Edge retains at most
+1,024 encrypted acknowledgement receipts. These are bounded resource budgets,
+not a guarantee about total filesystem usage: temporary files and filesystem
+metadata require headroom. Retention is processed during recovery and batch
+pulls rather than by an autonomous deletion timer, and readiness can degrade
+when a configured budget is exhausted while liveness remains separate.
+
+The bearer currently grants the complete queue. Bind one intended Hub consumer
+to the admitted source, vehicle, and VIN; Edge does not provide per-record
+bearer scopes or unlimited offline retention.
+
 The outer record `received_at_ms` is Edge's durable admission time. The
 envelope's `received_at_ms` is the receiver-supplied field hashed into the v1
 alias and excluded from the v2 stable identity. Neither arrival field is an
@@ -283,9 +300,11 @@ out-of-order, oversized, stale-batch, or wrong-version input returns 400 without
 deletion.
 
 V1 cannot represent a gap. `GET /v1/hub/batches/next` therefore returns 409
-`protocol_upgrade_required` whenever a durable gap is pending. Hub must use v2,
-persist and acknowledge the notice, then may continue using either record
-contract.
+`protocol_upgrade_required` whenever a durable gap is pending. A v1
+acknowledgement also returns that response after its bounded receipt history
+has been pruned or was unknown during a guarded format-2 migration. Hub must
+use v2, persist and acknowledge any gap notice, then may continue using either
+record contract.
 
 ## Handle status and retry
 
@@ -296,7 +315,7 @@ contract.
 | 400 | Invalid or stale acknowledgement | GET current batch; repair protocol if repeated |
 | 401 | Bearer missing, expired, rotated out, or revoked | Stop; enrol or rotate credential |
 | 413 | Request body exceeds fixed limit | Stop; repair client |
-| 409 | V1 cannot consume a pending durable gap | Use v2 and commit the gap notice |
+| 409 | V1 cannot consume a pending durable gap or its receipt history is unknown/pruned | Use v2 and commit the gap notice or current records |
 | 503 | Spool or credential state unavailable | Retry with bounded exponential backoff |
 | Timeout/disconnect | Commit/response outcome unknown | Retry GET; deduplicate before any apply |
 

@@ -23,7 +23,7 @@
   <key>ThrottleInterval</key>
   <integer>5</integer>
   <key>ExitTimeOut</key>
-  <integer>5</integer>
+  <integer>10</integer>
   <key>Umask</key>
   <integer>63</integer>
 </dict>

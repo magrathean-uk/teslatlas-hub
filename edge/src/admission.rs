@@ -151,6 +151,13 @@ async fn admit_receiver_envelope(
             state.metrics.rejected_storage();
             error_response(StatusCode::INSUFFICIENT_STORAGE, "storage_full")
         }
+        Err(SpoolError::BatchItemTooLarge) => {
+            state.metrics.rejected_invalid();
+            error_response(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "record_exceeds_delivery_limit",
+            )
+        }
         Err(_) => {
             state.metrics.rejected_internal();
             error_response(StatusCode::SERVICE_UNAVAILABLE, "spool_unavailable")

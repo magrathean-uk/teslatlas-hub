@@ -9,6 +9,7 @@ pub(crate) struct HealthResponse {
     corrupt_records: u64,
     expired_records: u64,
     pending_gap_notices: usize,
+    capacity_exhausted: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -30,6 +31,7 @@ impl HealthResponse {
             corrupt_records: snapshot.corrupt_records,
             expired_records: snapshot.expired_records,
             pending_gap_notices: snapshot.pending_gap_notices,
+            capacity_exhausted: snapshot.capacity_exhausted,
         }
     }
 }

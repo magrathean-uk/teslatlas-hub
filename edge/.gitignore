@@ -1,4 +1,6 @@
 /target/
 /dist/
+.docker-runtime/
+.docker-build/
 *.swp
 .DS_Store
