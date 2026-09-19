@@ -1,14 +1,17 @@
 {
   "schema_version": 2,
   "product": "Home Assistant",
-  "updated_at": "2026-09-19T10:30:43Z",
-  "update_scope": "post_adoption_next_phase_planning_no_execution",
-  "programme": "2026-09-18-app-v7-readiness",
+  "updated_at": "2026-09-19T11:04:10Z",
+  "update_scope": "full_product_completion_planning_no_execution",
+  "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "DEBIAN_ARM64_CONTAINER_ACCEPTED",
   "source_objective_state": "SECONDARY_RUNTIME_ACCEPTED_SCOPED",
   "current_gate_ids": [],
-  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
-  "objective": "Preserve the accepted Debian ARM64 Container integration and close the first replacement upgrade/rollback gap.",
+  "completion_gate_ids": ["F0", "F4", "F5", "F6", "F7"],
+  "accepted_receipts_immutable": true,
+  "full_solution_state": "NOT_ACCEPTED",
+  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Complete Home Assistant as a required ecosystem product across documented install, UI, lifecycle, recovery, real-input semantics, distribution and final installed acceptance.",
   "source": {
     "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
     "branch": "main",
@@ -49,25 +52,26 @@
     "cleanup_complete": true
   },
   "remaining": [
-    "Preserve the accepted exact compatibility binding; repeat runtime acceptance only for a component, profile, Hub fingerprint, HA image or lifecycle-behavior change.",
-    "L3: component replacement, invalid-candidate rollback and preservation of config entry, device/entity registry and unrelated HA state.",
-    "HACS/publication, Home Assistant OS/Supervisor, headed visual acceptance and polished distribution remain later obligations.",
-    "Real account, vehicle, telemetry, named-source and production acceptance require fresh owner input and remain outside this synthetic lane."
+    "F0: close every config, entity, lifecycle, runtime-floor and distribution claim.",
+    "F4: prove required headed user and API journeys, replacement/image lifecycle, recovery and registry preservation on supported selected runtimes.",
+    "F5: mandatory fresh named-source and passive Hub evidence must validate entity semantics.",
+    "F6-F7: prove deterministic component/manual/Container/catalog lifecycle and the final combined installed ecosystem."
   ],
   "next_goal_draft": {
-    "id": "L3_HA_COMPONENT_REPLACEMENT_ROLLBACK",
+    "id": "FULL_HOME_ASSISTANT_F0_F7",
     "state": "DRAFT_NOT_STARTED",
-    "objective": "Replace the accepted component in a selected Debian ARM64 HA Container, reject one invalid candidate, and roll back without losing config-entry, device/entity or unrelated HA state.",
+    "objective": "Complete Home Assistant as a required ecosystem product across supported user behavior, runtime lifecycle, real-input semantics, distribution and final installed acceptance.",
     "prerequisites": [
-      "Freeze baseline and candidate payload manifests, HA image, Hub fingerprint and profile.",
-      "Use a fresh Hub-owned handoff and persistent HA config identity.",
-      "Do not submit to HACS or reuse closed private inputs."
+      "F0 support ledger and exact component, HA image, Hub and profile identities",
+      "Accepted F1/F3 Hub and a fresh Hub-owned handoff",
+      "Fresh F5 input-derived Hub evidence; no reuse of closed private inputs"
     ],
     "acceptance_evidence": [
-      "Pre/post config-entry, device and entity identity/count comparison",
-      "Successful replacement with scheduler, reauth and reload working",
-      "Invalid candidate never active and prior component restored",
-      "Unrelated HA storage preserved and complete runtime cleanup"
+      "F0 integration/runtime/distribution ledger",
+      "F4 headed config/reauth/polling/lifecycle/recovery and registry receipt",
+      "F5 real-input entity semantic receipt",
+      "F6 deterministic manual/Container/component/catalog lifecycle receipt",
+      "F7 combined installed ecosystem and cleanup receipt"
     ],
     "execution_authorized": false
   },

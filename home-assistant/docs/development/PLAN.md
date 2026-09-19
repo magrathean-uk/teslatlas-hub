@@ -1,60 +1,63 @@
-# Home Assistant post-adoption plan — 2026-09-19
+# Home Assistant full-product completion plan — 2026-09-19
 
-Objective: Preserve the accepted Debian ARM64 Container integration and close
-the first replacement upgrade/rollback gap.
+Objective: complete the Home Assistant integration as a required part of the overall
+Hub ecosystem, with supported installation, lifecycle, recovery and ordinary user
+operation against the final Hub.
 
 Authority: [master plan](../../../docs/development/MASTER_PLAN.md),
-[coordination](../../../docs/development/COORDINATION.md), and
-[STATUS.json](STATUS.json).
+[product specification](../../../docs/development/PRODUCT_SPEC.md),
+[coordination](../../../docs/development/COORDINATION.md), and [STATUS.json](STATUS.json).
 
 ## Current position
 
-The secondary working-product objective is accepted on Debian 13.6 ARM64 with
-official Home Assistant Container 2026.8.3. The fresh lane proved authenticated
-config flow, one-use pairing, two devices/26 entities, scheduled refresh,
-zero/unknown/unavailable semantics, Hub outage/restart recovery, same-entry
-reauthentication, reload, reconfigure, disable/re-enable, Container stop/start,
-diagnostics redaction and cleanup.
+The bounded Debian 13 ARM64 Home Assistant Container 2026.8.3 journey remains accepted
+and closed. Its receipt is immutable. It does not prove full manual/package lifecycle,
+headed UI, replacement/image upgrade and rollback, real-source semantics, supported
+distribution or the final installed ecosystem. `full_solution_state` is
+`NOT_ACCEPTED`; this plan is drafted and not started.
 
-The receipt is source-built synthetic Container evidence. It does not prove a
-headed visual flow, component replacement upgrade/rollback, Home Assistant OS
-or Supervisor, HACS/publication, real data, named-source parity or production.
-Repeat the accepted lane only for a component/profile/Hub/image/behavior delta.
+## Required completion
 
-## Next goal draft — not started
+- **F0:** inventory all integration claims: config and reauth flows, identity and TLS,
+  polling cadence/concurrency/backoff, devices/entities and translations, dynamic
+  vehicles, zero/unknown/unavailable semantics, diagnostics/redaction, migration,
+  reload/reconfigure/disable/unload, manual install, Container, existing selected
+  HA OS/VM targets, component/image replacement, backup/rollback and HACS-shaped
+  distribution. Record exact Home Assistant/Python/Docker/runtime floors and either
+  prove or correct each supported claim.
+- **F4:** this gate is required for overall completion. Against the exact F1/F3 Hub,
+  prove the normal headed user journey and API behavior in the supported Debian ARM64
+  Container plus the documented manual installation into a selected existing supported
+  runtime. Cover pairing/replay rejection, polling and changed observations,
+  reauthentication, outage/restart, reload/reconfigure, registry stability, migration,
+  replacement/image upgrade, invalid-candidate rollback, backup/restore and removal.
+  A Mac may consume or stage to an explicitly selected runtime; it does not become a
+  native HA daemon.
+- **F5:** use the fresh named-source/import and passive-capture Hub evidence to validate
+  every mapped entity's units, numeric zero, null/unknown/unavailable transitions,
+  dynamic vehicle behavior, stale data and recovery. This input-dependent evidence is
+  mandatory, with identifiers and locations redacted.
+- **F6:** produce a deterministic installable component archive/source handoff with
+  exact profile, manifest, translations, licences, checksums and operator docs. Prove
+  manual and Container install/update/status/rollback/removal and Hub-catalog staging
+  without Viewer. HACS submission/publication remains a separate external action unless
+  explicitly authorized; any supported-distribution claim selected in F0 must still be
+  fully evidenced.
+- **F7:** run the F6 component in the final combined installed ecosystem, preserving
+  config entry, devices, entities, unrelated HA state and credentials across ecosystem
+  restart/upgrade/recovery, then perform owned cleanup.
 
-L3: deliver one Debian ARM64 Container component replacement lifecycle receipt.
-Freeze the accepted baseline component, replacement candidate, profile, Hub
-fingerprint, HA image and persistent config identity before execution. Stage
-through the bounded Hub-owned selector into an explicitly selected HA config,
-verify successful replacement, then inject one fail-closed invalid candidate
-and prove rollback to the last working component without losing the existing
-config entry, device/entity registry or unrelated HA state.
+HA may execute after primary Hub/Edge/SDK work, but F7 cannot be accepted without F4.
 
-Acceptance requires:
+## Work slices
 
-- exact baseline/candidate payload manifests and HA/Hub/profile identities;
-- pre/post config-entry, device and entity identity/count comparison;
-- successful replacement with scheduler, reauth and reload still working;
-- failed candidate never becoming active, rollback restoring the prior working
-  component, and unrelated HA storage fingerprints preserved;
-- Container/Hub stop, private-root removal and no retained credentials,
-  listeners or heavy-build lock.
+1. **L1:** complete F0 and any component gaps independent of a runtime.
+2. **L2:** prove supported runtime floors and full F4 lifecycle against F1/F3.
+3. **L3:** complete F5 semantics and F6 package/catalog/docs, then pass F7.
 
-This draft does not authorize source changes, Container/image work, guest start,
-runtime, tests, HACS submission, or publication. The coordinator must create and
-start a new goal.
+## Start and boundaries
 
-## Later work
-
-Headed visual acceptance, Home Assistant OS/Supervisor, HACS distribution,
-broader fault/parity coverage, fresh-owner-input named-source/real-data behavior
-and production remain separate lanes. HA remains an integration in a selected
-runtime, never a native macOS daemon.
-
-## Boundaries
-
-Preserve the dirty `main` checkout and existing HA config/database/entity
-state. Hub owns shared fixtures and aggregate installers. No App or Viewer work,
-x86/Intel/Azure, production or vehicle action, commit, push, CI, release,
-publication, or reuse of closed private inputs.
+No source change, Container/image work, runtime, guest, test, package, commit, push,
+HACS submission or publication is authorized by this plan. Preserve the dirty `main`
+tree, HA state and accepted receipt. Hub owns shared handoffs; HA owns component state.
+Exclude App, Viewer, x86/amd64/Intel and Azure. Never reuse closed private inputs.
