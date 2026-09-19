@@ -1,0 +1,502 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		20B37F758F9B7AB4497679B2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85CB5D102744EEEBA3919EFE /* AppDelegate.swift */; };
+		37EED69E80D51F862D2685BB /* TeslatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */; };
+		3F85F7BA523E1AA308EFF7FA /* TeslatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 0430BFDF72713CC6913F5FFC /* TeslatlasCurrentHub */; };
+		5B79DFAB9F735242B914018E /* claim.json in Resources */ = {isa = PBXBuildFile; fileRef = 09E4C7B89BC9C1AB2E6D1DA6 /* claim.json */; };
+		6BEB3D1124C90F42557DDFE1 /* drives.json in Resources */ = {isa = PBXBuildFile; fileRef = C1FA5E66F031A4D5FC20C516 /* drives.json */; };
+		6D29DEE22D4592E5708B2A9E /* ready.json in Resources */ = {isa = PBXBuildFile; fileRef = 15CCB8E7D51F6F177BD716A3 /* ready.json */; };
+		764F84C8D91004242EE77DC1 /* vehicles.json in Resources */ = {isa = PBXBuildFile; fileRef = 7F24E5EE2E347765906D3233 /* vehicles.json */; };
+		780F43DDB2E951076D8CF092 /* invitation.json in Resources */ = {isa = PBXBuildFile; fileRef = CB0BF908301B134AC440F2B2 /* invitation.json */; };
+		7BFDAE439202A66EC3C61376 /* CurrentHubTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0477F293DD30117E5D46A96 /* CurrentHubTestSupport.swift */; };
+		7D963149CB6E81BCD5FB56E0 /* discovery.json in Resources */ = {isa = PBXBuildFile; fileRef = CFDC6D86477EFB917963F71B /* discovery.json */; };
+		8E72828A4D4F755239A594D4 /* health.json in Resources */ = {isa = PBXBuildFile; fileRef = EC4A0166BFA44B97D08D5AE5 /* health.json */; };
+		98CE7F5A9332061E1AC420FA /* current.json in Resources */ = {isa = PBXBuildFile; fileRef = 9D580784A7F1816A5659CD2F /* current.json */; };
+		D20CF1ADCFBB734FE222C461 /* CurrentHubAppleConsumerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1F09CA75AFA76A40921F403 /* CurrentHubAppleConsumerTests.swift */; };
+		FD60AF0460CA2A02A9F7BEF9 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B38CE18D714579BCB85A04 /* SceneDelegate.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		76B5EA26056E454393442785 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2F1434725AE49A087F0C87AD /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B541A9300C125B6957434D50;
+			remoteInfo = CurrentHubRuntimeHost;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		09E4C7B89BC9C1AB2E6D1DA6 /* claim.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = claim.json; sourceTree = "<group>"; };
+		15CCB8E7D51F6F177BD716A3 /* ready.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ready.json; sourceTree = "<group>"; };
+		21B38CE18D714579BCB85A04 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		26369CE91CB86DBEFEE6C7D9 /* CurrentHubRuntimeTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CurrentHubRuntimeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		588B8AF7DDE52CA33DD864E6 /* CurrentHubRuntimeHost.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CurrentHubRuntimeHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7F24E5EE2E347765906D3233 /* vehicles.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = vehicles.json; sourceTree = "<group>"; };
+		85CB5D102744EEEBA3919EFE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		9D580784A7F1816A5659CD2F /* current.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = current.json; sourceTree = "<group>"; };
+		B1F09CA75AFA76A40921F403 /* CurrentHubAppleConsumerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentHubAppleConsumerTests.swift; sourceTree = "<group>"; };
+		C1FA5E66F031A4D5FC20C516 /* drives.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = drives.json; sourceTree = "<group>"; };
+		CB0BF908301B134AC440F2B2 /* invitation.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = invitation.json; sourceTree = "<group>"; };
+		CFDC6D86477EFB917963F71B /* discovery.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = discovery.json; sourceTree = "<group>"; };
+		E0477F293DD30117E5D46A96 /* CurrentHubTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentHubTestSupport.swift; sourceTree = "<group>"; };
+		EC4A0166BFA44B97D08D5AE5 /* health.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = health.json; sourceTree = "<group>"; };
+		EF06796FF37D6C51085B56E4 /* teslatlas-sdk-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "teslatlas-sdk-swift"; path = ..; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		67361B1D0774182CB25AF97B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				37EED69E80D51F862D2685BB /* TeslatlasCurrentHub in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9E8DA8D99C009F78C12E9A73 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3F85F7BA523E1AA308EFF7FA /* TeslatlasCurrentHub in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		251E63599F31481BF49622E6 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				85CB5D102744EEEBA3919EFE /* AppDelegate.swift */,
+				21B38CE18D714579BCB85A04 /* SceneDelegate.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		3D0FF3F0C2080E2A67862F38 = {
+			isa = PBXGroup;
+			children = (
+				ABA1F341D7E3ADE40A04D14F /* Fixtures */,
+				7EBFE0782964FD373A2F0F49 /* Packages */,
+				251E63599F31481BF49622E6 /* Sources */,
+				726C0A442907ECA89D9184B7 /* TeslatlasCurrentHubTests */,
+				6372C170A52FF398D68E1C73 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		6372C170A52FF398D68E1C73 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				588B8AF7DDE52CA33DD864E6 /* CurrentHubRuntimeHost.app */,
+				26369CE91CB86DBEFEE6C7D9 /* CurrentHubRuntimeTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		726C0A442907ECA89D9184B7 /* TeslatlasCurrentHubTests */ = {
+			isa = PBXGroup;
+			children = (
+				B1F09CA75AFA76A40921F403 /* CurrentHubAppleConsumerTests.swift */,
+				E0477F293DD30117E5D46A96 /* CurrentHubTestSupport.swift */,
+			);
+			name = TeslatlasCurrentHubTests;
+			path = ../Tests/TeslatlasCurrentHubTests;
+			sourceTree = "<group>";
+		};
+		7EBFE0782964FD373A2F0F49 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				EF06796FF37D6C51085B56E4 /* teslatlas-sdk-swift */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		ABA1F341D7E3ADE40A04D14F /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				09E4C7B89BC9C1AB2E6D1DA6 /* claim.json */,
+				9D580784A7F1816A5659CD2F /* current.json */,
+				CFDC6D86477EFB917963F71B /* discovery.json */,
+				C1FA5E66F031A4D5FC20C516 /* drives.json */,
+				EC4A0166BFA44B97D08D5AE5 /* health.json */,
+				CB0BF908301B134AC440F2B2 /* invitation.json */,
+				15CCB8E7D51F6F177BD716A3 /* ready.json */,
+				7F24E5EE2E347765906D3233 /* vehicles.json */,
+			);
+			name = Fixtures;
+			path = ../Tests/TeslatlasCurrentHubTests/Fixtures;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B541A9300C125B6957434D50 /* CurrentHubRuntimeHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B230C65A06E53F143C387069 /* Build configuration list for PBXNativeTarget "CurrentHubRuntimeHost" */;
+			buildPhases = (
+				CF3B6100A7756452933F0767 /* Sources */,
+				9E8DA8D99C009F78C12E9A73 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CurrentHubRuntimeHost;
+			packageProductDependencies = (
+				0430BFDF72713CC6913F5FFC /* TeslatlasCurrentHub */,
+			);
+			productName = CurrentHubRuntimeHost;
+			productReference = 588B8AF7DDE52CA33DD864E6 /* CurrentHubRuntimeHost.app */;
+			productType = "com.apple.product-type.application";
+		};
+		FF7B4E41DE6F258E270006D1 /* CurrentHubRuntimeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FE8B0BC6CCE834802B29FC0E /* Build configuration list for PBXNativeTarget "CurrentHubRuntimeTests" */;
+			buildPhases = (
+				A8E3029BB807073736131591 /* Sources */,
+				C3065617E474B838D7C865AB /* Resources */,
+				67361B1D0774182CB25AF97B /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				99D238EC3C3200FE96445EE5 /* PBXTargetDependency */,
+			);
+			name = CurrentHubRuntimeTests;
+			packageProductDependencies = (
+				65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */,
+			);
+			productName = CurrentHubRuntimeTests;
+			productReference = 26369CE91CB86DBEFEE6C7D9 /* CurrentHubRuntimeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		2F1434725AE49A087F0C87AD /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 7BCB28BE6F65C2A84D62A2D1 /* Build configuration list for PBXProject "CurrentHubRuntimeHost" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 3D0FF3F0C2080E2A67862F38;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				818E3D5D134C58F8198386B5 /* XCLocalSwiftPackageReference ".." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 6372C170A52FF398D68E1C73 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B541A9300C125B6957434D50 /* CurrentHubRuntimeHost */,
+				FF7B4E41DE6F258E270006D1 /* CurrentHubRuntimeTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C3065617E474B838D7C865AB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5B79DFAB9F735242B914018E /* claim.json in Resources */,
+				98CE7F5A9332061E1AC420FA /* current.json in Resources */,
+				7D963149CB6E81BCD5FB56E0 /* discovery.json in Resources */,
+				6BEB3D1124C90F42557DDFE1 /* drives.json in Resources */,
+				8E72828A4D4F755239A594D4 /* health.json in Resources */,
+				780F43DDB2E951076D8CF092 /* invitation.json in Resources */,
+				6D29DEE22D4592E5708B2A9E /* ready.json in Resources */,
+				764F84C8D91004242EE77DC1 /* vehicles.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A8E3029BB807073736131591 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D20CF1ADCFBB734FE222C461 /* CurrentHubAppleConsumerTests.swift in Sources */,
+				7BFDAE439202A66EC3C61376 /* CurrentHubTestSupport.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CF3B6100A7756452933F0767 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				20B37F758F9B7AB4497679B2 /* AppDelegate.swift in Sources */,
+				FD60AF0460CA2A02A9F7BEF9 /* SceneDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		99D238EC3C3200FE96445EE5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B541A9300C125B6957434D50 /* CurrentHubRuntimeHost */;
+			targetProxy = 76B5EA26056E454393442785 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		81F2B6924537D121171ACF9E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "eu.teslatlas.sdk.currenthub.runtime-tests";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CurrentHubRuntimeHost.app/CurrentHubRuntimeHost";
+			};
+			name = Debug;
+		};
+		9996689F4422079B9BD4FCB9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B82BE599130BB37F104DE07C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "eu.teslatlas.sdk.currenthub.runtime-host";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D09AA1C9E749F18E8336C366 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "eu.teslatlas.sdk.currenthub.runtime-tests";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CurrentHubRuntimeHost.app/CurrentHubRuntimeHost";
+			};
+			name = Release;
+		};
+		DC9F4208800DA16CAA9D1216 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "eu.teslatlas.sdk.currenthub.runtime-host";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EFAAE42F7C52DF132549A85D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		7BCB28BE6F65C2A84D62A2D1 /* Build configuration list for PBXProject "CurrentHubRuntimeHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EFAAE42F7C52DF132549A85D /* Debug */,
+				9996689F4422079B9BD4FCB9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B230C65A06E53F143C387069 /* Build configuration list for PBXNativeTarget "CurrentHubRuntimeHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DC9F4208800DA16CAA9D1216 /* Debug */,
+				B82BE599130BB37F104DE07C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FE8B0BC6CCE834802B29FC0E /* Build configuration list for PBXNativeTarget "CurrentHubRuntimeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				81F2B6924537D121171ACF9E /* Debug */,
+				D09AA1C9E749F18E8336C366 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		818E3D5D134C58F8198386B5 /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0430BFDF72713CC6913F5FFC /* TeslatlasCurrentHub */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TeslatlasCurrentHub;
+		};
+		65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TeslatlasCurrentHub;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 2F1434725AE49A087F0C87AD /* Project object */;
+}

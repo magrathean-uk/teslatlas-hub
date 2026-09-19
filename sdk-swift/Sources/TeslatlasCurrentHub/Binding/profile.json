@@ -32,6 +32,7 @@
     "wire": "signed 64-bit JSON integers"
   },
   "license": "Apache-2.0",
+  "max_claim_request_bytes": 4096,
   "max_response_bytes": 1048576,
   "pairing": {
     "claim_fields": [

@@ -10,8 +10,13 @@ Public Swift clients for three deliberately separate wire surfaces:
   Hub v1.0.0 implements public protocol profile 1.2.0.
 - `TeslatlasCurrentHub` implements the approved current-Hub profile
   `hub-http-v1@1.0.0`, pinned to manifest SHA-256
-  `b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b`
-  and tested against Hub product `2026.36.2`.
+  `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`
+  and admits Hub product `2026.36.2`.
+  [G3 r2](../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json)
+  (receipt SHA-256
+  `5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`)
+  and G6 accepted this exact binding for the bounded external-consumer evidence
+  described below.
 
 The package supports iOS 17+, macOS 14+, Linux builds under SwiftPM, and Swift
 6. It has no remote Swift package dependencies. Linux builds link an
@@ -21,6 +26,28 @@ headers and runtime libraries must be installed.
 The release-cohort product version is exported as `teslatlasProductVersion`.
 See [product versioning](docs/product-versioning.md) for its separation from
 the two wire-contract identities above.
+
+## Source-only SwiftPM use
+
+This repository is currently source storage; it does not publish a SwiftPM
+release or tag. For local development, point a consumer at a checkout:
+
+```swift
+dependencies: [
+  .package(path: "../teslatlas-sdk-swift")
+]
+```
+
+When a moving development dependency is acceptable, use the repository's
+`main` branch explicitly:
+
+```swift
+.package(url: "https://github.com/magrathean-uk/teslatlas-sdk-swift.git", branch: "main")
+```
+
+For reproducible distribution, use a reviewed content-bound source snapshot.
+The current G3/G6 receipts do not publish or tag one. The CalVer product
+identity, Swift tools version, and wire-contract revisions remain separate.
 
 ## Add the package
 
@@ -122,11 +149,10 @@ rotation, events, commands, metadata endpoint, charges endpoint, manifests,
 packs, positions, states, updates, or inferred routes. A Hub may advertise
 `sync.packs`; the product still does not expose it.
 
-The protocol repository had not released a deployed-Hub binding when this
-module was produced. Following an explicit instruction to retrieve the needed
-public material, the repository vendors a hash-pinned machine-readable binding
-audited from the immutable Hub `v1.0.0` tag and records the exact source commit
-and Git blob identities. This remains separate from protocol authority. See
+The protocol repository does not own this historical deployed-Hub binding. The
+repository vendors a hash-pinned machine-readable binding audited from the
+immutable Hub `v1.0.0` source identity and records the exact source commit and
+Git blob identities. This remains separate from protocol authority. See
 [Hub v1 compatibility](docs/hub-v1-compatibility.md).
 
 ## Use strict protocol 1.2
@@ -170,10 +196,61 @@ accumulator and rejects redirects.
 
 ```sh
 swift package dump-package
-swift test
+swift test --skip CurrentHubLiveTests --skip CurrentHubMatrixWorkerTests --skip LiveHubBlackBoxTests
 swift build -c release
-swift test -c release
+swift test -c release --skip CurrentHubLiveTests --skip CurrentHubMatrixWorkerTests --skip LiveHubBlackBoxTests
 ```
+
+The package also includes a minimal external consumer under
+`Examples/CurrentHubConsumer`. It imports only the public current-Hub product
+through SwiftPM and prints discovery, readiness, vehicle and query counts.
+Build it from that directory with `swift build -c release`; run it with an
+owner-only JSON configuration path:
+
+```sh
+swift run -c release CurrentHubConsumer /private/current-hub-consumer.json
+```
+
+G6 accepted one invocation of this maintained external example after an exact
+release build on macOS 27.0 arm64 with Swift 6.4. The journey verified exact
+discovery/profile/product/capabilities, normal TLS, claim and replay rejection,
+health/readiness, two current results, drive pages `2/2/1` with three `304`s,
+credential rotation, old-token rejection, post-rotation readback, and Hub
+restart continuity. Evidence is in the
+[Swift G6 receipt](docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json)
+and paired [Hub G6 receipt](../hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json).
+
+The configuration requires `endpoint`, `expectedHubID`, `deviceName`, and
+`invitationPath`; `vehicleID`, `driveFromMs`, `driveToMs`, `caPath`, and the
+paired restart-marker paths are optional. Invitation and CA files stay outside
+the repository. The sample
+intentionally keeps credentials in an in-memory actor store; an application
+should replace it with an atomic
+Keychain or file-backed actor and clear that store on sign-out. Claim and
+rotation are single-use operations: an uncertain network result must be
+resolved by the server or by re-pairing, never by an automatic retry. Server
+revocation remains a Hub operation.
+
+This acceptance is a source-built synthetic external-consumer result on current
+macOS 27 Apple silicon. The declared iOS 17 and macOS 14 package floors were
+not minimum-floor tested. It is not App integration, installer, notarization,
+package-service, real Tesla data, production, or full-matrix acceptance. The
+source remains unpublished and untagged by this work.
+
+For a reproducible Linux build and non-live test environment, use the local
+Docker recipe. It uses the official pinned `swift:6.0.3-jammy` multi-architecture
+manifest (amd64 and arm64/v8), runs as an unprivileged user, and installs the
+OpenSSL-backed curl and Python libraries needed by the test fixtures:
+
+```sh
+docker build -t teslatlas-swift-sdk .
+docker run --rm teslatlas-swift-sdk
+docker run --rm teslatlas-swift-sdk swift build -c release
+```
+
+This image is a build/test environment and does not start a Hub. Live tests
+remain opt-in and require private mounted inputs and a reachable trusted Hub;
+the container's localhost is not the Mac host.
 
 The current-Hub live test is mandatory when selected and reads all inputs from
 an owner-only JSON configuration file. It fails when configuration or expected

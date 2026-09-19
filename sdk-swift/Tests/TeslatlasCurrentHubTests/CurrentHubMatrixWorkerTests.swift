@@ -18,6 +18,86 @@ import Glibc
 private enum MatrixWorkerFailure: Error { case cancellationAccepted, oversizeAccepted }
 
 final class CurrentHubMatrixWorkerTests: XCTestCase {
+  func testMatrixCancellationPathStopsFixtureAndReturnsTypedFailure() async throws {
+    let started = ContinuousClock.now
+    let entries = try await matrixCancellationEvidence()
+
+    XCTAssertEqual(entries.count, 1)
+    XCTAssertEqual(entries[0].status, 0)
+    XCTAssertEqual(entries[0].requestID, "transport-no-response")
+    XCTAssertLessThan(started.duration(to: .now), .seconds(3))
+  }
+
+  func testMatrixBodyLimitPathStopsFixtureAndReturnsBoundedFailure() async throws {
+    let started = ContinuousClock.now
+    let entries = try await matrixBodyLimitEvidence()
+
+    XCTAssertEqual(entries.count, 1)
+    XCTAssertEqual(entries[0].status, 0)
+    XCTAssertEqual(entries[0].requestID, "transport-no-response")
+    XCTAssertLessThan(started.duration(to: .now), .seconds(3))
+  }
+
+  func testMatrixWorkerRejectsAckArrivingAfterCumulativeCellDeadline() async throws {
+    let fixture = try MatrixWorkerPhaseFixture(remainingCellMilliseconds: 5)
+    let task = Task<Void, Error> { _ = try await fixture.channel.phase("probe") }
+    let ready = try fixture.waitForReady()
+
+    do {
+      _ = try await task.value
+      XCTFail("Expected the phase to expire before its acknowledgement")
+    } catch let error as CurrentHubError {
+      XCTAssertEqual(
+        error,
+        .invalidResponse(
+          statusCode: 0,
+          requestID: nil,
+          reason: "matrix worker acknowledgement timed out"
+        )
+      )
+    }
+
+    // A coordinator acknowledgement that arrives after the one root-issued
+    // budget has expired must remain unusable; the worker has already failed.
+    try fixture.writeAck(
+      readySHA256: MatrixSHA256.hexDigest(ready), status: "accepted"
+    )
+    XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.ackURL.path))
+  }
+
+  func testMatrixWorkerRejectsNonAcceptedAckWithoutReadingChildResult() async throws {
+    let fixture = try MatrixWorkerPhaseFixture()
+    let task = Task<Void, Error> { _ = try await fixture.channel.phase("probe") }
+    let ready = try fixture.waitForReady()
+    try fixture.writeAck(
+      readySHA256: MatrixSHA256.hexDigest(ready), status: "failed"
+    )
+
+    do {
+      _ = try await task.value
+      XCTFail("Expected a failed child acknowledgement to be rejected")
+    } catch let error as CurrentHubError {
+      XCTAssertEqual(error, .invalidRequest("matrix worker acknowledgement is invalid"))
+    }
+  }
+
+  func testMatrixWorkerRejectsReplacedEvidenceBinding() async throws {
+    let fixture = try MatrixWorkerPhaseFixture()
+    let task = Task<Void, Error> { _ = try await fixture.channel.phase("probe") }
+    let ready = try fixture.waitForReady()
+    try fixture.writeAck(
+      readySHA256: MatrixSHA256.hexDigest(ready), status: "accepted",
+      resultSHA256: String(repeating: "0", count: 64)
+    )
+
+    do {
+      _ = try await task.value
+      XCTFail("Expected the replaced result binding to be rejected")
+    } catch let error as CurrentHubError {
+      XCTAssertEqual(error, .invalidRequest("matrix private file binding changed"))
+    }
+  }
+
   func testInstalledCurrentHubMatrixWorker() async throws {
     guard let path = ProcessInfo.processInfo.environment[
       "TESLATLAS_CURRENT_HUB_MATRIX_WORKER_CONFIG"
@@ -92,6 +172,7 @@ final class CurrentHubMatrixWorkerTests: XCTestCase {
     var etagRequests: [CurrentHubTranscriptEntry] = []
     var cursor: CurrentHubDriveCursor?
     var firstCursor: CurrentHubDriveCursor?
+    var secondCursor: CurrentHubDriveCursor?
     for _ in 0..<3 {
       let start = await transport.count()
       let query = CurrentHubDriveQuery(limit: 2, cursor: cursor)
@@ -100,7 +181,11 @@ final class CurrentHubMatrixWorkerTests: XCTestCase {
         return XCTFail("matrix drive page was not modified")
       }
       pages.append(page.items.map(\.id))
-      if firstCursor == nil { firstCursor = page.nextCursor }
+      if firstCursor == nil {
+        firstCursor = page.nextCursor
+      } else if secondCursor == nil {
+        secondCursor = page.nextCursor
+      }
       let conditional = try await client.drives(
         vehicleID: selected.vehicleID, query: query, ifNoneMatch: tag
       )
@@ -114,6 +199,20 @@ final class CurrentHubMatrixWorkerTests: XCTestCase {
     }
     XCTAssertEqual(pages, [[105, 104], [103, 102], [101]])
     XCTAssertNil(cursor)
+    let page2Cursor = try XCTUnwrap(firstCursor)
+    let page3Cursor = try XCTUnwrap(secondCursor)
+    let page2CursorSHA256 = MatrixSHA256.hexDigest(Data(page2Cursor.rawValue.utf8))
+    let page3CursorSHA256 = MatrixSHA256.hexDigest(Data(page3Cursor.rawValue.utf8))
+    XCTAssertEqual(etagRequests.count, 6)
+    for offset in stride(from: 0, to: etagRequests.count, by: 2) {
+      let modified = etagRequests[offset]
+      let notModified = etagRequests[offset + 1]
+      XCTAssertNil(modified.requestIfNoneMatch)
+      XCTAssertEqual(modified.responseCacheControl, "no-store")
+      XCTAssertEqual(notModified.requestIfNoneMatch, modified.responseETag)
+      XCTAssertEqual(notModified.responseETag, modified.responseETag)
+      XCTAssertEqual(notModified.responseCacheControl, "no-store")
+    }
 
     let wrongVehicleStart = await transport.count()
     await matrixAssertError(
@@ -221,7 +320,7 @@ final class CurrentHubMatrixWorkerTests: XCTestCase {
     XCTAssertEqual(recoveredVehicles.count, 2)
     let recoveryRequests = outageFailureRequests + (await transport.snapshot(since: recoveryStart))
 
-    let cancellation = try await matrixCancellationEvidence(endpoint: endpoint)
+    let cancellation = try await matrixCancellationEvidence()
     let bodyLimit = try await matrixBodyLimitEvidence()
     _ = try await channel.phase("final_verify")
 
@@ -264,11 +363,26 @@ final class CurrentHubMatrixWorkerTests: XCTestCase {
       "outage_recovery": ["outage_observed": true, "vehicles": 200],
       "unsupported_operation_zero_requests": ["outgoing_requests": 0],
       "credential_rotation_api": ["rotated": true, "same_device": rotatedCredential.deviceID == originalCredential.deviceID, "vehicles": 200, "old_credential_error": "unauthorized", "old_credential_status": 401],
-      "drives_three_page_order": ["pages": pages],
-      "drives_terminal_cursor": ["next_cursor": NSNull(), "ids": pages.last!],
-      "drives_etag_304": ["kind": "notModified", "post_304_ids": pages[1]],
-      "drives_wrong_vehicle_cursor": ["typed_error": "api", "http_status": 400, "error_code": "invalid_cursor"],
-      "drives_wrong_filter_cursor": ["typed_error": "api", "http_status": 400, "error_code": "invalid_cursor"],
+      "drives_three_page_order": [
+        "pages": pages,
+        "cursor_provenance": ["page2_sha256": page2CursorSHA256, "page3_sha256": page3CursorSHA256],
+      ],
+      "drives_terminal_cursor": [
+        "next_cursor": NSNull(), "ids": pages.last!,
+        "cursor_provenance": ["terminal_sha256": page3CursorSHA256],
+      ],
+      "drives_etag_304": [
+        "kind": "notModified", "post_304_ids": pages[1],
+        "cursor_provenance": ["page2_sha256": page2CursorSHA256, "page3_sha256": page3CursorSHA256],
+      ],
+      "drives_wrong_vehicle_cursor": [
+        "typed_error": "api", "http_status": 400, "error_code": "invalid_cursor",
+        "cursor_provenance": ["cursor_sha256": page2CursorSHA256],
+      ],
+      "drives_wrong_filter_cursor": [
+        "typed_error": "api", "http_status": 400, "error_code": "invalid_cursor",
+        "cursor_provenance": ["cursor_sha256": page2CursorSHA256],
+      ],
       "native_macos_transport": runtime,
       "native_linux_transport": runtime,
       "transport_cancellation": ["cancelled": true, "typed_error": "CancellationError", "bounded": true],
@@ -299,16 +413,158 @@ final class CurrentHubMatrixWorkerTests: XCTestCase {
       "transport_body_limit": (recovery.observationSequence, recovery.observationSequence),
     ]
     let operations = matrixCaseOperations
+    let credentialDevices: [String: UUID] = [
+      "real_auth": originalCredential.deviceID,
+      "credential_rotation_api": originalCredential.deviceID,
+      "replayed_invitation": originalCredential.deviceID,
+      "revocation": rotatedCredential.deviceID,
+      "credential_lifecycle_reauth": freshCredential.deviceID,
+      "endpoint_restart": freshCredential.deviceID,
+      "outage_recovery": freshCredential.deviceID,
+    ]
     let rows: [[String: Any]] = operations.keys.sorted().map { id in
       let anchor = lifecycle[id] ?? (commonAnchor, commonAnchor)
       return [
         "case_id": id, "operation": operations[id]!,
         "actor_manifest_sha256": identities.actorManifestSHA256,
         "session_sequence_before": anchor.0, "session_sequence_after": anchor.1,
+        "credential_device_id": credentialDevices[id]?.uuidString.lowercased() ?? NSNull(),
         "facts": actorFacts[id]!, "requests": matrixTranscript(requests[id] ?? []),
       ]
     }
     try channel.writeEvidence(rows: rows)
+  }
+}
+
+private final class MatrixWorkerPhaseFixture: @unchecked Sendable {
+  let root: URL
+  let ackURL: URL
+  let channel: MatrixWorkerChannel
+  private let coordinationDirectory: URL
+  private let config: CurrentHubMatrixWorkerConfig
+
+  init(remainingCellMilliseconds: Int = 1_000) throws {
+    root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "current-hub-worker-phase-\(UUID().uuidString)", isDirectory: true
+    )
+    let privateDirectory = root.appendingPathComponent("private", isDirectory: true)
+    coordinationDirectory = root.appendingPathComponent("coordination", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: privateDirectory, withIntermediateDirectories: true,
+      attributes: [.posixPermissions: NSNumber(value: 0o700)]
+    )
+    try FileManager.default.createDirectory(
+      at: coordinationDirectory, withIntermediateDirectories: true,
+      attributes: [.posixPermissions: NSNumber(value: 0o700)]
+    )
+
+    let initialURL = root.appendingPathComponent("initial-observation.json")
+    let initialData = Data(
+      #"{"proof_sha256":"0000000000000000000000000000000000000000000000000000000000000000","session_sequence":1}"#.utf8
+    )
+    try initialData.write(to: initialURL, options: .atomic)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: initialURL.path
+    )
+
+    let phaseURL = root.appendingPathComponent("phases.json")
+    let phaseObject: [String: Any] = [
+      "schema_version": 1,
+      "kind": "swift-worker-phases",
+      "actor_id": "swift_macos",
+      "resources": [:],
+      "phases": [[
+        "phase_id": "probe", "ordinal": 1, "recipe_id": "swift-probe",
+        "operations": ["verify"], "timeout_ms": 500,
+      ]],
+    ]
+    let phaseData = try JSONSerialization.data(
+      withJSONObject: phaseObject, options: [.sortedKeys, .withoutEscapingSlashes]
+    )
+    try phaseData.write(to: phaseURL, options: .atomic)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: phaseURL.path
+    )
+
+    let phaseDigest = MatrixSHA256.hexDigest(phaseData)
+    let initialDigest = MatrixSHA256.hexDigest(initialData)
+    let initialBinding: [String: Any] = ["path": initialURL.path, "sha256": initialDigest]
+    let phaseBinding: [String: Any] = ["path": phaseURL.path, "sha256": phaseDigest]
+    let object: [String: Any] = [
+      "schema_version": 1,
+      "kind": "matrix-actor-worker",
+      "actor_id": "swift_macos",
+      "session_id": "12345678-1234-4234-8234-123456789abc",
+      "cell_id": "swift__macos_arm64",
+      "instance_nonce": String(repeating: "a", count: 64),
+      "session_input_sha256": String(repeating: "b", count: 64),
+      "remaining_cell_ms": remainingCellMilliseconds,
+      "phase_contract": ["id": "phase_contract", "root": phaseBinding, "local": phaseBinding],
+      "inputs": [["id": "initial_observation", "root": initialBinding, "local": initialBinding]],
+      "private_root": privateDirectory.path,
+      "coordination_dir": coordinationDirectory.path,
+      "evidence_path": root.appendingPathComponent("evidence.json").path,
+      "log_path": root.appendingPathComponent("worker.log").path,
+    ]
+    let configData = try JSONSerialization.data(
+      withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]
+    )
+    config = try CurrentHubMatrixWorkerConfig.decode(configData)
+    channel = try MatrixWorkerChannel(config: config)
+    ackURL = coordinationDirectory.appendingPathComponent("worker-ack-000001.json")
+  }
+
+  deinit {
+    try? FileManager.default.removeItem(at: root)
+  }
+
+  func waitForReady(timeout: TimeInterval = 1) throws -> Data {
+    let readyURL = coordinationDirectory.appendingPathComponent("worker-ready-000001.json")
+    let deadline = Date().addingTimeInterval(timeout)
+    while !FileManager.default.fileExists(atPath: readyURL.path) && Date() < deadline {
+      Thread.sleep(forTimeInterval: 0.005)
+    }
+    guard let data = try? Data(contentsOf: readyURL) else {
+      throw CurrentHubError.invalidResponse(
+        statusCode: 0, requestID: nil, reason: "matrix worker did not publish ready"
+      )
+    }
+    return data
+  }
+
+  func writeAck(
+    readySHA256: String,
+    status: String,
+    resultSHA256: String? = nil
+  ) throws {
+    let resultURL = root.appendingPathComponent("result.json")
+    let resultData = Data(
+      #"{"actor_id":"swift_macos","phase_id":"probe","results":[{"operation":"verify","result":{"proof":{"discovery":{"hub_id":"11111111-1111-4111-8111-111111111111"},"service":{"generation":"fixture"},"sequence":2}}}],"schema_version":1,"session_id":"12345678-1234-4234-8234-123456789abc"}"#.utf8
+    )
+    try resultData.write(to: resultURL, options: .atomic)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: resultURL.path
+    )
+    let resultBinding: [String: Any] = [
+      "path": resultURL.path,
+      "sha256": resultSHA256 ?? MatrixSHA256.hexDigest(resultData),
+    ]
+    let ack: [String: Any] = [
+      "schema_version": 1,
+      "type": "worker_ack",
+      "session_id": config.sessionID.uuidString.lowercased(),
+      "cell_id": config.cellID,
+      "session_input_sha256": config.sessionInputSHA256,
+      "instance_nonce": config.instanceNonce,
+      "sequence": 1,
+      "ready_sha256": readySHA256,
+      "actor_id": config.actorID,
+      "phase": "probe",
+      "status": status,
+      "action": "continue",
+      "result": resultBinding,
+    ]
+    _ = try matrixWriteJSON(ack, to: ackURL)
   }
 }
 
@@ -346,17 +602,34 @@ private func matrixAssertError<T>(
 }
 
 private func matrixTranscript(_ entries: [CurrentHubTranscriptEntry]) -> [[String: Any]] {
-  entries.map { ["method": $0.method, "route": $0.route, "status": $0.status, "request_id": $0.requestID] }
+  entries.map {
+    ["method": $0.method, "route": $0.route, "status": $0.status,
+     "request_id": $0.requestID, "scope": $0.scope,
+     "request_if_none_match": $0.requestIfNoneMatch ?? NSNull(),
+     "response_etag": $0.responseETag ?? NSNull(),
+     "response_cache_control": $0.responseCacheControl ?? NSNull()]
+  }
 }
 
-private func matrixInvitation(
+func matrixInvitation(
   _ invitation: CurrentHubInvitation, replacingSecret secret: String
 ) throws -> CurrentHubInvitation {
+  guard var components = URLComponents(
+    url: invitation.pairingURI, resolvingAgainstBaseURL: false
+  ), var items = components.queryItems,
+    items.filter({ $0.name == "secret" }).count == 1,
+    let secretIndex = items.firstIndex(where: { $0.name == "secret" })
+  else { throw CurrentHubError.invalidRequest("matrix invitation URI is invalid") }
+  items[secretIndex] = URLQueryItem(name: "secret", value: secret)
+  components.queryItems = items
+  guard let pairingURI = components.url else {
+    throw CurrentHubError.invalidRequest("matrix invitation URI is invalid")
+  }
   let data = try JSONSerialization.data(withJSONObject: [
     "endpoint": invitation.endpoint.absoluteString,
     "pairingId": invitation.pairingID.uuidString.lowercased(),
     "expiresAtMs": invitation.expiresAtMilliseconds, "tlsPin": invitation.tlsPin,
-    "pairingUri": invitation.pairingURI.absoluteString, "secret": secret,
+    "pairingUri": pairingURI.absoluteString, "secret": secret,
   ])
   return try JSONDecoder().decode(CurrentHubInvitation.self, from: data)
 }
@@ -374,7 +647,10 @@ private func matrixTrustedTransport(
 ) throws -> CurrentHubURLSessionTransport {
   #if canImport(Security)
     let certificate = try matrixInput(config, discriminator: { $0.id == "certificate" })
-    let der = try matrixCertificateDER(matrixBoundedRead(URL(fileURLWithPath: certificate.local.path), maximumBytes: 65_536))
+    let der = try matrixCertificateDER(matrixBoundedRead(
+      URL(fileURLWithPath: certificate.local.path), maximumBytes: 65_536,
+      expectedSHA256: certificate.local.sha256
+    ))
     return try CurrentHubURLSessionTransport(
       maximumResponseBytes: 1_048_576,
       trustedCertificateAuthoritiesDER: [der],
@@ -403,47 +679,60 @@ private struct MatrixInputIdentities {
 }
 
 private func matrixInputIdentities(_ config: CurrentHubMatrixWorkerConfig) throws -> MatrixInputIdentities {
-  var artifact: String?
-  var hub: String?
-  var actorManifest: String?
-  var members: [[String: Any]]?
-  for input in config.inputs {
-    let data = try matrixBoundedRead(URL(fileURLWithPath: input.local.path), maximumBytes: 1_048_576)
-    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-    if object["execution_kind"] as? String == "actual_hub_acceptance",
-      let artifacts = object["artifacts"] as? [[String: Any]],
-      let selected = artifacts.first(where: { $0["role"] as? String == "swift_sdk_product" }) {
-      artifact = selected["sha256"] as? String
-      hub = artifacts.first(where: { $0["role"] as? String == "hub_executable" })?["sha256"] as? String
-    }
-    if object["artifact_sha256"] is String, let files = object["files"] as? [[String: Any]] {
-      members = files.map { item in
-        ["path": item["path"]!, "sha256": item["sha256"]!, "bytes": item["bytes"]!,
-         "mode": String(format: "%04o", item["mode"] as! Int)]
-      }
-    }
-    if object["build_record"] != nil { actorManifest = input.local.sha256 }
-  }
-  guard let hub, let artifact, let actorManifest, let members else {
+  let headerInput = try matrixInput(config, discriminator: { $0.id == "header" })
+  let productInput = try matrixInput(config, discriminator: { $0.id == "swift_product_manifest" })
+  let actorInput = try matrixInput(config, discriminator: { $0.id == "actor_input_manifest" })
+  let headerData = try matrixBoundedRead(
+    URL(fileURLWithPath: headerInput.local.path), maximumBytes: 1_048_576,
+    expectedSHA256: headerInput.local.sha256
+  )
+  let productData = try matrixBoundedRead(
+    URL(fileURLWithPath: productInput.local.path), maximumBytes: 1_048_576,
+    expectedSHA256: productInput.local.sha256
+  )
+  let actorData = try matrixBoundedRead(
+    URL(fileURLWithPath: actorInput.local.path), maximumBytes: 1_048_576,
+    expectedSHA256: actorInput.local.sha256
+  )
+  guard let header = try matrixStrictJSONObject(headerData) as? [String: Any],
+    header["execution_kind"] as? String == "actual_hub_acceptance",
+    let artifacts = header["artifacts"] as? [[String: Any]],
+    let artifact = artifacts.first(where: { $0["role"] as? String == "swift_sdk_product" })?["sha256"] as? String,
+    let hub = artifacts.first(where: { $0["role"] as? String == "hub_executable" })?["sha256"] as? String,
+    let product = try matrixStrictJSONObject(productData) as? [String: Any],
+    let membersValue = product["files"] as? [[String: Any]],
+    let actorManifest = try matrixStrictJSONObject(actorData) as? [String: Any],
+    actorManifest["build_record"] != nil
+  else {
     throw CurrentHubError.invalidRequest("matrix installed identities are incomplete")
   }
+  let members = try membersValue.map { item -> [String: Any] in
+    guard Set(item.keys) == ["path", "sha256", "bytes", "mode"],
+      let path = item["path"] as? String, let sha = item["sha256"] as? String,
+      let bytes = item["bytes"] as? Int, let mode = item["mode"] as? Int
+    else { throw CurrentHubError.invalidRequest("matrix installed identities are incomplete") }
+    return ["path": path, "sha256": sha, "bytes": bytes,
+            "mode": String(format: "%04o", mode)]
+  }
   return MatrixInputIdentities(
-    hubSHA256: hub, artifactSHA256: artifact, actorManifestSHA256: actorManifest,
+    hubSHA256: hub, artifactSHA256: artifact,
+    actorManifestSHA256: actorInput.local.sha256,
     installedMembers: members.sorted { ($0["path"] as! String) < ($1["path"] as! String) }
   )
 }
 
 private func matrixServiceMode(_ config: CurrentHubMatrixWorkerConfig) throws -> String {
-  for input in config.inputs {
-    let data = try matrixBoundedRead(URL(fileURLWithPath: input.local.path), maximumBytes: 1_048_576)
-    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      object["execution_kind"] as? String == "actual_hub_acceptance",
-      let runtime = object["runtime"] as? [String: Any],
-      let hub = runtime["hub"] as? [String: Any], let mode = hub["service_mode"] as? String
-    else { continue }
-    return mode
-  }
-  throw CurrentHubError.invalidRequest("matrix service mode is missing")
+  let input = try matrixInput(config, discriminator: { $0.id == "header" })
+  let data = try matrixBoundedRead(
+    URL(fileURLWithPath: input.local.path), maximumBytes: 1_048_576,
+    expectedSHA256: input.local.sha256
+  )
+  guard let object = try matrixStrictJSONObject(data) as? [String: Any],
+    object["execution_kind"] as? String == "actual_hub_acceptance",
+    let runtime = object["runtime"] as? [String: Any],
+    let hub = runtime["hub"] as? [String: Any], let mode = hub["service_mode"] as? String
+  else { throw CurrentHubError.invalidRequest("matrix service mode is missing") }
+  return mode
 }
 
 #if canImport(Security)
@@ -457,26 +746,36 @@ private func matrixServiceMode(_ config: CurrentHubMatrixWorkerConfig) throws ->
   }
 #endif
 
-private func matrixCancellationEvidence(endpoint: URL) async throws -> [CurrentHubTranscriptEntry] {
+private func matrixCancellationEvidence() async throws -> [CurrentHubTranscriptEntry] {
+  let server = try MatrixCancellationServer()
   let transcript = CurrentHubTranscriptTransport(base: CurrentHubURLSessionTransport(maximumResponseBytes: 1_048_576))
   let task = Task {
-    withUnsafeCurrentTask { $0?.cancel() }
-    return try await transcript.send(URLRequest(url: endpoint.appendingPathComponent("healthz")))
+    try await transcript.send(URLRequest(
+      url: URL(string: "http://127.0.0.1:\(server.port)/cancel?fixture=matrix-cancellation-v1")!
+    ))
   }
+  guard server.waitForRequest() else {
+    task.cancel(); await server.close()
+    throw CurrentHubError.invalidResponse(statusCode: 0, requestID: nil, reason: "matrix cancellation fixture did not receive request")
+  }
+  task.cancel()
   do {
     _ = try await task.value
-    XCTFail("pre-cancelled matrix request succeeded")
+    await server.close()
+    XCTFail("in-flight matrix request succeeded after cancellation")
     throw MatrixWorkerFailure.cancellationAccepted
   }
   catch is CancellationError {}
-  return await transcript.snapshot()
+  let entries = await transcript.snapshot()
+  await server.close()
+  return entries
 }
 
 private func matrixBodyLimitEvidence() async throws -> [CurrentHubTranscriptEntry] {
   let server = try MatrixOversizeServer()
   let transcript = CurrentHubTranscriptTransport(base: CurrentHubURLSessionTransport(maximumResponseBytes: 1_048_576))
   do {
-    _ = try await transcript.send(URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/oversize")!))
+    _ = try await transcript.send(URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/oversize?fixture=matrix-body-limit-v1")!))
     await server.close()
     XCTFail("oversize matrix response succeeded")
     throw MatrixWorkerFailure.oversizeAccepted
@@ -490,6 +789,71 @@ private func matrixBodyLimitEvidence() async throws -> [CurrentHubTranscriptEntr
   let entries = await transcript.snapshot()
   await server.close()
   return entries
+}
+
+private final class MatrixCancellationServer: @unchecked Sendable {
+  let port: UInt16
+  private let descriptor: Int32
+  private let requestSeen = DispatchSemaphore(value: 0)
+  private let task: Task<Void, Never>
+
+  init() throws {
+    #if os(Linux)
+      let stream = Int32(SOCK_STREAM.rawValue)
+    #else
+      let stream = SOCK_STREAM
+    #endif
+    let listener = socket(AF_INET, stream, 0)
+    guard listener >= 0 else { throw CurrentHubError.transportFailure(code: Int(errno)) }
+    var reuse: Int32 = 1
+    _ = setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout.size(ofValue: reuse)))
+    var address = sockaddr_in()
+    #if !os(Linux)
+      address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    #endif
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = 0
+    address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+    let bound = withUnsafePointer(to: &address) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        bind(listener, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+      }
+    }
+    guard bound == 0, listen(listener, 1) == 0 else {
+      DarwinOrGlibcClose(listener)
+      throw CurrentHubError.transportFailure(code: Int(errno))
+    }
+    var actual = sockaddr_in(); var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let named = withUnsafeMutablePointer(to: &actual) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(listener, $0, &length) }
+    }
+    guard named == 0 else {
+      DarwinOrGlibcClose(listener)
+      throw CurrentHubError.transportFailure(code: Int(errno))
+    }
+    descriptor = listener; port = UInt16(bigEndian: actual.sin_port)
+    let requestSeen = self.requestSeen
+    task = Task.detached {
+      let connection = accept(listener, nil, nil)
+      guard connection >= 0 else { return }
+      defer { DarwinOrGlibcClose(connection) }
+      var request = [UInt8](repeating: 0, count: 4096)
+      _ = recv(connection, &request, request.count, 0)
+      requestSeen.signal()
+      try? await Task.sleep(nanoseconds: 2_000_000_000)
+    }
+  }
+
+  func waitForRequest() -> Bool {
+    requestSeen.wait(timeout: .now() + 2) == .success
+  }
+
+  func close() async {
+    _ = shutdown(descriptor, Int32(SHUT_RDWR))
+    DarwinOrGlibcClose(descriptor)
+    task.cancel()
+    await task.value
+  }
 }
 
 private final class MatrixOversizeServer: @unchecked Sendable {
@@ -601,6 +965,7 @@ private struct MatrixPhaseResult {
 
 private final class MatrixWorkerChannel: @unchecked Sendable {
   private let config: CurrentHubMatrixWorkerConfig
+  private let cellDeadline: MatrixWorkerCellDeadline
   private var sequence = 0
   private(set) var observationSequence: Int
   private var proofSHA256: String
@@ -609,10 +974,17 @@ private final class MatrixWorkerChannel: @unchecked Sendable {
 
   init(config: CurrentHubMatrixWorkerConfig) throws {
     self.config = config
+    self.cellDeadline = try MatrixWorkerCellDeadline(
+      startNanoseconds: DispatchTime.now().uptimeNanoseconds,
+      remainingMilliseconds: config.remainingCellMilliseconds
+    )
     let initial = try matrixInput(config, discriminator: { $0.id == "initial_observation" })
-    let data = try matrixBoundedRead(URL(fileURLWithPath: initial.local.path), maximumBytes: 65_536)
+    let data = try matrixBoundedRead(
+      URL(fileURLWithPath: initial.local.path), maximumBytes: 65_536,
+      expectedSHA256: initial.local.sha256
+    )
     guard MatrixSHA256.hexDigest(data) == initial.local.sha256,
-      let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let object = try matrixStrictJSONObject(data) as? [String: Any],
       Set(object.keys) == ["session_sequence", "proof_sha256"],
       let sequence = object["session_sequence"] as? Int,
       let digest = object["proof_sha256"] as? String
@@ -621,6 +993,7 @@ private final class MatrixWorkerChannel: @unchecked Sendable {
   }
 
   func phase(_ id: String, deviceID: UUID? = nil) async throws -> MatrixPhaseResult {
+    try ensureCellTimeRemaining()
     sequence += 1
     let witness: [String: Any] = [
       "schema_version": 1, "session_id": config.sessionID.uuidString.lowercased(),
@@ -640,13 +1013,25 @@ private final class MatrixWorkerChannel: @unchecked Sendable {
     let readyPath = URL(fileURLWithPath: config.coordinationDirectory).appendingPathComponent(String(format: "worker-ready-%06d.json", sequence))
     let readyBinding = try matrixWriteJSON(ready, to: readyPath)
     let ackURL = URL(fileURLWithPath: config.coordinationDirectory).appendingPathComponent(String(format: "worker-ack-%06d.json", sequence))
-    let deadline = Date().addingTimeInterval(160)
+    let phase = try matrixPhase(config: config, id: id)
+    let phaseTimeout = try timeoutMilliseconds(for: phase)
+    let now = DispatchTime.now().uptimeNanoseconds
+    let deadline = try cellDeadline.phaseDeadline(
+      startingAt: now,
+      phaseMilliseconds: phaseTimeout
+    )
+    try ensureCellTimeRemaining()
     while !FileManager.default.fileExists(atPath: ackURL.path) {
-      if Date() >= deadline { throw CurrentHubError.invalidResponse(statusCode: 0, requestID: nil, reason: "matrix worker acknowledgement timed out") }
+      let current = DispatchTime.now().uptimeNanoseconds
+      if current >= deadline || cellDeadline.isExpired(at: current) {
+        throw CurrentHubError.invalidResponse(statusCode: 0, requestID: nil, reason: "matrix worker acknowledgement timed out")
+      }
       try await Task.sleep(nanoseconds: 250_000_000)
     }
+    try ensureCellTimeRemaining()
     let ackData = try matrixBoundedRead(ackURL, maximumBytes: 65_536)
-    guard let ack = try JSONSerialization.jsonObject(with: ackData) as? [String: Any],
+    try ensureCellTimeRemaining()
+    guard let ack = try matrixStrictJSONObject(ackData) as? [String: Any],
       Set(ack.keys) == ["schema_version", "type", "session_id", "cell_id", "session_input_sha256", "instance_nonce", "sequence", "ready_sha256", "actor_id", "phase", "status", "action", "result"],
       ack["schema_version"] as? Int == 1, ack["type"] as? String == "worker_ack",
       ack["session_id"] as? String == config.sessionID.uuidString.lowercased(),
@@ -657,14 +1042,23 @@ private final class MatrixWorkerChannel: @unchecked Sendable {
       ack["actor_id"] as? String == config.actorID, ack["phase"] as? String == id,
       ack["status"] as? String == "accepted", ack["action"] as? String == "continue",
       let resultBinding = ack["result"] as? [String: String],
-      let resultPath = resultBinding["path"], let resultDigest = resultBinding["sha256"]
+      Set(resultBinding.keys) == ["path", "sha256"],
+      let resultPath = resultBinding["path"], let resultDigest = resultBinding["sha256"],
+      resultPath.hasPrefix("/"), !resultPath.contains(".."),
+      resultDigest.count == 64,
+      resultDigest.unicodeScalars.allSatisfy(CharacterSet(charactersIn: "0123456789abcdef").contains)
     else { throw CurrentHubError.invalidRequest("matrix worker acknowledgement is invalid") }
-    let resultData = try matrixBoundedRead(URL(fileURLWithPath: resultPath), maximumBytes: 1_048_576)
+    let resultData = try matrixBoundedRead(
+      URL(fileURLWithPath: resultPath), maximumBytes: 1_048_576,
+      expectedSHA256: resultDigest
+    )
+    try ensureCellTimeRemaining()
     guard MatrixSHA256.hexDigest(resultData) == resultDigest,
-      let envelope = try JSONSerialization.jsonObject(with: resultData) as? [String: Any],
-      let results = envelope["results"] as? [[String: Any]],
-      let last = results.last?["result"] as? [String: Any]
+      let envelope = try matrixStrictJSONObject(resultData) as? [String: Any]
     else { throw CurrentHubError.invalidRequest("matrix phase result is invalid") }
+    let last = try matrixValidatePhaseResultEnvelope(
+      envelope, config: config, phase: phase, phaseID: id
+    )
     if let proof = last["proof"] as? [String: Any], let nextSequence = proof["sequence"] as? Int,
       nextSequence > observationSequence,
       let discovery = proof["discovery"] as? [String: Any],
@@ -682,7 +1076,25 @@ private final class MatrixWorkerChannel: @unchecked Sendable {
                              hubID: observedHubID, serviceGeneration: observedServiceGeneration)
   }
 
+  private func timeoutMilliseconds(for phase: [String: Any]) throws -> Int {
+    guard let timeout = matrixWorkerInteger(phase["timeout_ms"]), timeout > 0 else {
+      throw CurrentHubError.invalidRequest("matrix phase timeout is invalid")
+    }
+    return timeout
+  }
+
+  private func ensureCellTimeRemaining() throws {
+    guard !cellDeadline.isExpired(at: DispatchTime.now().uptimeNanoseconds) else {
+      throw CurrentHubError.invalidResponse(
+        statusCode: 0,
+        requestID: nil,
+        reason: "matrix worker cell deadline expired"
+      )
+    }
+  }
+
   func writeEvidence(rows: [[String: Any]]) throws {
+    try ensureCellTimeRemaining()
     let value: [String: Any] = [
       "schema_version": 1, "session_id": config.sessionID.uuidString.lowercased(),
       "cell_id": config.cellID, "session_input_sha256": config.sessionInputSHA256,
@@ -693,10 +1105,80 @@ private final class MatrixWorkerChannel: @unchecked Sendable {
   }
 }
 
-private func matrixBoundedRead(_ url: URL, maximumBytes: Int) throws -> Data {
-  let data = try Data(contentsOf: url, options: .mappedIfSafe)
-  guard data.count <= maximumBytes else { throw CurrentHubError.invalidRequest("matrix file exceeds bound") }
-  return data
+func matrixValidatePhaseResultEnvelope(
+  _ envelope: [String: Any],
+  config: CurrentHubMatrixWorkerConfig,
+  phase: [String: Any],
+  phaseID: String
+) throws -> [String: Any] {
+  let phaseKeys: Set<String> = ["phase_id", "ordinal", "recipe_id", "operations", "timeout_ms"]
+  guard Set(phase.keys) == phaseKeys,
+    phase["phase_id"] as? String == phaseID,
+    let operations = phase["operations"] as? [String],
+    !operations.isEmpty,
+    operations.allSatisfy({ ["verify", "stop", "start", "pair", "revoke"].contains($0) })
+  else { throw CurrentHubError.invalidRequest("matrix phase result is invalid") }
+
+  let envelopeKeys: Set<String> = ["schema_version", "session_id", "actor_id", "phase_id", "results"]
+  guard Set(envelope.keys) == envelopeKeys,
+    matrixWorkerInteger(envelope["schema_version"]) == 1,
+    envelope["session_id"] as? String == config.sessionID.uuidString.lowercased(),
+    envelope["actor_id"] as? String == config.actorID,
+    envelope["phase_id"] as? String == phaseID,
+    let results = envelope["results"] as? [[String: Any]],
+    results.count == operations.count
+  else { throw CurrentHubError.invalidRequest("matrix phase result is invalid") }
+
+  var last: [String: Any]?
+  for (operation, item) in zip(operations, results) {
+    guard Set(item.keys) == ["operation", "result"],
+      item["operation"] as? String == operation,
+      let result = item["result"] as? [String: Any]
+    else { throw CurrentHubError.invalidRequest("matrix phase result is invalid") }
+    last = result
+  }
+  guard let last else {
+    throw CurrentHubError.invalidRequest("matrix phase result is invalid")
+  }
+  return last
+}
+
+private func matrixWorkerInteger(_ value: Any?) -> Int? {
+  guard let number = value as? NSNumber else { return nil }
+  let type = String(cString: number.objCType)
+  guard !["c", "C", "B", "d", "D", "f", "F"].contains(type) else { return nil }
+  let integer = number.int64Value
+  guard integer >= Int64(Int.min), integer <= Int64(Int.max) else { return nil }
+  return Int(integer)
+}
+
+private func matrixPhase(
+  config: CurrentHubMatrixWorkerConfig, id: String
+) throws -> [String: Any] {
+  let binding = config.phaseContract.local
+  let data = try matrixBoundedRead(
+    URL(fileURLWithPath: binding.path), maximumBytes: 1_048_576,
+    expectedSHA256: binding.sha256
+  )
+  guard let contract = try matrixStrictJSONObject(data) as? [String: Any],
+    Set(contract.keys) == ["schema_version", "kind", "actor_id", "resources", "phases"],
+    matrixWorkerInteger(contract["schema_version"]) == 1,
+    contract["kind"] as? String == "swift-worker-phases",
+    contract["actor_id"] as? String == config.actorID,
+    let phases = contract["phases"] as? [[String: Any]],
+    let phase = phases.first(where: { $0["phase_id"] as? String == id }),
+    Set(phase.keys) == ["phase_id", "ordinal", "recipe_id", "operations", "timeout_ms"],
+    let operations = phase["operations"] as? [String],
+    !operations.isEmpty,
+    operations.allSatisfy({ ["verify", "stop", "start", "pair", "revoke"].contains($0) })
+  else { throw CurrentHubError.invalidRequest("matrix phase contract is invalid") }
+  return phase
+}
+
+private func matrixBoundedRead(
+  _ url: URL, maximumBytes: Int, expectedSHA256: String? = nil
+) throws -> Data {
+  try matrixPrivateRead(url, maximumBytes: maximumBytes, expectedSHA256: expectedSHA256)
 }
 
 private func matrixWriteJSON(_ value: Any, to url: URL) throws -> [String: Any] {
@@ -717,7 +1199,7 @@ private func matrixWriteJSON(_ value: Any, to url: URL) throws -> [String: Any] 
   return ["path": url.path, "sha256": MatrixSHA256.hexDigest(data)]
 }
 
-private enum MatrixSHA256 {
+enum MatrixSHA256 {
   private static let initial: [UInt32] = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]
   private static let constants: [UInt32] = [
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,

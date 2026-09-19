@@ -4,10 +4,12 @@ import time
 
 mode = sys.argv[1]
 count = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+host = sys.argv[3] if len(sys.argv) > 3 else "127.0.0.1"
+family = socket.AF_INET6 if ":" in host else socket.AF_INET
 
-server = socket.socket()
+server = socket.socket(family)
 server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind(("127.0.0.1", 0))
+server.bind((host, 0))
 server.listen(max(8, count))
 print(server.getsockname()[1], flush=True)
 
@@ -88,6 +90,14 @@ try:
                     b"www-authenticate: Basic realm=\"fallback\"\r\n"
                     b"Cache-Control: private\r\ncache-control: no-store\r\n"
                     b"X-Request-ID: repeated-auth\r\n"
+                    b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+            elif mode == "auth-401":
+                connection.sendall(
+                    b"HTTP/1.1 401 Unauthorized\r\n"
+                    b"WWW-Authenticate: Bearer realm=\"hub\"\r\n"
+                    b"Cache-Control: private, no-store\r\n"
+                    b"X-Request-ID: loopback-auth\r\n"
                     b"Content-Length: 0\r\nConnection: close\r\n\r\n"
                 )
             elif mode == "trailers":

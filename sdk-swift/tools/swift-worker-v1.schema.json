@@ -77,7 +77,11 @@
         "method",
         "route",
         "status",
-        "request_id"
+        "request_id",
+        "scope",
+        "request_if_none_match",
+        "response_etag",
+        "response_cache_control"
       ],
       "properties": {
         "method": {
@@ -99,6 +103,34 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^/",
+          "maxLength": 2048
+        },
+        "request_if_none_match": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\"[0-9a-f]{64}\"$",
+          "maxLength": 66
+        },
+        "response_etag": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\"[0-9a-f]{64}\"$",
+          "maxLength": 66
+        },
+        "response_cache_control": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
         }
       }
     },
@@ -111,6 +143,7 @@
         "actor_manifest_sha256",
         "session_sequence_before",
         "session_sequence_after",
+        "credential_device_id",
         "facts",
         "requests"
       ],
@@ -181,6 +214,10 @@
         "session_sequence_after": {
           "type": "integer",
           "minimum": 1
+        },
+        "credential_device_id": {
+          "type": ["string", "null"],
+          "format": "uuid"
         },
         "facts": {
           "type": "object"

@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Provide idiomatic Swift boundaries over two explicit contracts without
+Provide idiomatic Swift boundaries over three explicit contracts without
 importing the Teslatlas app or Hub implementation.
 
 ## Package boundaries
@@ -12,6 +12,7 @@ importing the Teslatlas app or Hub implementation.
 | `TeslatlasHubSDK` | Strict protocol-1.2 discovery, version negotiation, endpoint trust, typed reads, ETags, problems, and event decoding |
 | `TeslatlasCommands` | Strict protocol-1.2 asynchronous commands with explicit confirmation and idempotency |
 | `TeslatlasHubV1Compatibility` | Isolated deployed-Hub v1.0.0 discovery, existing bearer, vehicles, current state, and drives |
+| `TeslatlasCurrentHub` | Isolated `hub-http-v1@1.0.0` discovery, pairing and rotation, health/readiness, vehicles, current state, and bounded drives |
 | Internal mechanics | Atomic JSON state, bounded SSE framing, generic HTTP range validation, binding hash validation, and isolated transports |
 
 `TeslatlasCommands` depends on `TeslatlasHubSDK`. The Hub-v1 compatibility
@@ -74,3 +75,14 @@ when discovery advertises that capability.
 
 Full protocol conformance remains pending an independently implemented JSONL
 adapter. Live Hub-v1 proof remains separate from deterministic fixture proof.
+
+## Current Hub trust model
+
+`CurrentHubClient` loads and hash-checks the bundled `hub-http-v1@1.0.0`
+profile before discovery. It requires a caller-pinned Hub UUID, the exact
+current product version and capability set, and same-origin HTTPS routes.
+Pairing claims use a transport that explicitly owns certificate leaf-pin
+validation; a plain custom HTTP transport fails before a claim secret is sent.
+Apple uses ephemeral URLSession/Security and Linux uses the isolated
+OpenSSL-backed libcurl transport. Credential persistence and sign-out remain
+application-owned; the client deliberately has no server-revoke API.

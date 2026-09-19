@@ -13,6 +13,7 @@
     "actor_manifest_sha256",
     "session_sequence_before",
     "session_sequence_after",
+    "credential_device_id",
     "facts",
     "requests",
     "cleanup"
@@ -78,6 +79,13 @@
     "session_sequence_after": {
       "type": "integer",
       "minimum": 1
+    },
+    "credential_device_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
     },
     "facts": {
       "anyOf": [
@@ -145,7 +153,8 @@
               "type": "string"
             },
             "protocol_major": {
-              "type": "string"
+              "type": "integer",
+              "const": 1
             },
             "pack_format": {
               "type": "string"
@@ -280,7 +289,26 @@
               "type": "integer"
             },
             "vehicles": {
-              "type": "integer"
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "vehicle_id",
+                  "display_name"
+                ],
+                "properties": {
+                  "vehicle_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "display_name": {
+                    "type": "string"
+                  }
+                }
+              }
             }
           }
         },
@@ -489,7 +517,8 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "pages"
+            "pages",
+            "cursor_provenance"
           ],
           "properties": {
             "pages": {
@@ -498,6 +527,22 @@
                 "type": "array",
                 "items": {
                   "type": "integer"
+                }
+              }
+            },
+            "cursor_provenance": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "page2_sha256",
+                "page3_sha256"
+              ],
+              "properties": {
+                "page2_sha256": {
+                  "$ref": "#/$defs/sha"
+                },
+                "page3_sha256": {
+                  "$ref": "#/$defs/sha"
                 }
               }
             }
@@ -509,7 +554,8 @@
           "additionalProperties": false,
           "required": [
             "next_cursor",
-            "ids"
+            "ids",
+            "cursor_provenance"
           ],
           "properties": {
             "next_cursor": {
@@ -524,6 +570,18 @@
               "items": {
                 "type": "integer"
               }
+            },
+            "cursor_provenance": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "terminal_sha256"
+              ],
+              "properties": {
+                "terminal_sha256": {
+                  "$ref": "#/$defs/sha"
+                }
+              }
             }
           }
         },
@@ -533,7 +591,8 @@
           "additionalProperties": false,
           "required": [
             "kind",
-            "post_304_ids"
+            "post_304_ids",
+            "cursor_provenance"
           ],
           "properties": {
             "kind": {
@@ -543,6 +602,22 @@
               "type": "array",
               "items": {
                 "type": "integer"
+              }
+            },
+            "cursor_provenance": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "page2_sha256",
+                "page3_sha256"
+              ],
+              "properties": {
+                "page2_sha256": {
+                  "$ref": "#/$defs/sha"
+                },
+                "page3_sha256": {
+                  "$ref": "#/$defs/sha"
+                }
               }
             }
           }
@@ -554,7 +629,8 @@
           "required": [
             "typed_error",
             "http_status",
-            "error_code"
+            "error_code",
+            "cursor_provenance"
           ],
           "properties": {
             "typed_error": {
@@ -565,6 +641,18 @@
             },
             "error_code": {
               "type": "string"
+            },
+            "cursor_provenance": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cursor_sha256"
+              ],
+              "properties": {
+                "cursor_sha256": {
+                  "$ref": "#/$defs/sha"
+                }
+              }
             }
           }
         },
@@ -575,7 +663,8 @@
           "required": [
             "typed_error",
             "http_status",
-            "error_code"
+            "error_code",
+            "cursor_provenance"
           ],
           "properties": {
             "typed_error": {
@@ -586,6 +675,18 @@
             },
             "error_code": {
               "type": "string"
+            },
+            "cursor_provenance": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cursor_sha256"
+              ],
+              "properties": {
+                "cursor_sha256": {
+                  "$ref": "#/$defs/sha"
+                }
+              }
             }
           }
         },
@@ -698,7 +799,11 @@
         "method",
         "route",
         "status",
-        "request_id"
+        "request_id",
+        "scope",
+        "request_if_none_match",
+        "response_etag",
+        "response_cache_control"
       ],
       "properties": {
         "method": {
@@ -719,6 +824,34 @@
         "request_id": {
           "type": "string",
           "minLength": 1,
+          "maxLength": 256
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^/",
+          "maxLength": 2048
+        },
+        "request_if_none_match": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\"[0-9a-f]{64}\"$",
+          "maxLength": 66
+        },
+        "response_etag": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\"[0-9a-f]{64}\"$",
+          "maxLength": 66
+        },
+        "response_cache_control": {
+          "type": [
+            "string",
+            "null"
+          ],
           "maxLength": 256
         }
       }

@@ -19,6 +19,7 @@ MAX_INPUT_BYTES = 1_048_576
 MAX_EVIDENCE_BYTES = 8_388_608
 OPERATIONS = frozenset({"verify", "stop", "start", "pair", "revoke"})
 DEADLINES = {"verify": 30.0, "stop": 60.0, "start": 60.0, "pair": 160.0, "revoke": 160.0}
+PHASE_TRANSFER_MS = 10_000
 TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 SWIFT_CELLS = frozenset({"swift__macos_arm64", "swift__debian13_amd64", "swift__debian13_arm64"})
@@ -113,11 +114,88 @@ def _absolute(value, label):
     return value
 
 
-def _read_private(path, maximum, label):
+def _private_admission_path(path, label):
+    value = os.fspath(path)
+    if not isinstance(value, str) or not value or any(mark in value for mark in ("\x00", "\n", "\r")):
+        raise MatrixWireError(label + " path is invalid")
+    pure = PurePosixPath(value)
+    if not pure.is_absolute() or ".." in pure.parts:
+        raise MatrixWireError(label + " path is invalid")
+
+    # macOS exposes these fixed system directories through aliases. Resolve
+    # only a canonical system alias; every caller-provided parent remains
+    # descriptor-walked with O_NOFOLLOW below.
+    for alias, target in (("/etc", "/private/etc"), ("/tmp", "/private/tmp"), ("/var", "/private/var")):
+        if value == alias or value.startswith(alias + "/"):
+            try:
+                if os.path.islink(alias) and os.path.realpath(alias) == target:
+                    return target + value[len(alias):]
+            except OSError:
+                raise MatrixWireError(label + " path is unavailable")
+    return value
+
+
+def _admit_private_directory(descriptor, label):
     try:
-        descriptor = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        metadata = os.fstat(descriptor)
     except OSError as error:
-        raise MatrixWireError(label + " is unavailable") from error
+        raise MatrixWireError(label + " parent directory is unavailable") from error
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise MatrixWireError(label + " parent directory is invalid")
+    if metadata.st_uid not in (os.getuid(), 0):
+        raise MatrixWireError(label + " parent directory ownership is invalid")
+    # Readable/ searchable ancestors are fine. A writable ancestor must be
+    # private or a sticky system temporary directory such as /tmp.
+    if metadata.st_mode & 0o022 and not metadata.st_mode & stat.S_ISVTX:
+        raise MatrixWireError(label + " parent directory mode is invalid")
+
+
+def _open_private_parent(path, label):
+    admitted = _private_admission_path(path, label)
+    parts = PurePosixPath(admitted).parts
+    if len(parts) < 2 or parts[0] != "/" or any(not part for part in parts[1:]):
+        raise MatrixWireError(label + " path is invalid")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        directory_flags |= os.O_CLOEXEC
+    try:
+        parent = os.open("/", directory_flags)
+    except OSError as error:
+        raise MatrixWireError(label + " parent directory is unavailable") from error
+    try:
+        _admit_private_directory(parent, label)
+        for component in parts[1:-1]:
+            try:
+                child = os.open(component, directory_flags, dir_fd=parent)
+            except OSError as error:
+                raise MatrixWireError(label + " parent directory is unavailable") from error
+            try:
+                _admit_private_directory(child, label)
+            except BaseException:
+                os.close(child)
+                raise
+            os.close(parent)
+            parent = child
+        return parent, parts[-1]
+    except BaseException:
+        os.close(parent)
+        raise
+
+
+def _open_private_file(path, flags, label, mode=0):
+    parent, leaf = _open_private_parent(path, label)
+    try:
+        try:
+            descriptor = os.open(leaf, flags | os.O_NOFOLLOW, mode, dir_fd=parent)
+        except OSError as error:
+            raise MatrixWireError(label + " is unavailable") from error
+        return descriptor
+    finally:
+        os.close(parent)
+
+
+def _read_private(path, maximum, label):
+    descriptor = _open_private_file(path, os.O_RDONLY | os.O_NONBLOCK, label)
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
@@ -136,7 +214,7 @@ def _read_private(path, maximum, label):
 
 
 def file_binding(path, maximum=MAX_EVIDENCE_BYTES):
-    absolute = str(Path(path).resolve(strict=True))
+    absolute = os.path.abspath(os.fspath(path))
     raw = _read_private(absolute, maximum, "bound file")
     return {"path": absolute, "sha256": hashlib.sha256(raw).hexdigest()}
 
@@ -144,25 +222,30 @@ def file_binding(path, maximum=MAX_EVIDENCE_BYTES):
 def write_exclusive_json(path, value):
     target = Path(path)
     raw = canonical_json_bytes(value) + b"\n"
+    parent, leaf = _open_private_parent(target, "exclusive output")
     try:
-        descriptor = os.open(str(target), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    except OSError as error:
-        raise MatrixWireError("exclusive output is unavailable") from error
-    try:
-        offset = 0
-        while offset < len(raw):
-            written = os.write(descriptor, raw[offset:])
-            if written <= 0:
-                raise MatrixWireError("exclusive output write failed")
-            offset += written
-        os.fsync(descriptor)
+        try:
+            descriptor = os.open(
+                leaf,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600,
+                dir_fd=parent,
+            )
+        except OSError as error:
+            raise MatrixWireError("exclusive output is unavailable") from error
+        try:
+            offset = 0
+            while offset < len(raw):
+                written = os.write(descriptor, raw[offset:])
+                if written <= 0:
+                    raise MatrixWireError("exclusive output write failed")
+                offset += written
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.fsync(parent)
     finally:
-        os.close(descriptor)
-    directory = os.open(str(target.parent), os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(directory)
-    finally:
-        os.close(directory)
+        os.close(parent)
     return {"path": str(target.resolve()), "sha256": hashlib.sha256(raw).hexdigest()}
 
 
@@ -236,12 +319,14 @@ def _installed_manifest(staged, supplemental, label):
 
 
 def validate_worker_config(value):
-    required = {"schema_version", "kind", "actor_id", "session_id", "cell_id", "instance_nonce", "session_input_sha256", "phase_contract", "inputs", "private_root", "coordination_dir", "evidence_path", "log_path"}
+    required = {"schema_version", "kind", "actor_id", "session_id", "cell_id", "instance_nonce", "session_input_sha256", "remaining_cell_ms", "phase_contract", "inputs", "private_root", "coordination_dir", "evidence_path", "log_path"}
     config = _exact(value, required, "worker config")
     if type(config["schema_version"]) is not int or config["schema_version"] != 1 or config["kind"] != "matrix-actor-worker":
         raise MatrixWireError("worker config discriminator is invalid")
     if config["actor_id"] not in ACTORS or config["cell_id"] not in SWIFT_CELLS:
         raise MatrixWireError("worker identity is invalid")
+    if type(config["remaining_cell_ms"]) is not int or not 1 <= config["remaining_cell_ms"] <= 3_600_000:
+        raise MatrixWireError("worker remaining cell budget is invalid")
     _session(config["session_id"]); _digest(config["instance_nonce"], "worker nonce"); _digest(config["session_input_sha256"], "worker input digest")
     _staged(config["phase_contract"], "worker phase contract")
     if not isinstance(config["inputs"], list) or len(config["inputs"]) > 64:
@@ -274,11 +359,14 @@ def load_phase_contract(path, actor_id):
         raise MatrixWireError("phase contract resources are invalid")
     expected = ["bootstrap_pair", "revoke_and_pair", "restart", "outage_stop", "outage_start", "final_verify"]
     for ordinal, phase in enumerate(contract["phases"], 1):
-        _exact(phase, {"phase_id", "ordinal", "recipe_id", "operations"}, "phase")
+        _exact(phase, {"phase_id", "ordinal", "recipe_id", "operations", "timeout_ms"}, "phase")
         if phase["phase_id"] != expected[ordinal - 1] or phase["ordinal"] != ordinal or phase["recipe_id"] != "swift-" + phase["phase_id"]:
             raise MatrixWireError("phase order is invalid")
         if not isinstance(phase["operations"], list) or any(operation not in OPERATIONS for operation in phase["operations"]):
             raise MatrixWireError("phase recipe is invalid")
+        expected_timeout = int(sum(DEADLINES[operation] for operation in phase["operations"]) * 1000) + PHASE_TRANSFER_MS
+        if type(phase["timeout_ms"]) is not int or phase["timeout_ms"] != expected_timeout:
+            raise MatrixWireError("phase timeout is invalid")
     return contract
 
 
@@ -343,7 +431,8 @@ def load_session_input(path):
         root_profile_roots.add(PurePosixPath(*root_path.parts[:-len(name_parts)]))
         local_profile_roots.add(PurePosixPath(*local_path.parts[:-len(name_parts)]))
         member_paths[name] = (staged, member_raw)
-    if profile_ids != sorted(set(profile_ids)):
+    expected_profile_ids = [f"profile_member_{index:02d}" for index in range(1, len(PROFILE_MEMBERS) + 1)]
+    if profile_ids != expected_profile_ids:
         raise MatrixWireError("profile members are reordered or duplicated")
     if (
         set(member_paths) != set(PROFILE_MEMBERS)

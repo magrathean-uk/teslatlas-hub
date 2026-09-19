@@ -1,0 +1,90 @@
+{
+  "schema_version": 2,
+  "product": "Swift SDK",
+  "updated_at": "2026-09-19T10:30:43Z",
+  "update_scope": "post_adoption_next_phase_planning_no_execution",
+  "programme": "2026-09-18-app-v7-readiness",
+  "state": "G3_G6_G7_ACCEPTED",
+  "source_objective_state": "EXTERNAL_CONSUMER_AND_BINDING_ACCEPTED",
+  "current_gate_ids": [],
+  "accepted_gate_ids": [
+    "G3",
+    "G6",
+    "G7"
+  ],
+  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Preserve the accepted App-facing Swift boundary and verify the declared macOS 14 minimum floor.",
+  "source": {
+    "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+    "branch": "main",
+    "dirty_entries": 55,
+    "checked_at": "2026-09-19T10:30:43Z"
+  },
+  "current_worker": null,
+  "model_policy": {
+    "implementation": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/max",
+    "coordinator": "gpt-5.6-sol/max",
+    "fast_mode": false
+  },
+  "evidence_summary": [
+    "Earlier Debian ARM64 and supported Apple-silicon Mac external consumers completed discovery, claim, health/readiness, current, paginated drives and rotation.",
+    "Cleanup was recorded; this does not establish App integration or formal installed/matrix acceptance.",
+    "G6 accepted on a wholly fresh macOS 27 arm64 cohort with one maintained external example invocation: exact discovery/product/capabilities, normal TLS, claim/replay rejection, two current results including one absent observation, 2/2/1 drives and three 304s, rotation/old-token rejection/new-token success and Hub restart continuity.",
+    "The focused maintained-example suite passed 11/11, the accepted release executable is arm64 with SHA-256 17f9b72497a231bf47ce39169bbc99379012e2ee18e353badfbbbfad1eadd8b9, and all fresh private roots/processes/listeners/locks are absent.",
+    "G3 final admission binds product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926 to the accepted content-bound G6 Hub fingerprint and both G6 receipts; scoped admission/readback passes under r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865.",
+    "G7 is accepted through the workspace App v7 adoption handoff; it documents the exact TeslatlasCurrentHub integration boundary without modifying or accepting the App."
+  ],
+  "evidence_paths": [
+    "docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json",
+    "../hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+    "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+    "../docs/development/APP_V7_READINESS.md"
+  ],
+  "remaining": [
+    "L2: independently verify the declared macOS 14 Apple-silicon package floor in an isolated supported guest.",
+    "The macOS 13 Hub-floor VM remains below the Swift SDK floor and is not a Swift acceptance target.",
+    "iOS 17 floor/host evidence, publication and real-data semantics remain separate lanes."
+  ],
+  "next_goal_draft": {
+    "id": "L2_SWIFT_MACOS14_FLOOR",
+    "state": "DRAFT_NOT_STARTED",
+    "objective": "Resolve and build the exact accepted TeslatlasCurrentHub package on macOS 14 arm64 and prove the bounded public auth/read/recovery journey against a fresh exact Hub cohort.",
+    "acceptance_evidence": [
+      "Exact macOS, Xcode/Swift, source manifest, Package.swift and profile identities",
+      "External release consumer linked through TeslatlasCurrentHub",
+      "TLS, claim/replay rejection, current/history, rotation and Hub restart recovery",
+      "Private-root, credential, process and listener cleanup"
+    ],
+    "execution_authorized": false
+  },
+  "last_acceptance": {
+    "gate_id": "G6",
+    "state": "ACCEPTED",
+    "receipt": "docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json",
+    "source_head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+    "source_content_manifest_sha256": "2109dc00f26e755cd8bc3d17135ca7d2ff24142092f37d573eec3340a1c0ba55",
+    "binary_sha256": "17f9b72497a231bf47ce39169bbc99379012e2ee18e353badfbbbfad1eadd8b9",
+    "platform": "macOS 27.0 arm64",
+    "runtime_kind": "maintained external SwiftPM consumer against source-built synthetic Hub",
+    "cleanup_complete": true
+  },
+  "historical_status": {
+    "path": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/STATUS.json",
+    "sha256": "89b4c3071dbc3be5e2a5ab3f74b5fb66c0e4b8913df9225a7bec5f7f793eac16",
+    "note": "Exact pre-reset STATUS with detailed receipt keys, historical goals and assertions; not live execution authority."
+  },
+  "legacy_task": {
+    "thread_id": "01a082b7-e4c5-7383-bd9f-25a538c31e86",
+    "state": "ARCHIVED",
+    "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+    "native_goal_state": "historical_not_mutated_by_archival"
+  },
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; r1/r2 private roots removed; no current handoff",
+  "acceptance_limits": [
+    "No App integration acceptance",
+    "No real-data parity or production acceptance",
+    "Current macOS 27 arm64 only; the declared macOS 14 package floor was not independently exercised",
+    "Viewer excluded; x86/Intel paused"
+  ]
+}

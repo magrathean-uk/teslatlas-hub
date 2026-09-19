@@ -36,7 +36,12 @@ from matrix_wire import (
 
 LAUNCHER_INTERFACE = MappingProxyType({
     "call": "run_worker(actor_id, worker_config_binding, phase_callback)",
+    "remaining_cell_ms": "remaining_cell_ms(actor_id)",
     "controller_observations": "controller_observations(session_id)",
+    "linux_worker_contract": MappingProxyType({
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-linux-worker-contract-v1.json",
+        "sha256": "d3f7a0ab940d18388694d89896fb1bf9974cacaa21d26faeda77a43a53bac764",
+    }),
     "outcome_keys": (
         "schema_version", "kind", "actor_id", "status", "framework_exit_code",
         "timed_out", "evidence", "log", "runtime", "cleanup",
@@ -166,6 +171,7 @@ class MatrixCoordinator:
                 "actor_manifest_sha256": row["actor_manifest_sha256"],
                 "session_sequence_before": row["session_sequence_before"],
                 "session_sequence_after": row["session_sequence_after"],
+                "credential_device_id": row["credential_device_id"],
                 "facts": row["facts"], "requests": row["requests"],
                 "cleanup": {
                     "status": "passed", "transport_resources_closed": True,
@@ -233,7 +239,7 @@ class MatrixCoordinator:
         for actor_id in ACTOR_IDS:
             actor = actors[actor_id]
             relevant = [key for key, raw in self.raw.items() if raw["actor_id"] == actor_id]
-            claims.append({"id": actor.id, "kind": actor.kind, "runtime_ref": actor.runtime_ref, "entrypoint_ref": actor.entrypoint_ref, "artifact_roles": list(actor.artifact_roles), "source_roles": list(actor.source_roles), "installed_manifest": dict(actor.installed_manifest), "raw_evidence": [{"id": key, "schema_id": "swift-worker-v1", "binding": self.raw_bindings[key]} for key in relevant]})
+            claims.append({"id": actor.id, "kind": actor.kind, "runtime_ref": actor.runtime_ref, "entrypoint_ref": actor.entrypoint_ref, "artifact_roles": list(actor.artifact_roles), "source_roles": list(actor.source_roles), "installed_manifest": dict(actor.installed_manifest), "raw_evidence": [{"id": key, "schema_id": "swift-raw-v1", "binding": self.raw_bindings[key]} for key in relevant]})
         actor_evidence = {"schema_version": 1, "session_id": self.session["session_id"], "cell_id": self.session["cell_id"], "session_input_sha256": self.session_input_sha256, "actors": claims, "invocations": [vars(item) for item in invocations]}
         actor_binding = write_exclusive_json(self.session["outputs"]["actor_evidence"], actor_evidence)
         completion = {"schema_version": 1, "session_id": self.session["session_id"], "cell_id": self.session["cell_id"], "session_input_sha256": self.session_input_sha256, "normalized": normalized_binding, "actor_evidence": actor_binding}
@@ -363,21 +369,36 @@ def _validate_launcher_outcome(actor_id, outcome, worker_config_binding):
     return outcome
 
 
-def _build_worker_config(session, digest, actor, initial_observation):
+def _build_worker_config(session, digest, actor, initial_observation, remaining_cell_ms):
     actor_root = Path(session["outputs"]["coordination_dir"]) / actor["id"]
     actor_root.mkdir(mode=0o700, parents=True, exist_ok=False)
     common = session["inputs"]
     product = common["product_inputs"][0]
+    def reserved(identifier, staged):
+        return {"id": identifier, "root": staged["root"], "local": staged["local"]}
     initial_staged = {"id": "initial_observation", "root": initial_observation,
                       "local": initial_observation}
-    inputs = [initial_staged, session["header"], common["profile_manifest"], *common["profile_members"], common["scenario"],
-              common["certificate"], product["staged"], product["installed_manifest"],
-              actor["input_manifest"]]
+    profile_members = [
+        reserved("profile_member_%02d" % index, member)
+        for index, member in enumerate(common["profile_members"], 1)
+    ]
+    inputs = [
+        initial_staged,
+        reserved("header", session["header"]),
+        reserved("profile_manifest", common["profile_manifest"]),
+        *profile_members,
+        reserved("scenario", common["scenario"]),
+        reserved("certificate", common["certificate"]),
+        reserved("swift_product", product["staged"]),
+        reserved("swift_product_manifest", product["installed_manifest"]),
+        reserved("actor_input_manifest", actor["input_manifest"]),
+    ]
     value = {
         "schema_version": 1, "kind": "matrix-actor-worker",
         "actor_id": actor["id"], "session_id": session["session_id"],
         "cell_id": session["cell_id"], "instance_nonce": session["instance_nonce"],
         "session_input_sha256": digest, "phase_contract": actor["phase_contract"],
+        "remaining_cell_ms": remaining_cell_ms,
         "inputs": inputs, "private_root": str(actor_root / "private"),
         "coordination_dir": str(actor_root),
         "evidence_path": str(actor_root / "worker-evidence.json"),
@@ -391,8 +412,8 @@ def _build_worker_config(session, digest, actor, initial_observation):
 def run_installed(session_input_path, launcher):
     """Run the installed row using only the trusted runner launch capability.
 
-    `launcher` has exactly two exercised methods: `run_worker(actor_id,
-    worker_config_binding, phase_callback)` and
+    `launcher` has exactly three exercised methods: `remaining_cell_ms(actor_id)`,
+    `run_worker(actor_id, worker_config_binding, phase_callback)` and
     `controller_observations(session_id)`.  It owns executable/container/argv,
     environment, supervision and independent runtime inventory.  No such
     authority is accepted from SessionInput or a worker.  The callback accepts
@@ -415,7 +436,10 @@ def run_installed(session_input_path, launcher):
         runtimes = {}
         for actor in session["actors"]:
             actor_id = actor["id"]
-            phase_contract = strict_json(Path(actor["phase_contract"]["local"]["path"]).read_bytes())
+            phase_contract = read_bound_json(
+                actor["phase_contract"]["local"], maximum=1_048_576,
+                label="actor phase contract",
+            )
             callback = WorkerPhaseController(coordinator, actor_id, phase_contract)
             observation = coordinator.proofs.observations[coordinator.proofs.sequence]
             initial_binding = write_exclusive_json(
@@ -424,7 +448,12 @@ def run_installed(session_input_path, launcher):
                 {"session_sequence": coordinator.proofs.sequence,
                  "proof_sha256": observation["proof_sha256"]},
             )
-            config_binding = _build_worker_config(session, digest, actor, initial_binding)
+            remaining_cell_ms = launcher.remaining_cell_ms(actor_id)
+            if type(remaining_cell_ms) is not int or remaining_cell_ms <= 0:
+                raise MatrixWireError("launcher remaining cell budget is invalid")
+            config_binding = _build_worker_config(
+                session, digest, actor, initial_binding, remaining_cell_ms,
+            )
             outcome = _validate_launcher_outcome(
                 actor_id, launcher.run_worker(actor_id, config_binding, callback),
                 config_binding,

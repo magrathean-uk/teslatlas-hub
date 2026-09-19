@@ -6,6 +6,9 @@ import XCTest
 #if canImport(FoundationNetworking)
   import FoundationNetworking
 #endif
+#if os(Linux)
+  import Glibc
+#endif
 
 final class CurrentHubTransportTests: XCTestCase {
   func testTransportUsesProfileResponseBoundAndIsolatedState() {
@@ -87,6 +90,66 @@ final class CurrentHubTransportTests: XCTestCase {
       _ = try await task.value
       XCTFail("Expected cancellation")
     } catch is CancellationError {}
+  }
+
+  #if os(macOS)
+  func testPublicClientMapsRealLoopback401WithoutRetryOrSecretLeak() async throws {
+    let loopbackHost = "::1"
+    let server = try CurrentHubTransportServer(mode: "auth-401", host: loopbackHost)
+    defer { server.stop() }
+    let transport = CurrentHubLoopbackTransport(serverURL: server.url)
+    let client = try await CurrentHubClient.connect(
+      endpoint: CurrentHubTestData.endpoint,
+      expectedHubID: CurrentHubTestData.hubID,
+      credentialStore: MemoryCurrentHubCredentialStore(try currentHubCredential()),
+      transport: transport
+    )
+
+    do {
+      _ = try await client.vehicles()
+      XCTFail("Expected the real loopback 401 to be mapped")
+    } catch let error as CurrentHubError {
+      XCTAssertEqual(error, .unauthorized(requestID: "loopback-auth"))
+      let description = String(describing: error)
+      XCTAssertFalse(description.contains(CurrentHubTestData.tokenA))
+      XCTAssertFalse(description.contains(String(repeating: "s", count: 64)))
+    }
+
+    let requests = await transport.requests()
+    XCTAssertEqual(requests.count, 2, "discovery plus one authenticated request")
+    XCTAssertEqual(requests.last?.url?.path, "/v1/vehicles")
+    XCTAssertEqual(
+      requests.last?.value(forHTTPHeaderField: "Authorization"),
+      "Bearer \(CurrentHubTestData.tokenA)"
+    )
+    XCTAssertTrue(server.waitForNaturalExit(), "fixture must close after one request")
+  }
+  #endif
+
+  func testPublicClientMapsLoopbackTransportFailureWithoutSecretLeak() async throws {
+    let host = "[::1]"
+    let transport = CurrentHubLoopbackTransport(
+      serverURL: URL(string: "http://\(host):1/request")!
+    )
+    let client = try await CurrentHubClient.connect(
+      endpoint: CurrentHubTestData.endpoint,
+      expectedHubID: CurrentHubTestData.hubID,
+      credentialStore: MemoryCurrentHubCredentialStore(try currentHubCredential()),
+      transport: transport
+    )
+
+    do {
+      _ = try await client.vehicles()
+      XCTFail("Expected the unavailable loopback endpoint to fail")
+    } catch let error as CurrentHubError {
+      guard case .transportFailure = error else {
+        return XCTFail("Expected a typed transport failure, got \(error)")
+      }
+      XCTAssertFalse(String(describing: error).contains(CurrentHubTestData.tokenA))
+    }
+
+    let requests = await transport.requests()
+    XCTAssertEqual(requests.count, 2)
   }
 
   #if canImport(FoundationNetworking)
@@ -247,7 +310,7 @@ final class CurrentHubTransportTests: XCTestCase {
     func testLinuxPublicClientMapsRepeatedAuthenticationChallengesToUnauthorized() async throws {
       let server = try CurrentHubTransportServer(mode: "repeated-list-fields")
       defer { server.stop() }
-      let transport = CurrentHubLinuxLoopbackTransport(serverURL: server.url)
+      let transport = CurrentHubLoopbackTransport(serverURL: server.url)
       let client = try await CurrentHubClient.connect(
         endpoint: CurrentHubTestData.endpoint,
         expectedHubID: CurrentHubTestData.hubID,
@@ -272,15 +335,40 @@ final class CurrentHubTransportTests: XCTestCase {
       XCTAssertEqual(response.header("ETag"), CurrentHubTestData.eTag)
       XCTAssertNil(response.header("X-Trailer-Only"))
     }
+
+    #if os(Linux)
+    func testLinuxDefaultTransportUsesSSL_CERT_FILEForRealOpenSSLTrust() async throws {
+      let server = try CurrentHubTLSTestServer()
+      defer { server.stop() }
+
+      let previous = getenv("SSL_CERT_FILE").map { String(cString: $0) }
+      defer {
+        if let previous {
+          _ = setenv("SSL_CERT_FILE", previous, 1)
+        } else {
+          _ = unsetenv("SSL_CERT_FILE")
+        }
+      }
+      _ = setenv("SSL_CERT_FILE", server.certificatePath, 1)
+
+      var request = URLRequest(url: server.url)
+      request.timeoutInterval = 5
+      let response = try await CurrentHubURLSessionTransport()
+        .send(request)
+
+      XCTAssertEqual(response.statusCode, 200)
+      XCTAssertEqual(response.body, Data("{}".utf8))
+    }
+    #endif
   #endif
 }
 
-#if canImport(FoundationNetworking)
-  private final class CurrentHubTransportServer: @unchecked Sendable {
+#if os(macOS) || os(Linux)
+private final class CurrentHubTransportServer: @unchecked Sendable {
     let process = Process()
     let url: URL
 
-    init(mode: String, count: Int = 1) throws {
+    init(mode: String, count: Int = 1, host: String = "127.0.0.1") throws {
       guard let script = Bundle.module.url(
         forResource: "transport_server",
         withExtension: "py",
@@ -288,14 +376,15 @@ final class CurrentHubTransportTests: XCTestCase {
       ) else { throw CurrentHubError.invalidRequest("transport test server resource is missing") }
       let output = Pipe()
       process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-      process.arguments = [script.path, mode, String(count)]
+      process.arguments = [script.path, mode, String(count), host]
       process.standardOutput = output
       process.standardError = Pipe()
       try process.run()
       let data = output.fileHandleForReading.availableData
+      let urlHost = host.contains(":") ? "[\(host)]" : host
       guard let line = String(data: data, encoding: .utf8)?.split(separator: "\n").first,
         let port = Int(line),
-        let url = URL(string: "http://127.0.0.1:\(port)/request")
+        let url = URL(string: "http://\(urlHost):\(port)/request")
       else {
         process.terminate()
         throw CurrentHubError.invalidRequest("transport test server did not publish a port")
@@ -308,18 +397,122 @@ final class CurrentHubTransportTests: XCTestCase {
       process.waitUntilExit()
     }
 
+    /// Returns whether the fixture exited on its own after closing its listener
+    /// and accepted connection. A bounded poll keeps a broken request path from
+    /// turning this cleanup assertion into an unbounded test hang.
+    func waitForNaturalExit(timeout: TimeInterval = 1) -> Bool {
+      let deadline = Date().addingTimeInterval(timeout)
+      while process.isRunning && Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.01)
+      }
+      return !process.isRunning && process.terminationStatus == 0
+    }
+
     deinit {
       if process.isRunning { process.terminate() }
     }
+}
+#endif
+
+#if os(Linux)
+private final class CurrentHubTLSTestServer: @unchecked Sendable {
+  let process = Process()
+  let url: URL
+  let certificatePath: String
+  private let directory: URL
+
+  init() throws {
+    let fileManager = FileManager.default
+    directory = fileManager.temporaryDirectory
+      .appendingPathComponent("teslatlas-current-hub-tls-\(UUID().uuidString)", isDirectory: true)
+    try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+    let certificateURL = directory.appendingPathComponent("server.pem")
+    let keyURL = directory.appendingPathComponent("server.key")
+    certificatePath = certificateURL.path
+    try Self.createCertificate(certificateURL: certificateURL, keyURL: keyURL)
+
+    guard let script = Bundle.module.url(
+      forResource: "tls_server",
+      withExtension: "py",
+      subdirectory: "Fixtures"
+    ) else {
+      throw CurrentHubError.invalidRequest("TLS transport test server resource is missing")
+    }
+
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+    process.arguments = [script.path, certificateURL.path, keyURL.path]
+    process.standardOutput = output
+    process.standardError = Pipe()
+    try process.run()
+
+    let data = output.fileHandleForReading.availableData
+    guard let line = String(data: data, encoding: .utf8)?.split(separator: "\n").first,
+      let port = Int(line),
+      let url = URL(string: "https://127.0.0.1:\(port)/request")
+    else {
+      process.terminate()
+      process.waitUntilExit()
+      throw CurrentHubError.invalidRequest("TLS transport test server did not publish a port")
+    }
+    self.url = url
   }
 
-  private actor CurrentHubLinuxLoopbackTransport: CurrentHubHTTPTransport {
+  func stop() {
+    guard process.isRunning else {
+      try? FileManager.default.removeItem(at: directory)
+      return
+    }
+    process.terminate()
+    let deadline = Date().addingTimeInterval(0.5)
+    while process.isRunning && Date() < deadline {
+      Thread.sleep(forTimeInterval: 0.01)
+    }
+    if process.isRunning {
+      _ = Glibc.kill(process.processIdentifier, SIGKILL)
+    }
+    process.waitUntilExit()
+    try? FileManager.default.removeItem(at: directory)
+  }
+
+  deinit { stop() }
+
+  private static func createCertificate(certificateURL: URL, keyURL: URL) throws {
+    let process = Process()
+    let error = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
+    process.arguments = [
+      "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "1",
+      "-keyout", keyURL.path,
+      "-out", certificateURL.path,
+      "-subj", "/CN=127.0.0.1",
+      "-addext", "subjectAltName=IP:127.0.0.1",
+    ]
+    process.standardOutput = Pipe()
+    process.standardError = error
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+      let message = String(
+        data: error.fileHandleForReading.readDataToEndOfFile(),
+        encoding: .utf8
+      ) ?? "unknown openssl failure"
+      throw CurrentHubError.invalidRequest("TLS certificate generation failed: \(message)")
+    }
+  }
+}
+#endif
+
+private actor CurrentHubLoopbackTransport: CurrentHubHTTPTransport {
     private let serverURL: URL
     private let production = CurrentHubURLSessionTransport()
+    private var capturedRequests: [URLRequest] = []
 
     init(serverURL: URL) { self.serverURL = serverURL }
 
     func send(_ request: URLRequest) async throws -> CurrentHubHTTPResponse {
+      capturedRequests.append(request)
       if request.url?.path == "/.well-known/teslatlas-hub" {
         return CurrentHubHTTPResponse(
           statusCode: 200,
@@ -338,8 +531,9 @@ final class CurrentHubTransportTests: XCTestCase {
         finalURL: try XCTUnwrap(request.url)
       )
     }
-  }
-#endif
+
+    func requests() -> [URLRequest] { capturedRequests }
+}
 
 private final class CurrentHubURLProtocol: URLProtocol, @unchecked Sendable {
   private static let lock = NSLock()

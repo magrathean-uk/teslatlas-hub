@@ -1,0 +1,61 @@
+name: CurrentHubRuntimeHost
+
+options:
+  bundleIdPrefix: eu.teslatlas.sdk
+  deploymentTarget:
+    iOS: "17.0"
+
+packages:
+  TeslatlasSDK:
+    path: ..
+
+targets:
+  CurrentHubRuntimeHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.sdk.currenthub.runtime-host
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+    dependencies:
+      - package: TeslatlasSDK
+        product: TeslatlasCurrentHub
+
+  CurrentHubRuntimeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ../Tests/TeslatlasCurrentHubTests
+        includes:
+          - CurrentHubTestSupport.swift
+          - CurrentHubAppleConsumerTests.swift
+      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/discovery.json
+        buildPhase: resources
+      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/claim.json
+        buildPhase: resources
+      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/health.json
+        buildPhase: resources
+      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/invitation.json
+        buildPhase: resources
+      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/ready.json
+        buildPhase: resources
+      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/vehicles.json
+        buildPhase: resources
+      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/current.json
+        buildPhase: resources
+      - path: ../Tests/TeslatlasCurrentHubTests/Fixtures/drives.json
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.sdk.currenthub.runtime-tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/CurrentHubRuntimeHost.app/CurrentHubRuntimeHost"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      - target: CurrentHubRuntimeHost
+      - package: TeslatlasSDK
+        product: TeslatlasCurrentHub

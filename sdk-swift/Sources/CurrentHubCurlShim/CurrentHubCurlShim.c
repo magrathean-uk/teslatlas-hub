@@ -329,6 +329,16 @@ int current_hub_curl_operation_perform(current_hub_curl_operation *operation) {
   curl_easy_setopt(curl, CURLOPT_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
   curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+  const char *certificate_file = getenv("SSL_CERT_FILE");
+  if (certificate_file != NULL && certificate_file[0] != '\0') {
+    curl_easy_setopt(curl, CURLOPT_CAINFO, certificate_file);
+  }
+  const char *certificate_directory = getenv("SSL_CERT_DIR");
+  if (certificate_directory != NULL && certificate_directory[0] != '\0') {
+    curl_easy_setopt(curl, CURLOPT_CAPATH, certificate_directory);
+  }
   long connect_timeout = operation->timeout_milliseconds < 20000L
     ? operation->timeout_milliseconds : 20000L;
   curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, connect_timeout);

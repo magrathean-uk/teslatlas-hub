@@ -8,6 +8,70 @@ import XCTest
 #endif
 
 final class CurrentHubLiveTests: XCTestCase {
+  func testBoundedPrivateLiveInputsRejectParentSymlinksAndUnsafeDirectories() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "current-hub-private-\(UUID().uuidString)", isDirectory: true
+    )
+    try FileManager.default.createDirectory(
+      at: root, withIntermediateDirectories: false,
+      attributes: [.posixPermissions: NSNumber(value: 0o700)]
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let real = root.appendingPathComponent("real", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: real, withIntermediateDirectories: false,
+      attributes: [.posixPermissions: NSNumber(value: 0o700)]
+    )
+    let target = real.appendingPathComponent("input.json")
+    let data = Data(#"{"value":1}"#.utf8)
+    try data.write(to: target, options: .atomic)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: target.path
+    )
+    let digest = MatrixSHA256.hexDigest(data)
+    XCTAssertEqual(
+      try boundedRead(target, maximumBytes: 64, expectedSHA256: digest), data
+    )
+
+    let parentLink = root.appendingPathComponent("parent-link", isDirectory: true)
+    try FileManager.default.createSymbolicLink(
+      atPath: parentLink.path, withDestinationPath: real.path
+    )
+    XCTAssertThrowsError(
+      try boundedRead(
+        parentLink.appendingPathComponent("input.json"),
+        maximumBytes: 64,
+        expectedSHA256: digest
+      )
+    ) { error in
+      guard case CurrentHubError.invalidRequest(let reason) = error else {
+        return XCTFail("unexpected parent-link error: \(error)")
+      }
+      XCTAssertTrue(reason.contains("parent"))
+    }
+
+    let writable = root.appendingPathComponent("writable", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: writable, withIntermediateDirectories: false,
+      attributes: [.posixPermissions: NSNumber(value: 0o777)]
+    )
+    let writableTarget = writable.appendingPathComponent("input.json")
+    try data.write(to: writableTarget, options: .atomic)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: writableTarget.path
+    )
+    XCTAssertThrowsError(try boundedRead(writableTarget, maximumBytes: 64))
+
+    let oversized = real.appendingPathComponent("oversized.json")
+    let oversizedData = Data(repeating: 0x41, count: 65)
+    try oversizedData.write(to: oversized, options: .atomic)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: oversized.path
+    )
+    XCTAssertThrowsError(try boundedRead(oversized, maximumBytes: 64))
+  }
+
   func testRequiredCurrentHubJourney() async throws {
     guard let configPath = ProcessInfo.processInfo.environment["TESLATLAS_CURRENT_HUB_LIVE_CONFIG"] else {
       return XCTFail("TESLATLAS_CURRENT_HUB_LIVE_CONFIG is required for CurrentHubLiveTests")
@@ -139,7 +203,19 @@ final class CurrentHubLiveTests: XCTestCase {
     }
 
     try await assertCancelledRequest(transport: transport, endpoint: config.endpoint)
-    try await assertOversizedChunkedResponseRejected()
+    var checks = [
+      "trusted_tls", "identity_negative", "trust_negative",
+      "invitation_leaf_pin_negative", "claim", "rotation",
+      "old_bearer_rejected", "pagination", "etag_304", "units_null_zero",
+      "cancellation", "unsupported_zero",
+    ]
+    #if os(macOS) || os(Linux)
+      try await assertOversizedChunkedResponseRejected()
+      checks.append("chunked_oversize")
+    #else
+      print("TASK6_LIVE milestone=chunked_oversize_skipped platform=iOS")
+      checks.append("chunked_oversize_skipped")
+    #endif
 
     let receipt: [String: Any] = [
       "status": "passed",
@@ -153,12 +229,7 @@ final class CurrentHubLiveTests: XCTestCase {
       "drive_ids": driveIDs,
       "page_count": 3,
       "conditional_304_count": 3,
-      "checks": [
-        "trusted_tls", "identity_negative", "trust_negative",
-        "invitation_leaf_pin_negative", "claim",
-        "rotation", "old_bearer_rejected", "pagination", "etag_304",
-        "units_null_zero", "cancellation", "chunked_oversize", "unsupported_zero",
-      ],
+      "checks": checks,
     ]
     let data = try JSONSerialization.data(withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys])
     try data.write(to: config.receiptPath, options: .atomic)
@@ -269,6 +340,7 @@ final class CurrentHubLiveTests: XCTestCase {
     } catch is CancellationError {}
   }
 
+  #if os(macOS) || os(Linux)
   private func assertOversizedChunkedResponseRejected() async throws {
     guard let script = Bundle.module.url(
       forResource: "oversize_chunked_server",
@@ -302,6 +374,7 @@ final class CurrentHubLiveTests: XCTestCase {
       else { throw error }
     }
   }
+  #endif
 }
 
 private actor LiveCredentialStore: CurrentHubCredentialStore {
@@ -348,12 +421,10 @@ private struct LiveConfig: Decodable {
   }
 }
 
-private func boundedRead(_ url: URL, maximumBytes: Int) throws -> Data {
-  let data = try Data(contentsOf: url, options: .mappedIfSafe)
-  guard data.count <= maximumBytes else {
-    throw CurrentHubError.invalidRequest("private live input exceeds byte bound")
-  }
-  return data
+private func boundedRead(
+  _ url: URL, maximumBytes: Int, expectedSHA256: String? = nil
+) throws -> Data {
+  try matrixPrivateRead(url, maximumBytes: maximumBytes, expectedSHA256: expectedSHA256)
 }
 
 #if canImport(Security)

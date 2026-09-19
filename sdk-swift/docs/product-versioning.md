@@ -9,5 +9,6 @@ The calendar product number does not alter `swift-tools-version`, richer
 protocol profile `1.2.0`, the exact historical Hub v1 binding, or the
 independent `hub-http-v1@1.0.0` wire revision. `TeslatlasCurrentHub` pins that
 current profile to manifest SHA-256
-`b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b`
-and admits only its explicit tested Hub product versions.
+`b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`
+and admits only the explicit Hub product version recorded by its binding. A
+local build or fixture run does not by itself establish installed acceptance.

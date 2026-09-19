@@ -23,7 +23,7 @@
     "runtime_ref": {
       "enum": [
         "swift_macos",
-        "swift_linux"
+        "swift_container"
       ]
     },
     "runtime_kind": {

@@ -4,6 +4,13 @@
   "entrypoint": "run_installed(session_input_path, launcher)",
   "launcher_methods": [
     {
+      "name": "remaining_cell_ms",
+      "arguments": [
+        "actor_id"
+      ],
+      "returns": "positive-integer-from-root-enclosing-monotonic-cell-deadline"
+    },
+    {
       "name": "run_worker",
       "arguments": [
         "actor_id",
@@ -100,6 +107,17 @@
     ],
     "worker_raw_is_authoritative": false
   },
+  "worker_deadline": {
+    "source": "launcher.remaining_cell_ms(actor_id)",
+    "bound_config_key": "remaining_cell_ms",
+    "clock": "worker-monotonic",
+    "phase_cap": "sum-fixed-operation-deadlines-plus-10000ms-transfer"
+  },
+  "linux_worker_contract": {
+    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-linux-worker-contract-v1.json",
+    "sha256": "d3f7a0ab940d18388694d89896fb1bf9974cacaa21d26faeda77a43a53bac764",
+    "binding": "The fixed Linux Docker worker registration and relay contract is root-owned; this interface does not grant worker broker, Docker or command authority."
+  },
   "reserved_worker_inputs": [
     {
       "id": "initial_observation",
@@ -117,21 +135,21 @@
       "id": "matrix-worker-config-v1",
       "binding": {
         "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/matrix-worker-config-v1.schema.json",
-        "sha256": "f99c7c3f4a48e15919cefa01a1eedf1d051d182d7611c3ca8be2566119888f23"
+        "sha256": "cc761bbb4a0c38a4378dff119cfabdfbb1d288f2d626acd8e0a9c114c0bef582"
       }
     },
     {
       "id": "swift-worker-v1",
       "binding": {
         "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-worker-v1.schema.json",
-        "sha256": "de9a95a1d32e4bc607d45e7f92decc43674cc1ea8c297d245d364f9cbbb6ec1d"
+        "sha256": "34a8176e28162f425353f4ba4d0f3dd1a00375a2c54b8829178aa754af2ac486"
       }
     },
     {
       "id": "swift-runtime-v1",
       "binding": {
         "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/swift-runtime-v1.schema.json",
-        "sha256": "c0345d119c636fac707022f6d266821e6225cd6fef1dcb4424cecfbd466f8b65"
+        "sha256": "d608f1e4c31548fbf7005e66a8997d5f0a65cee8685f60c096745ced278d24f2"
       }
     }
   ],

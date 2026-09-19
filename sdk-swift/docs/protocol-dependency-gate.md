@@ -11,7 +11,7 @@ Those profiles remain public protocol definitions. They are not evidence that
 Teslatlas Hub v1.0.0 implements any one of them. The strict SDK surface and its
 pinned protocol fixtures were not rewritten to match deployed Hub behaviour.
 
-## Deployed-Hub dependency finding
+## Deployed-Hub dependency finding (historical activation record)
 
 The protocol repository checked for this work had no GitHub release objects,
 no deployed-Hub binding, and no separately named machine-readable authority for

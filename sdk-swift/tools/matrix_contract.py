@@ -11,12 +11,17 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal
 from pathlib import Path
+from urllib.parse import unquote
 
 ADAPTER_ID = "swift"
 CONTRACT_REVISION = 1
 PRODUCT_VERSION = "2026.36.2"
-PROFILE_SHA256 = "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+PROFILE_SHA256 = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 ACTOR_IDS = ("swift_macos", "swift_linux")
+RUNTIME_REFS = MappingProxyType({
+    "swift_macos": "swift_macos",
+    "swift_linux": "swift_container",
+})
 PHASE_RECIPES = (
     ("bootstrap_pair", ("verify", "pair")),
     ("revoke_and_pair", ("revoke", "pair")),
@@ -28,9 +33,79 @@ PHASE_RECIPES = (
 SOURCE_ROLE = "swift_sdk_source"
 ARTIFACT_ROLE = "swift_sdk_product"
 UNKNOWN_VEHICLE = "33333333-3333-4333-8333-333333333333"
+PRIMARY_VEHICLE = "11111111-1111-4111-8111-111111111111"
+SECONDARY_VEHICLE = "22222222-2222-4222-8222-222222222222"
 UNICODE_NAME = "Interop – Árvíztűrő 🚗"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+ENTITY_TAG = re.compile(r'^"[0-9a-f]{64}"$')
 TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+REQUEST_FIELDS = frozenset({
+    "method", "route", "status", "request_id", "scope",
+    "request_if_none_match", "response_etag", "response_cache_control",
+})
+
+
+def _decode_opaque_cursor(raw_cursor):
+    if not isinstance(raw_cursor, str) or not raw_cursor or re.search(
+        r"%(?![0-9a-fA-F]{2})", raw_cursor
+    ):
+        return None
+    try:
+        cursor = unquote(raw_cursor, encoding="utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return None
+    if (
+        not cursor
+        or len(cursor.encode("utf-8")) > 4096
+        or any(ord(character) < 0x20 or ord(character) == 0x7f for character in cursor)
+    ):
+        return None
+    return cursor
+
+
+def _scope_cursor(scope, vehicle_id):
+    prefix = f"/v1/vehicles/{vehicle_id}/drives?"
+    if not isinstance(scope, str) or not scope.startswith(prefix):
+        return None
+    values = [
+        part[len("cursor="):]
+        for part in scope[len(prefix):].split("&")
+        if part.startswith("cursor=")
+    ]
+    if len(values) != 1:
+        return None
+    return _decode_opaque_cursor(values[0])
+
+
+def _cursor_sha256(cursor):
+    return hashlib.sha256(cursor.encode("utf-8")).hexdigest()
+
+
+def _valid_entity_tag(value):
+    return isinstance(value, str) and ENTITY_TAG.fullmatch(value) is not None
+
+
+def _valid_request_record(value):
+    return (
+        isinstance(value, Mapping)
+        and set(value) == REQUEST_FIELDS
+        and value["method"] in {"GET", "POST"}
+        and isinstance(value["route"], str)
+        and value["route"].startswith("/")
+        and "?" not in value["route"]
+        and type(value["status"]) is int
+        and isinstance(value["request_id"], str)
+        and bool(value["request_id"])
+        and isinstance(value["scope"], str)
+        and len(value["scope"]) <= 2048
+        and all(
+            item is None or isinstance(item, str)
+            for item in (
+                value["request_if_none_match"], value["response_etag"],
+                value["response_cache_control"],
+            )
+        )
+    )
 
 REQUIRED_CASES = (
     "candidate_artifact_identity", "installed_service_runtime",
@@ -372,7 +447,7 @@ def _valid_runtime(actor_id, runtime):
     }
     if not isinstance(runtime, Mapping) or set(runtime) != required:
         return False
-    if runtime["schema_version"] != 1 or runtime["runtime_ref"] != actor_id:
+    if runtime["schema_version"] != 1 or runtime["runtime_ref"] != RUNTIME_REFS[actor_id]:
         return False
     if HEX64.fullmatch(str(runtime["actor_input_manifest_sha256"])) is None:
         return False
@@ -476,7 +551,7 @@ def _valid_actor(actor_id, actor):
     if not isinstance(actor, AdmittedActor) or actor.id != actor_id or actor.kind != "current_swift_transport":
         return "wrong_actor"
     expected_entry = "swift_current_native_test" if actor_id == "swift_macos" else "swift_current_linux_test"
-    if actor.runtime_ref != actor_id or actor.entrypoint_ref != expected_entry:
+    if actor.runtime_ref != RUNTIME_REFS[actor_id] or actor.entrypoint_ref != expected_entry:
         return "wrong_actor"
     if actor.source_roles != (SOURCE_ROLE,):
         return "wrong_source_role"
@@ -491,24 +566,363 @@ def _valid_actor(actor_id, actor):
     return None
 
 
-def _request_requirement(case_id, requests):
+def _request_requirement(case_id, requests, pairing_id=None):
+    """Require the exact request witness for a matrix case.
+
+    ``route`` is the redacted operation path, while ``scope`` retains the
+    vehicle, pairing, and query identity needed to prove what the client
+    actually requested.  Claim cases receive the expected pairing ID from
+    admission's independent controller view and cannot be admitted without it.
+    """
+    if not isinstance(requests, (list, tuple)):
+        return False
     if CASE_KINDS[case_id] in {"identity", "zero_request"}:
         return len(requests) == 0
-    required = {
-        "discovery_identity_profile": {("GET", "/.well-known/teslatlas-hub", 200)},
-        "unauthenticated_discovery": {("GET", "/.well-known/teslatlas-hub", 200), ("GET", "/healthz", 200), ("GET", "/readyz", 200)},
-        "bad_invitation": {("POST", "/v1/pairings/{pairing_id}/claim", 401)},
-        "replayed_invitation": {("POST", "/v1/pairings/{pairing_id}/claim", 401)},
-        "unknown_vehicle": {("GET", "/v1/vehicles/{vehicle_id}/current", 404)},
-        "revocation": {("GET", "/v1/vehicles", 401)},
-        "drives_etag_304": {("GET", "/v1/vehicles/{vehicle_id}/drives", 304), ("GET", "/v1/vehicles/{vehicle_id}/drives", 200)},
-        "drives_wrong_vehicle_cursor": {("GET", "/v1/vehicles/{vehicle_id}/drives", 400)},
-        "drives_wrong_filter_cursor": {("GET", "/v1/vehicles/{vehicle_id}/drives", 400)},
-    }.get(case_id)
-    if required is None:
-        return bool(requests)
-    actual = {(item.get("method"), item.get("route"), item.get("status")) for item in requests if isinstance(item, Mapping)}
-    return required <= actual
+    if any(not _valid_request_record(item) for item in requests):
+        return False
+
+    discovery_route = "/.well-known/teslatlas-hub"
+    vehicles_route = "/v1/vehicles"
+    current_route = "/v1/vehicles/{vehicle_id}/current"
+    drives_route = "/v1/vehicles/{vehicle_id}/drives"
+    claim_route = "/v1/pairings/{pairing_id}/claim"
+    discovery_scope = "/.well-known/teslatlas-hub"
+    vehicles_scope = "/v1/vehicles"
+    primary_current_scope = f"/v1/vehicles/{PRIMARY_VEHICLE}/current"
+    secondary_current_scope = f"/v1/vehicles/{SECONDARY_VEHICLE}/current"
+
+    def drive_scope(vehicle_id, query_kind, from_ms=None):
+        return ("drive", vehicle_id, query_kind, from_ms)
+
+    def valid_cursor(raw_cursor):
+        return _decode_opaque_cursor(raw_cursor) is not None
+
+    def matches_drive_scope(scope, vehicle_id, query_kind, from_ms=None):
+        prefix = f"/v1/vehicles/{vehicle_id}/drives?"
+        if not scope.startswith(prefix):
+            return False
+        query = scope[len(prefix):]
+        parts = query.split("&")
+        if query_kind == "first":
+            return from_ms is None and query == "limit=2"
+        if query_kind != "cursor":
+            return False
+        if from_ms is None:
+            if len(parts) != 2 or parts[0] != "limit=2":
+                return False
+        elif len(parts) != 3 or parts[:2] != [f"from_ms={from_ms}", "limit=2"]:
+            return False
+        return parts[-1].startswith("cursor=") and valid_cursor(parts[-1][len("cursor="):])
+
+    def drive_cursor(scope, vehicle_id):
+        return _scope_cursor(scope, vehicle_id)
+
+    first_drive_scope = drive_scope(PRIMARY_VEHICLE, "first")
+    page_cursor_scope = drive_scope(PRIMARY_VEHICLE, "cursor")
+    wrong_vehicle_scope = drive_scope(SECONDARY_VEHICLE, "cursor")
+    wrong_filter_scope = drive_scope(
+        PRIMARY_VEHICLE, "cursor", from_ms=1788566400001
+    )
+    requirements = {
+        "discovery_identity_profile": (("GET", discovery_route, 200, discovery_scope),),
+        "unauthenticated_discovery": (
+            ("GET", discovery_route, 200, discovery_scope),
+            ("GET", "/healthz", 200, "/healthz"),
+            ("GET", "/readyz", 200, "/readyz"),
+        ),
+        "bad_invitation": (("POST", claim_route, 401, None),),
+        "replayed_invitation": (("POST", claim_route, 401, None),),
+        "real_auth": (
+            ("POST", claim_route, 200, None),
+            ("GET", vehicles_route, 200, vehicles_scope),
+        ),
+        "credential_lifecycle_reauth": (
+            ("POST", claim_route, 200, None),
+            ("GET", vehicles_route, 200, vehicles_scope),
+        ),
+        "revocation": (("GET", vehicles_route, 401, vehicles_scope),),
+        "unknown_vehicle": (
+            ("GET", current_route, 404, f"/v1/vehicles/{UNKNOWN_VEHICLE}/current"),
+        ),
+        "exact_current_values": (
+            ("GET", current_route, 200, primary_current_scope),
+            ("GET", current_route, 200, secondary_current_scope),
+        ),
+        "endpoint_restart": (("GET", vehicles_route, 200, vehicles_scope),),
+        "outage_recovery": (
+            ("GET", vehicles_route, 0, vehicles_scope),
+            ("GET", vehicles_route, 200, vehicles_scope),
+        ),
+        "credential_rotation_api": (
+            ("GET", discovery_route, 200, discovery_scope),
+            ("POST", "/v1/device/rotate", 200, "/v1/device/rotate"),
+            ("GET", discovery_route, 200, discovery_scope),
+            ("GET", vehicles_route, 401, vehicles_scope),
+            ("GET", vehicles_route, 200, vehicles_scope),
+        ),
+        "drives_three_page_order": tuple(
+            ("GET", drives_route, 200, scope)
+            for scope in (first_drive_scope, page_cursor_scope, page_cursor_scope)
+        ),
+        "drives_terminal_cursor": (
+            ("GET", drives_route, 200, page_cursor_scope),
+        ),
+        "drives_etag_304": (
+            ("GET", drives_route, 200, first_drive_scope),
+            ("GET", drives_route, 304, first_drive_scope),
+            ("GET", drives_route, 200, page_cursor_scope),
+            ("GET", drives_route, 304, page_cursor_scope),
+            ("GET", drives_route, 200, page_cursor_scope),
+            ("GET", drives_route, 304, page_cursor_scope),
+        ),
+        "drives_wrong_vehicle_cursor": (
+            ("GET", drives_route, 400, wrong_vehicle_scope),
+        ),
+        "drives_wrong_filter_cursor": (("GET", drives_route, 400, wrong_filter_scope),),
+        "native_macos_transport": (
+            ("GET", discovery_route, 200, discovery_scope),
+            ("GET", "/healthz", 200, "/healthz"),
+            ("GET", "/readyz", 200, "/readyz"),
+        ),
+        "native_linux_transport": (
+            ("GET", discovery_route, 200, discovery_scope),
+            ("GET", "/healthz", 200, "/healthz"),
+            ("GET", "/readyz", 200, "/readyz"),
+        ),
+        "transport_cancellation": (
+            ("GET", "/cancel", 0, "/cancel?fixture=matrix-cancellation-v1"),
+        ),
+        "transport_body_limit": (
+            ("GET", "/oversize", 0, "/oversize?fixture=matrix-body-limit-v1"),
+        ),
+    }
+    required = requirements.get(case_id)
+    if required is None or len(requests) != len(required):
+        return False
+    claim_cases = {"bad_invitation", "replayed_invitation", "real_auth", "credential_lifecycle_reauth"}
+    if case_id in claim_cases:
+        if pairing_id is None or not _canonical_uuid(pairing_id):
+            return False
+    elif pairing_id is not None:
+        return False
+    previous_scope = None
+    previous_response_etag = None
+    for index, (request, (method, route, status, expected_scope)) in enumerate(
+        zip(requests, required)
+    ):
+        if (request.get("method"), request.get("route"), request.get("status")) != (
+            method, route, status
+        ):
+            return False
+        scope = request.get("scope")
+        if not isinstance(scope, str) or len(scope) > 2048:
+            return False
+        if expected_scope is None:
+            expected_scope = f"/v1/pairings/{pairing_id}/claim"
+        if isinstance(expected_scope, tuple) and expected_scope[0] == "drive":
+            _, vehicle_id, query_kind, from_ms = expected_scope
+            if not matches_drive_scope(scope, vehicle_id, query_kind, from_ms):
+                return False
+        elif scope != expected_scope:
+            return False
+        if case_id == "drives_etag_304" and index % 2 == 1 and scope != previous_scope:
+            return False
+        if case_id == "drives_etag_304":
+            request_etag = request["request_if_none_match"]
+            response_etag = request["response_etag"]
+            if not _valid_entity_tag(response_etag) or request["response_cache_control"] != "no-store":
+                return False
+            if status == 200:
+                if request_etag is not None:
+                    return False
+                previous_response_etag = response_etag
+            elif status == 304:
+                if (
+                    previous_response_etag is None
+                    or request_etag != previous_response_etag
+                    or response_etag != previous_response_etag
+                ):
+                    return False
+        previous_scope = scope
+    if case_id == "drives_three_page_order":
+        cursors = [
+            drive_cursor(requests[index]["scope"], PRIMARY_VEHICLE)
+            for index in (1, 2)
+        ]
+        if any(cursor is None for cursor in cursors) or len(set(cursors)) != 2:
+            return False
+    elif case_id == "drives_etag_304":
+        page_scopes = [requests[index]["scope"] for index in (0, 2, 4)]
+        cursors = [drive_cursor(scope, PRIMARY_VEHICLE) for scope in page_scopes]
+        if cursors[0] is not None or any(cursor is None for cursor in cursors[1:]):
+            return False
+        if len(set(cursors[1:])) != 2:
+            return False
+    return True
+
+
+def _cursor_provenance_matches(case_id, facts, requests, context, actor_id):
+    """Bind opaque cursor request bytes to the cursors issued by prior pages.
+
+    The worker records only SHA-256 values, so the private evidence never adds
+    another clear-text copy of an opaque server cursor.  The three-page case
+    supplies the cross-case anchors used by the terminal and invalid-scope
+    cases.
+    """
+    if not isinstance(facts, Mapping) or not isinstance(requests, (list, tuple)):
+        return False
+    provenance = facts.get("cursor_provenance")
+    if not isinstance(provenance, Mapping):
+        return False
+
+    def request_cursor(index):
+        if index < 0 or index >= len(requests):
+            return None
+        request = requests[index]
+        if not isinstance(request, Mapping):
+            return None
+        return _scope_cursor(request.get("scope"), PRIMARY_VEHICLE)
+
+    def digest_at(index):
+        cursor = request_cursor(index)
+        return _cursor_sha256(cursor) if cursor is not None else None
+
+    def three_page_raw():
+        return context.raw.get(
+            actor_id + "-drives_three_pages-drives_three_page_order"
+        ) or context.raw.get(actor_id + "-drives_three_pages")
+
+    def valid_three_page_anchor(raw):
+        """Validate the retained three-page record before trusting its hashes.
+
+        Cursor hashes are useful only when the record that issued them is also
+        admitted.  Cross-case callers may arrive with a standalone context, so
+        this check repeats the anchor's identity, facts, request, and cleanup
+        invariants instead of relying on the finalizer's case ordering.
+        """
+        required_raw = {
+            "schema_version", "session_id", "cell_id", "session_input_sha256",
+            "actor_id", "operation", "actor_manifest_sha256",
+            "session_sequence_before", "session_sequence_after",
+            "credential_device_id", "facts", "requests", "cleanup",
+        }
+        if not isinstance(raw, Mapping) or set(raw) != required_raw:
+            return False
+        actor = context.actors.get(actor_id)
+        if actor is None:
+            return False
+        if (
+            raw["schema_version"] != 1
+            or raw["session_id"] != context.session_id
+            or raw["cell_id"] != context.cell_id
+            or raw["actor_id"] != actor_id
+            or raw["operation"] != "drives_three_pages"
+            or HEX64.fullmatch(str(raw["session_input_sha256"])) is None
+            or raw["actor_manifest_sha256"] != actor.installed_manifest.get("sha256")
+            or raw["credential_device_id"] is not None
+            or type(raw["session_sequence_before"]) is not int
+            or type(raw["session_sequence_after"]) is not int
+            or raw["session_sequence_before"] <= 0
+            or raw["session_sequence_after"] < raw["session_sequence_before"]
+            or raw["cleanup"] != {
+                "status": "passed", "transport_resources_closed": True,
+                "auxiliary_fixture_stopped": True, "process_exited": True,
+            }
+        ):
+            return False
+        expected = _expected_from_context("drives_three_page_order", context).get(actor_id)
+        anchor_facts = raw["facts"]
+        if not isinstance(anchor_facts, Mapping) or not isinstance(expected, Mapping):
+            return False
+        comparable = dict(anchor_facts)
+        comparable.pop("cursor_provenance", None)
+        if not _typed_equal(comparable, expected):
+            return False
+        if not _request_requirement("drives_three_page_order", raw["requests"]):
+            return False
+        return _cursor_provenance_matches(
+            "drives_three_page_order", anchor_facts, raw["requests"], context, actor_id
+        )
+
+    if case_id == "drives_three_page_order":
+        if set(provenance) != {"page2_sha256", "page3_sha256"}:
+            return False
+        return (
+            provenance["page2_sha256"] == digest_at(1)
+            and provenance["page3_sha256"] == digest_at(2)
+            and isinstance(provenance["page2_sha256"], str)
+            and HEX64.fullmatch(provenance["page2_sha256"]) is not None
+            and isinstance(provenance["page3_sha256"], str)
+            and HEX64.fullmatch(provenance["page3_sha256"]) is not None
+        )
+    if case_id == "drives_etag_304":
+        if set(provenance) != {"page2_sha256", "page3_sha256"}:
+            return False
+        prior = three_page_raw()
+        prior_provenance = (
+            prior.get("facts", {}).get("cursor_provenance")
+            if isinstance(prior, Mapping)
+            else None
+        )
+        return (
+            valid_three_page_anchor(prior)
+            and
+            isinstance(prior_provenance, Mapping)
+            and provenance["page2_sha256"] == digest_at(2)
+            and provenance["page3_sha256"] == digest_at(4)
+            and provenance == {
+                "page2_sha256": prior_provenance.get("page2_sha256"),
+                "page3_sha256": prior_provenance.get("page3_sha256"),
+            }
+            and all(
+                isinstance(provenance[key], str)
+                and HEX64.fullmatch(provenance[key]) is not None
+                for key in ("page2_sha256", "page3_sha256")
+            )
+        )
+    if case_id == "drives_terminal_cursor":
+        if set(provenance) != {"terminal_sha256"}:
+            return False
+        prior = three_page_raw()
+        prior_provenance = (
+            prior.get("facts", {}).get("cursor_provenance")
+            if isinstance(prior, Mapping)
+            else None
+        )
+        return (
+            valid_three_page_anchor(prior)
+            and
+            provenance["terminal_sha256"] == digest_at(0)
+            and isinstance(prior_provenance, Mapping)
+            and provenance["terminal_sha256"] == prior_provenance.get("page3_sha256")
+            and isinstance(provenance["terminal_sha256"], str)
+            and HEX64.fullmatch(provenance["terminal_sha256"]) is not None
+        )
+    if case_id in {"drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor"}:
+        if set(provenance) != {"cursor_sha256"}:
+            return False
+        prior = three_page_raw()
+        prior_provenance = (
+            prior.get("facts", {}).get("cursor_provenance")
+            if isinstance(prior, Mapping)
+            else None
+        )
+        # The invalid-scope cases intentionally reuse page 2's issued cursor;
+        # only the vehicle or time-window scope is changed.
+        cursor = _scope_cursor(requests[0].get("scope"), SECONDARY_VEHICLE if case_id == "drives_wrong_vehicle_cursor" else PRIMARY_VEHICLE)
+        if cursor is None:
+            return False
+        digest = _cursor_sha256(cursor)
+        return (
+            valid_three_page_anchor(prior)
+            and
+            provenance["cursor_sha256"] == digest
+            and isinstance(prior_provenance, Mapping)
+            and digest == prior_provenance.get("page2_sha256")
+            and isinstance(provenance["cursor_sha256"], str)
+            and HEX64.fullmatch(provenance["cursor_sha256"]) is not None
+        )
+    return False
 
 
 def _valid_phase_admissions(actor, observations):
@@ -642,7 +1056,9 @@ def _controller_semantics(case_id, invocations, context):
                 return False
             if operation == "stop" and observation["service_generation"] != previous["service_generation"]:
                 return False
-            if operation == "start" and observation["service_generation"] == previous["service_generation"]:
+            if operation in {"start", "pair", "revoke"} and observation["service_generation"] == previous["service_generation"]:
+                return False
+            if operation not in {"start", "pair", "revoke"} and observation["service_generation"] != previous["service_generation"]:
                 return False
     ordered_observations = [item for _, item in sorted(observations.items())]
     immutable_keys = ("scenario_sha256", "seed_sha256", "store_id", "store_schema_version", "hub_id")
@@ -654,7 +1070,10 @@ def _controller_semantics(case_id, invocations, context):
     ):
         return False
     for previous, observation in zip(ordered_observations, ordered_observations[1:]):
-        if observation["operation"] != "start" and observation["service_generation"] != previous["service_generation"]:
+        if observation["operation"] in {"start", "pair", "revoke"}:
+            if observation["service_generation"] == previous["service_generation"]:
+                return False
+        elif observation["service_generation"] != previous["service_generation"]:
             return False
     if any(not _valid_phase_admissions(context.actors[actor_id], observations) for actor_id in ACTOR_IDS):
         return False
@@ -775,6 +1194,9 @@ def admit_case(case, context):
         "swift__macos_arm64", "swift__debian13_amd64", "swift__debian13_arm64"
     } or not isinstance(context.session_id, str):
         return _decision("wrong_context")
+    expected_status = "pending" if case_id == "installed_service_runtime" else "passed"
+    if case["status"] != expected_status:
+        return _decision("case_shape")
     if set(context.actors) != set(ACTOR_IDS):
         return _decision("wrong_actor")
     for actor_id in ACTOR_IDS:
@@ -806,17 +1228,47 @@ def admit_case(case, context):
         if raw is None:
             return _decision("raw_missing")
         actor = context.actors[invocation.actor_id]
-        required_raw = {"schema_version", "session_id", "cell_id", "session_input_sha256", "actor_id", "operation", "actor_manifest_sha256", "session_sequence_before", "session_sequence_after", "facts", "requests", "cleanup"}
+        required_raw = {"schema_version", "session_id", "cell_id", "session_input_sha256", "actor_id", "operation", "actor_manifest_sha256", "session_sequence_before", "session_sequence_after", "credential_device_id", "facts", "requests", "cleanup"}
         if not isinstance(raw, Mapping) or set(raw) != required_raw:
             return _decision("raw_identity_mismatch")
-        if raw["session_id"] != context.session_id or raw["cell_id"] != context.cell_id or raw["actor_id"] != invocation.actor_id or raw["operation"] != invocation.operation:
+        if (
+            raw["schema_version"] != 1
+            or raw["session_id"] != context.session_id
+            or raw["cell_id"] != context.cell_id
+            or raw["actor_id"] != invocation.actor_id
+            or raw["operation"] != invocation.operation
+            or HEX64.fullmatch(str(raw["session_input_sha256"])) is None
+        ):
             return _decision("raw_identity_mismatch")
         if raw["actor_manifest_sha256"] != actor.installed_manifest["sha256"]:
             return _decision("installed_manifest_mismatch")
         if raw["session_sequence_before"] != invocation.session_sequence_before or raw["session_sequence_after"] != invocation.session_sequence_after or type(invocation.session_sequence_before) is not int or invocation.session_sequence_before <= 0 or invocation.session_sequence_after < invocation.session_sequence_before:
             return _decision("sequence_mismatch")
-        if not _typed_equal(raw["facts"], expected[invocation.actor_id]):
+        comparable_facts = raw["facts"]
+        if case_id in {
+            "drives_three_page_order", "drives_terminal_cursor", "drives_etag_304",
+            "drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor",
+        }:
+            if not _cursor_provenance_matches(
+                case_id, raw["facts"], raw["requests"], context, invocation.actor_id
+            ):
+                return _decision("raw_fact_mismatch")
+            comparable_facts = dict(raw["facts"])
+            comparable_facts.pop("cursor_provenance", None)
+        if not _typed_equal(comparable_facts, expected[invocation.actor_id]):
             return _decision("raw_fact_mismatch")
+        credential_device_id = raw["credential_device_id"]
+        if credential_device_id is not None and not _canonical_uuid(credential_device_id):
+            return _decision("raw_identity_mismatch")
+        if case_id == "revocation":
+            revoked = [
+                item["transition"]["device_id"]
+                for sequence, item in context.controller_observations.items()
+                if invocation.session_sequence_before < sequence <= invocation.session_sequence_after
+                and item["operation"] == "revoke"
+            ]
+            if revoked != [credential_device_id]:
+                return _decision("controller_mismatch")
         cleanup = raw["cleanup"]
         if cleanup != {
             "status": "passed", "transport_resources_closed": True,
@@ -824,21 +1276,17 @@ def admit_case(case, context):
         }:
             return _decision("cleanup_failure")
         requests = raw["requests"]
-        if any(
-            not isinstance(item, Mapping)
-            or set(item) != {"method", "route", "status", "request_id"}
-            or item["method"] not in {"GET", "POST"}
-            or not isinstance(item["route"], str)
-            or not item["route"].startswith("/")
-            or "?" in item["route"]
-            or type(item["status"]) is not int
-            or not isinstance(item["request_id"], str)
-            or not item["request_id"]
-            for item in requests
-        ):
+        if any(not _valid_request_record(item) for item in requests):
             return _decision("request_mismatch")
         request_ids = tuple(item.get("request_id") for item in requests if isinstance(item, Mapping))
-        if request_ids != invocation.request_ids or not _request_requirement(case_id, requests):
+        claim_cases = {"bad_invitation", "replayed_invitation", "real_auth", "credential_lifecycle_reauth"}
+        expected_pairing_id = (
+            expected[invocation.actor_id].get("pairing_id")
+            if case_id in claim_cases else None
+        )
+        if request_ids != invocation.request_ids or not _request_requirement(
+            case_id, requests, expected_pairing_id
+        ):
             return _decision("request_mismatch")
         combined_requests.extend(requests)
     if not _typed_equal(case["request_transcript"], combined_requests):

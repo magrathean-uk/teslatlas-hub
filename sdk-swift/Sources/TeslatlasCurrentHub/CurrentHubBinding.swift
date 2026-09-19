@@ -2,7 +2,7 @@ import Foundation
 
 public struct CurrentHubBinding: Equatable, Sendable {
   public static let approvedManifestSHA256 =
-    "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+    "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 
   public let profileID: String
   public let manifestSHA256: String
