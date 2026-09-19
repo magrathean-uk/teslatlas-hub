@@ -1,0 +1,134 @@
+{
+  "aggregate_format": "sha256 of UTF-8 lines '<file_sha256>  <name>\\n' in files order",
+  "aggregate_sha256": "2c6efc9c7a196abc851bc961da4d430ecc63f7ea84bde78ee965e4b4491f1774",
+  "cleanup_complete": true,
+  "file_count": 24,
+  "files": [
+    {
+      "bytes": 723,
+      "name": "backup-and-credential-export.json",
+      "sha256": "e07dd03dcd34cc93bb648293c26f9f6fd5ec07d46fb7baffbd2c5b9dcd14a37c"
+    },
+    {
+      "bytes": 1063,
+      "name": "calibrations.json",
+      "sha256": "e8a7125da26bbd3bf91b8bbbe7dbee9108bd5ff5521e64cdaf5b4bc32af39a3c"
+    },
+    {
+      "bytes": 2456,
+      "name": "cohort-summary.json",
+      "sha256": "cf4c88cd4f87aa16f8b0a6b91c2f53fb4ef99ed5d683f819007bddb7be8bec7c"
+    },
+    {
+      "bytes": 899,
+      "name": "config-tls-service-restore.json",
+      "sha256": "a67bc6188cd885a919d348d4b83ad3a3a35ef2feafe37eab650834352215759a"
+    },
+    {
+      "bytes": 420,
+      "name": "data-and-credential-restore.json",
+      "sha256": "7e910db71fd3567a0f7822c42c8d15648812e46e7011df34052cffa4a756a2e6"
+    },
+    {
+      "bytes": 496,
+      "name": "host-final-cleanup.json",
+      "sha256": "25e5f8a6e2d7b068eb0c51d970e21d7b6208e49bdb06f0a11cfd222309a580ba"
+    },
+    {
+      "bytes": 666,
+      "name": "migration.json",
+      "sha256": "dc2a3746b13c048d6d53934a0509ab2afb82b2c4d3cf11963728eeab799c454c"
+    },
+    {
+      "bytes": 154,
+      "name": "package-sha256.txt",
+      "sha256": "f6714ef31bfb718c1413e7a159a4e232ccb35486330cc7e71f66a6a022ac7be2"
+    },
+    {
+      "bytes": 289,
+      "name": "platform.json",
+      "sha256": "abc3d30f945ccc9bc6bea60378511cca40ab2aa105c3ffbf4cd2047eb2760d37"
+    },
+    {
+      "bytes": 235,
+      "name": "pre-recovery-runtime.json",
+      "sha256": "b9b59d5f02d22e8145f98675cc2b30cc816b413bd621f5b656d8deee35562dd2"
+    },
+    {
+      "bytes": 459,
+      "name": "private-cleanup.json",
+      "sha256": "ded760afda60a455c9d827748de2b17ade93d776ad5c16b07af81700899821de"
+    },
+    {
+      "bytes": 382,
+      "name": "removal-preservation.json",
+      "sha256": "6b44c0e32e2542d373bd0e54a508fdeb3c0818b95e2aa0186eaf5a0d9831b354"
+    },
+    {
+      "bytes": 154,
+      "name": "repair-after-failure.json",
+      "sha256": "0935fad3cc91afaa394c6409b3ded6ba76d3d9d7f43620e24fdb5b7fd87d9efe"
+    },
+    {
+      "bytes": 438,
+      "name": "repair-before.json",
+      "sha256": "67e1ad26d47d0044a789bcc5c9c5fd5583f1113221fb71f386fc4ac823cce270"
+    },
+    {
+      "bytes": 42,
+      "name": "repair-failure.json",
+      "sha256": "867f3de34aca912828c2eb32db2ada1740ad3a28955398a2b0d17d64bd0378c0"
+    },
+    {
+      "bytes": 83,
+      "name": "repair-failure.txt",
+      "sha256": "68c624fbc51ea3f35f9c63c5f535659328fb9a698150873731430435fbc5a0f9"
+    },
+    {
+      "bytes": 118,
+      "name": "repair-post-grace-success.json",
+      "sha256": "43e7b89105ceb53f2327a5ade555982b269473c2d258f5de30d7854fb86e9e34"
+    },
+    {
+      "bytes": 118,
+      "name": "repair-retry-success.json",
+      "sha256": "43e7b89105ceb53f2327a5ade555982b269473c2d258f5de30d7854fb86e9e34"
+    },
+    {
+      "bytes": 96,
+      "name": "restart-before-recovery.json",
+      "sha256": "dcc83badd03bb882c13ddb573cfa5d281799d2ce723311b0845187773ba5289e"
+    },
+    {
+      "bytes": 192,
+      "name": "retention-grace.json",
+      "sha256": "cb823d4a4a5568f7ff9f40cea43de62643221017ac36220487d53bb5c8ab76f5"
+    },
+    {
+      "bytes": 88,
+      "name": "retention-post-grace.json",
+      "sha256": "0efb735f2033d472c54127e6e6389be54fcd99d88dc17b7a30ad6a1cdc2a1657"
+    },
+    {
+      "bytes": 158,
+      "name": "secret-scan.json",
+      "sha256": "fe60d29914211d01e59c2251445454004efedd19aa74b2a0b14e28fa6948a29b"
+    },
+    {
+      "bytes": 41,
+      "name": "source-head.txt",
+      "sha256": "9bbd65975ed440f6e8194baf8422ffc004b4dcbafaf51fa125fa6459ba46fa3b"
+    },
+    {
+      "bytes": 93,
+      "name": "source-readback.txt",
+      "sha256": "855aa9db04efa9ac11c05d18c9784c1c975d3f136c4abde1cdb675524ff79748"
+    }
+  ],
+  "generated_at": "2026-09-19T21:37:05.059781+00:00",
+  "guest_stopped": true,
+  "lock_released": true,
+  "schema": "teslatlas.hub.redacted-evidence/v1",
+  "secret_scan": "PASS",
+  "state": "COMPLETE"
+}

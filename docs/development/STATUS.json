@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-19T20:20:26Z",
-  "update_scope": "hub08_repair_atomicity_source_fix_independently_accepted",
+  "updated_at": "2026-09-19T21:40:14Z",
+  "update_scope": "f1_storage_cohort_independently_accepted",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "4102dce1376d725c7959ec71ec46ffdbe47b9c6b",
+    "head": "0d5e63f23b8649c0d56c865bc9cb1fd9c1b43950",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-19T16:15:00Z"
+    "checked_at": "2026-09-19T21:37:53Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -65,7 +65,9 @@
     "The r2 evidence bundle reached READY_FOR_CLEANUP before cleanup and COMPLETE afterward. It retains 25 allowlisted files, exact source archive/manifests, image/runtime/security/TLS/restart/DB outputs and the cohort-bound cleanup receipt at aggregate SHA-256 ec3ad4ff24ea801e414eeb1f0f1f725cf09a40ffa789a858a621cd15366c382e. Two scanner-rejected preparation attempts and their doctor-detail redaction plus metadata-field rename closures are recorded.",
     "Independent review rejected two P2 claim-integrity issues only: final-image cleanup wording appeared inconsistent with the disclosed retained anonymous builder intermediate, and the unretained jq filter/raw doctor hashes made the redaction transform non-reproducible. The metadata delta scopes image removal to the named/tagged cohort and runnable final image, explicitly classifies the retained builder intermediate, and calls the doctor derivative runner-reported. Same-reviewer delta review returned ACCEPT with no findings for this bounded runtime foundation.",
     "The bounded HUB-08 source fix moves expired retired-lineage deletion to repair_at's final fallible operation. A malformed unexpired retained manifest now fails before deletion, preserving exact eligible parent and child metadata; a same-cutoff successful retry removes both by the unchanged foreign-key cascade.",
-    "Independent Sol/high implementation review rejected one P2 test gap because the first fixture lacked an expired child binding. The focused closure added that child, proved exact two-table preservation and same-cutoff cascade deletion, and returned ACCEPT with no findings. Final receipt/PLAN/STATUS metadata review also returned ACCEPT with no findings; installed-path, retained corruption-cohort, complete HUB-08, F1 and F6 acceptance remain open."
+    "Independent Sol/high implementation review rejected one P2 test gap because the first fixture lacked an expired child binding. The focused closure added that child, proved exact two-table preservation and same-cutoff cascade deletion, and returned ACCEPT with no findings. Final receipt/PLAN/STATUS metadata review also returned ACCEPT with no findings.",
+    "The exact published 0d5e63f Debian ARM64 package passed a fresh installed storage cohort: schema 57-to-59 migration, failure-atomic retained-lineage repair with exact parent/child snapshot preservation, retry, runner-recorded one-hour grace and post-grace deletion, backup verification, separate cursor-key recovery, separate config/TLS/service restoration, strict TLS health, doctor, restart/persistence and data-preserving removal. Retained counts prove the row-presence transitions, but the bundle lacks expiry, cutoff and post-advance timestamps needed to reproduce the exact boundary classification.",
+    "The storage cohort's 24-payload redacted evidence bundle is COMPLETE at aggregate SHA-256 2c6efc9c7a196abc851bc961da4d430ecc63f7ea84bde78ee965e4b4491f1774 and manifest SHA-256 ed7dcb639e990dfdb54d36c1766a37133f9af009983cb1af39aceb75f333c5bf. It does not independently prove a prior READY_FOR_CLEANUP state. Initial review rejected that overclaim and the unreproducible exact one-hour boundary as two P2s; the calibrated delta retained both runner-recorded limits and same-reviewer review returned ACCEPT with no P1/P2 findings after independently recomputing all 24 payloads, aggregate, manifest, receipt, artifacts, redaction and cleanup. No product source defect or source change resulted."
   ],
   "evidence_paths": [
     "docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json",
@@ -82,13 +84,15 @@
     "docs/development/f6-arm64-container-runtime-foundation-2026-09-19-r1.json",
     "docs/development/f6-arm64-container-runtime-foundation-2026-09-19-r2.json",
     "docs/development/evidence/f6-arm64-container-runtime-2026-09-19-r2/manifest.json",
-    "docs/development/hub-08-repair-atomicity-source-fix-2026-09-19-r1.json"
+    "docs/development/hub-08-repair-atomicity-source-fix-2026-09-19-r1.json",
+    "docs/development/f1-storage-recovery-debian13-arm64-2026-09-19-r1.json",
+    "docs/development/evidence/f1-storage-cohort-2026-09-19-r1/manifest.json"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed claim-by-claim ledger is docs/development/F0_ACCEPTANCE_LEDGER.md at workspace root.",
     "F1-F4: complete standalone Hub, Edge, Protocol/SDK and required Home Assistant behavior on every active documented path.",
     "F5: fresh read-only named-source export and fresh authorized passive capture evidence are mandatory input-dependent acceptance gates.",
-    "HUB-08: build on the independently accepted repair-atomicity source fix by exercising it through an installed supported path and a retained corruption/recovery cohort; the full ledger assertion remains open.",
+    "HUB-08: the installed corruption/repair/retention and recovery cohort is independently accepted within its runner-recorded evidence limits; the wider F1/F6 ledger remains open.",
     "F6: build on the independently accepted exact-export ARM64 Compose r2 foundation; prove image-byte reproducibility if required, upgrade/rollback, backup/restore, failed candidate and data-preserving removal, populate the exact five-companion catalog only after all identities are stable, and prove the remaining ordinary lifecycle without Viewer.",
     "F7: pass one combined installed end-to-end ecosystem journey from F6 artifacts."
   ],
@@ -209,7 +213,7 @@
     "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_SOURCE_FIX",
     "receipt": "docs/development/hub-08-repair-atomicity-source-fix-2026-09-19-r1.json",
     "base_commit": "09684337332fdd7eae9ad460a8cc3bf6b1aaafd3",
-    "current_identity": "base commit plus exact uncommitted two-file patch",
+    "current_identity": "published commit 0d5e63f23b8649c0d56c865bc9cb1fd9c1b43950",
     "working_tree_patch_sha256": "87fd09c1415c0335d5245c36ef735d56a51fd6b55aea114ab4c3e46d304c8d3f",
     "implementation_sha256": "6b6b91f47e9cbb7e393f43deb112802d8ea0411f1b03b178828879612746c751",
     "test_sha256": "f48bbac472213c97f94fe36e18043cffa13360d7bd38ce4b37d6eb90f9347a1e",
@@ -219,7 +223,30 @@
     "focused_validation": "New regression passed 1/1 with 911 filtered; existing repair quarantine/orphan and live-delta retention/grace/deletion tests passed 1/1 each; cargo check --lib, rustfmt and diff-check passed.",
     "independent_implementation_review": "ACCEPT by gpt-5.6-sol/high with no findings after one P2 child-cascade fixture closure.",
     "metadata_review": "ACCEPT by the same gpt-5.6-sol/high reviewer with no findings; source/file/patch hashes, check claims, ordering semantics and open limits verified.",
-    "acceptance_limit": "Source-level repair retention-metadata ordering only; no installed path, retained corruption cohort, complete HUB-08, F1 or F6 acceptance."
+    "acceptance_limit": "Independently accepted source-level repair ordering and separately independently accepted bounded installed storage cohort; exact retention-boundary timing remains runner-recorded and F1/F6 remain open."
+  },
+  "current_f1_storage_recovery_slice": {
+    "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_COHORT",
+    "receipt": "docs/development/f1-storage-recovery-debian13-arm64-2026-09-19-r1.json",
+    "source_head": "0d5e63f23b8649c0d56c865bc9cb1fd9c1b43950",
+    "platform": "Debian GNU/Linux 13 aarch64",
+    "package_version": "2026.36.2-1",
+    "package_sha256": "c645f3c4715f11014065196622fb01597f1675f95b09c79564dd43a1ab253607",
+    "migration": "fresh ordinary 2026.36.1-1 schema 57 to exact current schema 59; quick_check ok",
+    "repair_atomicity": "malformed active retained lineage failed without changing the exact 3-parent/2-child snapshot; retry removed eligible parent/child and retained one runner-classified in-grace row",
+    "retention": "retained counts prove one row after retry and zero after the later repair; the exact one-hour grace and post-grace cutoff ordering are runner-recorded because expiry/cutoff/post-advance timestamps were not retained",
+    "recovery": "data backup created/verified, separately encrypted cursor key restored, config/TLS/service state reconstructed, all eight doctor checks and strict TLS health passed before and after restart",
+    "removal": "ordinary removal preserved configuration, service user and restored schema-59 data before explicit synthetic cleanup",
+    "evidence_bundle": "docs/development/evidence/f1-storage-cohort-2026-09-19-r1",
+    "evidence_state": "COMPLETE",
+    "evidence_file_count": 24,
+    "evidence_aggregate_sha256": "2c6efc9c7a196abc851bc961da4d430ecc63f7ea84bde78ee965e4b4491f1774",
+    "evidence_manifest_sha256": "ed7dcb639e990dfdb54d36c1766a37133f9af009983cb1af39aceb75f333c5bf",
+    "source_defects_observed": [],
+    "source_changes": [],
+    "cleanup_complete": true,
+    "independent_review": "Initial same-reviewer REJECT identified two P2 claim-integrity gaps: unsupported prior READY_FOR_CLEANUP ordering and an independently unreproducible exact one-hour boundary. The calibrated metadata/evidence delta retained both limits; same-reviewer ACCEPT returned no P1/P2 findings after recomputing all 24 payload hashes, aggregate 2c6efc9c7a196abc851bc961da4d430ecc63f7ea84bde78ee965e4b4491f1774, manifest ed7dcb639e990dfdb54d36c1766a37133f9af009983cb1af39aceb75f333c5bf and receipt 5b0a3f6b286f94514f71d7d4a5f9cc7c0732a30c6b563955588ec159127b880f, plus artifacts, redaction and cleanup.",
+    "acceptance_limit": "Synthetic core-only installed storage cohort; retained evidence proves only the final COMPLETE bundle state, not a prior READY_FOR_CLEANUP state, and the exact one-hour boundary is runner-recorded. No real provider/data, Fleet, container, macOS or package-byte-reproducibility acceptance. F1 and F6 remain open."
   },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/hub/docs/development/STATUS.json",
@@ -232,17 +259,17 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the F1/F6 Debian package cohort is purged. The afae80a attempt remains rejected unauditable. The fresh 4102dce exact-export ARM64 ordinary synthetic Compose runtime and COMPLETE retained bundle are independently accepted only as a bounded foundation. No owned container, volume, network, named/tagged candidate or runnable final image, Hub process, 8443 listener, TLS material or runtime root remains. Buildx is absent and no package was installed; pinned bases, anonymous builder-stage intermediate sha256:8e5e41ae96170bc65f41cfb220130ecb1dd96ccac1d4ea989a957475c910f262 and the 889.3 MB cache remain. debian13-arm64 is stopped and the heavy-build lock is absent. The HUB-08 source fix started no runtime and the shared lock is absent.",
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the earlier F1/F6 Debian package cohort is purged. The afae80a attempt remains rejected unauditable. The fresh 4102dce exact-export ARM64 ordinary synthetic Compose runtime and COMPLETE retained bundle are independently accepted only as a bounded foundation. The exact 0d5e63f installed storage/recovery cohort and calibrated COMPLETE evidence are independently accepted within their bounded runner-recorded limits; package removal preserved data before explicit synthetic cleanup. No owned package, service user, config, data, TLS/recovery material, Hub process or 8443 listener remains. debian13-arm64 is stopped, SSH port 60022 is closed and the heavy-build lock is absent. Pinned container bases, the disclosed anonymous builder-stage intermediate and retained Docker cache remain outside this cohort.",
   "acceptance_limits": [
     "G2 is source-built synthetic runtime evidence, not macOS installer/notarization/service acceptance",
     "Current macOS 27.0 was exercised; the documented macOS 13 minimum floor was not independently run",
     "No real account, vehicle, collection, named-source or production acceptance",
     "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
     "G6 is current macOS 27 arm64 external-consumer evidence; declared minimum floors were not independently exercised",
-    "The F1/F6 Debian package receipt is a bounded partial pass: no package-byte reproducibility, deliberate corruption/retention recovery, credential/config/TLS clean-host restore, Fleet sidecars or final clean-export source-bound artifact",
+    "The earlier F1/F6 package receipt plus the independently accepted bounded storage cohort cover exact current source-bound packaging, deliberate corruption/retention retry, separate credential/config/TLS/service restore and data-preserving removal. Package-byte reproducibility, Fleet sidecars and the remaining F1/F6 behavior remain open",
     "The F6 source/catalog receipt is an independently accepted partial source foundation: pushed-commit artifact rebuilds, ARM64 container runtime source proof, exact five-companion catalog population and installed lifecycle remain pending",
     "The F6 container source/static receipt remains independently accepted and afae80a remains rejected unauditable. The 4102dce exact-export ordinary Compose runtime and retained COMPLETE bundle are independently accepted only as a bounded foundation; pristine first-attempt TLS startup, image-byte reproducibility, upgrade/rollback, backup/restore, failed candidate, removal and full lifecycle remain pending",
-    "The HUB-08 repair atomicity patch and final metadata are independently accepted as a bounded source fix; installed-path execution, retained corruption/recovery evidence, complete HUB-08, F1 and F6 acceptance remain open",
+    "The HUB-08 source fix and bounded installed retained-corruption/recovery cohort are independently accepted. The retained bundle proves final COMPLETE state and row-count transitions, not prior READY ordering or the exact one-hour cutoff timing; complete F1 and F6 acceptance remain open",
     "No App integration acceptance",
     "Viewer excluded; x86/Intel paused"
   ]

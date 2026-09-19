@@ -1,0 +1,1 @@
+teslatlas-hub: cannot deserialize sync manifest: expected ident at line 1 column 2

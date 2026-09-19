@@ -1,0 +1,1 @@
+{"binary_absent": true, "config_preserved": true, "data_preserved": true, "installation_id_sha256": "9ac9e957999f7195d5bd1dc87cceb32c0fa757f91616b3cf7e3c8c7198b834b7", "listener_8443_absent": true, "ordinary_dpkg_remove": true, "package_status": "config-files", "quick_check": "ok", "schema_version": 59, "service_inactive": true, "service_user_preserved": true, "vehicle_rows": 1}

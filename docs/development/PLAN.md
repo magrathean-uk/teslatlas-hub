@@ -246,6 +246,36 @@ same-reviewer delta returned `ACCEPT` with no findings. This is source-level rep
 ordering only, not installed-path, retained corruption-cohort, complete HUB-08, F1
 or F6 acceptance.
 
+The fresh installed Debian 13 ARM64 storage and recovery cohort at published head
+`0d5e63f23b8649c0d56c865bc9cb1fd9c1b43950` is independently accepted within its
+bounded scope. An ordinary `2026.36.1-1` install initialized schema 57 and the
+exact source-built `2026.36.2-1` package migrated that store to schema 59. The installed
+repair command then failed on one deliberately malformed unexpired retained lineage
+without changing the exact eligible parent/child metadata snapshot, retried after only
+that malformed fixture was removed, deleted the eligible expired parent by cascade,
+retained one row and later deleted it after the runner advanced the fixture. The exact
+one-hour grace classification and cutoff ordering are runner-recorded because the
+retained bundle does not include the fixture expiry, cutoff or post-advance timestamps.
+Data backup/verification, separate encrypted cursor-
+key recovery, separately retained config/TLS restoration, systemd writable-path and
+enablement restoration, strict TLS health, doctor, restart/persistence and ordinary
+data-preserving package removal all passed. The retained allowlisted evidence bundle is
+`COMPLETE`; it does not independently prove a prior `READY_FOR_CLEANUP` state. Its 24
+payload files have aggregate
+SHA-256 `2c6efc9c7a196abc851bc961da4d430ecc63f7ea84bde78ee965e4b4491f1774`
+and manifest SHA-256 `ed7dcb639e990dfdb54d36c1766a37133f9af009983cb1af39aceb75f333c5bf`.
+No product source defect was observed and no source file changed. Initial migration
+stdout was not retained, so those transition values remain runner-recorded; the exact
+packages and final restored schema-59 state are retained. This is a synthetic core-only
+storage cohort, not F1 or F6 acceptance, real-source or passive-data evidence,
+Fleet-sidecar acceptance, or package-byte reproducibility. Initial independent review
+rejected two P2 claim-integrity gaps: the retained bundle did not prove a prior
+`READY_FOR_CLEANUP` state, and it lacked the expiry/cutoff/post-advance timestamps needed
+to reproduce the exact one-hour boundary. The metadata/evidence delta calibrated both
+claims without changing runtime results. Same-reviewer review independently recomputed
+all 24 payload hashes, aggregate and manifest, verified the receipt, artifacts,
+redaction and cleanup, and returned `ACCEPT` with no P1/P2 findings.
+
 ## Start and boundaries
 
 The sent full-solution goal authorizes bounded implementation, tests, isolated

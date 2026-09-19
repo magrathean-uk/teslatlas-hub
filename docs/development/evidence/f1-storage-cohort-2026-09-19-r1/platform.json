@@ -1,0 +1,1 @@
+{"architecture": "aarch64", "guest": "debian13-arm64", "kernel": "6.12.107+deb13-cloud-arm64", "os": "Debian GNU/Linux 13 (trixie)", "shared_lock_held": true, "strict_host_key_fingerprint": "SHA256:Q7mBR/PbEZKdZmDwEmqPtDG9p7qxhRQ2GCUA4qqsdY0", "systemd": "systemd 257 (257.13-1~deb13u1)"}
