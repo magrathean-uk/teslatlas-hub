@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "TypeScript SDK",
-  "updated_at": "2026-09-19T21:25:08Z",
-  "update_scope": "f0_ts_02_tls_pin_correction_review_ready",
+  "updated_at": "2026-09-19T21:33:54Z",
+  "update_scope": "f0_ts_02_source_test_boundary_independently_accepted",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G4_ACCEPTED",
   "source_objective_state": "PACKED_NODE_BROWSER_AND_BINDING_ACCEPTED",
@@ -11,16 +11,17 @@
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": ["G3", "G4"],
-  "planning_state": "FULL_PRODUCT_ACTIVE_F3_F6_TS_02_REVIEW_READY_LIFECYCLE_AND_RUNTIME_GAPS_OPEN",
+  "planning_state": "FULL_PRODUCT_ACTIVE_F3_F6_TS_02_SOURCE_TEST_ACCEPTED_LIFECYCLE_AND_RUNTIME_GAPS_OPEN",
   "objective": "Complete every documented TypeScript SDK Node/browser contract, support claim, reproducible package lifecycle, mandatory real-input semantics and final installed consumer journey.",
   "source": {
-    "head": "8bcb83b66f7fd60df096b24d51b0a78f5eafdc64",
+    "head": "3cc72520c6d857b20e10129be039965f4ca1f4ab",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
-    "tracked_dirty_entries_at_check": 4,
+    "tracked_dirty_entries_at_check": 2,
+    "reviewed_ts_02_source_commit": "3cc72520c6d857b20e10129be039965f4ca1f4ab",
     "accepted_runtime_source_head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
-    "checked_at": "2026-09-19T21:25:08Z"
+    "checked_at": "2026-09-19T21:33:54Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -35,8 +36,8 @@
     "The runner CDP-target and trust-hook payload defects were repaired with focused tests; the corrections are outside the packed archive, whose hash remains unchanged.",
     "Final Hub and task-owned Chrome processes, listeners, profiles, credentials, certificates and private runtimes are absent.",
     "G3 final admission binds the G4 evidence to product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926 using the accepted content-bound G2/G4 Hub fingerprint; the scoped checker and focused Protocol lock/readback pass under r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865.",
-    "TS-02 source correction is ready for review: Node validates normal TLS plus the invitation DER leaf SHA-256 before claim bytes, missing or malformed pins fail before network I/O, ordinary TLS failures remain bounded transport_error values, browser claim fails closed without a pin-capable caller transport, and focused match/mismatch/absence/error-semantics tests pass.",
-    "At the review-ready four-file dirty tree based on 8bcb83b, exact Node 26.7.0/npm 11.19.0 build, typecheck and Protocol lock passed; three focused unit files passed 55 tests and pack:check verified 88 files. An initial ambient Node 26.8.2 Protocol check was correctly rejected by devEngines and is not acceptance evidence.",
+    "TS-02 source/test boundary is independently accepted at published commit 3cc72520c6d857b20e10129be039965f4ca1f4ab: Node validates normal TLS plus the invitation DER leaf SHA-256 before claim bytes, missing or malformed pins fail before network I/O, ordinary TLS failures remain bounded transport_error values, and browser claim fails closed without a pin-capable caller transport.",
+    "Independent GPT-5.6 Sol/high review returned ACCEPT with no P1/P2 for the exact four-file TS-02 patch after exact Node 26.7.0/npm 11.19.0 build, typecheck and Protocol lock passed; three focused unit files passed 55 tests and pack:check verified 88 files. The initial ambient Node 26.8.2 Protocol rejection was a correct devEngines refusal and is not acceptance evidence.",
     "The exact Node 26.7.0/npm 11.19.0 package gate produced a deterministic 83-member unpublished archive SHA-256 42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7; clean install/import/reinstall/removal passed.",
     "Independent review found and the source now closes a process-wide TLS-disable bypass, binds browser example credentials to endpoint plus Hub UUID, and safely rejects null-body or out-of-range native claim statuses. The updated Chrome cross-Hub regression is added but not run while the shared heavy lane is occupied.",
     "The independently accepted platform foundation pins the official Node OCI index sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32 and records Linux ARM64/v8 child sha256:2b028cd57303b2761d24173789c85a013558d6cf20e78f51723385f368b6e34d from a fresh registry readback.",
@@ -61,7 +62,7 @@
     "docs/development/f3-f6-candidate-package-admission-2026-09-19-r1.json"
   ],
   "remaining": [
-    "F0 ledger accepted as a requirements map; its coordinator-owned TS-02 row remains OPEN until this review-ready SDK source/test correction is independently accepted and the root ledger is updated.",
+    "F0 TS-02 SDK-owned source/test boundary is independently accepted at 3cc72520c6d857b20e10129be039965f4ca1f4ab; coordinator-owned root-ledger closeout remains separate metadata work.",
     "F3 runtime: prove the newly admitted packed Node pin path and real-browser Web PKI/CORS/read/rotation path against the exact final F1 Hub.",
     "F3 floors: establish evidence-backed Node, npm, browser and active operating-system floors; current machine-readable floors remain null rather than invented or silently reduced.",
     "F5: consume mandatory fresh real-input semantic evidence.",

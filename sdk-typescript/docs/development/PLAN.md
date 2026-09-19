@@ -59,9 +59,9 @@ already accepted Chrome/Node tuple.
 3. **L3:** finish deterministic distribution/docs and catalog integration for F6,
    consume F5 real-input semantics, then pass F7.
 
-## TS-02 review-ready correction
+## TS-02 independently accepted source/test boundary
 
-At live source head `8bcb83b66f7fd60df096b24d51b0a78f5eafdc64`, the public Node
+At published commit `3cc72520c6d857b20e10129be039965f4ca1f4ab`, the public Node
 factory supplies a fresh, non-pooled HTTPS claim transport that retains CA and
 hostname verification, compares the invitation pin with the connected leaf's
 DER SHA-256 during TLS identity verification, and sends the claim body only
@@ -74,9 +74,13 @@ pin-capable claim transport.
 
 Focused synthetic tests cover pin match, mismatch, absence, ordinary TLS trust
 failure, unavailable browser transport, null-body statuses and invalid native
-status handling. This closes the SDK-owned TS-02 source/test defect for review;
-it does not by itself update the coordinator-owned F0 ledger, certify an
-unpublished archive, or satisfy F3 runtime acceptance against the final F1 Hub.
+status handling. Independent GPT-5.6 Sol/high review accepted the exact
+four-file source/test/documentation patch with no P1/P2 findings after exact
+Node 26.7.0/npm 11.19.0 build, typecheck, Protocol lock, 55 focused tests and an
+88-file package-content check passed. This accepts the SDK-owned TS-02
+source/test boundary; it does not certify a new unpublished archive, satisfy F3
+runtime acceptance against the final F1 Hub, provide a browser pairing bridge,
+or broaden the platform floors.
 
 ## Accepted platform/package foundation
 
