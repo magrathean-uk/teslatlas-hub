@@ -1,23 +1,35 @@
 {
   "schema_version": 2,
   "product": "Home Assistant",
-  "updated_at": "2026-09-19T11:04:10Z",
-  "update_scope": "full_product_completion_planning_no_execution",
+  "updated_at": "2026-09-19T20:41:55Z",
+  "update_scope": "f6_current_source_payload_independent_accept_metadata_delta_pending",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "DEBIAN_ARM64_CONTAINER_ACCEPTED",
   "source_objective_state": "SECONDARY_RUNTIME_ACCEPTED_SCOPED",
-  "current_gate_ids": [],
+  "current_gate_ids": ["F6"],
   "completion_gate_ids": ["F0", "F4", "F5", "F6", "F7"],
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
-  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "planning_state": "FULL_PRODUCT_F6_SOURCE_PAYLOAD_ACCEPTED_METADATA_DELTA_PENDING_AND_WAITING_FOR_F1_F3",
   "objective": "Complete Home Assistant as a required ecosystem product across documented install, UI, lifecycle, recovery, real-input semantics, distribution and final installed acceptance.",
   "source": {
-    "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+    "head": "dfb2b05067a88ba02e6dbfbd6db614f8a99b12f4",
     "branch": "main",
-    "dirty_entries": 50,
+    "dirty_entries_at_goal_activation": 6,
+    "tracked_dirty_entries_at_goal_activation": 0,
+    "accepted_runtime_source_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+    "git_tree": "43de76c71bba607f5d37226b4fa7a28c7b0887ee",
+    "source_archive_sha256": "e9cb7aadfa1694018f583628db92f9482520734226ea8f7dd9fc15476e7ae067",
+    "complete_source_manifest_sha256": "565c4defa7c64832cc48213bf8e4be699c1da722929c3faff6fbc4568a80ae3d",
+    "complete_source_file_count": 102,
+    "hub_catalog_source_sha256": "4af006321a29e0e9039458ef41c9421afe2537a72c7ec41dc89890b01dd41ec0",
+    "hub_catalog_source_file_count": 101,
     "component_payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
-    "checked_at": "2026-09-19T10:30:43Z"
+    "component_payload_manifest": "docs/development/ha-component-payload-manifest-2026-09-19-r2.txt",
+    "catalog_selection_receipt": "docs/development/f6-current-source-payload-handoff-2026-09-19-r1.json",
+    "catalog_selection_receipt_sha256": "99fdac66526bdec84d2429100f419eebedec588b0d32060c8f0f0a19bf43f2b3",
+    "independent_reviewed_candidate_receipt_sha256": "c228aa6a6df37e6a3fb0e2e61a432cec8b29e6178118fbdcfd7eb0b13a1c0613",
+    "checked_at": "2026-09-19T20:41:55Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -33,11 +45,15 @@
     "Bearer revocation opened reauthentication; one fresh invitation restored reads on the same entry. Reload, same-identity reconfigure, disable/re-enable and Container stop/start retained the 1/2/26 surface without duplication.",
     "Live diagnostics contained none of the known endpoint, Hub, bearer/device, pairing or vehicle values and no location, coordinate, cursor or raw-record structure.",
     "The component compatibility record now binds product 2026.36.2, exact profile hash, exact Hub source fingerprint and the two accepted receipts.",
+    "A clean export of current source dfb2b050 is frozen with a deterministic archive, complete 102-file manifest, Hub-compatible 101-file source record, exact profile and independently reproduced 31-file component payload for local-unpublished catalog review; no runtime acceptance is transferred.",
+    "Independent Sol/high review accepted the c228aa6 candidate receipt with no blocking findings, recomputed every source, profile and payload identity, and confirmed that AGENTS.md is the sole intentional difference between the 102-file Git export and 101-file Hub source record; the metadata-only receipt delta is pending same-reviewer confirmation.",
     "Container, Hub, private guest root and large HA image were removed; the guest is stopped and all owned ports/processes plus the heavy-build lock are absent."
   ],
   "evidence_paths": [
     "docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json",
     "docs/development/ha-component-payload-manifest-2026-09-19-r1.txt",
+    "docs/development/f6-current-source-payload-handoff-2026-09-19-r1.json",
+    "docs/development/ha-component-payload-manifest-2026-09-19-r2.txt",
     "compatibility/hub.json",
     "../hub/docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json"
   ],
@@ -52,14 +68,15 @@
     "cleanup_complete": true
   },
   "remaining": [
-    "F0: close every config, entity, lifecycle, runtime-floor and distribution claim.",
+    "F0 accepted: the independently reviewed workspace ledger maps every config, entity, lifecycle, runtime-floor and distribution claim.",
     "F4: prove required headed user and API journeys, replacement/image lifecycle, recovery and registry preservation on supported selected runtimes.",
     "F5: mandatory fresh named-source and passive Hub evidence must validate entity semantics.",
-    "F6-F7: prove deterministic component/manual/Container/catalog lifecycle and the final combined installed ecosystem."
+    "F6 source/catalog: same-reviewer confirmation of the metadata-only selection-receipt delta and explicit Hub catalog admission remain; manual/Container install, update, status, rollback and removal remain unproved.",
+    "F7: prove the final combined installed ecosystem."
   ],
   "next_goal_draft": {
     "id": "FULL_HOME_ASSISTANT_F0_F7",
-    "state": "DRAFT_NOT_STARTED",
+    "state": "READY_F6_WAITING_FOR_F1_F3",
     "objective": "Complete Home Assistant as a required ecosystem product across supported user behavior, runtime lifecycle, real-input semantics, distribution and final installed acceptance.",
     "prerequisites": [
       "F0 support ledger and exact component, HA image, Hub and profile identities",
@@ -73,7 +90,7 @@
       "F6 deterministic manual/Container/component/catalog lifecycle receipt",
       "F7 combined installed ecosystem and cleanup receipt"
     ],
-    "execution_authorized": false
+    "execution_authorized": true
   },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json",
@@ -92,6 +109,7 @@
     "Authenticated config-flow API acceptance; no headed browser or visual UI acceptance",
     "The isolated fixture-only CA environment did not accept unrelated Home Assistant outbound HTTPS integration connectivity",
     "No HA OS, Supervisor, add-on, HACS, installer, publication or replacement-upgrade acceptance",
+    "Current dfb2b050 source and payload are accepted only as a bounded local-unpublished catalog input; the metadata delta remains under review and no Hub catalog mutation or runtime rerun occurred",
     "No real-data, production, complete parity or full platform matrix acceptance",
     "No App or Viewer acceptance; x86/Intel/Azure paused"
   ]
