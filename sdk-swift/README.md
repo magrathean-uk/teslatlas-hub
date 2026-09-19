@@ -239,20 +239,30 @@ not minimum-floor tested. It is not App integration, installer, notarization,
 package-service, real Tesla data, production, or full-matrix acceptance. The
 source remains unpublished and untagged by this work.
 
-For a reproducible Linux build and non-live test environment, use the local
-Docker recipe. It uses the official pinned `swift:6.0.3-jammy` multi-architecture
-manifest (amd64 and arm64/v8), runs as an unprivileged user, and installs the
-OpenSSL-backed curl and Python libraries needed by the test fixtures:
+The prepared Linux floor gate is native ARM64 only. It materializes published
+commit `d7ac4488fc5908015e8de55cd57983ea87172266`, verifies source-handoff
+identity `733071fcd8c7db0e64b38547dab90dd354ad728dc2d9efee7fd2de438a14876e`,
+then uses the canonical `teslatlas-sdk-swift` package and separately checksummed
+`external-four-library-consumer` as the complete Docker context. The live
+checkout is never the container package input.
+
+The [Dockerfile](Dockerfile) pins Docker Official Image `swift:6.0.3-jammy`
+directly to its `linux/arm64/v8` child
+`sha256:c84da0197afcc90ef90a64194d4d451be7c090a845bcbf632755f9c16334ba8f`;
+the locked parent index is
+`sha256:e2b0410500126d7f569d387b5817426cef5c38cc02dc494c3dc5edc8e10304d6`.
+The gate rejects non-ARM64 hosts and Docker Engines and does not permit
+emulation. Inspect the bounded command without building or running anything:
 
 ```sh
-docker build -t teslatlas-swift-sdk .
-docker run --rm teslatlas-swift-sdk
-docker run --rm teslatlas-swift-sdk swift build -c release
+python3 tools/platform_gate.py verify
+python3 tools/platform_gate.py command linux-arm64
 ```
 
-This image is a build/test environment and does not start a Hub. Live tests
-remain opt-in and require private mounted inputs and a reachable trusted Hub;
-the container's localhost is not the Mac host.
+On an authorized native Linux ARM64 host, `python3 tools/platform_gate.py run
+linux-arm64` builds and runs that verified handoff consumer with isolated
+writable scratch, removes its owned image tag and temporary context, and does
+not start a Hub. This prepared lane has not yet been executed for acceptance.
 
 The current-Hub live test is mandatory when selected and reads all inputs from
 an owner-only JSON configuration file. It fails when configuration or expected

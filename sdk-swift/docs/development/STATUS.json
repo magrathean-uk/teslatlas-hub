@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
   "product": "Swift SDK",
-  "updated_at": "2026-09-19T14:28:27Z",
-  "update_scope": "f3_f6_source_handoff_foundation_review_accepted",
+  "updated_at": "2026-09-19T14:59:42Z",
+  "update_scope": "f3_platform_gate_preparation_delta_review_accepted",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G6_G7_ACCEPTED",
-  "source_objective_state": "EXTERNAL_CONSUMER_AND_BINDING_ACCEPTED",
-  "current_gate_ids": ["F3", "F6"],
+  "source_objective_state": "PLATFORM_HARNESS_PREPARATION_REVIEW_ACCEPTED",
+  "current_gate_ids": ["F3"],
   "completion_gate_ids": ["F0", "F3", "F5", "F6", "F7"],
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
@@ -15,15 +15,15 @@
     "G6",
     "G7"
   ],
-  "planning_state": "F3_F6_SOURCE_FOUNDATION_REVIEW_ACCEPTED_GATES_OPEN",
+  "planning_state": "F3_PLATFORM_GATE_PREPARATION_ACCEPTED_FLOOR_EXECUTION_OPEN",
   "objective": "Complete all four public SwiftPM libraries on iOS 17, macOS 14 Apple silicon and supported Linux ARM64, including package lifecycle, mandatory real-input semantics and final installed consumers.",
   "source": {
-    "head": "f5a359672d1e64f5c79701cb66a2acb89fe4dce5",
+    "head": "d7ac4488fc5908015e8de55cd57983ea87172266",
     "branch": "main",
     "dirty_entries_at_goal_activation": 10,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
-    "checked_at": "2026-09-19T11:30:21Z"
+    "checked_at": "2026-09-19T14:41:52Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -41,17 +41,23 @@
     "G7 is accepted through the workspace App v7 adoption handoff; it documents the exact TeslatlasCurrentHub integration boundary without modifying or accepting the App.",
     "The reviewed source foundation pins the live strict Protocol references to runtime-source 53b5c6483990db84e5214176755f398e93d87b1b while retaining historical Hub-v1 identities, and a deterministic 124-file source handoff compiled an external consumer importing all four public libraries on macOS 27 arm64.",
     "Initial independent review rejected unsafe symlink-root selection, incomplete special-entry and directory inventory, duplicate-key JSON acceptance, and umask-dependent metadata. The corrected delta closes all four findings with adversarial tests.",
-    "Same-reviewer Sol/high delta review accepted the bounded source-handoff foundation with no remaining P1 or P2 findings. This does not accept platform floors, runtime behavior, catalog lifecycle, F5, F3, F6 or F7."
+    "Same-reviewer Sol/high delta review accepted the bounded source-handoff foundation with no remaining P1 or P2 findings. This does not accept platform floors, runtime behavior, catalog lifecycle, F5, F3, F6 or F7.",
+    "The next bounded F3 candidate prepares a shared SDK-owned iOS 17 scheme with an all-four library launch probe, an isolated exact-macOS-14 handoff consumer, and a native-only Linux ARM64 lane pinned to the direct official Swift 6.0.3 Jammy ARM64 child digest.",
+    "Initial Sol/high platform-preparation review rejected the candidate with one P1 and two P2 findings: Linux built the live checkout after discarding the verified handoff; current Docker documentation retained the superseded multi-architecture input and commands; and two authoritative image metadata fields were not exact-value checked.",
+    "The delta closes all three findings: Docker now receives the accepted canonical handoff plus its separately checksummed consumer as the actual root-owned context, current docs name the direct ARM64 child and forbid emulation, and the authoritative catalog URL/source commit are locked with mutation tests.",
+    "The accepted handoff regression suite passed 7/7; preparation checks passed 11/11 and reproduced Protocol 53b5c648..., source identity 733071fc..., 124 inputs and 769736 bytes. The current macOS 27 arm64 host only parsed and statically validated the harnesses; no simulator, exact-floor runtime, Docker build or container ran.",
+    "The same Sol/high reviewer accepted the corrected frozen delta with no findings. This accepts bounded harness preparation only; every declared platform-floor runtime and final F3/F6/F7 gate remains open."
   ],
   "evidence_paths": [
     "docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json",
     "../hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
     "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
-    "../docs/development/APP_V7_READINESS.md"
+    "../docs/development/APP_V7_READINESS.md",
+    "docs/development/f3-platform-gate-preparation-2026-09-19-r1.json"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed workspace ledger maps all four public libraries and exact iOS 17, macOS 14, Linux ARM64 and Swift 6 claims.",
-    "F3: use the accepted source foundation to prove full public behavior on every active declared platform floor.",
+    "F3: independently review the prepared harnesses, then use the accepted source foundation to prove full public behavior on macOS 14 Apple silicon, exact iOS 17 and native Linux ARM64.",
     "F5: consume mandatory fresh named-source and passive semantic evidence.",
     "F6-F7: prove clean source lifecycle, Hub-catalog integration and final combined consumers from the accepted deterministic handoff foundation."
   ],
@@ -84,7 +90,34 @@
     "initial_review_state": "REJECTED",
     "initial_review_findings_closed": 4,
     "final_review_state": "ACCEPTED_NO_REMAINING_P1_P2_FINDINGS",
-    "publication_state_at_status_freeze": "AUTHORIZED_PENDING_POST_RECEIPT_HASH_VERIFICATION"
+    "publication_state_at_status_freeze": "PUBLISHED_AT_D7AC4488FC5908015E8DE55CD57983EA87172266"
+  },
+  "platform_gate_preparation": {
+    "baseline_head": "d7ac4488fc5908015e8de55cd57983ea87172266",
+    "state": "BOUNDED_PREPARATION_REVIEW_ACCEPTED",
+    "receipt": "docs/development/f3-platform-gate-preparation-2026-09-19-r1.json",
+    "host_used_for_static_checks": "macOS 27.0 arm64",
+    "xcode": "27.0 (27A266a)",
+    "xcodegen": "2.46.0",
+    "ios_shared_scheme": "CurrentHubRuntimeHost",
+    "ios_destination": "platform=iOS Simulator,OS=17.0,name=iPhone 15",
+    "macos_required_major": 14,
+    "linux_required_platform": "linux/arm64/v8",
+    "linux_image": "swift:6.0.3-jammy@sha256:c84da0197afcc90ef90a64194d4d451be7c090a845bcbf632755f9c16334ba8f",
+    "linux_parent_index_digest": "sha256:e2b0410500126d7f569d387b5817426cef5c38cc02dc494c3dc5edc8e10304d6",
+    "protocol_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "source_package_identity_sha256": "733071fcd8c7db0e64b38547dab90dd354ad728dc2d9efee7fd2de438a14876e",
+    "source_input_files": 124,
+    "source_input_bytes": 769736,
+    "source_handoff_tests": "7/7 passed",
+    "focused_platform_tests": "11/11 passed",
+    "platform_consumer_manifest": "PARSED_FROM_ACCEPTED_HANDOFF_ON_CURRENT_HOST",
+    "floor_runtime_executed": false,
+    "docker_build_or_run_executed": false,
+    "initial_review_state": "REJECTED_ONE_P1_TWO_P2",
+    "initial_review_findings_closed": 3,
+    "delta_review_state": "ACCEPTED_NO_FINDINGS",
+    "commit_state_at_status_freeze": "AUTHORIZED_PENDING_COMMIT_AND_PUSH"
   },
   "last_acceptance": {
     "gate_id": "G6",
@@ -108,12 +141,15 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; bounded F3/F6 source-handoff foundation review accepted; no live handoff and completion gates remain open",
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; bounded F3/F6 source-handoff foundation published; F3 platform harness preparation review pending with no exact-floor runtime executed",
   "acceptance_limits": [
     "No App integration acceptance",
     "No real-data parity or production acceptance",
     "Current macOS 27 arm64 source compilation only; the declared macOS 14 and iOS 17 floors were not independently exercised",
     "No Linux ARM64 runtime was executed for the reviewed source foundation",
+    "The prepared iOS 17 shared scheme was not built or run and no simulator was started",
+    "The prepared macOS 14 lane rejects the current macOS 27 host and has not run on the exact floor",
+    "The digest-pinned native Linux ARM64 lane was statically checked only; no Docker image or container was built or run",
     "No live Hub or source-catalog install, update, rollback or removal lifecycle was accepted",
     "F5 real-input semantics and final F3, F6 and F7 acceptance remain open",
     "Viewer excluded; x86/Intel paused"

@@ -1,26 +1,20 @@
-# Official multi-architecture manifest (amd64 and arm64/v8):
-# sha256:1ad73b8f2a2300c650da0949519418565661d802765b9a99435df22bc947e2b4
-FROM swift:6.0.3-jammy@sha256:1ad73b8f2a2300c650da0949519418565661d802765b9a99435df22bc947e2b4
+# Docker Official Image swift:6.0.3-jammy, linux/arm64/v8 child only.
+# Parent OCI index: sha256:e2b0410500126d7f569d387b5817426cef5c38cc02dc494c3dc5edc8e10304d6
+FROM --platform=linux/arm64/v8 swift:6.0.3-jammy@sha256:c84da0197afcc90ef90a64194d4d451be7c090a845bcbf632755f9c16334ba8f
 
 RUN apt-get update \
   && apt-get install --no-install-recommends -y ca-certificates libcurl4-openssl-dev libssl-dev python3 \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --create-home --user-group --uid 10001 --shell /usr/sbin/nologin swiftuser \
-  && install -d -o swiftuser -g swiftuser /workspace/teslatlas-sdk-swift
+  && install -d -o root -g root -m 0755 /workspace
 
-WORKDIR /workspace/teslatlas-sdk-swift
+WORKDIR /workspace
 
-# Keep the image input explicit. The matching .dockerignore is a deny-by-default
-# allowlist, so a private file or a nested build directory cannot enter the
-# build context and later be copied by an accidental broad COPY.
-COPY --chown=swiftuser:swiftuser Package.swift VERSION LICENSE /workspace/teslatlas-sdk-swift/
-COPY --chown=swiftuser:swiftuser Sources/ /workspace/teslatlas-sdk-swift/Sources/
-COPY --chown=swiftuser:swiftuser Tests/ /workspace/teslatlas-sdk-swift/Tests/
-COPY --chown=swiftuser:swiftuser Examples/TeslatlasHubSDKExample/ /workspace/teslatlas-sdk-swift/Examples/TeslatlasHubSDKExample/
-COPY --chown=swiftuser:swiftuser Examples/CurrentHubConsumer/Package.swift /workspace/teslatlas-sdk-swift/Examples/CurrentHubConsumer/
-COPY --chown=swiftuser:swiftuser Examples/CurrentHubConsumer/Sources/ /workspace/teslatlas-sdk-swift/Examples/CurrentHubConsumer/Sources/
-COPY --chown=swiftuser:swiftuser Examples/CurrentHubConsumer/Tests/ /workspace/teslatlas-sdk-swift/Examples/CurrentHubConsumer/Tests/
+# The context must be a verified source_handoff.py output, never the live repo.
+# These are the separately checksummed canonical package and external consumer.
+COPY teslatlas-sdk-swift/ /workspace/teslatlas-sdk-swift/
+COPY external-four-library-consumer/ /workspace/external-four-library-consumer/
 
 USER swiftuser
 
-CMD ["swift", "test", "--skip", "CurrentHubLiveTests", "--skip", "CurrentHubMatrixWorkerTests", "--skip", "CurrentHubAppleConsumerTests", "--skip", "LiveHubBlackBoxTests"]
+CMD ["swift", "build", "--package-path", "/workspace/external-four-library-consumer", "--scratch-path", "/tmp/teslatlas-platform-gate-build"]

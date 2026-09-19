@@ -12,6 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 HOST = ROOT / "iOSRuntimeHost"
 SPEC = HOST / "project.yml"
 PROJECT = HOST / "CurrentHubRuntimeHost.xcodeproj"
+SCHEME = PROJECT / "xcshareddata/xcschemes/CurrentHubRuntimeHost.xcscheme"
+PRODUCTS = (
+    "TeslatlasHubSDK",
+    "TeslatlasCommands",
+    "TeslatlasHubV1Compatibility",
+    "TeslatlasCurrentHub",
+)
 
 
 class IOSRuntimeHostTests(unittest.TestCase):
@@ -23,10 +30,27 @@ class IOSRuntimeHostTests(unittest.TestCase):
             "CurrentHubRuntimeTests:",
             "type: application",
             "type: bundle.unit-test",
-            "product: TeslatlasCurrentHub",
             "path: ..",
+            'iOS: "17.0"',
+            "schemes:",
         ):
             self.assertIn(marker, contents)
+        for product in PRODUCTS:
+            self.assertEqual(2, contents.count(f"product: {product}"))
+
+    def test_shared_scheme_builds_host_and_runs_tests(self):
+        self.assertTrue(SCHEME.is_file(), f"missing shared iOS host scheme: {SCHEME}")
+        contents = SCHEME.read_text(encoding="utf-8")
+        self.assertIn("CurrentHubRuntimeHost.app", contents)
+        self.assertIn("CurrentHubRuntimeTests.xctest", contents)
+        self.assertIn("TestAction", contents)
+
+    def test_host_probe_imports_every_public_product(self):
+        contents = (HOST / "Sources/PlatformSurfaceProbe.swift").read_text(
+            encoding="utf-8"
+        )
+        for product in PRODUCTS:
+            self.assertIn(f"import {product}", contents)
 
     @unittest.skipUnless(shutil.which("xcodebuild"), "xcodebuild is required on the Apple host")
     def test_generated_host_lists_app_and_test_targets(self):

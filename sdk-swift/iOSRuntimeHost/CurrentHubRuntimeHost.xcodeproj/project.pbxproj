@@ -8,18 +8,25 @@
 
 /* Begin PBXBuildFile section */
 		20B37F758F9B7AB4497679B2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85CB5D102744EEEBA3919EFE /* AppDelegate.swift */; };
-		37EED69E80D51F862D2685BB /* TeslatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */; };
-		3F85F7BA523E1AA308EFF7FA /* TeslatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 0430BFDF72713CC6913F5FFC /* TeslatlasCurrentHub */; };
+		3609C9487E3D152600443D50 /* TeslatlasHubV1Compatibility in Frameworks */ = {isa = PBXBuildFile; productRef = BF91B2D1BD937ED303467EE1 /* TeslatlasHubV1Compatibility */; };
+		37EED69E80D51F862D2685BB /* TeslatlasHubSDK in Frameworks */ = {isa = PBXBuildFile; productRef = D07B5D4750D07A422AB26AC4 /* TeslatlasHubSDK */; };
+		3F85F7BA523E1AA308EFF7FA /* TeslatlasHubSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EB8031791F7B83A054772825 /* TeslatlasHubSDK */; };
+		5267A211A1946FFEE56E4D85 /* TeslatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */; };
 		5B79DFAB9F735242B914018E /* claim.json in Resources */ = {isa = PBXBuildFile; fileRef = 09E4C7B89BC9C1AB2E6D1DA6 /* claim.json */; };
 		6BEB3D1124C90F42557DDFE1 /* drives.json in Resources */ = {isa = PBXBuildFile; fileRef = C1FA5E66F031A4D5FC20C516 /* drives.json */; };
 		6D29DEE22D4592E5708B2A9E /* ready.json in Resources */ = {isa = PBXBuildFile; fileRef = 15CCB8E7D51F6F177BD716A3 /* ready.json */; };
+		76097EE6CD8B9C7AF6218736 /* TeslatlasCommands in Frameworks */ = {isa = PBXBuildFile; productRef = 1DEB7109EF6B9C0C58BF7F7F /* TeslatlasCommands */; };
 		764F84C8D91004242EE77DC1 /* vehicles.json in Resources */ = {isa = PBXBuildFile; fileRef = 7F24E5EE2E347765906D3233 /* vehicles.json */; };
+		78033B9F10124437A476EA4E /* PlatformSurfaceProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D015519EF7C7CA7AAD7334D1 /* PlatformSurfaceProbe.swift */; };
 		780F43DDB2E951076D8CF092 /* invitation.json in Resources */ = {isa = PBXBuildFile; fileRef = CB0BF908301B134AC440F2B2 /* invitation.json */; };
 		7BFDAE439202A66EC3C61376 /* CurrentHubTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0477F293DD30117E5D46A96 /* CurrentHubTestSupport.swift */; };
 		7D963149CB6E81BCD5FB56E0 /* discovery.json in Resources */ = {isa = PBXBuildFile; fileRef = CFDC6D86477EFB917963F71B /* discovery.json */; };
 		8E72828A4D4F755239A594D4 /* health.json in Resources */ = {isa = PBXBuildFile; fileRef = EC4A0166BFA44B97D08D5AE5 /* health.json */; };
 		98CE7F5A9332061E1AC420FA /* current.json in Resources */ = {isa = PBXBuildFile; fileRef = 9D580784A7F1816A5659CD2F /* current.json */; };
+		CF32E7FFE8052DDDBA10E8C7 /* TeslatlasCurrentHub in Frameworks */ = {isa = PBXBuildFile; productRef = 0430BFDF72713CC6913F5FFC /* TeslatlasCurrentHub */; };
 		D20CF1ADCFBB734FE222C461 /* CurrentHubAppleConsumerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1F09CA75AFA76A40921F403 /* CurrentHubAppleConsumerTests.swift */; };
+		EFFA6C3E3F5B6B233F9F061C /* TeslatlasHubV1Compatibility in Frameworks */ = {isa = PBXBuildFile; productRef = F05F4BC484262353B82EB8C9 /* TeslatlasHubV1Compatibility */; };
+		FA0B74EBD7A46B81C59091F2 /* TeslatlasCommands in Frameworks */ = {isa = PBXBuildFile; productRef = F2DD4A69989E3DEFE24B4CE8 /* TeslatlasCommands */; };
 		FD60AF0460CA2A02A9F7BEF9 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B38CE18D714579BCB85A04 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -46,6 +53,7 @@
 		C1FA5E66F031A4D5FC20C516 /* drives.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = drives.json; sourceTree = "<group>"; };
 		CB0BF908301B134AC440F2B2 /* invitation.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = invitation.json; sourceTree = "<group>"; };
 		CFDC6D86477EFB917963F71B /* discovery.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = discovery.json; sourceTree = "<group>"; };
+		D015519EF7C7CA7AAD7334D1 /* PlatformSurfaceProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformSurfaceProbe.swift; sourceTree = "<group>"; };
 		E0477F293DD30117E5D46A96 /* CurrentHubTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentHubTestSupport.swift; sourceTree = "<group>"; };
 		EC4A0166BFA44B97D08D5AE5 /* health.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = health.json; sourceTree = "<group>"; };
 		EF06796FF37D6C51085B56E4 /* teslatlas-sdk-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "teslatlas-sdk-swift"; path = ..; sourceTree = SOURCE_ROOT; };
@@ -56,7 +64,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				37EED69E80D51F862D2685BB /* TeslatlasCurrentHub in Frameworks */,
+				37EED69E80D51F862D2685BB /* TeslatlasHubSDK in Frameworks */,
+				FA0B74EBD7A46B81C59091F2 /* TeslatlasCommands in Frameworks */,
+				3609C9487E3D152600443D50 /* TeslatlasHubV1Compatibility in Frameworks */,
+				5267A211A1946FFEE56E4D85 /* TeslatlasCurrentHub in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -64,7 +75,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3F85F7BA523E1AA308EFF7FA /* TeslatlasCurrentHub in Frameworks */,
+				3F85F7BA523E1AA308EFF7FA /* TeslatlasHubSDK in Frameworks */,
+				76097EE6CD8B9C7AF6218736 /* TeslatlasCommands in Frameworks */,
+				EFFA6C3E3F5B6B233F9F061C /* TeslatlasHubV1Compatibility in Frameworks */,
+				CF32E7FFE8052DDDBA10E8C7 /* TeslatlasCurrentHub in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,6 +89,7 @@
 			isa = PBXGroup;
 			children = (
 				85CB5D102744EEEBA3919EFE /* AppDelegate.swift */,
+				D015519EF7C7CA7AAD7334D1 /* PlatformSurfaceProbe.swift */,
 				21B38CE18D714579BCB85A04 /* SceneDelegate.swift */,
 			);
 			path = Sources;
@@ -150,6 +165,9 @@
 			);
 			name = CurrentHubRuntimeHost;
 			packageProductDependencies = (
+				EB8031791F7B83A054772825 /* TeslatlasHubSDK */,
+				1DEB7109EF6B9C0C58BF7F7F /* TeslatlasCommands */,
+				F05F4BC484262353B82EB8C9 /* TeslatlasHubV1Compatibility */,
 				0430BFDF72713CC6913F5FFC /* TeslatlasCurrentHub */,
 			);
 			productName = CurrentHubRuntimeHost;
@@ -171,6 +189,9 @@
 			);
 			name = CurrentHubRuntimeTests;
 			packageProductDependencies = (
+				D07B5D4750D07A422AB26AC4 /* TeslatlasHubSDK */,
+				F2DD4A69989E3DEFE24B4CE8 /* TeslatlasCommands */,
+				BF91B2D1BD937ED303467EE1 /* TeslatlasHubV1Compatibility */,
 				65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */,
 			);
 			productName = CurrentHubRuntimeTests;
@@ -244,6 +265,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				20B37F758F9B7AB4497679B2 /* AppDelegate.swift in Sources */,
+				78033B9F10124437A476EA4E /* PlatformSurfaceProbe.swift in Sources */,
 				FD60AF0460CA2A02A9F7BEF9 /* SceneDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -492,9 +514,33 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = TeslatlasCurrentHub;
 		};
+		1DEB7109EF6B9C0C58BF7F7F /* TeslatlasCommands */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TeslatlasCommands;
+		};
 		65C3470339B95FA57B15F3CC /* TeslatlasCurrentHub */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = TeslatlasCurrentHub;
+		};
+		BF91B2D1BD937ED303467EE1 /* TeslatlasHubV1Compatibility */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TeslatlasHubV1Compatibility;
+		};
+		D07B5D4750D07A422AB26AC4 /* TeslatlasHubSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TeslatlasHubSDK;
+		};
+		EB8031791F7B83A054772825 /* TeslatlasHubSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TeslatlasHubSDK;
+		};
+		F05F4BC484262353B82EB8C9 /* TeslatlasHubV1Compatibility */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TeslatlasHubV1Compatibility;
+		};
+		F2DD4A69989E3DEFE24B4CE8 /* TeslatlasCommands */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TeslatlasCommands;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -22,6 +22,12 @@ targets:
         SWIFT_VERSION: "6.0"
     dependencies:
       - package: TeslatlasSDK
+        product: TeslatlasHubSDK
+      - package: TeslatlasSDK
+        product: TeslatlasCommands
+      - package: TeslatlasSDK
+        product: TeslatlasHubV1Compatibility
+      - package: TeslatlasSDK
         product: TeslatlasCurrentHub
 
   CurrentHubRuntimeTests:
@@ -58,4 +64,22 @@ targets:
     dependencies:
       - target: CurrentHubRuntimeHost
       - package: TeslatlasSDK
+        product: TeslatlasHubSDK
+      - package: TeslatlasSDK
+        product: TeslatlasCommands
+      - package: TeslatlasSDK
+        product: TeslatlasHubV1Compatibility
+      - package: TeslatlasSDK
         product: TeslatlasCurrentHub
+
+schemes:
+  CurrentHubRuntimeHost:
+    build:
+      targets:
+        CurrentHubRuntimeHost: all
+        CurrentHubRuntimeTests:
+          - test
+    test:
+      gatherCoverageData: false
+      targets:
+        - name: CurrentHubRuntimeTests
