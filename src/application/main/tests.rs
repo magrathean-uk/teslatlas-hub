@@ -69,6 +69,36 @@ fn legal_aliases_and_source_command_parse_without_configuration() {
     }
     let source = Cli::try_parse_from(["teslatlas-hub", "source"]).expect("source CLI");
     assert!(matches!(source.command, Command::Source));
+
+    let healthcheck = Cli::try_parse_from([
+        "teslatlas-hub",
+        "healthcheck",
+        "--ca-file",
+        "/etc/teslatlas-hub/tls/ca.pem",
+        "--server-name",
+        "hub.example.invalid",
+    ])
+    .expect("healthcheck CLI");
+    assert!(matches!(
+        healthcheck.command,
+        Command::Healthcheck {
+            ca_file,
+            server_name,
+        }
+            if ca_file == PathBuf::from("/etc/teslatlas-hub/tls/ca.pem")
+                && server_name == "hub.example.invalid"
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn container_healthcheck_does_not_open_hub_state() {
+    assert!(!command_requires_user_hub_admission(
+        &Command::Healthcheck {
+            ca_file: PathBuf::from("/etc/teslatlas-hub/tls/ca.pem"),
+            server_name: "hub.example.invalid".to_owned(),
+        }
+    ));
 }
 
 #[cfg(target_os = "macos")]

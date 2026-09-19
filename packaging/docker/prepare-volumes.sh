@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
-# This command is intentionally explicit and one-shot. It only changes the
-# newly created named data volume; normal service startup never chowns state.
-exec docker compose run --rm --user 0 --entrypoint /bin/sh hub -c \
-  'install -d -o 10001 -g 10001 -m 700 /var/lib/teslatlas-hub'
+# This command is intentionally explicit and one-shot. The Compose initializer
+# has only CHOWN, FOWNER and DAC_OVERRIDE, verifies 10001:10001/0700 itself, and
+# changes only the named data volume. Normal Hub startup still drops all caps.
+exec docker compose run --rm --no-deps volume-init

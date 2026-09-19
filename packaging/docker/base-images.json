@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "resolved_at": "2026-09-19T14:31:32Z",
+  "registry": "registry-1.docker.io",
+  "claim_scope": "linux/arm64 only; index digests retain ordinary multi-platform source-build selection",
+  "images": {
+    "builder": {
+      "official_repository": "library/rust",
+      "tag": "1.98-bookworm",
+      "index_digest": "sha256:828077e0f5ed0401fbd9cb5b4d5dedca23bd13c7fe032f3e8b7313e7acd2a57f",
+      "linux_arm64_manifest_digest": "sha256:5b993f23fb69746405496e76f91e511d96c82b5b23304fd5d20b4a80a8b223ea",
+      "linux_arm64_config_digest": "sha256:c1999f81da8e1f787006d58cbaece8ac4837d7ae04ad16784d829470f4bebc8d",
+      "linux_arm64_config_created": "2026-09-19T03:43:19.755652153Z"
+    },
+    "runtime": {
+      "official_repository": "library/debian",
+      "tag": "13-slim",
+      "index_digest": "sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a",
+      "linux_arm64_manifest_digest": "sha256:da496358bd6934d2bd6a563a33176a2e50eff5490c54b4ac6fb051b69fef4071",
+      "linux_arm64_config_digest": "sha256:3fde68c8327d49ce5f747c72d9742ec63d27dee28515807ef0ca5259c3e01120",
+      "linux_arm64_config_created": "2026-09-18T00:00:00Z"
+    }
+  }
+}

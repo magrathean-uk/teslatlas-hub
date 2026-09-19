@@ -83,6 +83,7 @@ const IMMUTABLE_DIAGNOSTIC_OPEN_DELAY: Duration = Duration::ZERO;
 
 include!("main/macos_service.rs");
 include!("main/cli.rs");
+include!("main/healthcheck.rs");
 include!("main/companions.rs");
 include!("main/control.rs");
 include!("main/teslamate_check.rs");

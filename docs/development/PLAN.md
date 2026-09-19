@@ -44,6 +44,24 @@ the tested Hub cohort head. Exact clean-export native/container artifacts, ARM64
 container runtime source proof, final catalog population and installed companion
 lifecycle remain open F6 work.
 
+The next bounded container-preparation slice binds the official Rust and Debian
+base tags to exact multi-platform index digests whose Linux ARM64 children were
+read back from the registry, removes all runtime package-manager inputs, copies the
+public CA bundle from the pinned builder, and replaces the shell/curl probe with a
+bounded Hub CLI TLS healthcheck. Initial Sol/high review rejected the draft with
+three P1 and one P2 findings. The frozen delta now copies and clean-context-compiles
+all production embedded inputs, validates the documented certificate DNS name over
+loopback with a real positive/mismatch TLS test, uses a distinct volume initializer
+with only `CHOWN`, `FOWNER`, and `DAC_OVERRIDE` plus an exact ownership/mode check,
+and excludes private key/certificate extensions from the build context. Same-reviewer
+delta review rejected only a P2 mismatch between STATUS and the receipt's truthful
+ephemeral test-listener record. After correcting that claim, the final metadata-only
+review returned ACCEPT with no findings for this partial foundation. Compose still
+requires an explicit exact pushed Hub commit and the documented runtime readback
+requires the image's `source` result to match it. No image, container or VM was
+started in this slice; clean-export ARM64 build/runtime/lifecycle proof remains open
+after source publication.
+
 ## Full-product gates
 
 - **F0 — feature and support ledger.** Inventory every user-visible and operator-facing
@@ -121,10 +139,19 @@ L1–L3 are execution slices only; none is a completion substitute:
 Current L3 foundation checkpoint: source-identity enforcement, exact five-companion
 catalog generation/readback, Viewer-free active selectors, Hub-only `--components none`
 bootstrap, and native/container packaging inputs are implemented and focused-tested.
-Independent review, a pushed Hub commit, exact clean-export native/container rebuilds,
-final five-companion catalog population, installed lifecycle proof and publication
-of the validated Hub source commit are still pending. Release, tag and binary
-publication remain outside this slice. F6 is open.
+The source/catalog foundation is independently accepted and published. Exact
+clean-export native/container rebuilds, final five-companion catalog population and
+installed lifecycle proof remain pending. Release, tag and binary publication remain
+outside this slice. F6 is open.
+
+Container foundation checkpoint: immutable official base index identities, the
+verified Linux ARM64 child/config identities, complete builder inputs,
+package-manager-free runtime assembly, DNS-validating private-CA Hub-binary
+healthcheck, bounded volume initializer and exact source readback procedure are
+independently accepted within this partial source/static scope after the initial and
+delta REJECT findings were closed. This is not a built image or a runtime acceptance
+claim. Exact clean-export ARM64 image identity, source readback, health, security
+posture, persistence, recovery, upgrade/rollback and removal remain pending.
 
 ## Start and boundaries
 

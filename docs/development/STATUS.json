@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-19T14:21:25Z",
-  "update_scope": "f6_source_identity_and_exact_five_companion_catalog_partial_foundation_independently_accepted",
+  "updated_at": "2026-09-19T14:56:02Z",
+  "update_scope": "f6_arm64_container_source_static_partial_foundation_independently_accepted",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "dba3e7888d7a152054fc933bd5e8b9410f675f80",
+    "head": "099fe01b0c1ce069213e4d76f0a480b3c7cf21f9",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-19T14:21:25Z"
+    "checked_at": "2026-09-19T14:56:02Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -52,10 +52,11 @@
     "Two clean exported-source ARM64 release builds are byte-identical at binary SHA-256 31c6859afc7992ad731a1b4fcb994bda3edb7250bcb6f51cc07ef319484bf732; the exact private package is SHA-256 b8e483abb11b1de3eeabdd805f6a7ba9d3abe0f1468060ec07b97a9ad28d0a93.",
     "Independent Sol/high review accepted the bounded Debian ARM64 package foundation only after two P2 closures for current-directory-controlled source/target fallbacks; its delta recheck found no remaining findings.",
     "HUB-02, HUB-08, HUB-11 and DIST-01 remain partial: package-byte reproducibility, corruption/retention recovery, credential/config/TLS clean-host restore and a final clean-export source-bound artifact are explicit open assertions.",
-    "The F6 source/catalog foundation is ready for independent review: bound builds require an explicit exact pushed 40-hex Hub commit, unbound developer builds are non-distributable, and native plus container build paths carry the same source identity without Git or current-directory inference.",
+    "The F6 source/catalog foundation is independently accepted within its partial scope: bound builds require an explicit exact pushed 40-hex Hub commit, unbound developer builds are non-distributable, and native plus container build paths carry the same source identity without Git or current-directory inference.",
     "Active companion bootstrap/catalog surfaces now contain exactly Protocol, TypeScript SDK, Swift SDK, Home Assistant and Edge; Hub is the separately identified sixth repository. The shipped current catalog remains empty pending exact final companion identities and artifacts.",
     "The current TypeScript package foundation records SHA-256 42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7 and 83 members, but its exact archive bytes are not staged here, so runtime admission remains pending. Historical D1 records and Viewer R1 fixture sources remain unchanged.",
-    "Initial independent Sol/high review rejected the partial source/catalog foundation with three P2 findings. The historical D1 manifest was restored exactly, catalog JSON Schema now binds all five keys to repository-specific artifact shapes, and finalization binds a syntactically valid source commit to the tested Hub cohort head while allowing UNBOUND only for an unpublished candidate. Focused closure tests passed 61/61 and 31/31; the delta review returned ACCEPT with no findings for this partial foundation only."
+    "Initial independent Sol/high review rejected the partial source/catalog foundation with three P2 findings. The historical D1 manifest was restored exactly, catalog JSON Schema now binds all five keys to repository-specific artifact shapes, and finalization binds a syntactically valid source commit to the tested Hub cohort head while allowing UNBOUND only for an unpublished candidate. Focused closure tests passed 61/61 and 31/31; the delta review returned ACCEPT with no findings for this partial foundation only.",
+    "The bounded F6 container slice retained its verified official image digests and zero-package-manager runtime after initial Sol/high REJECT. Three P1 and one P2 findings are closed: complete production embedded inputs now compile from the isolated Docker COPY set, the Hub health probe validates the declared DNS certificate name over loopback with real TLS positive/mismatch coverage, a capability-bounded initializer verifies 10001:10001/0700 while normal Hub drops all capabilities, and private key/certificate extensions are excluded. A delta P2 claim mismatch about the ephemeral test listener was corrected; final metadata-only review returned ACCEPT with no findings for this partial source/static foundation."
   ],
   "evidence_paths": [
     "docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json",
@@ -67,7 +68,8 @@
     "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
     "docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json",
     "docs/development/f1-f6-debian13-arm64-package-lifecycle-2026-09-19-r1.json",
-    "docs/development/f6-source-catalog-foundation-2026-09-19-r1.json"
+    "docs/development/f6-source-catalog-foundation-2026-09-19-r1.json",
+    "docs/development/f6-arm64-container-foundation-2026-09-19-r1.json"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed claim-by-claim ledger is docs/development/F0_ACCEPTANCE_LEDGER.md at workspace root.",
@@ -145,6 +147,22 @@
     "independent_review": "ACCEPT by gpt-5.6-sol/high with no findings after three P2 closures",
     "acceptance_limit": "Static/source foundation only; no final artifact, populated production catalog, container runtime, installed cohort or F6 acceptance."
   },
+  "current_f6_container_slice": {
+    "state": "INDEPENDENTLY_ACCEPTED_PARTIAL_FOUNDATION",
+    "receipt": "docs/development/f6-arm64-container-foundation-2026-09-19-r1.json",
+    "baseline_head": "099fe01b0c1ce069213e4d76f0a480b3c7cf21f9",
+    "builder_index_digest": "sha256:828077e0f5ed0401fbd9cb5b4d5dedca23bd13c7fe032f3e8b7313e7acd2a57f",
+    "builder_linux_arm64_manifest_digest": "sha256:5b993f23fb69746405496e76f91e511d96c82b5b23304fd5d20b4a80a8b223ea",
+    "runtime_index_digest": "sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a",
+    "runtime_linux_arm64_manifest_digest": "sha256:da496358bd6934d2bd6a563a33176a2e50eff5490c54b4ac6fb051b69fef4071",
+    "runtime_package_manager": "absent",
+    "healthcheck": "Hub CLI exec-form HTTPS probe with explicit private CA, declared DNS certificate name resolved only to loopback, bounded response and exact product-version check",
+    "builder_context": "isolated Docker COPY input set compiles the production binary offline with both compile-time embedded files present",
+    "volume_init": "separate one-shot service with cap_drop ALL, only CHOWN/FOWNER/DAC_OVERRIDE restored, and exact 10001:10001/0700 stat assertion",
+    "runtime_started": false,
+    "independent_review": "ACCEPT by gpt-5.6-sol/high with no findings after three P1 and two P2 closures across initial, delta and metadata-only reviews",
+    "acceptance_limit": "Accepted static container-input and exact-export evidence preparation only; no image build, runtime, lifecycle, reproducibility or F6 acceptance."
+  },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/hub/docs/development/STATUS.json",
     "sha256": "3aca24b6bd9560dbd00c0635dbdb948034b9319600dfb3806c3a14dc819bfefe",
@@ -156,7 +174,7 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the F1/F6 Debian package cohort is purged; the F6 source/catalog foundation started no runtime, service or listener; debian13-arm64 is stopped; the heavy-build lock is absent; reusable target cache remains",
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the F1/F6 Debian package cohort is purged; the F6 source/catalog and container-preparation foundations started no image, container, VM or persistent service; the sole ephemeral local TLS test listener was stopped and is absent; debian13-arm64 is stopped; the heavy-build lock is absent; reusable target cache remains",
   "acceptance_limits": [
     "G2 is source-built synthetic runtime evidence, not macOS installer/notarization/service acceptance",
     "Current macOS 27.0 was exercised; the documented macOS 13 minimum floor was not independently run",
@@ -164,7 +182,8 @@
     "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
     "G6 is current macOS 27 arm64 external-consumer evidence; declared minimum floors were not independently exercised",
     "The F1/F6 Debian package receipt is a bounded partial pass: no package-byte reproducibility, deliberate corruption/retention recovery, credential/config/TLS clean-host restore, Fleet sidecars or final clean-export source-bound artifact",
-    "The F6 source/catalog receipt is a partial source foundation: independent review, pushed-commit builds, ARM64 container runtime source proof, exact five-companion catalog population and installed lifecycle remain pending",
+    "The F6 source/catalog receipt is an independently accepted partial source foundation: pushed-commit artifact rebuilds, ARM64 container runtime source proof, exact five-companion catalog population and installed lifecycle remain pending",
+    "The F6 container receipt is an independently accepted partial source/static foundation: exact clean-export ARM64 image build, source readback, health/security posture, lifecycle and reproducibility remain pending",
     "No App integration acceptance",
     "Viewer excluded; x86/Intel paused"
   ]

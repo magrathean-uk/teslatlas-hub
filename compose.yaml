@@ -24,17 +24,35 @@ services:
       - ./tls:/etc/teslatlas-hub/tls:ro
     healthcheck:
       test:
-        - CMD-SHELL
-        - >-
-          curl --fail --silent --show-error
-          --cacert /etc/teslatlas-hub/tls/ca.pem
-          https://127.0.0.1:8443/healthz
+        - CMD
+        - /usr/local/bin/teslatlas-hub
+        - healthcheck
+        - --ca-file
+        - /etc/teslatlas-hub/tls/ca.pem
+        - --server-name
+        - ${TESLATLAS_HUB_TLS_SERVER_NAME:?set TESLATLAS_HUB_TLS_SERVER_NAME to the DNS name in the Hub TLS certificate and public_url}
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
     stop_grace_period: 30s
     restart: unless-stopped
+
+  volume-init:
+    image: teslatlas-hub:local
+    entrypoint: ["/bin/sh", "-eu", "-c"]
+    command:
+      - >-
+        install -d -o 10001 -g 10001 -m 0700 /var/lib/teslatlas-hub
+        && test "$(stat -c '%u:%g:%a' /var/lib/teslatlas-hub)" = "10001:10001:700"
+    user: "0:0"
+    read_only: true
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - hub-data:/var/lib/teslatlas-hub
+    restart: "no"
 
 volumes:
   hub-data:

@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "receipt_id": "f6-arm64-container-foundation-2026-09-19-r1",
+  "generated_at": "2026-09-19T14:56:02Z",
+  "status": "independently_accepted_partial_foundation",
+  "scope": "Hub-only F6 Linux ARM64 container input immutability and exact-export runtime-evidence preparation; no image build, container, VM, persistent service, final artifact, runtime lifecycle, release, tag, signing, CI or publication; one ephemeral loopback TLS unit-test listener was created and fully stopped",
+  "baseline": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-hub.git",
+    "branch": "main",
+    "head": "099fe01b0c1ce069213e4d76f0a480b3c7cf21f9",
+    "origin_main": "099fe01b0c1ce069213e4d76f0a480b3c7cf21f9",
+    "tracked_dirty_entries_before_slice": 0,
+    "preserved_untracked_paths": [
+      ".serena/",
+      "target/"
+    ]
+  },
+  "official_base_resolution": {
+    "registry": "registry-1.docker.io",
+    "resolved_at": "2026-09-19T14:31:32Z",
+    "method": "Authenticated Docker Registry HTTP API V2 HEAD/GET of the official library tag with OCI/Docker index media types, followed by ARM64 child-manifest and config readback; bearer token was neither printed nor retained",
+    "lock_record": "packaging/docker/base-images.json",
+    "lock_record_sha256": "ba2cbbbe73913514dc04067d62c3d355308d37bb6c9051174ec24ae1c948606c",
+    "builder": {
+      "reference": "rust:1.98-bookworm",
+      "official_repository": "library/rust",
+      "index_digest": "sha256:828077e0f5ed0401fbd9cb5b4d5dedca23bd13c7fe032f3e8b7313e7acd2a57f",
+      "linux_arm64_manifest_digest": "sha256:5b993f23fb69746405496e76f91e511d96c82b5b23304fd5d20b4a80a8b223ea",
+      "linux_arm64_config_digest": "sha256:c1999f81da8e1f787006d58cbaece8ac4837d7ae04ad16784d829470f4bebc8d",
+      "config_readback": "os=linux architecture=arm64 created=2026-09-19T03:43:19.755652153Z"
+    },
+    "runtime": {
+      "reference": "debian:13-slim",
+      "official_repository": "library/debian",
+      "index_digest": "sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a",
+      "linux_arm64_manifest_digest": "sha256:da496358bd6934d2bd6a563a33176a2e50eff5490c54b4ac6fb051b69fef4071",
+      "linux_arm64_config_digest": "sha256:3fde68c8327d49ce5f747c72d9742ec63d27dee28515807ef0ca5259c3e01120",
+      "config_readback": "os=linux architecture=arm64 created=2026-09-18T00:00:00Z"
+    },
+    "claim_limit": "The pinned multi-platform index digests preserve ordinary platform selection, but only their Linux ARM64 children were inspected and only Linux ARM64 runtime acceptance is planned."
+  },
+  "immutable_build_design": {
+    "dockerfile_sha256": "7cd9e19be08600761f8cb49f987773eaa673e35c614ff9c01f9b3cd2d0126180",
+    "cargo_lock_sha256": "bd5e75d603f7a65463f70efcf0c73b8b9dcdf58be1db323df4f2e1dcb2d83478",
+    "base_selection": "Both FROM inputs retain their descriptive official tags and bind the exact OCI index digest.",
+    "runtime_package_manager": "absent; the runtime stage has no RUN instruction and performs no apt, apk, dnf, yum, curl or wget operation",
+    "public_tls_roots": "The digest-pinned Rust builder supplies /etc/ssl/certs/ca-certificates.crt to the digest-pinned Debian runtime, and SSL_CERT_FILE binds Hub outbound TLS clients to that copied bundle.",
+    "build_context": "Git metadata, local config.toml, TLS material, private-key/certificate extensions and target cache are excluded; Dockerfile COPY inputs remain explicit, including both production compile-time embedded files.",
+    "dependency_binding": "cargo build --locked uses the tracked Cargo.lock registry package versions and checksums; registry availability is not a claim of vendored/offline construction.",
+    "runtime_identity": "normal Hub uses numeric UID/GID 10001, read-only root filesystem, all capabilities dropped, no-new-privileges, private tmpfs, loopback host port and explicit config/TLS/data mounts; the one-shot volume initializer drops all capabilities then adds only CHOWN, FOWNER and DAC_OVERRIDE and verifies 10001:10001/0700",
+    "multi_platform_limit": "No platform is forced in the source Compose file; only the recorded Linux ARM64 child is in this evidence scope."
+  },
+  "healthcheck_design": {
+    "compose_sha256": "35d1255b983e9896c4e83208d93a15248051699bb2d9960ea130aad6501fae79",
+    "implementation": "src/application/main/healthcheck.rs",
+    "implementation_sha256": "702fed8cbb288ca9765b431b876749a063a665f87797f08b982ec65453360e42",
+    "command": "/usr/local/bin/teslatlas-hub healthcheck --ca-file /etc/teslatlas-hub/tls/ca.pem --server-name <lowercase DNS name from server.pem and public_url>",
+    "endpoint": "https://<server-name>:8443/healthz with that validation name resolved only to 127.0.0.1:8443",
+    "properties": [
+      "exec-form Compose healthcheck without shell or curl",
+      "explicit lowercase DNS validation name; IP literals, localhost, URL syntax and malformed names rejected",
+      "absolute non-symlink regular CA bundle bounded to 1 MiB",
+      "HTTPS only with redirects and proxies disabled, only the explicit mounted CA bundle trusted, and the certificate validated against the declared DNS name",
+      "2-second connect and 4-second total request limits",
+      "response body bounded to 16 KiB",
+      "HTTP 200 plus status=ok and this binary's exact product version required",
+      "returns before Hub configuration or durable state admission",
+      "real loopback TLS unit test accepts a matching DNS SAN and rejects a mismatched DNS SAN"
+    ]
+  },
+  "builder_context_completeness": {
+    "production_embedded_inputs": {
+      "fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql": "d8eebcbbb2f7e2039caa5cc509b0ff76b4aea56e4db1631d16f27aabf86d23db",
+      "packaging/com.teslatlas.hub.plist.in": "73243c25a74b3e6609e8e64f8102f227360c87959b52890c18ce423149ea2d4e"
+    },
+    "test": "scripts/test-docker-packaging.sh recreates only builder-stage COPY inputs in a fresh temporary tree and cargo check --locked --offline compiles the production teslatlas-hub binary there",
+    "cleanup": "temporary context deleted by an EXIT/HUP/INT/TERM trap; reusable output remains only under target/docker-context-check"
+  },
+  "source_binding_and_exact_export_plan": {
+    "build_input": "TESLATLAS_HUB_SOURCE_COMMIT",
+    "required_format": "exact pushed 40-lowercase-hex Hub commit",
+    "dockerfile_behavior": "The build argument is passed only to the locked Cargo build; build.rs fails closed for absent or malformed distributable identity and never infers Git or current-directory state.",
+    "compose_behavior": "Compose refuses interpolation when TESLATLAS_HUB_SOURCE_COMMIT is absent.",
+    "planned_clean_export_sequence": [
+      "After independent acceptance and source publication, create a fresh git archive of that exact pushed commit outside the working tree.",
+      "Build the Linux ARM64 image from only that clean exported tree with TESLATLAS_HUB_SOURCE_COMMIT set to the same 40-hex commit.",
+      "Read back teslatlas-hub source from the image and require exactly https://github.com/magrathean-uk/teslatlas-hub/tree/<commit>.",
+      "Record image ID/digest, image architecture, binary SHA-256, embedded source output, base index/child identities and clean build-context hash.",
+      "Exercise non-root/read-only/cap-drop/tmpfs/volume health, restart, persistence, backup/restore, failed candidate, upgrade/rollback and data-preserving removal on the isolated ARM64 runtime."
+    ],
+    "current_state": "independently accepted source/static preparation only; the exact clean-export image build and all runtime evidence remain pending after source publication"
+  },
+  "changed_file_bindings": {
+    ".dockerignore": "f630835ff9e09955262f208e6e6a85010072f603034f898cb89e14d28613b808",
+    "Dockerfile": "7cd9e19be08600761f8cb49f987773eaa673e35c614ff9c01f9b3cd2d0126180",
+    "compose.yaml": "35d1255b983e9896c4e83208d93a15248051699bb2d9960ea130aad6501fae79",
+    "docs/guides/install-docker.md": "f9d55940f4f05b3d4789467525aed7dbe3ba524fa03026f3bee9947fe7655ecf",
+    "packaging/docker/base-images.json": "ba2cbbbe73913514dc04067d62c3d355308d37bb6c9051174ec24ae1c948606c",
+    "packaging/docker/prepare-volumes.sh": "8a352775494350acebeace23861e7a650b0649c90c2c0e17e1a2cfabc3765d73",
+    "scripts/test-docker-packaging.sh": "c8e668c61e6daa7f6bf544ef55d2b8ca922e9edc7b79ee8640d5a206d9a8a9c0",
+    "src/application/main.rs": "c953b7dc4ff3011edeb29f4530b2a3248a2f687cab15d775d7127dbfc96d4d24",
+    "src/application/main/cli.rs": "7f59385d245f5bae25c07efba801e78f74cd7e8b01454b473e146fce79f89601",
+    "src/application/main/dispatch.rs": "a081b3843a7447f9c9fc4634cc9fd8d86a1936ce5af2ac0879cfc11643c58e33",
+    "src/application/main/healthcheck.rs": "702fed8cbb288ca9765b431b876749a063a665f87797f08b982ec65453360e42",
+    "src/application/main/tests.rs": "f1e1cf87eaa19c8daf17d67268771c864b2fd913e59e1c4a8c69a4df8f264d92"
+  },
+  "focused_validation": [
+    {
+      "command": "./scripts/test-docker-packaging.sh",
+      "result": "passed immutable FROM/lock agreement, zero package-manager input, exact embedded-input hashes, clean builder-COPY-only offline production compile, source binding, normal-Hub all-cap-drop/read-only policy, bounded volume-init capabilities/stat assertion, health/docs and Compose syntax; no image or container created"
+    },
+    {
+      "command": "TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 cargo test --bin teslatlas-hub container_healthcheck -- --nocapture",
+      "result": "passed 5 focused tests; real local TLS matching-name success and mismatch failure, DNS-name validation, health payload/version validation, relative-CA rejection before network and no Hub-state admission"
+    },
+    {
+      "command": "TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 cargo test --bin teslatlas-hub legal_aliases_and_source_command_parse_without_configuration -- --nocapture",
+      "result": "passed 1 focused CLI parsing test including the healthcheck command"
+    },
+    {
+      "command": "cargo fmt -- --check; sh -n scripts/test-docker-packaging.sh packaging/docker/prepare-volumes.sh; jq -e . packaging/docker/base-images.json; git diff --check",
+      "result": "passed"
+    }
+  ],
+  "runtime_and_cleanup": {
+    "heavy_build_lock_acquired": false,
+    "heavy_build_lock_final": "absent",
+    "debian13_arm64_guest": "Stopped",
+    "docker_build_started": false,
+    "container_or_vm_started": false,
+    "service_or_listener_started": "one ephemeral unit-test loopback TLS listener only; task aborted and joined, no listener remained after the suite",
+    "fresh_private_runtime_created": false,
+    "cleanup_required": false,
+    "preserved_build_cache": "target/"
+  },
+  "open_assertions": [
+    "The same Sol/high reviewer accepted the bounded source/static foundation only after three P1 and two P2 findings were closed across the initial, delta and metadata-only reviews.",
+    "No final source-bound image exists until this accepted delta is committed, pushed and rebuilt from that exact clean exported commit.",
+    "The pinned bases and copied CA path have not yet been exercised by an ARM64 image build.",
+    "Image architecture, binary source readback, non-root execution, health, read-only filesystem, capabilities, volumes, persistence, restart, recovery, upgrade/rollback and removal remain runtime assertions.",
+    "Container byte reproducibility and the complete F6/F7 installed ecosystem remain open.",
+    "The exact five-companion production catalog remains intentionally empty pending final reviewed companion identities and artifacts."
+  ],
+  "excluded": [
+    "App",
+    "Viewer repository inspection, modification or active dependency",
+    "x86, x86_64, amd64 and Intel targets",
+    "Azure",
+    "production, public ingress, Tesla accounts and vehicle actions",
+    "CI, release, tag, signing and binary publication"
+  ],
+  "secrets_or_private_runtime_data_present": false,
+  "independent_review": {
+    "reviewer": "gpt-5.6-sol/high",
+    "initial_verdict": "REJECT",
+    "initial_findings": [
+      {
+        "severity": "P1",
+        "finding": "The Docker builder context omitted the production SQL fixture embedded by updates_delivery.rs, so an image build could not compile.",
+        "closure": "Dockerfile now copies the exact fixture; the new builder-COPY-only temporary context test also exposed and closed the pre-existing omitted macOS plist include, then compiled the production binary offline."
+      },
+      {
+        "severity": "P1",
+        "finding": "The healthcheck validated TLS against 127.0.0.1 while the ordinary documentation issued a hostname certificate.",
+        "closure": "Compose now requires the certificate/public_url DNS name; the Hub probe validates that name while resolving it only to loopback. A real local TLS test accepts the matching SAN and rejects a mismatched name."
+      },
+      {
+        "severity": "P1",
+        "finding": "The all-capabilities-dropped Hub service could not perform root volume ownership preparation.",
+        "closure": "Volume preparation is a distinct one-shot read-only-root service that drops all caps, adds only CHOWN/FOWNER/DAC_OVERRIDE, and fails unless stat reads 10001:10001:700; normal Hub remains cap_drop ALL."
+      },
+      {
+        "severity": "P2",
+        "finding": "The Docker build context did not mirror private key and certificate extension exclusions.",
+        "closure": "*.key, *.pem, *.p12 and *.pfx are excluded and asserted by the static test."
+      }
+    ],
+    "closure_tests": "Docker static plus clean-context production compile passed; focused healthcheck tests passed 5/5 and CLI parsing passed 1/1",
+    "first_delta_verdict": "REJECT",
+    "first_delta_findings": [
+      {
+        "severity": "P2",
+        "finding": "STATUS claimed that no listener was started although the receipt correctly recorded the ephemeral loopback TLS test listener.",
+        "closure": "STATUS now states that no image, container, VM or persistent service started and that the sole ephemeral local TLS test listener was stopped and is absent."
+      }
+    ],
+    "final_metadata_verdict": "ACCEPT",
+    "final_findings": [],
+    "verified": [
+      "all four initial implementation findings are closed",
+      "all 12 receipt file bindings match",
+      "pinned base indexes and Linux ARM64 child/config identities remain exact",
+      "zero runtime package-manager inputs and exact source binding remain intact",
+      "STATUS and receipt listener claims agree",
+      "JSON and diff checks pass and port 8443 has no listener"
+    ],
+    "acceptance_limit": "ACCEPT applies only to this bounded source/static container foundation; no image/runtime lifecycle, F6 or F7 acceptance."
+  },
+  "gate_disposition": "F6 remains open; this independently accepted partial foundation does not prove an image, runtime lifecycle, reproducibility, F6 or F7"
+}

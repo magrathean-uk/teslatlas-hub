@@ -307,6 +307,15 @@ enum Command {
     Legal,
     /// Print this build's source route.
     Source,
+    /// Probe the container's loopback TLS health endpoint using one explicit CA bundle.
+    Healthcheck {
+        /// Absolute PEM CA bundle used only for the loopback health probe.
+        #[arg(long)]
+        ca_file: PathBuf,
+        /// Lowercase DNS name present in the Hub TLS certificate and public URL.
+        #[arg(long)]
+        server_name: String,
+    },
     /// Initialize or migrate the local Hub database.
     Init,
     /// Create the configured local store for a packaged Linux installation.

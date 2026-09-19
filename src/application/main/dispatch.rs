@@ -3,6 +3,14 @@
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
 
+    if let Command::Healthcheck {
+        ca_file,
+        server_name,
+    } = &cli.command
+    {
+        return run_container_healthcheck(ca_file, server_name).await;
+    }
+
     #[cfg(unix)]
     if let Command::TeslaMateCheck {
         source,
@@ -632,6 +640,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Legal
         | Command::Source
+        | Command::Healthcheck { .. }
         | Command::Doctor
         | Command::Status
         | Command::TeslaMateCheck { .. }
