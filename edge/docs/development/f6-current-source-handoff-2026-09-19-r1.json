@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "kind": "f6_edge_current_source_handoff",
+  "result": "PREPARED_BOUNDED_SOURCE_ONLY",
+  "recorded_at": "2026-09-19T20:35:00Z",
+  "scope": "Deterministic complete source export and manifest for the exact current reachable Edge main commit; no build, package, install, runtime, catalog artifact or gate acceptance",
+  "source_identity": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-edge.git",
+    "branch": "main",
+    "commit": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
+    "tree": "6a4f87ae1575af36a7737dd05fc75f8c30dfb993",
+    "local_head": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
+    "local_main": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
+    "cached_origin_main": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
+    "live_origin_main": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
+    "live_check_command": "git ls-remote --heads origin main"
+  },
+  "preserved_worktree_at_start": {
+    "tracked_dirty": [
+      "docs/development/PLAN.md",
+      "docs/development/STATUS.json"
+    ],
+    "untracked": [
+      ".serena/",
+      "target",
+      "tools/interop/client_lanes/__pycache__/",
+      "tools/interop/client_lanes/edge_contract/__pycache__/"
+    ],
+    "disposition": "Preserved. The export was made from the immutable commit object, not the dirty checkout."
+  },
+  "source_export": {
+    "format": "tar",
+    "prefix": "teslatlas-edge-c9965cd2584ed87ab7fbb7fdb0e66084092e9629/",
+    "command": "git -c tar.umask=0022 archive --format=tar --prefix=teslatlas-edge-c9965cd2584ed87ab7fbb7fdb0e66084092e9629/ c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
+    "sha256": "3ec2063d2765c6f8d016f27989bca88b548ff0d62f45c959f65c98ebf2158d62",
+    "bytes": 1300480,
+    "regular_file_count": 134,
+    "regular_file_bytes": 1175373,
+    "directory_member_count": 35,
+    "reproducibility": "Two independent exports were byte-identical and had the same SHA-256."
+  },
+  "complete_manifest": {
+    "path": "docs/development/f6-current-source-manifest-c9965cd-2026-09-19.json",
+    "sha256": "d1a21e7da8dc556e6c9b4d0a9860568f02d55193ca2dcfb0a714c41f3bbc7a52",
+    "source_aggregate_sha256": "78a874f0163d082d997b2729233d5c4d2aec1673741070bcea8b3f0924ad70e1",
+    "entry_count": 134,
+    "entry_fields": [
+      "path",
+      "git_mode",
+      "size",
+      "sha256"
+    ],
+    "coverage": "Every retained regular file in the exact commit tree; no dirty-worktree or untracked bytes."
+  },
+  "compatibility_binding": {
+    "product_version": "2026.36.2",
+    "profile": "edge-delivery-v2@2.0.0",
+    "profile_sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224",
+    "edge_binding_path": "compatibility/hub.json",
+    "edge_binding_sha256": "2fb1add6e04df0c1d8bba1dd2763c593a35b5d4f6d36db71e0654f8676c8ec71",
+    "accepted_g3_receipt": "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+    "accepted_g3_receipt_sha256": "5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865",
+    "reuse_limit": "Only the exact compatibility/profile binding is reused. The accepted runtime source head 67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2 and historical D1 selected-source aggregate 301ed74968778298619afeb9b9db90b55837b16304aac5f7a68da4684fd28fe1 do not establish this current source export's runtime or F6 acceptance."
+  },
+  "safety": {
+    "duplicate_archive_paths": 0,
+    "unsafe_archive_paths": 0,
+    "link_members": 0,
+    "special_members": 0,
+    "git_tree_regular_files_only": true,
+    "archive_file_set_matches_git_tree": true,
+    "archive_modes_sizes_match_git_tree": true,
+    "directory_mode": "0755",
+    "regular_file_mode_mapping": {
+      "100644": "0644",
+      "100755": "0755"
+    }
+  },
+  "tooling": {
+    "git": "git version 2.54.0 (Apple Git-157)",
+    "manifest": "Python 3.9.6 stdlib tarfile/hashlib/json plus git ls-tree/show",
+    "archive_reader": "bsdtar 3.5.3 / libarchive 3.7.4"
+  },
+  "checks": [
+    {
+      "name": "source identity convergence",
+      "result": "PASS",
+      "detail": "HEAD, main, cached origin/main and live origin/main were identical."
+    },
+    {
+      "name": "archive reproducibility",
+      "result": "PASS",
+      "detail": "Two exports compared byte-identical; SHA-256 3ec2063d2765c6f8d016f27989bca88b548ff0d62f45c959f65c98ebf2158d62."
+    },
+    {
+      "name": "complete manifest validation",
+      "result": "PASS",
+      "detail": "134 manifest entries exactly matched the commit's regular-file set, content, size and mode."
+    },
+    {
+      "name": "compatibility profile readback",
+      "result": "PASS",
+      "detail": "The current commit binding, protocol SHA256SUMS and accepted G3 receipt retained their exact recorded digests."
+    },
+    {
+      "name": "JSON parse",
+      "result": "PASS",
+      "detail": "The complete manifest, this receipt and STATUS.json parsed with Python json.tool."
+    },
+    {
+      "name": "diff whitespace",
+      "result": "PASS",
+      "detail": "git diff --check returned no errors."
+    },
+    {
+      "name": "focused secret-pattern scan",
+      "result": "PASS",
+      "detail": "No private-key header, AWS access-key identifier, GitHub token or Teslatlas bearer pattern was found in the changed handoff documentation."
+    }
+  ],
+  "catalog": {
+    "edge_artifact_created": false,
+    "hub_catalog_modified": false,
+    "reason": "The Hub catalog does not admit Edge artifacts. This is a source handoff only."
+  },
+  "cleanup": {
+    "temporary_directory": "/tmp/teslatlas-edge-f6.di0Owy",
+    "temporary_exports_removed": true,
+    "runtime_or_build_started": false,
+    "credential_or_private_data_read": false
+  },
+  "claims": {
+    "current_source_handoff_prepared": true,
+    "runtime_accepted": false,
+    "f2_accepted": false,
+    "f6_accepted": false,
+    "f7_accepted": false
+  },
+  "limitations": [
+    "No VM, Docker, build, package, install, service-manager, update, rollback, removal or runtime path was exercised.",
+    "No Edge package or Hub catalog artifact was created or claimed.",
+    "No real-data, passive-input, App, Viewer, x86/Intel, release, tag, CI or production acceptance is claimed.",
+    "F6 remains open pending clean exported-source build/install and the required native/container lifecycle evidence."
+  ]
+}

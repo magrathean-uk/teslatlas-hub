@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
   "product": "Edge",
-  "updated_at": "2026-09-19T11:04:10Z",
-  "update_scope": "full_product_completion_planning_no_execution",
+  "updated_at": "2026-09-19T20:35:00Z",
+  "update_scope": "f6_current_source_handoff_prepared_f2_waiting_for_f1",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G5_ACCEPTED",
   "source_objective_state": "DURABLE_FORWARDING_AND_BINDING_ACCEPTED",
-  "current_gate_ids": [],
+  "current_gate_ids": ["F6"],
   "completion_gate_ids": ["F0", "F2", "F5", "F6", "F7"],
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
@@ -14,13 +14,25 @@
     "G3",
     "G5"
   ],
-  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "planning_state": "FULL_PRODUCT_READY_F6_WAITING_FOR_F1",
   "objective": "Complete the optional Edge and pinned receiver across documented native/container ARM64 and Apple-silicon behavior, recovery, passive evidence, distribution and combined installed acceptance.",
   "source": {
-    "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "head": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
     "branch": "main",
-    "dirty_entries": 49,
-    "checked_at": "2026-09-19T10:30:43Z"
+    "dirty_entries_at_goal_activation": 4,
+    "tracked_dirty_entries_at_goal_activation": 0,
+    "accepted_runtime_source_head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "checked_at": "2026-09-19T20:25:56Z",
+    "current_source_handoff": {
+      "state": "PREPARED_SOURCE_ONLY",
+      "receipt": "docs/development/f6-current-source-handoff-2026-09-19-r1.json",
+      "manifest": "docs/development/f6-current-source-manifest-c9965cd-2026-09-19.json",
+      "manifest_sha256": "d1a21e7da8dc556e6c9b4d0a9860568f02d55193ca2dcfb0a714c41f3bbc7a52",
+      "source_aggregate_sha256": "78a874f0163d082d997b2729233d5c4d2aec1673741070bcea8b3f0924ad70e1",
+      "archive_sha256": "3ec2063d2765c6f8d016f27989bca88b548ff0d62f45c959f65c98ebf2158d62",
+      "regular_file_count": 134,
+      "f6_accepted": false
+    }
   },
   "current_worker": null,
   "model_policy": {
@@ -31,6 +43,7 @@
   },
   "evidence_summary": [
     "r11 exact source/preparation was independently accepted as inactive; no guest runtime or event exists for that cohort.",
+    "F6 current-source preparation freezes exact reachable commit c9965cd2584ed87ab7fbb7fdb0e66084092e9629 as a reproducible complete 134-file export and manifest; it creates no Edge catalog artifact and proves no runtime or lifecycle gate.",
     "Prior narrow forwarding/recovery results remain historical; expired r11 credentials and closed cohorts cannot be reused.",
     "G5 accepted on fresh Debian 13 ARM64 cohort r5: exactly one guarded V event produced one encrypted admission, survived Hub outage and Edge restart with stable batch/record identity, committed before occurrence-bound ACK, projected one synthetic-b2 vehicle, advanced frontier 0 to 1, drained pending/gaps to zero, and remained durable through Hub restart.",
     "The r4 helper/receiver mismatch was closed without replay; the exact pinned empty-MessageID ACK contract and lane-only V mapping passed focused Go and live receiver/bridge tests before r5.",
@@ -40,17 +53,19 @@
     "docs/development/edge-macos-one-event-r11-concrete-profile-acceptance-2026-09-18.json",
     "docs/development/edge-macos-one-event-r11-restart-cross-owner-acceptance-2026-09-18.json",
     "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+    "docs/development/f6-current-source-handoff-2026-09-19-r1.json",
+    "docs/development/f6-current-source-manifest-c9965cd-2026-09-19.json",
     "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json"
   ],
   "remaining": [
-    "F0: close every Edge, receiver, spool, service, container and recovery claim.",
+    "F0 accepted: the independently reviewed workspace ledger maps every Edge, receiver, spool, service, container and recovery claim.",
     "F2: prove complete optional delivery and fault recovery against the exact F1 Hub.",
     "F5: a fresh authorized passive capture is mandatory external input for real mapping/parity evidence.",
-    "F6-F7: prove Debian ARM64, Apple-silicon and ARM64 container lifecycle, catalog integration and final combined installation."
+    "F6 current-source handoff is prepared; clean exported-source build/install and Debian ARM64, Apple-silicon and ARM64 container lifecycle evidence remain open. F7 final combined installation remains open."
   ],
   "next_goal_draft": {
     "id": "FULL_EDGE_RECEIVER_F0_F7",
-    "state": "DRAFT_NOT_STARTED",
+    "state": "READY_F6_WAITING_FOR_F1",
     "objective": "Complete Edge and the pinned receiver across documented delivery, recovery, native/container distribution, passive evidence and final installed integration.",
     "prerequisites": [
       "F0 ledger and exact receiver source/version/toolchain/configuration audit",
@@ -64,7 +79,7 @@
       "F6 native/container install, upgrade, backup/restore, rollback, removal and catalog receipts",
       "F7 combined installed ecosystem receipt"
     ],
-    "execution_authorized": false
+    "execution_authorized": true
   },
   "last_acceptance": {
     "gate_id": "G5",
@@ -94,6 +109,7 @@
     "No App integration acceptance",
     "No real-data parity or production acceptance",
     "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
+    "The current-source export and complete manifest are source-only preparation; no Edge artifact belongs in the Hub catalog and F6 remains open",
     "Viewer excluded; x86/Intel paused"
   ]
 }

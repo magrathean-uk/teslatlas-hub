@@ -13,7 +13,14 @@ Authority: [master plan](../../../docs/development/MASTER_PLAN.md),
 G3/G5 remain accepted for the exact synthetic Debian ARM64 delivery lane. Preserve
 their receipts and closed cohort. They do not prove native/container packaging,
 minimum floors, complete spool migration/recovery, passive input, or final installed
-integration. `full_solution_state` is `NOT_ACCEPTED`; this plan is not started.
+integration. `full_solution_state` is `NOT_ACCEPTED`. F0 passed independent review;
+F6 source work is ready and F2 runtime work waits for the accepted F1 Hub.
+
+The bounded F6 current-source handoff now freezes reachable commit
+`c9965cd2584ed87ab7fbb7fdb0e66084092e9629` as a deterministic complete Git
+export with a per-file manifest. This is source-only preparation: the Hub catalog
+does not admit an Edge artifact, and no build, install, runtime, F2, F6 or F7 claim
+follows from the handoff.
 
 ## Required completion
 
@@ -52,9 +59,11 @@ listeners and service order. Do not expand into unrelated upstream development.
 
 ## Start and boundaries
 
-No implementation, build, package, guest, receiver, event, test, commit, push or
-publication is authorized by this draft. Preserve the dirty `main` tree and accepted
-receipts. Hub owns shared runtimes; Edge owns its package, receiver binding and spool.
+The sent goal authorizes bounded implementation, builds, unpublished packages,
+synthetic runtimes/tests and validated source commits/pushes. It does not authorize
+release publication, CI, production or passive capture without fresh authority.
+Preserve the dirty `main` tree and accepted receipts. Hub owns shared runtimes; Edge
+owns its package, receiver binding and spool.
 Exclude App, Viewer, x86/amd64/Intel and Azure. Never reuse old receiver traffic,
 credentials, CAs, roots or closed cohorts; never expose the receiver through a generic
 TLS-terminating proxy.
