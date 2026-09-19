@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "receipt_id": "protocol-f3-f6-linux-arm64-docker-checker-2026-09-19-r2",
+  "recorded_at": "2026-09-19T13:52:42Z",
+  "lane_completed_at": "2026-09-19T13:44:22Z",
+  "state": "INDEPENDENTLY_ACCEPTED_EXACT_PUBLISHED_SOURCE_ARM64_DOCKER_SLICE",
+  "scope": "Clean exported-commit reproduction of the deterministic Protocol developer bundle and documented Docker checker on native Linux ARM64.",
+  "source_identity": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+    "branch": "main",
+    "runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "preflight": {
+      "local_head": "53b5c6483990db84e5214176755f398e93d87b1b",
+      "origin_main": "53b5c6483990db84e5214176755f398e93d87b1b",
+      "ls_remote_main": "53b5c6483990db84e5214176755f398e93d87b1b",
+      "tracked_status": "clean",
+      "preserved_untracked": [
+        ".serena/"
+      ]
+    },
+    "export": {
+      "command": "git archive --format=tar --prefix=source/ 53b5c6483990db84e5214176755f398e93d87b1b",
+      "stream_sha256": "61a4a5d237bcd462d8cc454a98322fbc4c8f1eef5ae864532628917c8ec40d6c",
+      "stream_bytes": 2508800,
+      "files": 188,
+      "host_and_guest_stream_hashes_equal": true,
+      "staged_input": "Only the exact git archive was transferred to the guest; no worktree or untracked file was staged."
+    },
+    "prior_receipt_preserved": "docs/development/f3-f6-linux-arm64-docker-checker-2026-09-19-r1.json",
+    "immutable_evidence_preserved": "docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+  },
+  "guest": {
+    "name": "debian13-arm64",
+    "os": "Debian GNU/Linux 13 (trixie)",
+    "dpkg_architecture": "arm64",
+    "uname_architecture": "aarch64",
+    "kernel": "6.12.107+deb13-cloud-arm64",
+    "vm_type": "vz",
+    "resources": {
+      "cpus": 4,
+      "memory": "4GiB",
+      "disk": "32GiB"
+    },
+    "access": "Existing checked-in scripts/dev/vm.sh wrapper only",
+    "guest_user": {
+      "name": "bolyki",
+      "uid": 501,
+      "gid": 1000
+    },
+    "docker_preinstalled": true,
+    "packages_installed_by_lane": [],
+    "docker": {
+      "client": "26.1.5+dfsg1",
+      "server": "26.1.5+dfsg1",
+      "server_os": "linux",
+      "server_architecture": "arm64",
+      "docker_io_package": "26.1.5+dfsg1-9+deb13u1",
+      "containerd_package": "1.7.24~ds1-6+deb13u1",
+      "runc_package": "1.1.15+ds1-2+b4",
+      "daemon_active_during_lane": true,
+      "daemon_enabled_before_lane": true
+    }
+  },
+  "developer_bundle": {
+    "source_python": "3.13.5",
+    "archive_name": "teslatlas-protocol-2026.36.2.tar.gz",
+    "archive_sha256": "8ac5ccfa03d8432284b7045e0ec93b66254897d9ec96a9a7d516fd112eb1b8be",
+    "archive_bytes": 279094,
+    "archive_members": 172,
+    "payload_members": 170,
+    "manifest_sha256": "43c990e2172ce64045a60e5c3577e1e58800243fa4fcbbe6d103ff731504c512",
+    "checksum_map_sha256": "2c190224e6d84b47911f368f29d074a3c50b394f275a41cdbdc6e985b9eee899",
+    "uv_lock_sha256": "1c9c22f18a85c1ae18c0f2166caba69f41fbac9f5001b9ce04b947540e2c2157",
+    "dockerfile_sha256": "10ed175c2fa17e6db70c49a7453c7ea2851f9e9f892213ae290bf3059d408923",
+    "determinism": "Two independent builds from the exact exported commit were byte-identical and matched the independently accepted candidate bundle identity.",
+    "safe_extraction": "PASS: the standard developer-bundle extractor validated and created only the expected teslatlas-protocol-2026.36.2 root before the Docker build."
+  },
+  "docker_build": {
+    "result": "PASS",
+    "command": "DOCKER_BUILDKIT=0 docker build --no-cache -t teslatlas-protocol-check:53b5c648 .",
+    "builder": "Docker classic daemon builder running natively on ARM64",
+    "buildkit_note": "The retained Debian docker.io installation has no usable buildx component; no package or plugin was installed. The classic builder inherited the native ARM64 daemon platform.",
+    "context_bytes_reported": 2386000,
+    "image_id": "sha256:721f2ad812e8f11c9c27c17bd2f72ec25e68452671c6bde2799f8158e9158095",
+    "image_size_bytes": 509930832,
+    "platform": "linux/arm64",
+    "build_log_sha256": "de063c4bfca8de9c2632fa6b4014a87c70fc15e3332c802ff65ffb325272b71c",
+    "pinned_bases": [
+      {
+        "reference": "ghcr.io/astral-sh/uv:0.12.9@sha256:8b940d3a9d65bed080436972241af2e21c84b5e8c9193f7014ed71479ee795ff",
+        "local_image_id": "sha256:7868c738541e84b0110d2e18b6332840fa2fc83771373db0db5f27dc68e1dea1",
+        "platform": "linux/arm64"
+      },
+      {
+        "reference": "python:3.13.13-slim-bookworm@sha256:355bfa66770995d7e9a0da4b3473b44d0cb451f6b56f5615ad9c39e3c4eca03f",
+        "local_image_id": "sha256:03c6d4b159949d4769a04152b3fe56da0a54476214f025bb0358c4b496785d6b",
+        "platform": "linux/arm64"
+      }
+    ],
+    "image_configuration": {
+      "user": "gate",
+      "working_directory": "/workspace/teslatlas-protocol",
+      "command": [
+        "./tools/check"
+      ],
+      "uv_offline": "1",
+      "python": "3.13.13",
+      "uv": "0.12.9 (aarch64-unknown-linux-musl)"
+    }
+  },
+  "docker_runtime": {
+    "result": "PASS",
+    "command": "docker run --rm --network none teslatlas-protocol-check:53b5c648",
+    "container_removed": true,
+    "network_mode": "none",
+    "route_rows": 0,
+    "uid": 10001,
+    "gid": 10001,
+    "user": "gate",
+    "uv_offline": "1",
+    "bundle_inputs_present": true,
+    "tests": {
+      "collected": 142,
+      "passed": 142,
+      "failed": 0,
+      "errors": 0
+    },
+    "conformance": {
+      "profiles": 3,
+      "runs": 31,
+      "passed": 31,
+      "failed": 0
+    },
+    "profile_identities": {
+      "hub-http-v1@1.0.0": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "edge-delivery-v2@2.0.0": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+    },
+    "logs": {
+      "checker_sha256": "66dc9e457e3844a2f071ef23cf8b8de3fe95239a607b85750db48f6ea0a0a82b",
+      "image_inspect_sha256": "8d3d2a723c0e9ffc03d308f545c890757962595e8f78e41ee0c69542b2fcdacf",
+      "runtime_metadata_sha256": "a601d3b2f76d28f0cc223a785d6a7ef53f94e53d527c0357c908d3f2c73b7d8a"
+    }
+  },
+  "runtime_boundaries": {
+    "private_input_used": false,
+    "service_started": false,
+    "teslatlas_listener_created": false,
+    "published_ports": [],
+    "runtime_network": "none",
+    "remote_wire_smoke": false,
+    "x86_or_emulation_used": false,
+    "new_vm_or_context_created": false
+  },
+  "cleanup": {
+    "docker_inventory_before_lane": {
+      "images": 0,
+      "containers": 0,
+      "volumes": 0,
+      "build_cache_bytes": 0
+    },
+    "docker_inventory_before_cleanup": {
+      "images": 3,
+      "containers": 0,
+      "volumes": 0,
+      "build_cache_bytes": 0,
+      "image_bytes": 556500000
+    },
+    "docker_inventory_after_cleanup": {
+      "images": 0,
+      "containers": 0,
+      "volumes": 0,
+      "build_cache_bytes": 0,
+      "image_bytes": 0
+    },
+    "disk_bytes": {
+      "baseline_used": 9021775872,
+      "before_cleanup_used": 9618870272,
+      "after_cleanup_used": 9021796352,
+      "residual_delta_from_baseline": 20480
+    },
+    "temporary_build_root_removed": "/tmp/teslatlas-protocol-r2-53b5c648",
+    "guest_stopped": true,
+    "host_forward_port_60022_closed": true,
+    "residual_teslatlas_processes": 0,
+    "heavy_build_lock_released": true,
+    "lock_release_receipt": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build.released-protocol-docker-r2-20260919T134422Z",
+    "clock_evidence": {
+      "host_clock_check": "2026-09-19T13:47:03Z (2026-09-19T14:47:03+0100 BST)",
+      "metadata_corrected_at": "2026-09-19T13:52:42Z",
+      "lock_acquired_at": "2026-09-19T13:41:21Z",
+      "lock_acquisition_source": "Host filesystem birthtime 2026-09-19T13:41:21.629708Z for the owner file created immediately after atomic mkdir.",
+      "guest_stop_completed_at": "2026-09-19T13:44:22Z",
+      "release_time_source": "Host-side scripts/dev/vm.sh/hostagent reported the instance shut down at 2026-09-19T14:44:22+0100; the lock move followed the closed-port checks.",
+      "guest_clock_used": false,
+      "correction": "The earlier T134719Z suffix and acquired_at 13:42:20Z were manually supplied labels rather than observed clock values. They were replaced with host-observed acquisition and shutdown/release times; no host/guest skew is claimed."
+    }
+  },
+  "acceptance": {
+    "accepted_by_this_receipt": [
+      "Exact published runtime-source commit identity and clean git-archive staging",
+      "Byte-deterministic developer bundle identity from two native ARM64 guest builds",
+      "Safe verified extraction of the exact bundle",
+      "Digest-pinned Docker build on native Linux ARM64",
+      "Network-isolated non-root offline checker pass with 142/142 tests and 31/31 conformance",
+      "Complete cleanup, guest stop and lock release"
+    ],
+    "not_accepted": [
+      "Full Protocol F3 or F6",
+      "Remote-wire smoke",
+      "Hub catalog install, update, status, rollback or removal",
+      "Cold-cache offline dependency installation",
+      "Final Hub, TypeScript, Swift, Edge or Home Assistant consumer admission",
+      "F5 named-source/import/passive evidence",
+      "F7 combined installed acceptance",
+      "App, Viewer, x86, x86_64, amd64, Intel, Azure, CI, release, tag, binary publication or production"
+    ],
+    "independent_review": {
+      "status": "ACCEPT",
+      "recorded_at": "2026-09-19T13:54:30Z",
+      "model": "gpt-5.6-sol/high",
+      "findings": [],
+      "runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+      "accepted_scope": "Exact published runtime-source commit 53b5c6483990db84e5214176755f398e93d87b1b, deterministic developer-bundle identity, native Linux ARM64 digest-pinned Docker build, network-none non-root offline checker result, cleanup and calibrated r2 evidence chronology.",
+      "limits": "Accepts only the exact-source native ARM64 Docker developer-bundle slice. Full F3/F6, remote-wire smoke, cold-cache dependency installation, Hub catalog lifecycle, final consumers, F5 and F7 remain open. The later evidence commit does not replace the pinned runtime-source commit."
+    }
+  }
+}

@@ -79,8 +79,16 @@ candidate archive builds were byte-identical at SHA-256 `8ac5ccfa...b8be`; the n
 `linux/arm64` candidate image ran as UID/GID 10001 with `UV_OFFLINE=1` and
 `--network none`, passing 142/142 tests and 31/31 conformance runs. Independent
 Sol/high review accepted this bounded dirty-tree candidate with no findings. It remains
-candidate evidence only: a published source commit and clean reproduction from that
-exported commit are required before accepting the ARM64 Docker slice.
+historical candidate evidence only.
+
+The correction is now published at exact runtime-source commit
+`53b5c6483990db84e5214176755f398e93d87b1b`. A clean git archive of that commit
+reproduced bundle SHA-256 `8ac5ccfa...b8be`, built image
+`sha256:721f2ad8...58095` natively on Linux ARM64 and passed the same UID/GID,
+offline, network-none, 142/142-test and 31/31-conformance assertions. Independent
+Sol/high review accepted the r2 exact-source ARM64 Docker slice with no findings,
+strictly pinned to runtime-source commit `53b5c648...d87b1b`; full F3/F6 is not
+accepted.
 Cold-cache offline dependency installation, remote-wire smoke, Hub catalog
 install/update/status/rollback/removal, downstream final-product admission and the F5
 real-input assertions remain open.
