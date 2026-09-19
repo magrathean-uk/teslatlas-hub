@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "receipt_id": "protocol-f3-f6-linux-arm64-docker-checker-2026-09-19-r1",
+  "recorded_at": "2026-09-19T13:33:57Z",
+  "state": "INDEPENDENTLY_ACCEPTED_CANDIDATE_PUBLICATION_AND_CLEAN_REPRODUCTION_REQUIRED",
+  "scope": "Native Linux ARM64 Docker checker reproduction of the published Protocol developer bundle, baseline defect diagnosis, bounded Dockerfile correction, and dirty-tree candidate verification.",
+  "source_identity": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+    "branch": "main",
+    "published_head": "6686615c93a72c8c278391bdcc69e8a05853a970",
+    "published_head_relation": "Local HEAD, origin/main and the remote main ref matched before the lane.",
+    "published_export": {
+      "method": "git archive --format=tar --prefix=source/ 6686615c93a72c8c278391bdcc69e8a05853a970",
+      "stream_sha256": "8e1587c4e565673368d31d7aef0c9ff320bc1eca9c912d6b3ec78fcd6979a09b",
+      "excluded": [
+        "Untracked .serena/ cache",
+        "Any file not reachable from the exact published commit"
+      ]
+    },
+    "candidate_worktree": {
+      "base_commit": "6686615c93a72c8c278391bdcc69e8a05853a970",
+      "tracked_changes": [
+        "Dockerfile"
+      ],
+      "dockerfile_diff_sha256": "4c06bdc7c0c9e5d63880ea3d29a5f3711017e3417ed4562702ddd866cb31204f",
+      "candidate_dockerfile_sha256": "10ed175c2fa17e6db70c49a7453c7ea2851f9e9f892213ae290bf3059d408923",
+      "classification": "Dirty-tree candidate only; not an exact reachable-source artifact and not accepted for final F6."
+    },
+    "immutable_evidence_preserved": "docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+  },
+  "guest": {
+    "name": "debian13-arm64",
+    "os": "Debian GNU/Linux 13 (trixie)",
+    "dpkg_architecture": "arm64",
+    "uname_architecture": "aarch64",
+    "kernel": "6.12.107+deb13-cloud-arm64",
+    "vm_type": "vz",
+    "resources": {
+      "cpus": 4,
+      "memory": "4GiB",
+      "disk": "32GiB"
+    },
+    "access": "Existing checked-in scripts/dev/vm.sh wrapper only",
+    "docker_preinstalled": true,
+    "packages_installed_by_lane": [],
+    "docker": {
+      "client": "26.1.5+dfsg1",
+      "server": "26.1.5+dfsg1",
+      "server_os": "linux",
+      "server_architecture": "arm64",
+      "docker_io_package": "26.1.5+dfsg1-9+deb13u1",
+      "containerd_package": "1.7.24~ds1-6+deb13u1",
+      "runc_package": "1.1.15+ds1-2+b4",
+      "daemon_active_during_lane": true,
+      "daemon_enabled_before_lane": true
+    }
+  },
+  "published_bundle_reproduction": {
+    "archive_name": "teslatlas-protocol-2026.36.2.tar.gz",
+    "archive_sha256": "6368e2f59303b8ed7623c7817492269fc869e77754909ab47bd4cc6aefb196ec",
+    "archive_bytes": 279097,
+    "archive_members": 172,
+    "payload_members": 170,
+    "result": "PASS",
+    "statement": "Python 3.13.5 in the native ARM64 guest rebuilt the exact published archive bytes, verified the archive, and safely extracted the expected versioned root before the Docker build."
+  },
+  "published_bundle_docker_result": {
+    "result": "FAIL",
+    "build": {
+      "command": "DOCKER_BUILDKIT=0 docker build --no-cache -t teslatlas-protocol-check:6686615 .",
+      "context_bytes_reported": 2386000,
+      "image_id": "sha256:477c31c3c7905139b17288fb190990409f14c4789b4cdfa84adf84f04d9bb7df",
+      "image_size_bytes": 509842499,
+      "platform": "linux/arm64"
+    },
+    "run": {
+      "command": "docker run --rm --network none teslatlas-protocol-check:6686615",
+      "tests_collected": 142,
+      "errors": 6,
+      "conformance_runs_reached": 0,
+      "log_sha256": "8e248f6f0ad8200a706a10807e600f0180685fb946bd4a54869ce1a3ed2e8ae8"
+    },
+    "diagnosis": {
+      "error": "The six developer-bundle self-tests failed before their assertions because Dockerfile was absent from the final image.",
+      "missing_image_payload": [
+        "Dockerfile",
+        "THIRD-PARTY-NOTICES.md",
+        "docs/developer-bundle.md"
+      ],
+      "root_cause": "The published Dockerfile copied most test and contract trees but omitted required developer-bundle root inputs and top-level docs from the final stage."
+    }
+  },
+  "candidate_correction": {
+    "changed_file": "Dockerfile",
+    "change": [
+      "COPY docs ./docs",
+      "COPY Dockerfile VERSION LICENSE README.md THIRD-PARTY-NOTICES.md ./"
+    ],
+    "source_contract_change": false,
+    "daemon_or_service_added": false,
+    "candidate_bundle": {
+      "archive_sha256": "8ac5ccfa03d8432284b7045e0ec93b66254897d9ec96a9a7d516fd112eb1b8be",
+      "archive_bytes": 279094,
+      "archive_members": 172,
+      "manifest_sha256": "43c990e2172ce64045a60e5c3577e1e58800243fa4fcbbe6d103ff731504c512",
+      "checksum_map_sha256": "2c190224e6d84b47911f368f29d074a3c50b394f275a41cdbdc6e985b9eee899",
+      "uv_lock_sha256": "1c9c22f18a85c1ae18c0f2166caba69f41fbac9f5001b9ce04b947540e2c2157",
+      "determinism": "Two independent guest builds were byte-identical; safe extraction and directory verification passed."
+    }
+  },
+  "candidate_docker_verification": {
+    "result": "PASS_CANDIDATE_ONLY",
+    "build": {
+      "command": "DOCKER_BUILDKIT=0 docker build --no-cache -t teslatlas-protocol-check:candidate .",
+      "context_bytes_reported": 2386000,
+      "builder": "Docker classic daemon builder running natively on ARM64",
+      "buildkit_note": "The Debian docker.io installation did not provide a usable buildx component, so the explicit-platform BuildKit attempt was not used; no plugin was installed and the classic builder inherited the native ARM64 daemon platform.",
+      "image_id": "sha256:dc170e6577cfade28ad3dc0209d075f542807ed05245129a7d26525de79ece91",
+      "image_size_bytes": 509930832,
+      "build_log_sha256": "8a2556629c0c5e6932f49f9b67e72b7cd36244ad5f670a8dc9b149d1a628357a"
+    },
+    "pinned_bases": [
+      {
+        "reference": "ghcr.io/astral-sh/uv:0.12.9@sha256:8b940d3a9d65bed080436972241af2e21c84b5e8c9193f7014ed71479ee795ff",
+        "local_image_id": "sha256:7868c738541e84b0110d2e18b6332840fa2fc83771373db0db5f27dc68e1dea1",
+        "platform": "linux/arm64"
+      },
+      {
+        "reference": "python:3.13.13-slim-bookworm@sha256:355bfa66770995d7e9a0da4b3473b44d0cb451f6b56f5615ad9c39e3c4eca03f",
+        "local_image_id": "sha256:03c6d4b159949d4769a04152b3fe56da0a54476214f025bb0358c4b496785d6b",
+        "platform": "linux/arm64"
+      }
+    ],
+    "image_configuration": {
+      "os": "linux",
+      "architecture": "arm64",
+      "user": "gate",
+      "working_directory": "/workspace/teslatlas-protocol",
+      "command": [
+        "./tools/check"
+      ],
+      "uv_offline": "1",
+      "python": "3.13.13",
+      "uv": "0.12.9 (aarch64-unknown-linux-musl)"
+    },
+    "runtime": {
+      "command": "docker run --rm --network none teslatlas-protocol-check:candidate",
+      "container_removed": true,
+      "network_mode": "none",
+      "route_rows": 0,
+      "uid": 10001,
+      "gid": 10001,
+      "user": "gate",
+      "uv_offline": "1",
+      "bundle_inputs_present": true,
+      "tests": {
+        "collected": 142,
+        "passed": 142,
+        "failed": 0,
+        "errors": 0
+      },
+      "conformance": {
+        "profiles": 3,
+        "runs": 31,
+        "passed": 31,
+        "failed": 0
+      },
+      "profile_identities": {
+        "hub-http-v1@1.0.0": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "edge-delivery-v2@2.0.0": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+      },
+      "run_log_sha256": "7c09eb37da8f4f644c80c6bd15c5b14aeed277292e469679be379d6eda2d55d4"
+    }
+  },
+  "runtime_boundaries": {
+    "private_input_used": false,
+    "service_started": false,
+    "teslatlas_listener_created": false,
+    "published_ports": [],
+    "runtime_network": "none",
+    "remote_wire_smoke": false,
+    "x86_or_emulation_used": false,
+    "new_vm_or_context_created": false
+  },
+  "cleanup": {
+    "docker_inventory_before_lane": {
+      "images": 0,
+      "containers": 0,
+      "volumes": 0,
+      "build_cache_bytes": 0
+    },
+    "docker_inventory_before_cleanup": {
+      "images": 4,
+      "containers": 0,
+      "volumes": 0,
+      "build_cache_bytes": 0,
+      "image_bytes": 920100000
+    },
+    "docker_inventory_after_cleanup": {
+      "images": 0,
+      "containers": 0,
+      "volumes": 0,
+      "build_cache_bytes": 0,
+      "image_bytes": 0
+    },
+    "disk_bytes": {
+      "baseline_used": 9021444096,
+      "before_cleanup_used": 10005643264,
+      "after_cleanup_used": 9021534208,
+      "residual_delta_from_baseline": 90112
+    },
+    "temporary_build_root_removed": "/tmp/teslatlas-protocol-docker.7vNA72",
+    "guest_stopped": true,
+    "host_forward_port_60022_closed": true,
+    "residual_teslatlas_processes": 0,
+    "heavy_build_lock_released": true,
+    "lock_release_receipt": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build.released-protocol-docker-20260919T133651Z"
+  },
+  "acceptance": {
+    "accepted_by_this_receipt": [
+      "Exact published commit and developer archive reproduction in the retained native Linux ARM64 guest",
+      "Reproduction and diagnosis of the published Docker image payload defect",
+      "A minimal dirty-tree Dockerfile correction with a deterministic candidate archive",
+      "Candidate-only native linux/arm64 image build and network-isolated 142-test plus 31/31 conformance pass",
+      "Complete runtime and build-context cleanup, guest stop and lock release"
+    ],
+    "not_accepted": [
+      "The published commit as a passing Docker checker; it reproducibly fails six tests",
+      "The candidate as an exact reachable-source artifact before publication and clean exported-commit reproduction",
+      "Full Protocol F3 or F6",
+      "Remote-wire smoke",
+      "Hub catalog install, update, status, rollback or removal",
+      "Cold-cache offline dependency installation",
+      "Final Hub, TypeScript, Swift, Edge or Home Assistant consumer admission",
+      "F5 named-source/import/passive evidence",
+      "F7 combined installed acceptance",
+      "App, Viewer, x86, x86_64, amd64, Intel, Azure, CI, release, tag, binary publication or production"
+    ],
+    "independent_review": {
+      "status": "ACCEPT",
+      "recorded_at": "2026-09-19T13:38:56Z",
+      "model": "gpt-5.6-sol/high",
+      "findings": [],
+      "accepted_scope": "Bounded dirty-tree ARM64 Docker candidate, minimal Dockerfile payload correction, candidate bundle/image identities, native network-isolated checker evidence, cleanup and calibrated receipt limits.",
+      "limits": "This review does not convert the candidate into reachable-source evidence and does not accept full F3/F6. Publication and clean exported-commit ARM64 reproduction, remote-wire smoke, Hub catalog lifecycle, cold-cache offline dependencies, final consumers, F5 and F7 remain open."
+    }
+  }
+}

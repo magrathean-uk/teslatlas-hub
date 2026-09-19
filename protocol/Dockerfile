@@ -30,7 +30,8 @@ COPY tests ./tests
 COPY tools ./tools
 COPY openapi ./openapi
 COPY compatibility ./compatibility
-COPY VERSION LICENSE README.md ./
+COPY docs ./docs
+COPY Dockerfile VERSION LICENSE README.md THIRD-PARTY-NOTICES.md ./
 
 ENV PATH="/workspace/teslatlas-protocol/.venv/bin:${PATH}" \
     UV_OFFLINE=1

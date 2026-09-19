@@ -12,7 +12,8 @@ Authority: [master plan](../../../docs/development/MASTER_PLAN.md),
 G3 remains accepted for the exact five-product current-Hub/Edge compatibility binding.
 Keep its receipt immutable. It does not prove every rich profile, distributable bundle,
 independent implementation, named-source semantics or final installed ecosystem.
-`full_solution_state` is `NOT_ACCEPTED`. F0 passed independent review; F3/F6 are ready.
+`full_solution_state` is `NOT_ACCEPTED`. F0 passed independent review; F3/F6 are in
+progress.
 
 ## Required completion
 
@@ -62,9 +63,27 @@ archive SHA-256 `6368e2f59303b8ed7623c7817492269fc869e77754909ab47bd4cc6aefb196e
 A fresh locked install seeded an isolated cache; deleting that environment and
 reinstalling from the cache with `UV_OFFLINE=1` passed the complete 142-test gate
 and all 31 conformance runs from the verified extracted archive. This proves the
-native bundle foundation only. It does not prove a cold-cache offline dependency
-install, ARM64 Docker, Hub catalog install/update/status/rollback/removal, downstream
-final-product admission, or the F5 real-input assertions.
+native bundle foundation only.
+
+## Linux ARM64 Docker candidate
+
+The exact published commit `6686615c93a72c8c278391bdcc69e8a05853a970` and its
+accepted archive SHA-256 `6368e2f5...96ec` were reproduced in the retained Debian 13
+ARM64 guest. Its documented Docker image build succeeded natively, but the default
+network-isolated checker collected 142 tests and ended with six errors because the
+final image omitted `Dockerfile`, `THIRD-PARTY-NOTICES.md` and top-level `docs/`
+required by the bundle self-tests.
+
+A minimal dirty-tree Dockerfile correction copies those public bundle inputs. Two
+candidate archive builds were byte-identical at SHA-256 `8ac5ccfa...b8be`; the native
+`linux/arm64` candidate image ran as UID/GID 10001 with `UV_OFFLINE=1` and
+`--network none`, passing 142/142 tests and 31/31 conformance runs. Independent
+Sol/high review accepted this bounded dirty-tree candidate with no findings. It remains
+candidate evidence only: a published source commit and clean reproduction from that
+exported commit are required before accepting the ARM64 Docker slice.
+Cold-cache offline dependency installation, remote-wire smoke, Hub catalog
+install/update/status/rollback/removal, downstream final-product admission and the F5
+real-input assertions remain open.
 
 ## Start and boundaries
 
