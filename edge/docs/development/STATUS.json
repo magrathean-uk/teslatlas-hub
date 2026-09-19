@@ -1,18 +1,21 @@
 {
   "schema_version": 2,
   "product": "Edge",
-  "updated_at": "2026-09-19T10:30:43Z",
-  "update_scope": "post_adoption_next_phase_planning_no_execution",
-  "programme": "2026-09-18-app-v7-readiness",
+  "updated_at": "2026-09-19T11:04:10Z",
+  "update_scope": "full_product_completion_planning_no_execution",
+  "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G5_ACCEPTED",
   "source_objective_state": "DURABLE_FORWARDING_AND_BINDING_ACCEPTED",
   "current_gate_ids": [],
+  "completion_gate_ids": ["F0", "F2", "F5", "F6", "F7"],
+  "accepted_receipts_immutable": true,
+  "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": [
     "G3",
     "G5"
   ],
-  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
-  "objective": "Preserve accepted durable forwarding and prepare the first installed Edge/receiver lifecycle on Debian ARM64.",
+  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Complete the optional Edge and pinned receiver across documented native/container ARM64 and Apple-silicon behavior, recovery, passive evidence, distribution and combined installed acceptance.",
   "source": {
     "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
     "branch": "main",
@@ -40,24 +43,26 @@
     "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json"
   ],
   "remaining": [
-    "L1: Debian ARM64 installed Edge/receiver upgrade, rollback and spool-preserving removal after the installed Hub baseline is ready.",
-    "L2: Apple-silicon package and LaunchAgent lifecycle.",
-    "Passive or real telemetry requires fresh owner authorization and inputs; never reuse the synthetic r5 cohort."
+    "F0: close every Edge, receiver, spool, service, container and recovery claim.",
+    "F2: prove complete optional delivery and fault recovery against the exact F1 Hub.",
+    "F5: a fresh authorized passive capture is mandatory external input for real mapping/parity evidence.",
+    "F6-F7: prove Debian ARM64, Apple-silicon and ARM64 container lifecycle, catalog integration and final combined installation."
   ],
   "next_goal_draft": {
-    "id": "L1_EDGE_DEBIAN_ARM64_INSTALLED_LIFECYCLE",
+    "id": "FULL_EDGE_RECEIVER_F0_F7",
     "state": "DRAFT_NOT_STARTED",
-    "objective": "Install exact baseline packages, upgrade to the candidate, prove one fresh installed-path synthetic delivery, roll back a failed candidate, then remove services while preserving spool/configuration.",
+    "objective": "Complete Edge and the pinned receiver across documented delivery, recovery, native/container distribution, passive evidence and final installed integration.",
     "prerequisites": [
-      "Installed Hub L1 baseline and a fresh Hub-owned handoff",
-      "Frozen Edge and receiver packages, units, profile and legal/lock identities",
-      "Fresh receiver, Edge and Hub credentials and roots"
+      "F0 ledger and exact receiver source/version/toolchain/configuration audit",
+      "Accepted F1 Hub and fresh Hub-owned handoffs",
+      "Fresh one-use synthetic cohorts and separately authorized passive input"
     ],
     "acceptance_evidence": [
-      "Package hashes, dpkg-query identity and actual service units",
-      "Correct users, modes, listeners, loopback admission and service order",
-      "Occurrence-bound committed/readable event with stable spool identity and no duplicate",
-      "Failed-candidate rollback and spool/configuration-preserving removal"
+      "F0 feature/support ledger",
+      "F2 complete ACK/deduplication/outage/restart/backpressure/recovery receipt",
+      "F5 passive mapping and redaction receipt",
+      "F6 native/container install, upgrade, backup/restore, rollback, removal and catalog receipts",
+      "F7 combined installed ecosystem receipt"
     ],
     "execution_authorized": false
   },

@@ -1,60 +1,60 @@
-# Edge post-adoption plan — 2026-09-19
+# Edge full-product completion plan — 2026-09-19
 
-Objective: Preserve accepted durable forwarding and prepare the first installed
-Edge/receiver lifecycle on Debian ARM64.
+Objective: complete Edge and its pinned Fleet Telemetry receiver as an optional,
+recoverable installed component of the Hub ecosystem on every active documented
+ARM64/Apple-silicon path.
 
 Authority: [master plan](../../../docs/development/MASTER_PLAN.md),
-[coordination](../../../docs/development/COORDINATION.md),
-[App v7 handoff](../../../docs/development/APP_V7_READINESS.md), and
-[STATUS.json](STATUS.json).
+[product specification](../../../docs/development/PRODUCT_SPEC.md),
+[coordination](../../../docs/development/COORDINATION.md), and [STATUS.json](STATUS.json).
 
 ## Current position
 
-G3 and G5 are accepted for product `2026.36.2` and
-`edge-delivery-v2@2.0.0`. The fresh Debian 13 ARM64 r5 cohort proved one
-guarded synthetic event through receiver, encrypted spool and Hub commit; exact
-ACK occurrence, duplicate safety, outage/restart recovery, readable projection,
-Hub restart durability and cleanup passed.
+G3/G5 remain accepted for the exact synthetic Debian ARM64 delivery lane. Preserve
+their receipts and closed cohort. They do not prove native/container packaging,
+minimum floors, complete spool migration/recovery, passive input, or final installed
+integration. `full_solution_state` is `NOT_ACCEPTED`; this plan is not started.
 
-The accepted lane used source-built synthetic processes. It is not Debian
-package, systemd, Apple package, Docker lifecycle, real telemetry or production
-acceptance. Do not replay r5 or reuse its credentials, roots or identities.
+## Required completion
 
-## Next goal draft — not started
+- **F0:** inventory every Edge/receiver claim: receiver mTLS and bearer isolation,
+  decoded envelope validation, bounded encrypted spool, stable identities, v1/v2 ACK
+  behavior, gaps/dispositions, quotas/retention, retry/deduplication, spool-format
+  migration and guards, doctor/status, TLS and credential rotation, native services,
+  Docker Compose, backup/restore/rollback and removal. Resolve exact active ARM64 Linux
+  and Apple-silicon macOS floors and correct any unsupported claim.
+- **F2:** against the exact F1 Hub, prove receiver-first startup, loopback admission,
+  durable write before acceptance, Hub commit before occurrence-bound ACK, outage and
+  restart recovery, no duplicate projection, gap handling, backpressure/degraded
+  states, rotation and bounded failure. Edge must remain optional to standalone Hub.
+- **F5:** with a fresh authorized passive capture, prove real receiver mapping,
+  timestamps/units/nulls, unsupported durable dispositions, interruption/replay and
+  redaction. The capture is mandatory external input. It must be read-only/passive and
+  must not cause account, command or vehicle action.
+- **F6:** prove source-built Debian 13 ARM64 packages/systemd, Apple-silicon macOS 13+
+  packages/LaunchAgents and the Linux ARM64 Compose path. Each must cover install,
+  configuration, upgrade, spool-format transition, verified backup/restore, rollback
+  and spool-preserving removal. The Hub catalog must install/update/status/rollback/
+  remove the exact Edge source without Viewer.
+- **F7:** run the F6 Edge/receiver artifacts in the final installed ecosystem and show
+  durable forwarding, recovery and cleanup alongside the SDKs and required HA lane.
 
-L1: deliver one Debian 13 ARM64 installed lifecycle receipt for Edge core and
-the pinned Fleet Telemetry receiver after the installed Hub baseline is ready.
-Freeze previous-working and candidate packages, binaries, legal/lock inputs,
-configuration, systemd units, profile and target. Install the baseline, upgrade
-to the candidate, confirm service ordering and one new bounded synthetic
-delivery, exercise one fail-closed candidate/rollback path, then remove package
-code and services while preserving spool/configuration by default. Do not purge.
+The external receiver/proxy is a bounded audited dependency. Pin its source/version,
+toolchain, binary hash, legal inputs, configuration schema, TLS/bearer files, users,
+listeners and service order. Do not expand into unrelated upstream development.
 
-Acceptance requires:
+## Work slices
 
-- package/payload hashes, `dpkg-query`, architecture and actual service units;
-- separate owner-only receiver, Edge and Hub credentials/configuration with
-  correct modes, users, listeners and loopback admission;
-- one occurrence-bound committed/readable event, stable spool identity through
-  restart/upgrade, no duplicate projection and a drained frontier;
-- rollback to the working baseline after the failed-candidate path;
-- removal with owned services/listeners absent and retained spool/config
-  fingerprints unchanged.
+1. **L1:** complete F0 and Debian ARM64 installed F2 lifecycle after F1 Hub exists.
+2. **L2:** close Apple-silicon package/floor and ARM64 container claims.
+3. **L3:** complete catalog/reproducibility/docs for F6, run mandatory F5 when fresh
+   input exists, then contribute the final F7 receipt.
 
-This draft does not authorize implementation, package build, installation,
-guest start, runtime, event submission, or tests. The coordinator must create
-and start a new goal.
+## Start and boundaries
 
-## Later work
-
-L2 covers Apple-silicon `.pkg`/LaunchAgent lifecycle. L3 covers reproducible
-source-only package inputs and only changed recovery paths. ARM64 Compose, wider
-spool fault coverage and separately authorized passive/real telemetry remain
-later lanes. Real-data work requires fresh owner input and never an old fixture.
-
-## Boundaries
-
-Preserve the dirty `main` checkout. Hub owns shared fixtures and runtimes; Edge
-owns its packages, receiver binding and spool. No App or Viewer work,
-x86/Intel/Azure, production or vehicle action, commit, push, CI, release,
-publication, public ingress, or reuse of closed cohorts.
+No implementation, build, package, guest, receiver, event, test, commit, push or
+publication is authorized by this draft. Preserve the dirty `main` tree and accepted
+receipts. Hub owns shared runtimes; Edge owns its package, receiver binding and spool.
+Exclude App, Viewer, x86/amd64/Intel and Azure. Never reuse old receiver traffic,
+credentials, CAs, roots or closed cohorts; never expose the receiver through a generic
+TLS-terminating proxy.
