@@ -193,18 +193,21 @@ printf '%s\n' \
     '    present=${SYSTEMCTL_HUB_PRESENT:-1}' \
     '    active=${SYSTEMCTL_HUB_ACTIVE:-${SYSTEMCTL_ACTIVE:-0}}' \
     '    enabled=${SYSTEMCTL_HUB_ENABLED:-${SYSTEMCTL_ENABLED:-0}}' \
+    '    failed=${SYSTEMCTL_HUB_FAILED:-0}' \
     '    ;;' \
     '  teslatlas-command-proxy.service)' \
     '    present=${SYSTEMCTL_PROXY_PRESENT:-0}' \
     '    active=${SYSTEMCTL_PROXY_ACTIVE:-0}' \
     '    enabled=${SYSTEMCTL_PROXY_ENABLED:-0}' \
+    '    failed=${SYSTEMCTL_PROXY_FAILED:-0}' \
     '    ;;' \
     '  teslatlas-fleet-telemetry.service)' \
     '    present=${SYSTEMCTL_TELEMETRY_PRESENT:-0}' \
     '    active=${SYSTEMCTL_TELEMETRY_ACTIVE:-0}' \
     '    enabled=${SYSTEMCTL_TELEMETRY_ENABLED:-0}' \
+    '    failed=${SYSTEMCTL_TELEMETRY_FAILED:-0}' \
     '    ;;' \
-    '  *) present=0; active=0; enabled=0 ;;' \
+    '  *) present=0; active=0; enabled=0; failed=0 ;;' \
     'esac' \
     'case "$1" in' \
     '  cat) [ "$present" = 1 ] ;;' \
@@ -213,7 +216,11 @@ printf '%s\n' \
     '    [ "$active" = 1 ]' \
     '    ;;' \
     '  is-enabled) [ "$enabled" = 1 ] ;;' \
-    '  start) [ "${SYSTEMCTL_FAIL_START_SERVICE:-}" != "$service_name" ] ;;' \
+    '  is-failed) [ "$failed" = 1 ] ;;' \
+    '  start)' \
+    '    [ "${SYSTEMCTL_FAIL_START_SERVICE:-}" != "$service_name" ] || exit 1' \
+    '    if [ "${SYSTEMCTL_START_LIMIT_HIT:-0}" = 1 ] && ! grep -Fqx "reset-failed $service_name" "$SYSTEMCTL_LOG"; then exit 1; fi' \
+    '    ;;' \
     '  stop) [ "${SYSTEMCTL_FAIL_STOP_SERVICE:-}" != "$service_name" ] ;;' \
     '  *) exit 0 ;;' \
     'esac' > "$maintainer_bin/systemctl"
@@ -276,6 +283,25 @@ require_log 'start teslatlas-fleet-telemetry.service'
 [ ! -e "$upgrade_backup" ] || fail 'recovered preinst failure retained payload backup'
 
 : > "$systemctl_log"
+printf '%s\n' old-binary > "$installed_binary"
+printf '%s\n' old-unit > "$installed_unit"
+PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
+    SYSTEMCTL_ACTIVE=0 SYSTEMCTL_ENABLED=1 SYSTEMCTL_HUB_FAILED=1 \
+    sh "$test_root/preinst" upgrade 1.0.0
+[ "$(cat "$maintainer_state")" = '1 1 1 0 0 0 0 0 0' ] \
+    || fail 'upgrade did not retain the run intent of an enabled failed Hub'
+require_log 'is-failed --quiet teslatlas-hub.service'
+require_log 'stop teslatlas-hub.service'
+printf '%s\n' recovered-binary > "$installed_binary"
+printf '%s\n' recovered-unit > "$installed_unit"
+PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub_status_log" \
+    SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=1 SYSTEMCTL_START_LIMIT_HIT=1 HUB_READY=1 \
+    sh "$test_root/postinst" configure 1.0.0
+require_log 'reset-failed teslatlas-hub.service'
+require_log 'start teslatlas-hub.service'
+[ ! -e "$upgrade_backup" ] || fail 'failed-service recovery retained old payload'
+
+: > "$systemctl_log"
 : > "$hub_status_log"
 printf '%s\n' old-binary > "$installed_binary"
 printf '%s\n' old-unit > "$installed_unit"
@@ -301,12 +327,16 @@ printf '%s\n' new-binary > "$installed_binary"
 printf '%s\n' new-unit > "$installed_unit"
 PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub_status_log" \
     SYSTEMCTL_ACTIVE=1 HUB_READY=1 \
+    SYSTEMCTL_START_LIMIT_HIT=1 \
     SYSTEMCTL_PROXY_PRESENT=1 SYSTEMCTL_PROXY_ACTIVE=1 \
     SYSTEMCTL_TELEMETRY_PRESENT=1 SYSTEMCTL_TELEMETRY_ACTIVE=1 \
     sh "$test_root/postinst" configure 1.0.0
 require_log 'daemon-reload'
+require_log 'reset-failed teslatlas-command-proxy.service'
 require_log 'start teslatlas-command-proxy.service'
+require_log 'reset-failed teslatlas-hub.service'
 require_log 'start teslatlas-hub.service'
+require_log 'reset-failed teslatlas-fleet-telemetry.service'
 require_log 'start teslatlas-fleet-telemetry.service'
 grep -Fqx -- "-u teslatlas -- $installed_binary --config $config_file status" \
     "$hub_status_log" || fail 'upgrade did not query Hub readiness as the service user'

@@ -1,5 +1,37 @@
 # Verify a release
 
+## Current source-built 2026.36.2 Debian package
+
+There is no prebuilt `2026.36.2` download. Build from one recorded source
+commit and retain that commit, the clean source-export checksum, the complete
+locked dependency legal bundle, the package checksum and the native toolchain
+versions. Legal-bundle generation is offline and requires the complete locked
+cache, so fetch it before building:
+
+```sh
+git rev-parse HEAD
+cargo fetch --locked
+HUB_SOURCE_ROOT=$(pwd -P)
+RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/teslatlas-hub" \
+  cargo build --locked --release --bin teslatlas-hub
+python3 scripts/legal-bundle.py --repo . --output-dir dist/dependency-legal
+scripts/build-deb.sh \
+  --binary target/release/teslatlas-hub \
+  --legal-bundle dist/dependency-legal \
+  --version 2026.36.2 \
+  --architecture "$(dpkg --print-architecture)" \
+  --output "dist/teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
+sha256sum "dist/teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
+dpkg-deb --field \
+  "dist/teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb" \
+  Package Version Architecture Depends
+```
+
+The Debian metadata must report package `teslatlas-hub`, version
+`2026.36.2-1`, and the selected architecture. The core-only package omits Fleet
+sidecars. Its product-version source route does not replace the separately
+recorded exact source commit and source-export checksum.
+
 ## Historical 2026.36.1 package verification
 
 GitHub release downloads are no longer provided. The instructions below apply

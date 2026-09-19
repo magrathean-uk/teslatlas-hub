@@ -100,7 +100,9 @@ start_recorded_service() {
     previous_active=$3
     [ "$previous_present" = 1 ] && [ "$previous_active" = 1 ] \
         && unit_available "$configured_service" || return 0
-    systemctl start "$configured_service" && wait_service_active "$configured_service"
+    systemctl reset-failed "$configured_service" \
+        && systemctl start "$configured_service" \
+        && wait_service_active "$configured_service"
 }
 
 stop_all_services() {

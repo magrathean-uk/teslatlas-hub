@@ -16,7 +16,7 @@ fn regular_file(path: &Path) -> bool {
 
 fn resolve_helper_layout(
     executable: &Path,
-    source_root: &Path,
+    source_root: Option<&Path>,
 ) -> Result<CompanionHelperLayout, String> {
     let executable_parent = executable
         .parent()
@@ -37,10 +37,12 @@ fn resolve_helper_layout(
             catalog: prefix.join("share/companions/catalog-current.json"),
         });
     }
-    candidates.push(CompanionHelperLayout {
-        helper: source_root.join("scripts/bootstrap-companions.py"),
-        catalog: source_root.join("tools/companions/catalog-current.json"),
-    });
+    if let Some(source_root) = source_root {
+        candidates.push(CompanionHelperLayout {
+            helper: source_root.join("scripts/bootstrap-companions.py"),
+            catalog: source_root.join("tools/companions/catalog-current.json"),
+        });
+    }
 
     candidates
         .into_iter()
@@ -48,6 +50,33 @@ fn resolve_helper_layout(
         .ok_or_else(|| {
             "the audited companion helper/catalog is missing from the Hub installation".to_owned()
         })
+}
+
+fn development_source_root() -> Result<Option<PathBuf>, String> {
+    let Some(source_root) = std::env::var_os("TESLATLAS_HUB_SOURCE_ROOT") else {
+        return Ok(None);
+    };
+    let source_root = PathBuf::from(source_root);
+    if !source_root.is_absolute() {
+        return Err("TESLATLAS_HUB_SOURCE_ROOT must be an absolute path".to_owned());
+    }
+    fs::canonicalize(&source_root)
+        .map(Some)
+        .map_err(|error| format!("cannot resolve TESLATLAS_HUB_SOURCE_ROOT: {error}"))
+}
+
+fn resolve_runtime_helper_layout<F>(
+    executable: &Path,
+    source_root: F,
+) -> Result<CompanionHelperLayout, String>
+where
+    F: FnOnce() -> Result<Option<PathBuf>, String>,
+{
+    if let Ok(layout) = resolve_helper_layout(executable, None) {
+        return Ok(layout);
+    }
+    let source_root = source_root()?;
+    resolve_helper_layout(executable, source_root.as_deref())
 }
 
 fn push_path(arguments: &mut Vec<OsString>, option: &str, path: &Path) {
@@ -64,8 +93,15 @@ fn operation_arguments(
         return Err("--prefix must be an absolute path".to_owned());
     }
     if options.components.is_empty()
-        || options.components.iter().any(|component| component.is_empty())
-        || options.components.iter().collect::<std::collections::HashSet<_>>().len()
+        || options
+            .components
+            .iter()
+            .any(|component| component.is_empty())
+        || options
+            .components
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
             != options.components.len()
     {
         return Err("--components must be a unique nonempty set".to_owned());
@@ -140,9 +176,7 @@ fn d1_plan_arguments(options: &CompanionD1PlanArgs) -> Result<Vec<OsString>, Str
         return Err("--component-manifest must be an absolute path".to_owned());
     }
     if options.components.len() != 1 || options.components[0] != "home-assistant" {
-        return Err(
-            "D1 planning requires only the explicit home-assistant component".to_owned(),
-        );
+        return Err("D1 planning requires only the explicit home-assistant component".to_owned());
     }
     if options.selector != "debian13-arm64-container" {
         return Err("D1 planning does not admit the requested selector".to_owned());
@@ -286,7 +320,7 @@ async fn run_companion_command(command: &CompanionCommand) -> ExitCode {
         Ok(executable) => executable,
         Err(error) => return companion_error(&format!("cannot resolve Hub executable: {error}")),
     };
-    let layout = match resolve_helper_layout(&executable, Path::new(env!("CARGO_MANIFEST_DIR"))) {
+    let layout = match resolve_runtime_helper_layout(&executable, development_source_root) {
         Ok(layout) => layout,
         Err(error) => return companion_error(&error),
     };
@@ -347,7 +381,26 @@ mod companion_delegation_tests {
         touch(&source.join("scripts/bootstrap-companions.py"));
         touch(&source.join("tools/companions/catalog-current.json"));
 
-        let layout = resolve_helper_layout(&executable, &source).expect("installed layout");
+        let layout = resolve_helper_layout(&executable, Some(&source)).expect("installed layout");
+        assert_eq!(layout.helper, helper);
+        assert_eq!(layout.catalog, catalog);
+    }
+
+    #[test]
+    fn installed_layout_wins_before_an_invalid_source_fallback_is_evaluated() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let package_root = temporary.path().join("usr");
+        let executable = package_root.join("bin/teslatlas-hub");
+        let helper = package_root.join("lib/teslatlas-hub/bootstrap-companions.py");
+        let catalog = package_root.join("share/teslatlas-hub/companions/catalog-current.json");
+        touch(&executable);
+        touch(&helper);
+        touch(&catalog);
+
+        let layout = resolve_runtime_helper_layout(&executable, || {
+            Err("invalid development source root must not be evaluated".to_owned())
+        })
+        .expect("installed layout");
         assert_eq!(layout.helper, helper);
         assert_eq!(layout.catalog, catalog);
     }
@@ -420,8 +473,8 @@ mod companion_delegation_tests {
         let command = CompanionCommand::Status(CompanionPrefixArgs {
             prefix: PathBuf::from("/private/companions"),
         });
-        let actual = command_arguments(&command, Path::new("/shipped.json"))
-            .expect("status arguments");
+        let actual =
+            command_arguments(&command, Path::new("/shipped.json")).expect("status arguments");
         assert_eq!(
             actual,
             [
@@ -442,8 +495,8 @@ mod companion_delegation_tests {
             component_manifest: PathBuf::from("/private/components.json"),
         });
 
-        let actual = command_arguments(&command, Path::new("/shipped.json"))
-            .expect("D1 plan arguments");
+        let actual =
+            command_arguments(&command, Path::new("/shipped.json")).expect("D1 plan arguments");
         assert_eq!(
             actual,
             [
@@ -498,8 +551,8 @@ mod companion_delegation_tests {
             timeout_seconds: 90,
         });
 
-        let actual = command_arguments(&command, Path::new("/shipped.json"))
-            .expect("D1 install arguments");
+        let actual =
+            command_arguments(&command, Path::new("/shipped.json")).expect("D1 install arguments");
         assert_eq!(
             actual,
             [
@@ -572,8 +625,8 @@ mod companion_delegation_tests {
             edge_tool_root: None,
             timeout_seconds: 300,
         });
-        let actual = command_arguments(&command, Path::new("/shipped.json"))
-            .expect("update arguments");
+        let actual =
+            command_arguments(&command, Path::new("/shipped.json")).expect("update arguments");
         assert_eq!(
             actual,
             [

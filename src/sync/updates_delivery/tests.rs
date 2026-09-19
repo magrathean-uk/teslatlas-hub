@@ -462,6 +462,13 @@ fn production_witness_rejects_overlapping_null_and_empty_denominators() {
 }
 
 #[test]
+fn relative_cargo_target_directory_is_rejected() {
+    let error = canonical_cargo_target_dir(Some(std::ffi::OsString::from("relative-target")))
+        .expect_err("relative CARGO_TARGET_DIR must fail closed");
+    assert!(error.message.contains("absolute path"));
+}
+
+#[test]
 fn pinned_fixture_logical_stream_matches_frozen_digest() {
     let fixture = parse_pinned_updates_fixture().expect("parse pinned fixture");
     let stream = encode_updates_logical_stream(&fixture.rows).expect("encode");

@@ -2034,10 +2034,17 @@ pub struct ReceiptIdentityHashes {
 
 fn shipping_hub_binary_path() -> Result<PathBuf, UpdatesDeliveryError> {
     let mut candidates = Vec::new();
-    if let Ok(target_dir) = std::env::var("CARGO_TARGET_DIR") {
-        candidates.push(PathBuf::from(target_dir).join("release/teslatlas-hub"));
+    if let Ok(executable) = std::env::current_exe() {
+        if executable.file_name().and_then(|name| name.to_str()) == Some("teslatlas-hub") {
+            candidates.push(executable);
+        }
     }
-    candidates.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/teslatlas-hub"));
+    if let Some(target_dir) = canonical_cargo_target_dir(std::env::var_os("CARGO_TARGET_DIR"))? {
+        candidates.push(target_dir.join("release/teslatlas-hub"));
+    }
+    if let Ok(source_root) = shipping_source_root() {
+        candidates.push(source_root.join("target/release/teslatlas-hub"));
+    }
     candidates
         .into_iter()
         .find(|path| path.is_file())
@@ -2048,11 +2055,49 @@ fn shipping_hub_binary_path() -> Result<PathBuf, UpdatesDeliveryError> {
         })
 }
 
+fn canonical_cargo_target_dir(
+    target_dir: Option<std::ffi::OsString>,
+) -> Result<Option<PathBuf>, UpdatesDeliveryError> {
+    let Some(target_dir) = target_dir else {
+        return Ok(None);
+    };
+    let target_dir = PathBuf::from(target_dir);
+    if !target_dir.is_absolute() {
+        return Err(reject("CARGO_TARGET_DIR must be an absolute path"));
+    }
+    fs::canonicalize(target_dir)
+        .map(Some)
+        .map_err(|error| reject(error.to_string()))
+}
+
+fn shipping_source_root() -> Result<PathBuf, UpdatesDeliveryError> {
+    let Some(source_root) = std::env::var_os("TESLATLAS_HUB_SOURCE_ROOT") else {
+        return Err(reject(
+            "Hub source root is unavailable; set TESLATLAS_HUB_SOURCE_ROOT to the absolute source checkout path",
+        ));
+    };
+    let source_root = PathBuf::from(source_root);
+    if !source_root.is_absolute() {
+        return Err(reject("TESLATLAS_HUB_SOURCE_ROOT must be an absolute path"));
+    }
+    let source_root = fs::canonicalize(source_root).map_err(|error| reject(error.to_string()))?;
+    if !source_root.join("packaging/config.toml").is_file()
+        || !source_root
+            .join("packaging/com.teslatlas.hub.plist.in")
+            .is_file()
+    {
+        return Err(reject(
+            "TESLATLAS_HUB_SOURCE_ROOT does not contain the shipping packaging inputs",
+        ));
+    }
+    Ok(source_root)
+}
+
 /// Bind the shipping Hub binary, shipping config, and rustc toolchain.
 pub fn receipt_identity_hashes() -> Result<ReceiptIdentityHashes, UpdatesDeliveryError> {
     let binary_path = shipping_hub_binary_path()?;
     let binary_bytes = fs::read(&binary_path).map_err(|error| reject(error.to_string()))?;
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest_dir = shipping_source_root()?;
     let config_toml = fs::read(manifest_dir.join("packaging/config.toml"))
         .map_err(|error| reject(error.to_string()))?;
     let plist = fs::read(manifest_dir.join("packaging/com.teslatlas.hub.plist.in"))

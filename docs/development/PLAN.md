@@ -16,7 +16,11 @@ immutable. They prove useful source-built synthetic journeys; they do not prove 
 complete supported feature set, ordinary installation and lifecycle, minimum floors,
 real-source parity, reproducible distribution or the final installed ecosystem.
 
-`full_solution_state` remains `NOT_ACCEPTED`. This plan is drafted and not started.
+`full_solution_state` remains `NOT_ACCEPTED`. The owner activated the goal on
+2026-09-19. F0 passed independent review. The first bounded Debian 13 ARM64 package
+foundation is independently accepted only within its explicit partial scope: F1 and
+F6 remain active and unaccepted, and the nonexistent `v2026.36.2` Corresponding Source
+route remains a release-publication blocker.
 
 ## Full-product gates
 
@@ -94,9 +98,10 @@ L1–L3 are execution slices only; none is a completion substitute:
 
 ## Start and boundaries
 
-This draft does not authorize implementation, builds, tests, runtime, VM work,
-catalog mutation, commit, push or publication. The future coordinator goal must be
-explicitly sent before any execution begins.
+The sent full-solution goal authorizes bounded implementation, tests, isolated
+runtime/VM work, validated source commits/pushes and exact catalog updates. It does
+not authorize CI, releases, tags, binary publication, signing, production or real
+Tesla activity.
 
 Preserve the independent dirty `main` checkout and immutable G0–G7 evidence. Hub owns
 shared runtimes, fixtures, installers and integration orchestration. Exclude App,

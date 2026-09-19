@@ -2,11 +2,12 @@
 
 Teslatlas Hub targets Debian 13 on amd64 and ARM64. First
 [build a local package](build-from-source.md); no prebuilt releases are provided.
-The core-only packages contain core/legacy collection without Fleet command-proxy or Fleet
-Telemetry companions. They are not a complete Fleet installation. Read the
-[release limits](../releases/release-notes-2026.36.1.md) and
-[verify the package](../releases/verification.md) before installing. For an
-existing deployment, follow [Upgrade and rollback](../releases/upgrade.md).
+The current `2026.36.2` core-only package contains core/Legacy collection
+without Fleet command-proxy or Fleet Telemetry companions. It is not a
+complete Fleet installation. [Verify the package](../releases/verification.md)
+before installing. For an existing deployment, follow
+[Upgrade and rollback](../releases/upgrade.md). The historical `2026.36.1`
+limits remain in its [release note](../releases/release-notes-2026.36.1.md).
 
 ## Select the package
 
@@ -17,7 +18,7 @@ dpkg --print-architecture
 ## Install
 
 ```sh
-sudo dpkg -i "teslatlas-hub_2026.36.1_$(dpkg --print-architecture).deb"
+sudo dpkg -i "teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml bootstrap
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
@@ -45,8 +46,8 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub \
 ```
 
 The [Fleet setup](fleet-setup.md) guide applies to installations with separately
-verified compatible Fleet companions; those companions are absent from these
-2026.36.1 Debian packages.
+verified compatible Fleet companions; those companions are absent from the
+core-only package built by the command above.
 
 ## Start and inspect
 

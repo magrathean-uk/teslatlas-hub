@@ -56,7 +56,10 @@ Build natively on amd64 or arm64. Install the Rust toolchain required by
 Use a fresh output directory; legal-bundle generation refuses to overwrite one.
 
 ```sh
-cargo build --locked --release --bin teslatlas-hub
+cargo fetch --locked
+HUB_SOURCE_ROOT=$(pwd -P)
+RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/teslatlas-hub" \
+  cargo build --locked --release --bin teslatlas-hub
 mkdir -p dist
 python3 scripts/legal-bundle.py --repo . --output-dir dist/dependency-legal
 HUB_VERSION=$(target/release/teslatlas-hub --version | awk '{print $2}')
@@ -67,6 +70,13 @@ scripts/build-deb.sh \
   --version "$HUB_VERSION" --architecture "$HUB_ARCH" \
   --output "dist/teslatlas-hub_${HUB_VERSION}_${HUB_ARCH}.deb"
 ```
+
+`cargo fetch --locked` is required before legal-bundle generation. The legal
+gate reads all locked target-specific package metadata offline, including
+dependencies that are not compiled for Linux; an ordinary native build alone
+does not populate that complete cache. The source-path remap prevents the
+checkout's absolute path from changing otherwise identical release binaries;
+keep the fixed destination exactly as shown.
 
 Follow [Debian installation](install-debian.md) using that local package.
 This command builds core/Legacy functionality only. Fleet requires both

@@ -107,7 +107,9 @@ start_recorded_service() {
     previous_active=$3
     [ "$previous_present" = 1 ] && [ "$previous_active" = 1 ] \
         && unit_available "$configured_service" || return 0
-    systemctl start "$configured_service" && wait_service_active "$configured_service"
+    systemctl reset-failed "$configured_service" \
+        && systemctl start "$configured_service" \
+        && wait_service_active "$configured_service"
 }
 
 stop_all_services() {
@@ -398,7 +400,9 @@ if [ -d /run/systemd/system ]; then
             || fail_upgrade "command proxy failed its bounded startup check"
 
         if [ "$hub_active" = 1 ]; then
-            systemctl start "$service" || fail_upgrade "New Hub failed to start"
+            systemctl reset-failed "$service" \
+                && systemctl start "$service" \
+                || fail_upgrade "New Hub failed to start"
         else
             systemctl stop "$service" || true
         fi

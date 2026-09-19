@@ -1,0 +1,316 @@
+{
+  "schema": "teslatlas.hub.f1-f6-debian-arm64-package-lifecycle/v1",
+  "generated_at": "2026-09-19T13:02:59Z",
+  "receipt_id": "f1-f6-debian13-arm64-package-lifecycle-2026-09-19-r1",
+  "state": "PARTIAL_PASS_WITH_EXPLICIT_GAPS",
+  "scope": {
+    "ledger_rows": [
+      "HUB-02",
+      "HUB-03",
+      "HUB-08",
+      "HUB-11",
+      "DIST-01"
+    ],
+    "target": "Debian GNU/Linux 13 ARM64 ordinary local package and systemd lifecycle",
+    "package_scope": "core/Legacy; Fleet sidecars absent",
+    "excluded": [
+      "production",
+      "public ingress",
+      "Tesla accounts or vehicles",
+      "private closed handoffs",
+      "x86, x86_64, amd64 and Intel",
+      "CI, tags, releases, signing and binary publication",
+      "Viewer and App"
+    ]
+  },
+  "source_identity": {
+    "repository_head": "c0302c1b830cd2fc62dbb032c3fcd391e3d62a73",
+    "branch": "main",
+    "candidate_form": "baseline HEAD plus the tracked patch recorded below; independent review and package evidence bind this exact base-plus-patch source identity",
+    "candidate_tracked_patch_sha256": "da6dd69033124577f8431edd7207713036b3ca2ed877588b2d16b975f97797c2",
+    "candidate_tracked_patch_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub/f1-debian-arm64-20260919-r1/candidate-tracked.patch",
+    "cargo_toml_sha256": "7231aaa85251dc789fa590dc6ea007b53aefb30aeb29be90cb08fdff7d7dd9d6",
+    "cargo_lock_sha256": "bd5e75d603f7a65463f70efcf0c73b8b9dcdf58be1db323df4f2e1dcb2d83478",
+    "source_archive": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub/f1-debian-arm64-20260919-r1/teslatlas-hub-2026.36.2-f1-final-source-r2.tar",
+      "sha256": "2e89b5bf0800f47612ec40692f9a1e4c4d23bda17b0635454485737b2c8ff52b",
+      "construction": "deterministic GNU tar export of the exact candidate source with target and dist excluded, fixed commit timestamp, sorted names and numeric root ownership",
+      "verification": "extracted on the host without warnings; all eleven candidate-modified source, packaging, test and operator-document files matched the working tree byte for byte"
+    },
+    "source_route": {
+      "reported_by_binary": "https://github.com/magrathean-uk/teslatlas-hub/tree/v2026.36.2",
+      "reachable": false,
+      "effect": "The candidate must remain private and must not be represented as a distributable current release until exact Corresponding Source is reachable at the advertised route or the route is changed to another exact reachable source identity.",
+      "tag_or_publication_created": false
+    }
+  },
+  "platform": {
+    "guest": "debian13-arm64",
+    "os": "Debian GNU/Linux 13 (trixie)",
+    "architecture": "arm64",
+    "kernel": "6.12.95+deb13-cloud-arm64",
+    "systemd": "257.13-1~deb13u1",
+    "dpkg": "1.22.22",
+    "rustc": {
+      "version": "1.98.0",
+      "commit": "88d9e12ae178fab0fb5cc050a94da85685d449ea",
+      "host": "aarch64-unknown-linux-gnu",
+      "llvm": "22.1.8"
+    },
+    "cargo": {
+      "version": "1.98.0",
+      "commit": "797e8a9bca276c1c9f9f738d2a20f484fa4eea9d"
+    },
+    "shared_heavy_lock": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+    "heavy_work_serialized": true
+  },
+  "artifacts": {
+    "predecessor": {
+      "package_version": "2026.36.1-1",
+      "architecture": "arm64",
+      "source_tag": "v2026.36.1",
+      "source_commit": "c1b6ef38a89d6c1992636f81849d9626b7661bd6",
+      "package_path": "dist/2026.36.1/teslatlas-hub_2026.36.1_arm64.deb",
+      "package_sha256": "3c082a14d77f14f8ebaa6bdeab7dae507da7cb6fe858faaf6a27efdeaab2bd83",
+      "binary_sha256": "9b7ea01fb4f3f7642e122ca529898464d038a641d3dddcc61dc15fc65e0b5a58"
+    },
+    "candidate": {
+      "package_version": "2026.36.2-1",
+      "architecture": "arm64",
+      "package_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub/f1-debian-arm64-20260919-r1/teslatlas-hub_2026.36.2_arm64.deb",
+      "package_sha256": "b8e483abb11b1de3eeabdd805f6a7ba9d3abe0f1468060ec07b97a9ad28d0a93",
+      "binary_sha256": "31c6859afc7992ad731a1b4fcb994bda3edb7250bcb6f51cc07ef319484bf732",
+      "depends": [
+        "adduser",
+        "ca-certificates",
+        "python3 (>= 3.10)",
+        "systemd (>= 254)",
+        "libc6 (>= 2.39)",
+        "libgcc-s1 (>= 4.2)"
+      ],
+      "fleet_sidecars": "absent",
+      "legal_bundle_generation": "PASS after cargo fetch --locked; the package checksum binds the included legal payload",
+      "publication_state": "private reusable candidate only"
+    },
+    "failed_candidate_fixture": {
+      "construction": "the candidate package was truncated to 4096 bytes in the private guest",
+      "expected_result": "dpkg rejects the archive before installed state changes",
+      "result": "PASS"
+    }
+  },
+  "reproducibility": {
+    "initial_observation": {
+      "state": "FAIL",
+      "binary_a_sha256": "06dc17aca7e23f4008849ab601e0c40d58b50334cebd716becd5fd4200699650",
+      "binary_b_sha256": "7c973e76f0cc86f9106fd627f16fceb1fb331c36154554cb12f315796de1b758",
+      "cause": "release code embedded the absolute CARGO_MANIFEST_DIR, so path remapping alone did not remove checkout identity"
+    },
+    "repair": {
+      "files": [
+        "src/application/main/companions.rs",
+        "src/sync/updates_delivery.rs"
+      ],
+      "behavior": "installed layouts are resolved before the optional development root is evaluated; development source fallback requires an explicit absolute TESLATLAS_HUB_SOURCE_ROOT which is canonicalised before use; receipt binary discovery uses the running binary, an absolute canonical CARGO_TARGET_DIR, or the same explicit canonical source root, with no implicit current-directory fallback",
+      "focused_test": "cargo test --locked companion_delegation_tests --bin teslatlas-hub: 12 passed; cargo test --locked relative_cargo_target_directory_is_rejected --lib: 1 passed"
+    },
+    "final_binary_check": {
+      "state": "PASS",
+      "clean_build_roots": [
+        "/home/bolyki.guest/f1-hub-repro-c",
+        "/home/bolyki.guest/f1-hub-repro-d"
+      ],
+      "build_command": "RUSTFLAGS='--remap-path-prefix=$PWD=/usr/src/teslatlas-hub' rustup run 1.98.0 cargo build --locked --release --bin teslatlas-hub",
+      "binary_a_sha256": "31c6859afc7992ad731a1b4fcb994bda3edb7250bcb6f51cc07ef319484bf732",
+      "binary_b_sha256": "31c6859afc7992ad731a1b4fcb994bda3edb7250bcb6f51cc07ef319484bf732",
+      "byte_comparison": "identical",
+      "checkout_path_present_in_binary": false
+    },
+    "package_byte_reproducibility": "NOT_TESTED; only the release binary was independently rebuilt twice"
+  },
+  "lifecycle": {
+    "fresh_install": {
+      "state": "PASS",
+      "package": "2026.36.1-1 predecessor, followed by exact 2026.36.2-1 candidate checks",
+      "service_user": "teslatlas system user with /usr/sbin/nologin",
+      "config": "root:teslatlas 0750 directory and root:teslatlas 0640 config.toml",
+      "data": "teslatlas:teslatlas 0700 directory and 0600 SQLite database",
+      "systemd": "active and enabled when explicitly started; User/Group=teslatlas, StateDirectoryMode=0700, ProtectSystem=strict and NoNewPrivileges=yes",
+      "listener": "127.0.0.1:8080 only",
+      "diagnostics": "bootstrap, status and doctor passed; doctor reported schema 59 and PRAGMA quick_check ok"
+    },
+    "restart": {
+      "state": "PASS",
+      "assertion": "ordinary systemctl restart changed MainPID while status, identity, configuration and data remained usable"
+    },
+    "backup_restore": {
+      "state": "PARTIAL_PASS",
+      "assertions": [
+        "backup creation and verification passed",
+        "restore passed with identical redacted installation identity",
+        "restored SQLite PRAGMA quick_check returned ok"
+      ],
+      "clean_host_ready": false,
+      "reason": "the data backup intentionally does not include provider credentials, recovery credential exports, TLS material, config.toml or service-manager state; those inputs were absent or retained separately"
+    },
+    "genuine_upgrade": {
+      "state": "PASS",
+      "from": "2026.36.1-1",
+      "to": "2026.36.2-1",
+      "service_active_during_package_transition": true,
+      "schema_before": 57,
+      "schema_after": 59,
+      "identity_stable": true,
+      "config_stable": true
+    },
+    "genuine_rollback": {
+      "state": "PASS",
+      "method": "stop candidate, verify and restore the predecessor data backup into a separate private path, then install the verified predecessor with dpkg --force-downgrade",
+      "safety": "the predecessor binary was never started against the schema-59 candidate store",
+      "scope": "one exact synthetic 2026.36.2-to-2026.36.1 recovery route, not a general downgrade guarantee"
+    },
+    "failed_candidate": {
+      "state": "PASS",
+      "assertion": "a structurally corrupt package was rejected before mutation; the installed predecessor version, active PID, redacted identity and data remained unchanged"
+    },
+    "start_limit_recovery": {
+      "state": "PASS_AFTER_REPAIR",
+      "observed_failure": "repeated legitimate lifecycle actions exhausted StartLimitBurst; the original postinst could leave a new package half-configured or preserve an enabled failed service as stopped",
+      "repairs": [
+        "reset failed/rate-limit state before maintainer-script service starts",
+        "record an enabled failed unit as having run intent so reinstall attempts bounded recovery",
+        "apply the same reset discipline to rollback/abort service restoration"
+      ],
+      "focused_static_test": "scripts/dev/run.sh hub ./scripts/test-linux-packaging.sh: PASS",
+      "exact_package_pressure": "after one ordinary restart and three further rapid pressure restarts, the fourth pressure restart was rejected with start-limit-hit; reinstall of the exact b8e483ab package reset the state and returned the enabled service to active with Result=success"
+    },
+    "removal": {
+      "state": "PASS",
+      "ordinary_dpkg_remove": "service became inactive and unloaded, loopback listener disappeared, service account remained and config/data/identity were preserved",
+      "preserved_config_sha256": "cd45f8b076b4ac84b471a7e7f41d01d4819346de6fda940240e643e586b38a13",
+      "preserved_database_sha256_after_clean_shutdown": "a8e27c0da7de9248179e2f48657a8419ef6480c31dd8d03ac2835440e8e45b34",
+      "redacted_installation_identity_sha256": "ee048e38158dd599d8a7ffd0d5ccdc0a7acd30d34fab35146b10c3aae9474235",
+      "sqlite_quick_check": "ok"
+    }
+  },
+  "focused_checks": [
+    {
+      "command": "sh -n packaging/linux/{preinst,postinst,postrm} scripts/test-linux-packaging.sh",
+      "result": "PASS"
+    },
+    {
+      "command": "scripts/dev/run.sh hub ./scripts/test-linux-packaging.sh",
+      "result": "PASS"
+    },
+    {
+      "command": "scripts/dev/run.sh hub cargo test --locked companion_delegation_tests --bin teslatlas-hub",
+      "result": "12 passed, 0 failed"
+    },
+    {
+      "command": "scripts/dev/run.sh hub cargo test --locked relative_cargo_target_directory_is_rejected --lib",
+      "result": "1 passed, 0 failed"
+    },
+    {
+      "command": "two independent native ARM64 cargo build --locked --release invocations with fixed path remap",
+      "result": "PASS; binaries byte-identical"
+    },
+    {
+      "command": "candidate source archive extraction and byte comparison",
+      "result": "PASS; no extraction warnings and all changed candidate files matched"
+    },
+    {
+      "command": "python3 scripts/verify-provenance.py",
+      "result": "BASELINE_FAIL; the current tracked repository has a pre-existing broad unclassified-file backlog including root distribution files, development evidence and workspace-planning snapshots; this slice did not expand scope to rewrite that manifest"
+    },
+    {
+      "command": "python3 scripts/verify-repository-layout.py",
+      "result": "BASELINE_FAIL; the current tracked repository has a pre-existing broad documentation-category, filename and archived-link backlog; this slice did not expand scope to rewrite historical planning snapshots"
+    }
+  ],
+  "ledger_assessment": {
+    "HUB-02": {
+      "state": "PARTIAL_PASS",
+      "proved": "pinned clean exported-source ARM64 release binaries are byte reproducible and exact source/toolchain/lock hashes are recorded",
+      "open": "the .deb itself was not independently rebuilt twice, and the candidate source identity is an uncommitted patch rather than a reachable immutable public source object"
+    },
+    "HUB-03": {
+      "state": "SCOPED_PASS",
+      "proved": "install, identity, permissions, start, status, restart, diagnostics, corrupt-candidate rejection, genuine upgrade, safe predecessor rollback, start-limit recovery and ordinary removal passed on Debian 13 ARM64",
+      "open": "full F1 acceptance still depends on the independent HUB-08/HUB-11 gaps and final immutable source binding"
+    },
+    "HUB-08": {
+      "state": "PARTIAL_PASS",
+      "proved": "schema 57-to-59 migration, restored-store integrity, durable identity and data-preserving removal",
+      "open": "retention policy, deliberate SQLite/pack corruption, repair behavior and failure recovery were not exercised in this bounded package slice"
+    },
+    "HUB-11": {
+      "state": "PARTIAL_PASS",
+      "proved": "data backup verification/restore, identity continuity, failed-candidate preservation, real predecessor recovery and uninstall preservation",
+      "open": "no provider credentials existed, recovery exports were not exercised, and a data backup alone did not restore config, TLS or systemd state; cleanHostReady remained false"
+    },
+    "DIST-01": {
+      "state": "PARTIAL_PASS",
+      "proved": "current Debian build/install/upgrade/verification instructions now identify 2026.36.2 and separate the historical 2026.36.1 package",
+      "open": "the running binary advertises nonexistent tag v2026.36.2, no exact public current Corresponding Source exists, package byte reproducibility is unproved and the full six-repository no-Viewer catalog is not part of this slice"
+    }
+  },
+  "explicit_gaps": [
+    "No real provider account, vehicle, collection or recovery credential was used.",
+    "No TLS or public ingress path was exercised.",
+    "The backup was not a clean-host-ready recovery bundle.",
+    "No retention/corruption/repair acceptance was run beyond migration, backup restore and SQLite quick_check.",
+    "The package archive was not independently rebuilt twice; only the release binary has byte-reproducibility proof.",
+    "The v2026.36.2 source route is not reachable and must remain an explicit blocker.",
+    "Fleet companions and the exact six-active-repository catalog remain outside this core-only package receipt.",
+    "The repository provenance verifier has a pre-existing broad classification backlog and remains failing.",
+    "The repository layout verifier has a pre-existing broad documentation and archived-link backlog and remains failing."
+  ],
+  "independent_review": {
+    "reviewer_model": "gpt-5.6-sol/high",
+    "scope": "read-only review of the bounded Hub patch, receipt, artifact bindings and cleanup",
+    "initial_findings": [
+      {
+        "severity": "P2",
+        "finding": "a relative CARGO_TARGET_DIR could make receipt hashing resolve a current-directory-controlled packaging tree",
+        "closure": "require CARGO_TARGET_DIR to be absolute and canonical before use; retain no current-directory fallback",
+        "focused_test": "cargo test --locked relative_cargo_target_directory_is_rejected --lib: 1 passed"
+      },
+      {
+        "severity": "P2",
+        "finding": "evaluating an invalid development source root before an installed helper could block the installed layout and risk a source-tree fallback",
+        "closure": "resolve the installed helper layout first and evaluate only an explicit absolute canonical TESLATLAS_HUB_SOURCE_ROOT development fallback",
+        "focused_test": "cargo test --locked companion_delegation_tests --bin teslatlas-hub: 12 passed, including proof that installed layout does not evaluate an erroring fallback closure"
+      }
+    ],
+    "delta_recheck": {
+      "findings": [],
+      "verdict": "ACCEPTED",
+      "accepted_scope": "independently reviewed bounded partial F1/F6 Debian 13 ARM64 package foundation only",
+      "not_accepted": [
+        "F1",
+        "F6",
+        "publication authorization",
+        "full-solution acceptance"
+      ],
+      "open_blocker": "the nonexistent and unreachable v2026.36.2 Corresponding Source tag/URL still blocks representing or publishing the candidate as a distributable current release",
+      "other_open_gaps": "all explicit_gaps above remain open"
+    }
+  },
+  "cleanup": {
+    "ordinary_removal_semantics_observed_before_private_cleanup": true,
+    "package_state": "absent after purge",
+    "fresh_service_user_and_group": "removed after preservation semantics were recorded",
+    "fresh_private_runtime_paths": "absent: /etc/teslatlas-hub, /var/lib/teslatlas-hub and /srv/teslatlas-hub-f1-r1",
+    "owned_listener": "absent",
+    "guest": "debian13-arm64 stopped",
+    "shared_heavy_lock": "released after guest cleanup and stop",
+    "host_listener_8080": "absent",
+    "reusable_builds_and_artifacts": "preserved in the guest and host candidate directory",
+    "host_free_space_after_cleanup": "147 GiB"
+  },
+  "redaction": {
+    "secrets_present": false,
+    "raw_installation_identity_present": false,
+    "credentials_present": false,
+    "note": "Only the SHA-256 of the one-use synthetic installation identity is recorded."
+  }
+}
