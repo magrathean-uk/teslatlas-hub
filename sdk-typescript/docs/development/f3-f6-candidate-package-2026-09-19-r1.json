@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "receipt_id": "f3-f6-candidate-package-2026-09-19-r1",
+  "generated_at": "2026-09-19T20:03:46Z",
+  "result": "CANDIDATE_ONLY_INDEPENDENTLY_ACCEPTED",
+  "scope": {
+    "gate_ids": ["F3", "F6"],
+    "claim": "Exact-source reproducible unpublished candidate package, strict archive admission, and fresh external install/removal only.",
+    "not_claimed": [
+      "predecessor install, update, or rollback",
+      "Hub catalog admission",
+      "Docker or VM execution",
+      "browser runtime execution",
+      "final Hub consumer execution",
+      "F3, F5, F6, or F7 acceptance"
+    ]
+  },
+  "source": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+    "branch": "main",
+    "commit": "56a07dd7c1a55e5f783ab71640a01f4b56d908c4",
+    "local_head_at_export": "56a07dd7c1a55e5f783ab71640a01f4b56d908c4",
+    "origin_main_at_export": "56a07dd7c1a55e5f783ab71640a01f4b56d908c4",
+    "export_method": "git archive --format=tar of the exact commit; no working-tree bytes",
+    "export_directory": "/Users/bolyki/dev/teslatlas-lab/candidates/teslatlas-sdk-typescript-f3-f6-20260919-r1/source",
+    "manifest_path": "/Users/bolyki/dev/teslatlas-lab/candidates/teslatlas-sdk-typescript-f3-f6-20260919-r1/evidence/source-manifest.json",
+    "manifest_sha256": "546b517f6ce86556252e7fbcde19bee320d7e30017e3bd4d8ad075220b939d2b",
+    "manifest_size_bytes": 39736,
+    "file_count": 285,
+    "export_tar_path": "/Users/bolyki/dev/teslatlas-lab/candidates/teslatlas-sdk-typescript-f3-f6-20260919-r1/artifacts/teslatlas-sdk-typescript-56a07dd7c1a55e5f783ab71640a01f4b56d908c4.tar",
+    "export_tar_sha256": "4837b4b380c06e7e1f4589bf03115a59dc17fc7059f5c6d228286e9b91c783fd",
+    "export_tar_size_bytes": 3174400
+  },
+  "toolchain": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64",
+    "node": {
+      "version": "26.7.0",
+      "executable_sha256": "a9bd0630891c2dcdee70de88270fee2cc0c4a9e76495039dd3b4f91c5e6b71df"
+    },
+    "npm": {
+      "version": "11.19.0",
+      "package_metadata_sha256": "09dfcf187178ce1ab3ea6194c80d3ae082ad2a86dc1269ac963f94429e718122",
+      "cli_sha256": "8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7"
+    },
+    "ambient_node_or_npm_used": false
+  },
+  "package": {
+    "name": "@teslatlas/sdk",
+    "version": "2026.36.2",
+    "private": true,
+    "publication_performed": false,
+    "path": "/Users/bolyki/dev/teslatlas-lab/candidates/teslatlas-sdk-typescript-f3-f6-20260919-r1/artifacts/teslatlas-sdk-2026.36.2.tgz",
+    "archive_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
+    "archive_size_bytes": 283749,
+    "member_count": 88,
+    "npm_shasum": "36115bfc1e88b4ee8d4d5a111df5194c256455db",
+    "npm_integrity": "sha512-xzt2olkgE1VFU9Y4p+X3VtdCFTROFgYRdTTclbHumfSS7MxxfblFP86bd9dpccpf5HmFpwkwc98PIAtl9o3QVg==",
+    "historical_archive_sha256_rejected": "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7"
+  },
+  "repeatability": {
+    "result": "PASS",
+    "method": "Two independent clean git exports each ran exact npm ci, build, and npm pack; cmp proved byte-identical archives.",
+    "first_archive_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
+    "second_archive_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
+    "test_clean_package_after_tools_copy_fix": "PASS; clean and stale packs both reproduced 070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7"
+  },
+  "archive_admission": {
+    "result": "PASS",
+    "observed": {
+      "name": "@teslatlas/sdk",
+      "version": "2026.36.2",
+      "package_manager": "npm@11.19.0",
+      "member_count": 88
+    },
+    "defenses": "The accepted package-provenance reader verifies the exact SHA-256 and rejects malformed gzip/tar, duplicate members, links, special entries, unsafe paths, unsafe modes, invalid checksums, oversized payloads, malformed UTF-8/JSON, and inconsistent package metadata."
+  },
+  "candidate_admission": {
+    "result": "INDEPENDENTLY_REVIEWED",
+    "receipt_path": "docs/development/f3-f6-candidate-package-admission-2026-09-19-r1.json",
+    "receipt_sha256": "e9625cc82bb76a2f27fe9c1fa830d1f8c3d6362838a89bbecb3883daff60d14c",
+    "scope": "Candidate source, toolchain, archive, receipt, cleanup, and claim integrity only."
+  },
+  "external_consumer": {
+    "result": "CANDIDATE_FRESH_INSTALL_REMOVAL_PASS",
+    "receipt_path": "/Users/bolyki/dev/teslatlas-lab/candidates/teslatlas-sdk-typescript-f3-f6-20260919-r1/evidence/candidate-fresh-install-receipt.json",
+    "receipt_sha256": "c948c95bff6458edf54d5dc7248a0fa9e5410798c85d3d36f03349be50ed35a1",
+    "receipt_size_bytes": 1373,
+    "installed_content_manifest_sha256": "925cb7662c3ff87d1f35b7eaae3d4895c8173ab2a7ab9c64f3226a1bf863e01b",
+    "node_entry_sha256": "d1c0c5f6694eaf851b1caf0e4f7fecafb4dde835f46064388b537fde52371912",
+    "browser_entry_sha256": "f644c59b964ec61897ef2e72593f39b2dded6fc514d014a021f8722d4928855b",
+    "cleanup": "Temporary consumer removed; package absent and import rejected after uninstall."
+  },
+  "validation": [
+    {
+      "check": "Scoped Biome format and lint over the 19 package-lifecycle foundation source/JSON files",
+      "result": "PASS"
+    },
+    {
+      "check": "npm run build followed by npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "check": "npm run protocol:check",
+      "result": "PASS"
+    },
+    {
+      "check": "Vitest package lifecycle, platform-package, and package-surface suites",
+      "result": "PASS",
+      "detail": "3 files, 24 tests"
+    },
+    {
+      "check": "npm run pack:check",
+      "result": "PASS",
+      "detail": "88 files"
+    },
+    {
+      "check": "npm run test:package after the narrow tools-copy harness correction",
+      "result": "PASS",
+      "detail": "Clean/stale byte equality, declarations, imports, reinstall, removal, and exact candidate SHA-256"
+    },
+    {
+      "check": "node --check over the five package/admission scripts",
+      "result": "PASS"
+    }
+  ],
+  "non_accepting_diagnostics": [
+    "Repository-wide biome format . still reports six pre-existing JSON formatting differences in exact commit 56a07dd; no historical record was rewritten. The package-lifecycle delta format and lint checks pass.",
+    "A clean export typecheck before build cannot resolve package self-exports because dist is absent. The candidate build then typecheck sequence passes; this receipt does not claim npm run verify succeeds from a pristine source export."
+  ],
+  "cleanup": {
+    "temporary_build_exports_absent": true,
+    "temporary_verification_exports_absent": true,
+    "temporary_external_consumer_absent": true,
+    "task_owned_runtime_started": false,
+    "docker_or_vm_started": false,
+    "preserved_untracked_entries": [".DS_Store", ".serena/"]
+  },
+  "blocking_inputs": [
+    "No valid independently accepted older predecessor package/export/receipt exists, so update and rollback are blocked.",
+    "The Hub-owned catalog is empty, so catalog and source-bootstrap admission are blocked.",
+    "Native Linux ARM64 Docker, final F1 Hub, browser runtime, F5 named-source evidence, and F7 combined acceptance remain separate open gates."
+  ],
+  "independent_review": {
+    "state": "ACCEPTED",
+    "verdict": "ACCEPT",
+    "reviewer_model": "GPT-5.6 Sol",
+    "reasoning": "high",
+    "reviewed_at": "2026-09-19T20:10:11Z",
+    "reviewed_frozen_handoff_sha256": "a6e133ac487ffa76a605d625ab937755b6470294a57642da270d41ab3108a110",
+    "findings": [],
+    "p1_findings": 0,
+    "p2_findings": 0,
+    "scope": "Exact source/toolchain/archive/receipt/cleanup/claim-integrity review of the frozen candidate-package slice.",
+    "approval_required_before_commit_or_push": false
+  }
+}

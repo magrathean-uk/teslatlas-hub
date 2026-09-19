@@ -105,6 +105,27 @@ regression were then accepted by the same reviewer with no findings:
   exact predecessor, non-empty final catalog and source bootstrap, and F7
   combined installed Node/browser acceptance all remain open.
 
+## Independently accepted candidate-only package
+
+The exact clean Git export of commit
+`56a07dd7c1a55e5f783ab71640a01f4b56d908c4` produced byte-identical packages in
+two independent Node `26.7.0`/npm `11.19.0` builds. The unpublished 88-member
+candidate is SHA-256
+`070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7`.
+Its 285-file deterministic source manifest is SHA-256
+`546b517f6ce86556252e7fbcde19bee320d7e30017e3bd4d8ad075220b939d2b`.
+Fresh external Node and browser imports plus removal passed, and the
+package-cleanliness harness now includes the packaged `tools/` directory and
+reproduces the same archive hash.
+
+Independent GPT-5.6 Sol/high review accepted the exact source, toolchain,
+archive, receipt, cleanup and claim-integrity slice with no P1/P2 findings. This
+is candidate-only admission, not F3 or F6 acceptance. There is still no valid
+older predecessor or non-empty Hub catalog, so update, rollback, catalog and
+source-bootstrap acceptance remain blocked. Docker/VM, browser-floor, final-Hub,
+F5 and F7 evidence were not run or claimed. The exact receipt is
+[`f3-f6-candidate-package-2026-09-19-r1.json`](f3-f6-candidate-package-2026-09-19-r1.json).
+
 ## Start and boundaries
 
 The sent goal authorizes bounded source changes, generation, tests, unpublished

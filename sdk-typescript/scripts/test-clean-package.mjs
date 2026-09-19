@@ -36,6 +36,7 @@ try {
       "src",
       "scripts",
       "docs",
+      "tools",
       "LICENSE",
       "README.md",
       "package.json",
