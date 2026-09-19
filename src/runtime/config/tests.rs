@@ -408,6 +408,68 @@ fn fleet_telemetry_requires_fleet_proxy_and_safe_paths() {
 }
 
 #[test]
+fn fleet_telemetry_accepts_public_tls_with_a_private_loopback_ingress() {
+    let loopback = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+                 [collector]\nprovider = 'fleet'\n\
+                 fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
+                 [collector.fleet_telemetry]\n\
+                 hostname = 'telemetry.example.test'\n\
+                 ca_certificate_path = '/etc/teslatlas-hub/telemetry/ca.pem'\n\
+                 ingest_token_path = '/var/lib/teslatlas-hub/secrets/telemetry-token'\n";
+
+    for bind in ["127.0.0.1:8443", "0.0.0.0:8443", "192.0.2.10:8080"] {
+        let config = format!(
+            "{}[tls]\ncertificate_path = '/etc/teslatlas/tls/cert.pem'\n\
+             private_key_path = '/etc/teslatlas/tls/key.pem'\n\
+             public_url = 'https://hub.example.test'\n",
+            loopback.replace("127.0.0.1:8080", bind)
+        );
+        HubConfig::from_exact_bytes(config.as_bytes()).unwrap_or_else(|error| {
+            panic!("public TLS Fleet bind {bind} must be accepted: {error}")
+        });
+    }
+}
+
+#[test]
+fn fleet_telemetry_rejects_a_public_tls_listener_collision_with_private_ingress() {
+    let loopback = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
+                 [collector]\nprovider = 'fleet'\n\
+                 fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
+                 [collector.fleet_telemetry]\n\
+                 hostname = 'telemetry.example.test'\n\
+                 ca_certificate_path = '/etc/teslatlas-hub/telemetry/ca.pem'\n\
+                 ingest_token_path = '/var/lib/teslatlas-hub/secrets/telemetry-token'\n";
+
+    for bind in ["127.0.0.1:8080", "0.0.0.0:8080", "[::]:8080"] {
+        let config = format!(
+            "{}[tls]\ncertificate_path = '/etc/teslatlas/tls/cert.pem'\n\
+             private_key_path = '/etc/teslatlas/tls/key.pem'\n\
+             public_url = 'https://hub.example.test'\n",
+            loopback.replace("127.0.0.1:8080", bind)
+        );
+        assert!(matches!(
+            HubConfig::from_exact_bytes(config.as_bytes()),
+            Err(ConfigError::FleetTelemetryListenerCollision)
+        ));
+    }
+}
+
+#[test]
+fn fleet_telemetry_still_rejects_public_plaintext() {
+    let config = "data_dir = '/var/lib/teslatlas'\nbind = '0.0.0.0:8443'\n\
+                  [collector]\nprovider = 'fleet'\n\
+                  fleet_command_proxy_url = 'https://127.0.0.1:4443'\n\
+                  [collector.fleet_telemetry]\n\
+                  hostname = 'telemetry.example.test'\n\
+                  ca_certificate_path = '/etc/teslatlas-hub/telemetry/ca.pem'\n\
+                  ingest_token_path = '/var/lib/teslatlas-hub/secrets/telemetry-token'\n";
+    assert!(matches!(
+        HubConfig::from_exact_bytes(config.as_bytes()),
+        Err(ConfigError::NonLoopbackBind)
+    ));
+}
+
+#[test]
 fn fleet_telemetry_debug_redacts_secret_path() {
     let telemetry = FleetTelemetryConfig {
         hostname: "telemetry.example.test".to_owned(),

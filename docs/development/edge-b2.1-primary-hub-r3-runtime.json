@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "status": "stopped_for_edge_outage_evidence",
+  "ready_at": "2026-09-09",
+  "fixture_root": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r3-20260909",
+  "ready_descriptor_path": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r3-20260909/ready.json",
+  "ready_descriptor_mode": "0600",
+  "launch_inventory": {
+    "command": "/usr/bin/python3.13 /home/bolyki.guest/teslatlas-workspace/hub-current-20260908/tools/interop/fixture.py --config /home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r3-20260909.run.json",
+    "launcher_pid": 35022,
+    "hub_child_pid": 35038,
+    "direct_child_verified": true,
+    "port": 18480
+  },
+  "connection": {
+    "health_url": "https://127.0.0.1:18480/healthz",
+    "readiness_url": "https://127.0.0.1:18480/readyz",
+    "ca_path": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r3-20260909/server.pem",
+    "ca_path_mode": "0600",
+    "trusted_health": 200,
+    "trusted_readiness": 200
+  },
+  "sealed_binding": {
+    "source_id": "04d1bc2f-0e9a-4f84-9ac5-492955dd8d5e",
+    "vehicle_id": "11111111-1111-4111-8111-111111111111",
+    "vin": "5YJ3E1EA7KF000001",
+    "car_id": 9,
+    "edge_base_url": "https://127.0.0.1:18510/"
+  },
+  "initial_state": {
+    "edge_lineages": 0,
+    "edge_sequence_dispositions": 0
+  },
+  "closure": {
+    "owner": "Hub fixture launcher only",
+    "target": "Verify launch_inventory.command, then send SIGTERM only to launcher_pid.",
+    "required_evidence": "mode-0600 stopped.json naming hub_child_pid with normal exit and no 18480 listener."
+  },
+  "closure_observation": {
+    "stopped_receipt_mode": "0600",
+    "normal_child_exit": true,
+    "stopped_receipt_named_expected_child": true,
+    "port_18480_closed": true
+  }
+}

@@ -25,12 +25,12 @@ class Supervisor:
         self.binary,bh=f.stage_executable(c['binary'],stage/'teslatlas-hub');self.seed,sh=f.stage_executable(c['seed_binary'],stage/'interop_fixture')
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',c['port']))
-            subprocess.run([str(self.seed),'--output',str(self.root),'--port',str(c['port'])],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=60)
+            subprocess.run(f.seed_command(c,self.seed,self.root,c['port']),check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=60)
         with sqlite3.connect((self.root/'hub/hub.sqlite').as_uri()+'?mode=ro',uri=True) as db:self.events.append({'operation':'seed','schema_version':db.execute('PRAGMA user_version').fetchone()[0]})
         self.d=f.read_private_json(self.root/'connection.json');f.configure_allowed_origins(self.d['config_path'],c['allowed_origins'])
         self.d.update(binary_path=str(self.binary),binary_sha256=bh,seed_binary_path=str(self.seed),seed_binary_sha256=sh,profile_id=c['profile_id'],profile_path=c['profile_path'],profile_sha256=c['profile_sha256'],status='ready',provenance='synthetic-real-process')
-        self.scenario=Path(__file__).resolve().parents[3]/'tests/interop/scenario.json'
-        self.d.update(scenario_path=str(self.scenario),scenario_sha256=hashlib.sha256(self.scenario.read_bytes()).hexdigest())
+        self.scenario,scenario_sha256=f.copy_selected_scenario(self.root,c)
+        self.d.update(scenario_path=str(self.scenario),scenario_sha256=scenario_sha256)
         self.expired=self.pair(1);self.invitation=self.pair(900)
         while time.time()*1000<=self.expired['expiresAtMs']:time.sleep(.05)
         self.start()

@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "prepared_not_started",
+  "prepared_at": "2026-09-09",
+  "fixture": {
+    "private_descriptor_path": "/home/bolyki.guest/teslatlas-fixtures/viewer-r1-20260909.run.json",
+    "output_root": "/home/bolyki.guest/teslatlas-fixtures/viewer-r1-20260909",
+    "output_root_exists": false,
+    "port": 18480,
+    "future_trusted_endpoint": "https://127.0.0.1:18480",
+    "future_ca_path": "/home/bolyki.guest/teslatlas-fixtures/viewer-r1-20260909/server.pem",
+    "future_ca_mode": "0600 after successful start",
+    "allowed_origin": "http://127.0.0.1:4173",
+    "profile": {
+      "id": "hub-http-v1@1.0.0",
+      "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+    }
+  },
+  "synthetic_scenario": {
+    "id": "viewer-r1-51-drives",
+    "sha256": "bb27007d8de40e90db843de694a02d8da23a54874831c67aed455cac185cca6b",
+    "history_page_sizes_at_limit_25": [25, 25, 1],
+    "first_drive_id": 1051,
+    "terminal_drive_id": 1001,
+    "second_vehicle_history": "empty",
+    "provenance": "synthetic-only"
+  },
+  "staged_seed": {
+    "sha256": "e37c8ff03ced748b16b87b0720ef149a168cc5457fcb503778fe6b24dce1593d"
+  },
+  "lifecycle": {
+    "owner": "Hub private supervisor",
+    "start_condition": "Explicit Viewer R1 direction only; do not start for preparation.",
+    "launch": "exec /usr/bin/python3.13 /home/bolyki.guest/teslatlas-workspace/hub-current-20260908/tools/interop/client_lanes/supervisor.py /home/bolyki.guest/teslatlas-fixtures/viewer-r1-20260909.run.json",
+    "controls": ["verify", "stop", "start", "revoke", "pair"],
+    "stop_safeguard": "Use only the supervisor's bounded control or terminate its verified launcher; then require mode-0600 stopped.json and no listener on 127.0.0.1:18480.",
+    "protected_unrelated_listeners": [8443, 18483, 18500, 18510]
+  },
+  "limits": [
+    "No Hub process, trusted CA, invitation, credential, browser profile, request transcript, or Viewer session was created.",
+    "No browser, conditional request, outage, revocation, re-pair, cleanup, collection, installed-matrix, or platform-acceptance claim is made.",
+    "Do not reuse B1 or retired Edge output roots, private inputs, or browser state."
+  ]
+}

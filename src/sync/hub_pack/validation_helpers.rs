@@ -204,10 +204,28 @@ fn validate_optional_text_with_source_width(
 }
 
 fn ensure_private_staging_directory(path: &Path) -> Result<(), ProjectionPackError> {
-    fs::create_dir_all(path).map_err(|source| ProjectionPackError::CreateDirectory {
-        path: path.to_path_buf(),
-        source,
+    // The caller may run with a group-writable umask. Create this sensitive
+    // leaf at its private mode rather than admitting and repairing an unsafe
+    // directory after the fact.
+    fs::create_dir_all(path.parent().expect("staging path has a parent")).map_err(|source| {
+        ProjectionPackError::CreateDirectory {
+            path: path.to_path_buf(),
+            source,
+        }
     })?;
+    match fs::DirBuilder::new()
+        .mode(PRIVATE_STAGING_DIRECTORY_MODE)
+        .create(path)
+    {
+        Ok(()) => {}
+        Err(source) if source.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(source) => {
+            return Err(ProjectionPackError::CreateDirectory {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    }
     let metadata =
         fs::symlink_metadata(path).map_err(|source| ProjectionPackError::InspectStaging {
             path: path.to_path_buf(),

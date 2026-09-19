@@ -33,7 +33,7 @@ export async function runBrowser(config,payload,control){
   const badPage=await untrusted.contexts()[0].newPage();let rejected=false;try{await badPage.goto(payload.descriptor.endpoint+'/healthz',{timeout:10000})}catch(e){rejected=String(e).includes('ERR_CERT_AUTHORITY_INVALID')}await badPage.close();if(!rejected)throw Error('untrusted control accepted CA');
   const page=await browser.contexts()[0].newPage();const cdp=await page.context().newCDPSession(page);const sent=[],responses=[],failures=[],pending=new Map();
   cdp.on('Network.requestWillBeSent',e=>{if(e.request.url.startsWith(payload.descriptor.endpoint+'/')){sent.push(e);pending.set(e.requestId,{method:e.request.method,route:new URL(e.request.url).pathname})}});
-  cdp.on('Network.responseReceived',e=>{if(!pending.has(e.requestId))return;const request=pending.get(e.requestId);const entry={...request,status:e.response.status,request_id:Object.entries(e.response.headers).find(([k])=>k.toLowerCase()==='x-request-id')?.[1]??''};responses.push(entry)});
+  cdp.on('Network.responseReceived',e=>{if(!pending.has(e.requestId))return;const request=pending.get(e.requestId);const entry={...request,status:e.response.status,request_id:Object.entries(e.response.headers).find(([k])=>k.toLowerCase()==='x-request-id')?.[1]??'',scope:request.route};responses.push(entry)});
   cdp.on('Network.loadingFailed',e=>{if(pending.has(e.requestId))failures.push({...pending.get(e.requestId),error_code:e.errorText})});
   await cdp.send('Network.enable');
   await page.exposeBinding('laneControl',async(_source,op)=>control(op));

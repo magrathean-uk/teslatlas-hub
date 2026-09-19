@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "kind": "edge-b2.1-redacted-root-runtime-interface",
+  "status": "sealed_input_revalidated_runtime_pending",
+  "run_id": "edge-b2-20260909",
+  "cell_id": "edge_v2__debian13_arm64",
+  "session_id": "ff157419-53f6-4672-a338-003bee2f2a77",
+  "sealed_fixture": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/evidence/edge-b2.1-owner-20260909/hub-edge-b2.1-fixture.json",
+    "sha256": "7c25daae215a9970f0699b8c808c3c995fee12e69676d7266afea23b259cd4a9",
+    "mode": "0600",
+    "admissibility": "Edge revalidated synthetic private-key custody modes; runtime evidence remains pending"
+  },
+  "sealed_launch_inventory": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/evidence/edge-b2.1-owner-20260909/inputs/root/launch_inventory.json",
+    "sha256": "b957df99b919f484e1b16057ce486c6b5140cdc3f57a7091dc85fefe2a82e0cf",
+    "mode": "0600",
+    "content": "not disclosed",
+    "admissibility": "Edge revalidated synthetic private-key custody modes; runtime evidence remains pending"
+  },
+  "ownership_decision": {
+    "root_runner": "teslatlas-edge",
+    "hub_role": "Bind the fixture and stage only the hash-bound Edge coordinator after the runner supplies a descriptor and certificate. edge_runtime.py can validate the closed evidence shape, but the installed-adapter callbacks remain fail-closed until a future Hub integration attaches that validation.",
+    "edge_role": "Consume the sealed fixture and its private launch inventory, materialize the four isolated lane configurations, start and stop the receiver and Edge process generations, and return redacted process, listener, transport, store, spool, and cleanup observations.",
+    "reason": "The Edge B2.1 plan assigns Edge its receiver/spool start and stop path while limiting Hub to selection, admission, fixture/session values, and the smallest collector.edge integration. Moving Edge credentials, encrypted spool, or service-manager control into Hub would violate that product boundary."
+  },
+  "primary_lane": {
+    "id": "primary",
+    "hub_port": 18480,
+    "receiver_port": 18500,
+    "delivery_port": 18510,
+    "process_owner": "teslatlas-edge root runner",
+    "guest_config": {
+      "status": "not_materialized",
+      "reason": "The sealed fixture binds private inputs but build_edge_fixture_input performs no preparation or launch."
+    },
+    "start": {
+      "command": null,
+      "reason": "The reviewed Hub adapter rejects a launch derived from job expectations. The teslatlas-edge root runner must consume only the sealed fixture and its bound launch inventory, construct the actual four-lane runtime, and record independently observed evidence before the coordinator starts."
+    },
+    "stop": {
+      "command": null,
+      "reason": "No primary process has been started. The same teslatlas-edge root runner must own a bounded stop and write the required cleanup observations."
+    }
+  },
+  "running_hub_handoff": {
+    "owner": "teslatlas-edge root runner",
+    "required_descriptor_fields": [
+      "schema_version=1",
+      "kind=installed-host",
+      "broker_socket=canonical owner-only Unix socket",
+      "session_id=ff157419-53f6-4672-a338-003bee2f2a77",
+      "registration_sha256=bound registration digest"
+    ],
+    "required_certificate_field": "certificate_path=canonical owner-only regular PEM file",
+    "additional_non_secret_descriptor_fields": [],
+    "identity_observation": "The Hub ID is observed through the root-owned broker verify proof after launch; it is not a job-selected launcher argument."
+  },
+  "required_runtime_evidence": {
+    "kind": "edge-installed-runtime-evidence",
+    "identity_fields": [
+      "schema_version=1",
+      "run_id",
+      "cell_id",
+      "session_id",
+      "instance_nonce",
+      "fixture_sha256"
+    ],
+    "lanes_in_order": [
+      "primary",
+      "reference",
+      "fault",
+      "negative"
+    ],
+    "per_lane_fields": [
+      "id",
+      "hub_generation",
+      "producer_generation",
+      "namespace",
+      "config",
+      "store",
+      "spool",
+      "transport",
+      "witnesses",
+      "cleanup"
+    ],
+    "binding_rules": "Every bound record is a unique, single-link, owner-only regular file with a verified SHA-256. producer_generation is required on every lane; spool is required except on negative, where it is null."
+  },
+  "required_stop_and_cleanup": {
+    "raw_cleanup_schema": "edge_cleanup_v1",
+    "raw_cleanup_fields": [
+      "resource_id",
+      "acquired",
+      "stop",
+      "current_absence",
+      "retention",
+      "status=clean",
+      "errors=[]"
+    ],
+    "close_result_fields": [
+      "schema_version=1",
+      "session_id",
+      "state=closed",
+      "journal",
+      "final_stopped",
+      "cleanup_errors=[]",
+      "local_transport"
+    ],
+    "ack_requirement": "The coordinator accepts only close_completed after its ready binding is acknowledged with the same run, cell, session, nonce, and SessionInput digest."
+  },
+  "reviewed_boundaries": [
+    "tools/interop/installed_hosts/edge_fixture.py: build_edge_fixture_input",
+    "tools/interop/installed_hosts/edge_runtime.py: validate_edge_runtime_evidence",
+    "tools/interop/installed_hosts/contract.py: validate_descriptor",
+    "tools/interop/matrix_runner/edge_installed.py: build_session_input and fail-closed runtime callbacks",
+    "teslatlas-edge/tools/interop/client_lanes/edge.py: _read_ack"
+  ],
+  "verification": {
+    "interpreter": "Python 3.11",
+    "tests": "41 passed: edge fixture, edge runtime, installed session, and Edge adapter",
+    "host_default_python": "3.9.6 unsupported for the reviewed strict zip/dataclass boundary"
+  }
+}

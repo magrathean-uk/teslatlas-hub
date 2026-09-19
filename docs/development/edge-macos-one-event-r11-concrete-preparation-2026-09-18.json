@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.hub.edge_macos_one_event_r11_concrete_preparation",
+  "date": "2026-09-18",
+  "verified_at": "2026-09-18T13:49:44Z",
+  "status": "prepared_inactive_awaiting_edge_independent_concrete_review",
+  "authority": "Hub-owned one-use local preparation only. No guest creation or start, transfer, listener, runtime, browser, producer invocation or event is authorized by this receipt.",
+  "cross_owner_source_gate": {
+    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/development/edge-macos-one-event-r11-restart-cross-owner-acceptance-2026-09-18.json",
+    "sha256": "4d8b4449de277fbbd47b755ceffa6559fb0269a2ce0bb08fe318d26eed7b4bc8",
+    "state": "accepted_source_only_inactive_no_runtime_authority"
+  },
+  "frozen_inputs": {
+    "hub_restart_receipt_sha256": "d64db856ac4948eb7bafaedaa2df15a6699537f13b7dea09cad3b46aade6c668",
+    "proposal_sha256": "5f6969ab295e06502ec415d9da52355519240aa7fe9510f49f39e03bc2b96544",
+    "preparation_specification_sha256": "d800b93a929236aab471dc9528891b3cf28563b992e9bc90191b5965faac4eb0",
+    "one_use_preparer_sha256": "d3f2ffa5f6582e3a97abc9b4bfebf3fdc39ed269880011d493ae69862a58f909",
+    "fixture_binding_validator_sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819",
+    "fixture_binding_test_sha256": "c3697062b280c4d119b1da3861a8bf5b8d97473eadbd2d3a49acfc03d996bae0"
+  },
+  "pre_execution_gate": {
+    "root_absent": true,
+    "public_profile_absent": true,
+    "heavy_build_lock_absent": true,
+    "ports_closed": [
+      8080,
+      21850,
+      21458,
+      21459,
+      18535
+    ],
+    "dhcp_binding": "teslatls13arm64 at 192.168.64.10",
+    "note": "An initial shell guard stopped before invoking the preparer because a single-line search could not match the multiline DHCP lease entry. Root/profile remained absent. The accepted preparer's multiline Python check then passed during the sole actual invocation."
+  },
+  "execution": {
+    "actual_preparer_invocations": 1,
+    "invocation": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r11.py 5f6969ab295e06502ec415d9da52355519240aa7fe9510f49f39e03bc2b96544",
+    "exit_code": 0,
+    "result": "prepared",
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11",
+    "root_mode": "0700",
+    "tree_files": 62,
+    "tree_symlinks": 0,
+    "rebuild_performed": false
+  },
+  "machine_written_evidence": {
+    "preparation_summary": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/evidence/preparation-summary.json",
+      "sha256": "4f068ba355cfc089226bee7bbe28fa91a68957263c17883a7950b87028781a11",
+      "mode": "0600"
+    },
+    "public_certificate_profile": {
+      "path": "docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r11.json",
+      "sha256": "4b896644694800b37cf749b96788d01559f256fb3b73ca0295a28b29ca5038c2",
+      "mode": "0644",
+      "state": "hub_prepared_awaiting_edge_independent_verification"
+    },
+    "source_profile_staging": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/evidence/source-profile-staging.json",
+      "sha256": "509b2e61c3257c8532a8c2a351b75a09204d8dc4dd21405b8d8a52030e9b2e7c",
+      "mode": "0600"
+    },
+    "fixture_binding_validation": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/evidence/fixture-binding-validation-public.json",
+      "sha256": "6fe2ed243d9d21fdfd26c96c8e6424d7bdd0985c7e4420e6590dd53488110a84",
+      "mode": "0600",
+      "status": "PASS",
+      "checked_relationships": 7,
+      "database_query_only": true,
+      "database_immutable": true,
+      "database_fingerprint_unchanged": true,
+      "wal_shm_absent_before_and_after": true,
+      "negative_hub_id_mismatch": "PASS before PKI or credentials"
+    },
+    "inactive_binding": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/guest-stage/actor/binding.json",
+      "sha256": "9f3dff1c306549adefbb91a39e4c05c709f813a06e3cf39b35ab74ef69be3340",
+      "mode": "0600",
+      "event_authorized": false
+    },
+    "fixture_database": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/guest-stage/hub/hub.sqlite",
+      "sha256": "7904059618fb15954a3b792b2169b414fadd1a9dc4c765e92176fd0f357c74cf",
+      "mode": "0600",
+      "wal_present": false,
+      "shm_present": false
+    }
+  },
+  "staged_artifacts": {
+    "hub_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "interop_fixture_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+    "edge_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "helper_sha256": "4b7c0170888d9f45fcd145bf3d34eecf7363898036daca6332b67354fc47ea59",
+    "guard_sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+    "ledger_observer_sha256": "098c543a0fafc1d2c3c6c16f554f321c7c0535ffefff24778df33f548cbd35a2",
+    "fixture_binding_validator_sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819",
+    "mode": "0500",
+    "links": 1
+  },
+  "rendered_configs": {
+    "edge_sha256": "a1674d255f4024d2c28450578385a6e4d4c6be26c2cade5af1dec972d7e52079",
+    "receiver_sha256": "e66c50e2aea82fb430f883a04004349a7dbe0a5b4db89f317ddd0d3d073a8cf2",
+    "hub_sha256": "ed7d4289ed2b118e0787c0ea44b592624ff06591094cd9e5b3c23dffd7958303"
+  },
+  "launch_contract": {
+    "cwd": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11",
+    "start_order": [
+      "receiver",
+      "edge",
+      "hub"
+    ],
+    "receiver_dispatch_endpoint": "http://127.0.0.1:8080/v1/internal/fleet-telemetry",
+    "receiver_data_bind": "127.0.0.1:21458",
+    "receiver_status_url": "http://127.0.0.1:21459/status",
+    "receiver_bearer_environment": "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE",
+    "edge_receiver_bind": "127.0.0.1:8080",
+    "edge_hub_bind": "192.168.64.10:21850",
+    "hub_bind": "127.0.0.1:18535",
+    "hub_edge_base_url": "https://192.168.64.10:21850/",
+    "status": "PASS before root creation and repeated in machine-written profile"
+  },
+  "private_inputs": {
+    "files": 15,
+    "all_mode": "0600",
+    "all_links": 1,
+    "raw_values_recorded": false,
+    "credential_ttl_seconds": 1800,
+    "secrets_preserved": true
+  },
+  "post_execution_state": {
+    "heavy_build_lock_absent": true,
+    "ports_closed": [
+      8080,
+      21850,
+      21458,
+      21459,
+      18535
+    ],
+    "staged_executables_open_by_process": false,
+    "guest_command_invoked": false,
+    "guest_root_created": false,
+    "listener_started": false,
+    "runtime_started": false,
+    "browser_started": false,
+    "producer_invoked": false,
+    "event_authorized": false,
+    "event_submitted": false,
+    "shared_guest_status_probe": "INCONCLUSIVE: read-only scripts/dev/vm.sh status reported no Lima instance and Tart garbage-collection path error; no start, stop, create, exec, SSH or transfer command was invoked"
+  },
+  "handoff": {
+    "owner": "Edge",
+    "required_review": "Independently verify public profile SHA256 4b896644694800b37cf749b96788d01559f256fb3b73ca0295a28b29ca5038c2, staging receipt SHA256 509b2e61c3257c8532a8c2a351b75a09204d8dc4dd21405b8d8a52030e9b2e7c, fixture validation SHA256 6fe2ed243d9d21fdfd26c96c8e6424d7bdd0985c7e4420e6590dd53488110a84, inactive binding SHA256 9f3dff1c306549adefbb91a39e4c05c709f813a06e3cf39b35ab74ef69be3340, staged hashes, secret metadata and exact launch contract.",
+    "next_gate": "No guest transfer or runtime action until Edge returns an exact concrete-profile PASS and the coordinator reviews fresh concrete readiness. Producer/event authority remains absent."
+  },
+  "proof_boundary": "This proves one fresh inactive local r11 preparation and machine-written evidence. It is not guest transfer, listener, zero-event baseline, runtime, browser, producer, event, end-to-end delivery, package, release, production or vehicle acceptance evidence."
+}

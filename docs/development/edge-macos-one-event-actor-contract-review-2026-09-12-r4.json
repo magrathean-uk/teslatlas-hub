@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_actor_contract_review_r4",
+  "date": "2026-09-12",
+  "state": "rejected_output_preflight_gap_no_runtime_authorization",
+  "edge_proposal": {
+    "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r4.json",
+    "sha256": "2358982834062f8df894de76ce85e92b7563cebac3ba66fc19bb48f4660c8771"
+  },
+  "reviewed_sources": {
+    "producer": {
+      "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/producer/main.go",
+      "sha256": "d59c5e38245113bebdfe2635f1f3e42cfa4052f269d45d5fbd0b392a12697df2"
+    },
+    "producer_test": {
+      "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/producer/main_test.go",
+      "sha256": "a60bdba6bb71da8af5e4ede33627affda55efbd813efe2705108211391eca40d"
+    },
+    "guard": {
+      "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/guard/invoke_one_event.py",
+      "sha256": "4b072a2bc51d27c78fe1db84c9535d0fae7b4dc413b5e4c1eb9dc76a0e28084a"
+    },
+    "guard_test": {
+      "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/guard/test_invoke_one_event.py",
+      "sha256": "1a48c87c90eedd32c7027dd6c06621a546b9d421274ac207fcddd931481e4fff"
+    }
+  },
+  "accepted_checks": {
+    "stable_files": "All four declared files are regular mode-0644 uid-501 single-link files and independently rehash to the proposal values.",
+    "proposal_json": "PASS",
+    "gofmt": "PASS",
+    "guard_syntax": "PASS",
+    "guard_focused_tests": "PASS 6/6 with the local fake helper and no network",
+    "pinned_source_archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9",
+    "pinned_identity_source_sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+    "producer_overlay_tests": "PASS for ./cmd/synthetic-vehicle with GOPROXY=off against pinned Fleet Telemetry d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "producer_source_boundary": "The producer pair is a fresh review candidate, not source proof for or a permitted reuse of historical binary db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7.",
+    "runtime_started": false,
+    "network_used_by_reviewed_tests": false,
+    "credential_or_pki_action": false,
+    "producer_event_submitted": false
+  },
+  "blocking_finding": {
+    "id": "EDGE-R4-RESULT-PATH-NOT-PREFLIGHTED",
+    "evidence": "With the submitted local fake-helper fixture, Hub pre-created the contract's result path with sentinel bytes. run_once created the exclusive guard and output, invoked the helper exactly once, then raised 'result already exists'. The sentinel remained, but no final result record was persisted.",
+    "impact": "A stale or aliased result path can permit the one event attempt and only afterward prevent the required final evidence record. This violates the proposal's pre-invocation absent-path gate and final-result policy. Aliases between result, output, guard or input paths can cause equivalent post-event persistence failures.",
+    "required_correction": [
+      "Before reading the clock or claiming the guard, lstat and reject any existing guard, result, output and atomic result-temporary path.",
+      "Require guard, result, output and result-temporary paths to be pairwise distinct and disjoint from every input path.",
+      "Add regressions proving pre-existing result, output and result-temporary paths plus output aliases reject before clock, guard creation or helper spawn while preserving sentinel bytes."
+    ]
+  },
+  "temporary_review_overlay": "The isolated pinned-source overlay was moved recoverably to /Users/bolyki/.Trash/teslatlas-edge-r4-source-review.TCPCiP after tests.",
+  "next_gate": "Edge supplies one additive source-only r5 guard/test correction with exact stable hashes and receipt. The unchanged producer pair may be rebound by hash if unaffected. Hub must independently review r5 before any source staging, helper build, PKI, guest, runtime or event decision.",
+  "proof_boundary": "This review accepts the source identities and focused test results but rejects the r4 guard for runtime preparation. It is not helper-binary, installed, receiver, Edge, Hub, forwarding, durable commit, ACK/frontier, projection, service, release, production, vehicle or user acceptance evidence."
+}

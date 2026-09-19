@@ -1,0 +1,55 @@
+{
+  "schema": "teslatlas.hub.active-target-handoff/v1",
+  "state": "passed_target_loader_check_guest_stopped",
+  "prepared_at": "2026-09-12",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "scope": "Independently deploy and load the exact Edge receiver candidate on the existing supported macOS 13.7.4 ARM64 guest. No receiver configuration, listener, identity, credential, event, Hub fixture, Home Assistant, Viewer, x86, install, LaunchAgent, production or vehicle action.",
+  "candidate": {
+    "host_path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-receiver-status-loopback-macos13-20260910/teslatlas-fleet-telemetry",
+    "sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "bytes": 29251922,
+    "mode_and_type": "0755 single-link regular Mach-O 64-bit arm64 executable",
+    "build": "Go 1.27.0 darwin/arm64; CGO_ENABLED=0; GOARM64=v8.0; trimpath; no VCS metadata; stripped",
+    "deployment_target": "LC_BUILD_VERSION macOS 13.0 minimum, SDK 26.2",
+    "dynamic_dependencies": [
+      "/usr/lib/libSystem.B.dylib",
+      "/usr/lib/libresolv.9.dylib",
+      "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+      "/System/Library/Frameworks/Security.framework/Versions/A/Security"
+    ],
+    "forbidden_dependency_check": "No Homebrew, libzmq or zeromq load command; local -help loaded successfully on Apple silicon."
+  },
+  "target": {
+    "guest": "macos13-arm64",
+    "expected_os": "macOS 13.7.4 build 22H420",
+    "expected_arch": "arm64",
+    "expected_user": "admin UID 501",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-r1",
+    "guest_binary": "/Users/admin/teslatlas-lab/candidates/edge-receiver-c2ace-r1/teslatlas-fleet-telemetry",
+    "observed": "macOS 13.7.4 build 22H420, arm64, admin UID 501"
+  },
+  "action": {
+    "allowed": "Start only the existing macos13-arm64 guest through the canonical wrapper; verify target identity and absence of an existing exact guest root; transfer the candidate; verify guest bytes/mode/Mach-O dependencies; execute only -help; confirm it exits 0 without a receiver process or listener.",
+    "forbidden": "Do not create or read credentials, write receiver config, start readiness/status/network service, issue an identity, install packages, load a service, submit an event, touch retained state or use any stale Edge cohort input.",
+    "shared_lock": "No build or installation occurs, so the heavy-build lock remains unclaimed; abort if another task owns a conflicting shared runtime action."
+  },
+  "cleanup": {
+    "owner": "Hub",
+    "action": "Completed: stopped only the existing macos13-arm64 guest after the bounded loader result. Retained the versioned 0500 guest candidate after its exact identity was verified; it carries no private input.",
+    "required_closure": "Verified: guest reports stopped, heavy-build lock absent, and the -help check left no Edge receiver process."
+  },
+  "result": {
+    "guest_candidate_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "guest_candidate_bytes": 29251922,
+    "guest_candidate_mode": "0500 single-link regular file",
+    "guest_file_identity": "Mach-O 64-bit executable arm64",
+    "guest_deployment_target": "macOS 13.0 minimum, SDK 26.2",
+    "guest_dependencies": "Exact same four Apple system library/framework paths as host inspection; no Homebrew or ZeroMQ path.",
+    "guest_codesign": "Valid on disk and satisfies its designated requirement.",
+    "guest_invocation": "-help exited 0 and displayed only the config-file option; no receiver process remained.",
+    "guest_state_after": "stopped",
+    "next_gate": "A distinct fresh receiver identity/config/credential handoff and readiness-only runtime must be prepared before any event or forwarding work."
+  },
+  "proof_boundary": "A passing result proves exact candidate deployment and loader compatibility on the supported Ventura ARM64 target. It does not prove receiver readiness, service lifecycle, credentials, forwarding, Hub/HA integration or active-target acceptance."
+}

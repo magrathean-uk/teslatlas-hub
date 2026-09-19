@@ -1,0 +1,183 @@
+{
+  "schema": "teslatlas.hub.debian-arm64-standalone/v1",
+  "state": "passed_source_built_synthetic_restart_and_retained_state",
+  "prepared_at": "2026-09-18",
+  "owner": "Hub",
+  "authority": "../../../docs/development/MASTER_PLAN.md#G1",
+  "target": {
+    "guest": "debian13-arm64",
+    "os": "Debian GNU/Linux 13 (trixie)",
+    "architecture": "aarch64",
+    "kernel": "6.12.95+deb13-cloud-arm64",
+    "final_state": "stopped",
+    "ssh_listener_60022_closed": true
+  },
+  "source": {
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "branch": "main",
+    "snapshot_input_count": 637,
+    "snapshot_policy": "current tracked plus nonignored untracked files with explicit exclusions; the host checkout was not mutated to stage the build",
+    "exclusions": [
+      ".git",
+      "target",
+      "dist",
+      "build",
+      "caches",
+      "vendor",
+      "upstream",
+      "repository-roots",
+      "fixtures/teslamate-postgres",
+      "local key-like paths"
+    ],
+    "content_manifest_sha256": "7bf0e28fd807e56b0c2ed0cae61e0f0034e467b0af214c10b52275ec5ab4d901",
+    "tracked_diff_sha256": "8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca",
+    "status_sha256": "bdd89dbab926206e143f191a061759a79f72b35bfbc56814a633d4da3988201f",
+    "archive_sha256": "f29fd6a245dfca4e46bd0b64c248e3a22fa8dc3f2fdfb29201408af6e18e2a7b"
+  },
+  "toolchain": {
+    "debian_sources": "Debian trixie, trixie-updates, trixie-backports and trixie-security through deb.debian.org",
+    "packages": [
+      "build-essential 12.12",
+      "ca-certificates 20250419",
+      "curl 8.14.1-2+deb13u5",
+      "pkg-config 1.8.1-4",
+      "python3 3.13.5-1"
+    ],
+    "rustup_source": "https://sh.rustup.rs",
+    "rustup_installer_sha256": "7d0ea0f8eba7fa1ebfe998091cd7ec4501e33ec5ca6b884eb4d894d7da5170af",
+    "rustup": "rustup 1.29.1 (d95a37b6a 2026-08-13)",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+    "target": "aarch64-unknown-linux-gnu"
+  },
+  "heavy_build_lock": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+    "one_heavy_job_only": true,
+    "installation_lock": "atomically held during apt and exact Rust installation, then released by trap when the first staging path assumption failed",
+    "build_owner_record": {
+      "task": "/root/g1_hub_debian",
+      "pid": 84794,
+      "started_at": "2026-09-18T15:55:10Z",
+      "completed_at": "2026-09-18T15:56:44Z"
+    },
+    "final_state": "absent"
+  },
+  "build": {
+    "command": "rustup run 1.98.0 cargo build --locked --release --features interop-fixture --bin teslatlas-hub --example interop_fixture",
+    "cargo_build_invocations": 1,
+    "elapsed": "1m33s",
+    "hub_sha256": "2e36baa5fe5a2f894968845f8f53254e4cbe622c5e8150ed20da081dac46fbbc",
+    "interop_fixture_sha256": "afa198ef25ab8bd9fe2b8df2e94da72f2565a589f4562b4454e0d318a1e3ea50",
+    "hub_format": "ELF 64-bit LSB PIE executable, ARM aarch64, dynamically linked",
+    "version": "2026.36.2",
+    "source_changed_for_build_or_runtime": false
+  },
+  "ordinary_boundary": {
+    "bootstrap": "passed on a separate fresh owner-only store",
+    "setup": "the ordinary CLI exposed private token-file and bounded-stdin routes; a missing-input invocation exited 2 before any Tesla request",
+    "tesla_account_or_vehicle_contact": false
+  },
+  "runtime": {
+    "kind": "fresh synthetic B1 source runtime",
+    "closed_endpoint": "https://127.0.0.1:18532",
+    "config_sha256": "a5e49f27a40bd975f5c342bb07b9cb517b8a4e93fb7c8919b06a05c128694c5b",
+    "server_certificate_sha256": "626fc2ab2afe3221c27986fe0ea71cc1b1b8109185303e1adc4f0131ae33f575",
+    "hub_id": "89274315-f8b0-4909-bc4f-f0e60f05fd6c",
+    "private_boundary": "all invitation, bearer, TLS private key, cursor key and synthetic owner-token material remained in 0600 guest files; no value or device identifier entered argv, logs, this receipt or messages",
+    "first_process": {
+      "pid": 8060,
+      "claim_status": 200,
+      "immediate_invitation_replay_status": 401,
+      "discovery_hub_id_matched": true,
+      "vehicle_count": 2,
+      "current_endpoint_statuses": [
+        200,
+        200
+      ],
+      "current_observation_present": [
+        true,
+        false
+      ],
+      "drive_pages": [
+        [105, 104],
+        [103, 102],
+        [101]
+      ],
+      "etag_304": true,
+      "native_status": "ok, ready, version 2026.36.2, two vehicles",
+      "native_doctor": "status ok, schema 59, all eight checks passed, two vehicles, one paired device",
+      "stop": "Hub logged a clean stop; PID absent and listener closed"
+    },
+    "restart_process": {
+      "pid": 8183,
+      "new_process": true,
+      "same_binary_config_and_store_inode": true,
+      "same_hub_id": true,
+      "same_bearer_accepted": true,
+      "vehicle_count": 2,
+      "current_endpoint_statuses": [
+        200,
+        200
+      ],
+      "current_observation_present": [
+        true,
+        false
+      ],
+      "drive_pages": [
+        [105, 104],
+        [103, 102],
+        [101]
+      ],
+      "etag_304": true,
+      "native_status": "ok, ready, version 2026.36.2, two vehicles",
+      "native_doctor": "status ok, schema 59, all eight checks passed, same installation ID, two vehicles, one paired device",
+      "stop": "Hub logged a clean stop; PID absent and listener closed"
+    },
+    "final_native": {
+      "status": "ok",
+      "ready": true,
+      "version": "2026.36.2",
+      "schema_version": 59,
+      "checks_passed": 8,
+      "checks_total": 8,
+      "paired_devices": 1,
+      "vehicles": 2,
+      "installation_id_matched": true,
+      "listener_closed": true
+    }
+  },
+  "cleanup": {
+    "private_runtime_root_removed": true,
+    "guest_source_target_and_private_client_removed": true,
+    "removed_guest_bytes": 678254922,
+    "retained_host_evidence_bytes_approximate": "47 MiB",
+    "retained_guest_environment": "minimal Debian build packages and exact Rust toolchain for later authorized work",
+    "guest_stopped": true,
+    "port_60022_closed": true,
+    "heavy_build_lock_absent": true
+  },
+  "pre_acceptance_failures_and_fixes": [
+    {
+      "failure": "The documented one-token VM wrapper spelling was rejected by the current wrapper.",
+      "fix": "The coordinator corrected VM_ACCESS; G1 used the implemented two-token syntax."
+    },
+    {
+      "failure": "The first installation command assumed /home/bolyki instead of the verified /home/bolyki.guest after toolchain installation.",
+      "fix": "No Cargo build had run; the lock released by trap, the actual HOME was verified, and the fresh build path was used under a new atomic lock."
+    },
+    {
+      "failure": "A pre-launch chmod glob removed execute bits from a fresh seed directory.",
+      "fix": "No Hub process had started; the failed root was removed and a fresh root used."
+    },
+    {
+      "failure": "A private client treated the response ETag header spelling case-sensitively after consuming its invitation.",
+      "fix": "That process and root were closed and removed without reuse; the client lookup was made case-insensitive and the entire accepted r3 cohort was fresh."
+    }
+  ],
+  "evidence": {
+    "host_root": "/Users/bolyki/dev/teslatlas-lab/build/hub/g1-debian-arm64-20260918-r1",
+    "redacted_runtime_receipt_sha256": "d22f4d33b3426a93f7a13b47b80ac3a92700a2d6547b64403df727b7644c364b",
+    "contents": "lean source list/content manifest/diff/status/archive, completed build lock record, two native binaries and the redacted runtime receipt"
+  },
+  "proof_boundary": "This accepts G1 as current dirty-source, native Debian 13 ARM64, synthetic standalone Hub evidence. It is not a Debian package, installed service/systemd, upgrade/rollback/removal, real account/data/collection, named-source parity, production, release, App, Viewer, x86, Intel or Azure acceptance."
+}

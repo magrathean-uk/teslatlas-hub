@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import resource
 from pathlib import Path
 import signal
 import socket
@@ -25,8 +26,35 @@ import time
 import urllib.error
 import urllib.request
 import urllib.parse
+import uuid
 
 MAX_CONFIG_BYTES = 64 * 1024
+EDGE_PRIMARY_BASE_URL = "https://127.0.0.1:18510/"
+EDGE_DOCKER_BASE_URL = "https://127.0.0.1:19443/"
+EDGE_R1_DOCKER_BASE_URL = "https://127.0.0.1:20443/"
+EDGE_R10_DOCKER_BASE_URL = "https://127.0.0.1:20543/"
+EDGE_R12_DOCKER_BASE_URL = "https://127.0.0.1:20743/"
+EDGE_R12_REPLACEMENT_DOCKER_BASE_URL = "https://127.0.0.1:20843/"
+EDGE_R13_AUTHORIZED_DOCKER_BASE_URL = "https://127.0.0.1:20943/"
+EDGE_ALLOWED_BASE_URLS = frozenset((
+    EDGE_PRIMARY_BASE_URL,
+    EDGE_DOCKER_BASE_URL,
+    EDGE_R1_DOCKER_BASE_URL,
+    EDGE_R10_DOCKER_BASE_URL,
+    EDGE_R12_DOCKER_BASE_URL,
+    EDGE_R12_REPLACEMENT_DOCKER_BASE_URL,
+    EDGE_R13_AUTHORIZED_DOCKER_BASE_URL,
+))
+DEFAULT_SCENARIO_ID = "b1-five-drives"
+SCENARIO_SOURCES = {
+    DEFAULT_SCENARIO_ID: Path(__file__).resolve().parents[2] / "tests/interop/scenario.json",
+    "viewer-r1-51-drives": Path(__file__).resolve().parents[2] / "tests/interop/scenario-viewer-r1-51-drives.json",
+}
+EDGE_COLLECTOR_FIELDS = {
+    "base_url", "ca_certificate_path", "client_certificate_path",
+    "client_private_key_path", "bearer_token_path", "installation_id",
+    "lineage", "source_id", "vehicle_id", "vin", "car_id",
+}
 
 _native_path = Path(__file__).resolve().parents[3] / "teslatlas-protocol/conformance/hub_native_evidence.py"
 _native_spec = importlib.util.spec_from_file_location("hub_native_evidence", _native_path)
@@ -65,7 +93,7 @@ def read_private_json(path):
 
 def load_config(path):
     config = read_private_json(path)
-    allowed = {"binary", "seed_binary", "output_dir", "port", "lifetime_seconds", "profile_id", "profile_path", "profile_sha256", "allowed_origins"}
+    allowed = {"binary", "seed_binary", "output_dir", "port", "lifetime_seconds", "profile_id", "profile_path", "profile_sha256", "allowed_origins", "edge_collector", "scenario_id"}
     if not isinstance(config, dict) or set(config) - allowed:
         raise ValueError("unknown config fields")
     if config.get("profile_id") != "hub-http-v1@1.0.0":
@@ -111,7 +139,30 @@ def load_config(path):
                 or parsed.password is not None or parsed.path or parsed.query or parsed.fragment
                 or parsed.geturl() != origin):
             raise ValueError("allowed origins must be exact canonical HTTP origins")
+    scenario_source(config)
+    if "edge_collector" in config:
+        config["edge_collector"] = validate_edge_collector(config["edge_collector"])
     return config
+
+
+def scenario_source(config):
+    scenario_id = config.get("scenario_id", DEFAULT_SCENARIO_ID)
+    if not isinstance(scenario_id, str) or scenario_id not in SCENARIO_SOURCES:
+        raise ValueError("unknown scenario selector")
+    source = SCENARIO_SOURCES[scenario_id]
+    if not source.is_file():
+        raise ValueError("scenario source is unavailable")
+    return source
+
+
+def copy_selected_scenario(root, config):
+    source = scenario_source(config)
+    raw = source.read_bytes()
+    destination = Path(root) / "scenario.json"
+    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as output:
+        output.write(raw)
+    return destination, hashlib.sha256(raw).hexdigest()
 
 
 def configure_allowed_origins(config_path, origins):
@@ -123,6 +174,133 @@ def configure_allowed_origins(config_path, origins):
         raise ValueError("seeded fixture unexpectedly defines an HTTP section")
     with open(path, "a", encoding="utf-8") as stream:
         stream.write("[http]\nallowed_origins = %s\n" % json.dumps(origins, separators=(",", ":")))
+
+
+def validate_edge_collector(value):
+    if not isinstance(value, dict) or set(value) != EDGE_COLLECTOR_FIELDS:
+        raise ValueError("invalid Edge collector binding")
+    if value["base_url"] not in EDGE_ALLOWED_BASE_URLS:
+        raise ValueError("Edge collector must use a reserved endpoint")
+    for field in ("installation_id", "lineage"):
+        item = value[field]
+        if not isinstance(item, str) or not re.fullmatch(r"[a-z0-9._-]{1,128}", item):
+            raise ValueError("invalid Edge collector binding")
+    for field in ("source_id", "vehicle_id"):
+        item = value[field]
+        if not isinstance(item, str):
+            raise ValueError("invalid Edge collector binding")
+        try:
+            if uuid.UUID(item).int == 0:
+                raise ValueError("invalid Edge collector binding")
+        except ValueError as error:
+            raise ValueError("invalid Edge collector binding") from error
+    vin = value["vin"]
+    if (not isinstance(vin, str) or len(vin) != 17
+            or not vin.isascii() or not vin.isalnum()
+            or any(item in vin for item in "IOQ")
+            or type(value["car_id"]) is not int or value["car_id"] <= 0):
+        raise ValueError("invalid Edge collector binding")
+    for field in ("ca_certificate_path", "client_certificate_path", "client_private_key_path", "bearer_token_path"):
+        item = value[field]
+        if not isinstance(item, str) or not Path(item).is_absolute():
+            raise ValueError("invalid Edge collector private path")
+        candidate = Path(item)
+        try:
+            metadata = candidate.lstat()
+        except OSError as error:
+            raise ValueError("invalid Edge collector private path") from error
+        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid()
+                or metadata.st_nlink != 1 or metadata.st_mode & 0o077):
+            raise ValueError("invalid Edge collector private path")
+    paths = [value[field] for field in ("ca_certificate_path", "client_certificate_path", "client_private_key_path", "bearer_token_path")]
+    if len(set(paths)) != len(paths):
+        raise ValueError("invalid Edge collector private path")
+    return value
+
+
+def configure_edge_collector(config_path, edge):
+    path = Path(config_path)
+    original = path.read_text()
+    collector = "[collector]\ninterval_seconds = 0\n"
+    if original.count(collector) != 1 or "[collector.edge]" in original or not original.endswith("\n"):
+        raise ValueError("seeded fixture has no disabled collector section")
+    updated = original.replace("[collector]\n", '[collector]\nprovider = "fleet"\n', 1)
+    fields = (
+        "base_url", "ca_certificate_path", "client_certificate_path",
+        "client_private_key_path", "bearer_token_path", "installation_id",
+        "lineage", "source_id", "vehicle_id", "vin", "car_id",
+    )
+    with open(path, "w", encoding="utf-8") as stream:
+        stream.write(updated)
+        stream.write("[collector.edge]\n")
+        for field in fields:
+            stream.write("%s = %s\n" % (field, json.dumps(edge[field])))
+
+
+def configure_seeded_config(config_path, config):
+    if "edge_collector" in config:
+        configure_edge_collector(config_path, config["edge_collector"])
+    configure_allowed_origins(config_path, config["allowed_origins"])
+
+
+def seed_command(config, seed_binary, output_dir, port):
+    command = [str(seed_binary), "--output", str(output_dir), "--port", str(port)]
+    if "edge_collector" in config:
+        command.extend((
+            "--source-id", config["edge_collector"]["source_id"],
+            "--vehicle-id", config["edge_collector"]["vehicle_id"],
+            "--vin", config["edge_collector"]["vin"],
+            "--car-id", str(config["edge_collector"]["car_id"]),
+        ))
+    if "scenario_id" in config:
+        command.extend(("--scenario", config["scenario_id"]))
+    return command
+
+
+def subprocess_diagnostic(stage, command, timeout):
+    started = time.monotonic()
+    limits = {}
+    for name in ("RLIMIT_NOFILE", "RLIMIT_STACK", "RLIMIT_AS"):
+        limit = getattr(resource, name, None)
+        if limit is not None:
+            soft, hard = resource.getrlimit(limit)
+            limits[name.removeprefix("RLIMIT_").lower()] = {"soft": soft, "hard": hard}
+    result = {
+        "stage": stage,
+        "command_sha256": hashlib.sha256("\0".join(map(str, command)).encode()).hexdigest(),
+        "working_directory_sha256": hashlib.sha256(os.getcwd().encode()).hexdigest(),
+        "environment_names_sha256": hashlib.sha256("\n".join(sorted(os.environ)).encode()).hexdigest(),
+        "io": {"stdin": "inherited", "stdout": "devnull", "child_error": "captured_not_persisted"},
+        "timeout_seconds": timeout,
+        "limits": limits,
+        "parent_maxrss": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+    }
+    try:
+        completed = subprocess.run(
+            command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=timeout, umask=0o077
+        )
+    except subprocess.TimeoutExpired:
+        result["termination"] = "timeout"
+    except OSError as error:
+        result["termination"] = "spawn_error"
+        result["error_type"] = type(error).__name__
+    else:
+        if completed.returncode < 0:
+            result["termination"] = "signal"
+            result["signal"] = signal.Signals(-completed.returncode).name
+        else:
+            result["termination"] = "exit"
+            result["exit_code"] = completed.returncode
+    result["elapsed_ms"] = int((time.monotonic() - started) * 1000)
+    return result
+
+
+def write_fixture_diagnostic(output_dir, diagnostic):
+    write_private_json(Path(output_dir).parent / "fixture-diagnostic.json", diagnostic)
+
+
+def subprocess_failed(diagnostic):
+    return diagnostic["termination"] != "exit" or diagnostic.get("exit_code") != 0
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -182,15 +360,17 @@ def run(config):
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", config.get("port", 0)))
             port = reservation.getsockname()[1]
-            seeded = subprocess.run([str(seed_binary), "--output", config["output_dir"], "--port", str(port)],
-                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=60)
-            if seeded.returncode:
-                raise RuntimeError("synthetic seed failed (exit %d)" % seeded.returncode)
+            seeded = subprocess_diagnostic(
+                "seed", seed_command(config, seed_binary, config["output_dir"], port), 60
+            )
+            if subprocess_failed(seeded):
+                write_fixture_diagnostic(config["output_dir"], seeded)
+                raise RuntimeError("synthetic seed failed (%s)" % seeded["termination"])
         root = Path(config["output_dir"])
         descriptor = read_private_json(root / "connection.json")
         if descriptor["endpoint"] != "https://127.0.0.1:%d" % port:
             raise ValueError("seeded endpoint mismatch")
-        configure_allowed_origins(descriptor["config_path"], config["allowed_origins"])
+        configure_seeded_config(descriptor["config_path"], config)
         # Supported product CLI is the invitation authority for native runs.
         invitation_path = root / "cli-invitation.json"
         invitation_fd = os.open(invitation_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -202,14 +382,10 @@ def run(config):
         invitation = read_private_json(invitation_path)
         if invitation.get("endpoint") != descriptor["endpoint"] or "pairingId" not in invitation:
             raise ValueError("supported CLI invitation mismatch")
-        scenario_path = root / "scenario.json"
-        scenario_bytes = (Path(__file__).resolve().parents[2] / "tests/interop/scenario.json").read_bytes()
-        scenario_fd = os.open(scenario_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(scenario_fd, "wb") as scenario_output:
-            scenario_output.write(scenario_bytes)
+        scenario_path, scenario_sha256 = copy_selected_scenario(root, config)
         descriptor.update(invitation_path=str(invitation_path), profile_id=config["profile_id"],
                           profile_path=config["profile_path"], profile_sha256=config["profile_sha256"],
-                          scenario_path=str(scenario_path), scenario_sha256=hashlib.sha256(scenario_bytes).hexdigest(),
+                          scenario_path=str(scenario_path), scenario_sha256=scenario_sha256,
                           update_request_path=str(root / "advance.request"), update_receipt_path=str(root / "advance.json"))
         log_fd = os.open(root / "serve.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(log_fd, "wb") as log:

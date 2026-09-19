@@ -47,13 +47,19 @@ def _source(root: Path, name: str, commit: str) -> dict:
 
 
 def _component(name: str, record: dict) -> dict:
-    return {
+    component = {
         "repository": record["repository"],
         "commit": record["commit"],
         "source_sha256": record["source_sha256"],
         "product_version": "2026.36.2",
         "profile": recipes.EXPECTED_PROFILES[name],
     }
+    if name == "home-assistant":
+        component["artifacts"] = {
+            "payload_manifest_sha256": "9d857e0ee62076cdda1238ca7fc14ad2afa3695b2cf5cdaefc8c4edbc64e870a",
+            "selection_receipt_sha256": "e" * 64,
+        }
+    return component
 
 
 def _cohort(records: dict[str, dict], names: tuple[str, ...]) -> core.Cohort:

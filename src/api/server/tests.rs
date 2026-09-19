@@ -48,6 +48,9 @@ use crate::{
     },
 };
 
+#[path = "tests/fleet_listener.rs"]
+mod fleet_listener;
+
 #[test]
 fn tls_identity_reader_rejects_a_fifo_without_waiting_for_a_writer() {
     let temporary = tempfile::tempdir().expect("temporary directory");
@@ -1486,6 +1489,79 @@ async fn tls_router_requires_a_paired_device_and_claims_once() {
         .await
         .expect("replay response");
     assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn pairing_claim_uses_the_profile_body_bound_and_extractor_media_type() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let invitation = store
+        .create_pairing("profile-bound", 1_000, i64::MAX)
+        .expect("pairing invitation");
+    let cursor_key = CursorKey::from_bytes([32; 32]);
+    let app = paired_router(store, &cursor_key);
+    let uri = format!("/v1/pairings/{}/claim", invitation.pairing_id);
+
+    let malformed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(&uri)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from("{"))
+                .unwrap(),
+        )
+        .await
+        .expect("malformed claim response");
+    assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        malformed
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("text/plain"))
+    );
+
+    let unsupported = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(&uri)
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .expect("unsupported claim response");
+    assert_eq!(unsupported.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert!(
+        unsupported
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("text/plain"))
+    );
+
+    let oversized = serde_json::json!({
+        "secret": invitation.secret(),
+        "device_name": "x".repeat(4_500),
+    })
+    .to_string();
+    assert!(oversized.len() > 4 * 1024);
+    let oversized_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(&uri)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(oversized))
+                .unwrap(),
+        )
+        .await
+        .expect("oversized claim response");
+    assert_eq!(oversized_response.status(), StatusCode::PAYLOAD_TOO_LARGE);
 }
 
 #[tokio::test]

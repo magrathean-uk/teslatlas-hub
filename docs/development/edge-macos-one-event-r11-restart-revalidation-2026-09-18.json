@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.hub.edge_macos_one_event_r11_restart_revalidation",
+  "date": "2026-09-18",
+  "verified_at": "2026-09-18T13:37:41Z",
+  "status": "passed_source_only_inputs_unchanged_inactive_awaiting_edge_review",
+  "authority": "Hub-owned source revalidation only. No root claim, fixture preparation, PKI, credential, guest, listener, runtime, producer invocation or event is authorized by this receipt.",
+  "inputs": {
+    "proposal": {
+      "path": "docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r11.json",
+      "sha256": "5f6969ab295e06502ec415d9da52355519240aa7fe9510f49f39e03bc2b96544"
+    },
+    "preparation_specification": {
+      "path": "docs/development/edge-macos-one-event-certificate-profile-preparation-2026-09-12-r11.json",
+      "sha256": "d800b93a929236aab471dc9528891b3cf28563b992e9bc90191b5965faac4eb0"
+    },
+    "one_use_preparer": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r11.py",
+      "sha256": "d3f2ffa5f6582e3a97abc9b4bfebf3fdc39ed269880011d493ae69862a58f909",
+      "bytes": 31705,
+      "mode": "0500"
+    },
+    "fixture_binding_validator": {
+      "path": "tools/interop/edge_fixture_binding.py",
+      "sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819"
+    },
+    "fixture_binding_test": {
+      "path": "tools/interop/test_edge_fixture_binding.py",
+      "sha256": "c3697062b280c4d119b1da3861a8bf5b8d97473eadbd2d3a49acfc03d996bae0"
+    }
+  },
+  "checks": {
+    "cross_hash_binding": "PASS: proposal binds the exact preparation specification and preparer; preparation specification binds the exact preparer",
+    "preparer_source_preflight": {
+      "status": "PASS",
+      "hub_manifest_inputs": 195,
+      "edge_manifest_inputs": 15,
+      "exact_anchors_and_artifacts": 14,
+      "launch_contract": "PASS: receiver fixed dispatcher 127.0.0.1:8080, Edge admission 127.0.0.1:8080, exact bearer environment and path, exact argv/cwd/binds/TLS paths/Hub collector URL, receiver then Edge then Hub order"
+    },
+    "focused_python_tests": {
+      "invocation": "env -u TESLATLAS_INTEROP_FIXTURE python3 -m unittest tools.interop.test_edge_fixture_binding tools.interop.test_edge_ledger_observer",
+      "result": "PASS: 6 discovered, 5 passed, 1 skipped because no generic TESLATLAS_INTEROP_FIXTURE binary was configured",
+      "diagnostic": "The r11 one-use preparer is not the generic fixture binary expected by the skipped test. Supplying it in that slot failed before output creation with the expected argument-bound error: exact lowercase r11 proposal SHA-256 argument required. The empty diagnostic directory was removed. The one-use preparer itself was not executed with its required proposal hash."
+    },
+    "inactive_state": {
+      "host_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11",
+      "host_root_absent": true,
+      "public_profile": "docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r11.json",
+      "public_profile_absent": true,
+      "preparation_lock_absent": true,
+      "ports_closed": [
+        8080,
+        21850,
+        21458,
+        21459,
+        18535
+      ]
+    }
+  },
+  "handoff": {
+    "owner": "Edge",
+    "required_review": "Independently verify the exact proposal, preparation specification, preparer, validator and test hashes above. This Hub receipt does not authorize companion mutation or contact.",
+    "next_hub_gate": "Only after an exact Edge PASS may Hub freshly revalidate absence and run the one-use preparation once. No runtime or producer event is included."
+  },
+  "proof_boundary": "This receipt proves that the frozen r11 Hub-owned source inputs remain byte-identical, internally bound and inactive on 2026-09-18. It does not prove a prepared profile, fixture, guest transfer, listener, zero-event baseline, producer submission or end-to-end delivery."
+}

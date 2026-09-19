@@ -241,6 +241,44 @@ struct CompanionPrefixArgs {
     prefix: PathBuf,
 }
 
+#[derive(Clone, Debug, Args)]
+struct CompanionD1PlanArgs {
+    /// One explicit D1 component; only admitted source-only selectors may be planned.
+    #[arg(long, value_delimiter = ',', num_args = 1..)]
+    components: Vec<String>,
+    /// Selector identity from the reviewed D1 component manifest.
+    #[arg(long)]
+    selector: String,
+    /// Absolute D1 component manifest supplied by the owner.
+    #[arg(long)]
+    component_manifest: PathBuf,
+}
+
+#[derive(Clone, Debug, Args)]
+struct CompanionD1InstallArgs {
+    /// The only D1 component admitted to the source-only local candidate path.
+    #[arg(long, value_delimiter = ',', num_args = 1..)]
+    components: Vec<String>,
+    /// Selector identity from the reviewed D1 component manifest.
+    #[arg(long)]
+    selector: String,
+    /// Absolute D1 component manifest supplied by the owner.
+    #[arg(long)]
+    component_manifest: PathBuf,
+    /// Absolute unprivileged disposable installation prefix outside the Hub package.
+    #[arg(long)]
+    prefix: PathBuf,
+    /// Caller-supplied byte-complete Home Assistant local source manifest.
+    #[arg(long)]
+    local_sources: PathBuf,
+    /// Explicit existing Home Assistant configuration directory.
+    #[arg(long)]
+    ha_config: PathBuf,
+    /// Per-process deadline forwarded to the fixed Home Assistant recipe.
+    #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u16).range(1..=1800))]
+    timeout_seconds: u16,
+}
+
 #[derive(Clone, Debug, Subcommand)]
 enum CompanionCommand {
     /// Install the newest admitted compatible cohort without refreshing the catalog.
@@ -254,6 +292,12 @@ enum CompanionCommand {
     /// Verify sources, prerequisites, recipes, and targets without activation.
     #[command(name = "dry-run")]
     DryRun(CompanionOperationArgs),
+    /// Bind an admitted D1 selector into a source-only plan; this never installs or starts anything.
+    #[command(name = "d1-plan")]
+    D1Plan(CompanionD1PlanArgs),
+    /// Materialize the admitted D1 Home Assistant source as one explicit local candidate.
+    #[command(name = "d1-install")]
+    D1Install(CompanionD1InstallArgs),
 }
 
 #[derive(Debug, Subcommand)]

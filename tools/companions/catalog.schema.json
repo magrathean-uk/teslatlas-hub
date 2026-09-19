@@ -72,6 +72,19 @@
               }
             }
           }
+        },
+        {
+          "if": {"properties": {"repository": {"const": "https://github.com/magrathean-uk/teslatlas-home-assistant.git"}}},
+          "then": {
+            "required": ["artifacts"],
+            "properties": {
+              "artifacts": {
+                "required": ["payload_manifest_sha256", "selection_receipt_sha256"],
+                "minProperties": 2,
+                "maxProperties": 2
+              }
+            }
+          }
         }
       ],
       "properties": {
@@ -96,7 +109,9 @@
             "package_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "asset_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "sdk_package_filename": {"type": "string", "pattern": "^teslatlas-sdk-[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+\\.tgz$"},
-            "sdk_package_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            "sdk_package_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "payload_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "selection_receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
           }
         },
         "profile": {

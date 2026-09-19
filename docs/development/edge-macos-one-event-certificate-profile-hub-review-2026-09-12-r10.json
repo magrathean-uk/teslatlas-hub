@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_certificate_profile_hub_review_r10",
+  "date": "2026-09-12",
+  "state": "hub_accepts_concrete_profile_store_and_inactive_binding_pending_edge_review",
+  "inputs": {
+    "proposal_sha256": "a7e5e1fda8f58ba499b328f7d0a284fd7e09d2b9ff5e72674fd2f07ce1ab51f1",
+    "profile_path": "hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r10.json",
+    "profile_sha256": "b3a879730a5f2f1b5323eceaec065f404cb7414a2364d6c1f2a93463ef5710b8",
+    "source_staging_sha256": "ba7e481aeaf79cf49f3c8005f08126f913fff7ccba88b06e3e869e8d0ec2dffc",
+    "fixture_binding_validation_sha256": "7c9a86e9f7a2f0bdc0b0a48a7dfe1fc26ead194723087e3f36a1974cbf9d08f8",
+    "inactive_binding_sha256": "25d299f458387e3d8342488ea2ddb4bfaa195703a4e95b3da4269f8c56c6edab",
+    "preparation_summary_sha256": "a3bd60ed3b0f010169517db007cbe7efda8dbbe17430d61f4eedc21c97466e43"
+  },
+  "independent_hub_checks": {
+    "fixture_store_binding": "PASS: seven relationships re-read from owner-only fixture result and binding and verified against the actual Hub store",
+    "sqlite_open": "PASS: immutable=1, mode=ro and query_only",
+    "database_fingerprint": "PASS unchanged",
+    "wal_shm": "PASS absent before and after",
+    "vehicle_client_sslclient": "PASS",
+    "receiver_server_sslserver_ip_127_0_0_1": "PASS",
+    "edge_server_sslserver_ip_192_168_64_10": "PASS",
+    "hub_client_sslclient": "PASS",
+    "staged_hub_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "staged_edge_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "staged_receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "staged_helper_sha256": "4b7c0170888d9f45fcd145bf3d34eecf7363898036daca6332b67354fc47ea59",
+    "public_vin_redaction": "PASS",
+    "actor_outputs_absent": "PASS",
+    "ports_closed": [8086, 21849, 21456, 21457, 18534],
+    "shared_heavy_build_lock_absent": true
+  },
+  "decision": "Hub accepts the exact concrete r10 certificate/profile, stopped-fixture actual-store validation and event_authorized=false binding for the conditional zero-event gate. Edge independent acceptance remains required before any guest/runtime action.",
+  "authority": "After Edge accepts these exact concrete bytes, coordinator standing authority permits one zero-event baseline. It does not authorize actor contract/authorization creation, producer invocation or event submission.",
+  "proof_boundary": "Host-side source/profile/store/binding verification only. No guest, listener, Hub/Edge/receiver runtime, zero baseline, forwarding, producer, event, service, release, production, vehicle or user acceptance occurred."
+}

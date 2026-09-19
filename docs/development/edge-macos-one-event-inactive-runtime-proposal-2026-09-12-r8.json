@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_inactive_actor_guard_profile_runtime_event_proposal_r8",
+  "date": "2026-09-12",
+  "state": "source_only_superseding_fresh_reservation_pending_edge_review",
+  "inherits_complete_contract": {
+    "path": "hub/docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r7.json",
+    "sha256": "409bdfe7dd60b31622a9fea36ac80c1e5eff0929c5bccb0cba10fdfd3311fd7c",
+    "edge_review_of_inherited_contract": "PASS",
+    "rule": "All accepted actor, canonical-root-route, source/staging, certificate/profile, inactive-binding, read-only-ledger, zero-baseline, submit-once, every-sequence classification, projection, failure and cleanup requirements remain byte-semantically unchanged except the fresh replacements listed below."
+  },
+  "r7_closure": {
+    "failure_receipt_path": "hub/docs/development/edge-macos-one-event-preparation-failure-2026-09-12-r7.json",
+    "failure_receipt_sha256": "75a76594228f33b4d660266ee46f781ac0306dc8db57ba10f5cc26807b912c3a",
+    "reason": "The one-use preparer selected a nonexistent Rust launcher after claiming the host root but before the first build.",
+    "r7_root_or_identity_reuse_allowed": false
+  },
+  "exact_fresh_replacements": {
+    "cohort_id": "edge-macos-one-event-20260912-r8",
+    "host_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r8",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r8",
+    "host_root_absent_at_proposal": true,
+    "guest_root_must_be_proven_absent_before_creation": true,
+    "edge_internal": "127.0.0.1:8084",
+    "edge_hub_facing_address": null,
+    "edge_hub_facing_port": 21847,
+    "edge_hub_facing_address_assignment": "Resolve and verify the existing Mac guest's actual private address before certificate issuance and runtime; the preparer currently pins the documented 192.168.64.10 and any difference closes r8 before runtime.",
+    "receiver_data": "127.0.0.1:21452",
+    "receiver_status": "127.0.0.1:21453",
+    "hub_api": "127.0.0.1:18532",
+    "receiver_endpoint": "wss://127.0.0.1:21452/",
+    "transaction_id": "edge-mac-r8-20260912-v-001",
+    "host_staged_binding": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r8/staging/actor/binding.json",
+    "guest_binding": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r8/actor/binding.json",
+    "host_staged_ledger_observer": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r8/staging/bin/edge_ledger_observer.py",
+    "guest_ledger_observer": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r8/bin/edge_ledger_observer.py",
+    "guest_hub_database": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r8/hub/hub.sqlite",
+    "cleanup_ports": [8084, 21847, 21452, 21453, 18532]
+  },
+  "unchanged_accepted_inputs": {
+    "r5_actor_source_binary_receipt_sha256": "e5e8e87c5ecbf191ef30a46de4e5f55796b22d7b193a84da6784a9e6e28ec4d5",
+    "helper_sha256": "4b7c0170888d9f45fcd145bf3d34eecf7363898036daca6332b67354fc47ea59",
+    "guard_sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+    "route_source_review_sha256": "341054d5e1750fac7189f1ade51242f5219495b95a50e8c7743905871465425b",
+    "ledger_observer_source_review_sha256": "d7973ad946203f50f080b5818a8fa3d82389ec5fdd06aad16e1da8c3bff4de31",
+    "ledger_observer_sha256": "098c543a0fafc1d2c3c6c16f554f321c7c0535ffefff24778df33f548cbd35a2",
+    "ledger_observer_test_sha256": "7450f2be66d17227988105a7a2f092896cd9583ed50b531e1d54fa0544ce965b"
+  },
+  "corrected_preparation": {
+    "profile_preparation_path": "hub/docs/development/edge-macos-one-event-certificate-profile-preparation-2026-09-12-r8.json",
+    "profile_preparation_sha256": "249580883f12424cd1a27c291e0100c89768da938229e2411028faa6224998fd",
+    "preparer_path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r8.py",
+    "preparer_sha256": "e38792e36e8c48f29e0e12d7f41cebd4067c54bdf24e0bbe9679a18009d105cb",
+    "preparer_mode": "0500",
+    "preparer_argv": [
+      "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r8.py",
+      "the SHA-256 of this exact accepted proposal"
+    ],
+    "correction": "The only operational correction is verified /opt/homebrew/bin/rustup. No accepted behavioral gate is weakened or replaced.",
+    "non_mutating_preflight": {
+      "syntax": "PASS Python 3.11.16",
+      "rustup_path": "/opt/homebrew/bin/rustup",
+      "rustc": "1.98.0 aarch64-apple-darwin",
+      "cargo": "1.98.0",
+      "openssl": "3.6.4",
+      "go_test_environment": "GOPROXY=off and GOTOOLCHAIN=local",
+      "macos13_arm64_dhcp_lease": "PASS; teslatls13arm64 currently maps to 192.168.64.10 without guest start",
+      "host_root_absent": true,
+      "shared_heavy_build_lock_absent": true,
+      "ports_closed": [8084, 21847, 21452, 21453, 18532]
+    }
+  },
+  "inactive_binding_and_event": {
+    "binding_stage": "The preparer creates one fresh private host-staged binding with event_authorized=false, exact new identities, transaction edge-mac-r8-20260912-v-001, endpoint wss://127.0.0.1:21452/, canonical VehicleName payload and accepted helper/certificate hashes. Only its redacted identity hash and file SHA-256 are public.",
+    "guest_copy_rule": "After independent profile acceptance, copy the exact binding bytes once to the reserved guest path and rehash before zero-event runtime review.",
+    "authorization_contract_guard_and_outputs": "authorization.json, contract.json, guard.json, result.json, .result.json.tmp and helper-output.log remain absent through the zero-event baseline.",
+    "projection_rule": "A future separately authorized single submission must produce exactly one intended VehicleName projection while every actual lifecycle and telemetry application/sequence is observed and classified. Total sequence count is not predicted.",
+    "event_authorized": false
+  },
+  "authority": {
+    "source_profile_preparation": "After Edge independently accepts this exact r8 proposal and corrected preparer, coordinator standing authority permits one fresh preparation without another confirmation.",
+    "zero_event_runtime": "After Hub and Edge independently accept the machine-written public certificate/profile receipt and exact inactive binding hash, coordinator standing authority permits one zero-event baseline without another confirmation.",
+    "producer_event": "Not authorized. A later explicit coordinator decision remains mandatory after both-owner baseline acceptance.",
+    "current_actions_performed": "Source-only r8 proposal and non-mutating preflight only; no r8 root, build, PKI, credential, guest, listener, runtime, producer or event exists."
+  },
+  "failure_and_cleanup": "Any mismatch after root claim closes r8 without repair or reuse. Release the exact lock, stop only exact owned processes if any, close the five reserved ports, remove one-use secrets at final cleanup, and preserve only owner-only redacted evidence. Installed Hub 8443, HA 18483, historical roots, unrelated processes and keychain entries remain untouched.",
+  "proof_boundary": "This is a source-only fresh r8 reservation and corrected preparer review package. It is not build, staging, certificate, credential, guest, listener, zero baseline, forwarding, event, service, release, production, vehicle or user acceptance."
+}

@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "passed_packed_node_51_drive_consumer_cleaned",
+  "fixture_root": "/home/bolyki.guest/teslatlas-fixtures/typescript-r1-51-drives-20260909",
+  "private_descriptor_path": "/home/bolyki.guest/teslatlas-fixtures/typescript-r1-51-drives-20260909.run.json",
+  "launch": {
+    "command": "exec /usr/bin/python3.13 /home/bolyki.guest/teslatlas-workspace/hub-current-20260908/tools/interop/fixture.py --config /home/bolyki.guest/teslatlas-fixtures/typescript-r1-51-drives-20260909.run.json",
+    "launcher_pid": 77280,
+    "hub_child_pid": 77296,
+    "direct_child_verified": true,
+    "maximum_lifetime_seconds": 1800,
+    "listener_port": 18481
+  },
+  "handoff": {
+    "endpoint": "https://127.0.0.1:18481",
+    "ready_descriptor": ".../typescript-r1-51-drives-20260909/ready.json",
+    "full_pairing_invitation": ".../typescript-r1-51-drives-20260909/cli-invitation.json",
+    "trust_ca": ".../typescript-r1-51-drives-20260909/server.pem",
+    "owner_only_mode": "0600",
+    "trusted_health": 200,
+    "trusted_readiness": 200
+  },
+  "scenario": {
+    "id": "viewer-r1-51-drives",
+    "sha256": "bb27007d8de40e90db843de694a02d8da23a54874831c67aed455cac185cca6b",
+    "drive_page_lengths": [25, 25, 1],
+    "consumer_expectations": ["drive_limit=25", "51 total drives", "current cursor continuation", "conditional 304 continuation"]
+  },
+  "consumer_result": {
+    "owner_report": "A fresh packed @teslatlas/sdk@2026.36.2 consumer under Node 26.7.0 passed two-vehicle discovery, 51 drives in pages 25/25/1, current cursor continuation, conditional 304 continuation, claim/rotation, and default Fetch.",
+    "artifact_binding": "The owner reports the unchanged 81-member archive SHA256 begins 03dddd; credential and receipt remain owner-only.",
+    "limit": "This owner report is selected packed-consumer evidence, not an installed-matrix, platform, collection, or complete R1 result."
+  },
+  "closure": {
+    "owner": "Hub fixture launcher only",
+    "action": "Completed: after exact descriptor and direct-child verification, SIGTERM was sent only to launcher PID 77280; no process group or other lane was signalled.",
+    "evidence": "stopped.json is mode 0600, names child PID 77296 with normal exit, and 18481 is closed while installed 8443 and HA 18483 remain listening."
+  },
+  "limits": [
+    "This is a fresh isolated synthetic Node-consumer fixture, not an installed-matrix or platform acceptance row.",
+    "The selected owner-reported consumer result and Hub cleanup do not establish an installed matrix, broader R1 reliability, collection, migration, or platform acceptance.",
+    "Private invitation, bearer, CA bytes, package contents, and request data remain redacted."
+  ]
+}

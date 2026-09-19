@@ -1,0 +1,289 @@
+{
+  "schema_version": 1,
+  "product": "Teslatlas Swift SDK",
+  "repository": "teslatlas-sdk-swift",
+  "state": "ACTIVE",
+  "execution_state": "COMPLETED_CURRENT_GOAL",
+  "native_goal_state": "complete",
+  "effective_execution_state": "completed_arm64_mac_public_consumer_working_product",
+  "goal_objective": "Deliver a normal usable SwiftPM consumer on supported Apple-silicon macOS and supported Debian 13 ARM64, with package shape, public TeslatlasCurrentHub consumer usability, strict current-Hub/profile and transport boundaries, and the minimum ARM64/Mac packaging or lifecycle evidence needed for a usable product. Preserve x86/amd64/Intel Mac/Azure/full-matrix work as paused, keep named-source parity as a separate acceptance gap, require concrete Hub handoffs for shared runtimes, and do not modify app/.",
+  "plan": "PLAN.md",
+  "current_stage": "COMPLETED 2026-09-12; Debian ARM64 and supported Apple-silicon Mac external consumer passes; formal installed/matrix backlog separate",
+  "first_milestone_after_start": "S3",
+  "current_model": "gpt-5.6-luna",
+  "model_purpose": "owner-authorized development",
+  "last_verified": "2026-09-12",
+  "completed_this_programme": [
+    "ARM64 package and public consumer build/test path with repaired Linux libcurl trust seam",
+    "Fresh Debian 13 ARM64 external CurrentHubConsumer live journey",
+    "Fresh supported Apple-silicon Mac external CurrentHubConsumer live journey"
+  ],
+  "active_targets": [
+    "Apple-silicon local Mac meeting the macOS 14 package floor (currently macOS 27.0, arm64, Swift 6.4, Xcode 27)",
+    "Existing Debian 13 ARM64 guest debian13-arm64"
+  ],
+  "deferred_targets": [
+    "x86",
+    "x86_64",
+    "amd64",
+    "Intel Mac",
+    "prepared macOS 13.7.4 guest as a Swift acceptance target",
+    "Azure",
+    "final cross-architecture matrix and clean-host rows",
+    "new VMs or repair/use of the unadmitted Debian x86_64 guest"
+  ],
+  "scope_override": {
+    "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+    "owner_direction_date": "2026-09-09",
+    "rule": "Active Apple-silicon Mac and Debian 13 ARM64 working products take priority; deferred architecture rows remain preserved and cannot block them.",
+    "r1_boundary": "Missing named-source TeslaMate input, real import, passive provenance and full parity remain acceptance gaps but do not block independent consumer usability.",
+    "mac_floor_observation": "The prepared macos13-arm64 guest reports macOS 13.7.4 below the declared macOS 14 package floor; the active local Mac reports arm64/macOS 27.0 and is the supported Mac runtime.",
+    "owner_restart_date": "2026-09-12",
+    "restart_boundary": "The global 2026-09-10 pause is lifted for Debian ARM64 and Apple-silicon Mac execution. Preserve the existing goal, dirty checkout and completed evidence; x86 remains deferred and closed runtime cohorts are not reusable.",
+    "viewer_boundary": "Viewer development, packaging, integration and acceptance are excluded from current Swift work; retained Viewer references are historical only."
+  },
+  "native_goal_status": "complete 2026-09-12; the package, source, ARM64 build, Linux trust repair, and fresh Debian ARM64 ordinary consumer journey pass. The corrected one-use supported-Mac handoff then produced an arm64 CurrentHubConsumer executable and completed discovery, claim, health, readiness, vehicles, current, paginated drives and credential rotation with exit 0. The current Swift working-product criterion is therefore proven on both active targets. The sample's in-memory credential store intentionally requires a fresh claim after process restart; Hub restart/data preservation, formal installed/matrix lifecycle, named-source R1, and deferred x86/amd64/Intel/Azure work are separate backlog gates. Swift removed only its exact scratch directory and released the shared lock; Hub then stopped its exact launcher and child cleanly and closed port 18494. No duplicate goal exists.",
+  "needed_input": "No further Swift input is required for the current ARM64/Mac working product. The accepted live receipts are the fresh Debian ARM64 and corrected supported-Mac external `Examples/CurrentHubConsumer` journeys, with both one-use runtimes cleaned. Formal installed/matrix/lifecycle, cross-product restart/data-preservation, named-source R1, and deferred x86/amd64/Intel/Azure work remain separate backlog items; a future follow-on requires a concrete owner-authorized scope or fresh handoff.",
+  "publication_authorized": false,
+  "environment_access": "../../../docs/development/VM_ACCESS.md",
+  "evidence": [
+    {
+      "kind": "swift_macos_r2_public_consumer",
+      "result": "pass_live_consumer_journey",
+      "detail": "Using the corrected fresh supported Apple-silicon Mac handoff, Swift invoked the permitted wrapper exactly once before expiry. The immutable 158-file source was staged under the package-identity-preserving basename `teslatlas-sdk-swift`; the wrapper built and ran the public Examples/CurrentHubConsumer release executable. Redacted public output was discovery=status=ok, claim=status=ok, health=status=ok, readiness=status=ready, vehicles=count=2, current=status=ok, drives=pages=3 count=5, rotation=status=ok; exit code 0. The recorded artifact is a native arm64 Mach-O executable, 816592 bytes, mode 700, SHA256 e6767824159bda2a715b4466fccf6dc1b04125fab1e57b485e0f12a37bc3b4d7. No private input contents were inspected and no retry occurred.",
+      "source_identity": "handoff active-macos-swift-consumer-handoff-2026-09-12-r1; endpoint https://127.0.0.1:18494; Hub ID 0f299bcf-735a-4b2e-9173-854b23dba694; source SHA256 234b352d2b692d667287c6db0896c7981c1a62b925c6aa4ba603fee002407751; source manifest SHA256 d25e1453259ae7ce73e105fa7797ad6c3a5c0205ce4f6d21cce65e3ae17f6d34; corrected wrapper SHA256 5ac6380a3705f738cc508fa9f9747d7db77bed66637229a1a62b7d20af27a90f",
+      "verified_at": "2026-09-12"
+    },
+    {
+      "kind": "swift_macos_r2_sdk_cleanup",
+      "result": "pass_exact_scratch_and_hub_fixture_cleaned",
+      "detail": "After the successful one-shot invocation, Swift removed only the exact non-symlink scratch directory `/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/swift-build-r2`; the directory is absent and the shared heavy-build lock is free. Hub then validated launcher PID 3568 and direct child PID 3673 against the exact handoff root, observed launcher exit 0 and Hub child exit 0, verified both PIDs and port 18494 closed, and retained the owner-only stopped descriptor. No private input contents were inspected, and no installed or matrix acceptance is implied.",
+      "source_identity": "handoff active-macos-swift-consumer-handoff-2026-09-12-r1; stopped descriptor SHA256 de2e954e498b18d0c5a6ffca84b6a03a62519c3d36088d6bfc160d875bb9966f; Hub exit code 0",
+      "verified_at": "2026-09-12"
+    },
+    {
+      "kind": "swift_macos_public_consumer_handoff_identity_mismatch",
+      "result": "failed_before_build_transport_corrected_handoff_required",
+      "detail": "The fresh supported-Mac handoff was invoked exactly once before expiry using its supplied wrapper. SwiftPM stopped before compiling or starting CurrentHubConsumer because the staged package was named `source`, while both CurrentHubConsumer targets require package identity `teslatlas-sdk-swift`; the only valid package identity reported was `source`. Exit code was 1, with no executable artifact, network request, claim, or live-consumer acceptance. The wrapper released the shared heavy-build lock. Swift removed only its exact non-symlink scratch directory `/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/swift-build`, which is absent; no credentials or private input contents were inspected and no retry occurred. Hub must issue a corrected one-use handoff preserving the same immutable source binding and package identity.",
+      "source_identity": "handoff active-macos-swift-consumer-2026-09-12-r1; source SHA256 234b352d2b692d667287c6db0896c7981c1a62b925c6aa4ba603fee002407751; source manifest SHA256 d25e1453259ae7ce73e105fa7797ad6c3a5c0205ce4f6d21cce65e3ae17f6d34; endpoint 18494; Hub ID 0f299bcf-735a-4b2e-9173-854b23dba694",
+      "verified_at": "2026-09-12"
+    },
+    {
+      "kind": "owner_restart",
+      "result": "resumed_existing_goal_no_duplicate",
+      "detail": "The owner explicitly lifted the 2026-09-10 global pause on 2026-09-12 and resumed Debian ARM64 and Apple-silicon Mac work from preserved checkpoints. The existing single native goal, dirty main checkout, source edits and completed ARM64 R3 receipt were preserved; no new goal, stale runtime cohort, x86 row, App change, production action, commit, push, CI run or release was created. Read-only process reconciliation found no Swift, Xcode or Docker development process and the shared heavy-build lock was free. The actual blocker is unchanged: a fresh expiring Hub handoff is needed for one ordinary external CurrentHubConsumer run on the supported Apple-silicon Mac.",
+      "source_identity": "Updated root AGENTS.md; docs/development/ACTIVE_SCOPE.md; docs/development/TASKS.json execution_state=RESUME_REQUESTED/restart_requested_at=2026-09-12; preserved Swift goal thread 01a082b7-e4c5-7383-bd9f-25bfba51c5f1",
+      "verified_at": "2026-09-12"
+    },
+    {
+      "kind": "current_working_product_reconciliation",
+      "result": "mac_public_consumer_handoff_remaining_formal_lifecycle_separate",
+      "detail": "The current Swift working-product criterion is ordinary SwiftPM consumption, not formal installed-matrix admission. Debian ARM64 is live-proven by the R3 external CurrentHubConsumer receipt, and existing macOS CurrentHubLiveTests prove the native URLSession library path. The remaining current criterion is one live run of the external CurrentHubConsumer executable on the supported Apple-silicon Mac. The sample intentionally clears its in-memory credential store at process end, so a restart requires re-pairing; it owns no durable Hub data. Hub restart/data preservation and fixed installed runner/session-input receipts are separate cross-product and formal lifecycle backlog gates, not prerequisites for this current Swift developer-resource goal.",
+      "source_identity": "PLAN.md current working-product boundary; README.md; Examples/CurrentHubConsumer/README.md; existing macOS CurrentHubLiveTests and Debian R3 receipt",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "swift_debian_r3_public_consumer",
+      "result": "pass_live_consumer_journey",
+      "detail": "Using the fresh Hub-owned Debian 13 ARM64 handoff, the exact permitted one-shot `docker start -a` command ran the nonprivileged swiftuser container on host networking with zero mounts and only the handoff-defined SSL_CERT_FILE path. The immutable source binding was source SHA256 234b352d2b692d667287c6db0896c7981c1a62b925c6aa4ba603fee002407751, composed of the 158-file refresh plus CurrentHubCurlShim.c SHA256 9647f4f6000af20207a3acb0d0231913b3d390f08008c0381151f7f200aab844 and CurrentHubTransportTests.swift SHA256 8365b37a8d2ba8b2cc4ac64418cd84a824aea491b58ea863a3721918020bad60. The pinned image was `teslatlas-swift-current-consumer:debian-arm64-libcurl-r3-20260909`, image SHA256 b84ffb6dfe951d5692b0a450c82b25cd576b2dad05e2bd30eac1bcd23ae505e4, user swiftuser. Against Hub ID e14ec585-5ce6-4fd1-a038-2fad3c8ade40 at https://127.0.0.1:18499, public output was discovery=ok, claim=ok, health=ok, readiness=ready, vehicles=2, current=ok, drives=3 pages/5 count, rotation=ok; exit code 0. Hub reported paired_devices=1, outbound_request_receipts=0 and stream_session_receipts=0. This proves the repaired ordinary Debian ARM64 consumer journey only. No private credentials were inspected or copied and no retry occurred.",
+      "source_identity": "Hub handoff endpoint 18499; source SHA256 234b352d2b692d667287c6db0896c7981c1a62b925c6aa4ba603fee002407751; image SHA256 b84ffb6dfe951d5692b0a450c82b25cd576b2dad05e2bd30eac1bcd23ae505e4",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "swift_debian_r3_cleanup",
+      "result": "pass_hub_owned_cleanup",
+      "detail": "Hub confirmed cleanup of the one-use R3 handoff: the endpoint at port 18499 is closed, the R3 container and private input root were removed, the R3 image was removed, and the temporary remote source was removed. This cleanup receipt is Hub-reported evidence; the SDK did not inspect private inputs or perform cleanup. No installed or matrix acceptance is implied.",
+      "source_identity": "Hub ID e14ec585-5ce6-4fd1-a038-2fad3c8ade40; R3 endpoint 18499; container teslatlas-swift-current-consumer-debian-arm64-libcurl-r3-20260909",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "goal_activation",
+      "result": "historical_superseded",
+      "detail": "The earlier native full-plan goal activation is retained as historical evidence only; the owner later deleted the prior native goals and created one fresh scoped goal recorded below.",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "owner_scope_override",
+      "result": "active_arm64_mac_deferred_x86",
+      "detail": "Applied docs/development/ACTIVE_SCOPE.md owner direction dated 2026-09-09. Active work is the existing Apple-silicon local Mac and Debian 13 ARM64 guest. x86/x86_64/amd64, Intel Mac, Azure, final cross-architecture rows, and the macOS 13.7.4 guest as a Swift acceptance target are paused, preserved, and cannot block the working product. Named-source TeslaMate admission remains an explicit acceptance gap but not a consumer-usability blocker.",
+      "source_identity": "Active local Mac: arm64, macOS 27.0, Swift 6.4, Xcode 27; Package.swift floor: macOS 14; prepared macOS guest: 13.7.4 below floor",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "native_goal_scope_override",
+      "result": "historical_limitation_superseded",
+      "detail": "The earlier limitation that the native goal was blocked and could not be edited is superseded by the owner deletion of the prior goals. The fresh native goal is active; the effective ARM64/Mac scope remains recorded in PLAN.md and STATUS.json.",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "native_goal_recreated",
+      "result": "active",
+      "detail": "After get_goal returned no goal, create_goal created exactly one fresh native goal with no token budget. A second get_goal confirmed status active, tokensUsed 0, thread_id 01a082b7-e4c5-7383-bd9f-25bfba51c5f1, and the exact revised ARM64/Mac objective recorded in goal_objective.",
+      "objective": "Deliver a normal usable SwiftPM consumer on supported Apple-silicon macOS and supported Debian 13 ARM64, with package shape, public TeslatlasCurrentHub consumer usability, strict current-Hub/profile and transport boundaries, and the minimum ARM64/Mac packaging or lifecycle evidence needed for a usable product. Preserve x86/amd64/Intel Mac/Azure/full-matrix work as paused, keep named-source parity as a separate acceptance gap, require concrete Hub handoffs for shared runtimes, and do not modify app/.",
+      "created_at": 1788961692,
+      "tokens_used": 0,
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "environment",
+      "result": "partial",
+      "detail": "Swift 6.4 and Xcode 27 are available; uv-managed Python 3.11.16 is available. System python3 is 3.9.6 and fails the documented 3.11 floor; no floor was lowered.",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "debian_arm64_preflight",
+      "result": "reachable_toolchain_missing",
+      "detail": "Read-only preflight of the existing debian13-arm64 guest reports Debian 13 aarch64, kernel 6.12.107+deb13-cloud-arm64, Docker client/server 26.1.5+dfsg1 with aarch64 daemon and root /var/lib/docker, 10 GiB free disk and 2.9 GiB available memory. Native Swift and clang are absent; the ordinary user cannot read the Docker socket, while passwordless sudo can inspect it. Existing HA and Edge containers were observed only and were not changed. This is environment evidence, not package, live-consumer, installed, or cleanup acceptance.",
+      "source_identity": "Read-only commands through scripts/dev/vm.sh debian ssh on 2026-09-09",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "debian_arm64_container_consumer",
+      "result": "pass_package_and_consumer_only",
+      "detail": "Using the existing Debian 13 ARM64 Docker daemon and the SDK Dockerfile pinned to swift:6.0.3-jammy manifest SHA256 1ad73b8f2a2300c650da0949519418565661d802765b9a99435df22bc947e2b4, the built image reported linux/arm64 and ran as swiftuser. The root non-live selection passed 148 tests with 0 failures; the release package build passed; Examples/CurrentHubConsumer passed 9 tests with 0 failures and its release build passed. The uniquely tagged image, temporary source context, and all --rm containers were removed; the shared heavy-build lock was released. This proves ARM64 package/consumer build and test behavior only, not a live Hub journey, Debian installed service, fixed-matrix row, or cleanup authority.",
+      "source_identity": "Dockerfile SHA256 4ce3ec0511c0b17372fa5d548b6c9fab95a2211ec87c3254a8a54445e8cb42a4; Package.swift SHA256 cfae0738fec873d0b5361aae8ddc4f33e37bf2f42ee4e40259e23e23875e898f; CurrentHubConsumerTests.swift SHA256 fecf95ff957d1de4f05fae6a68ca94ca8f02f37564c5822b68dc391169370b8e",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "source_delta_after_d1",
+      "result": "pass_rebound_source_only",
+      "detail": "After the Hub-verified immutable D1 snapshot and aggregate source binding, the SDK added only a conditional FoundationNetworking import to Examples/CurrentHubConsumer/Tests/CurrentHubConsumerTests.swift so the public consumer test target compiles on Linux. A refreshed owner-only read-only snapshot includes the current bytes and preserves the same 158-file scope; the ARM64 package/consumer gate passed with this source identity. Hub independently reverified the refreshed snapshot twice and recorded the source-only rebind; no installed row or runtime acceptance is implied.",
+      "source_identity": "Prior D1 source SHA256 9076fbe1f5e0e20fde929cc7f5e0093e93e5216fa98b67e32c90e9b10a4dec6b; refreshed source SHA256 e92f4b75ac6da0ba62d78b1ac0c3ed1eacf4b779c753a570c722e9053ca9b7cb; current test file SHA256 fecf95ff957d1de4f05fae6a68ca94ca8f02f37564c5822b68dc391169370b8e",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "s2_contract_and_package",
+      "result": "pass",
+      "detail": "swift package dump-package reports four library products with iOS 17/macOS 14 floors; non-live SwiftPM tests pass (139 tests, 0 failures); top-level release build and Examples/CurrentHubConsumer release build pass; git diff --check passes.",
+      "source_identity": "HEAD 51494612db6aa3d0b0dafd08001ce432befa7fbf; working tree remains dirty and preserved",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "consumer_package",
+      "result": "pass",
+      "detail": "CurrentHubConsumer SwiftPM test suite passes (9 tests, 0 failures) and its public TeslatlasCurrentHub import/release build succeeds.",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "d1_packaging",
+      "result": "pass",
+      "detail": "The pinned swift:6.0.3-jammy Linux arm64 container validation completed with 148 selected XCTest tests and zero failures; the release package build and external CurrentHubConsumer release build also passed. The image ran as unprivileged swiftuser UID/GID 10001, used the recorded pinned manifest/image identities, and all owned --rm containers were absent afterward. This is package/local-container evidence only, not Linux amd64, installed-Hub, live-Hub, iOS, or physical-device acceptance.",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "matrix_adapter",
+      "result": "pass",
+      "detail": "uv run --python 3.11 with the declared jsonschema constraint passes the matrix adapter suite (28 tests, 0 failures), including rejection of non-reserved profile-member IDs in real session input.",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "ios_runtime_host",
+      "result": "pass",
+      "detail": "SDK-owned XcodeGen host and test target execute the public CurrentHubAppleConsumerTests lifecycle on iOS Simulator 27.0 (iPhone 17 Pro, arm64, UUID 2E02B24A-4320-42BF-8D89-80ED3854A104): 1 test, 0 failures. The hosted test bundle contains the eight enumerated JSON fixtures. This is simulator runtime evidence, not physical-device or live-Hub acceptance.",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "s3_live_consumer",
+      "result": "pass",
+      "detail": "The public macOS CurrentHubLiveTests journey passed against a fresh Hub-owned Debian ARM64 native fixture tunneled on loopback: Hub ID 1d8ab817-d058-4125-9406-94e0f0b237f2, endpoint https://127.0.0.1:18482, profile hub-http-v1@1.0.0 SHA256 b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926, product 2026.36.2, two vehicles, five drives in three pages and three conditional 304 responses. The receipt covered trusted TLS, wrong identity/trust/leaf-pin negatives, claim, rotation and old-bearer rejection, null/zero units, cancellation, unsupported zero-I/O and streamed oversize rejection. Hub cleanup then recorded hub_exit_code 0 and closed port 18482. This proves the S3 ordinary native consumer path, not installed-matrix or physical-device acceptance.",
+      "source_identity": "SDK HEAD 51494612db6aa3d0b0dafd08001ce432befa7fbf; current matrix_live.py a7242473cfb091db8cf812c56314e28ebaf559859b1d1e4981f81534ff92ff05; current matrix_wire.py fa9cf4abfd072c1e167568aff6f1efb35b0078a228cadf94bf7f834da5d05422",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "hub_swift_pin_audit",
+      "result": "pass",
+      "detail": "Hub independently re-reviewed and rebound the current Swift adapter bytes: matrix_live.py a7242473cfb091db8cf812c56314e28ebaf559859b1d1e4981f81534ff92ff05, matrix_wire.py fa9cf4abfd072c1e167568aff6f1efb35b0078a228cadf94bf7f834da5d05422, and matrix_contract.py 1019fbfc64c91038dbc68025bf31fb9483abb0cba13588440ab0861892b083df. Hub focused entrypoint/installed tests passed 11/11 and the SDK matrix adapter gate passed 28/28; the later Python 3.11 Hub registry/Swift checks passed 18 relevant checks. This clears source binding and preparation checks only; no installed Swift runtime row exists yet.",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "hub_swift_fixed_adapter_source",
+      "result": "pass_source_pending_runtime_contract",
+      "detail": "The Hub fixed Swift registry row and five callbacks (launch, admission, supplement, execution logs and runtime inventory) are source-present and the focused Python 3.11 verification passes 20 tests (13 Swift adapter, 7 registry). This is source-preparation evidence only. Hub receipt validation still requires independently bound runtime identity_sha256/runtime_ref fields while the SDK reviewed Swift runtime schema is closed to its execution/platform/compiler/test_product/transport/artifact/actor_input_manifest_sha256/phase_admissions shape; Hub must reconcile that boundary before any Swift X1 run.",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "hub_d1_source_binding",
+      "result": "pass_source_only_runtime_pending",
+      "detail": "The prior Hub packaging/components.json binding remains the old optional source identity: SHA256 37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa, source SHA256 9076fbe1f5e0e20fde929cc7f5e0093e93e5216fa98b67e32c90e9b10a4dec6b, and read-only external manifest SHA256 18a950c20e5b3c423d99b9556e3b044bf0f46a2da31df45633011c166613685c. The refreshed handoff is ready for Hub re-review; package_archive_present is false and every macOS/Debian installed selector remains blocked until that rebind and a target receipt.",
+      "source_identity": "Package.swift SHA256 cfae0738fec873d0b5361aae8ddc4f33e37bf2f42ee4e40259e23e23875e898f; profile hub-http-v1@1.0.0 SHA256 b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "vm_access",
+      "result": "reachable_not_sdk_acceptance",
+      "detail": "Prepared debian13-arm64 guest is reachable as Debian 13.6 aarch64. Hub-owned service and native-fixture evidence now exists independently, but this SDK task has not installed or exercised Swift there; no Swift acceptance is implied.",
+      "verified_at": "2026-09-08"
+    },
+    {
+      "kind": "d1_component_handoff",
+      "result": "pass_source_only_runtime_pending",
+      "detail": "Prepared the refreshed source-only Swift D1 handoff at d1-component-manifest-handoff-2026-09-09.json. The owner-only read-only frozen snapshot is /Users/bolyki/.codex/artifacts/teslatlas-sdk-swift-d1-20260909-refresh-ro/frozen-source with 158 listed files and no writable paths from HEAD 51494612db6aa3d0b0dafd08001ce432befa7fbf; source manifest SHA256 e92f4b75ac6da0ba62d78b1ac0c3ed1eacf4b779c753a570c722e9053ca9b7cb and external manifest SHA256 4ebf48d90013fab1ed354703d305b8d9170d240cb7526d7d57b18a1c96c34a8c. SDK source_manifest_for matched the refreshed record twice. The record binds Package.swift, VERSION 2026.36.2, five SwiftPM products, iOS 17/macOS 14 floors, current-Hub/profile and matrix contract identities, explicit no-service ownership, supported/blocked selectors, lifecycle/receipt fields, and redaction limits. No package archive, service, installed selector, or runtime receipt is claimed; Hub must independently recheck the refreshed read-only snapshot twice before replacing the old aggregate binding.",
+      "source_identity": "Package.swift SHA256 cfae0738fec873d0b5361aae8ddc4f33e37bf2f42ee4e40259e23e23875e898f; profile hub-http-v1@1.0.0 SHA256 b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926; matrix validator SHA256 1019fbfc64c91038dbc68025bf31fb9483abb0cba13588440ab0861892b083df",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "d1_swift_refreshed_source_rebind",
+      "result": "pass_source_only_runtime_not_started",
+      "detail": "Hub independently invoked source_manifest_for twice against the refreshed owner-only read-only Swift snapshot and supplied local-sources record. Both complete manifests were identical and matched all 158 records: source SHA256 e92f4b75ac6da0ba62d78b1ac0c3ed1eacf4b779c753a570c722e9053ca9b7cb, external manifest SHA256 4ebf48d90013fab1ed354703d305b8d9170d240cb7526d7d57b18a1c96c34a8c, and HEAD 51494612db6aa3d0b0dafd08001ce432befa7fbf; no writable or symlink snapshot paths were observed. The rebind covers the test-only FoundationNetworking delta for future selection. It did not start or pair a Swift consumer, select an installed row, reuse Viewer inputs, or establish runtime/package/platform acceptance.",
+      "source_identity": "Hub STATUS kind d1_swift_refreshed_source_rebind; former aggregate source identity remains historical and distinct",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "hub_swift_debian_handoff_prepared",
+      "result": "pass_hub_and_swift_runner_builds_fixture_staging_pending",
+      "detail": "Hub supplied a fresh Swift-specific Debian 13 ARM64 ordinary-consumer handoff at port 18495 with distinct candidate, fixture, and consumer roots. The handoff binds Hub source HEAD 7fe8cb202c0eb7e291901a9b719d3fbe65c675bc, profile hub-http-v1@1.0.0 SHA256 b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926, refreshed Swift source SHA256 e92f4b75ac6da0ba62d78b1ac0c3ed1eacf4b779c753a570c722e9053ca9b7cb, source manifest SHA256 4ebf48d90013fab1ed354703d305b8d9170d240cb7526d7d57b18a1c96c34a8c, and Dockerfile SHA256 4ce3ec0511c0b17372fa5d548b6c9fab95a2211ec87c3254a8a54445e8cb42a4. Hub completed the clean candidate build under the shared lock: ELF Linux aarch64 Hub binary SHA256 0687a619d009debd48ad7f67501e52d0d147402001e262f03a4c54b63fc99d14, seed SHA256 bfc494e1f182951123e55da9cc987b016aa64528ac7efd44200a5cb326ce7707, fixture source SHA256 f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47, and scenario SHA256 c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3. Hub also completed the fresh runner build under the shared lock: image `teslatlas-swift-current-consumer:debian-arm64-20260909`, image ID SHA256 84f242c2ecf2a6e8f8113c26f2fceb062fce7b0f1d85afd6c84df7c511b1d1ea, arm64, image user swiftuser, runtime_started false. The transferred 158-file Swift source was source-manifest verified before promotion. Fixture staging and launch remain pending, so no endpoint, CA, invitation, configuration, consumer run, or cleanup receipt is claimed. Former Swift r2, Viewer 18487, and Node 18489 inputs remain excluded.",
+      "source_identity": "debian-arm64-swift-consumer-handoff-2026-09-09.json; SDK Dockerfile SHA256 4ce3ec0511c0b17372fa5d548b6c9fab95a2211ec87c3254a8a54445e8cb42a4",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "native_goal_blocked_audit",
+      "result": "blocked_external_hub_launch_handoff",
+      "detail": "The same external blocker recurred across three consecutive goal turns after the Debian ARM64 fixture reached fixture_staged_validated_ready_to_start: Hub did not start the Hub-owned fixture or supply fresh CA, invitation, and live configuration. Direct handoff/guest checks confirmed runtime_state not_started and port 18495 closed; coordinator escalation and exact Hub launch requests were sent. No SDK-side action can produce the required live evidence without violating the Hub fixture ownership boundary. The goal tool status is blocked; this does not claim Debian live, installed, or full-matrix acceptance.",
+      "source_identity": "goal thread 01a082b7-e4c5-7383-bd9f-25a538c31e86; handoff debian-arm64-swift-consumer-handoff-2026-09-09.json",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "hub_swift_fixture_pre_ready_failure",
+      "result": "failed_no_further_retry_authorized",
+      "detail": "Hub reported that the authorized fresh Debian ARM64 fixture retry stopped before readiness exactly like the preserved first attempt. Neither retained root produced a CA, endpoint/connection descriptor, invitation, Hub listener, ready/stopped descriptor, container, or Swift consumer; each created only the same partial private output store before exiting nonzero. The handoff now records retry_fixture_pre_ready_failure_preserved_no_further_retry and explicitly forbids a third fixture retry. No Swift execution input exists.",
+      "source_identity": "handoff debian-arm64-swift-consumer-handoff-2026-09-09.json; runtime port 18495; both failed roots retained by Hub",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "swift_debian_public_consumer_command_failure",
+      "result": "failed_before_transport_fresh_handoff_required",
+      "detail": "Hub supplied a repaired live fixture at https://127.0.0.1:18497 with trusted /healthz and /readyz responses, a fresh one-use invitation, and a created nonprivileged swiftuser container. Swift started that exact container once. It exited 1 before any network or credential read with `error: no executable product named 'CurrentHubConsumer'` because the command ran from the SDK root instead of the nested Examples/CurrentHubConsumer package. No journey, identity, profile, transport, or cleanup acceptance is claimed; the exited container and one-use inputs are not reusable. Hub was asked for a fresh corrected command/handoff using the nested package path.",
+      "source_identity": "repaired Hub handoff at port 18497; container teslatlas-swift-current-consumer-debian-arm64-20260909; SDK public consumer package Examples/CurrentHubConsumer",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "swift_debian_r2_public_consumer_transport_failure",
+      "result": "failed_transport_before_journey_acceptance",
+      "detail": "Hub supplied corrected R2 endpoint https://127.0.0.1:18498 with Hub ID c4f5c1df-0e85-4090-8396-5be446245b9e, trusted health/readiness 200, fresh owner-only inputs, and the verified command `swift run --package-path Examples/CurrentHubConsumer -c release CurrentHubConsumer /tmp/swift-input/current-hub-consumer.json`. The exact nonprivileged swiftuser container built the nested product successfully, then exited 1 with only the public redacted result `status=transport_failure`. No journey milestones, request-level diagnosis, transport/profile/identity acceptance, or consumer receipt exists; the R2 container and one-use inputs are not reusable.",
+      "source_identity": "corrected_r2_fixture_ready_container_staged_awaiting_swift; container teslatlas-swift-current-consumer-debian-arm64-r2-20260909; profile SHA256 b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "swift_debian_r2_cleanup",
+      "result": "container_and_private_input_removed_shared_image_retained_by_preserved_r1",
+      "detail": "After the R2 failure, Swift removed only the exact R2 container and private input directory. Docker refused removal of the shared image tag because preserved failed R1 container 3f41c117b0af still references the same image ID; the R1 container was not deleted or force-removed. Hub owns the live R2 fixture cleanup. No private input contents were read or copied.",
+      "source_identity": "R2 container teslatlas-swift-current-consumer-debian-arm64-r2-20260909; R2 input root /home/bolyki.guest/teslatlas-consumers/swift-debian-arm64-r2-20260909/input; shared image SHA256 84f242c2ecf2a6e8f8113c26f2fceb062fce7b0f1d85afd6c84df7c511b1d1ea",
+      "verified_at": "2026-09-09"
+    },
+    {
+      "kind": "linux_process_trust_repair",
+      "result": "pass_source_and_package_verification_blocked_live_handoff",
+      "detail": "Hub's non-secret diagnosis identified the R2 transport_failure as curl code 60 before any Hub request: the Linux C shim did not pass SSL_CERT_FILE/SSL_CERT_DIR into libcurl's CAINFO/CAPATH options. The SDK added explicit peer verification (CURLOPT_SSL_VERIFYPEER=1), hostname verification (CURLOPT_SSL_VERIFYHOST=2), and non-empty environment-to-CA mapping without changing hostname or leaf-pin checks. The real ARM64 TLS regression was red before the source change and passes 1/1 after it; the pinned ARM64 root non-live suite passes 149/149, top-level release build passes, Examples/CurrentHubConsumer passes 9/9 with its release build, and the supported Apple-silicon non-live suite passes 139/139. The owned diagnostic image, containers and temporary source context were removed; the preserved failed-R1 container/image was not touched. This proves the source/package repair only, not a fresh live Hub journey or installed lifecycle row.",
+      "source_identity": "Sources/CurrentHubCurlShim/CurrentHubCurlShim.c; Tests/TeslatlasCurrentHubTests/CurrentHubTransportTests.swift; pinned ARM64 image sha256:b596dc9c7f2b52a9e90ba093d4f6ce8a5a96e89562c63a0c8a7e8cb61d5e15f3",
+      "verified_at": "2026-09-09"
+    }
+  ],
+  "thread_id": "01a082b7-e4c5-7383-bd9f-25a538c31e86",
+  "stage_semantics": "B2 is the global consumer-integration stage; S2 is its first owned contract/preparation work package",
+  "reasoning_effort": "max",
+  "development_authorized_at": "2026-09-08T21:13:48.933123+00:00",
+  "blocker": "No blocker remains for the current Swift ARM64/Mac working-product goal. Formal installed/matrix/lifecycle, cross-product restart/data-preservation, named-source R1, and deferred x86/amd64/Intel/Azure acceptance remain separate backlog work. The one-use Mac fixture was cleaned by its Hub owner; this receipt does not claim installed or matrix acceptance.",
+  "blocker_owner": "None for the completed Swift working-product goal; the coordinator owns separate named-source/formal backlog scope.",
+  "unblock_event": "None for the current goal. A future follow-on requires explicit owner scope and fresh, one-use runtime inputs; closed handoffs and Viewer inputs remain non-reusable.",
+  "next_ready_action": "Preserve the accepted Debian ARM64 and supported-Mac receipts. Do not rerun unchanged source/package suites or reuse one-use handoffs. Treat formal installed/matrix/lifecycle and cross-product restart/data-preservation work as separate backlog."
+}

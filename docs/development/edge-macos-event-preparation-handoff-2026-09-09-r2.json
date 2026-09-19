@@ -1,0 +1,168 @@
+{
+  "schema": "teslatlas.hub.edge-event-preparation-handoff/v1",
+  "status": "r2_receiver_target_load_failed_cleaned_no_event",
+  "date": "2026-09-09",
+  "owner": "Hub",
+  "authorization": "Coordinator standing preparation authority after independent receiver-correction review: create one fresh Mac Edge/Hub cohort, prove the corrected receiver status socket is loopback-only, obtain an ordinary empty baseline, and return inactive one-shot actor bindings. Producer submission remains separately unauthorized.",
+  "scope": "Fresh synthetic development preparation only. It may create new owner-only roots, identity, PKI, Edge credential and listeners. It must not invoke the producer, assign an event timestamp, submit ingress, create application/sequence/ACK state, attach Home Assistant or Viewer, operate a vehicle, reuse r1 state/identity/credentials, install a package, or touch unrelated services.",
+  "receiver_correction_review": {
+    "pinned_upstream": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "pinned_archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9",
+    "direct_digest_receipt": "docs/development/coordination/2026-09-09-edge-receiver-direct-digests.json",
+    "source": {
+      "config/config.go": "d3a446d729d0cd670081ffdcf4983593aa439dcf117c5fd23d304b6504aa2cec",
+      "server/monitoring/status_server.go": "e2b1bf6ef7fd1656caa0e7d38cb31c817b80e84da8dafd1885cc70581b90236a",
+      "server/monitoring/status_server_test.go": "7b94a1f1eeb341de437c0ee45cd2c49377cbeedb63468a99d7533f0cb24785db"
+    },
+    "candidate": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-receiver-status-loopback-20260909/teslatlas-fleet-telemetry",
+      "sha256": "a701006ef234e764c396043fd2e7c418d46526c3b1d12b55b725f3f159d98a14",
+      "size_bytes": 50410802,
+      "mode_type": "0500 single-link regular Mach-O arm64"
+    },
+    "independent_patch_review": "Compared against the cached pinned archive. The entire delta is one optional JSON StatusHost field; default 127.0.0.1 plus net.JoinHostPort replacing wildcard :port formatting; and one new 86-line test file. The regression sets telemetry Host=0.0.0.0, requires /status HTTP 200 with body ok, rejects an lsof wildcard socket, requires exact loopback, and separately covers an explicit status host. cmd/main retains StatusPort>0 as the status-server activation guard.",
+    "retained_tests": "TDD RED observed TCP *:53492. Go 1.27.0 affected config/monitoring/streaming suite passed 33/2/12; corrected producer mock-receiver suite passed four top-level/six subtests. Broad ./... is explicitly not a pass because of a wrong producer environment selection and absent pinned integration certificates.",
+    "review_result": "C0; source/candidate admitted to preparation only. Source-to-binary binding is retained build-receipt evidence, not reproducible-build proof; actual guest loopback socket and /status behavior are mandatory."
+  },
+  "target_preflight": {
+    "guest": "macos13-arm64",
+    "os": "macOS 13.7.4",
+    "architecture": "arm64",
+    "user_uid": "admin/501",
+    "address": "192.168.64.10",
+    "checked_at_utc": "2026-09-09T21:29Z",
+    "fresh_roots_absent": true,
+    "r1_pids_absent": true,
+    "listeners_free": [
+      "127.0.0.1:8080",
+      "192.168.64.10:21743",
+      "127.0.0.1:21744",
+      "127.0.0.1:21745",
+      "127.0.0.1:18491"
+    ]
+  },
+  "fresh_target": {
+    "edge_root": "/Users/admin/teslatlas-edge-event-prep-20260909-r2",
+    "hub_root": "/Users/admin/teslatlas-hub-edge-event-prep-20260909-r2",
+    "staging_root": "/Users/admin/teslatlas-hub-edge-event-prep-staging-20260909-r2",
+    "edge_internal": "127.0.0.1:8080",
+    "edge_delivery": "192.168.64.10:21743",
+    "raw_receiver": "127.0.0.1:21744",
+    "receiver_status_required": "127.0.0.1:21745",
+    "hub_control": "127.0.0.1:18491"
+  },
+  "verified_artifacts": {
+    "edge": "880ee095f6d96f465a73dfc5285851ffadb102494a624d654802f108fda2a882",
+    "receiver_corrected": "a701006ef234e764c396043fd2e7c418d46526c3b1d12b55b725f3f159d98a14",
+    "hub": "eaf44a2803723b4a9d961c2dfac6057db94e3da36110070f9abdc49ce22abfad",
+    "empty_fixture": "f4fcc8e1fda2124ccf19998077a6f80648cf6f897e517e6c1c8e8458437b8fed",
+    "inactive_producer": "db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7"
+  },
+  "preparation_evidence": {
+    "resumed_target_reconciliation": {
+      "checked_at_utc": "2026-09-10T05:25Z",
+      "reason": "The existing macos13-arm64 VM had stopped externally. Only that existing VM was restarted; all three R2 roots and staged artifacts were unchanged, all five listeners were closed, no runtime directory existed, and the Edge credential store still contained zero credentials. Completed setup and source review were not repeated."
+    },
+    "sealed_identity": {
+      "identity_sha256": "0d976f198647cdd12bb0d9d74170e9bb5ba3264578c528a9445f85f125d43ed6",
+      "producer_input_sha256": "d9794e7e75317dad677f67f6f72467c6bc0b07756839aa77e27274303f95e7d5",
+      "event_authorized": false,
+      "created_at_ms_present": false,
+      "private_values": "Fresh source, vehicle, installation, lineage, transaction, VIN and car bindings remain sealed owner-only and are not reproduced in this record."
+    },
+    "empty_fixture": {
+      "scenario": "empty-edge-binding",
+      "receipt_sha256": "b8542ef8ff3860fa36d24e534dd3b26d619c8db8f63c3ffba38105dd75e479ab",
+      "result": "Schema-2 sealed identity echoed; no telemetry or event generated."
+    },
+    "fresh_public_certificates": {
+      "vehicle_server_ca_sha256": "4a61bfd00196e84ac345003ad590297ef3afdc317c789568c4dd25276cc88530",
+      "vehicle_server_leaf_sha256": "fa09c332d78460bf204663b48d6f01f7f6fee64ede48c9ad06f096d361bd7e5e",
+      "vehicle_client_ca_sha256": "d558ac9d87e4d8d2759f22529e7eeb66ef5ecd7079ddfaddec330456e45a0608",
+      "vehicle_client_leaf_sha256": "4717b42663fd4bcfb3993c774ab099c97a1debf67965de9ea1ad03c331f4eac2",
+      "edge_delivery_server_ca_sha256": "b187b7f3024c316d581abbca8bcb300edd33dcc6aca60e75c9c69a7e9a07cfcf",
+      "edge_delivery_server_leaf_sha256": "501bc099b50e775137ff9f7f42c3168e800bdcf9ec3842773f2167c7b21cd428",
+      "edge_delivery_client_ca_sha256": "5168bd3d41f6568cd6f014be3103b8ca5394dfa733751b6c743f13395e282f14",
+      "edge_delivery_client_leaf_sha256": "8dc4488de60e669006901c25fa54cd0071469ae3e27331f4c211fea0adf9c834",
+      "hub_control_ca_sha256": "3a700e5d7b4f339d79aa2fe6f955eb37a634b72541a2227602acab34bbf8a73a",
+      "hub_control_leaf_sha256": "d02c908d71b15ba8a3df1dd4ae5b1028c686b1983749cad1d92e86d2e1305a56"
+    },
+    "configs_and_diagnostics": {
+      "edge_config_sha256": "e6cb912bece6efbca98d023749f9a5d97508b27e1596b380c79eda378ed77dc8",
+      "receiver_config_sha256": "32e03f11d27391410071e6687bfae8d5cb539f6c03260638c4fac399772e74d1",
+      "receiver_status_host": "omitted deliberately to exercise the corrected 127.0.0.1 default",
+      "hub_config_sha256": "bfd84423f39ae2dc9f777b5fcecd96473882ad9c23c4eac37b5cb8ae7308333f",
+      "edge_init_doctor": "passed with empty state before enrollment",
+      "hub_init_sha256": "366007468acf3245ac5c3ee8433ed8ea15ee4197cb75f3e80204f75771151f41",
+      "hub_doctor_sha256": "d12b300cd980b0f4b64ac5b5b1508af99b3e9b484e12b13532aa9a0a579ef03b",
+      "hub_doctor": "status ok and all checks passed before any listener"
+    },
+    "single_finite_credential": {
+      "credential_id": "98754bc5-e250-4f5f-a458-862a8d551a37",
+      "format": "tte1",
+      "bytes": 85,
+      "expires_at_utc": "2026-09-10T05:44:39.690000Z",
+      "observed_expired_after_utc": "2026-09-10T05:44:43Z",
+      "post_expiry_state": "All five R2 listeners remained closed; Edge PID 754 and receiver PID 770 remained absent; Hub was never started.",
+      "metadata_sha256": "03cd8d6027180a3a5b26b48a0b29bc911321b16e7e27e42b1f251694b0e54acb",
+      "raw_issuance": "deleted after atomic owner-only bundle consumption",
+      "renewed_rotated_or_reenrolled": false
+    }
+  },
+  "planned_sequence": [
+    "Recheck target roots, listeners and candidate hashes; create only the three fresh roots with private custody.",
+    "Generate one new sealed identity with event_authorized=false and run only the empty-edge-binding fixture. Generate fresh vehicle, Edge-Hub and Hub-control PKI.",
+    "Run Edge init/doctor; enrol exactly one finite tte1 credential and atomically consume it into a private Hub bundle. Never print, rotate, extend or reenrol it.",
+    "Run Hub init/doctor. Launch Edge, corrected receiver and Hub in order. Before Hub acceptance, require lsof to show receiver raw and status listeners only on 127.0.0.1 and require GET /status = 200/ok.",
+    "Obtain stable Edge and Hub health/readiness plus native Hub empty status. Do not invoke the staged producer.",
+    "At credential expiry or any mismatch, stop Hub, receiver and Edge in order; verify all five listeners closed and preserve the roots/receipts."
+  ],
+  "one_shot_actor": {
+    "status": "inactive_and_ineligible_receiver_candidate_failed_target_load",
+    "endpoint": "wss://127.0.0.1:21744/",
+    "payload": "Exactly one topic-V VehicleName string datum; no numeric telemetry, units, vehicle command, Tesla account credential, retry or replay.",
+    "activation": "A separate explicit submit-once decision must bind the sealed identity and a current timestamp. This preparation neither authorizes nor performs that invocation."
+  },
+  "result": {
+    "outcome": "fail_closed_before_receiver_socket_and_before_hub_start",
+    "edge": {
+      "pid": 754,
+      "command_verified": true,
+      "health_http": 200,
+      "readiness_http": 200,
+      "stopped": true
+    },
+    "receiver": {
+      "pid": 770,
+      "command_started": true,
+      "socket_opened": false,
+      "process_result": "dyld load failure before service startup",
+      "missing_dependency": "/opt/homebrew/opt/zeromq/lib/libzmq.5.dylib",
+      "candidate_lc_build_version": {
+        "minos": "27.0",
+        "sdk": "27.0"
+      },
+      "comparison": "The prior runnable receiver SHA-256 8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1 has no ZeroMQ dylib dependency but is not eligible because it retains the wildcard status bind."
+    },
+    "hub": {
+      "started": false,
+      "reason": "The mandatory corrected-receiver target gate failed."
+    },
+    "cleanup": {
+      "verified_at_utc": "2026-09-10T05:34:53Z",
+      "edge_pid_absent": 754,
+      "receiver_pid_absent": 770,
+      "hub_pid_file_absent": true,
+      "listeners_closed": [
+        "127.0.0.1:8080",
+        "192.168.64.10:21743",
+        "127.0.0.1:21744",
+        "127.0.0.1:21745",
+        "127.0.0.1:18491"
+      ],
+      "roots_preserved": true
+    },
+    "event_evidence": "No producer invocation, timestamp assignment, ingress, telemetry event, application, sequence, ACK, Home Assistant action or vehicle action occurred.",
+    "remaining_gate": "Supply a corrected receiver artifact that is runnable on the macOS 13 ARM64 target without an absent absolute dylib dependency; then use an entirely fresh cohort. Do not reuse this R2 identity or credential."
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "status": "stopped_after_one_edge_submission_with_hub_transport_failure",
+  "ready_at": "2026-09-09",
+  "fixture_root": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r5-docker-20260909",
+  "private_descriptor_path": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r5-docker-20260909.run.json",
+  "ready_descriptor_path": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r5-docker-20260909/ready.json",
+  "ready_descriptor_mode": "0600",
+  "launch_inventory": {
+    "command": "exec /usr/bin/python3.13 /home/bolyki.guest/teslatlas-workspace/hub-current-20260908/tools/interop/fixture.py --config /home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r5-docker-20260909.run.json",
+    "launcher_pid": 59984,
+    "hub_child_pid": 60002,
+    "direct_child_verified": true,
+    "hub_listener_port": 18490,
+    "maximum_lifetime_seconds": 1800
+  },
+  "same_hub_ha_claim_renewal": {
+    "prior_claims": "Two earlier short-lived claims expired without an HA submission; no temporary HA entry, bearer, Edge submission, sensor observation, or ledger result is claimed from them.",
+    "issuer": "supported Hub CLI while the r5 data directory was quiescent",
+    "claim": "v3 strict owner-only private invitation; 900-second lifetime; locator was sent only to the HA owner",
+    "r5_identity_and_tls": "unchanged",
+    "active_ready_descriptor_path": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r5-docker-20260909/ha-b2-retry-v3-live-ready.json",
+    "active_ready_descriptor_mode": "0600",
+    "active_launcher_pid": 69198,
+    "active_hub_child_pid": 69199,
+    "trusted_health": 200,
+    "trusted_readiness": 200,
+    "next_boundary": "Completed: HA attached its temporary entry, Edge made one approved submission, and HA later removed only that temporary entry."
+  },
+  "connection": {
+    "hub_health_url": "https://127.0.0.1:18490/healthz",
+    "hub_readiness_url": "https://127.0.0.1:18490/readyz",
+    "hub_ca_path": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r5-docker-20260909/server.pem",
+    "hub_ca_mode": "0600",
+    "trusted_health": 200,
+    "trusted_readiness": 200
+  },
+  "collector_binding": {
+    "docker_edge_base_url": "https://127.0.0.1:19443/",
+    "source_id": "04d1bc2f-0e9a-4f84-9ac5-492955dd8d5e",
+    "vehicle_id": "11111111-1111-4111-8111-111111111111",
+    "vin": "5YJ3E1EA7KF000001",
+    "car_id": 9,
+    "installation_id": "edge-b2-20260909",
+    "lineage": "edge-spool-b2-20260909",
+    "private_input_roles": ["server trust CA", "Hub client certificate", "Hub client key", "active Edge bearer"],
+    "private_input_proof": "Each role was independently verified as a distinct owner-only nonsymlink regular file with nlink 1; no bytes, hash, token, or credential identifier is recorded here."
+  },
+  "artifact_binding": {
+    "hub_binary_sha256": "c08083a25ea6f348e588f0386aca2218cfcf73f64126bb78f5844eb1f076b910",
+    "seed_binary_sha256": "e37c8ff03ced748b16b87b0720ef149a168cc5457fcb503778fe6b24dce1593d",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+  },
+  "initial_sqlite_snapshot": {
+    "sealed_source_binding": true,
+    "edge_lineages": 0,
+    "edge_sequence_dispositions": 0,
+    "edge_applications": 0,
+    "edge_pending_publications": 0
+  },
+  "one_shot_submission_and_diagnosis": {
+    "edge_owner_report": "One approved Docker receiver submission ACKed. Edge retained one encrypted queued record; no second submission was authorised.",
+    "hub_runtime_observation": "The r5 collector repeatedly reported state backoff with detail edge transport unavailable; Edge lineage, application, pending-publication, and sequence-disposition counts all remained zero.",
+    "read_only_control_probe": "Using r5's exact configured URL, CA, client certificate/key, and bearer as the same guest owner, a direct mTLS GET returned HTTP 200 with a 6,358-byte version-2 batch containing 11 records and zero gaps. This probe neither ACKed nor submitted a record.",
+    "classification": "The sealed endpoint, private-file custody, mTLS route, HTTP status, and bounded response were independently healthy. The failure is confined to r5's in-process Hub collector transport path before durable acceptance. The runtime maps the underlying request/stream error to the deliberately generic edge transport unavailable diagnostic, so this bounded run cannot distinguish a lower-level reqwest/TLS/stream cause without changing the collector; no such change or retry was authorised.",
+    "not_proven": "No Hub durable commit, ACK, collection result, Docker acceptance, or end-to-end same-Hub value follows from the receiver ACK."
+  },
+  "coexistence": {
+    "left_listening": [8443, 18480, 18483, 18500, 18510, 19443],
+    "isolated_fixture_listener": 18490,
+    "viewer_18480_not_touched": true
+  },
+  "closure": {
+    "owner": "Hub r5 temporary renewal launcher only",
+    "action": "Completed: after exact parent/child verification, SIGTERM was sent only to launcher PID 69198; no process group or unrelated service was signalled.",
+    "evidence": "ha-b2-retry-v3-live-stopped.json is mode 0600; child PID 69199 exited 0; 127.0.0.1:18490 is closed; installed 8443, HA 18483, and Viewer 18480 remained listening."
+  },
+  "limits": [
+    "This is an isolated synthetic Hub fixture handoff, not an installed Hub or Docker acceptance row.",
+    "The one receiver ACK and r5 lifecycle cleanup are bounded evidence only. They do not prove Hub collector pull, durable commit, Hub ACK, collection, replay, Docker acceptance, or end-to-end same-Hub value.",
+    "Private CA, client certificate/key, bearer, invitation, and raw SQLite payloads remain redacted."
+  ]
+}

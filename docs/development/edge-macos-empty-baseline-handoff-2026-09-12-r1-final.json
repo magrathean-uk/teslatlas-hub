@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_empty_baseline_closed_handoff_final_snapshot",
+  "date": "2026-09-12",
+  "state": "closed_rejected_certificate_identity_review_no_submission",
+  "immutability": "This versioned snapshot is the final closed-r1 handoff. Later corrections or status changes must use a new file and must not edit these bytes.",
+  "source_handoff": {
+    "path": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r1.json",
+    "sha256_at_freeze": "8aadc454966d9cf692fe32260ddf531d8594e5a26c56902424901f8873c278fc",
+    "superseded_ready_state_sha256": "4fd3ed7237f7ae15e83176d611d76e0761fb4abcb4170f462cfa562bfb5a52eb",
+    "earlier_closed_state_sha256": "a9007816bcbee9f63751600a0869acd0218153ce863bdde52d14f7f07019df52",
+    "digest_history_reason": "The mutable handoff was amended after closure to record the public-certificate hash and pinned-parser reconciliation. This final snapshot freezes that amended closed state without changing the rejected cohort decision."
+  },
+  "cohort": {
+    "id": "edge-hub-empty-baseline-20260912-r1",
+    "target": "macOS 13.7.4 arm64",
+    "hub_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "hub_seed_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+    "edge_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "sealed_binding_sha256": "e2d3b72af358156f689dc383b0eca6ca88eeae402e30832fef8102c93816556e"
+  },
+  "empty_baseline": {
+    "result": "PASS",
+    "readiness_receipt_sha256": "f6fad862ff13096f2a5b513bc73bb6d834086621f3dc16e8f031e84bdc4d8d36",
+    "summary": "Five-second zero-event Edge stability, receiver HTTP 200, authenticated mTLS delivery with records=[] and gaps=[], Hub health/readiness/status and doctor checks, one sealed vehicle, zero observations, pending publications zero and ACK frontier null all passed."
+  },
+  "certificate_reconciliation": {
+    "producer_leaf_pem_sha256": "fcf01266e005309904d36d67a407303497db4280723f261a024cae165fb0c6ba",
+    "producer_leaf_der_sha256": "3f7f6207e7716bca25cd2dafad5ca17df617d2c432a09e1f6f2cf856167d0f58",
+    "superseded_hand_recorded_pem_sha256": "fcf012de17db696f2dd5d1fd2af9d542f7b3560c39451db55a53de69de12c905",
+    "edge_verification_path": "teslatlas-edge/docs/development/edge-macos-producer-certificate-profile-verification-2026-09-12-r1.json",
+    "edge_verification_sha256_before_final_snapshot_rebind": "2c4831a83668e15f62d56dd02cbbb11d06d273a3ad2dc5aa867acb6d27cdf03a",
+    "result": "Issuer/profile, Subject.CommonName sealed identity, clientAuth EKU, key correspondence, exact receiver CA trust anchor and pinned-parser identity policy pass. VIN SAN is not applicable for the pinned issuer policy."
+  },
+  "decision": {
+    "coordinator_decision": "rejected",
+    "event_authorized": false,
+    "producer_invoked": false,
+    "authorization_file_present": false,
+    "invocation_guard_present": false,
+    "invocation_result_present": false,
+    "cohort_reusable": false,
+    "reason": "The first independent identity review triggered fail-closed rejection. Later reconciliation corrected a hand-recorded PEM digest and an inapplicable SAN expectation, but cannot amend this rejected cohort into acceptance."
+  },
+  "cleanup": {
+    "receipt_sha256": "ad3a71847a73aab1600cdade58f3141c8e6f922c6e53114672a2f6e49726d428",
+    "ports_closed": [8080, 21843, 21444, 21445, 18523],
+    "guest_stopped": true,
+    "shared_heavy_build_lock_absent": true
+  },
+  "future_scope": "A wholly fresh cohort may be prepared under the coordinator's later authorization, but must use a new root, identities, machine-computed staged PEM and DER digests, credentials, transaction, source candidates, expiry and receipts. Producer submission remains separately forbidden until fresh readiness and binding review.",
+  "limitations": [
+    "This is candidate-process zero-state and cleanup evidence only.",
+    "It is not durable forwarding, installation, service, release, production, vehicle, Home Assistant or user acceptance evidence."
+  ]
+}

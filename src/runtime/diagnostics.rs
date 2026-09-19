@@ -308,6 +308,8 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         && !fleet.present;
     let collector_required =
         (config.collector.interval_seconds > 0 || config.collector.edge.is_some()) && !init_only;
+    let direct_provider_credentials_required =
+        collector_required && config.collector.edge.is_none();
     let can_start = collector_required
         && !configured.is_empty()
         && (config.collector.edge.is_some() || selected_credentials_present);
@@ -384,7 +386,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     };
     let credentials_check = DoctorCheck {
         name: "selectedProviderCredentials".to_owned(),
-        passed: (!collector_required && !selected_credentials_configured)
+        passed: (!direct_provider_credentials_required && !selected_credentials_configured)
             || selected_credentials_present,
         detail: format!(
             "provider={:?} legacyPresent={} legacyCollection={} fleetPresent={} fleetCollection={} required={}",
@@ -466,7 +468,8 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             3,
             DoctorCheck {
                 name: "fleetCollectionScopes".to_owned(),
-                passed: (!collector_required && !fleet.present) || fleet.valid_for_collection,
+                passed: (!direct_provider_credentials_required && !fleet.present)
+                    || fleet.valid_for_collection,
                 detail: fleet
                     .scope_status
                     .clone()

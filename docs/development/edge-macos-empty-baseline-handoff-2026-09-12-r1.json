@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "state": "closed_rejected_certificate_identity_review_no_submission",
+  "scope": "One fresh macOS 13 arm64 candidate cohort; empty baseline only until an explicit coordinator one-event authorization.",
+  "guest": {
+    "os": "macOS 13.7.4",
+    "build": "22H420",
+    "architecture": "arm64",
+    "user": "admin UID 501",
+    "root": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r1"
+  },
+  "source_and_candidates": {
+    "hub_source_receipt": "hub/docs/development/hub-macos-arm64-source-binary-receipt-2026-09-12-r1.json",
+    "edge_source_receipt": "teslatlas-edge/docs/development/edge-macos-arm64-source-binary-receipt-2026-09-12-r1.json",
+    "edge_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "hub_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "hub_seed_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6"
+  },
+  "contract": {
+    "accepted_review": "hub/docs/development/edge-macos-forwarding-contract-review-2026-09-12-r2.json",
+    "proposal_sha256": "9bf4c2f85911f94a35a19353b024f6a59f6eb39635f8a89b8159aa2b64ee4bd8",
+    "sealed_binding_sha256": "e2d3b72af358156f689dc383b0eca6ca88eeae402e30832fef8102c93816556e",
+    "producer_client_certificate_pem_sha256": "fcf01266e005309904d36d67a407303497db4280723f261a024cae165fb0c6ba",
+    "producer_client_certificate_der_sha256": "3f7f6207e7716bca25cd2dafad5ca17df617d2c432a09e1f6f2cf856167d0f58",
+    "superseded_incorrect_recorded_certificate_sha256": "fcf012de17db696f2dd5d1fd2af9d542f7b3560c39451db55a53de69de12c905",
+    "raw_private_values_recorded": false
+  },
+  "runtime": {
+    "started_at_ms": 1789211374391,
+    "checked_at_ms": 1789211380929,
+    "credential": {
+      "format": "tte1",
+      "ttl_seconds": 1800,
+      "expires_at_ms": 1789212504583,
+      "raw_value_recorded": false
+    },
+    "listeners": [
+      {"process": "Edge", "pid": 977, "address": "127.0.0.1:8080"},
+      {"process": "Edge", "pid": 977, "address": "192.168.64.10:21843"},
+      {"process": "receiver", "pid": 978, "address": "127.0.0.1:21444"},
+      {"process": "receiver", "pid": 978, "address": "127.0.0.1:21445"},
+      {"process": "Hub", "pid": 979, "address": "127.0.0.1:18523"}
+    ],
+    "readiness_receipt_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r1/empty-baseline-ready-r3.json",
+    "readiness_receipt_sha256": "f6fad862ff13096f2a5b513bc73bb6d834086621f3dc16e8f031e84bdc4d8d36"
+  },
+  "baseline": {
+    "stable_seconds": 5,
+    "edge_health_and_readiness": "HTTP 200; status ok; records=0; bytes=0; corrupt=0; expired=0; pending gap notices=0; capacity exhausted=false before and after the stability interval.",
+    "edge_metrics": "All spool, gap, admitted, duplicate, and rejection counters required by the handoff were zero.",
+    "receiver_status": "HTTP 200 body ok.",
+    "trusted_delivery": "Fresh owner-only bearer plus pinned server CA and client certificate/key returned HTTP 200 with records=[] and gaps=[].",
+    "hub": "Health HTTP 200; readiness HTTP 200; native status ready=true; schema 59; one sealed vehicle; raw observations=0; current observations=0; quarantined sessions=0; all doctor checks passed."
+  },
+  "attempt_history": [
+    "The historical staged seed was rejected before any listener because it did not implement empty-edge-binding.",
+    "A current source-bound Hub and interop fixture were built under the shared heavy-build lock.",
+    "The first runtime proof attempt reached the baseline checks but its harness rejected tracing-prefixed doctor JSON; exact process cleanup closed all five ports and no event was sent.",
+    "The corrected immutable proof helper produced the readiness receipt above."
+  ],
+  "event_authorized": false,
+  "decision_and_cleanup": {
+    "coordinator_decision": "rejected",
+    "reason": "Edge's first independent review reported a VIN SAN mismatch. Source/public-certificate reconciliation later established that the pinned receiver derives this issuer's identity from the leaf Subject CommonName and does not require or read SAN. The initial SAN criterion was inapplicable, but the coordinator-rejected cohort remains closed and cannot be amended into acceptance.",
+    "hash_reconciliation": "The retained host PEM and immutable staging manifest both hash to fcf01266e005309904d36d67a407303497db4280723f261a024cae165fb0c6ba, matching Edge's observed file. The earlier fcf012de... value was a recording error; DER hashes to 3f7f6207e7716bca25cd2dafad5ca17df617d2c432a09e1f6f2cf856167d0f58.",
+    "producer_invoked": false,
+    "authorization_file_present": false,
+    "invocation_guard_present": false,
+    "invocation_result_present": false,
+    "cleanup_receipt_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r1/empty-baseline-cleanup-r3.json",
+    "cleanup_receipt_sha256": "ad3a71847a73aab1600cdade58f3141c8e6f922c6e53114672a2f6e49726d428",
+    "process_results": [
+      {"process": "Edge", "pid": 977, "exit_code": 0},
+      {"process": "receiver", "pid": 978, "exit_code": -15},
+      {"process": "Hub", "pid": 979, "exit_code": 0}
+    ],
+    "ports_closed": [8080, 21843, 21444, 21445, 18523],
+    "guest_stopped": true,
+    "shared_heavy_build_lock_absent": true
+  },
+  "reconciliation_receipt": {
+    "path": "teslatlas-edge/docs/development/edge-macos-producer-certificate-profile-verification-2026-09-12-r1.json",
+    "sha256": "c6d464a3b086988508c780898e57a51d17ed737b1b85d0820a318d90b739a0df",
+    "result": "Issuer/profile, Subject.CommonName sealed identity, clientAuth EKU, key correspondence, exact receiver CA trust anchor and pinned parser policy all pass; VIN SAN is not applicable; pinned-parser mismatch=false."
+  },
+  "next_gate": "The coordinator reviews the completed reconciliation and decides whether any entirely fresh cohort may be prepared. This closed root, credential and binding remain non-reusable and grant no future runtime authority.",
+  "limitations": [
+    "No producer was invoked and no telemetry event was sent.",
+    "This is candidate-process evidence only; no install, package, service, release, production, vehicle, or user acceptance is claimed."
+  ]
+}

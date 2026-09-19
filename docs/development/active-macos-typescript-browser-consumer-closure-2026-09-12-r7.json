@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_sequential_runtime_closure_r7",
+  "date": "2026-09-12",
+  "state": "closed_supervisor_ipc_failure_before_chrome_no_sdk_acceptance_no_retry",
+  "hub_handoff": {
+    "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r7.json",
+    "sha256": "1cd5dfc4710cad3de26f72cd3adfac7a827813c50e118b70d7fbe12fc4f8c46d"
+  },
+  "sdk_failure_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r7.json",
+    "sha256": "7d6a14cd14bd765c0d56cc31b16a9c4037810e12650244cb46ea9d26dd77e6d9"
+  },
+  "runtime_failure_evidence": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7/evidence/browser-acceptance-receipt.json",
+    "sha256": "9e3a8881250e696ab0245160510517f7680c6f46bf0d693376c71b5dc6915bcb",
+    "mode": "0600"
+  },
+  "result": {
+    "attempts": 1,
+    "supervisor_pid": 47036,
+    "supervisor_initial_state": "serving/idle with control.sock and supervisor-state.json created",
+    "failure": "The supervisor process was absent while its socket and state paths remained when the first untrusted control request ran. That request failed with ECONNREFUSED on the r7 control.sock.",
+    "untrusted_chrome_started": false,
+    "untrusted_cdp_attach": false,
+    "sdk_runner_started": false,
+    "helper_server_started": false,
+    "hub_request_started": false,
+    "certificate_import_started": false,
+    "trusted_browser_started": false,
+    "keychain_mutation": false,
+    "witness_created": false,
+    "acceptance_produced": false,
+    "retry_authorized": false
+  },
+  "cleanup": {
+    "typescript_supervisor_pid_absent": true,
+    "typescript_owned_children_absent": true,
+    "typescript_ports_closed": [
+      4177,
+      9238,
+      9239
+    ],
+    "untrusted_profile_absent": true,
+    "trusted_profile_absent": true,
+    "supervisor_socket_removed": true,
+    "supervisor_state_removed": true,
+    "event_log_absent": true,
+    "certificate_export_and_witness_absent": true,
+    "failure_receipt_preserved": true,
+    "fresh_certificate_sha1": "924C668403B227741353E9BB82C698A0FDA64750",
+    "fresh_certificate_present_in_login_keychain": false,
+    "credential_removed": true,
+    "credential_path_absent": true,
+    "hub_launcher_pid_absent": true,
+    "hub_child_pid_absent": true,
+    "hub_child_exit_code": 0,
+    "hub_stopped_receipt_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r7-h2/run/stopped.json",
+    "hub_stopped_receipt_sha256": "cdfe0a3ac0b7471629e82ded170823ee09e2d9e6ca50e10f6b88e44bdb033ceb",
+    "hub_stopped_receipt_mode": "0600",
+    "hub_port_closed": 18529
+  },
+  "closed_preparation_failure": {
+    "path": "hub/docs/development/active-macos-typescript-browser-hub-preparation-failure-2026-09-12-r7-h1.json",
+    "sha256": "db63b4c1d4dc3c4c9f6a686a080ea12754e9d2acf07d922e5f57a99a993039c2",
+    "reuse_allowed": false
+  },
+  "next_gate": "Do not retry or repair r7. Any future browser lane requires a source-only diagnosis of why the supervisor exited after publishing serving state, an independently reviewed correction and regression for that lifecycle, and a wholly fresh TypeScript preparation plus Hub tuple under separate authorization.",
+  "proof_boundary": "This closure proves the independently verified r7 handoff, supervisor IPC connection-refused failure before Chrome and exact cross-owner cleanup only. It is not Chrome, TLS-negative, CA-import, CORS, SDK API, Hub API, package installation, service, release, production, vehicle or user acceptance evidence."
+}

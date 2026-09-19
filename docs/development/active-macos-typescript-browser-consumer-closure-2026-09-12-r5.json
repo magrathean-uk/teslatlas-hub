@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_sequential_runtime_closure",
+  "date": "2026-09-12",
+  "state": "closed_supervisor_ipc_lifecycle_failure_before_sdk_no_acceptance_no_retry",
+  "hub_handoff": {
+    "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r5.json",
+    "sha256": "91edb32761ad5d8ce5e83c301e2942efbe2f469313c3eaf0d15e8773b8ec3520"
+  },
+  "sdk_failure_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r5.json",
+    "sha256": "653cfd2c656e7bea65aa575f6a5dde5cd373b76405e28efe843dffaa8dab1d45",
+    "mode": "0600"
+  },
+  "result": {
+    "attempts": 1,
+    "untrusted_chrome_started": true,
+    "untrusted_cdp_attach": "passed",
+    "chrome_version": "Chrome/152.0.7977.83",
+    "protocol_version": "1.3",
+    "error": "The untrusted-control client received no response after half-closing its request while the supervisor awaited delayed Chrome readiness.",
+    "root_cause": "The client used socket.end for its request. The supervisor server did not use allowHalfOpen:true, awaited Chrome readiness, and then attempted to write the delayed response after the writable side had closed.",
+    "sdk_runner_started": false,
+    "helper_server_started": false,
+    "hub_request_started": false,
+    "certificate_import_started": false,
+    "trusted_browser_started": false,
+    "keychain_mutation": false,
+    "witness_created": false,
+    "acceptance_receipt_created": false,
+    "retry_authorized": false
+  },
+  "cleanup": {
+    "typescript_supervisor_pid_absent": true,
+    "typescript_untrusted_child_pid_absent": true,
+    "typescript_child_exit_code": 0,
+    "typescript_ports_closed": [
+      4175,
+      9234,
+      9235
+    ],
+    "fresh_certificate_sha1": "048716E2E2A3A9D9EF93F47E49F086AA5C14892D",
+    "fresh_certificate_present_in_login_keychain": false,
+    "profiles_socket_export_witness_and_acceptance_absent": true,
+    "credential_removed": true,
+    "credential_path_absent": true,
+    "hub_launcher_pid_absent": true,
+    "hub_child_pid_absent": true,
+    "hub_child_exit_code": 0,
+    "hub_stopped_receipt_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r4/run/stopped.json",
+    "hub_stopped_receipt_sha256": "a858c666d16eaa9a2af27992e14f0eb7bf08a9932b8d24d8aaabecfef3b97d01",
+    "hub_stopped_receipt_mode": "0600",
+    "hub_port_closed": 18527
+  },
+  "next_gate": "Correct and independently review the supervisor delayed-response socket lifecycle with a browser-free regression before any separately authorized fresh tuple. The consumed r5 tuple and credential are not reusable.",
+  "proof_boundary": "This closure proves the supervised untrusted Chrome launch, CDP attachment, diagnosed IPC failure, and exact cleanup only. It is not TLS-negative, CA-import, CORS, SDK API, Hub API, package installation, service, release, production, vehicle or user acceptance evidence."
+}

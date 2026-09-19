@@ -12,7 +12,7 @@ use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{self, Write},
-    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     str::FromStr,
 };

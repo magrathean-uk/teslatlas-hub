@@ -21,6 +21,11 @@
   "build_host": {
     "go": [
       {
+        "path": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64/bin/go",
+        "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
+        "goroot": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64"
+      },
+      {
         "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
         "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
         "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64"

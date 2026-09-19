@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_sequential_runtime_closure_r6",
+  "date": "2026-09-12",
+  "state": "closed_operator_pre_run_permissions_failure_no_sdk_acceptance_no_retry",
+  "hub_handoff": {
+    "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r6.json",
+    "sha256": "3334c6e1bb5e47723b362cb10748970ae53596be26a1bd79631f0eabe00983d3"
+  },
+  "sdk_failure_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r6.json",
+    "sha256": "4d76afb0ccf30ad044a5bc3040df74001508a933cdc1307c87705a3651a70f76"
+  },
+  "result": {
+    "attempts": 1,
+    "untrusted_chrome_pid": 85816,
+    "untrusted_cdp_attach": "passed with Chrome 152, protocol 1.3 and exact listener/process snapshot",
+    "failure": "The operator-prepared evidence directory had file mode 0600, so the shell could not create runner.stderr and the npm browser runner process did not start.",
+    "sdk_runner_started": false,
+    "helper_server_started": false,
+    "hub_request_started": false,
+    "certificate_import_started": false,
+    "trusted_browser_started": false,
+    "keychain_mutation": false,
+    "witness_created": false,
+    "acceptance_receipt_created": false,
+    "retry_authorized": false
+  },
+  "cleanup": {
+    "typescript_supervisor_pid_absent": true,
+    "typescript_untrusted_child_pid_absent": true,
+    "typescript_untrusted_child_exit_code": 0,
+    "typescript_ports_closed": [
+      4176,
+      9236,
+      9237
+    ],
+    "untrusted_profile_removed": true,
+    "trusted_profile_absent": true,
+    "supervisor_socket_removed": true,
+    "certificate_export_witness_and_acceptance_absent": true,
+    "fresh_certificate_sha1": "341BC3EC8C266D472430E3BA998764107B9AF513",
+    "fresh_certificate_present_in_login_keychain": false,
+    "credential_removed": true,
+    "credential_path_absent": true,
+    "hub_launcher_pid_absent": true,
+    "hub_child_pid_absent": true,
+    "hub_child_exit_code": 0,
+    "hub_stopped_receipt_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r6/run/stopped.json",
+    "hub_stopped_receipt_sha256": "6f01afd305f126795d21bedd14b79a20d8916c3b1c8febe97168e16a369a726f",
+    "hub_stopped_receipt_mode": "0600",
+    "hub_port_closed": 18528
+  },
+  "next_gate": "Correct directory/file modes source-only and add a no-browser preflight that proves the exact runner stderr/output paths are creatable before any future Chrome spawn. A later tuple requires a separate review and authorization; r6 remains consumed and non-reusable.",
+  "proof_boundary": "This closure proves corrected supervisor response delivery through untrusted Chrome attach, the pre-run permission failure, and exact cleanup only. It is not TLS-negative, CA-import, CORS, SDK API, Hub API, package installation, service, release, production, vehicle or user acceptance evidence."
+}

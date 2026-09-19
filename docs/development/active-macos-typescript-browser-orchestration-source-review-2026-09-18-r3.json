@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.hub.active_macos_typescript_browser_orchestration_source_review",
+  "date": "2026-09-18",
+  "verified_at": "2026-09-18T14:56:58Z",
+  "status": "accepted_source_only_no_runtime_authorization_no_handoff",
+  "authority": "Independent Hub-owned source-only review of the final TypeScript browser-control orchestration candidate. No TypeScript, root coordinator, App, Viewer or other product file was edited. No browser, Hub runtime, VM, guest, listener, Keychain, live fixture, producer or event was started or touched.",
+  "supersedes_reviews": [
+    {
+      "path": "docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r1.json",
+      "sha256": "2e9653c8b5c3719a4b62170129ca7f2f61ad0ba03a48adee265b5e66448b7a1c",
+      "status": "retained_rejected_historical_review"
+    },
+    {
+      "path": "docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r2.json",
+      "sha256": "0ff0987b65f29bef4d5c12b4885a7b90f2a055444915b2ebaf67589a9bb24ecd",
+      "status": "retained_rejected_historical_review"
+    }
+  ],
+  "reviewed_input": {
+    "source_receipt": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+      "sha256": "8c686933275cd3233ca2fbf0dbe29b3e547fe37f7850968faab620f552a1bbdb"
+    },
+    "orchestrator": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/browser-control-orchestrator.mjs",
+      "sha256": "7232768d3a96f49fdf2b831b03ca95929c83ca4d6c35ccc24c7d512cf07034ff"
+    },
+    "browser_free_regression": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/test-browser-control-orchestrator.mjs",
+      "sha256": "3c2dadf277706e6250440b3cf00ab33d4d80334d4e3c8d0244b21b22b4ed6ac9"
+    },
+    "bound_hooks": {
+      "preflight_template": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/browser-control-preflight-template.mjs",
+        "sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78"
+      },
+      "preflight_regression": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/test-browser-control-preflight-template.mjs",
+        "sha256": "1789949b89b1afe474e305914c9680371aca9706d0f19b6fae15f9fee1785488"
+      },
+      "preflight_correction_receipt_sha256": "d14f0f9a404a9cd83996779f45f0e9eecbcced8dc74c70c6f9e10cf98b475bf1",
+      "sequential_trust_sequence": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/browser-trust-sequence.mjs",
+        "sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9"
+      },
+      "browser_runner": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/browser-hub-runner.mjs",
+        "sha256": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004"
+      }
+    }
+  },
+  "repository_state": {
+    "hub_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "typescript_head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+    "dirty_trees_preserved": true,
+    "typescript_writes_by_review": 0,
+    "hub_write_scope": [
+      "docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r3.json",
+      "docs/development/STATUS.json"
+    ]
+  },
+  "toolchain": {
+    "node": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+      "version": "v26.7.0"
+    },
+    "npm_version": "11.19.0"
+  },
+  "source_inspection": {
+    "stale_receipt": {
+      "status": "PASS",
+      "source_locations": [
+        "scripts/browser-control-orchestrator.mjs:430-441",
+        "scripts/test-browser-control-orchestrator.mjs:179-200"
+      ],
+      "evidence": "After pure config normalization, a configured receiptPath is checked absent before the capture check, prepareBrowserControlFiles, capture creation or spawnTracked. The stale-receipt regression requires null preflight and capture, zero supervisor/control/runner/cleanup children, zero cleanup attempts, an absent evidence directory and byte-preserved receipt-sentinel content."
+    },
+    "stale_capture": {
+      "status": "PASS",
+      "source_locations": [
+        "scripts/browser-control-orchestrator.mjs:436-443",
+        "scripts/test-browser-control-orchestrator.mjs:202-227"
+      ],
+      "evidence": "The orchestration capture directory is asserted absent before prepareBrowserControlFiles can mutate the control root. The regression preserves stale.marker and requires null preflight/capture, no supervisor or cleanup child, zero cleanup attempts and absent runner.stdout/runner.stderr."
+    },
+    "cleanup_sequence_and_closure": {
+      "status": "PASS",
+      "source_locations": [
+        "scripts/browser-control-orchestrator.mjs:480-544",
+        "scripts/test-browser-control-orchestrator.mjs:317-351"
+      ],
+      "evidence": "The cleanup loop has no supervisor-closed early exit, creates one ordered attempt record for each configured command, retains command failures, then separately waits for or forces supervisor close. The focused case runs shutdown, cleanup-failure and after in order; records passed/failed/passed, attempts 3 of 3, fails the overall result and verifies supervisorClosed=true."
+    }
+  },
+  "verification": {
+    "syntax": {
+      "status": "PASS",
+      "command": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node --check <file>",
+      "files": [
+        "scripts/browser-control-orchestrator.mjs",
+        "scripts/test-browser-control-orchestrator.mjs",
+        "scripts/browser-control-preflight-template.mjs",
+        "scripts/test-browser-control-preflight-template.mjs",
+        "scripts/browser-trust-sequence.mjs",
+        "scripts/browser-hub-runner.mjs"
+      ]
+    },
+    "browser_free_orchestration_regression": {
+      "status": "PASS",
+      "command": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node scripts/test-browser-control-orchestrator.mjs",
+      "cases": [
+        "stale-receipt-before-preflight-mutation",
+        "stale-capture-before-preflight-mutation",
+        "success",
+        "supervisor-failure",
+        "runner-failure",
+        "control-failure",
+        "cleanup-sequence-after-supervisor-close"
+      ],
+      "browser_started": false,
+      "hub_contacted": false,
+      "keychain_touched": false,
+      "fresh_live_fixture": false
+    },
+    "preflight_regression": {
+      "status": "PASS",
+      "command": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node scripts/test-browser-control-preflight-template.mjs",
+      "second_invocation": "rejected_without_truncation",
+      "stale_artifacts_rejected_before_mutation": 10,
+      "root_symlink_rejected_before_mutation": true
+    },
+    "biome": {
+      "status": "PASS",
+      "command": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node node_modules/@biomejs/biome/bin/biome check scripts/browser-control-orchestrator.mjs scripts/test-browser-control-orchestrator.mjs scripts/browser-control-preflight-template.mjs scripts/test-browser-control-preflight-template.mjs scripts/browser-trust-sequence.mjs scripts/browser-hub-runner.mjs",
+      "result": "Checked 6 files in 33ms. No fixes applied."
+    }
+  },
+  "post_run_boundary": {
+    "tracked_ports_closed": [
+      4176,
+      9236,
+      9237,
+      4177,
+      9238,
+      9239,
+      18529
+    ],
+    "matching_test_or_child_processes_remaining": 0,
+    "temporary_test_roots_remaining": 0,
+    "temporary_root_patterns": [
+      "tl-orchestrator-fixtures-*",
+      "teslatlas-browser-preflight-template-*",
+      "teslatlas-browser-preflight-symlink-*"
+    ],
+    "browser_started": false,
+    "hub_runtime_started": false,
+    "vm_or_guest_started": false,
+    "listener_started": false,
+    "keychain_touched": false,
+    "live_fixture_started": false,
+    "producer_or_event_started": false
+  },
+  "decision": {
+    "source_candidate": "accepted",
+    "runtime_authorized": false,
+    "handoff_issued": false,
+    "r7_reopened": false,
+    "reason": "The exact source package satisfies the bounded freshness, cleanup sequencing, failure recording and supervisor closure requirements. Source acceptance does not authorize browser execution. Per owner authority, no approved ARM64 guest currently exists, so no runtime handoff is issued."
+  },
+  "proof_boundary": "This receipt proves only exact source binding, static inspection and browser-free temporary-process behavior. It is not browser, SDK API, TLS, CA import, CORS, Hub API, VM/guest, package journey, service, release, production, vehicle or user acceptance evidence."
+}

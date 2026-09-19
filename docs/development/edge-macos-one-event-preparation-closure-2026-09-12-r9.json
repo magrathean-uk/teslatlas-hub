@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_preparation_closure_r9",
+  "date": "2026-09-12",
+  "state": "closed_fixture_read_only_open_defect_no_pki_runtime_or_event",
+  "accepted_source_package": {
+    "proposal_path": "hub/docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r9.json",
+    "proposal_sha256": "189f4d937e870a1a065d563664467aa39d80f4c422d55b5f85ddce89cdba7776",
+    "preparation_spec_path": "hub/docs/development/edge-macos-one-event-certificate-profile-preparation-2026-09-12-r9.json",
+    "preparation_spec_sha256": "a410aa6df2cd3fea36122cf42fa1ede895f81a80ccb4464ac596e13130489198",
+    "preparer_path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r9.py",
+    "preparer_sha256": "1496e044fa3a463f590b544765fb17d0597e7a53df3b8ad09eef069ec76ef2b3",
+    "edge_review": "PASS for one exact preparation execution",
+    "executions": 1
+  },
+  "failure": {
+    "stage": "After the supported empty-edge-binding fixture returned and the owner-only inactive binding was written, during the first positive actual-store validation and before staging accepted binaries, PKI, Edge init or credential creation.",
+    "error": "fixture database query failed: unable to open database file",
+    "cause": "The freshly closed Hub fixture is a checkpointed WAL-mode catalogue with no WAL/SHM sidecars. Python sqlite mode=ro cannot read that state without creating WAL coordination files, while the accepted validator prohibited writes but did not use the Hub repository's established guarded immutable-snapshot open.",
+    "missed_regression": "The original focused database used a SQLite shape that plain mode=ro could open and therefore did not reproduce the exact freshly closed Hub fixture condition.",
+    "repair_or_reuse_allowed": false
+  },
+  "preserved_failure_evidence": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9",
+    "fixture_result_private_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9/evidence/fixture-result-private.json",
+    "fixture_result_private_sha256": "2bf66d2ebb734161787ba09ffa2455479ffab5411ec93ef3c0ec9f13f40567ca",
+    "rejected_binding_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9/guest-stage/actor/binding.json",
+    "rejected_binding_sha256": "2c068ab6cf367fd258a93690d81745a8d97859829cfcc2563198540efa041f53",
+    "fixture_database_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9/guest-stage/hub/hub.sqlite",
+    "fixture_database_sha256_after_cleanup": "7d595f5ffc46abc046ccdfbdf7ad0a69868f3fd48f641ab58401b88a4f092163",
+    "all_paths_owner_only": true,
+    "raw_identity_values_publicly_recorded": false
+  },
+  "independent_diagnostic_side_effect": {
+    "owner": "Edge",
+    "action": "A normal SQLite diagnostic connection to the closed r9 fixture created hub.sqlite-shm and an empty hub.sqlite-wal before demonstrating why plain read-only validation had failed.",
+    "result": "The diagnostic then observed the seven relationships, but that does not accept or revive r9.",
+    "sidecars_removed_by_hub_cleanup": true,
+    "diagnostic_must_not_be_repeated_on_r9": true
+  },
+  "cleanup": {
+    "removed": [
+      "the one-use Hub cursor key",
+      "the diagnostic hub.sqlite-shm coordination sidecar",
+      "the diagnostic empty hub.sqlite-wal sidecar"
+    ],
+    "pki_created": false,
+    "edge_state_or_credential_created": false,
+    "accepted_binary_staging_started": false,
+    "public_profile_created": false,
+    "guest_started_or_root_created": false,
+    "process_or_listener_started": false,
+    "producer_invoked": false,
+    "event_submitted": false,
+    "shared_heavy_build_lock_absent": true,
+    "ports_closed": [8085, 21848, 21454, 21455, 18533]
+  },
+  "source_correction_after_closure": {
+    "validator_path": "hub/tools/interop/edge_fixture_binding.py",
+    "validator_sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819",
+    "test_path": "hub/tools/interop/test_edge_fixture_binding.py",
+    "test_sha256": "01fded231c7694d881b36b9c6c98f129cb246c7c73b0c109e2df105c594910d0",
+    "focused_result": "PASS 5/5 including immutable WAL-header validation, byte preservation, in-memory Hub-ID mismatch and pending-WAL rejection",
+    "method": "Require absent WAL/SHM sidecars, fingerprint the catalogue, open immutable=1 plus mode=ro and query_only, then require the same absent-sidecar state and exact catalogue fingerprint after all seven checks.",
+    "scope": "This is a source correction only and is not authority to repair or rerun r9. A fresh successor cohort requires Edge review."
+  },
+  "decision": "r9 is closed and non-reusable. Its fixture, identity slot, binding and any retained files are failure evidence only and are not inputs to a later cohort.",
+  "proof_boundary": "The fixture-first ordering executed and exposed a read-only-open defect before secret/runtime preparation. No PKI, Edge credential, guest, listener, Hub/Edge/receiver runtime, zero baseline, forwarding, producer, event, service, release, production, vehicle or user acceptance occurred."
+}

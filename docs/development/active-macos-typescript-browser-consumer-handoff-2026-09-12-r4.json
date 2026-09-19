@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_consumer_prelaunch_rebinding",
+  "date": "2026-09-12",
+  "state": "ready_for_one_supervised_sequential_browser_attempt",
+  "authority": "Versioned pre-launch correction under the already authorized single fresh attempt. No Chrome or keychain action occurred under the superseded binding, so the attempt and the still-live fresh Hub fixture remain unconsumed.",
+  "superseded_handoff": {
+    "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r3.json",
+    "sha256": "41a483bab38a9d8c160fe72e323c22bb6c82b244a6a9c66f62bb919b785c47d1",
+    "state": "superseded_before_launch_due_control_hash_and_contract_correction",
+    "runtime_identity_reusable_under_this_rebinding": true,
+    "reason": "The unconsumed r3 review found a PEM-versus-DER digest mismatch and did not explicitly await the runner's untrusted CDP closure, owned child termination and port 9235 closure before CA import."
+  },
+  "unchanged_fresh_hub_binding": {
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r4",
+    "ready_descriptor_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r4/run/ready.json",
+    "ready_descriptor_sha256": "84dadaae9a0addb87aeff03f396fcf7de466bdddd57929eaf26a83f5e303a226",
+    "endpoint": "https://127.0.0.1:18527",
+    "browser_endpoint": "https://localhost:18527",
+    "hub_id": "3e85ba59-22f6-4e5d-bf0d-a709a55949b1",
+    "launcher_pid": 41557,
+    "hub_pid": 41605,
+    "listener": "127.0.0.1:18527",
+    "health_and_readiness_rechecked": "HTTP 200 status ok and ready immediately before this rebinding",
+    "certificate_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r4/run/server.pem",
+    "certificate_pem_sha256": "e2d462d1d52a412b778ac7f57c20aab87a5fcfe06fefb1d51dd41c54fca45422",
+    "certificate_der_sha256": "7340fe9ecaaa3c2098d591d2da67ac86b0fd29185de50f3682411a7d1912c18a",
+    "credential_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r4/browser-input/credential.json",
+    "credential_mode": "0600",
+    "credential_bytes": 161,
+    "credential_expires_at_ms": 1791809939650,
+    "raw_credential_or_device_id_recorded": false
+  },
+  "corrected_typescript_binding": {
+    "repository_preparation_receipt": {
+      "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-control-preparation-2026-09-12-r2.json",
+      "sha256": "30f04bb35a854cbe3a1c15969cf58150a35a74d1ee1323134a3c1197f0ad85b4",
+      "mode": "0600"
+    },
+    "control_preparation_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/preparation.json",
+    "control_preparation_sha256": "3ca8dd30724cddfe7ab967f0b3580099f15963585734a6b006cacac0836540a6",
+    "supervisor": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/supervisor.mjs",
+      "sha256": "fb8a1b9ec56898849f89f81274b5c5710523dc8ae643adba06ac4f59404b81fb",
+      "mode": "0700"
+    },
+    "trust_hooks": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/trust-hooks.mjs",
+      "sha256": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+      "mode": "0700"
+    },
+    "untrusted_control": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/untrusted-control.mjs",
+      "sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+      "mode": "0700"
+    },
+    "certificate_digest_rule": "The runner and trust hook both SHA-256 hash the DER bytes decoded from the PEM certificate. The expected value is 7340fe9ecaaa3c2098d591d2da67ac86b0fd29185de50f3682411a7d1912c18a.",
+    "pre_import_boundary": "After the negative observation, the runner closes its Playwright CDP handle. Before security add-trusted-cert, the trust hook asks the persistent supervisor to observe no established CDP connection, terminate only its owned untrusted Chrome child, observe exit/close/signal, verify port 9235 closed, and mark the untrusted phase cleaned.",
+    "supervision": "Both Chrome phases remain direct detached=false, shell=false children with bounded piped redacted stderr, exact PID/lsof/command/CDP attach evidence and all-exit teardown evidence.",
+    "ports": {
+      "browser_origin": 4175,
+      "trusted_cdp": 9234,
+      "untrusted_cdp": 9235
+    }
+  },
+  "prelaunch_verification": {
+    "node_syntax": "PASS",
+    "targeted_biome": "PASS reported by TypeScript owner",
+    "hash_mode_and_json_cross_check": "PASS",
+    "stale_tuple_or_bypass_scan": "PASS",
+    "ports_closed": [4175, 9234, 9235],
+    "chrome_started": false,
+    "keychain_touched": false,
+    "certificate_import_started": false,
+    "attempt_consumed": false
+  },
+  "execution_contract": "Use every unchanged package, scenario, profile, API assertion, cleanup and forbidden-action field from the superseded r3 handoff, replacing only its TypeScript-control hashes and the clarified certificate/pre-import boundary with this receipt. Run exactly one attempt with no retry or tuple reuse.",
+  "cleanup": "On every exit, TypeScript must close the exact supervisor and owned Chrome children, remove only fresh control/package/profile/socket/state/export/witness artifacts, verify 4175/9234/9235 closed and verify the exact fresh certificate absent from the login keychain. Hub then stops only launcher PID 41557 and child PID 41605 and verifies 18527 closed.",
+  "proof_boundary": "This versioned rebinding is pre-execution contract evidence only. It does not prove TLS rejection, trust import, browser SDK API behavior, installation, service, release, production, vehicle or user acceptance."
+}

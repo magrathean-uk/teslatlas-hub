@@ -10,6 +10,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from jsonschema import Draft202012Validator
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from companions.core import (  # noqa: E402
@@ -26,8 +28,10 @@ from companions.core import (  # noqa: E402
     status,
     verify_local_source,
 )
+from companions.recipes import RecipeContext  # noqa: E402
+from companions.targets import activate_targets  # noqa: E402
 
-PROFILE_SHA = "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+PROFILE_SHA = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 COMMITS = {
     "protocol": "1" * 40,
     "sdk-typescript": "2" * 40,
@@ -54,7 +58,7 @@ def component(name: str, version: str, *, digest: str | None = None) -> dict:
         value["artifacts"] = {
             "package_filename": f"teslatlas-sdk-{version}.tgz",
             "package_sha256": (
-                "d1ab6ba0ede3a24ae12ed4151db0c90bf957fa19f5640cc4323bd368e565e8bb"
+                "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
                 if version == "2026.36.2"
                 else "d" * 64
             ),
@@ -87,6 +91,68 @@ def catalog_data() -> dict:
 
 
 class CatalogTests(unittest.TestCase):
+    def test_catalog_schema_accepts_home_assistant_target_provenance(self) -> None:
+        schema = json.loads(
+            (Path(__file__).resolve().parents[1] / "catalog.schema.json").read_text()
+        )
+        catalog = {
+            "schema_version": 1,
+            "cohorts": [
+                {
+                    "product_version": "2026.36.2",
+                    "publication_status": "local-unpublished",
+                    "admitted_hub_versions": [],
+                    "components": {
+                        "home-assistant": {
+                            "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+                            "commit": "a" * 40,
+                            "source_sha256": "b" * 64,
+                            "product_version": "2026.36.2",
+                            "profile": {
+                                "id": "hub-http-v1",
+                                "revision": "1.0.0",
+                                "sha256": PROFILE_SHA,
+                            },
+                            "artifacts": {
+                                "payload_manifest_sha256": "c" * 64,
+                                "selection_receipt_sha256": "d" * 64,
+                            },
+                        }
+                    },
+                }
+            ],
+        }
+
+        self.assertEqual([], list(Draft202012Validator(schema).iter_errors(catalog)))
+
+    def test_home_assistant_catalog_requires_target_provenance(self) -> None:
+        data = {
+            "schema_version": 1,
+            "cohorts": [
+                {
+                    "product_version": "2026.36.2",
+                    "publication_status": "local-unpublished",
+                    "admitted_hub_versions": [],
+                    "components": {
+                        "home-assistant": {
+                            "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+                            "commit": "1" * 40,
+                            "source_sha256": "a" * 64,
+                            "product_version": "2026.36.2",
+                            "profile": {
+                                "id": "hub-http-v1",
+                                "revision": "1.0.0",
+                                "sha256": PROFILE_SHA,
+                            },
+                        }
+                    },
+                }
+            ],
+        }
+
+        with self.assertRaisesRegex(CatalogError, "provenance"):
+            parse_catalog(data)
+
     def test_same_cohort_is_default_and_update_needs_explicit_later_admission(
         self,
     ) -> None:
@@ -172,6 +238,37 @@ class CatalogTests(unittest.TestCase):
         ] = "0" * 64
         with self.assertRaisesRegex(CatalogError, "reviewed artifacts"):
             parse_catalog(data)
+
+    def test_home_assistant_catalog_retains_both_provenance_hashes(self) -> None:
+        data = catalog_data()
+        cohort = data["cohorts"][0]
+        cohort["components"] = {
+            "home-assistant": {
+                "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+                "commit": "a" * 40,
+                "source_sha256": "b" * 64,
+                "product_version": "2026.36.2",
+                "profile": {
+                    "id": "hub-http-v1",
+                    "revision": "1.0.0",
+                    "sha256": PROFILE_SHA,
+                },
+                "artifacts": {
+                    "payload_manifest_sha256": "c" * 64,
+                    "selection_receipt_sha256": "d" * 64,
+                },
+            }
+        }
+
+        catalog = parse_catalog(data)
+
+        self.assertEqual(
+            catalog.cohorts[0].components["home-assistant"].artifacts,
+            {
+                "payload_manifest_sha256": "c" * 64,
+                "selection_receipt_sha256": "d" * 64,
+            },
+        )
 
 
 class SourceTests(unittest.TestCase):
@@ -268,6 +365,95 @@ class SourceTests(unittest.TestCase):
 
 
 class PrefixTests(unittest.TestCase):
+    def test_home_assistant_install_binds_catalog_provenance_to_target_receipt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = root / "prefix"
+            source = root / "source"
+            source.mkdir()
+            (source / "payload.txt").write_text("source\n")
+            repository = "https://github.com/magrathean-uk/teslatlas-home-assistant.git"
+            record = source_manifest_for("home-assistant", source, repository, "1" * 40)
+            data = {
+                "schema_version": 1,
+                "cohorts": [
+                    {
+                        "product_version": "2026.36.2",
+                        "publication_status": "local-unpublished",
+                        "admitted_hub_versions": [],
+                        "components": {
+                            "home-assistant": {
+                                "repository": repository,
+                                "commit": "1" * 40,
+                                "source_sha256": record["source_sha256"],
+                                "product_version": "2026.36.2",
+                                "profile": {
+                                    "id": "hub-http-v1",
+                                    "revision": "1.0.0",
+                                    "sha256": PROFILE_SHA,
+                                },
+                                "artifacts": {
+                                    "payload_manifest_sha256": "b720c922e53edd47a62de17d99ff1d32c638706886d32a5e2fd7339b11d78347",
+                                    "selection_receipt_sha256": "d" * 64,
+                                },
+                            }
+                        },
+                    }
+                ],
+            }
+            selected = select_cohort(
+                parse_catalog(data),
+                ("home-assistant",),
+                "2026.36.2",
+                allow_candidates=True,
+                update=False,
+            )
+            config = root / "ha-config"
+            config.mkdir()
+
+            def build(_name: str, _source: Path, output: Path) -> dict:
+                payload = output / "custom_components" / "teslatlas_hub"
+                payload.mkdir(parents=True)
+                (payload / "manifest.json").write_text("{}\n")
+                return {"commands": [], "dependencies": {}}
+
+            result = install_cohort(
+                prefix,
+                selected,
+                {"home-assistant": record},
+                build,
+                target_binding={"ha_config": str(config.resolve())},
+            )
+
+            receipt = json.loads(Path(result["receipt"]).read_text())
+            self.assertEqual(
+                receipt["targets"],
+                {
+                    "ha_config": str(config.resolve()),
+                    "ha_payload_manifest_sha256": "b720c922e53edd47a62de17d99ff1d32c638706886d32a5e2fd7339b11d78347",
+                    "ha_selection_receipt_sha256": "d" * 64,
+                },
+            )
+            target = config / "custom_components" / "teslatlas_hub"
+            self.assertTrue(target.is_symlink())
+            target.unlink()
+
+            activate_targets(
+                prefix,
+                ("home-assistant",),
+                RecipeContext(ha_config=config),
+            )
+
+            self.assertTrue(target.is_symlink())
+            receipt["targets"]["ha_selection_receipt_sha256"] = "0" * 64
+            Path(result["receipt"]).write_text(json.dumps(receipt))
+            with self.assertRaisesRegex(
+                BootstrapError, "Home Assistant target provenance"
+            ):
+                status(prefix)
+
     def test_prefix_operations_reject_a_symlinked_prefix(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

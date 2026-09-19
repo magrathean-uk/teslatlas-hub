@@ -135,6 +135,70 @@ fn prefix_arguments(action: &str, options: &CompanionPrefixArgs) -> Result<Vec<O
     Ok(arguments)
 }
 
+fn d1_plan_arguments(options: &CompanionD1PlanArgs) -> Result<Vec<OsString>, String> {
+    if !options.component_manifest.is_absolute() {
+        return Err("--component-manifest must be an absolute path".to_owned());
+    }
+    if options.components.len() != 1 || options.components[0] != "home-assistant" {
+        return Err(
+            "D1 planning requires only the explicit home-assistant component".to_owned(),
+        );
+    }
+    if options.selector != "debian13-arm64-container" {
+        return Err("D1 planning does not admit the requested selector".to_owned());
+    }
+    let mut arguments = vec![OsString::from("d1-plan"), OsString::from("--components")];
+    arguments.push("home-assistant".into());
+    arguments.push("--selector".into());
+    arguments.push(options.selector.clone().into());
+    push_path(
+        &mut arguments,
+        "--component-manifest",
+        &options.component_manifest,
+    );
+    Ok(arguments)
+}
+
+fn d1_install_arguments(options: &CompanionD1InstallArgs) -> Result<Vec<OsString>, String> {
+    for (option, path) in [
+        ("--component-manifest", &options.component_manifest),
+        ("--prefix", &options.prefix),
+        ("--local-sources", &options.local_sources),
+        ("--ha-config", &options.ha_config),
+    ] {
+        if !path.is_absolute() {
+            return Err(format!("{option} must be an absolute path"));
+        }
+    }
+    if options.components.len() != 1 || options.components[0] != "home-assistant" {
+        return Err(
+            "D1 installation requires only the explicit home-assistant component".to_owned(),
+        );
+    }
+    if options.selector != "debian13-arm64-container" {
+        return Err("D1 installation does not admit the requested selector".to_owned());
+    }
+    let mut arguments = vec![OsString::from("d1-install"), OsString::from("--components")];
+    arguments.push("home-assistant".into());
+    arguments.push("--selector".into());
+    arguments.push(options.selector.clone().into());
+    push_path(
+        &mut arguments,
+        "--component-manifest",
+        &options.component_manifest,
+    );
+    push_path(&mut arguments, "--prefix", &options.prefix);
+    arguments.push("--hub-version".into());
+    arguments.push(env!("CARGO_PKG_VERSION").into());
+    arguments.push("--mode".into());
+    arguments.push("local-candidate".into());
+    push_path(&mut arguments, "--local-sources", &options.local_sources);
+    push_path(&mut arguments, "--ha-config", &options.ha_config);
+    arguments.push("--timeout-seconds".into());
+    arguments.push(options.timeout_seconds.to_string().into());
+    Ok(arguments)
+}
+
 fn command_arguments(
     command: &CompanionCommand,
     shipped_catalog: &Path,
@@ -151,6 +215,8 @@ fn command_arguments(
         CompanionCommand::DryRun(options) => {
             operation_arguments("dry-run", options, shipped_catalog)
         }
+        CompanionCommand::D1Plan(options) => d1_plan_arguments(options),
+        CompanionCommand::D1Install(options) => d1_install_arguments(options),
     }
 }
 
@@ -366,6 +432,121 @@ mod companion_delegation_tests {
                 env!("CARGO_PKG_VERSION"),
             ]
         );
+    }
+
+    #[test]
+    fn d1_plan_forwards_only_the_explicit_manifest_and_selector() {
+        let command = CompanionCommand::D1Plan(CompanionD1PlanArgs {
+            components: vec!["home-assistant".to_owned()],
+            selector: "debian13-arm64-container".to_owned(),
+            component_manifest: PathBuf::from("/private/components.json"),
+        });
+
+        let actual = command_arguments(&command, Path::new("/shipped.json"))
+            .expect("D1 plan arguments");
+        assert_eq!(
+            actual,
+            [
+                "d1-plan",
+                "--components",
+                "home-assistant",
+                "--selector",
+                "debian13-arm64-container",
+                "--component-manifest",
+                "/private/components.json",
+            ]
+        );
+    }
+
+    #[test]
+    fn d1_plan_rejects_unbound_hub_core_before_the_helper_runs() {
+        let command = CompanionCommand::D1Plan(CompanionD1PlanArgs {
+            components: vec!["hub-core".to_owned()],
+            selector: "debian13-arm64-container".to_owned(),
+            component_manifest: PathBuf::from("/private/components.json"),
+        });
+
+        assert_eq!(
+            command_arguments(&command, Path::new("/shipped.json")),
+            Err("D1 planning requires only the explicit home-assistant component".to_owned())
+        );
+    }
+
+    #[test]
+    fn d1_plan_rejects_unbound_fleet_helpers_before_the_helper_runs() {
+        let command = CompanionCommand::D1Plan(CompanionD1PlanArgs {
+            components: vec!["fleet-helpers".to_owned()],
+            selector: "debian13-arm64-container".to_owned(),
+            component_manifest: PathBuf::from("/private/components.json"),
+        });
+
+        assert_eq!(
+            command_arguments(&command, Path::new("/shipped.json")),
+            Err("D1 planning requires only the explicit home-assistant component".to_owned())
+        );
+    }
+
+    #[test]
+    fn d1_install_forwards_only_the_admitted_local_candidate_inputs() {
+        let command = CompanionCommand::D1Install(CompanionD1InstallArgs {
+            components: vec!["home-assistant".to_owned()],
+            selector: "debian13-arm64-container".to_owned(),
+            component_manifest: PathBuf::from("/private/components.json"),
+            prefix: PathBuf::from("/private/companions"),
+            local_sources: PathBuf::from("/private/local-sources.json"),
+            ha_config: PathBuf::from("/private/ha-config"),
+            timeout_seconds: 90,
+        });
+
+        let actual = command_arguments(&command, Path::new("/shipped.json"))
+            .expect("D1 install arguments");
+        assert_eq!(
+            actual,
+            [
+                "d1-install",
+                "--components",
+                "home-assistant",
+                "--selector",
+                "debian13-arm64-container",
+                "--component-manifest",
+                "/private/components.json",
+                "--prefix",
+                "/private/companions",
+                "--hub-version",
+                env!("CARGO_PKG_VERSION"),
+                "--mode",
+                "local-candidate",
+                "--local-sources",
+                "/private/local-sources.json",
+                "--ha-config",
+                "/private/ha-config",
+                "--timeout-seconds",
+                "90",
+            ]
+        );
+    }
+
+    #[test]
+    fn d1_install_rejects_unbound_core_and_fleet_before_the_helper_runs() {
+        for component in ["hub-core", "fleet-helpers"] {
+            let command = CompanionCommand::D1Install(CompanionD1InstallArgs {
+                components: vec![component.to_owned()],
+                selector: "debian13-arm64-container".to_owned(),
+                component_manifest: PathBuf::from("/private/components.json"),
+                prefix: PathBuf::from("/private/companions"),
+                local_sources: PathBuf::from("/private/local-sources.json"),
+                ha_config: PathBuf::from("/private/ha-config"),
+                timeout_seconds: 90,
+            });
+
+            assert_eq!(
+                command_arguments(&command, Path::new("/shipped.json")),
+                Err(
+                    "D1 installation requires only the explicit home-assistant component"
+                        .to_owned()
+                )
+            );
+        }
     }
 
     #[test]

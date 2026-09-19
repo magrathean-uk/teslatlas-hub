@@ -1,0 +1,734 @@
+{
+  "schema_version": 1,
+  "product": "Teslatlas Hub",
+  "repository": "hub",
+  "state": "IN_PROGRESS",
+  "native_goal_state": "paused_existing_goal_owner_restart_authorized",
+  "native_goal_objective": "Owner scope override 2026-09-12: deliver usable Hub-only operation on Debian 13 ARM64 and Apple-silicon macOS, then support the normal Mac Swift consumer and selected Home Assistant/Edge roles. Viewer is excluded from all current goals, plans, packaging, integration and acceptance. Named-source parity remains separate and non-blocking; x86/amd64/Intel Mac/Azure/full-matrix work remains paused.",
+  "native_goal_scope_override": {
+    "owner_direction_date": "2026-09-09",
+    "effective_state": "ACTIVE_ARM64_MAC_SCOPE",
+    "native_goal_created_at": "2026-09-09T13:48:27Z",
+    "native_goal_control_result": "The existing goal remains the sole goal and get_goal reported it paused on 2026-09-12. The owner explicitly restarted all development in current authority; no duplicate goal was created. Execution resumes under that direct authority while preserving the exact existing goal object.",
+    "owner_scope_change_date": "2026-09-12",
+    "effective_objective": "Hub-only on Debian ARM64 and Apple-silicon Mac; normal Mac Swift consumer; selected HA/Edge roles. Viewer excluded.",
+    "goal_api_limitation": "The available goal controls can only complete or block the existing goal; they cannot amend its older Viewer clause or resume its paused control status. The owner override is recorded here as the effective objective, and no duplicate goal is created.",
+    "authority": "../../../docs/development/ACTIVE_SCOPE.md"
+  },
+  "goal_objective": "Owner scope override 2026-09-12: deliver usable Hub-only operation on Debian 13 ARM64 and Apple-silicon macOS, then support the normal Mac Swift consumer and selected Home Assistant/Edge roles. Viewer is excluded from all current goals, plans, packaging, integration and acceptance. Named-source parity remains separate and non-blocking; x86/amd64/Intel Mac/Azure/full-matrix work remains paused.",
+  "plan": "PLAN.md",
+  "current_stage": "HUB_R11_PREPARED_INACTIVE_2026_09_18: Viewer remains excluded and x86/amd64/Intel work remains paused. Edge final source-gate PASS SHA256 4d8b4449 bound Hub restart receipt d64db856 and all frozen r11 inputs. Hub invoked preparer d3f2ffa5 exactly once and produced public profile 4b896644, staging receipt 509b2e61, immutable fixture validation 6fe2ed24, inactive binding 9f3dff1c and summary 4f068ba3. Seven relationships passed immutable/query-only validation with unchanged database fingerprint and no WAL/SHM. Private inputs remain owner-only/single-link; all five ports are closed. No guest action, listener, runtime, browser, producer or event occurred. Edge independent concrete-profile review is pending. Hub accepted the final TypeScript browser-orchestration candidate as source-only in r3 SHA256 9d0c3bb69436248b5aced7084b363890b3446d3f7d4b8f3980e0d02bb374f36b after exact hash binding, six syntax checks, seven browser-free orchestration cases, the preflight regression and targeted Biome with no fixes. No browser runtime or handoff is authorized because no approved ARM64 guest currently exists.",
+  "first_milestone_after_start": "H2/H5/H6 active ARM64 and Apple-silicon Mac usable Hub-only routes",
+  "current_model": "gpt-5.6-sol",
+  "model_purpose": "owner-authorized development",
+  "last_verified": "2026-09-18",
+  "completed_this_programme": [
+    "B1 Debian ARM64 Hub-plus-Viewer working bootstrap, native current-profile fixture, redacted current-scenario browser journey, and redacted packed TypeScript Node journey (not an installed matrix)",
+    "B2.1 Edge primary isolated runtime: admitted/duplicate, Hub-outage spool/restart, fresh drain/recovery, and each Hub fixture cleanup (not an installed matrix)",
+    "2026-09-12 supported Apple-silicon Mac external CurrentHubConsumer R1: release build plus discovery, claim, health, readiness, two vehicles, current, five drives over three pages and credential rotation; exact Swift scratch/lock and Hub fixture cleanup completed (synthetic candidate-process evidence, not installed/release acceptance)",
+    "2026-09-12 Edge receiver c2ace1b9 target loader check: exact candidate deployed to macOS 13.7.4 ARM64, system-only loader/signature verified, -help exited 0, no receiver process remained and guest stopped (loader proof only, not readiness/integration acceptance)",
+    "2026-09-12 Edge receiver c2ace1b9 readiness-only runtime: after diagnosing the unconditional fresh bearer-file startup dependency, the corrected receiver started as admin UID 501, owned only 127.0.0.1:21444/21445, returned HTTP 200/body ok from /status, submitted zero events, and was terminated by exact PID before the guest stopped and lock absence was confirmed (receiver proof only, not Edge service/forwarding/Hub/HA/platform acceptance)",
+    "2026-09-12 standalone Apple-silicon Mac Hub restart R1: the same fresh candidate root, Hub identity, paired credential and synthetic two-vehicle/five-drive data remained usable across an exact process stop/restart; native status and doctor passed before and after, both processes exited 0 and port 18522 closed (candidate-process retained-state evidence only, not package/service/setup/platform acceptance)"
+  ],
+  "needed_input": "Edge must independently verify concrete public profile SHA256 4b896644, staging receipt SHA256 509b2e61, fixture validation SHA256 6fe2ed24, inactive binding SHA256 9f3dff1c, staged hashes, private metadata and the exact launch contract using Hub concrete-preparation receipt SHA256 96a13421. No guest transfer or runtime follows until that exact PASS and coordinator review of fresh concrete readiness. The TypeScript browser-orchestration source package is accepted by Hub r3 SHA256 9d0c3bb69436248b5aced7084b363890b3446d3f7d4b8f3980e0d02bb374f36b; it needs no further source correction, but any future browser lane requires a separately approved ARM64 guest, fresh exact source revalidation and explicit runtime authority. Viewer, runtime, producer event and x86 work remain unauthorized.",
+  "active_targets": [
+    {
+      "id": "debian13-arm64",
+      "scope": "Ordinary Hub-only bootstrap, service, administration, pairing/API access, restart and retained-data work; selected HA/Edge roles remain separate.",
+      "state": "working bootstrap evidence retained; no completed fixture or private descriptor may be reused"
+    },
+    {
+      "id": "apple-silicon-macos",
+      "scope": "Ordinary Hub-only setup, service/LaunchAgent as needed, administration, pairing/API access, restart, retained data, and a supported Swift consumer when its SDK floor is met. Viewer excluded.",
+      "state": "active; normal Mac Swift public-consumer R1 and standalone Hub restart/retained-state R1 passed and cleaned; the TypeScript browser attempt closed before CDP attach; Edge r8-r10 are closed and non-reusable, and fixed-dispatch fixture-first r11 source review is pending while its event remains separately gated"
+    }
+  ],
+  "paused_targets": [
+    "x86",
+    "x86_64",
+    "amd64",
+    "Intel Mac",
+    "all x86/amd64 images, builds, VMs, runtime/lifecycle tests, acceptance rows, and cleanup/repair work",
+    "Azure clean-host validation",
+    "the historical full cross-architecture matrix"
+  ],
+  "current_scope_exclusions": {
+    "viewer": "Excluded by owner on 2026-09-12 from every current goal, plan, package, integration, runtime, dependency and acceptance requirement. Preserve source and completed evidence as historical only.",
+    "x86": "All x86/x86_64/amd64 and Intel Mac development remains paused.",
+    "goal_control": "The sole preserved goal still reports paused and its objective cannot be amended by available controls. The current owner override is effective; do not duplicate or falsely complete the goal."
+  },
+  "handoff_queue": [
+    {
+      "consumer": "Viewer browser B1",
+      "state": "passed_browser_journey_fixture_cleaned",
+      "handoff": "Viewer r1 reached its bounded lifetime and r2 consumed its invitation while the scenario-bound smoke was corrected. Viewer r3 then passed its installed browser smoke in 1.4 seconds using package SHA256 30836ece, Hub ID 92c1fadb-ea21-49ee-a690-e110056e846e, two-vehicles-five-drives scenario SHA256 c74f1c90, Node 26.7.0, Playwright 1.62.1, and Chromium 152.0.7977.82. Hub verified r1/r2/r3 direct child exit 0, owner-only stopped records, and port 18480 closure. Chromium and certutil remain available for future browser lanes.",
+      "next": "Historical evidence only. Viewer is excluded from current goals and no further action or input reuse is permitted."
+    },
+    {
+      "consumer": "Viewer R1 installed session",
+      "state": "passed_browser_acceptance_and_hub_lifecycle_cleaned",
+      "handoff": "The prior closed Viewer root was not reused. Hub created the isolated recovery5 root with the exact viewer-r1-51-drives scenario SHA256 bb27007d8de40e90db843de694a02d8da23a54874831c67aed455cac185cca6b, pages 25/25/1, and only http://127.0.0.1:4173 as CORS origin. Viewer reports its recovery7 browser acceptance passed; its Viewer PID 57900 and port 4173 are stopped. Hub independently verified the owner-only recovery controls, the requested stop/restore/revoke/fresh-pair boundaries, and the final cleanup: direct child PID 75193 exited 0, launcher PID 70413 exited, recovery5 stopped.json is mode 0600 with status stopped and 29 recorded events, and 18480 is closed. Installed 8443 and HA 18483 remained listening. The owner-only browser-complete marker is mode 0600. No invitation, bearer, certificate bytes, browser state, or request transcript is recorded here.",
+      "next": "Historical evidence only. Viewer is excluded from current goals; do not reuse recovery5/7 roots, private inputs, browser state or controls."
+    },
+    {
+      "consumer": "Viewer R1 data-state session",
+      "state": "passed_bounded_browser_data_state_and_hub_lifecycle_cleaned",
+      "handoff": "Hub created a new 18480 fixture after confirming the prior R1 root was closed. It bound a fresh Hub identity, hub-http-v1@1.0.0 SHA256 b80d940e, the fixed viewer-r1-51-drives scenario SHA256 bb27007d8, exact CORS origin http://127.0.0.1:4173, and owner-only descriptor/invitation/scenario/CA inputs. Viewer returned docs/development/receipts/2026-09-09-r1-installed-data-state.json: its installed Debian 13 ARM64 browser run passed in 3.1 seconds, with 51 drives retained across three 304 revalidations, explicit unsupported resources without corresponding requests, a retained-state/recovery partial failure, and cancellation without late repopulation. Hub independently verified the Viewer port closed while its own direct fixture remained healthy, then stopped only launcher 170788; child 170804 exited 0, stopped.json is 0600, and 18480/4173 are closed.",
+      "next": "Historical evidence only. Viewer is excluded from current goals; do not reuse any private input or infer broader acceptance."
+    },
+    {
+      "consumer": "TypeScript SDK packed Node B1",
+      "state": "passed_packed_node_fixture_cleaned",
+      "handoff": "The fresh Node fixture was consumed by an external installed @teslatlas/sdk package. The redacted receipt reports Debian ARM64 Node 26.7.0/npm 11.19.0, default Fetch, owner-only CA, Hub ID ef1f600c-713d-456e-9b20-d328ea5b2583, API 1.0, four capabilities, two vehicles, two drives, pairing claim, and credential rotation. It binds @teslatlas/sdk@2026.36.2 archive SHA256 03ddddf1, dist/node.js SHA256 83bb4403, installed manifest SHA256 4b1a44f7, and 81 members. Hub verified receipt and credential regular owner-only 0600 files without reading the credential; launcher PID 26147/child PID 26165 ended with child exit 0, stopped.json 0600, and port 18481 closed.",
+      "next": "Keep this as B1 packed consumer evidence only; do not reuse its private descriptor, CA, invitation, credential, or receipt paths for later lanes."
+    },
+    {
+      "consumer": "TypeScript SDK packed Node R1 51-drive session",
+      "state": "passed_packed_consumer_cleaned",
+      "handoff": "Hub created an independent 0600 descriptor/root on 18481 with the fixed viewer-r1-51-drives scenario SHA256 bb27007d8de40e90db843de694a02d8da23a54874831c67aed455cac185cca6b and pages 25/25/1. TypeScript reports a fresh Node 26.7 packed @teslatlas/sdk@2026.36.2 consumer passed two-vehicle discovery, 51 drives, current cursor continuation, conditional 304 continuation, claim/rotation, and default Fetch; the owner binds the unchanged 81-member archive SHA256 beginning 03dddd. Credential and receipt remain owner-only. Hub then verified/directly stopped only launcher 77280: child 77296 exited 0, stopped.json is 0600, and 18481 closed while installed 8443 and HA 18483 remained listening. r5, Viewer, installed Hub, and HA inputs were not reused. Redacted details are docs/development/typescript-r1-51-drives-runtime-2026-09-09.json.",
+      "next": "Retain this as selected packed-consumer evidence only. Do not reuse its root, descriptor, CA, invitation, credential, package root, or receipt. It is not an installed-matrix, broader R1, collection, migration, or platform acceptance row."
+    },
+    {
+      "consumer": "TypeScript SDK generic packed browser Mac R1",
+      "state": "closed_trust_isolation_failure_no_sdk_acceptance",
+      "handoff": "Hub created one isolated local Mac fixture on 127.0.0.1:18521 with a fresh pre-paired credential, exact localhost CORS origin and the retained @teslatlas/sdk archive. TypeScript's first control correctly rejected the CA while its intended trusted profile still returned Chromium net_error -202. Importing the exact CA into the macOS login keychain then made both Chrome profiles trust it, so the runner stopped at the required untrusted negative-control gate before SDK API acceptance. No redacted acceptance receipt exists. TypeScript removed its helper, browser controls, profiles, witness, logs and fresh install; Hub found and removed the exact residual temporary certificate, stopped launcher 91606/direct child 91611 with child exit 0, retained a 0600 stopped record and closed 18521/4174/9227/9228.",
+      "next": "No third attempt or tuple reuse. A future browser route needs a reviewed supported separate trust context, such as distinct OS-user/keychain controls, or an explicitly authorized runner/handoff change. This is trust-isolation failure and cleanup evidence, not SDK or Hub API acceptance."
+    },
+    {
+      "consumer": "Swift B2",
+      "state": "passed_native_consumer_fixture_cleaned",
+      "handoff": "The first Swift fixture consumed its invitation before the SDK could write a receipt, then Hub verified its cleanup (direct child exit 0, stopped.json 0600, port closed). Swift r2 then completed its public native journey from Hub ID 1d8ab817-d058-4125-9406-94e0f0b237f2 at https://127.0.0.1:18482 and returned a redacted passed receipt. Hub verified r2 launcher PID 19224 and direct child PID 19240 stopped with child exit 0, retained a 0600 stopped.json, and closed port 18482. Hub binds current matrix_live.py a7242473, matrix_wire.py fa9cf4ab, and matrix_contract.py 1019fbfc; a future source-byte change fails reviewed loading.",
+      "next": "Keep this as native public-consumer evidence only. The current Hub Swift adapter has its SessionInput builder but no source-fixed launch_adapter, admit, build_supplement, execution_logs, or runtime_inventory callback, so it cannot validly enter FixedInstalledAdapter yet. Its X1 implementation must first supply that complete callback contract, then use a macOS 14+/Swift 6.4 target (the prepared macOS 13.7.4/Swift 5.8.1 guest is below the SDK floor), a fresh Debian 13 ARM64 target, and a fresh Debian 13 amd64 target with the fixed Docker/Linux runner."
+    },
+    {
+      "consumer": "Home Assistant B2",
+      "state": "passed_real_debian_arm64_container_b2_1_owner_lane_active",
+      "handoff": "The Home Assistant owner consumed its dedicated private fixture at https://127.0.0.1:18483 in a real Debian 13 ARM64 Home Assistant 2026.8.3 Container (arm64 image digest e53b24b1). It reports UI pairing for two devices/26 entities, normal scheduled advancement, bearer revocation/re-authentication, UI reload, unload/re-enable, and compose restart retaining the Hub entry. It also stopped only that disposable fixture through a scheduler/backoff boundary (26 unavailable/0 unknown sensors), restarted the same identity/config to readyz 200, and recovered to 26 sensors with one unavailable/21 unknown and healthy 22.5 C activity, without credential or invitation change. Private invitations, trust and credentials remain redacted. Its output/lane remains owner-controlled; Hub did not start or mutate it.",
+      "next": "Retain the redacted B2.1 receipt and bounded outage/recovery observation as real HA Container evidence only. Await the later Hub/Edge cohort for B2.2 and the remaining R1 cases; never copy its raw invitation, token, credential, or runtime state."
+    },
+    {
+      "consumer": "Home Assistant same-Hub Edge r5 B2 handoff",
+      "state": "closed_temporary_entry_removed_original_lane_restored",
+      "handoff": "The selected HA Container temporarily attached r5 through its normal REST config flow after trust reload: it had two Teslatlas entries, 52 registered entities (26 per entry), and live states in both entry groups. After the one authorised Edge submission and r5's zero-ledger transport failure, HA removed only its temporary 18490 entry, restored the original trust bundle, and reports the original 18483 lane ready with one entry/26 entities and owner-only credential files. Hub did not mutate HA, the original 18483 entry, or its entities.",
+      "next": "Keep this as a bounded same-Hub configuration-flow and cleanup result only. No r5 value, Edge-delivered HA observation, collection result, or installed-matrix row was established."
+    },
+    {
+      "consumer": "Edge B2.1",
+      "state": "primary_b2_1_runtime_and_cleanup_documented",
+      "handoff": "Hub kept the installed Hub on 8443 and the HA fixture on 18483 untouched. In r2, its independent post-stop read-only ledger has one sealed lineage with ack frontier 11, 11 sequence dispositions, 10 applications, two pending-publication rows, and one consumer diagnostic. Edge reports that two byte-identical mTLS submissions both ACKed and the ledger distinguished a stable-record duplicate from a further projected application; Hub verified r2 normal direct-child exit, 0600 stopped receipt, and closed 18480. Hub then created r3 with the same sealed binding, verified owner-only ready descriptor/direct child/trusted health/readiness, and stopped only its launcher for the requested Hub-outage boundary; r3 has a normal child exit, 0600 stopped receipt, and no 18480 listener. Edge reports one acknowledged receiver submission while Hub was down, three encrypted queued records, and persistence across its exact-service restart. Hub created r4 as a fresh mode-0600 root and independently verified direct parent/child plus trusted health/readiness 200. Edge reports queue zero after drain, r4 lineage ack_frontier 17 with first_spool_seq 12, connected consumer, complete pending=2, and projected_telemetry=2. Hub then verified r4 normal child exit, 0600 stopped receipt, and closed 18480; Edge 18500/18510, installed Hub 8443, and HA 18483 remained listening. The redacted r4 guest launch/stop/cleanup invocation and root/PID/health/CA metadata are docs/development/edge-b2.1-primary-hub-r4-runtime.json. Formal session-reader regression passed: `python3.11 -m unittest tools.interop.installed_hosts.test_edge_fixture` ran 8 tests, including exact-byte recheck and duplicate-key rejection, followed by py_compile and diff-check clean.",
+      "next": "Retain the redacted primary B2.1 evidence only. Do not reuse r2/r3/r4 or any private descriptor, invitation, or credential. Edge retains its receiver/spool evidence; Hub does not infer an installed-matrix row. Continue only with the next owner-authorized canonical-plan stage."
+    },
+    {
+      "consumer": "Edge Docker r5",
+      "state": "closed_failure_r9_repeated_safe_connect_edge_pre_admission_failure",
+      "handoff": "Hub validated r5's fixed Docker Edge URL, sealed source binding, and four owner-only trust/auth inputs. HA attached its temporary r5 entry, then Edge reports one approved receiver submission ACKed and retained one encrypted queued record; no second submission was authorised. The live Hub collector repeatedly stored only backoff/edge transport unavailable and all r5 edge lineage/application/pending-publication/sequence rows remained zero. A read-only direct mTLS GET using r5's exact configured inputs returned HTTP 200 with a 6,358-byte v2 batch of 11 records and zero gaps. Fresh r9 used new source/vehicle/binding, new owner-only inputs, a new Docker listener, and a new temporary HA entry. Its Hub collector emitted five safe `connect` diagnostics while all four durable ledger counts remained zero. Its one separately authorised Edge helper call failed before Edge admission with certificate-required, leaving Edge's queue empty. Post-cleanup Edge established that this helper embeds the old vehicle identity, so it was not a valid fresh-R1 producer actor. Hub, Edge, and HA each completed bounded cleanup; no r5/r9 state may be reused.",
+      "next": "Do not retry. Edge must replace and test a helper bound to the fresh R1 producer identity, including client-certificate presentation; Hub must continue source-only comparison of the Docker listener against the proven native EdgeConsumer mTLS path. A new fresh cohort needs explicit authorization after both boundaries are addressed. This remains neither Docker acceptance nor end-to-end value."
+    },
+    {
+      "consumer": "Historical Apple-silicon Mac candidate and Viewer route",
+      "state": "historical_viewer_scope_excluded",
+      "handoff": "docs/development/active-macos-hub-viewer-toolchain-handoff-2026-09-09.json records the existing local arm64/macOS 27.0 runtime, Hub 7fe8cb and Viewer ba5424dc, current Xcode/Rust/Node readiness, older 2026.36.1 app without service state, and the only observed build gate: exact Go 1.27.0 is absent while Go 1.27.1 is rejected. The first bounded action is user-owned verified Go 1.27.0 provisioning under the single heavy-build lock; no Hub build, package install, app replacement, service, Viewer process, pairing, or guest action is included.",
+      "next": "No Viewer action. Preserve this as historical candidate/toolchain evidence; current Hub-only and Mac Swift work uses wholly fresh inputs."
+    }
+  ],
+  "publication_authorized": false,
+  "evidence": [
+    {
+      "kind": "native_goal_activation",
+      "status": "active_fresh_arm64_mac_objective",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "After the owner deleted the historical native goals, Hub verified get_goal returned null, created exactly one fresh native goal with the saved ARM64/Mac working-product objective, and verified get_goal again returned that exact objective with status active. This active goal excludes paused x86/x86_64/amd64, Intel Mac, Azure, and full-matrix work, while retaining named-source parity as a separate acceptance gap."
+    },
+    {
+      "kind": "b1_current_source_bootstrap",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "The isolated Debian 13 ARM64 service ran Hub 2026.36.2 and the real local-candidate installer activated release 2026.36.2-9fd6e708c5725647 from SDK b1cd548f and Viewer ba5424dc. It rebuilt and admitted SDK archive 03ddddf1 and Viewer archive f92becdb with Viewer asset manifest 6d417a87; a repeated invocation was an exact no-op."
+    },
+    {
+      "kind": "b1_service_and_viewer_lifecycle",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "The actual systemd Hub package upgrade preserved the dedicated empty SQLite database and returned TLS /healthz 200 after a bounded poll. The packaged Viewer served its real index on 127.0.0.1:4173, then stopped and restarted successfully."
+    },
+    {
+      "kind": "b1_unconfigured_upgrade_regression",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "Linux packaging now uses the live status-only empty-vehicle check after systemd start, while retaining stopped doctor admission before startup; the focused packaging test and the real active unconfigured package upgrade passed."
+    },
+    {
+      "kind": "b1_native_current_profile_fixture",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "A real Debian 13 ARM64 release Hub binary c08083a2 and seed binary ba3a92ae ran against a private SQLite/TLS fixture bound to hub-http-v1@1.0.0 SHA256 b80d940e. The current-Hub raw adapter wrote a 0600 receipt with 24/24 passed cases, including pairing, bounded request failures, pagination, conditional drives, bearer rotation, and an owned reopen-preservation update. The launcher then stopped its direct child cleanly (exit 0), retained a 0600 stopped record, and left no listener on 18480. This is synthetic native-process evidence, not Viewer/browser, installed-matrix, collection, migration, or platform acceptance."
+    },
+    {
+      "kind": "b1_viewer_browser_handoff",
+      "status": "passed_and_cleaned",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "Viewer r1 reached its 900-second lifetime and r2 consumed an invitation while the scenario-bound smoke was corrected. On r3, the corrected Viewer-installed browser smoke passed one test in 1.4 seconds using package SHA256 30836eced2cd38d9c98374ea3247e1242c21e50832f41bcdd7e08bf779529851, Hub ID 92c1fadb-ea21-49ee-a690-e110056e846e, two-vehicles-five-drives scenario SHA256 c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3, Node 26.7.0, Playwright 1.62.1, and Chromium 152.0.7977.82. It covered wrong-UUID inspection, pairing and identity, current values 0%, 160.93 km, and 16,093.44 km with Observed presentation, ordered drives 105 through 101, empty vehicle, refresh, and clear-session return to Pair. Hub then verified r3 launcher/child closure (PIDs 21433/21449), child exit 0, stopped.json mode 0600, and port 18480 absent; Viewer verified its process PID 25728 and port 4173 closed. The redacted Viewer receipt is teslatlas-viewer/docs/development/receipts/2026-09-08-b1-installed-browser-r3.json. This is current-scenario browser evidence, not collection, migration, installed-matrix, or platform acceptance."
+    },
+    {
+      "kind": "b1_viewer_browser_prerequisites",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "Under the shared guest-install lock, Debian ARM64 received only Chromium and NSS certificate tooling plus apt-resolved dependencies. Chromium is /usr/bin/chromium, version 152.0.7977.82, and certutil is /usr/bin/certutil. The existing Viewer-owned fixture launcher and direct Hub child remained running after the install. This enables normal browser/NSS trust setup; it is not browser acceptance."
+    },
+    {
+      "kind": "b1_typescript_packed_node_handoff",
+      "status": "passed_and_cleaned",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "A fresh Debian ARM64 packed Node consumer installed the accepted @teslatlas/sdk@2026.36.2 archive SHA256 03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c into a separate node_modules/@teslatlas/sdk root and passed against Hub ID ef1f600c-713d-456e-9b20-d328ea5b2583 at https://127.0.0.1:18481. The redacted receipt records Node 26.7.0/npm 11.19.0, default Fetch with owner-only fixture CA, API 1.0, four capabilities, two vehicles, two drives, passed invitation claim and credential rotation, dist/node.js SHA256 83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9, installed content manifest SHA256 4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6, and 81 members. Hub verified the receipt and credential are nonsymlink owner-only 0600 files without reading credential content, then verified launcher PID 26147/child PID 26165 closure, stopped.json mode 0600 with child exit 0, and port 18481 absent. This is packed B1 consumer evidence, not an installed Hub matrix, collection, migration, or platform acceptance."
+    },
+    {
+      "kind": "b2_swift_native_fixture_handoff",
+      "status": "cleaned_after_consumer",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "The first Swift fixture invitation was consumed before a redacted SDK receipt could be written; Hub verified direct child PID 17788 exited 0, its stopped.json remained 0600, and port 18482 closed. Swift r2 used a separate private descriptor under .../b2-swift-handoff-r2-20260908/fixture/ready.json for Hub ID 1d8ab817-d058-4125-9406-94e0f0b237f2, hub-http-v1@1.0.0 SHA256 b80d940e, Hub binary c08083a2, and seed ba3a92ae. After consumer completion Hub verified launcher PID 19224 and child PID 19240 absent, r2 stopped.json mode 0600 with child exit 0, and port 18482 closed. This is private synthetic native fixture lifecycle evidence, not Swift installed-matrix, browser, collection, migration, or platform acceptance."
+    },
+    {
+      "kind": "b2_swift_public_native_consumer",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "Swift reported a redacted passed public macOS CurrentHubLiveTests journey against the r2 Hub fixture: trusted TLS; identity, trust, and leaf-pin negative cases; claim; rotation and old-bearer rejection; pagination/ETag including three conditional 304s; null/zero units; cancellation; unsupported zero-I/O; and chunked oversize. The receipt identifies product 2026.36.2, Hub ID 1d8ab817-d058-4125-9406-94e0f0b237f2, endpoint https://127.0.0.1:18482, hub-http-v1@1.0.0 SHA256 b80d940e, two vehicles, drive IDs 105 through 101, and three pages. It is native consumer evidence only, not a Swift installed-matrix, iOS runtime, collection, migration, or platform acceptance result."
+    },
+    {
+      "kind": "b2_swift_reviewed_adapter_rebind",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "Hub independently rebound current dirty Swift adapter bytes: matrix_live.py a7242473cfb091db8cf812c56314e28ebaf559859b1d1e4981f81534ff92ff05 and matrix_wire.py fa9cf4abfd072c1e167568aff6f1efb35b0078a228cadf94bf7f834da5d05422; matrix_contract.py remained 1019fbfc64c91038dbc68025bf31fb9483abb0cba13588440ab0861892b083df. A test-first Hub session-staging correction now reserves profile_member_01 through profile_member_18, matching the reviewed wire. Hub focused entrypoint/installed tests passed 11/11; the SDK exact-version jsonschema>=4.26 matrix-adapter gate passed 28/28. This rebind is source/integration evidence only, not an installed runtime or acceptance row."
+    },
+    {
+      "kind": "b1_b2_handoff",
+      "status": "ready_for_fixture_binding",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "The installed unconfigured target remains https://127.0.0.1:8443 with profile hub-http-v1@1.0.0 SHA256 b80d940e and unprivileged 0600 trust input /home/bolyki.guest/teslatlas-dev/b1-trust/server.pem. The active companion receipt is /home/bolyki.guest/teslatlas-dev/companions/releases/2026.36.2-9fd6e708c5725647/receipt.json. Viewer and Node B1 fixtures completed and were cleaned. No Edge collector.edge fixture/session, collection credential, or installed-matrix result exists yet; B2 must create fresh disposable inputs and close its runner-owned process."
+    },
+    {
+      "kind": "b2_home_assistant_real_container",
+      "status": "passed_owner_lane_active",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "Home Assistant supplied a redacted real Debian 13 ARM64 Container B2.1 receipt against its dedicated Hub fixture at https://127.0.0.1:18483: UI pairing, two devices/26 entities, normal scheduled polling after a fixture advance, bearer revocation and UI re-authentication, reload, unload/re-enable, and compose restart retaining one Hub configuration entry. It binds Home Assistant 2026.8.3, integration 2026.36.2, hub-http-v1@1.0.0 SHA256 b80d940e, and ARM64 image digest e53b24b1. This is B2.1 Container evidence only; it does not complete Edge coexistence, R1 recovery/parity, D1 delivery, or X1 platform acceptance. Hub did not start or mutate the owner-controlled live lane."
+    },
+    {
+      "kind": "b2_edge_four_lane_fixture_binding",
+      "status": "sealed_owner_runtime_pending",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub verified the redacted Edge owner handoff, exact run/cell/session identity, 16-role private custody boundary, fresh four-lane root/port topology, and then wrote owner-only lease, reservation, and combined fixture bindings (SHA256 09b9e676, fd126f66, and 7c25daae respectively). The fixture builder first rejected the legitimate 716510-byte public oversized-batch profile vector because it reused the 262144-byte private metadata cap; a test-first Hub correction gives only public profile members an explicit 1048576-byte bound. Fixture, runtime-evidence, session, and adapter tests passed 41/41 with Python 3.11; the host default Python 3.9.6 is unsupported because the reviewed boundary uses strict zip/dataclass features. The current adapter therefore still refuses to fabricate root runtime, launch, stop, or cleanup evidence. No Edge lane root, guest process, installed package, Hub collection, or matrix row was created, so this is sealed input evidence rather than runtime acceptance."
+    },
+    {
+      "kind": "b2_edge_primary_hub_fixture_preparation",
+      "status": "prepared_not_started",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The source-bound interop seed now supports the sealed non-nil Edge source UUID and the fixture accepts only its fixed 18510 HTTPS endpoint plus four single-link owner-only credential paths. Focused seed tests passed 3/3, fixture tests passed 16/16, and the guest rebuilt the new seed binary. Hub independently observed only the Edge receiver/delivery listeners on 18500/18510, verified the selected credential role hashes and modes without logging contents, and created a mode-0600 validated runner configuration for a fresh port-18480 output root. The installed 8443 Hub and HA 18483 fixture stayed untouched. This is preparation evidence only: it does not prove Hub start, TLS health, Edge pull, collection, cleanup, or installed-matrix acceptance."
+    },
+    {
+      "kind": "b2_edge_primary_hub_fixture_bounded_lifecycle",
+      "status": "passed_without_edge_delivery",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "On explicit owner instruction, the prepared Hub fixture ran one isolated direct child on 127.0.0.1:18480. Hub independently verified its owner-only ready descriptor, sealed source and vehicle bindings, trusted TLS health 200, and readiness 200, while installed Hub 8443, HA 18483, and Edge 18500/18510 remained listening. A brief observation found zero Edge lineage and disposition rows. The first local SSH Ctrl-C did not signal the reparented remote launcher; after verifying its exact command, Hub sent SIGTERM only to that launcher. Its cleanup completed with normal child exit, a mode-0600 stopped receipt naming the child, and no 18480 listener. This proves only Hub's bounded isolated lifecycle and cleanup. It does not prove Edge pull, commit, ACK, collection, cross-component cleanup, or an installed-matrix row; the stopped output root cannot be reused for those claims."
+    },
+    {
+      "kind": "b2_edge_primary_hub_fixture_r2_ready",
+      "status": "edge_duplicate_runtime_observed_and_cleaned",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "On the explicit Edge request, Hub created r2 as a fresh owner-only root and launched only its direct child on 127.0.0.1:18480. Its 0600 ready descriptor, direct launcher/child relation, sealed binding, and trusted /healthz=/readyz=200 were independently verified. The initial read-only snapshot was zero Edge lineages/dispositions. Edge reports two byte-identical mTLS submissions both ACKed and a stable-record duplicate distinguished from a further projected application. Hub's independent post-stop read-only ledger has one lineage with ack frontier 11, 11 sequence dispositions, 10 applications, two pending-publication rows, and one consumer diagnostic. Hub then verified normal direct-child exit, a 0600 stopped receipt, and no 18480 listener. The redacted runtime descriptor is docs/development/edge-b2.1-primary-hub-r2-runtime.json. This is bounded Edge/Hub cohort evidence, not installed-matrix acceptance."
+    },
+    {
+      "kind": "b2_edge_primary_hub_fixture_r3_outage_boundary",
+      "status": "passed_hub_outage_edge_spool_step_pending",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub created r3 as another fresh owner-only root with the same sealed Edge binding, verified its direct process ownership and trusted health/readiness 200, then independently observed zero Edge lineage/disposition rows. At the Edge owner's explicit outage request, Hub stopped only its verified launcher. The direct child exited normally, r3 retained a 0600 stopped receipt naming it, and 18480 closed while installed Hub 8443, HA 18483, and Edge 18500/18510 stayed listening. Its redacted descriptor is docs/development/edge-b2.1-primary-hub-r3-runtime.json. This establishes a bounded Hub-outage boundary only; Edge's offline spool persistence and a later drain/recovery remain unobserved."
+    },
+    {
+      "kind": "b2_edge_primary_hub_fixture_r4_drain_target",
+      "status": "passed_edge_drain_recovery_and_cleaned",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "After Edge reported an acknowledged receiver submission while r3 was down, three encrypted queued records, and spool persistence across its exact-service restart, Hub created r4 as a fresh mode-0600 root. Its ready descriptor, sealed binding, direct launcher/child relationship, and trusted /healthz=/readyz=200 are independently verified. Edge reports queue zero after r4 drain, lineage ack_frontier 17 with first_spool_seq 12, connected consumer, complete pending=2, and projected_telemetry=2. Hub then stopped only its verified r4 launcher and independently verified normal child exit, 0600 stopped receipt naming that child, closed 18480, and unaffected 8443/18483/18500/18510 listeners. The redacted connection and guest launch/stop/cleanup invocation is docs/development/edge-b2.1-primary-hub-r4-runtime.json. This is primary B2.1 cohort evidence only, not an installed-matrix or broader platform acceptance result."
+    },
+    {
+      "kind": "r1_home_assistant_bounded_outage_recovery",
+      "status": "passed_partial_live_container",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The Home Assistant owner stopped only its disposable port-18483 Hub fixture, observed 26 Teslatlas sensors all unavailable (zero unknown) through the normal scheduler/backoff boundary, restarted the same fixture identity/config to readyz 200, and observed bounded recovery to 26 sensors with one unavailable/21 unknown plus healthy 22.5 C vehicle activity. No credential or invitation changed. This is a bounded selected-HA live outage/recovery observation only; timeout, malformed response, invalid invitation, partial-vehicle, parity, replacement and full-matrix R1 cases remain open. Hub did not mutate the owner lane."
+    },
+    {
+      "kind": "r1_viewer_51_drive_fixture_preparation",
+      "status": "prepared_not_started",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub added one fixed viewer-r1-51-drives selector to the test-only seed and both private launchers. The synthetic first vehicle has literal 25/25/1 pages (1051 through 1001), while the second vehicle remains empty and the established current/charge values remain synthetic. Focused Rust interop tests passed 4/4; Python fixture tests passed 19/19; supervisor tests passed 5/5; formatting, bytecode compilation, and diff checks passed. A fresh mode-0600 private supervisor descriptor was validated for port 18480 and exact Viewer origin http://127.0.0.1:4173; its output root is absent, so no Hub process, trusted CA, invitation, credential, browser state, request, outage, revocation, re-pair, 304, or cleanup evidence exists. This is prepared test infrastructure only, not Viewer R1 runtime, browser, recovery, collection, installed-matrix, or platform acceptance."
+    },
+    {
+      "kind": "r1_viewer_recovery5_live_handoff",
+      "status": "passed_selected_browser_and_lifecycle_handoff_cleaned",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The prior recovery4 attempt closed immediately because its noninteractive remote stdin reached EOF; it left a normal 0600 stopped record and no 18480 listener, and its root was not reused. A tty-backed persistent supervisor channel then ran one fresh recovery5 root. Hub independently verified owner-only ready/connection/scenario/CA files, trusted health/readiness 200, exact CORS, literal 25/25/1 pages, bounded stop/restore/revoke/fresh-pair controls, and final normal cleanup. Viewer reports recovery7 browser acceptance passed and its browser process/port closed. Hub verified recovery5 child exit 0, launcher exit, 0600 stopped status, and 18480 closure. This is selected isolated Viewer browser/recovery evidence only; it does not prove an installed matrix, collection, platform, or complete R1 acceptance."
+    },
+    {
+      "kind": "b2_edge_docker_r5_fixture_launch",
+      "status": "superseded_by_final_bounded_failure_and_cleanup",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "A test-first fixture update permits only a second fixed Docker Edge collector URL, https://127.0.0.1:19443/, while rejecting arbitrary URLs; its focused behavior and 20-test fixture suite passed. Hub staged that runner source, revalidated the four private Docker Edge trust/auth inputs without exposing bytes, and created a fresh mode-0600 r5 descriptor. Because Viewer owned the still-active 18480 lane, Edge explicitly authorized the free isolated 18490 listener. Hub then launched r5's direct child PID 60002 under launcher PID 59984, verified mode-0600 readiness plus trusted health/readiness 200, and independently confirmed the fixed collector and sealed source binding. The initial SQLite snapshot has zero Edge lineages, sequence dispositions, applications, and pending publications. Installed Hub 8443, Viewer 18480, HA 18483, Edge 18500/18510, and Docker Edge 19443 remained listening. This proves only an isolated, live pre-submission fixture boundary; it does not prove Edge delivery, Hub commit/ACK, Docker acceptance, collection, cleanup, installed-matrix, or broader R1 reliability."
+    },
+    {
+      "kind": "b2_same_hub_ha_r5_claim_v3_renewal",
+      "status": "closed_after_temporary_attachment_and_cleanup",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Two earlier short-lived private claims expired before HA submitted its temporary second-entry flow; neither is evidence of HA attachment or Edge delivery. With explicit Edge approval, Hub stopped only its preceding verified r5 temporary owner, confirmed 18490 closed, and used the supported Hub CLI to issue a third strict owner-only 900-second claim while the unchanged r5 data directory was quiescent. HA then attached a temporary second entry and later removed only that entry, restoring its original 18483 trust. This proves a bounded configuration-flow and cleanup lifecycle only, not a Hub ledger mutation, Docker acceptance, collection, installed matrix, or broader R1 reliability."
+    },
+    {
+      "kind": "b2_edge_docker_r5_one_shot_transport_failure_and_cleanup",
+      "status": "closed_failure_r9_safe_connect_and_edge_pre_admission",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Edge reports one authorised r5 Docker receiver submission ACKed and no second submission was made. r5 nevertheless recorded its deliberately generic backoff/edge transport unavailable diagnostic and all four durable Edge ledger counts stayed zero. A Hub read-only direct mTLS GET using the exact configured inputs returned HTTP 200 with a bounded 6,358-byte v2 batch containing 11 records and zero gaps. A fresh r9 then used new root, Docker runtime, Hub credentials, source/vehicle binding, and temporary HA configuration entry. The diagnostic candidate emitted only five safe `connect` codes while all four r9 ledger counts remained zero. r9's sole Edge helper call separately failed certificate-required before Edge admission, and Edge later verified that helper embeds the old vehicle identity rather than r9's fresh identity; its queue stayed empty. Hub's existing native Edge mTLS end-to-end test passes with the exact EdgeConsumer construction. Hub/Edge/HA cleanup left their unrelated installed lanes intact. This is a bounded product-failure and diagnosis boundary, not collector, ACK, Docker, collection, installed-matrix, or platform acceptance."
+    },
+    {
+      "kind": "b2_r9_docker_tls_static_revalidation",
+      "status": "passed_but_not_a_reqwest_handshake",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub read only public certificate metadata from the stopped r9 Docker runtime and owner-only Hub inputs, without copying certificate or key bytes. The Docker server certificate validates for 127.0.0.1, has server-auth purpose, and chains to the Hub trust input; the Hub client certificate has client-auth purpose and validates against the runtime client CA. The current local candidate also uses an RSA server leaf and RSA Hub client leaf. This rules out the malformed-name, purpose, and CA-chain branches, but the Docker listener is stopped, so it does not prove a Rustls/reqwest handshake, HTTP request, collector pull, or durable acceptance."
+    },
+    {
+      "kind": "b2_edge_transport_safe_socket_diagnostic",
+      "status": "source_regression_passed_not_live_reclassification",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "A test-first Hub change now maps only the static, non-secret connection-refused socket outcome before the existing TLS/body/request categories. The real released-listener regression first failed against the generic `connect` label, then passed with `connect_refused`; formatting and whitespace checks also passed. Public collector status remains the existing generic edge transport unavailable detail. Because r9 is closed, this does not retroactively classify its `connect` failures or prove a Docker listener, request, durable acceptance, or recovery."
+    },
+    {
+      "kind": "b2_r10_exact_edgeconsumer_empty_spool_trust_failure",
+      "status": "closed_failure_root_cause_isolated_no_retry",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub independently validated the fresh r10 owner-only input directory and its two public certificate fingerprints, then ran exactly one ignored integration probe that invokes the real EdgeConsumer.poll_once v2 path once against the sealed empty-spool delivery listener. The probe returned generic transport before any batch acceptance, ACK, or Hub ledger assertion; Edge observed no HTTP-route reach. Edge independently verified the Hub client certificate chain, while Hub independently read the handed-off server-ca.pem as the delivery leaf (subject Teslatlas Edge r10 hub-server, server-auth, issuer Teslatlas Edge r10 hub-server-ca) rather than a CA. Edge's chain verification confirms the supplied leaf cannot verify itself as an issuer root. The fresh r10 runtime, its empty spool, and HA 18483 remain unchanged; no producer helper was invoked. This isolates the Docker collector failure to the trust-input role boundary, not a route, record, ACK, collection, or HA acceptance result. The r10 one-shot authorization is consumed and its inputs/root cannot be retried or reused."
+    },
+    {
+      "kind": "b2_r11_exact_edgeconsumer_empty_spool_mtls_pull",
+      "status": "passed_one_authorised_control_no_record_or_ack",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "After independently reviewing Edge's source-tested trust-bundle repair, Hub validated the fresh r11 owner-only input custody (0700 directory and four 0600 single-link files) without exposing private bytes. Its public server CA is CA:TRUE; the r11 delivery leaf chains to that CA for 127.0.0.1 with server-auth; the client leaf chains to its separate client CA with client-auth and matches the private-key public key. The fresh Docker Edge/receiver pair was healthy on 20643/20644 with zero records, bytes, corruption, expiry, and pending gaps. With matching staged test-source SHA256, Hub ran exactly one ignored integration test invoking real EdgeConsumer.poll_once once at the r11 v2 endpoint. It passed 1/1, accepted an empty batch, and asserted zero temporary Hub ledger applications, sequences, pending publications, and ACK frontier. There was no ACK request, producer/helper call, record, collection, HA attachment, retry, or installed-matrix result. The shared heavy-build lock released after the one command. Edge then stopped the receiver first (bounded SIGTERM), stopped Edge second, retained its sealed empty-spool evidence, and Hub independently observed 20643/20644 closed while r10 20543/20544 and HA 18483 remained listening. r11 cannot be reused."
+    },
+    {
+      "kind": "b2_r12_pre_record_hub_fixture_connected",
+      "status": "closed_invalid_root_after_empty_polls_only",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The first r12 partial root was discarded before it could publish credentials or listeners. Edge then supplied r12-fresh, whose owner-only inputs validate as an issuing server CA, loopback server leaf, separate client CA/client leaf, and matching client key; both delivery and receiver became healthy with empty health/ready receipts. Before Edge's final source/control handoff clarified that this was an in-place-repaired diagnostic root, Hub created a 0700 fixture-launch root and 0600 config, then launched one direct child on 127.0.0.1:18491. Its 0600 ready descriptor, process relationship, trusted health/readiness 200, and Hub status independently showed Edge delivery configured, connected, and empty polling. A read-only pre-record snapshot had zero lineages, applications, sequence dispositions, pending publications, accumulator states, and sync ledger rows; one consumer diagnostic was the expected empty poll. No record was submitted and HA had not confirmed an entry. Once Edge declared r12-fresh non-reusable, Hub stopped only its verified launcher; the child exited 0, a 0600 stopped receipt names the child, and 18491 closed. This is invalid diagnostic/cleanup evidence only, not a valid pre-record control, submission, ACK, collection, HA observation, recovery, or installed-matrix acceptance."
+    },
+    {
+      "kind": "b2_r12_replacement_one_authorized_actor_rejection_and_cleanup",
+      "status": "closed_failure_no_retry_before_edge_admission",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The coordinator-authorized replacement sequence used fresh 20843/20844 Edge state, a fresh 0600/0700 Hub fixture on 18493, and one temporary HA entry after its normal scheduler refreshed. Immediately before the one producer call, Hub's persisted receipt had zero applications, sequences, pending publications, accumulator states, and ACK frontier; the only bound-vehicle observation was the fixture baseline and the Edge consumer diagnostic was connected/empty-poll. Edge made the one authorized actor call exactly once. TLS completed, but the pinned receiver rejected the actor at its application identity boundary: the certificate chained to the mounted client CA yet had no required X.509 identity extensions and the custom r12 issuer was unauthorized. Edge reported no admission, ACK, queued records, bytes, corruption, expiry, or pending gaps. Hub independently re-read zero durable ledger counts, null frontier, the same one baseline observation, and connected empty-poll status. HA then deleted only 18493 and restored 18483; Hub stopped only its verified launcher/direct child (child exit 0, 0600 stopped receipt, 18493 closed); Edge stopped receiver first then Edge and 20843/20844 closed. Installed Hub 8443 and primary HA 18483 remained healthy. This is a bounded failure/cleanup receipt, not Edge admission, Hub collection, durable ACK, HA value, Docker acceptance, or an installed-matrix result. The one-shot authorization is consumed and this cohort cannot be retried or reused."
+    },
+    {
+      "kind": "b2_r12_replacement_receiver_identity_source_review",
+      "status": "passed_source_only_exact_pinned_parser",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub independently re-ran Edge's focused generator regression (2/2) using its explicit sibling-module path and its no-network exact-parser harness (3/3) against pinned Fleet Telemetry v0.9.4 messages/identity.go SHA256 20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5. The generator's fresh self-issued client CA uses the parser's recognized Tesla Motors Products CA issuer branch; a leaf CN equal to the synthetic VIN therefore resolves to vehicle_device. The harness also preserves the negative cases: an unrecognized issuer and a known OID issuer without an identity OID are rejected. Python compilation, JSON validation, and whitespace checks passed. This establishes only the source/application profile correction: it did not start a receiver, Edge, Hub, HA, listener, producer helper, network request, credential mutation, runtime root, fixture, replay, or record submission."
+    },
+    {
+      "kind": "b2_r13_authorized_name_only_edge_hub_ha_journey",
+      "status": "passed_bounded_data_path_with_multi_sequence_caveat_and_cleaned",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Under fresh coordinator authority, Edge created a distinct owner-only r13 root on 20943/20944 with source 8c867580-27df-4e80-9a5f-c73f9864f809, vehicle 024c338a-decd-4196-976e-29fe11b18111, a synthetic VIN ending 000005, car 12, and new installation/lineage. Hub added only the exact 20943 delivery endpoint through a test-first fixture gate: the focused test first rejected it, then the implementation passed that test and all 20 fixture tests. Hub independently verified r13 custody, trust/key matching, the Tesla Motors Products CA actor issuer, leaf VIN subject, actual actor SHA256, empty Edge readiness, and a zero pre-record ledger. A fresh 18494 Hub direct-child fixture reached trusted health 200 with Edge connected/empty-poll; HA paired exactly one temporary entry through its normal UI while primary 18483 remained healthy. Edge then ran the sealed actor exactly once, with exit 0, receiver ACK, topic/transaction match, and one source-constructed VehicleName=synthetic-b2 datum without numeric fields. Hub independently saw one lineage, ACK frontier 3, three committed sequence/application rows, zero non-complete publications, and one accumulator state. Sequence 2 was projected telemetry; sequences 1 and 3 were durable_non_projection_event with projection_unsupported. The accumulator contains VehicleName plus connectivity/state/VIN/timestamp metadata only, and HA's normal post-ACK scheduler observation showed no new entity, numeric value, or unit-bearing projection. This proves the bounded one-call name-only data path, receiver ACK, encrypted Edge persistence, Hub commit/frontier/drain, and HA observation. It does not prove a strict one-actor-payload to one-stored-sequence invariant. HA deleted only 18494 and restored its primary trust/configuration. Hub stopped only verified launcher 155441/direct child 155459 (child exit 0, 18494 closed); Edge stopped receiver first (exit 143) then Edge (exit 0), both restart counts zero, 20943/20944 closed, and evidence roots retained. Primary 18483 plus unrelated r10/r12 listeners remained intact. No retry, replay, production action, or real vehicle action occurred."
+    },
+    {
+      "kind": "r1_typescript_packed_node_51_drive_fixture",
+      "status": "passed_selected_packed_consumer_and_cleaned",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub created a fresh 18481 direct-child fixture with a 0600 descriptor, full CLI invitation, trust CA, ready descriptor, and literal 25/25/1 scenario. TypeScript reports its fresh packed Node consumer passed the selected 51-drive/cursor/304/claim/rotation/default-Fetch journey, binding Node 26.7 and the existing 81-member package archive SHA256 beginning 03dddd. Hub then stopped only its verified launcher; child exit was 0, stopped.json remained 0600, and 18481 closed. This is selected packed-consumer evidence only. It does not prove an installed matrix, broader R1, collection, migration, or platform acceptance."
+    },
+    {
+      "kind": "d1_home_assistant_debian_arm64_container_selection",
+      "status": "accepted_primary_runtime_lane_only",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Home Assistant supplied d1-debian13-arm64-container-selection-receipt-2026-09-09.json, SHA256 2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2. Hub independently confirmed its schema, selector, bounded status, matching frozen component manifest SHA256 73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940, no standalone package, Debian 13 ARM64/HA Container identity, explicit config and component ownership, lifecycle actions, pairing/scheduled-refresh/reauth/reload/unload/restart results, one-entry/26-entity before/after invariant, redaction, and cleanup limits. packaging/components.json binds only that receipt to the HA Debian ARM64 Container selector. It is not a standalone package, macOS, x86_64, full composition, R1 parity, X1, or final acceptance result."
+    },
+    {
+      "kind": "d1_viewer_component_handoff_source_review",
+      "status": "source_and_package_identity_verified_then_limited_docker_runtime",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Viewer supplied an external owner-only frozen source snapshot and bootstrap-companions schema-1 manifest, SHA256 ce0e854bdddb5e6a87a9ab199b213b709df7b66c079140504ab6d706eb855b82. Hub independently ran source_manifest_for twice against that snapshot: both checks matched the 106-file Viewer record at SHA256 b57d3e5b7c015bf397b55ab5823afe33d20c0b2296d0892f39c6bd683d6bae7a. Hub also independently matched the retained 10-member Viewer package SHA256 c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31, current Dockerfile, compose.yaml, healthcheck, and SDK archive identities. The later isolated Docker receipt is recorded separately and binds only that selector; native package and macOS selectors remain pending."
+    },
+    {
+      "kind": "d1_viewer_debian_arm64_docker_runtime",
+      "status": "passed_isolated_runtime_cleaned_not_final_acceptance",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Viewer supplied its redacted source-built Docker receipt SHA256 80598bad57fe34a679deafa1bb7c7f08862f65e030f7481dda087491a70d2331. Hub matched its source manifest and Dockerfile/Compose/healthcheck/SDK archive identities, and bound only the Debian 13 ARM64 Docker selector to image sha256:6791fa6d019028ae4d0c3cad926207852830188ccf5dcc70e4e01b00d76e5ea6. The receipt records Docker 26.1.5, Compose 2.26.1, non-root node uid 1000, loopback HTTP/health, no mounts, restart, unchanged sibling containers, and a clean Compose stop. Hub independently observed zero matching Viewer containers, zero matching network, no port-4173 listener, and the same retained local image. This is a cleaned isolated Viewer Docker result only; it does not establish Hub readiness/integration, browser TLS/CORS, native Debian, macOS, amd64, upgrade/rollback, helper parity, collection, or installed/final acceptance."
+    },
+    {
+      "kind": "d1_typescript_sdk_component_handoff_source_review",
+      "status": "source_and_package_identity_verified_developer_resource_only",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The TypeScript SDK supplied an external owner-only 254-file frozen snapshot at b1cd548f plus bootstrap-companions schema-1 manifest SHA256 4264d380a1d4f8e9ae8bb5d1b76c99bcbf4da89eb89906f79f40c10929d80067 and source SHA256 1f4e2ad068de14285f7fbe9f462fde6ee384ff992cce17ff13cbfea8d53a53f8. Hub independently reconciled every frozen file record after explicitly rebasing only the record's original checkout path to the owner-only snapshot, confirmed its read-only modes, profile hub-http-v1@1.0.0 SHA256 b80d940e, and the retained 81-member @teslatlas/sdk 2026.36.2 archive SHA256 03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c with Node and browser public-entry hashes. packaging/components.json binds only optional caller-owned developer-resource selectors. The service selector remains blocked: no SDK service, host, consumer, browser, Docker image, credential, listener, package installation, or installed/platform acceptance was changed or claimed."
+    },
+    {
+      "kind": "d1_protocol_component_handoff_source_review",
+      "status": "immutable_source_and_contract_identity_verified_developer_resource_only",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Protocol supplied an owner-only 221-path read-only snapshot at 05225bd5 and external manifest SHA256 e89ff7ecf4b9e0ddeebc6801ca4bf7a865b8c0561e12bb69e1c5d14f55b7ec24. Hub independently ran source_manifest_for twice against its 177 file records; both matched source SHA256 efda1c9d31556871fe5be9965889083a7037b0c311945280631ce9dd21ce994f. Hub bound only Protocol VERSION 2026.36.2, current-Hub profile hub-http-v1@1.0.0 SHA256 b80d940e, compatibility hub identity db8ac003, matrix contract identity 75bdb638, and offline checker identity 22cff4d2. The Protocol source selector is optional developer-resource evidence; no package archive, image, service, listener, profile admission, installed target, or runtime is bound. The offline checker remains a source-only test environment and native Protocol service is unsupported."
+    },
+    {
+      "kind": "d1_swift_sdk_component_handoff_source_review",
+      "status": "immutable_source_and_swiftpm_identity_verified_developer_resource_only",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub initially rejected Swift's writable snapshot rather than calling it frozen. Swift then supplied a replacement owner-only snapshot with zero writable paths: 201 source paths at 0500/0400, external manifest SHA256 18a950c20e5b3c423d99b9556e3b044bf0f46a2da31df45633011c166613685c, 158 file records, and source SHA256 9076fbe1f5e0e20fde929cc7f5e0093e93e5216fa98b67e32c90e9b10a4dec6b at 51494612. Hub independently ran source_manifest_for twice against that replacement and both records matched. It also verified Package.swift SHA256 cfae0738fec873d0b5361aae8ddc4f33e37bf2f42ee4e40259e23e23875e898f, VERSION 2026.36.2, five declared products, and iOS 17/macOS 14 floors. packaging/components.json binds only optional SwiftPM source. No release archive, native build output, image, service, Hub SessionInput, target, runtime, host, credential, listener, or installed/platform acceptance is bound; every installed target selector remains blocked."
+    },
+    {
+      "kind": "d1_edge_component_handoff_source_review",
+      "status": "immutable_source_and_candidate_identity_verified_runtime_limited",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub initially rejected Edge's writable content-matching snapshot. Edge then supplied a replacement owner-only immutable snapshot with zero writable paths while preserving its twelve executable-bit records: 87 files at 67650cd9, manifest SHA256 b178a64de064c8e95cbf7e2d36811bb720084924e81f4eb359a4e6da629b6eb9, source SHA256 301ed74968778298619afeb9b9db90b55837b16304aac5f7a68da4684fd28fe1, and profile edge-delivery-v2@2.0.0 SHA256 e304fb6e. Hub independently ran source_manifest_for twice, matching every relative path, byte hash, size, executable bit, and aggregate digest. It bound the cited ARM64 native/package and Docker candidate identities and recipe/source identities only. The Debian ARM64 native and macOS records remain explicitly limited lifecycle subsets; Docker remains a runtime shape without durable Hub ACK; both amd64 selectors remain blocked or pending. No target was started, installed, mutated, or accepted, and no credential, fixture, ledger, receiver/producer, vehicle, or service state was touched."
+    },
+    {
+      "kind": "d1_aggregate_component_selection_manifest",
+      "status": "source_only_component_identity_bindings_verified",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "packaging/components.json records every D1 component slot and a fail-closed runtime-receipt schema. Hub verified the Home Assistant frozen 31-line payload identity and its specifically bounded Debian 13 ARM64 Container selection receipt; Viewer frozen source/package identities plus its cleaned isolated Debian ARM64 Docker receipt; immutable TypeScript SDK source/package identities; immutable Swift SDK source/SwiftPM identity twice; immutable Edge source/candidate identities twice; and immutable Protocol source/contract identities twice. Viewer remains non-integrated and limited to its selected Docker result; Protocol and both SDKs are caller-owned developer resources, never services; and Edge retains every source/runtime-subset limitation. Hub core and Fleet helpers remain explicitly blocked pending reviewed candidate artifacts. The focused verifier first failed before each new binding and now passes nine checks. This is neither package installation nor runtime acceptance."
+    },
+    {
+      "kind": "d1_home_assistant_disposable_local_candidate_installer_adapter",
+      "status": "passed_source_only_disposable_transaction_not_runtime_acceptance",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The machine-readable companions d1-plan and separately explicit d1-install paths admit only home-assistant/debian13-arm64-container. Both bind aggregate manifest SHA256 37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa, HA source head f650331a1af0cf33cec271bc7eefc0f1201ebd4e, product 2026.36.2, profile hub-http-v1@1.0.0 SHA256 b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926, payload manifest SHA256 73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940, and selection receipt SHA256 2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2. The plan is source-only with activation_authorized false. The explicit local-candidate test exercised the existing transactional HA staging/link path in a disposable configuration, preserved its existing sentinel, and reported runtime_acceptance false; it did not start Home Assistant. Hub core and Fleet helpers are rejected before manifest use because their reviewed candidate artifacts remain absent. Fresh source checks passed 80 companion Python tests, 9 aggregate-manifest checks, 1 bootstrap-catalog check, 11 Rust companion-delegation tests including 5 D1-specific cases, cargo fmt --check, and the Hub binary build. No persistent HA configuration, package, service, container, guest, credential, production selector, R1 evidence, or installed/platform acceptance was changed or established."
+    },
+    {
+      "kind": "r1_teslamate_parity_source_mapping_ledger",
+      "status": "source_mapping_reviewed_operational_parity_unrun",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "docs/development/teslamate-parity-evidence-2026-09-09.md names the TeslaMate v4.2.0-compatible source revision e8d24886f97f22469c2675f89be843f6d401c76a and records the current schema-2.2 17-domain source ledger: 16 captured, typed, fingerprint-bound fields/domains and the deliberate unread/unhashed addresses.raw exclusion. Fresh local source tests passed the exact fail-closed ledger, drive/state evidence digest, redacted read-only witness/report boundaries, and seven physical projection conversions. No live TeslaMate database, source backup, import, passive observation, migration, recovery, backup/restore, or soak action was performed. This is source-level mapping evidence only, not full parity, collection, or an installed-matrix result."
+    },
+    {
+      "kind": "r1_data_recovery_source_regression",
+      "status": "passed_synthetic_source_level_operational_receipt_unrun",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Fresh local tests passed 13/13 data-recovery cases plus the binary observation-command parser and durable/monotonic watermark regressions. The synthetic recovery tests cover private data-only backup creation and immutable verification, identity/lineage preservation, pairing and collector-authority removal, tamper/symlink/scope rejection, historical schema migration, and preservation of an existing restore destination. They did not run the public backup, verify-backup, or restore-data commands against a durable R1 fixture or installed service, and they did not read a TeslaMate source, invoke a collector, use vehicle credentials, or establish passive, recovery, retention, or soak acceptance."
+    },
+    {
+      "kind": "r1_synthetic_data_backup_restore_continuation",
+      "status": "passed_bounded_synthetic_data_only_and_cleaned",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "docs/development/r1-synthetic-data-recovery-2026-09-09.json records one fresh owner-only synthetic root exercised with the public backup, verify-backup, restore-data, status, and verify-observation commands. It binds the scenario, source/debug binary, data-only backup generation, identity, manifest/completion/database digests, post-watermark source/restored continuation, and one fail-closed truncated-copy rejection that preserved the original backup and created no invalid restore destination. Pairing, decryption keys, TLS material, configuration, service state, and collector authority were deliberately excluded; the stopped synthetic ports were closed and the disposable roots were moved to Trash after validation. This is direct debug-binary synthetic recovery evidence only, not an installed package, clean-host, TeslaMate import, real credential, passive collection, retention, soak, or full-parity result."
+    },
+    {
+      "kind": "r1_viewer_data_state_fresh_fixture",
+      "status": "passed_bounded_browser_and_hub_lifecycle_cleaned",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Viewer returned its redacted docs/development/receipts/2026-09-09-r1-installed-data-state.json for a fresh Hub fixture: Debian 13 ARM64 Node 26.7.0, Playwright 1.62.1, Chromium 152.0.7977.82, viewer package SHA256 96cbea31, Hub 5334ff3f-bd07-4c48-bc74-cebd6c7c526a, and viewer-r1-51-drives SHA256 bb27007d8. One installed browser test passed in 3.1 seconds, covering three conditional 304 drive pages while retaining all 51 rows, capability-driven unsupported resources without requests, a retained-data then recovered browser-owned drive failure, and canceled delayed current data without late repopulation. Viewer stopped its exact packaged process and closed 4173. Hub independently rechecked the live owner-only fixture, stopped only launcher 170788, verified child 170804 exit 0 and stopped.json mode 0600, and observed 18480/4173 closed. This is selected synthetic Viewer data-state and Hub cleanup evidence only, not TeslaMate collection/parity, migration, Docker, installed-matrix, or platform acceptance."
+    },
+    {
+      "kind": "r1_named_source_read_only_evidence_plan",
+      "status": "prepared_source_only_not_authorized",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "docs/development/r1-named-source-read-only-evidence-plan-2026-09-09.md translates H7's existing source code and CLI into a reviewable next lane: the missing preserved source/backup, one read-only PostgreSQL identity, selected car and version confirmation, isolated stopped Hub destination, exact teslamate-check command/output, bounded comparison data, and separately authorized migration/passive/recovery/soak steps. No source, database credential, Hub target, service, collector, vehicle, or new synthetic cohort was accessed or created. It is a plan, not an admission, import, parity, collection, migration, recovery, soak, D1, or X1 result."
+    },
+    {
+      "kind": "active_macos_user_owned_go_policy_regression",
+      "status": "passed_fail_closed_source_regression_no_candidate_runtime",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "With TESLATLAS_GO set only to the verified user-owned Go 1.27.0 Darwin ARM64 executable, the full scripts/test-go-proxy-evidence.sh regression passed under the shared heavy-build lock. The strict build-host policy still accepts only complete path/SHA256/GOROOT triples, including the added user-owned triple with executable SHA256 a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267, and rejects forged or mixed triples. This is source-level provenance evidence only: no Hub candidate app or package, installed app, service, listener, Viewer process, pairing, shared guest, vehicle, credential, or production state was created or changed. The r1 clean-HEAD candidate remains rejected and cannot be reused; docs/development/active-macos-hub-viewer-toolchain-handoff-2026-09-09.json defines the fresh r2 archive plus exact-lock-overlay boundary."
+    },
+    {
+      "kind": "active_macos_r2_candidate_build",
+      "status": "passed_local_candidate_build_unsigned_noninstalled",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "A fresh Apple-silicon candidate built under the shared heavy-build lock from Hub HEAD 7fe8cb202c0eb7e291901a9b719d3fbe65c675bc plus only the reviewed scripts/tesla-proxy-lock.json overlay SHA256 b4b02f44698d4d394d1e3dd1407d25f7223ad475b407eea109b844616c8244d2. It produced TeslatlasHub.pkg SHA256 c3b50aecce3958bd2b434a5382e178e01f99638a203b214576631c3b4ef085d4 (69,314,955 bytes) and Teslatlas Hub.app 2026.36.2. The embedded Hub is arm64 macOS-13.0-minimum SHA256 895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55; the local ad-hoc app signature verifies and the expanded installer payload has no AppleDouble files. The product package has no release signature/notarization, so the app correctly refuses to install/update its service without official release metadata. No existing 2026.36.1 app replacement, package installation, service, listener, config/data root, Viewer, pairing, credential, vehicle, or shared-guest action occurred. This is a local candidate build, not installed or release acceptance."
+    },
+    {
+      "kind": "active_macos_r2_candidate_fixture_seed",
+      "status": "passed_source_build_runtime_not_started",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Under the shared heavy-build lock, the exact r2 candidate source built cargo --locked --release --example interop_fixture successfully. The result is an arm64 Mach-O seed binary SHA256 b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce. No fixture, Hub listener, config/data root, app/package installation, Viewer, pairing, credential, vehicle, or shared-guest action started; the heavy-build lock released after the build."
+    },
+    {
+      "kind": "active_macos_r2_candidate_fixture_staging",
+      "status": "passed_owner_only_prelaunch_validation_runtime_not_started",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub staged only the source-fixed candidate fixture, default scenario, frozen Protocol native-evidence helper/profile, and an owner-only fixture configuration under a fresh 0700 control root. The exact configuration SHA256 feae8bf1b937012ccc85c0b3495679c1839a11fa756b581fc3b84bbed6a46af0 was accepted by the candidate fixture's real loader, binding profile hub-http-v1@1.0.0 SHA256 b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926, port 18487, origin http://127.0.0.1:4173, 1800-second fixture lifetime, and 900-second invitation lifetime. The output root did not exist and ports 18487/4173 had no listeners. This is prelaunch input validation only: no candidate Hub process, listener, TLS material, data/config output, invitation, Viewer, app/package installation, credential, vehicle, shared guest, or production action started."
+    },
+    {
+      "kind": "active_macos_r2_candidate_fixture_ready",
+      "status": "passed_real_https_ready_viewer_handoff_open",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The staged r2 fixture launched one disposable, real candidate Hub process. Its direct child PID 36006 listens only on 127.0.0.1:18487 under fixture launcher PID 35922; HTTPS /readyz returned 200/status ready using the fresh owner-only local CA SHA256 a58543d25e7baba3d5a31518b1a6dee6371e8c91e25cb6a3cdaefe093d7eff0c. The owner-only ready descriptor SHA256 a9979b7111d30ee88292a7a6736ed64ee673a996d6c008d8d4af0837f121f3cc binds candidate Hub SHA256 895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55, seed SHA256 b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce, Hub ID 7980ebf7-04a8-47a5-b4ae-5d17d356b618, frozen profile b80d940e, and b1-five-drives scenario SHA256 c74f1c90. It created one owner-only 900-second supported-CLI invitation only at the new local path specified in the active Mac handoff; no secret is recorded here. Viewer may now consume exactly that handoff from its normal local origin. This remains a bounded synthetic-real-process candidate route, not an installed app/package, release, collection, migration, profile, or platform acceptance."
+    },
+    {
+      "kind": "d1_swift_refreshed_source_rebind",
+      "status": "passed_double_immutable_source_verification_runtime_not_started",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub independently invoked source_manifest_for twice against the owner-only read-only Swift snapshot at teslatlas-sdk-swift-d1-20260909-refresh-ro/frozen-source and the supplied local-sources record. Both complete manifests were identical and matched all 158 records: Swift source SHA256 e92f4b75ac6da0ba62d78b1ac0c3ed1eacf4b779c753a570c722e9053ca9b7cb, external local-sources manifest SHA256 4ebf48d90013fab1ed354703d305b8d9170d240cb7526d7d57b18a1c96c34a8c, source commit 51494612db6aa3d0b0dafd08001ce432befa7fbf, zero writable or symlink snapshot paths. This binds the recorded test-only FoundationNetworking source delta for future formal selection; it does not start a Swift consumer, select an installed row, use any current Viewer fixture input, or establish runtime/package/platform acceptance."
+    },
+    {
+      "kind": "active_macos_r2_candidate_fixture_viewer_cleanup",
+      "status": "blocked_before_browser_pairing_macos_trust_and_cleaned",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Viewer started and cleanly stopped its normal local 127.0.0.1:4173 process against the fresh r2 candidate. Chrome reached the Viewer but the smoke stopped at wrong-UUID discovery with Hub discovery unavailable before pairing. Viewer directly verified supplied-CA Hub health, readiness, and CORS discovery, but macOS was locked and neither CLI nor UI certificate-trust configuration was available. No certificate-bypass option was used and no pairing/invitation secret was consumed. Hub independently rechecked HTTPS /healthz and /readyz as 200 before sending SIGTERM only to fixture launcher PID 35922; direct child PID 36006 exited 0. The 0600 stopped descriptor SHA256 cf7fd1e745edf8c57653134d1ffae565e87c2c4827b6b2d8b88647d0d10d9657 records that child exit, both PIDs are absent, and ports 18487/4173 are closed. The private evidence root is retained. This demonstrates a bounded local candidate process and correct cleanup, not browser pairing/current/history, installed app/package, trust enrollment, release, profile, collection, or platform acceptance."
+    },
+    {
+      "kind": "active_macos_packed_node_fixture_ready",
+      "status": "passed_packed_node_consumer_and_cleaned",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "A fresh Apple-silicon r2 candidate fixture was staged in a distinct 0700 root with only its candidate fixture/scenario, frozen 17-member current-Hub profile, native-evidence helper and 0600 configuration. The candidate loader accepted the configuration; all inputs and the absent run root/free port were rechecked. The fixture then created a new 0600 ready descriptor SHA256 10b3dd79b433ca4850f79f30751dab88526b11167e08a7c4fc725cf92fe5d46d, local CA SHA256 71b2eb76d4d632cfee63d554fed4ea0893cc46d440c95e4982fbbd91bf87a5d5 and one new owner-only supported-CLI invitation at the private path in docs/development/active-macos-node-consumer-handoff-2026-09-09.json. Hub ID a95c379d-3b10-4af0-920a-1907981083c8 and candidate binary SHA256 895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55 are bound to profile b80d940e and default scenario c74f1c90. HTTPS health/readiness returned 200; launcher PID 65782 directly owns Hub child PID 65785 listening only on 127.0.0.1:18489. This opens exactly one strict-CA packed Node consumer handoff. It is not a browser path, app/package installation, release, collection, migration, profile, installed-matrix or platform-acceptance result."
+    },
+    {
+      "kind": "active_macos_packed_node_fixture_cleanup",
+      "status": "passed_public_packed_node_route_and_hub_cleanup",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The TypeScript owner consumed the one fresh handoff and returned a redacted Node v26.7.0 receipt: Hub ID a95c379d-3b10-4af0-920a-1907981083c8, API 1.0, four capabilities, two vehicles, five drives in three two-item pages, ETag 304/cursor continuation, one-time claim, credential rotation and default Fetch. It binds packed @teslatlas/sdk 2026.36.2: node entry SHA256 83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9, tarball SHA256 03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c, 81-member installed manifest SHA256 4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6. Its consumer root, credential and receipt were owner-only; no secret was disclosed. Hub independently rechecked HTTPS health/readiness then sent SIGTERM only to launcher PID 65782. Direct Hub child PID 65785 exited 0; stopped.json is 0600 SHA256 2dfa6ad997aa03c6158b363b951489f39c8ddf5bec68c11c23fe74e6fb2d1665 and TCP 18489 is closed. This is selected Mac packed-Node and Hub lifecycle evidence, not a browser/UI route, installed matrix, package installation, release, collection, migration, profile or platform acceptance."
+    },
+    {
+      "kind": "debian_arm64_swift_candidate_and_runner_build",
+      "status": "passed_clean_candidate_and_private_runner_runtime_not_started",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Under the shared heavy-build lock, Hub created an absent guest candidate root by git archive of Hub HEAD 7fe8cb202c0eb7e291901a9b719d3fbe65c675bc, excluding the dirty guest worktree, and built cargo --locked --release --bin teslatlas-hub --example interop_fixture. Both artifacts are ELF Linux aarch64: Hub SHA256 0687a619d009debd48ad7f67501e52d0d147402001e262f03a4c54b63fc99d14 and seed SHA256 bfc494e1f182951123e55da9cc987b016aa64528ac7efd44200a5cb326ce7707. Hub transferred and reverified the 158-file immutable Swift source SHA256 e92f4b75; raw archive transfer partials are retained after macOS metadata/readonly modes prevented extraction, while only the separately verified no-AppleDouble data copy was promoted. A fresh private teslatlas-swift-current-consumer:debian-arm64-20260909 image then built from the pinned Swift 6.0.3 Jammy manifest, immutable Dockerfile SHA256 4ce3ec0511c0b17372fa5d548b6c9fab95a2211ec87c3254a8a54445e8, image SHA256 84f242c2ecf2a6e8f8113c26f2fceb062fce7b0f1d85afd6c84df7c511b1d1ea, arm64, image user swiftuser. No container, fixture, Hub listener, invitation, configuration/data output, package installation, service/permission change, consumer, credential, vehicle or shared runtime action started."
+    },
+    {
+      "kind": "debian_arm64_swift_fixture_first_failure_retry_staging",
+      "status": "both_authorized_fixture_attempts_pre_ready_failed_preserved_no_further_retry",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The first 18495 fixture attempt exited before readiness after staging the exact ELF candidate and seed, leaving only a private partial output store; it created no connection descriptor, CA, invitation, ready/stopped receipt, listener, Swift container, consumer or change to the installed Hub/HA/Edge lanes. The candidate fixture deliberately suppresses its seed child's stderr and persisted no first-failure diagnostic, so no precise cause is inferred. The same staged seed then passed three new seed-only diagnostics with zero stderr, including an exact nested control-root/run output layout, staged 0500 executable and held-18495-reservation reproduction; this rules out the candidate binary, staged copy, output layout and port reservation as reproduced mechanisms. The first root was preserved and not reused. One fresh 0700 retry root separately staged only fixture SHA256 f9c0e368, scenario c74f1c90, native helper 09fdd315, frozen 17-member profile b80d940e and 0600 configuration SHA256 9885a714; its real loader accepted the absent-output/free-port inputs. That one authorized retry then failed at the same seed boundary: exactly one vehicle, five materialised drives and one materialised charge persisted, but no transport pack/import snapshot/observation/pairing or connection/CA/invitation was created. It created no listener, Swift container or consumer. Both partial roots are retained; no further retry is authorized. This is failure diagnosis/staging evidence only, not Hub HTTPS readiness, consumer, container, package, service, collection or platform acceptance."
+    },
+    {
+      "kind": "debian_arm64_swift_seed_diagnostic_instrumentation",
+      "status": "cause_confirmed_test_backed_repair_staged_for_fresh_readiness",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Under the coordinator's explicit source-diagnostic authorization, Hub added only secret-safe seed-subprocess metadata to the working fixture and first ran its focused suite. The one authorized clean-HEAD instrumented run then returned seed exit 1 in 57ms; its 0600 diagnostic SHA256 8fbcad11 contains only stage/timing/exit plus hashed command/cwd/environment-name, standard-stream, limit and parent-memory metadata—not raw stderr or payload. Independent read-only evidence shows each failed root's packs/.staging is 0775 under inherited guest umask 0002. Candidate ensure_private_staging_directory rejects those group-write bits before chmod, exactly at the first pack boundary; the guest had 6,653,857,792 free bytes and zero OOM kills. Three standalone seeds all set 0077 and passed. A real child-umask test first failed at inherited 0002, then passed after the minimal runner repair invokes its seed child with umask=0o077; the focused suite passed 25 tests. Hub staged one new, distinct repaired clean-HEAD overlay SHA256 58796263 on port 18497 with the existing candidate binaries, default scenario, frozen helper/profile and 0600 config SHA256 ddec6844. Its loader accepted an absent output/free port. No repaired process, listener, CA, invitation, Swift container, consumer, package, service or acceptance action has started."
+    },
+    {
+      "kind": "debian_arm64_swift_repaired_fixture_and_container_handoff",
+      "status": "r1_command_failure_and_r2_libcurl_trust_failure_cleaned_no_acceptance",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "The first fresh repaired fixture ran a direct candidate Hub child only on 127.0.0.1:18497, but its created public Swift container used the repository-root command and exited 1 before network or credential read because CurrentHubConsumer is an executable only in the nested Examples/CurrentHubConsumer package. Hub preserved that container/input, stopped only its launcher/direct child, retained its 0600 stopped record and closed 18497. Hub then verified the nested product with no-network swift package describe and the corrected swift run package-path option with no-network help. A distinct R2 fixture ran only on 127.0.0.1:18498 under the demonstrated parent umask 0002 with a new Hub ID, CA and invitation; its trusted /healthz plus /readyz returned HTTP 200. Swift's corrected nested-package public command built successfully but returned only redacted status=transport_failure, then Swift removed exactly its R2 container/input. Hub's final read-only R2 SQLite counts show zero paired devices, outbound-request receipts and stream-session receipts. A credential-free, temporary C probe inside the same pinned swiftuser image and SSL_CERT_FILE environment returned libcurl code 60 and HTTP status 0 for /healthz, even though an OpenSSL default-store probe and host trusted checks both accepted the same CA. The frozen shim has no CAINFO/CAPATH setting, so this is a Swift Linux libcurl process-trust boundary. Hub stopped only launcher 76169/direct child 76185, retained the 0600 stopped record and closed 18498. No invitation contents were read, and this is failure/cleanup diagnosis—not consumer, installed-service, collection, matrix or acceptance evidence."
+    },
+    {
+      "kind": "edge_macos_existing_target_preflight",
+      "status": "target_compatible_candidate_verified_hub_link_tls_prepared_corrected_config_and_final_identity_pending",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "At the coordinator's direct direction, Hub recorded the exact selected macos13-arm64 guest as stopped, started only that existing guest, and completed the proposal-bound metadata preflight. It observed macOS 13.7.4 arm64, admin UID 501, non-loopback private address 192.168.64.10, no Edge/receiver process or loaded LaunchAgent, and no listener at the proposed 8080, 21443, 21444 or 18488 bindings. The retained fixed Edge state root is owner-only/non-symlinked but non-empty; its private files are owner-only and public certificates non-writable, yet no contents, credentials, keys, certificate values or hashes were read. Hub created a distinct absent-before-create/non-symlinked 0700 admin-home root with a sealed owner-only identity. Edge then made the Hub-input server SAN an explicit IP argument and Hub independently verified its focused regressions, syntax/diff and candidate package/Mach-O identities. Under proposal ba05200c, Hub generated fresh owner-only Hub-link TLS/bearer with a portable LibreSSL procedure: separately purpose-verified server/client chains, exact 192.168.64.10 leaf SAN, matching leaf keys, and no listener. Three earlier private stages were preserved as non-consumable procedure failures. Hub found the initial sealed identity embeds c789b68c, rejected it before output, then under coordinator authority created a new ba05200c-bound 0600/single-link record preserving the unused contract and retained the old record ineligible; Edge independently confirmed that pair. Hub's pre-init source review then found the proposal's spool_limits field conflicts with strict current EdgeConfig's spool field; no config was written. Coordinator requires Edge's corrected frozen template and one final identity version before PKI. The concrete next runtime contract is docs/development/edge-macos-empty-baseline-runtime-handoff-2026-09-09.json. Vehicle identity/receiver PKI, config, Edge/Hub runtime, fixture, listener, consumer and event remain unstarted; the retained state stays ineligible."
+    },
+    {
+      "kind": "edge_macos_empty_hub_control",
+      "status": "passed_bounded_empty_control_cleaned_with_external_sqlite_read_limitation",
+      "verified_at": "2026-09-09",
+      "what_it_proves": "Hub repaired a real diagnostics-policy mismatch exposed by the fresh Edge fixture: when Edge transport is configured, doctor now requires direct provider credentials only when Hub itself would perform direct collection. The test-first sealed-binding regression passed in the feature suite (8/8), the default library check passed, and a fresh arm64 Hub candidate was built from 7fe8cb202c0eb7e291901a9b719d3fbe65c675bc plus only the diagnostics overlay SHA256 3b004bb59aa371279d3b22ff2cb1130241109150137a8de053a0649ded8ba970; the candidate binary SHA256 is eaf44a2803723b4a9d961c2dfac6057db94e3da36110070f9abdc49ce22abfad. The first serve correctly rejected a stale 64-byte non-tte1 bearer before binding. Edge then test-fixed its preparer, enrolled one short-lived active tte1 credential without restart or event, and Hub generated a separate 0700 four-file 0600 consumer input bundle. Doctor passed. One direct Hub process listened only on 127.0.0.1:18488; after one startup-race probe, four consecutive health/readiness pairs were HTTP 200. Native status showed Edge connected, pending publications 0, ACK frontier null, latest observation 0/null; native doctor after Hub stop showed raw/current observations 0. No producer, vehicle event, ACK, Fleet discovery, direct Tesla credential or retained-state reuse occurred. Hub stopped first, then receiver PID 3681, then Edge PID 3617; ports 8080/21443/21444/18488 were closed and 18487 remained closed. macOS sqlite3 and Python URI reads both returned unable-to-open-database after native doctor/status succeeded, so independent direct Edge application/sequence counts are explicitly not claimed. This is a real bounded runtime/control and cleanup result, not installed-product, collection, vehicle, viewer, release or platform acceptance."
+    },
+    {
+      "kind": "macos_swift_external_current_hub_consumer_r1",
+      "status": "passed_external_consumer_and_exact_cleanup",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub staged one fresh owner-only Apple-silicon fixture on 127.0.0.1:18494 from candidate Hub SHA256 895873ef, seed b9b489a3, fixture f9c0e368, profile b80d940e and scenario c74f1c90. The first Swift wrapper invocation failed before build, network or pairing because SwiftPM derived local package identity source instead of the required teslatlas-sdk-swift; the shared lock released. Hub confirmed that root cause, staged a read-only basename-corrected copy, verified all 158 source files against source SHA256 234b352d and manifest SHA256 d25e1453, and package describe passed. Swift then ran the corrected wrapper exactly once under the shared heavy-build lock. The arm64 CurrentHubConsumer release build SHA256 e6767824 completed and its redacted exit-0 output records discovery ok, claim ok, health ok, readiness ready, two vehicles, current ok, five drives over three pages and credential rotation ok. Swift removed only swift-build-r2 and released the lock. Hub validated and stopped only launcher PID 3568/direct child PID 3673, observed child exit 0, retained stopped descriptor SHA256 de2e954e and closed port 18494. This is one external public Swift consumer journey against synthetic candidate-process data, not installed Hub, release, production, vehicle, HA, Edge, device or x86 acceptance. Full non-secret receipt: docs/development/active-macos-swift-consumer-handoff-2026-09-12-r1.json."
+    },
+    {
+      "kind": "edge_macos13_c2ace_target_loader_r1",
+      "status": "passed_exact_deployment_and_loader_guest_stopped",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub independently rehashed receiver candidate c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6 as a 29,251,922-byte arm64 Mach-O with macOS 13.0 minimum, SDK 26.2, Go 1.27.0, CGO disabled and only libSystem, libresolv, CoreFoundation and Security load paths. The candidate's local -help path loaded. Under a recorded Hub-owned no-credential handoff, Hub started only the existing macos13-arm64 guest, observed macOS 13.7.4 build 22H420 on arm64 as admin UID 501, deployed the candidate into a fresh versioned root, and reverified the exact SHA256, byte count, 0500 single-link mode, Mach-O target, dependencies and valid ad-hoc signature in the guest. Its -help path exited 0 and no receiver process remained. Hub stopped the guest and the shared heavy-build lock remained absent. This proves target deployment and loader compatibility only; no config, identity, credential, listener, readiness, event, Hub/HA integration, install, LaunchAgent, Viewer or x86 acceptance. Receipt: docs/development/edge-macos13-receiver-loader-handoff-2026-09-12-r1.json."
+    },
+    {
+      "kind": "edge_macos13_c2ace_receiver_readiness_r1",
+      "status": "passed_receiver_readiness_and_exact_cleanup",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub accepted Edge's final receiver-only proposal SHA256 d629e3df, generated wholly fresh server/client-CA material plus an owner-only startup bearer, and staged the exact c2ace1b9 candidate and config SHA256 4f7b1cf0 into a fresh macOS 13 guest root. The first start had exited code 2 before binding because the pinned producer constructor unconditionally requires TESLATLAS_FLEET_TELEMETRY_BEARER_FILE; after Edge corrected only that startup dependency, exact receiver PID 567 ran as admin UID 501, owned only 127.0.0.1:21444 and 127.0.0.1:21445, and GET /status returned HTTP 200 with body ok. Zero events were submitted and no Edge process, Hub fixture or Home Assistant action occurred. The attached SSH interruption left PID 567 reparented to PID 1, so Hub verified its exact command and sent SIGTERM only to that PID; it exited, both ports closed, macos13-arm64 stopped and the shared lock remained absent. This proves receiver startup, loopback status and bounded shutdown only, not Edge service readiness, event admission, forwarding, Hub/HA integration, install, LaunchAgent or platform acceptance. Receipt: docs/development/edge-macos13-receiver-readiness-handoff-2026-09-12-r1.json."
+    },
+    {
+      "kind": "active_macos_hub_standalone_restart_r1",
+      "status": "passed_candidate_process_restart_and_retained_state",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub staged candidate SHA256 895873ef and seed SHA256 b9b489a3 in a fresh private Mac root, started one direct process on 127.0.0.1:18522, and verified native status/doctor plus a fresh paired API credential against two vehicles, current data and five drives over three pages. After exact normal shutdown, the same staged binary, config and data root restarted under a new PID with the same Hub identity, pairing count and synthetic data; the same credential remained valid. Native status and doctor passed after restart, both process runs exited 0, and port 18522 closed. The host external SQLite reader limitation after shutdown is recorded without making a claim from it. This is candidate-process restart, administration and retained-state evidence only, not ordinary setup UI, package installation, LaunchAgent/service, upgrade, backup, uninstall, real collection or platform acceptance. Receipt: docs/development/active-macos-hub-standalone-restart-2026-09-12-r1.json."
+    },
+    {
+      "kind": "edge_macos_forwarding_contract_review_r1",
+      "status": "rejected_pending_staged_path_and_source_binary_receipt",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub parsed and independently checked Edge proposal SHA256 b680f9e8, matching all ten listed current critical-source hashes, receiver-overlay inputs, package/embedded arm64 Edge binary, receiver candidate and producer-helper identities without installing or invoking them. Review rejected execution because the service argv names /usr/local/libexec despite the no-install boundary and the retained package record does not provide the exact included dirty-tree manifest/build command required by the proposal's own source-to-binary rule. Edge was asked for one superseding staged-path contract and exact source-bound darwin-arm64 candidate receipt. No guest, input, credential, listener, runtime or event was created. Receipt: docs/development/edge-macos-forwarding-contract-review-2026-09-12-r1.json."
+    },
+    {
+      "kind": "active_macos_typescript_browser_consumer_r1",
+      "status": "closed_browser_trust_isolation_failure_no_acceptance",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "A fresh generic packed-browser handoff ran two bounded macOS Chrome trust-control attempts. Profile-local NSS trust did not make the trusted browser accept the CA, while login-keychain import made both intended trusted and untrusted profiles accept it; the runner stopped at the mandatory negative-control gate before SDK API acceptance. TypeScript cleaned its helper, Chrome controls, profiles, witness, logs and fresh install. Hub independently removed the exact residual temporary certificate, stopped only launcher 91606/direct child 91611, verified child exit 0 and 0600 stopped record SHA256 b6e6fe17, and confirmed 18521/4174/9227/9228 closed. No third attempt is allowed for this tuple. Receipt: docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r1.json."
+    },
+    {
+      "kind": "active_macos_typescript_browser_sequential_source_review_r1",
+      "status": "accepted_for_one_wholly_fresh_bounded_handoff",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub independently reviewed the SDK's sequential macOS trust correction at receipt SHA256 98ebe5a6 and exact eight-file identities. The untrusted control must reject and close before import; the trusted control uses normal login-keychain trust only afterward; the expected certificate export is independently predeclared and absent before import; and exact browser cleanup runs on malformed import or failed CDP attachment before certificate removal verification. Node 26.7 focused tests passed 13/13, typecheck passed, targeted Biome checked eight files without fixes, and diff check passed. Receipt: docs/development/active-macos-typescript-browser-source-review-2026-09-12-r1.json. This is source-contract evidence only; no browser, keychain, Hub runtime, credential, CORS or SDK API acceptance ran."
+    },
+    {
+      "kind": "active_macos_typescript_browser_sequential_runtime_r2",
+      "status": "closed_untrusted_cdp_lifecycle_failure_no_acceptance",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub published one wholly fresh source-reviewed handoff on 18525 with a new owner-only descriptor, CA and credential. TypeScript installed the exact packed SDK and verified the specified untrusted Chrome command line plus a live 9232 CDP endpoint, but the single runner then received ECONNREFUSED before its first connectOverCDP attachment. No TLS negative observation, CA import, trusted browser, CORS or SDK route ran, and no witness or acceptance receipt exists. TypeScript removed the exact profiles/state/package path and verified 4174/9231/9232 closed plus the fresh certificate absent. Hub stopped only launcher 54565/direct child 54573, recorded child exit 0 and 0600 stopped receipt SHA256 0ed603f5, and closed 18525. Root cause is unproven beyond the observed CDP liveness loss. Frozen closure: docs/development/active-macos-typescript-browser-consumer-closure-2026-09-12-r2.json SHA256 a3631ece, binding Hub closed handoff fabcee02 and SDK failure receipt 19463790. No retry is authorized."
+    },
+    {
+      "kind": "edge_macos_source_bound_empty_baseline_r1",
+      "status": "closed_zero_event_pass_rejected_certificate_identity_review_no_submission",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub built current dirty-tree source under the shared lock with a stable 195-input manifest, producing arm64 Hub SHA256 fd39f694 and empty-binding seed SHA256 e9a2a822. In a fresh macOS 13.7.4 arm64 root, Edge SHA256 64cec68d, receiver SHA256 c2ace1b9 and that Hub reached a five-second zero-event baseline: Edge health/readiness and all required spool/admission/rejection metrics were zero, receiver status was HTTP 200 ok, authenticated mTLS delivery returned HTTP 200 with no records or gaps, and Hub health/readiness/status plus all doctor checks passed with one sealed vehicle, zero observations, pending publications zero and ACK frontier null. The coordinator rejected the producer event after Edge's first identity review reported a VIN SAN failure. Reconciliation established that the retained PEM and staging manifest hash to fcf01266 while the earlier fcf012de record was erroneous; current generator source intentionally uses leaf Subject CommonName, not SAN, for the pinned receiver parser. The cohort remains closed and non-reusable regardless of that reconciliation. No authorization, invocation guard, result or producer submission existed. Hub stopped exact PIDs in the recorded order, closed 8080/21843/21444/21445/18523, stopped the guest and verified the shared lock absent. Final immutable handoff: docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r1-final.json SHA256 df9f19a5; final Edge reconciliation receipt SHA256 b8e64d76. This is candidate-process zero-state and cleanup evidence only, not durable forwarding, install, service, release, production, vehicle or user acceptance."
+    },
+    {
+      "kind": "edge_macos_source_bound_empty_baseline_r2",
+      "status": "passed_fresh_certificate_bound_zero_event_baseline_and_cleaned_no_submission",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub reviewed Edge's fresh source receipts and independent certificate-profile receipt, staged a wholly fresh Mac guest root, and verified Edge SHA256 64cec68d, receiver SHA256 c2ace1b9, Hub SHA256 fd39f694 and seed SHA256 e9a2a822. Exact PEM/DER identity, sealed Subject.CommonName binding, issuer/profile, clientAuth, key correspondence and receiver-CA trust passed; SAN was absent and not required by the pinned known-issuer parser. After fresh init/doctor and a new 1800-second tte1 credential, the cohort held a five-second exact zero-event baseline: Edge queue and all metrics zero, receiver status HTTP 200 ok, trusted mTLS delivery records/gaps zero, Hub ready with one sealed vehicle and zero observations, pending publications zero and ACK frontier null. No r2 producer actor or one-call guard was included in the reviewed preparation, so the reserved transaction was not treated as authorization and no event was sent. Hub terminated only the exact supervisor lineage, recorded Edge/Hub exit 0 and receiver SIGTERM, closed 8081/21844/21446/21447/18526, stopped the guest and verified the shared lock absent. Receipt: docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r2.json SHA256 21f46025. This is candidate-process readiness evidence only, not durable forwarding, installation, service, release, production, vehicle or user acceptance."
+    },
+    {
+      "kind": "edge_macos_one_event_actor_contract_review_r3",
+      "status": "rejected_pending_stable_reviewable_sources_and_guard_implementation",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Edge's r3 policy shape correctly requires fresh non-reused state, exact authorization, one timestamp, O_CREAT|O_EXCL before one spawn, one VehicleName-only write/ACK and no retry. Hub could not independently rehash or inspect either helper source because both exact /private/tmp paths were already absent. The only guard implementation cited was a historical path on a stopped guest; the proposal supplied future behavior requirements but no stable fresh wrapper source or focused tests. No guest, credential, PKI, process, producer or event action occurred. Rejection: docs/development/edge-macos-one-event-actor-contract-review-2026-09-12-r3.json SHA256 d4dc413d."
+    },
+    {
+      "kind": "edge_macos_one_event_actor_contract_review_r4",
+      "status": "rejected_output_preflight_gap_no_runtime_authorization",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub independently rehashed and inspected Edge's stable r4 producer and guard source/test package. The pinned-source producer overlay test passed offline; six local no-network guard tests, syntax, gofmt and JSON checks passed. An added fake-helper regression then pre-created the configured result path: the wrapper claimed the guard, created output and invoked the helper once before raising result already exists, so no final result record was persisted. The same class includes aliases among result, output, guard or inputs. No staging, helper binary build, PKI, guest, runtime or event action occurred. Rejection: docs/development/edge-macos-one-event-actor-contract-review-2026-09-12-r4.json SHA256 932bde29."
+    },
+    {
+      "kind": "edge_macos_one_event_actor_contract_review_r5",
+      "status": "accepted_source_only_no_staging_build_runtime_or_event_authorization",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub independently rehashed and inspected Edge's r5 proposal/receipt, unchanged fresh producer pair and corrected guard pair. The guard now derives and preflights guard/result/output/result-temp paths, rejects occupants and aliases with every input before the clock, and keeps O_EXCL plus atomic result publication. Seven local no-network regressions passed, including stale sentinels and output aliases before clock/guard/spawn. No staging, helper binary build, PKI, guest, runtime or event occurred. Review: docs/development/edge-macos-one-event-actor-contract-review-2026-09-12-r5.json SHA256 5dcbebee."
+    },
+    {
+      "kind": "active_macos_typescript_browser_sequential_runtime_r5",
+      "status": "closed_supervisor_ipc_lifecycle_failure_before_sdk_no_acceptance_no_retry",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Under the final r5 handoff, the exact untrusted Chrome child started, owned 9235 and passed the live CDP attach snapshot as Chrome 152 / protocol 1.3. The control client then received no response because it half-closed its request while the supervisor awaited Chrome readiness, and the server lacked an allow-half-open delayed-response path. The SDK runner, helper 4175, Hub request, CA import, trusted child, witness and acceptance route never started. TypeScript stopped its supervisor and Chrome child with child exit 0, removed its fresh control artifacts, and closed 4175/9234/9235. Hub removed the one-use credential, verified the exact fresh certificate absent from the login keychain, stopped launcher 41557/direct child 41605 with child exit 0, and closed 18527. Frozen closure: docs/development/active-macos-typescript-browser-consumer-closure-2026-09-12-r5.json SHA256 c025fc64. No retry is authorized; a corrected and independently reviewed supervisor delayed-response lifecycle is required before any new tuple."
+    },
+    {
+      "kind": "active_macos_typescript_browser_control_ipc_source_review_r5",
+      "status": "accepted_source_only_no_runtime_authorization",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub inspected the exact corrected supervisor SHA256 5e12b921 and regression SHA256 c6db7081. The server now uses allowHalfOpen:true and explicitly ends both successful and structured-failure responses after dispatch. With Node 26.7.0, independent syntax checks passed, the half-closing client received immediate, delayed and failure responses and both sides closed, the temporary socket was removed, and targeted Biome checked both files without fixes. No browser, Hub or keychain action ran. Receipt: docs/development/active-macos-typescript-browser-control-ipc-source-review-2026-09-12-r5.json SHA256 c0c47baf. This accepts only the source correction; a future attempt needs a wholly fresh reviewed control/package and Hub tuple."
+    },
+    {
+      "kind": "active_macos_typescript_browser_sequential_runtime_r6",
+      "status": "closed_operator_pre_run_permissions_failure_no_sdk_acceptance_no_retry",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub independently reviewed the fresh r6 controls/package and opened one new tuple on 18528. The corrected supervisor returned the exact untrusted Chrome PID 85816 after a live 9237 CDP attach with Chrome 152/protocol 1.3. The SDK runner then did not start because the operator-prepared evidence directory had file mode 0600, preventing creation of runner.stderr. No helper 4176, Hub API request, CA import, trusted child, witness or acceptance route ran. TypeScript stopped its supervisor and child with exit 0, removed its profile/socket and closed 4176/9236/9237; Hub verified the exact certificate absent, removed the credential, stopped launcher 80680/direct child 80778 with child exit 0, and closed 18528. Frozen closure: docs/development/active-macos-typescript-browser-consumer-closure-2026-09-12-r6.json SHA256 3884af70. No retry is authorized."
+    },
+    {
+      "kind": "active_macos_typescript_browser_control_preflight_review_r6",
+      "status": "rejected_not_fail_closed_no_runtime_authorization",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "TypeScript's first source-only mode preflight correctly distinguished 0700 directories from 0600 files, but Hub rejected it: runner outputs used truncating flag w rather than exclusive wx; stale state/event/profile/export/witness/acceptance paths were not rejected before chmod and file creation; and tests covered only one successful invocation, not second-run sentinel preservation or stale-artifact pre-mutation failure. No r7, browser, Hub or keychain action occurred. Review: docs/development/active-macos-typescript-browser-control-preflight-review-2026-09-12-r6.json SHA256 960151f5."
+    },
+    {
+      "kind": "active_macos_typescript_browser_control_preflight_template_review_r2",
+      "status": "accepted_source_only_no_runtime_authorization",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub independently reviewed TypeScript's superseding v2 preflight template receipt SHA256 d14f0f9a, template SHA256 12f9bf60 and regression SHA256 1789949b. The template uses lstat to reject a symlink root before mutation, keeps nested symlinks fail-closed, includes control.sock in all stale-artifact cases, and creates runner outputs exclusively at 0600. Pinned Node 26.7.0 syntax and regression passed, including fresh creation, second-invocation sentinel preservation, all stale paths before mutation, and root-symlink target mode/content preservation; targeted Biome and diff checks passed. No r7, browser, Hub, helper, keychain or SDK API runtime occurred. Review: docs/development/active-macos-typescript-browser-control-preflight-template-review-2026-09-12-r2.json."
+    },
+    {
+      "kind": "active_macos_typescript_browser_control_package_review_r7",
+      "status": "accepted_preparation_only_no_runtime_authorization",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub independently reviewed the immutable r7 preparation receipt SHA256 9b2c29fb and manifest SHA256 8e8d7c5d. The fresh owner-only root has no symlinks; exact control hashes, @teslatlas/sdk 2026.36.2 archive/package identity and 81-file install match. Pinned Node 26.7.0 syntax and IPC regression, targeted Biome, diff and JSON checks passed; 4177/9238/9239/18529 are closed and no scoped Node process exists. Only the two intentional empty 0600 runner outputs exist. No supervisor, Chrome, Hub, keychain, credential, certificate or SDK API runtime occurred. Review: docs/development/active-macos-typescript-browser-control-package-review-2026-09-12-r7.json SHA256 e381f40f."
+    },
+    {
+      "kind": "edge_macos_one_event_actor_source_binary_receipt_r5",
+      "status": "passed_fresh_source_test_and_darwin_arm64_build_no_runtime_authorization",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Under the shared heavy-build lock, Hub staged the pinned Fleet Telemetry revision plus only the accepted r5 producer overlay into a fresh owner-only root, revalidated the 160-file manifest, passed the offline producer test and built a CGO-disabled Mach-O arm64 helper with Go 1.27.1. The artifact is mode 0500, single-link, ad-hoc signed, minimum macOS 13.0, SHA256 4b7c0170 and does not contain the historical VIN, transaction or fixed endpoint. The lock released and is absent. No PKI, guest, receiver, Edge, Hub runtime or event occurred. Receipt: docs/development/edge-macos-one-event-actor-source-binary-receipt-2026-09-12-r5.json SHA256 e5e8e87c."
+    },
+    {
+      "kind": "active_macos_typescript_browser_sequential_runtime_r7",
+      "status": "closed_supervisor_ipc_failure_before_chrome_no_sdk_acceptance_no_retry",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub published a fresh r7 handoff on 18529 bound to the accepted control/package root, new Hub identity, exact owner-only certificate and one already-claimed credential. TypeScript independently verified every binding and started the sole authorized attempt. The supervisor initially published serving/idle state but exited before the first untrusted control request, which failed ECONNREFUSED on control.sock; no Chrome, CDP attach, helper, SDK runner, Hub API request, certificate import or keychain mutation occurred. TypeScript removed its exact runtime state and closed 4177/9238/9239. Hub removed the one-use credential, verified the certificate absent, stopped launcher 36208/direct child 36218 with child exit 0 and closed 18529. Frozen closure: docs/development/active-macos-typescript-browser-consumer-closure-2026-09-12-r7.json SHA256 5a5cb4ab. No retry is authorized."
+    },
+    {
+      "kind": "edge_macos_one_event_inactive_actor_guard_profile_runtime_event_proposal_r6",
+      "status": "historical_accepted_then_superseded_by_coordinator_corrections",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "After Edge independently accepted the exact r5 helper source-to-binary binding, Hub published a complete inactive r6 proposal with wholly fresh identity slots, host/guest roots, actor paths and ports 8082/21845/21448/21449/18530. Edge accepted it, but the coordinator later required corrected sequence-count semantics, an executable supported ledger observer, pre-event sealed transaction/binding, and an explicit receiver route. The immutable r6 receipt remains historical and is not executable authority. No r6 PKI, private input, guest, listener, runtime, producer or event occurred. Proposal: docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r6.json SHA256 873e046f."
+    },
+    {
+      "kind": "active_macos_typescript_browser_supervisor_lifecycle_diagnosis_review_r1",
+      "status": "accepted_bounded_diagnosis_no_source_fix_or_runtime_authorization",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub reran TypeScript's exact r7 transformed supervisor/control lifecycle under Node 26.7.0 in a fresh temporary root with one awaited parent owning both direct non-detached children. Server and client exited/closed 0 without signals; shutdown response, stopped state and cleanup passed; no browser, Hub or keychain ran. No source defect was reproduced and r7's external terminator cannot be named because its original exit/close/signal boundary was not retained. A future lane requires reviewed one-parent full orchestration plus lifecycle capture and a fresh tuple. Review: docs/development/active-macos-typescript-browser-supervisor-lifecycle-diagnosis-review-2026-09-12-r1.json SHA256 ddcfeb5c."
+    },
+    {
+      "kind": "edge_ledger_read_only_observer_source_review_r1",
+      "status": "accepted_source_and_synthetic_fixture_proof_live_open_pending",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub added a Python 3.11 observer that requires a canonical owner-only single-link Hub database, opens SQLite with URI mode=ro plus query_only, validates schema 58 and emits every selected lineage/application/sequence with pending and accumulator metadata. Focused tests passed 2/2: a lifecycle/projected/lifecycle fixture was fully classified without changing its SHA or creating sidecars, and an absent database failed without creation. The earlier live SQLite error 14 is not declared fixed; the first fresh same-owner live invocation must pass or close the baseline. Review: docs/development/edge-ledger-read-only-observer-source-review-2026-09-12-r1.json SHA256 d7973ad9."
+    },
+    {
+      "kind": "edge_macos_one_event_preparation_failure_r7",
+      "status": "closed_pre_build_tool_path_failure_non_reusable",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "After Edge accepted corrected r7, its one-use preparer claimed the host root and lock, enumerated source inputs, then failed before the first build because /Users/bolyki/.cargo/bin/rustup does not exist. The r7 root contains only empty owner-only build/PKI/staging directories and two identical 0600 lock records. No build output, staged input, PKI, credential, binding, guest, listener, runtime, producer or event exists; all five ports are closed and the lock is absent. r7 is closed/non-reusable. Receipt: docs/development/edge-macos-one-event-preparation-failure-2026-09-12-r7.json SHA256 75a76594."
+    },
+    {
+      "kind": "edge_macos_one_event_preparation_closure_r8",
+      "status": "closed_store_identity_binding_defect_non_reusable",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "r8 reached fresh source/profile staging, but its preparer proposed hub_installation_id before the supported empty-edge-binding fixture created the authoritative Hub store ID. Hub and Edge rejected the binding before guest/runtime. All one-use keys, bearers and credential-store files were removed; ports are closed and no guest, listener, runtime, producer or event occurred. r8 is non-reusable. Closure: docs/development/edge-macos-one-event-preparation-closure-2026-09-12-r8.json SHA256 7fb85e51."
+    },
+    {
+      "kind": "edge_macos_one_event_preparation_closure_r9",
+      "status": "closed_fixture_read_only_open_defect_non_reusable",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "After exact Edge acceptance, r9 ran once and created the supported fixture plus owner-only inactive binding, then plain mode=ro failed to open the freshly closed WAL catalogue before accepted-binary staging, PKI, Edge init or credentials. A later Edge diagnostic created SHM and empty WAL sidecars; Hub removed them plus the cursor key, retained owner-only failure evidence, and verified all ports closed with no guest/runtime/event. r9 is non-reusable. Closure: docs/development/edge-macos-one-event-preparation-closure-2026-09-12-r9.json SHA256 b5dc5195."
+    },
+    {
+      "kind": "edge_macos_one_event_inactive_actor_guard_profile_runtime_event_proposal_r10",
+      "status": "closed_pre_listener_dispatch_port_mismatch_non_reusable",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Edge accepted r10 source and concrete profile after Hub's successful one-use fixture-first preparation. All 44 reviewed tree entries matched on the macOS 13 ARM64 guest after correcting two transfer-umask mode changes before launch. The receiver exited before opening a listener because its required bearer-file environment was omitted; before retry, Hub proved the exact binary dispatches only to 127.0.0.1:8080 while r10 configured Edge on 127.0.0.1:8086. No Edge or Hub process, listener, baseline, producer or event followed. Hub removed all one-use inputs, verified ports 8080/8086/21849/21456/21457/18534 closed and actor outputs absent, stopped the VM and closed r10 non-reusable. Closure: docs/development/edge-macos-one-event-runtime-closure-2026-09-12-r10.json."
+    },
+    {
+      "kind": "edge_macos_one_event_inactive_actor_guard_profile_runtime_event_proposal_r11",
+      "status": "source_only_fixed_dispatch_fixture_first_pending_independent_edge_review",
+      "verified_at": "2026-09-12",
+      "what_it_proves": "Hub created a fresh r11 source-only successor after closing r10. The exact accepted receiver SHA256 c2ace1b9 contains its fixed http://127.0.0.1:8080/v1/internal/fleet-telemetry dispatcher; r11 binds Edge admission to the same port and requires TESLATLAS_FLEET_TELEMETRY_BEARER_FILE on the direct receiver child. Before root creation, the frozen one-use preparer validates all three exact binary CLI interfaces and in-memory rendered configs, argv, cwd, binds, bearer environment/path, TLS paths, Hub collector URL and receiver-Edge-Hub order. It also passes syntax and read-only anchor checks for 195 Hub inputs, 15 Edge inputs and 14 exact artifacts, reserves fresh ports 8080/21850/21458/21459/18535, and retains immutable stopped-fixture validation. Proposal SHA256 5f6969ab, prep spec d800b93a, preparer d3f2ffa5. No r11 root, fixture, PKI, credential, guest, listener, runtime, producer or event exists."
+    },
+    {
+      "kind": "edge_macos_one_event_r11_restart_revalidation",
+      "status": "passed_source_only_inputs_unchanged_inactive_awaiting_edge_review",
+      "verified_at": "2026-09-18",
+      "what_it_proves": "Hub revalidated the exact r11 proposal 5f6969ab, preparation specification d800b93a, one-use preparer d3f2ffa5, fixture-binding validator 42a6d635 and validator test c3697062. Cross-hashes and source preflight passed for 195 Hub inputs, 15 Edge inputs, 14 exact anchors/artifacts and the complete receiver/Edge/Hub launch contract. Five focused local tests passed and the real-fixture case skipped without a generic fixture binary. The r11 root/profile/lock remain absent and ports 8080/21850/21458/21459/18535 remain closed. No preparer, fixture, PKI, credential, guest, listener, runtime, producer or event ran. Receipt: docs/development/edge-macos-one-event-r11-restart-revalidation-2026-09-18.json SHA256 d64db856."
+    },
+    {
+      "kind": "active_macos_typescript_browser_orchestration_source_review_r1",
+      "status": "rejected_fail_closed_freshness_and_cleanup_sequence_defects_no_runtime_authorization",
+      "verified_at": "2026-09-18",
+      "what_it_proves": "Hub independently rebound TypeScript source receipt 75e23ba8, orchestrator ed565ac1, browser-free regression 8b5c7c25 and all three reviewed hooks under Node 26.7.0/npm 11.19.0. Syntax and the declared success/supervisor-failure/runner-failure/control-failure cases passed. Targeted browser-free checks proved two blockers: a stale capture directory is rejected only after preflight creates runner.stdout and runner.stderr, and a two-command cleanup reports passed after attempting only the first when that command closes the supervisor. TypeScript must correct both and add focused regressions before another Hub review. No companion file/task, browser, Hub runtime, keychain, credential or SDK API was mutated or started. Review: docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r1.json SHA256 2e9653c8."
+    },
+    {
+      "kind": "edge_macos_one_event_r11_concrete_preparation",
+      "status": "prepared_inactive_awaiting_edge_independent_concrete_review",
+      "verified_at": "2026-09-18",
+      "what_it_proves": "After Edge final source-gate PASS SHA256 4d8b4449 bound Hub receipt d64db856 and every exact frozen r11 input, Hub revalidated root/profile/lock absence, the current 192.168.64.10 DHCP binding and five closed ports, then invoked preparer d3f2ffa5 exactly once. It produced machine-written public profile 4b896644, source/staging receipt 509b2e61, immutable fixture-store validation 6fe2ed24, inactive binding 9f3dff1c, fixture database 79040596 and preparation summary 4f068ba3. Seven binding relationships passed immutable/query-only validation with unchanged database fingerprint, negative mismatch rejection and no WAL/SHM. Eight staged executables are exact, mode 0500 and single-link; 15 private files are mode 0600 and single-link with raw values withheld. All reserved ports remain closed, no staged executable is open by a process, and no guest command, listener, runtime, browser, producer or event occurred. The read-only shared VM status wrapper was inconclusive due existing Lima/Tart infrastructure errors and is not claimed as guest-state proof. Receipt: docs/development/edge-macos-one-event-r11-concrete-preparation-2026-09-18.json SHA256 96a13421."
+    },
+    {
+      "kind": "active_macos_typescript_browser_orchestration_source_review_r2",
+      "status": "rejected_optional_receipt_freshness_checked_after_mutation_no_runtime_authorization",
+      "verified_at": "2026-09-18",
+      "what_it_proves": "Hub rebound repaired TypeScript receipt 83d3f048, orchestrator a66c2cfd, regression 1b74b93a and unchanged preflight/trust/runner hooks under pinned Node 26.7.0/npm 11.19.0. Syntax passed and all six declared browser-free cases passed. Stale capture now rejects before preflight mutation; all cleanup commands run in order after supervisor close; failed cleanup is recorded and fails the result; supervisor closure is verified. The full prior correction remains incomplete: an optional stale receiptPath is only detected by exclusive write after preflight, capture, supervisor and cleanup. An independent browser-free reproduction returned failed/receipt while preflight and capture existed, runner stdout/stderr were created, the sentinel was preserved, cleanup attempted 1/1 and supervisorClosed was true. TypeScript must add a pre-preflight receipt absence check and focused seventh case. No TypeScript file, scoped runtime port, Hub runtime, Keychain, credential, live fixture or browser command was touched. Review: docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r2.json SHA256 0ff0987b."
+    },
+    {
+      "kind": "active_macos_typescript_browser_orchestration_source_review_r3",
+      "status": "accepted_source_only_no_runtime_authorization_no_handoff",
+      "verified_at": "2026-09-18",
+      "source_receipt_sha256": "8c686933275cd3233ca2fbf0dbe29b3e547fe37f7850968faab620f552a1bbdb",
+      "orchestrator_sha256": "7232768d3a96f49fdf2b831b03ca95929c83ca4d6c35ccc24c7d512cf07034ff",
+      "browser_free_regression_sha256": "3c2dadf277706e6250440b3cf00ab33d4d80334d4e3c8d0244b21b22b4ed6ac9",
+      "preflight_sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+      "trust_sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+      "runner_sha256": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+      "review_sha256": "9d0c3bb69436248b5aced7084b363890b3446d3f7d4b8f3980e0d02bb374f36b",
+      "what_it_proves": "Hub independently accepted the exact final TypeScript source package under pinned Node 26.7.0/npm 11.19.0. Six source and regression syntax checks passed; all seven browser-free orchestration cases passed; the preflight regression passed; and targeted Biome checked six files with no fixes. Source inspection and focused assertions prove stale receiptPath rejection occurs before preflight, capture and any child/cleanup activity while preserving the sentinel; stale capture rejects before control-root mutation; all three configured cleanup commands run in order after shutdown closes the supervisor, the middle failure is recorded, the overall result fails and supervisorClosed is true. Ports 4176/9236/9237/4177/9238/9239/18529 are closed, no matching child process or temporary test root remains, and dirty trees were preserved. This is source acceptance only: no browser, Hub runtime, VM, guest, listener, Keychain, live fixture, producer or event ran. No runtime handoff is issued because no approved ARM64 guest currently exists. Review: docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r3.json SHA256 9d0c3bb69436248b5aced7084b363890b3446d3f7d4b8f3980e0d02bb374f36b."
+    }
+  ],
+  "thread_id": "01a082b7-37ed-7ea3-98fc-849284695b63",
+  "environment_access": "../../../docs/development/VM_ACCESS.md",
+  "reasoning_effort": "high",
+  "development_authorized_at": "2026-09-08T21:13:48.933123+00:00",
+  "blocker": "r11 preparation is complete and inactive. Edge independent concrete-profile acceptance of public profile SHA256 4b896644, staging receipt 509b2e61, fixture validation 6fe2ed24, inactive binding 9f3dff1c, staged hashes and launch contract is pending via Hub receipt 96a13421. The shared VM status wrapper also returned existing Lima/Tart infrastructure errors during a read-only probe, so no guest-state proof is claimed. TypeScript source package 8c686933275cd3233ca2fbf0dbe29b3e547fe37f7850968faab620f552a1bbdb is accepted by Hub review 9d0c3bb69436248b5aced7084b363890b3446d3f7d4b8f3980e0d02bb374f36b, but no approved ARM64 guest currently exists for a browser lane. Runtime, browser, producer event, Viewer and x86 work remain unauthorized.",
+  "blocker_owner": "Edge owns independent review of the exact r11 concrete inactive profile. The coordinator owns any later fresh concrete-readiness decision and any future establishment of an approved ARM64 browser guest. Hub preserves all one-use r11 secrets and owns any future shared guest/runtime mutation and cleanup; no such mutation or browser handoff is currently authorized.",
+  "unblock_event": "Edge returns exact PASS for Hub concrete-preparation receipt SHA256 96a13421 and its bound profile/staging/validation/binding hashes. That permits coordinator readiness review only; it does not itself authorize guest transfer, runtime or producer submission. The TypeScript source correction gate is complete. A future browser lane remains blocked until the owner/coordinator separately establishes an approved ARM64 guest, revalidates the exact source hashes and explicitly authorizes a fresh runtime handoff.",
+  "next_ready_action": "Remain idle on companion-owned work. When independently handed back, review Edge's concrete r11 decision. Preserve the r11 staged tree, one-use secrets and accepted TypeScript source receipt. Do not issue a TypeScript browser handoff, transfer/start a guest, open listeners, run browser/Hub runtime, invoke the synthetic producer, authorize an event, edit companion/root/App/Viewer files, reuse r10 or older lanes, or start x86 work."
+}

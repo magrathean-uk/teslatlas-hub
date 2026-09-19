@@ -1,0 +1,97 @@
+{
+  "schema": "teslatlas.hub.edge-macos-vehiclename-prep-handoff/v1",
+  "status": "expired_cleaned_no_event_authorized",
+  "scope": "One fresh Mac Edge/Hub empty control. This is preparation evidence only, not a telemetry-delivery, Home Assistant, installed-product, collection, release, or platform-acceptance result.",
+  "target": {
+    "guest": "macos13-arm64",
+    "address": "192.168.64.10",
+    "edge_health": "127.0.0.1:8080",
+    "edge_delivery": "192.168.64.10:21543",
+    "receiver": "127.0.0.1:21544",
+    "receiver_status": "127.0.0.1:21545",
+    "hub": "127.0.0.1:18489"
+  },
+  "expired_cohort": {
+    "edge": {
+      "pid": 5711,
+      "owner": "admin",
+      "argv_binding": "teslatlas-edge candidate with only the fresh Edge config"
+    },
+    "receiver": {
+      "pid": 5718,
+      "owner": "admin",
+      "argv_binding": "pinned receiver candidate with only the fresh receiver config"
+    },
+    "hub": {
+      "pid": 5772,
+      "owner": "admin",
+      "argv_binding": "Hub r3 edge-diagnostics candidate with only the fresh Hub config"
+    },
+    "cleanup": "After the fixed credential expiry, Hub, then receiver, then Edge were stopped after exact PID/argv checks. Their fresh listener ports 18489, 21544, 21545, 21543 and 8080 were then closed; unrelated 18487 was also closed. The owner-only roots and receipts remain retained. No credential extension or re-enrolment occurred."
+  },
+  "fresh_custody": {
+    "edge_root": "/Users/admin/teslatlas-edge-macos-forwarding-prep-20260909",
+    "hub_data_root": "/Users/admin/teslatlas-hub-vehiclename-prep-20260909",
+    "hub_candidate_root": "/Users/admin/teslatlas-hub-vehiclename-prep-staging-20260909",
+    "ownership": "Each root, input directory, handoff directory and regular private input is admin-owned, mode 0700 for directories or 0600/0700 as appropriate, non-symlinked and single-link. The private sealed identity is at edge_root/handoff/identity.json; its SHA-256 is 8c4e1d4a662c439dec976739fcaff05f16912e7e6302bbea03ff7ce19adae5b2.",
+    "identity": "Fresh source, vehicle, VIN, car, installation and lineage values are sealed in that private record. event_authorized is false. The first malformed identity attempt is preserved separately and ineligible."
+  },
+  "runtime_artifacts": {
+    "edge_binary": {
+      "sha256": "880ee095f6d96f465a73dfc5285851ffadb102494a624d654802f108fda2a882",
+      "architecture": "Mach-O arm64"
+    },
+    "receiver_binary": {
+      "sha256": "8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1",
+      "architecture": "Mach-O arm64",
+      "pinned_source": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b"
+    },
+    "hub_binary": {
+      "sha256": "eaf44a2803723b4a9d961c2dfac6057db94e3da36110070f9abdc49ce22abfad",
+      "architecture": "Mach-O arm64",
+      "source_baseline": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc plus the reviewed diagnostics-only overlay"
+    },
+    "fixture_binary": {
+      "sha256": "f4fcc8e1fda2124ccf19998077a6f80648cf6f897e517e6c1c8e8458437b8fed",
+      "scope": "feature-gated empty Edge binding only"
+    }
+  },
+  "pki_and_credential": {
+    "verified": "All four issuer/leaf pairs verified for their expected sslserver or sslclient purpose. The Edge delivery leaf has only IP SAN 192.168.64.10; the receiver leaf has only IP SAN 127.0.0.1; the receiver client issuer is Tesla Motors Products CA.",
+    "public_certificate_sha256": {
+      "hub_server_ca": "f14fd4e53fc6efbd9bf9ce482873a734c8bb6e580cbfe7cac72a184f8d48ff85",
+      "hub_server_leaf": "ea8499407156cf83fb55af3a4f97ea9d56c08bd61df40608ed05d15c07e989fb",
+      "hub_client_ca": "677e90a33a6be5662f65a6e81fc61e2f1e2b992101ea09a8e2e2fa89577fb77e",
+      "hub_client_leaf": "f8a3cdc13cb7c11c19d343cb3dd18554bdaf7c3933e77f05ca1c7079b926f5c3",
+      "vehicle_server_ca": "1e36a8eefbc09302e6baeefe88d0b888087c151e62565ca4ffd9fcdda2f08167",
+      "vehicle_server_leaf": "63fbaf97090f03705c4f085bb428081572bb71bee1f3b480e9b40ed7b549d96b",
+      "vehicle_client_ca": "62b4c451ce9b73bbad6552f76c1a61e018fd34f53728366256c3e761f7422890",
+      "vehicle_client_leaf": "26687f368c3d7ffa6e9c9d019a967a9d9f95946868b84f9886ff21c7310ab9db"
+    },
+    "consumer_credential": {
+      "format": "tte1",
+      "bytes": 85,
+      "expires_at_utc": "2026-09-09T20:07:40.907000Z",
+      "raw_value": "withheld; raw issuance output was deleted after atomic owner-only consumer-bundle creation"
+    }
+  },
+  "native_empty_baseline": {
+    "edge_init_and_doctor": "passed before listeners",
+    "edge_health_and_ready": "passed before and after Hub control: records=0, bytes=0, oldest_age_seconds=0, corrupt_records=0, expired_records=0, pending_gap_notices=0, capacity_exhausted=false",
+    "hub_init_and_doctor": "passed before listener",
+    "hub_runtime": "after one ordinary startup-race probe, four health/readiness pairs passed. Hub status reports Edge connected, one configured vehicle, latest observation id 0 with null timestamps, Edge pending publications 0 and ACK frontier null.",
+    "edge_ingress": "No producer or receiver request was invoked. The live Edge queue remained zero, which is the available native ingress evidence.",
+    "applications_and_sequences_limit": "Hub status intentionally exposes pending and ACK state but not application/sequence counts. The fresh macOS external SQLite reader limitation remains unresolved, so this handoff does not claim independent live counts for edge_applications or edge_sequence_dispositions. The feature-gated fixture test separately asserts its seeded base has applications=0, sequences=0, pending=0 and ACK=null; that is setup proof, not an independent live database read."
+  },
+  "producer_gate": {
+    "authorization": "No producer event is authorized. No VehicleName, ingress, application, sequence, ACK, retry, replay, Home Assistant entry, LaunchAgent mutation or retained-state reuse has occurred.",
+    "contract": "A future separately authorized invocation may use only the sealed fresh transaction/VIN and a VehicleName-only V payload. Its created_at_ms must be bound at the explicit submit-once decision; no time or executable argv is activated by this handoff.",
+    "source_pin": "pinned fleet-telemetry v0.9.4 cmd/synthetic-vehicle/main.go SHA-256 b27566c80766f4fa0823c2b797809ade65cf09a0d8dd080dd7d14efada34c698; local identity-bound invocation policy source SHA-256 a4eb195334de5f0188203cc5948d21db15eb1448cc563a46d05ce81bcc2e84ba.",
+    "artifact_review": "The old embedded-VIN helper remains rejected and unused. Edge then prepared (but did not stage, install, launch or invoke) a separate Mach-O arm64 artifact at /Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-producer-darwin-arm64-20260909/synthetic-vehicle-darwin-arm64, SHA-256 db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7. Independent static review matched the pinned source SHA above, found no stale cohort VIN, and confirmed required explicit VIN/TLS/transaction/timestamp arguments, one WebSocket dial/write/read-ACK path with no retry loop, TLS 1.2 minimum, configured client certificate, custom CA roots and server name 127.0.0.1. This is static provenance/contract evidence only; the source package has no Go test files and the artifact has not been exercised against a receiver. A fresh cohort, repeat empty gate, a bounded behavioral check where authorized, and explicit SUBMIT ONCE authority would still be needed."
+  },
+  "stop_conditions": [
+    "credential expiry",
+    "any custody, TLS, health, readiness, empty-ledger or process-ownership mismatch",
+    "coordinator cleanup direction"
+  ]
+}

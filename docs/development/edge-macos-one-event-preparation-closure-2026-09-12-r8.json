@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_preparation_closure_r8",
+  "date": "2026-09-12",
+  "state": "closed_store_identity_binding_defect_no_runtime_or_event",
+  "proposal": {
+    "path": "hub/docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r8.json",
+    "sha256": "494f32a5b56a8dd370f6b0dc1bdd4b0111561bbb7e24cd172875269af416110b",
+    "edge_preparation_review": "PASS before the concrete profile was generated"
+  },
+  "prepared_evidence": {
+    "source_profile_staging_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r8/evidence/source-profile-staging.json",
+    "source_profile_staging_sha256": "5293d8d0b4c6b759a640e88fb79b992c00b3f1290f910bb2f9aeb7c066e3b693",
+    "private_machine_profile_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r8/evidence/certificate-profile-private.json",
+    "private_machine_profile_sha256": "b50741c762571cb4d051376780889c06c83b837ac58bc16cbf65eae96e182d26",
+    "redacted_public_profile_path": "hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r8.json",
+    "redacted_public_profile_sha256": "046dfb1f7377ff1b1f2e3a55f916ce2edb172567b1caf3db34166fbcfe653d60",
+    "redaction_receipt_path": "hub/docs/development/edge-macos-one-event-certificate-profile-redaction-2026-09-12-r8.json",
+    "redaction_receipt_sha256": "891eabcf754ace191b09ee24d11e48793bb4a5613497e1b2d5c1f2fb4456d945",
+    "inactive_binding_sha256": "fecc4ca78c149e097b7d89b9dd766e2bc95fcf8a50fe482c39fc9e882f7b9376",
+    "event_authorized": false
+  },
+  "rejection": {
+    "finding": "The preparer generated a proposed hub_installation_id before creating the Hub fixture. The supported interop_fixture empty-edge-binding path generates the authoritative Hub store installation ID itself and has no parameter for a prescribed Hub ID.",
+    "effect": "The inactive binding cannot be proven equal to the future Hub store identity, so neither the concrete profile nor the binding is eligible for guest staging or zero-event runtime.",
+    "required_future_order": "Create the fresh host-side empty Edge Hub fixture first; capture its returned hub_id; then seal that exact value into the private binding before certificate/profile review.",
+    "repair_or_reuse_allowed": false
+  },
+  "cleanup": {
+    "removed_one_use_files": 33,
+    "removed_classes": [
+      "all generation-work CA/leaf private keys, CSRs, serials, extension files and duplicate certificates",
+      "all staged leaf private keys",
+      "staged spool key, receiver bearer, Hub bearer and Edge credential store"
+    ],
+    "retained": [
+      "seven public staged certificate/CA files",
+      "redacted and owner-only machine profile evidence",
+      "source/build/staging evidence and binaries",
+      "owner-only inactive binding as rejected evidence",
+      "two owner-only build-lock records"
+    ],
+    "guest_started": false,
+    "process_or_listener_started": false,
+    "producer_invoked": false,
+    "event_submitted": false,
+    "shared_heavy_build_lock_absent": true,
+    "ports_closed": [8084, 21847, 21452, 21453, 18532]
+  },
+  "decision": "r8 is closed and non-reusable. Its build/profile outputs are failure evidence only and are not inputs to a later cohort.",
+  "proof_boundary": "The fresh builds and certificate checks were preparation evidence before rejection. No guest, listener, Hub/Edge/receiver runtime, zero baseline, forwarding, event, service, release, production, vehicle or user acceptance occurred."
+}

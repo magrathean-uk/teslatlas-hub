@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_inactive_actor_guard_profile_runtime_event_proposal_r11",
+  "date": "2026-09-12",
+  "state": "source_only_fixed_dispatch_fixture_first_pending_edge_review",
+  "inherits_behavioral_contract": {
+    "path": "hub/docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r7.json",
+    "sha256": "409bdfe7dd60b31622a9fea36ac80c1e5eff0929c5bccb0cba10fdfd3311fd7c",
+    "edge_review": "PASS",
+    "rule": "All accepted actor, canonical root route, certificate, inactive-binding, active-ledger observer, zero-baseline, submit-once, every-sequence classification, projection, failure and cleanup gates remain unchanged except this fresh reservation, the accepted stopped-fixture immutable-read correction, and the fixed receiver dispatch/launch binding."
+  },
+  "closed_predecessor": {
+    "path": "hub/docs/development/edge-macos-one-event-runtime-closure-2026-09-12-r10.json",
+    "sha256": "618093bce4920f40e1f7191990df781206ea4012788cb76d738428bdd508c86e",
+    "reason": "The accepted receiver binary dispatches only to 127.0.0.1:8080, but r10 configured Edge admission on 127.0.0.1:8086; the first receiver invocation also omitted its required bearer-file environment and exited before any listener.",
+    "r10_reuse_allowed": false,
+    "runtime_or_event_occurred": false
+  },
+  "exact_fresh_replacements": {
+    "cohort_id": "edge-macos-one-event-20260912-r11",
+    "host_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11",
+    "host_root_absent": true,
+    "guest_root_must_be_proven_absent_before_later_copy": true,
+    "edge_internal": "127.0.0.1:8080",
+    "edge_hub": "192.168.64.10:21850",
+    "receiver_data": "127.0.0.1:21458",
+    "receiver_status": "127.0.0.1:21459",
+    "hub_api": "127.0.0.1:18535",
+    "receiver_endpoint": "wss://127.0.0.1:21458/",
+    "transaction_id": "edge-mac-r11-20260912-v-001",
+    "host_binding": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/guest-stage/actor/binding.json",
+    "guest_binding": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11/actor/binding.json",
+    "host_database": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r11/guest-stage/hub/hub.sqlite",
+    "guest_database": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11/hub/hub.sqlite",
+    "cleanup_ports": [
+      8080,
+      21850,
+      21458,
+      21459,
+      18535
+    ]
+  },
+  "stopped_fixture_immutable_validation": {
+    "scope": "Only the freshly exited, checkpointed, pre-runtime Hub fixture. It does not alter the active-ledger observer's live-WAL semantics.",
+    "requirements": [
+      "Create the supported empty-edge-binding fixture before the binding, PKI or credentials.",
+      "Capture the fixture-returned authoritative hub_id owner-only and seal it with Edge installation, lineage, source, vehicle, VIN and car identities.",
+      "Require no hub.sqlite-wal or hub.sqlite-shm before opening.",
+      "Fingerprint the exact database bytes before opening.",
+      "Open SQLite with mode=ro&immutable=1 and enable and verify query_only.",
+      "Check all seven identity relationships against the fixture result and actual store.",
+      "Close SQLite, require sidecars still absent, and require the database fingerprint unchanged.",
+      "Require an in-memory Hub-ID mismatch to fail before staging, PKI, Edge init or credential creation."
+    ],
+    "validator_path": "hub/tools/interop/edge_fixture_binding.py",
+    "validator_sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819",
+    "test_path": "hub/tools/interop/test_edge_fixture_binding.py",
+    "test_sha256": "c3697062b280c4d119b1da3861a8bf5b8d97473eadbd2d3a49acfc03d996bae0",
+    "test_result": "PASS 6/6 including actual accepted Rust interop fixture tree preservation and no sidecar creation"
+  },
+  "source_profile_preparation": {
+    "path": "hub/docs/development/edge-macos-one-event-certificate-profile-preparation-2026-09-12-r11.json",
+    "sha256": "d800b93a929236aab471dc9528891b3cf28563b992e9bc90191b5965faac4eb0",
+    "preparer_path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r11.py",
+    "preparer_sha256": "d3f2ffa5f6582e3a97abc9b4bfebf3fdc39ed269880011d493ae69862a58f909",
+    "preparer_mode": "0500",
+    "preparer_argv": [
+      "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r11.py",
+      "the SHA-256 of this exact accepted proposal"
+    ],
+    "preflight": {
+      "syntax": "PASS",
+      "focused_regression": "PASS 6/6",
+      "complete_launch_contract": "PASS before root creation: exact receiver, Edge and Hub CLI interfaces; fixed dispatcher/source-lock endpoint; in-memory rendered configs; argv; cwd; binds; bearer environment/path; TLS paths; Hub collector URL; receiver then Edge then Hub start order",
+      "hub_manifest_members": 195,
+      "edge_manifest_members": 15,
+      "exact_anchors_and_artifacts": 14,
+      "host_root_absent": true,
+      "public_profile_absent": true,
+      "shared_heavy_build_lock_absent": true,
+      "ports_closed": [
+        8080,
+        21850,
+        21458,
+        21459,
+        18535
+      ],
+      "guest_started": false
+    }
+  },
+  "accepted_immutable_inputs": {
+    "rule": "Hash-pin the accepted Hub manifest and Edge receipt, revalidate every member and exact artifact, assert the exact receiver's fixed dispatcher endpoint, then copy accepted binaries into the fresh r11 stage. Do not rebuild unchanged binaries or rerun unrelated suites.",
+    "hub_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "interop_fixture_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+    "edge_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "helper_sha256": "4b7c0170888d9f45fcd145bf3d34eecf7363898036daca6332b67354fc47ea59",
+    "guard_sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+    "ledger_observer_sha256": "098c543a0fafc1d2c3c6c16f554f321c7c0535ffefff24778df33f548cbd35a2",
+    "rebuild_performed_or_planned": false
+  },
+  "inactive_binding_and_event": {
+    "binding": "One fresh owner-only event_authorized=false binding contains the fixture-returned Hub ID, six caller identities, transaction type V, transaction edge-mac-r11-20260912-v-001, root WSS endpoint, canonical VehicleName-only payload and accepted helper hash.",
+    "public_identity_evidence": "Only SHA-256 values are published; the synthetic VIN CommonName is withheld on first public-profile write.",
+    "guest_copy_rule": "Only after independent r11 profile acceptance, copy the exact guest-stage bytes to a freshly proven-absent guest root and rehash before zero-event runtime.",
+    "actor_outputs_absent_through_baseline": [
+      "authorization.json",
+      "contract.json",
+      "guard.json",
+      "result.json",
+      ".result.json.tmp",
+      "helper-output.log"
+    ],
+    "event_authorized": false
+  },
+  "authority": {
+    "preparation": "A fresh Edge PASS bound to this exact r11 source package is required before one preparer execution under coordinator standing authority.",
+    "zero_event": "After Hub and Edge accept the machine-written r11 public profile, stopped-fixture validation, inactive binding and fixed receiver launch contract, one zero-event baseline is conditionally authorized.",
+    "producer_event": "Not authorized; a later explicit coordinator decision is required after both-owner baseline acceptance.",
+    "current_actions": "Source, focused tests and non-mutating preflight only."
+  },
+  "failure_and_cleanup": "Any mismatch after r11 root creation closes r11 without repair or reuse. Remove one-use secrets, stop only exact owned processes, prove ports 8080/21850/21458/21459/18535 closed, and preserve redacted failure evidence. Installed Hub 8443, Home Assistant 18483, historical roots, unrelated processes and keychain entries remain untouched.",
+  "proof_boundary": "Source-only r11 reservation and fixed receiver dispatch/launch correction. No r11 root, fixture, PKI, credential, guest, listener, baseline, producer, event, service, release, production, vehicle or user acceptance.",
+  "fixed_receiver_dispatch_and_launch": {
+    "receiver_binary_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "compiled_dispatch_endpoint": "http://127.0.0.1:8080/v1/internal/fleet-telemetry",
+    "edge_receiver_bind": "127.0.0.1:8080",
+    "bearer_file_environment": "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE",
+    "bearer_file_guest_path": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11/private/receiver-bearer",
+    "exact_receiver_argv": [
+      "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11/bin/teslatlas-fleet-telemetry",
+      "-config",
+      "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r11/config/fleet-telemetry.json"
+    ],
+    "start_order": [
+      "receiver status HTTP 200 body ok",
+      "Edge healthz and readyz HTTP 200",
+      "Hub healthz and readyz HTTP 200"
+    ],
+    "pre_start_rule": "The direct receiver child must receive the exact bearer-file environment before argv execution; any endpoint, bind, path or ordering mismatch closes r11 without retry."
+  }
+}

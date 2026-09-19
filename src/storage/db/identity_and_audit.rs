@@ -579,7 +579,7 @@ impl HubStore {
         descriptor: &SourceDescriptor,
         created_at_ms: i64,
     ) -> Result<(SourceRecord, bool), StoreError> {
-        self.register_source_with_creation_state(descriptor, created_at_ms)
+        self.register_source_with_creation_state(descriptor, created_at_ms, None)
     }
 
     pub fn register_source(
@@ -587,7 +587,23 @@ impl HubStore {
         descriptor: &SourceDescriptor,
         created_at_ms: i64,
     ) -> Result<SourceRecord, StoreError> {
-        self.register_source_with_creation_state(descriptor, created_at_ms)
+        self.register_source_with_creation_state(descriptor, created_at_ms, None)
+            .map(|(source, _)| source)
+    }
+
+    /// Register a sealed source identity for an explicitly invoked synthetic
+    /// interoperability fixture. This is unavailable in product builds.
+    #[cfg(feature = "interop-fixture")]
+    pub fn register_interop_source_with_id(
+        &self,
+        descriptor: &SourceDescriptor,
+        created_at_ms: i64,
+        source_id: Uuid,
+    ) -> Result<SourceRecord, StoreError> {
+        if source_id.is_nil() {
+            return Err(StoreError::InvalidSourceId);
+        }
+        self.register_source_with_creation_state(descriptor, created_at_ms, Some(source_id))
             .map(|(source, _)| source)
     }
 
@@ -595,6 +611,7 @@ impl HubStore {
         &self,
         descriptor: &SourceDescriptor,
         created_at_ms: i64,
+        expected_source_id: Option<Uuid>,
     ) -> Result<(SourceRecord, bool), StoreError> {
         descriptor.validate()?;
         validate_timestamp("source created_at_ms", created_at_ms)?;
@@ -604,11 +621,24 @@ impl HubStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
         if let Some(source) = find_source(&transaction, descriptor)? {
+            if expected_source_id.is_some_and(|expected| expected != source.source_id) {
+                return Err(StoreError::InvalidSourceId);
+            }
             transaction.commit().map_err(StoreError::RegisterSource)?;
             return Ok((source, false));
         }
 
-        let source_id = Uuid::new_v4();
+        let source_id = expected_source_id.unwrap_or_else(Uuid::new_v4);
+        let source_id_exists: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sources WHERE source_id = ?1)",
+                params![source_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        if source_id_exists {
+            return Err(StoreError::InvalidSourceId);
+        }
         transaction
             .execute(
                 "INSERT INTO sources (source_id, source_kind, generation, created_at_ms) \

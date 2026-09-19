@@ -1,0 +1,106 @@
+{
+  "schema": "teslatlas.hub.active-target-handoff/v1",
+  "state": "closed_browser_trust_isolation_failure_no_acceptance",
+  "prepared_at": "2026-09-12",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "scope": "One generic packed TypeScript browser SDK journey on the existing local Apple-silicon Mac. Viewer is excluded. Hub owns only the fresh fixture, pre-paired credential and cleanup; TypeScript owns the fresh package install, helper origin, trusted/untrusted browser controls, trust witness and redacted receipt.",
+  "target": {
+    "kind": "existing_local_apple_silicon_mac",
+    "architecture": "arm64",
+    "host_os": "macOS 27.0",
+    "node": "26.7.0",
+    "browser_origin": "http://localhost:4174"
+  },
+  "candidate": {
+    "id": "hub-macos-arm64-20260909-r2",
+    "hub_binary": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2/target/release/teslatlas-hub",
+    "hub_binary_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+    "seed_binary": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2/target/release/examples/interop_fixture",
+    "seed_binary_sha256": "b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce",
+    "fixture_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+    "native_evidence_sha256": "09fdd31510470577c1e22da0969c6762f933aa06b087b6959a7d520b29159bd0",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3"
+  },
+  "profile": {
+    "id": "hub-http-v1@1.0.0",
+    "manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+  },
+  "first_attempt": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r1",
+    "result": "failed_before_process_start",
+    "root_cause": "The staged immutable fixture resolved tests/interop/scenario.json relative to its staged source root, but that public scenario file was not staged.",
+    "closure": "No Hub process, ready descriptor or listener was created. The partial owner-only root is preserved and cannot be reused."
+  },
+  "runtime": {
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2",
+    "fixture_config": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/fixture-config.json",
+    "fixture_config_sha256": "240442d07120cc95bf5b391cb0ce05730e65f7d524650fcf5b9ce0799efd0e5c",
+    "ready_descriptor": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/run/ready.json",
+    "ready_descriptor_sha256": "d951269551bb580761dc481a876745df5502af1fd6b70a4bf63d27a71ef15157",
+    "endpoint": "https://127.0.0.1:18521",
+    "browser_endpoint": "https://localhost:18521",
+    "hub_id": "483e02c5-857d-4483-9ae3-039946135e78",
+    "launcher_pid": 91606,
+    "hub_pid": 91611,
+    "listener": "127.0.0.1:18521 only",
+    "allowed_origins": [
+      "http://localhost:4174"
+    ],
+    "health_and_readiness": "Normal TLS through the fresh CA returned HTTP 200 for /healthz status ok and /readyz status ready.",
+    "certificate": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/run/server.pem",
+      "sha256": "e7ab389dd48451b1527dc53297ef408c132354dd24c92132ad04f761191f49a0",
+      "sans": [
+        "DNS:localhost",
+        "IP:127.0.0.1"
+      ],
+      "mode": "0600"
+    },
+    "credential": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/browser-input/credential.json",
+      "mode": "0600",
+      "bytes": 161,
+      "state": "fresh pre-paired credential; invitation consumed once; value, device identifier and digest withheld"
+    },
+    "scenario": "b1-five-drives; drive_limit=2; expected_drive_count=5",
+    "lifetime_seconds": 1800
+  },
+  "typescript_action": {
+    "owner_task_id": "01a082b7-890b-70b3-8a0e-9e964636849f",
+    "command": "PATH=/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin:$PATH /Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/npm run test:hub:browser",
+    "required_environment": {
+      "TESLATLAS_HUB_HTTP_CONFIG": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/run/ready.json",
+      "TESLATLAS_HUB_CREDENTIAL_FILE": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/browser-input/credential.json",
+      "TESLATLAS_HUB_SDK_TARBALL": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/teslatlas-sdk-2026.36.2.tgz",
+      "TESLATLAS_HUB_SDK_TARBALL_SHA256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "TESLATLAS_HUB_BROWSER_ORIGIN": "http://localhost:4174",
+      "TESLATLAS_HUB_BROWSER_LISTEN_PORT": "4174",
+      "TESLATLAS_HUB_DRIVE_PAGE_LIMIT": "2",
+      "TESLATLAS_HUB_EXPECTED_DRIVE_COUNT": "5",
+      "TESLATLAS_HUB_SDK_PACKAGE_ROOT": "TypeScript-owned fresh install/node_modules/@teslatlas/sdk",
+      "TESLATLAS_BROWSER_CDP_URL": "TypeScript-owned fresh trusted Chrome CDP endpoint",
+      "TESLATLAS_BROWSER_UNTRUSTED_CDP_URL": "TypeScript-owned fresh untrusted Chrome control endpoint",
+      "TESLATLAS_BROWSER_LAUNCH_WITNESS": "TypeScript-owned fresh 0600 trust witness",
+      "TESLATLAS_HUB_RECEIPT": "TypeScript-owned fresh 0600 redacted receipt"
+    },
+    "expected_result": "The trusted browser passes normal TLS, CORS preflight, discovery/readiness/current, five drives over three pages, 304 plus post-304 cursor continuation, credential rotation and default Fetch; the untrusted control fails ERR_CERT_AUTHORITY_INVALID.",
+    "forbidden": "No Viewer code/process, certificate bypass, stale input, package install outside the TypeScript-owned fresh consumer root, Edge/HA action, Hub fixture mutation, installed app/service, production, vehicle, x86 or publication action."
+  },
+  "cleanup": {
+    "hub_owner": "Completed: Hub interrupted only launcher PID 91606 and its direct Hub child PID 91611. Both PIDs are absent; stopped.json is owner-only mode 0600, records child PID 91611 with exit code 0, has SHA256 b6e6fe175900cf09ada9bb33a283d22a5f3497af7e881ecb5f62fff300d1b3d2, and 18521 is closed.",
+    "typescript_owner": "Completed: TypeScript stopped its helper and both test Chrome controls; 4174, 9227 and 9228 are closed. Its fresh consumer root remains an empty owner-only 0700 directory after package install, browser profiles, witness and logs were removed.",
+    "trust_cleanup_correction": "TypeScript reported the temporary login-keychain certificate removed, but Hub's exact SHA-256 lookup still found the fresh rcgen self-signed certificate. Hub deleted only that exact certificate fingerprint 25AE53603FA3DF5495F7868B0200F5E051328DED634F9C6EE0A52C7E0BDE1EBF and independently verified it absent.",
+    "retention": "Hub retains the R2 owner-only evidence root as non-reusable after cleanup."
+  },
+  "result": {
+    "status": "failed_browser_trust_isolation_before_sdk_api_acceptance",
+    "first_attempt": "The untrusted Chrome control rejected the fresh CA as expected, but the intended trusted profile still failed TLS with Chromium net_error -202 and the SDK surfaced a transport failure. No SDK API acceptance receipt was produced.",
+    "corrected_attempt": "After the exact fresh CA was added to the macOS login keychain, trusted Chrome could use it but the separate untrusted Chrome control also trusted it. The runner stopped at its negative-control gate with untrusted browser control did not fail with ERR_CERT_AUTHORITY_INVALID, before accepting any SDK API journey.",
+    "root_cause_boundary": "The selected macOS Chrome controls share login-keychain trust; separate browser profiles do not provide the required independently trusted and untrusted certificate contexts. This result does not diagnose a Hub API or SDK data-path defect.",
+    "retry_boundary": "No third attempt is admissible for this tuple. Future work requires a reviewed supported trust-isolation context, such as separate OS-user/keychain browser controls, or an explicitly authorized runner/handoff change.",
+    "sdk_acceptance": false,
+    "redacted_acceptance_receipt": false
+  },
+  "proof_boundary": "This handoff and any passing result prove one generic public packed browser SDK journey against a synthetic real Hub candidate process on the local Apple-silicon Mac. They do not prove installed Hub/package/service, Viewer, collection, migration, production, platform matrix or release acceptance."
+}

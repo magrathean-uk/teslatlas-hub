@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_preparation_failure_r7",
+  "date": "2026-09-12",
+  "state": "closed_pre_build_tool_path_failure_non_reusable",
+  "proposal": {
+    "path": "hub/docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r7.json",
+    "sha256": "409bdfe7dd60b31622a9fea36ac80c1e5eff0929c5bccb0cba10fdfd3311fd7c",
+    "edge_independent_review": "PASS before preparation"
+  },
+  "preparer": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r7.py",
+    "sha256_at_failed_attempt": "a4a8b8428e2bd57acd6e90a36d7857bf98344bbcb17e9e74e43e2f95f0ca4f8a",
+    "failure": "The script referenced /Users/bolyki/.cargo/bin/rustup, which does not exist; the verified executable is /opt/homebrew/bin/rustup.",
+    "failure_stage": "After exclusive host-root and build-lock claim and source manifest enumeration, before the first build command."
+  },
+  "closed_root": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r7",
+    "mode": "0700",
+    "owner_uid": 501,
+    "only_contents": "Empty build, pki-work and staging subdirectories plus two byte-identical owner-only build-lock records.",
+    "staged_regular_files": 0,
+    "build_outputs": 0,
+    "pki_files": 0,
+    "private_inputs": 0,
+    "actor_files": 0,
+    "binding_created": false,
+    "certificate_profile_receipt_created": false,
+    "reuse_allowed": false
+  },
+  "lock_cleanup": {
+    "owner_record_sha256": "b53ecc8d5ec3219d5f880a15b9606b3f7fa82ac88880d5349a6edc3dbefab680",
+    "owner_record_mode": "0600",
+    "shared_heavy_build_lock_absent": true
+  },
+  "runtime_boundary": {
+    "guest_started": false,
+    "listener_started": false,
+    "credential_created": false,
+    "certificate_or_key_created": false,
+    "producer_invoked": false,
+    "event_authorized": false,
+    "event_submitted": false,
+    "ports_closed": [8083, 21846, 21450, 21451, 18531]
+  },
+  "decision": "r7 is consumed and closed. Correct the preparer only for a separately reviewed fresh cohort; do not repair, resume, or reuse this root.",
+  "proof_boundary": "This is failure and cleanup evidence only. It is not build, profile, certificate, guest, runtime, forwarding, event, service, release, production, vehicle or user acceptance."
+}

@@ -219,10 +219,9 @@ pub(super) async fn decorate_resource_limit_response(
             .headers()
             .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
             .is_none()
+        && let Some(origin) = origin
     {
-        if let Some(origin) = origin {
-            decorate_allowed_response(&mut response, origin, false);
-        }
+        decorate_allowed_response(&mut response, origin, false);
     }
     response
 }

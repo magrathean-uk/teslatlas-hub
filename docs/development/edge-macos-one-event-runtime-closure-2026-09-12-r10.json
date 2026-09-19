@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_runtime_closure_r10",
+  "date": "2026-09-12",
+  "state": "closed_pre_listener_dispatch_port_mismatch_non_reusable",
+  "accepted_source_package": {
+    "proposal_path": "hub/docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r10.json",
+    "proposal_sha256": "a7e5e1fda8f58ba499b328f7d0a284fd7e09d2b9ff5e72674fd2f07ce1ab51f1",
+    "preparation_spec_path": "hub/docs/development/edge-macos-one-event-certificate-profile-preparation-2026-09-12-r10.json",
+    "preparation_spec_sha256": "9c3fd83cab426f2bc6123cbcc443d0f8e3091b4b08cec100f8d7a7087a0a9840",
+    "preparer_path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r10.py",
+    "preparer_sha256": "3ded9580a4d62ac5a25ac5ad2e63770b17bc5e6e89e8cf051c4d18e6e7b84035",
+    "executions": 1,
+    "edge_source_review": "PASS",
+    "edge_concrete_profile_review": "PASS"
+  },
+  "prepared_profile": {
+    "profile_path": "hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r10.json",
+    "profile_sha256": "b3a879730a5f2f1b5323eceaec065f404cb7414a2364d6c1f2a93463ef5710b8",
+    "hub_review_path": "hub/docs/development/edge-macos-one-event-certificate-profile-hub-review-2026-09-12-r10.json",
+    "hub_review_sha256": "e8941a7426a35d6f034d37e4af8533bc2503468eb45a1e8747b4fe67a9809b7f",
+    "source_staging_sha256": "ba7e481aeaf79cf49f3c8005f08126f913fff7ccba88b06e3e869e8d0ec2dffc",
+    "fixture_binding_public_sha256": "7c9a86e9f7a2f0bdc0b0a48a7dfe1fc26ead194723087e3f36a1974cbf9d08f8",
+    "fixture_binding_private_sha256": "36640801c45f9e250590daf6bdc8db8c7820a3ee81c8e371120bdc848a010a86",
+    "fixture_result_private_sha256": "81c478525a9781c5db39326831d6b246c7ce4423ac588f61f8b48748270b777b",
+    "inactive_binding_sha256": "25d299f458387e3d8342488ea2ddb4bfaa195703a4e95b3da4269f8c56c6edab",
+    "retained_fixture_database_sha256": "e7efe4d11591b99fe33e6a3001b0f66c3c9c3cb6b3f973fb623d5495746f8a0e"
+  },
+  "guest_staging": {
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r10",
+    "initial_transfer_difference": "The guest umask tightened the generated Hub pack directory from 0755 to 0700 and its single pack from 0640 to 0600; both file bytes and SHA-256 matched the reviewed host source.",
+    "correction": "Before any process start, the two guest modes were set to their exact reviewed host modes.",
+    "post_correction_comparison": "PASS for all 44 directories, regular files and symbolic links by type, mode, size and file SHA-256"
+  },
+  "failed_launch": {
+    "start_order_reached": [
+      "receiver process invocation"
+    ],
+    "receiver_exit": "The receiver exited before opening its data or status listener because TESLATLAS_FLEET_TELEMETRY_BEARER_FILE was not supplied to that first invocation.",
+    "edge_started": false,
+    "hub_started": false,
+    "listener_started": false,
+    "retry_performed": false,
+    "reason_no_retry": "Static inspection of the exact accepted receiver binary then proved its immutable dispatcher URL is http://127.0.0.1:8080/v1/internal/fleet-telemetry, while the accepted r10 Edge configuration listens on 127.0.0.1:8086. Supplying the bearer environment would not repair that source/profile mismatch."
+  },
+  "root_cause": {
+    "receiver_binary_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "compiled_dispatch_endpoint": "http://127.0.0.1:8080/v1/internal/fleet-telemetry",
+    "configured_edge_receiver_bind": "127.0.0.1:8086",
+    "accepted_source_contract_evidence": "teslatlas-edge/docs/development/edge-macos-forwarding-contract-proposal-2026-09-12-r1.json fixes the same receiver binary to port 8080 and requires TESLATLAS_FLEET_TELEMETRY_BEARER_FILE.",
+    "repair_or_reuse_allowed": false
+  },
+  "cleanup": {
+    "removed_from_host_and_guest": "All r10 private keys, certificates, spool key, receiver and Hub bearers, Hub credential store, and Hub cursor key.",
+    "retained": "Owner-only non-secret preparation evidence, inactive binding, stopped Hub fixture, redacted configuration and receiver failure log.",
+    "actor_outputs_absent": [
+      "authorization.json",
+      "contract.json",
+      "guard.json",
+      "result.json",
+      ".result.json.tmp",
+      "helper-output.log"
+    ],
+    "ports_closed": [8080, 8086, 21849, 21456, 21457, 18534],
+    "macos_vm_stopped": true,
+    "shared_heavy_build_lock_absent": true,
+    "producer_invoked": false,
+    "event_submitted": false
+  },
+  "decision": "r10 is closed and non-reusable. A successor must use a fresh root, identity tuple, credentials, PKI and ports, bind Edge internal admission to 127.0.0.1:8080, and launch the receiver with the exact bearer-file environment.",
+  "proof_boundary": "r10 proves source/profile preparation, stopped-fixture identity binding, exact guest staging and fail-closed pre-listener diagnosis. It is not a zero-event baseline, forwarding, producer, event, installed-service, release, production, vehicle or user acceptance result."
+}

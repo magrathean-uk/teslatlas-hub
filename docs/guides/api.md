@@ -5,9 +5,12 @@ content-addressed pack protocol remains available for efficient full-device
 synchronisation. This release does not expose a general vehicle-control API.
 
 Public capabilities are additive within an advertised API version. Clients
-must discover support instead of assuming that an endpoint exists. The full
-external specification, generated SDK, event stream, and conformance gate are
-not complete in this release.
+must discover support instead of assuming that an endpoint exists. Product
+`2026.36.2` has an accepted bounded `hub-http-v1@1.0.0` binding with manifest
+SHA-256
+`b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
+The richer external specification and event stream remain separate surfaces.
+The accepted binding does not add routes beyond those advertised by discovery.
 
 ## Transport and authentication
 
@@ -27,7 +30,7 @@ not complete in this release.
 |---|---|---|
 | `GET` | `/healthz` | Process and store health. |
 | `GET` | `/readyz` | Collector and serving readiness. |
-| `GET` | `/.well-known/teslatlas-hub` | Stable Hub identity, API versions, capabilities, build, sync protocol, and source route. Tagged builds expose their version-bound source; development builds expose the repository. |
+| `GET` | `/.well-known/teslatlas-hub` | Stable Hub identity, API versions, capabilities, build, sync protocol, and configured source route. |
 | `POST` | `/v1/pairings/{pairing_id}/claim` | Claim one pairing invitation. |
 | `POST` | `/v1/device/rotate` | Rotate the current device bearer. |
 | `GET` | `/v1/vehicles` | List vehicles visible to the paired device. |
@@ -46,6 +49,8 @@ rejected.
 
 `GET /.well-known/teslatlas-hub` is not secret-bearing. Its `hub_id` is the
 stable installation UUID. `api_versions` currently contains `"1.0"`.
+The `version` field is the Hub product version (`2026.36.2` for the accepted
+cohort), not the wire profile revision.
 `capabilities` contains only implemented and currently usable surfaces. A Hub
 with its protected cursor-signing key advertises `query.vehicles`,
 `query.current`, `query.drives`, and `sync.packs`. An unsigned loopback test or
@@ -100,3 +105,20 @@ is lost.
 Responses include `x-request-id` when the request reaches the router. Preserve
 that identifier in a redacted bug report. Never attach bearers, pairing
 payloads, precise locations, or pack contents to a public issue.
+
+## Accepted evidence boundary
+
+[G3 r2](../../../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json)
+admitted the exact product/profile records using accepted
+[G4 TypeScript](../../../teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json),
+[G5 Edge](../../../teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json),
+and [G6 Swift](../../../teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json)
+receipts. The G3 receipt SHA-256 is
+`5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`.
+Those receipts cover source-built synthetic
+journeys on macOS 27 Apple silicon and Debian 13.6 ARM64, including pairing,
+rotation, current/history reads, bounded pagination, restart behavior, and the
+recorded Edge durable-delivery lane. They do not establish an installer,
+notarized or service-managed release, real Tesla data, App or Viewer
+integration, declared minimum OS floors, production, or a full platform matrix.
+No source publication or tag is implied.

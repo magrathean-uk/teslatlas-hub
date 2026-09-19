@@ -10,6 +10,7 @@ all source, artifact, profile, runtime, and expected/actual bindings match.
 
 import argparse
 import hashlib
+import importlib
 import json
 import math
 import os
@@ -23,8 +24,17 @@ import tarfile
 import time
 from datetime import datetime, timezone
 
-from matrix_runner import source_evidence as _source_evidence
-from installed_hosts.contract import read_registered_config as _read_registered_config
+if __package__:
+    from .matrix_runner import source_evidence as _source_evidence
+    from .installed_hosts.contract import read_registered_config as _read_registered_config
+    _MATRIX_RUNNER_PACKAGE = f"{__package__}.matrix_runner"
+else:
+    _INTEROP_ROOT = str(Path(__file__).resolve().parent)
+    if _INTEROP_ROOT not in sys.path:
+        sys.path.insert(0, _INTEROP_ROOT)
+    from matrix_runner import source_evidence as _source_evidence
+    from installed_hosts.contract import read_registered_config as _read_registered_config
+    _MATRIX_RUNNER_PACKAGE = "matrix_runner"
 
 
 MAX_CONFIG_BYTES = 1024 * 1024
@@ -663,7 +673,46 @@ def _verify_artifact_version(artifact, product_version, actual, *, probe_executa
         if artifact["name"] != "interop_fixture" or artifact["embedded_version"] != "tooling":
             raise MatrixError("protocol fixture tooling identity mismatch")
     elif role == "swift_sdk_product":
-        raise PendingCapability("pending: Swift product verifier is unavailable")
+        # A Swift matrix row is only meaningful when the selected product is
+        # an immutable source/product archive.  Do not infer its version from
+        # the filename or accept a loose build directory: the fixed Swift
+        # launcher later binds its installed member inventory to this archive.
+        required = {
+            "Package.swift", "VERSION", "tools/matrix-contract.json",
+            "tools/matrix_contract.py", "tools/matrix_live.py", "tools/matrix_wire.py",
+        }
+        try:
+            with tarfile.open(path, "r:gz") as archive:
+                members = archive.getmembers()
+                files = {}
+                for member in members:
+                    if member.isdir():
+                        continue
+                    if not member.isfile() or member.name.startswith("/") or ".." in Path(member.name).parts:
+                        raise MatrixError("Swift product archive member is invalid")
+                    prefix = "teslatlas-sdk-swift/"
+                    if not member.name.startswith(prefix) or member.name == prefix:
+                        raise MatrixError("Swift product archive root is invalid")
+                    relative = member.name[len(prefix):]
+                    if relative in files or member.size > MAX_CONFIG_BYTES:
+                        raise MatrixError("Swift product archive member inventory is invalid")
+                    stream = archive.extractfile(member)
+                    if stream is None:
+                        raise MatrixError("Swift product archive member is unavailable")
+                    files[relative] = stream.read(MAX_CONFIG_BYTES + 1)
+                    if len(files[relative]) > MAX_CONFIG_BYTES:
+                        raise MatrixError("Swift product archive member exceeds bound")
+        except (OSError, tarfile.TarError) as error:
+            raise MatrixError("Swift product archive is invalid") from error
+        if (not required.issubset(files)
+                or b'name: "teslatlas-sdk-swift"' not in files["Package.swift"]):
+            raise MatrixError("Swift product archive is incomplete")
+        try:
+            version = files["VERSION"].decode("ascii", "strict").strip()
+        except UnicodeDecodeError as error:
+            raise MatrixError("Swift product version is invalid") from error
+        if version != product_version or artifact["embedded_version"] != product_version:
+            raise MatrixError("Swift product embedded version mismatch")
     else:
         raise MatrixError("unsupported actual artifact role")
 
@@ -948,19 +997,32 @@ def _validate_job(job, matrix, execution_kind, config_version=1):
             entry = (WORKSPACE_ROOT / "hub/tools/interop/client_lanes/run.mjs").resolve()
             if len(job["argv"]) != 3 or Path(job["argv"][1]).resolve() != entry or len(files) < 2 or files[1] != entry:
                 raise MatrixError("TypeScript actual adapter invocation is not fixed")
-            descriptor_path = _validate_private_output(job["argv"][2], must_exist=True)
-            descriptor = read_json(descriptor_path, private=True)
             mode = "node" if job["adapter"] == "typescript_node" else "browser"
             if config_version == 2:
-                if not isinstance(descriptor, dict) or set(descriptor) != {"schema_version", "kind", "mode", "session_input"} or descriptor.get("schema_version") != 2 or descriptor.get("kind") != "installed-client-lane" or descriptor.get("mode") != mode:
-                    raise MatrixError("TypeScript installed lane descriptor binding mismatch")
-                _validate_session_input_binding(descriptor["session_input"], job)
+                # Installed jobs use a runner-created descriptor, so the
+                # descriptor cannot carry the launcher identity yet.  Bind
+                # the executable to the matrix-pinned Node binary before the
+                # descriptor is reserved; otherwise a job could self-bind an
+                # arbitrary `node` file through command_files.
+                launcher_identity = _node_launcher_identity(
+                    job, client,
+                    {"schema_version": 2, "kind": "installed-client-lane"},
+                )
+                # The fixed registry creates the controller-bound SessionInput
+                # only after the installed session's initial verify. Reserve a
+                # fresh private descriptor path here; launch_adapter writes its
+                # exact binding before the child is started.
+                descriptor_path = _validate_private_output(job["argv"][2], must_exist=False)
+                if os.path.lexists(descriptor_path):
+                    raise MatrixError("TypeScript installed lane descriptor path is not fresh")
             else:
+                descriptor_path = _validate_private_output(job["argv"][2], must_exist=True)
+                descriptor = read_json(descriptor_path, private=True)
                 if not isinstance(descriptor, dict) or descriptor.get("mode") != mode or descriptor.get("evidence_path") != job["evidence_path"]:
                     raise MatrixError("TypeScript lane descriptor binding mismatch")
                 launcher_identity = _node_launcher_identity(job, client, descriptor)
-                if mode == "node" and job["runtime"]["client"]["tool_versions"].get("node") != launcher_identity["version"]:
-                    raise MatrixError("Node launcher and client runtime version differ")
+            if mode == "node" and job["runtime"]["client"]["tool_versions"].get("node") != launcher_identity["version"]:
+                raise MatrixError("Node launcher and client runtime version differ")
         elif config_version == 1:
             raise PendingCapability("pending: actual adapter invocation contract is unavailable")
         for artifact in job["artifacts"]:
@@ -1204,6 +1266,103 @@ def _case_result(case_id, status, expected, actual, evidence_kind, transcript, j
     return value
 
 
+def _installed_case_result(case_id, job, evidence_hash, *, status="pending", reason=None):
+    """Create a redacted v2 row until an admitted adapter supplies case facts.
+
+    Installed adapters do not use the v1 aggregate evidence document.  Their
+    private supplement is retained separately and is validated by
+    ``receipt_validation``; a case is promoted only by a reviewed adapter
+    predicate.  Keeping this constructor separate prevents a syntactically
+    valid supplement from silently entering the legacy case normalizer.
+    """
+    value = _case_result(
+        case_id, status, {"required": True}, {"evidence": "installed supplement"},
+        "identity", [], job, evidence_hash, reason=reason,
+    )
+    value["evidence_path"] = None
+    return value
+
+
+def _normalize_installed_evidence(installed_dispatch, job, config, required_cases):
+    """Normalize the runner-owned v2 completion without reading v1 evidence.
+
+    The shared runner owns lifecycle and supplement binding.  A reviewed fixed
+    registry entry may additionally return its closed semantic admission
+    result; no child-supplied case map can promote an installed row by itself.
+    Entries without that capability remain pending.
+    """
+    binding = installed_dispatch.supplement
+    if not isinstance(binding, dict) or set(binding) != {"path", "sha256"}:
+        raise MatrixError("installed supplement binding is invalid")
+    _require_absolute(binding["path"], "installed supplement")
+    _validate_digest(binding["sha256"], "installed supplement")
+    evidence_hash = binding["sha256"]
+    admission = getattr(installed_dispatch, "admission", None)
+    if admission is None:
+        reason = "pending: reviewed installed case predicates are unavailable"
+        return [
+            _installed_case_result(case_id, job, evidence_hash, reason=reason)
+            for case_id in required_cases
+        ], [reason], evidence_hash
+    if (not isinstance(admission, dict)
+            or set(admission) != {"schema_version", "adapter_id", "cases"}
+            or admission.get("schema_version") != 1
+            or admission.get("adapter_id") != job["adapter"]
+            or not isinstance(admission.get("cases"), list)):
+        raise MatrixError("reviewed installed admission result is invalid")
+    rows = admission["cases"]
+    by_id = {row.get("id"): row for row in rows if isinstance(row, dict)}
+    if len(by_id) != len(rows) or set(by_id) != set(required_cases):
+        raise MatrixError("reviewed installed admission case coverage is incomplete")
+    results = []
+    closed = getattr(getattr(installed_dispatch, "result", None), "session_evidence", None)
+    runner_closed = (
+        getattr(closed, "state", None) == "closed"
+        and not getattr(closed, "cleanup_errors", ("missing",))
+        and isinstance(getattr(closed, "final_stopped", None), dict)
+        and closed.final_stopped.get("status") == "stopped"
+        and isinstance(closed.final_stopped.get("service"), dict)
+        and closed.final_stopped["service"].get("state") == "stopped"
+    )
+    for case_id in required_cases:
+        row = by_id[case_id]
+        if set(row) != {"id", "status", "expected", "actual", "evidence_kind", "request_transcript"}:
+            raise MatrixError("reviewed installed admission case shape is invalid")
+        if case_id == "installed_service_runtime":
+            if row["status"] != "pending" or not runner_closed:
+                raise MatrixError("runner-owned service-runtime proof is incomplete")
+            status = "passed"
+        else:
+            if row["status"] != "passed":
+                raise MatrixError("reviewed installed admission case is not passed")
+            status = "passed"
+        _validate_public_json(row["expected"])
+        _validate_public_json(row["actual"])
+        if not isinstance(row["expected"], dict) or not row["expected"] or not _typed_equal(row["expected"], row["actual"]):
+            raise MatrixError("reviewed installed admission case facts are invalid")
+        if row["evidence_kind"] not in {"http", "zero_request", "identity"}:
+            raise MatrixError("reviewed installed admission case kind is invalid")
+        transcript = row["request_transcript"]
+        if not isinstance(transcript, list):
+            raise MatrixError("reviewed installed admission transcript is invalid")
+        # The private TypeScript contract retains scope for route binding. The
+        # public matrix schema intentionally exposes only method/path/status/
+        # request-id, so remove that private field at this boundary.
+        public_transcript = []
+        for request in transcript:
+            if not isinstance(request, dict) or set(request) != {"method", "route", "status", "request_id", "scope"}:
+                raise MatrixError("reviewed installed admission transcript is invalid")
+            public_transcript.append({key: request[key] for key in ("method", "route", "status", "request_id")})
+        _validate_transcript(case_id, public_transcript, config["execution_kind"] in ACTUAL_KINDS)
+        value = _case_result(
+            case_id, status, row["expected"], row["actual"], row["evidence_kind"],
+            public_transcript, job, evidence_hash,
+        )
+        value["evidence_path"] = None
+        results.append(value)
+    return results, [], evidence_hash
+
+
 def _validate_legacy_evidence(raw, job, config):
     """Recognize current focused receipts without promoting them to matrix cases."""
     role = job["adapter"]
@@ -1381,7 +1540,7 @@ def _validate_identity_proof(case_id, proof, job):
                     or packed.get("packageVersion") != "2026.36.2"
                     or packed.get("tarballSha256") != artifact_hashes.get("typescript_sdk_tarball")
                     or packed.get("entry") != ("dist/node.js" if job["adapter"] == "typescript_node" else "dist/browser.js")
-                    or type(packed.get("installedMemberCount")) is not int or packed["installedMemberCount"] != 80
+                    or type(packed.get("installedMemberCount")) is not int or packed["installedMemberCount"] != 81
                     or not isinstance(client, dict) or type(client.get("pid")) is not int or client["pid"] <= 0):
                 raise MatrixError("packed client process evidence is invalid")
             for name in ("entrySha256", "tarballSha256", "installedContentManifestSha256"):
@@ -1425,7 +1584,7 @@ def _validate_actual_assertion(case_id, expected, actual, job):
         hashes = {item["role"]: item["sha256"] for item in job["artifacts"]}
         fixed = {"hub_sha256": hashes.get("hub_executable"),
                  "tarball_sha256": hashes.get("typescript_sdk_tarball"),
-                 "package_version": "2026.36.2", "installed_members": 80}
+                 "package_version": "2026.36.2", "installed_members": 81}
         if not _typed_equal(expected, fixed):
             raise MatrixError("candidate assertion is not bound to exact artifacts")
         return
@@ -1658,7 +1817,11 @@ def _run_job(job, cell, config, matrix):
             result["launcher_identity"] = _node_launcher_identity(
                 job, matrix["clients"][cell["client_id"]], descriptor
             )
-        result["evidence_path"] = job["evidence_path"]
+        # v2 installed adapters publish a private supplement from the
+        # runner-owned close path; they do not produce the v1 evidence file.
+        # Keep the legacy path for schema-v1 jobs only.
+        if config["schema_version"] == 1:
+            result["evidence_path"] = job["evidence_path"]
         result["runtime_expected"] = job["runtime"]
         before_sources, before_artifacts = _observe_job_identities(
             job, config["product_version"], config["execution_kind"] in ACTUAL_KINDS,
@@ -1666,7 +1829,7 @@ def _run_job(job, cell, config, matrix):
         )
         result["identity_before"] = {"sources": before_sources, "artifacts": before_artifacts}
         if config["schema_version"] == 2:
-            from matrix_runner import installed_registry
+            installed_registry = importlib.import_module(f"{_MATRIX_RUNNER_PACKAGE}.installed_registry")
             try:
                 installed_dispatch = installed_registry.dispatch(job, cell, config, matrix)
             except installed_registry.InstalledRegistryPending as error:
@@ -1688,15 +1851,28 @@ def _run_job(job, cell, config, matrix):
         )
         if execution["error"]:
             raise MatrixError(execution["error"])
-        evidence_hash = sha256_file(job["evidence_path"])
-        result["evidence_sha256"] = evidence_hash
-        evidence = read_json(job["evidence_path"], job["max_output_bytes"], private=True)
-        case_results, case_errors = _normalize_evidence(
-            evidence, job, config, required_cases, evidence_hash
-        )
-        result["case_results"] = case_results
-        result["runtime_actual"] = evidence.get("runtime") if isinstance(evidence, dict) else None
-        result["errors"].extend(case_errors)
+        if installed_dispatch is not None:
+            # The supplement is the v2 completion binding.  Do not read or
+            # normalize the legacy evidence_path, which may not exist for a
+            # reviewed installed entry.
+            case_results, case_errors, evidence_hash = _normalize_installed_evidence(
+                installed_dispatch, job, config, required_cases
+            )
+            result["case_results"] = case_results
+            result["evidence_path"] = installed_dispatch.supplement["path"]
+            result["evidence_sha256"] = evidence_hash
+            result["runtime_actual"] = getattr(installed_dispatch, "runtime_actual", None)
+            result["errors"].extend(case_errors)
+        else:
+            evidence_hash = sha256_file(job["evidence_path"])
+            result["evidence_sha256"] = evidence_hash
+            evidence = read_json(job["evidence_path"], job["max_output_bytes"], private=True)
+            case_results, case_errors = _normalize_evidence(
+                evidence, job, config, required_cases, evidence_hash
+            )
+            result["case_results"] = case_results
+            result["runtime_actual"] = evidence.get("runtime") if isinstance(evidence, dict) else None
+            result["errors"].extend(case_errors)
         after_sources, after_artifacts = _observe_job_identities(
             job, config["product_version"], config["execution_kind"] in ACTUAL_KINDS,
             installed=config["schema_version"] == 2,
@@ -1713,9 +1889,21 @@ def _run_job(job, cell, config, matrix):
         else:
             result["status"] = "passed"
         if installed_dispatch is not None:
-            from matrix_runner import receipt_validation
-            receipt_validation._supplement(installed_dispatch.supplement, result)
+            receipt_validation = importlib.import_module(f"{_MATRIX_RUNNER_PACKAGE}.receipt_validation")
             result["supplement"] = dict(installed_dispatch.supplement)
+            try:
+                receipt_validation._supplement(installed_dispatch.supplement, result)
+            except receipt_validation.ReceiptValidationError:
+                # Supplement bytes are private and may contain credentials or
+                # host topology.  Preserve the completed row and its binding,
+                # but turn a semantic rejection into a permanent redacted row
+                # failure instead of allowing it to escape the aggregate.
+                result["errors"] = [
+                    error for error in result["errors"]
+                    if not error.startswith("pending: reviewed installed case predicates")
+                ]
+                result["errors"].append("installed supplement rejected")
+                result["status"] = "failed"
     except PendingCapability as error:
         result["errors"].append(str(error))
         result["status"] = "pending"
@@ -1802,11 +1990,16 @@ def _preflight_private_boundaries(config, config_path, receipt_path):
         elif job["adapter"] in {"typescript_node", "typescript_browser"} and len(job["argv"]) > 2:
             descriptor = job["argv"][2]
         if descriptor is not None:
-            resolved = _validate_private_output(descriptor, must_exist=True)
+            dynamic_installed_descriptor = (
+                config.get("schema_version") == 2
+                and job.get("adapter") in {"typescript_node", "typescript_browser"}
+            )
+            resolved = _validate_private_output(descriptor, must_exist=not dynamic_installed_descriptor)
             if resolved in paths:
                 raise MatrixError("private matrix paths alias")
             paths.add(resolved)
-            if config.get("schema_version") == 2 and job["adapter"] in {"typescript_node", "typescript_browser"}:
+            if (not dynamic_installed_descriptor and config.get("schema_version") == 2
+                    and job["adapter"] in {"typescript_node", "typescript_browser"}):
                 value = read_json(resolved, private=True)
                 binding = value.get("session_input") if isinstance(value, dict) else None
                 if isinstance(binding, dict) and set(binding) == {"path", "sha256"}:
@@ -1876,7 +2069,45 @@ def run_matrix(config_path, receipt_path, require_complete=False):
             elif cell["id"] not in jobs_by_cell:
                 cells.append(_empty_cell(cell, matrix, "missing required cell"))
             else:
-                cells.append(_run_job(jobs_by_cell[cell["id"]], cell, config, matrix))
+                job = jobs_by_cell[cell["id"]]
+                row_before = None
+                row_error = None
+                if config["schema_version"] == 2:
+                    try:
+                        # Revalidate the exact admitted source/export/output
+                        # boundary immediately before this row.  Passing the
+                        # single job keeps the check attributable to the row
+                        # while the helper still audits the complete cohort.
+                        row_before = _validate_cohort_binding(
+                            config["cohort_inputs"], config["product_version"], [job]
+                        )
+                    except (MatrixError, OSError) as error:
+                        row_error = "row cohort preflight failed"
+                        receipt["errors"].append(row_error)
+                if row_error is not None:
+                    failed = _empty_cell(cell, matrix, row_error)
+                    failed["status"] = "failed"
+                    cells.append(failed)
+                    continue
+                row = _run_job(job, cell, config, matrix)
+                if config["schema_version"] == 2:
+                    try:
+                        row_after = _validate_cohort_binding(
+                            config["cohort_inputs"], config["product_version"], [job]
+                        )
+                        if row_after != row_before:
+                            raise MatrixError("row cohort identity changed during adapter execution")
+                    except (MatrixError, OSError) as error:
+                        message = (
+                            "row cohort identity changed during adapter execution"
+                            if isinstance(error, MatrixError)
+                            and str(error) == "row cohort identity changed during adapter execution"
+                            else "row cohort postflight failed"
+                        )
+                        row["errors"].append(message)
+                        row["status"] = "failed"
+                        receipt["errors"].append(message)
+                cells.append(row)
         if config["schema_version"] == 2:
             for item in cells:
                 item.setdefault("supplement", None)

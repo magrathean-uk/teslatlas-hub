@@ -43,7 +43,7 @@ from companions.core import (
 VALID_CATALOG_A = b'{"schema_version":1,"cohorts":[]}\n'
 VALID_CATALOG_B = b'{"cohorts":[],"schema_version":1}\n'
 PROTOCOL_REPOSITORY = "https://github.com/magrathean-uk/teslatlas-protocol.git"
-PROFILE_SHA = "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+PROFILE_SHA = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 
 
 class _FixtureServer(socketserver.ThreadingTCPServer):
@@ -116,12 +116,15 @@ def _catalog_for_source(source: Path, commit: str) -> tuple[dict, dict]:
 
 
 class CliTests(unittest.TestCase):
-    def run_cli(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+    def run_cli(
+        self, *arguments: str, environment: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(SCRIPT), *arguments],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=environment,
         )
 
     def test_status_is_machine_readable_and_does_not_require_a_catalog(self) -> None:
@@ -162,6 +165,327 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["status"], "error")
         self.assertIn("--components", payload["error"])
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_d1_plan_binds_only_the_accepted_home_assistant_arm64_selector(self) -> None:
+        manifest = SCRIPT.parents[1] / "packaging" / "components.json"
+
+        result = self.run_cli(
+            "d1-plan",
+            "--components",
+            "home-assistant",
+            "--selector",
+            "debian13-arm64-container",
+            "--component-manifest",
+            str(manifest),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan["status"], "planned_source_only")
+        self.assertEqual(plan["component_ids"], ["home-assistant"])
+        self.assertEqual(plan["selector_id"], "debian13-arm64-container")
+        self.assertEqual(
+            plan["candidate_source_and_artifact_identities"],
+            {
+                "source_repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+                "source_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+                "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+                "selection_receipt_sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2",
+            },
+        )
+        self.assertTrue(plan["runtime_receipt_required"])
+        self.assertFalse(plan["activation_authorized"])
+        self.assertNotIn("would_activate", plan)
+
+    def test_d1_plan_rejects_unbound_hub_core_before_manifest_use(self) -> None:
+        result = self.run_cli(
+            "d1-plan",
+            "--components",
+            "hub-core",
+            "--selector",
+            "debian13-arm64-container",
+            "--component-manifest",
+            "/deliberately-absent/components.json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "status": "error",
+                "error": "D1 selection is blocked until candidate identities are admitted for hub-core",
+            },
+        )
+
+    def test_d1_plan_rejects_unbound_fleet_helpers_before_manifest_use(self) -> None:
+        result = self.run_cli(
+            "d1-plan",
+            "--components",
+            "fleet-helpers",
+            "--selector",
+            "debian13-arm64-container",
+            "--component-manifest",
+            "/deliberately-absent/components.json",
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(
+            json.loads(result.stdout),
+            {
+                "status": "error",
+                "error": "D1 selection is blocked until candidate identities are admitted for fleet-helpers",
+            },
+        )
+
+    def test_d1_install_materializes_only_the_admitted_ha_payload_in_a_disposable_config(self) -> None:
+        python314 = Path("/opt/homebrew/bin/python3.14")
+        if not python314.is_file():
+            self.skipTest("Home Assistant recipe proof requires Python 3.14")
+        source = SCRIPT.parents[2] / "teslatlas-home-assistant"
+        manifest_path = SCRIPT.parents[1] / "packaging" / "components.json"
+        self.assertTrue(source.is_dir())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tool_bin = root / "bin"
+            tool_bin.mkdir()
+            (tool_bin / "python3").symlink_to(python314)
+            environment = dict(os.environ, PATH=f"{tool_bin}{os.pathsep}{os.environ['PATH']}")
+            config = root / "ha-config"
+            marker = config / ".storage" / "core.config_entries"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("preserve\n", encoding="utf-8")
+            local_sources = root / "local-sources.json"
+            prefix = root / "companion-prefix"
+
+            manifest_result = self.run_cli(
+                "manifest",
+                "--components",
+                "home-assistant",
+                "--source",
+                f"home-assistant={source}",
+                "--output",
+                str(local_sources),
+                environment=environment,
+            )
+            self.assertEqual(manifest_result.returncode, 0, manifest_result.stderr)
+
+            result = self.run_cli(
+                "d1-install",
+                "--components",
+                "home-assistant",
+                "--selector",
+                "debian13-arm64-container",
+                "--component-manifest",
+                str(manifest_path),
+                "--prefix",
+                str(prefix),
+                "--ha-config",
+                str(config),
+                "--hub-version",
+                "2026.36.2",
+                "--mode",
+                "local-candidate",
+                "--local-sources",
+                str(local_sources),
+                environment=environment,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            installed = json.loads(result.stdout)
+            self.assertEqual(installed["status"], "installed")
+            self.assertEqual(
+                installed["d1_selector"],
+                {
+                    "component_id": "home-assistant",
+                    "selector_id": "debian13-arm64-container",
+                    "activation_authorized": True,
+                    "installation_mode": "local-unpublished",
+                    "runtime_acceptance": False,
+                },
+            )
+            self.assertEqual(installed["external_actions"], {
+                "home-assistant": {
+                    "status": "linked",
+                    "path": str(
+                        config.resolve() / "custom_components" / "teslatlas_hub"
+                    ),
+                    "restart_required": True,
+                }
+            })
+            target = config / "custom_components" / "teslatlas_hub"
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(marker.read_text(encoding="utf-8"), "preserve\n")
+            self.assertTrue(str(prefix / "releases") in str(target.resolve()))
+
+    def test_d1_install_rejects_a_local_source_head_mismatch_before_prefix_use(self) -> None:
+        source = SCRIPT.parents[2] / "teslatlas-home-assistant"
+        manifest_path = SCRIPT.parents[1] / "packaging" / "components.json"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "ha-config"
+            marker = config / ".storage" / "core.config_entries"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("preserve\n", encoding="utf-8")
+            local_sources = root / "local-sources.json"
+            prefix = root / "companion-prefix"
+            manifest_result = self.run_cli(
+                "manifest",
+                "--components",
+                "home-assistant",
+                "--source",
+                f"home-assistant={source}",
+                "--output",
+                str(local_sources),
+            )
+            self.assertEqual(manifest_result.returncode, 0, manifest_result.stderr)
+            value = json.loads(local_sources.read_text(encoding="utf-8"))
+            value["components"]["home-assistant"]["commit"] = "0" * 40
+            local_sources.write_text(json.dumps(value), encoding="utf-8")
+
+            result = self.run_cli(
+                "d1-install",
+                "--components",
+                "home-assistant",
+                "--selector",
+                "debian13-arm64-container",
+                "--component-manifest",
+                str(manifest_path),
+                "--prefix",
+                str(prefix),
+                "--ha-config",
+                str(config),
+                "--hub-version",
+                "2026.36.2",
+                "--mode",
+                "local-candidate",
+                "--local-sources",
+                str(local_sources),
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(
+                json.loads(result.stdout),
+                {
+                    "status": "error",
+                    "error": "D1 Home Assistant local source identity does not match",
+                },
+            )
+            self.assertFalse(prefix.exists())
+            self.assertFalse((config / "custom_components" / "teslatlas_hub").exists())
+            self.assertEqual(marker.read_text(encoding="utf-8"), "preserve\n")
+
+    def test_d1_install_rejects_an_unadmitted_payload_digest_before_source_use(self) -> None:
+        source = SCRIPT.parents[2] / "teslatlas-home-assistant"
+        source_manifest = SCRIPT.parents[1] / "packaging" / "components.json"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "ha-config"
+            marker = config / ".storage" / "core.config_entries"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("preserve\n", encoding="utf-8")
+            local_sources = root / "local-sources.json"
+            manifest = root / "components.json"
+            prefix = root / "companion-prefix"
+            document = json.loads(source_manifest.read_text(encoding="utf-8"))
+            component = next(
+                value for value in document["components"] if value["id"] == "home-assistant"
+            )
+            component["payload"]["handoff_manifest_sha256"] = "0" * 64
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+            manifest_result = self.run_cli(
+                "manifest",
+                "--components",
+                "home-assistant",
+                "--source",
+                f"home-assistant={source}",
+                "--output",
+                str(local_sources),
+            )
+            self.assertEqual(manifest_result.returncode, 0, manifest_result.stderr)
+
+            result = self.run_cli(
+                "d1-install",
+                "--components",
+                "home-assistant",
+                "--selector",
+                "debian13-arm64-container",
+                "--component-manifest",
+                str(manifest),
+                "--prefix",
+                str(prefix),
+                "--ha-config",
+                str(config),
+                "--hub-version",
+                "2026.36.2",
+                "--mode",
+                "local-candidate",
+                "--local-sources",
+                str(local_sources),
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(
+                json.loads(result.stdout),
+                {"status": "error", "error": "D1 Home Assistant selector is not admitted"},
+            )
+            self.assertFalse(prefix.exists())
+            self.assertFalse((config / "custom_components" / "teslatlas_hub").exists())
+            self.assertEqual(marker.read_text(encoding="utf-8"), "preserve\n")
+
+    def test_d1_plan_rejects_a_non_allowlisted_aggregate_source_repository(self) -> None:
+        source_manifest = SCRIPT.parents[1] / "packaging" / "components.json"
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest = Path(temporary) / "components.json"
+            document = json.loads(source_manifest.read_text(encoding="utf-8"))
+            component = next(
+                value for value in document["components"] if value["id"] == "home-assistant"
+            )
+            component["source"]["repository"] = "untrusted-home-assistant"
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+
+            result = self.run_cli(
+                "d1-plan",
+                "--components",
+                "home-assistant",
+                "--selector",
+                "debian13-arm64-container",
+                "--component-manifest",
+                str(manifest),
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(
+                json.loads(result.stdout),
+                {"status": "error", "error": "D1 Home Assistant selector is not admitted"},
+            )
+
+    def test_d1_plan_rejects_an_aggregate_source_product_version_mismatch(self) -> None:
+        source_manifest = SCRIPT.parents[1] / "packaging" / "components.json"
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest = Path(temporary) / "components.json"
+            document = json.loads(source_manifest.read_text(encoding="utf-8"))
+            component = next(
+                value for value in document["components"] if value["id"] == "home-assistant"
+            )
+            component["source"]["product_version"] = "2026.36.3"
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+
+            result = self.run_cli(
+                "d1-plan",
+                "--components",
+                "home-assistant",
+                "--selector",
+                "debian13-arm64-container",
+                "--component-manifest",
+                str(manifest),
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(
+                json.loads(result.stdout),
+                {"status": "error", "error": "D1 Home Assistant selector is not admitted"},
+            )
 
     def test_manifest_writes_owner_only_content_bound_json(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

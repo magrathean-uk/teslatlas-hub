@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "status": "stopped_after_edge_duplicate_proof",
+  "verified_at": "2026-09-09",
+  "scope": "redacted Hub-owned connection and cleanup descriptor only",
+  "connection": {
+    "endpoint": "https://127.0.0.1:18480",
+    "ready_descriptor_path": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r2-20260909/ready.json",
+    "ready_descriptor_mode": "0600",
+    "trust": "Use the owner-only certificate_path named by the ready descriptor; no certificate or credential bytes are reproduced here.",
+    "profile": "hub-http-v1@1.0.0",
+    "profile_sha256_prefix": "b80d940e",
+    "health": "trusted /healthz=200",
+    "readiness": "trusted /readyz=200"
+  },
+  "sealed_binding": {
+    "source_id": "04d1bc2f-0e9a-4f84-9ac5-492955dd8d5e",
+    "vehicle_id": "11111111-1111-4111-8111-111111111111",
+    "vin": "5YJ3E1EA7KF000001",
+    "car_id": 9,
+    "edge_base_url": "https://127.0.0.1:18510/",
+    "installation_id": "edge-b2-20260909",
+    "lineage": "edge-spool-b2-20260909"
+  },
+  "hub_owner_process": {
+    "launcher_pid": 33924,
+    "hub_child_pid": 33940,
+    "direct_child_verified": true,
+    "port": 18480,
+    "launcher_config_path": "/home/bolyki.guest/teslatlas-fixtures/edge-b2-primary-hub-r2-20260909.run.json"
+  },
+  "initial_read_only_observation": {
+    "edge_lineages": 0,
+    "edge_sequence_dispositions": 0,
+    "meaning": "No Edge delivery, commit, ACK, collection, or acceptance claim follows from this initial snapshot."
+  },
+  "cleanup": {
+    "owner": "Hub fixture launcher only",
+    "authorized_target": "Verify the launcher command still names launcher_config_path, then signal only launcher_pid with SIGTERM.",
+    "required_receipt": "A mode-0600 stopped.json in the fresh fixture root naming the direct child with normal exit.",
+    "required_boundary": "No listener on 127.0.0.1:18480 after stop.",
+    "never_target": [
+      "installed Hub on 8443",
+      "Home Assistant fixture on 18483",
+      "Edge receiver on 18500",
+      "Edge delivery service on 18510"
+    ]
+  },
+  "closure_observation": {
+    "stopped_receipt_mode": "0600",
+    "normal_child_exit": true,
+    "stopped_receipt_named_expected_child": true,
+    "port_18480_closed": true
+  },
+  "ownership": {
+    "Hub": "This direct Hub child and its fixture cleanup.",
+    "Edge": "Receiver/spool lifecycle and all Edge runtime, delivery, and cleanup evidence."
+  }
+}

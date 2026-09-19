@@ -12,6 +12,8 @@ __pycache__/
 .DS_Store
 .env
 .env.*
+/config.toml
+/tls/
 *.key
 *.pem
 *.p12

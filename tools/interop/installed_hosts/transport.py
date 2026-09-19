@@ -287,12 +287,12 @@ class SSHTransport:
             raise RuntimeError("remote command failed with status {}".format(result.returncode))
         return result.stdout
 
-    def _transfer_base64(self, local_bytes, remote_path, mode):
+    def _transfer_base64(self, local_bytes, remote_path, mode, deadline=None):
         decoder = "/usr/bin/base64 -D" if self.registered.registration["provider"] == "tart-macos" else "/usr/bin/base64 -d"
         command = "umask 077; {} > {}; /bin/chmod {} {}".format(
             decoder, shlex.quote(remote_path), mode, shlex.quote(remote_path)
         )
-        self._run_remote(command, 120, base64.b64encode(local_bytes), writer=True)
+        self._run_remote(command, 120, base64.b64encode(local_bytes), deadline=deadline, writer=True)
 
     def _verify_remote_bundle_members(self, deadline=None):
         reg = self.registered.registration
@@ -311,7 +311,11 @@ class SSHTransport:
         if observed != self.bundle_members:
             raise RuntimeError("guest controller extracted members differ from reviewed archive")
 
-    def open(self, registered):
+    def open(self, registered, deadline=None):
+        deadline = deadline or Deadline(30)
+        if not isinstance(deadline, Deadline):
+            raise TypeError("SSH transport open requires a bounded Deadline")
+        deadline.remaining()
         self.registered = registered
         reg = registered.registration
         for key in ("executable", "config", "identity_file"):
@@ -322,18 +326,18 @@ class SSHTransport:
         self.paths = remote_session_paths(reg, registered.config["session_id"])
         stale = run_capped(
             ["/usr/sbin/lsof", "-nP", "-iTCP:18480", "-sTCP:LISTEN", "-FnPT"],
-            Deadline(5), maximum=MAX_JSON_BYTES, allowed_status=(0, 1),
+            Deadline(min(5, deadline.remaining())), maximum=MAX_JSON_BYTES, allowed_status=(0, 1),
         )
         if stale.returncode == 0 and stale.stdout:
             raise RuntimeError("local TLS forward port already has a listener")
         root = shlex.quote(self.paths["root"])
         root_mode = "0711" if reg["provider"] == "lima-debian" else "0700"
-        self._run_remote("umask 077; test ! -e {0}; /bin/mkdir -m {1} {0}".format(root, root_mode), 30, writer=True)
+        self._run_remote("umask 077; test ! -e {0}; /bin/mkdir -m {1} {0}".format(root, root_mode), 30, deadline=deadline, writer=True)
         self._root_created = True
         try:
-            self._transfer_base64(archive.read_bytes(), self.paths["archive"], "0600")
+            self._transfer_base64(archive.read_bytes(), self.paths["archive"], "0600", deadline=deadline)
             digest_tool = "/usr/bin/shasum -a 256" if reg["provider"] == "tart-macos" else "/usr/bin/sha256sum"
-            output = self._run_remote("{} {}; /usr/bin/tar -xf {} -C {}".format(digest_tool, shlex.quote(self.paths["archive"]), shlex.quote(self.paths["archive"]), root), 60, writer=True)
+            output = self._run_remote("{} {}; /usr/bin/tar -xf {} -C {}".format(digest_tool, shlex.quote(self.paths["archive"]), shlex.quote(self.paths["archive"]), root), 60, deadline=deadline, writer=True)
             observed_digest = output.decode("utf-8").split()[0] if output else ""
             if observed_digest != registered.config["controller_bundle"]["sha256"]:
                 raise RuntimeError("guest controller archive digest mismatch")
@@ -343,14 +347,14 @@ class SSHTransport:
             for key, mode in (("seed", seed_mode), ("scenario", "0600"), ("package_manifest", "0600")):
                 local = Path(registered.config[key]["path"])
                 remote_path = self.paths["root"] + "/" + key
-                self._transfer_base64(local.read_bytes(), remote_path, mode)
+                self._transfer_base64(local.read_bytes(), remote_path, mode, deadline=deadline)
                 guest_inputs[key] = remote_path
             profile_sum = Path(registered.config["profile"]["path"])
             validate_profile_bundle(profile_sum)
             remote_profile = self.paths["root"] + "/profile"
-            self._run_remote("/bin/mkdir -m 0700 {} {}/examples".format(shlex.quote(remote_profile), shlex.quote(remote_profile)), 15, writer=True)
+            self._run_remote("/bin/mkdir -m 0700 {} {}/examples".format(shlex.quote(remote_profile), shlex.quote(remote_profile)), 15, deadline=deadline, writer=True)
             for name in sorted(PROFILE_MEMBERS):
-                self._transfer_base64((profile_sum.parent / name).read_bytes(), remote_profile + "/" + name, "0600")
+                self._transfer_base64((profile_sum.parent / name).read_bytes(), remote_profile + "/" + name, "0600", deadline=deadline)
             guest_inputs["profile"] = remote_profile + "/SHA256SUMS"
             receipt_root = "/Library/Application Support/Teslatlas Hub/interop-package-receipts" if reg["provider"] == "tart-macos" else "/var/lib/teslatlas-hub/interop-package-receipts"
             private = {
@@ -365,7 +369,7 @@ class SSHTransport:
                 "installation_receipt": receipt_root + "/" + registered.config["package"]["sha256"] + ".json",
                 "ownership_path": self.paths["root"] + "/ownership.json",
             }
-            self._transfer_base64(json.dumps(private, sort_keys=True, separators=(",", ":")).encode("utf-8"), self.paths["session"], "0600")
+            self._transfer_base64(json.dumps(private, sort_keys=True, separators=(",", ":")).encode("utf-8"), self.paths["session"], "0600", deadline=deadline)
             python = shlex.quote(reg["guest"]["python"]["path"])
             entrypoint = shlex.quote(self.paths["entrypoint"])
             session = shlex.quote(self.paths["session"])
@@ -382,10 +386,10 @@ class SSHTransport:
                 bufsize=0,
             )
             from .macos import _process as observe_local_process
-            self.local_process_identity = observe_local_process(self.process.pid, session_argv, deadline=Deadline(30))
+            self.local_process_identity = observe_local_process(self.process.pid, session_argv, deadline=deadline)
             self._reply_reader = IncrementalLineReader(self.process.stdout.fileno(), MAX_JSON_BYTES)
-            greeting = self._read_reply(30)
-            pem = self._run_remote("/bin/cat {}".format(shlex.quote(self.paths["root"] + "/public-ca.pem")), 15)
+            greeting = self._read_reply(deadline)
+            pem = self._run_remote("/bin/cat {}".format(shlex.quote(self.paths["root"] + "/public-ca.pem")), 15, deadline=deadline)
             try:
                 der = ssl.PEM_cert_to_DER_cert(pem.decode("ascii"))
             except (UnicodeDecodeError, ValueError) as error:
@@ -407,7 +411,8 @@ class SSHTransport:
     def _read_reply(self, timeout):
         if self.process is None or self.process.stdout is None:
             raise RuntimeError("guest controller is not open")
-        raw = self._reply_reader.read(Deadline(timeout))
+        deadline = timeout if isinstance(timeout, Deadline) else Deadline(timeout)
+        raw = self._reply_reader.read(deadline)
         if not raw or len(raw) > MAX_JSON_BYTES or not raw.endswith(b"\n"):
             raise RuntimeError("guest controller returned an invalid bounded frame")
         try:

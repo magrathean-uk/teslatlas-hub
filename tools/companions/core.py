@@ -256,6 +256,11 @@ def parse_catalog(value: Any) -> Catalog:
             expected_artifact_fields: set[str]
             if name == "sdk-typescript":
                 expected_artifact_fields = {"package_filename", "package_sha256"}
+            elif name == "home-assistant":
+                expected_artifact_fields = {
+                    "payload_manifest_sha256",
+                    "selection_receipt_sha256",
+                }
             elif name == "viewer":
                 expected_artifact_fields = {
                     "package_filename",
@@ -267,6 +272,10 @@ def parse_catalog(value: Any) -> Catalog:
             else:
                 expected_artifact_fields = set()
             if set(artifacts) != expected_artifact_fields:
+                if name == "home-assistant":
+                    raise CatalogError(
+                        "component home-assistant target provenance fields mismatch"
+                    )
                 raise CatalogError(f"component {name} artifact fields mismatch")
             for key, artifact_value in artifacts.items():
                 if key.endswith("sha256"):
@@ -860,6 +869,29 @@ def _verify_source_snapshot(
         raise BootstrapError(f"retained source bytes changed: {name}")
 
 
+def _verify_ha_target_provenance(
+    receipt: Mapping[str, Any], components: Mapping[str, Any]
+) -> None:
+    component = components.get("home-assistant")
+    if component is None:
+        return
+    if not isinstance(component, Mapping):
+        raise BootstrapError("retained Home Assistant target provenance is invalid")
+    artifacts = component.get("artifacts")
+    targets = receipt.get("targets")
+    if not isinstance(artifacts, Mapping) or not isinstance(targets, Mapping):
+        raise BootstrapError("retained Home Assistant target provenance is invalid")
+    for key in ("payload_manifest_sha256", "selection_receipt_sha256"):
+        artifact_value = artifacts.get(key)
+        target_value = targets.get(f"ha_{key}")
+        if (
+            not isinstance(artifact_value, str)
+            or HEX_64.fullmatch(artifact_value) is None
+            or target_value != artifact_value
+        ):
+            raise BootstrapError("retained Home Assistant target provenance changed")
+
+
 def _verify_release(prefix: Path, release_id: str) -> dict[str, Any]:
     """Recompute every retained source and output identity before reuse."""
     release = prefix / "releases" / release_id
@@ -897,6 +929,7 @@ def _verify_release(prefix: Path, release_id: str) -> dict[str, Any]:
             or expected_output != _directory_manifest(component_root / "output")
         ):
             raise BootstrapError(f"retained output bytes changed: {name}")
+    _verify_ha_target_provenance(receipt, components)
     return receipt
 
 
@@ -1034,6 +1067,7 @@ def is_identical_active(
 ) -> bool:
     """Verify the complete active release before reporting an identical input."""
     prefix = _prefix_path(prefix)
+    binding = _bind_component_target_provenance(cohort, target_binding)
     with PrefixLock(prefix):
         _recover_transaction(prefix)
         current = active_release_id(prefix)
@@ -1041,7 +1075,7 @@ def is_identical_active(
             return False
         receipt = _verify_release(prefix, current)
         return receipt.get("input_sha256") == installation_input_sha256(
-            cohort, installation_mode, target_binding, hub_version
+            cohort, installation_mode, binding, hub_version
         )
 
 
@@ -1063,6 +1097,26 @@ def _validate_install_request(cohort: Cohort, installation_mode: str) -> None:
     from .recipes import validate_component_set
 
     validate_component_set(cohort.components)
+
+
+def _bind_component_target_provenance(
+    cohort: Cohort, target_binding: Optional[Mapping[str, str]]
+) -> dict[str, str]:
+    """Bind target-sensitive component identities from the selected cohort."""
+    binding = dict(sorted((target_binding or {}).items()))
+    home_assistant = cohort.components.get("home-assistant")
+    if home_assistant is None:
+        return binding
+    for key in ("payload_manifest_sha256", "selection_receipt_sha256"):
+        value = home_assistant.artifacts.get(key)
+        target_key = f"ha_{key}"
+        if not isinstance(value, str):
+            raise BootstrapError("Home Assistant target provenance is incomplete")
+        existing = binding.get(target_key)
+        if existing is not None and existing != value:
+            raise BootstrapError("Home Assistant target provenance conflicts with cohort")
+        binding[target_key] = value
+    return dict(sorted(binding.items()))
 
 
 def _install_materialized_locked(
@@ -1214,7 +1268,7 @@ def install_cohort_from_provider(
     """No-op or materialize and install while holding one operation lock."""
     _validate_install_request(cohort, installation_mode)
     prefix = _prefix_path(prefix)
-    binding = dict(sorted((target_binding or {}).items()))
+    binding = _bind_component_target_provenance(cohort, target_binding)
     with PrefixLock(prefix):
         _recover_transaction(prefix)
         input_sha256 = installation_input_sha256(

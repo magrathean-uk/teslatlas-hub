@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.hub.active_macos_typescript_browser_orchestration_source_review",
+  "date": "2026-09-18",
+  "verified_at": "2026-09-18T13:37:41Z",
+  "status": "rejected_fail_closed_freshness_and_cleanup_sequence_defects_no_runtime_authorization",
+  "authority": "Independent Hub-owned read-only review of the TypeScript source handoff. No TypeScript files were edited and no browser, Hub, credential, keychain, SDK API, live fixture or companion task was started, woken or polled.",
+  "reviewed_input": {
+    "source_receipt": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+      "sha256": "75e23ba81eff2179a81299065f58bbf2399ea3dcf3881d6d6e75a32dbb284436"
+    },
+    "orchestrator": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/browser-control-orchestrator.mjs",
+      "sha256": "ed565ac109e93414365b759682690a4c19151f5d3f5a1ec192e9e6261dffed0d"
+    },
+    "browser_free_regression": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/test-browser-control-orchestrator.mjs",
+      "sha256": "8b5c7c25781b8c9a81712cf7179fdb158d5187464b142465945500b08c6273ef"
+    },
+    "bound_hooks": {
+      "preflight_template_sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+      "sequential_trust_sequence_sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+      "browser_runner_sha256": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+      "preflight_correction_receipt_sha256": "d14f0f9a404a9cd83996779f45f0e9eecbcced8dc74c70c6f9e10cf98b475bf1"
+    }
+  },
+  "toolchain": {
+    "node": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+      "version": "v26.7.0"
+    },
+    "npm_version": "11.19.0"
+  },
+  "accepted_checks": {
+    "node_check": "PASS for orchestrator and browser-free regression",
+    "declared_browser_free_regression": {
+      "status": "PASS",
+      "cases": [
+        "success",
+        "supervisor-failure",
+        "runner-failure",
+        "control-failure"
+      ]
+    },
+    "runtime_boundary": "No browser, Hub, keychain, credential or live fixture was used."
+  },
+  "rejection_findings": [
+    {
+      "id": "capture_freshness_checked_after_preflight_mutation",
+      "severity": "blocking",
+      "source_locations": [
+        "scripts/browser-control-orchestrator.mjs:156-161",
+        "scripts/browser-control-orchestrator.mjs:419-425",
+        "scripts/browser-control-preflight-template.mjs:92-103",
+        "scripts/browser-control-preflight-template.mjs:136-143"
+      ],
+      "claim_conflict": "The source receipt says the orchestration capture directory must be absent before mutation, but runOwnedBrowserControl executes the output-creating preflight before prepareCaptureDirectory checks that absence.",
+      "reproduction": {
+        "setup": "Pre-create control/evidence/orchestration, then run the orchestrator with browser-free fixture commands.",
+        "result": {
+          "status": "failed",
+          "failurePhase": "orchestrator",
+          "runnerStdoutCreated": true,
+          "runnerStderrCreated": true
+        }
+      },
+      "impact": "A stale capture root is rejected only after runner output files have been created, so the promised fail-before-mutation boundary is false."
+    },
+    {
+      "id": "cleanup_sequence_skipped_after_supervisor_close",
+      "severity": "blocking",
+      "source_locations": [
+        "scripts/browser-control-orchestrator.mjs:465-472"
+      ],
+      "claim_conflict": "The source receipt says cleanup commands run after success or failure, but the loop breaks as soon as the supervisor is closed.",
+      "reproduction": {
+        "setup": "Configure two cleanup commands; make the first cleanly shut down and await the supervisor; make the second create an observable marker.",
+        "result": {
+          "status": "passed",
+          "configured": 2,
+          "attempted": 1,
+          "secondRan": false,
+          "supervisorClosed": true
+        }
+      },
+      "impact": "Later cleanup actions can be silently skipped while the overall orchestration reports passed."
+    }
+  ],
+  "coverage_gap": "The accepted four-case regression uses one cleanup command and has no stale-capture pre-mutation preservation case, so neither defect is currently caught.",
+  "required_correction": [
+    "Assert the capture directory and any optional receipt path are absent before preflight changes modes or creates runner output files; preserve all sentinels on rejection.",
+    "Execute every configured cleanup command regardless of supervisor close state. Track configured and attempted counts, and fail if any cleanup is skipped or fails; keep supervisor stop/wait escalation as a separate bounded step.",
+    "Add focused regressions proving stale capture rejection occurs before any mutation and proving a two-step cleanup still executes step two when step one closes the supervisor.",
+    "Publish a new exact source receipt and hashes for independent Hub re-review. Do not reopen r7 or treat this source review as runtime authority."
+  ],
+  "handoff": {
+    "owner": "TypeScript SDK",
+    "state": "correction_required",
+    "review_path": "docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r1.json",
+    "runtime_authorized": false
+  },
+  "proof_boundary": "This is source and browser-free fixture evidence only. It rejects the current source package for a future live lane and is not browser, TLS, CA import, CORS, SDK API, Hub runtime, package, service, release, production, vehicle or user acceptance evidence."
+}

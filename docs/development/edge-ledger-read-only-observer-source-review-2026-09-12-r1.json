@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "kind": "edge_ledger_read_only_observer_source_review_r1",
+  "date": "2026-09-12",
+  "state": "accepted_source_and_fixture_proof_live_r6_use_pending",
+  "observer": {
+    "path": "hub/tools/interop/edge_ledger_observer.py",
+    "sha256": "098c543a0fafc1d2c3c6c16f554f321c7c0535ffefff24778df33f548cbd35a2",
+    "future_staged_path": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/bin/edge_ledger_observer.py",
+    "future_staged_mode": "0500"
+  },
+  "test": {
+    "path": "hub/tools/interop/test_edge_ledger_observer.py",
+    "sha256": "7450f2be66d17227988105a7a2f092896cd9583ed50b531e1d54fa0544ce965b",
+    "red_observed": "Import failed with ModuleNotFoundError before the observer existed.",
+    "green_command": "python3.11 -B -m unittest hub.tools.interop.test_edge_ledger_observer -v",
+    "green_result": "PASS 2/2",
+    "syntax": "PASS with Python 3.11"
+  },
+  "executable_future_method": {
+    "argv_prefix": [
+      "/usr/bin/python3",
+      "-B",
+      "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/bin/edge_ledger_observer.py",
+      "--database",
+      "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/hub/hub.sqlite"
+    ],
+    "runtime_selector_arguments": [
+      "--installation-id followed by the exact sealed Edge installation ID",
+      "--lineage followed by the exact sealed Edge lineage"
+    ],
+    "execution_user": "The same macOS guest user that owns the fresh Hub database and its owner-only parent directory.",
+    "sqlite_open": "Canonical single-link owner-only regular database opened with URI mode=ro, followed by PRAGMA query_only=ON and a verified query_only value of 1.",
+    "schema_gate": "PRAGMA user_version must be at least 58 and all six Hub/Edge ledger tables must exist.",
+    "output": "One strict JSON observation with hashed selectors/store identity, lineage frontier, every application and sequence classification, non-complete pending publications, and accumulator metadata with state bytes represented only by size and SHA-256."
+  },
+  "fixture_proof": {
+    "database_mode": "0600 under a 0700 same-owner directory",
+    "database_sha256_unchanged": true,
+    "sidecar_or_new_file_created": false,
+    "fixture_shape": "One lineage with three applications and three sequences: lifecycle, projected VehicleName, lifecycle; one complete publication and one accumulator.",
+    "observed_counts": {
+      "lineages": 1,
+      "applications": 3,
+      "sequences": 3,
+      "pending_publications": 0,
+      "accumulator_states": 1
+    },
+    "classification": [
+      "durable_non_projection_event",
+      "projected_telemetry",
+      "durable_non_projection_event"
+    ],
+    "missing_database_behavior": "Fails before sqlite3 connect and does not create the missing path."
+  },
+  "runtime_contract": {
+    "before_start": "Stage and rehash this exact observer with the fresh r7 Hub/fixture candidate. Prove the target Hub database path and parent are owned/readable by the exact observer user before any runtime.",
+    "baseline": "Run once after Hub checkpoint/readiness and require zero selected lineage/application/sequence/non-complete-publication/accumulator rows. Any open, ownership, schema or query error fails the baseline; it is never converted to zero.",
+    "post_event": "Run after the Hub durable commit/frontier settles and record every sequence row ordered by spool_seq. Require exactly one projected_telemetry application for VehicleName, classify all additional lifecycle records by their actual category/reason, and bind frontier/pending/accumulator state without assuming one datum equals one sequence.",
+    "repeatability": "The observer may be invoked at named baseline and post-event checkpoints only; each invocation is read-only and separately hashed in the owner-only runtime receipt."
+  },
+  "precise_limits": [
+    "The focused fixture proves the observer's same-owner read-only open, schema checks, exact row extraction and non-creation behavior; no r6/r7 guest or live Hub database was opened in this review.",
+    "This does not prove that a future guest path has the expected ownership or that a live database is readable. The pre-start ownership probe and first zero-baseline invocation remain mandatory.",
+    "The earlier SQLite error 14 is not treated as resolved by assertion. A repeat error closes the future baseline before event authorization."
+  ],
+  "proof_boundary": "This is source and synthetic-fixture proof for a bounded read-only observer. It is not live ledger, runtime, Edge, Hub forwarding, event, package, service, release, production, vehicle or user acceptance evidence."
+}

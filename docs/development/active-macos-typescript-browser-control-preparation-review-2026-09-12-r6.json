@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_control_preparation_review_r6",
+  "date": "2026-09-12",
+  "state": "accepted_for_fresh_hub_tuple_preparation_no_runtime_attempt_yet",
+  "typescript_preparation_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-control-preparation-2026-09-12-r6.json",
+    "sha256": "62b61961c389586495069e68e29910bcf4dd7721f39dcf4b78430f15315cd070"
+  },
+  "fresh_tuple": {
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6",
+    "app_origin": "http://localhost:4176",
+    "trusted_cdp": "http://127.0.0.1:9236",
+    "untrusted_cdp": "http://127.0.0.1:9237",
+    "hub_endpoint_binding": "https://localhost:18528",
+    "ports_closed_before_hub_preparation": [
+      4176,
+      9236,
+      9237,
+      18528
+    ]
+  },
+  "reviewed_bindings": {
+    "preparation_manifest_sha256": "786b86e992edadbb8754d93bda03fe91e17cbc73b1d0208d099e7715c1c1e19a",
+    "supervisor_sha256": "4038d26f8631fc79b01ebb0b402613f79378128697ffb16daeac668f44340e88",
+    "ipc_regression_sha256": "c6db7081b0f7221b99c24d344681f1ac9b8526643bf85bb8e10f87b7be5e2334",
+    "trust_hooks_sha256": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+    "untrusted_control_sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+    "package_archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "package_json_sha256": "1f0c127f3896dadcb77deccf4526ce14277f65ee85abd4536fb4cd4fbf084cf0",
+    "package_version": "2026.36.2",
+    "installed_file_count": 81
+  },
+  "independent_verification": {
+    "r6_supervisor_delta": "Only control-root, app-origin, Hub endpoint and trusted/untrusted CDP bindings differ from the accepted r5 corrected supervisor.",
+    "node_26_7_syntax_four_files": "PASS",
+    "browser_free_ipc_regression": "PASS immediate, delayed and structured-failure responses after client half-close; server/client close and temporary socket removal observed",
+    "targeted_biome_four_files": "Checked 4 files; no fixes applied",
+    "package_archive_digest": "PASS",
+    "package_json_digest_version_and_81_file_count": "PASS",
+    "runtime_paths_absent": true,
+    "browser_started": false,
+    "hub_started": false,
+    "keychain_touched": false,
+    "attempt_consumed": false
+  },
+  "authorization_boundary": "This accepts the fresh TypeScript source/package preparation only. Hub may now prepare and review one fresh Hub tuple. A browser attempt is not authorized until a final handoff binds the new Hub identity, certificate, credential, exact process lineage and cleanup contract.",
+  "proof_boundary": "This is source, package and browser-free IPC preparation evidence only. It is not Chrome, TLS, keychain trust, CORS, SDK API, Hub API, installation, service, release, production, vehicle or user acceptance evidence."
+}

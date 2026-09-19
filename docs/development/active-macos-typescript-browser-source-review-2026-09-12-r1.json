@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_sequential_trust_source_review",
+  "date": "2026-09-12",
+  "state": "accepted_for_one_wholly_fresh_bounded_handoff",
+  "target": "local Apple-silicon Mac",
+  "reviewed_correction": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-trust-isolation-correction-2026-09-12.json",
+    "sha256": "98ebe5a6195db9bff8b8310942be5aa18a40492682f423a56dbcc8a01307519a",
+    "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+    "package": "@teslatlas/sdk@2026.36.2",
+    "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "profile": "hub-http-v1@1.0.0"
+  },
+  "source_sha256": {
+    "scripts/test-hub-browser.mjs": "ce6def4e982ea848561c844bfd52e53021bb40fa802895dbbbff72342b757e6d",
+    "scripts/browser-hub-runner.mjs": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+    "scripts/browser-trust-sequence.mjs": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+    "scripts/hub-acceptance-evidence.mjs": "6b6eeb0e93bc08e261b1db02f2cd0de3672f42d4a0cba5c312ce2cf2e2590136",
+    "scripts/browser-trust-sequence.d.mts": "3ba154be221b6392c540979cdbec45c8ab4b2d8d0150bf59d6d60dee536bd475",
+    "scripts/hub-acceptance-evidence.d.mts": "a7428c56d1d505b4a19d3ed380875d15b83028e21dedd4b9f4503681f9a051e4",
+    "tests/unit/browser-trust-sequence.test.ts": "9232544d2298bbcde7d2315a547f67971ad9d602051cb25b7ca0032714dcbd6d",
+    "tests/unit/hub-acceptance-evidence.test.ts": "e91ada4f9eabe76459d114c3d2f91d73966cac396538f61d374d43bd04a31762"
+  },
+  "independent_review": {
+    "sequential_boundary": "The untrusted Chrome control must produce ERR_CERT_AUTHORITY_INVALID and close before any login-keychain import. The trusted control begins only after normal trust import. No simultaneous per-profile trust-isolation claim is permitted.",
+    "cleanup_boundary": "After import starts, an owner-supplied cleanup hook is required even when import evidence is malformed or trusted CDP attachment fails. It binds the fresh endpoint, certificate digest and trusted CDP URL and must prove browser closure and CDP-port closure before certificate removal verification.",
+    "export_boundary": "The expected certificate export path is independently supplied, absolute and canonical, absent before import, exact in hook output and witness, owner-only, regular, single-link, distinct from the fixture certificate and byte-identical by certificate digest.",
+    "bypass_boundary": "Certificate bypass flags remain rejected from live CDP command-line observations.",
+    "result": "No blocking source finding remains for the bounded sequential mode."
+  },
+  "verification": {
+    "runtime": "Node 26.7.0",
+    "focused_files": 2,
+    "focused_tests": 13,
+    "focused_tests_result": "PASS",
+    "typecheck": "PASS",
+    "targeted_biome_check": "PASS; eight files, no fixes applied",
+    "git_diff_check": "PASS"
+  },
+  "fresh_handoff_gate": {
+    "allowed": "Hub may publish one wholly fresh bounded browser handoff using a new owner-only runtime root, endpoint, descriptor, CA, pre-paired credential, browser profiles, CDP ports, witness, expected certificate export path, expiry and cleanup ownership.",
+    "required_mode": "sequential-macos-login-keychain",
+    "closed_inputs": "The prior 18521 tuple, descriptor, CA, credential, profiles, browser controls, witness and helper state remain non-reusable.",
+    "forbidden": "No certificate bypass, Viewer dependency, installed-service mutation, production or vehicle action, x86 work, publication or stale-input reuse."
+  },
+  "proof_boundary": "This receipt accepts source and hook contracts only. No browser, keychain, Hub runtime, credential, CORS, SDK API journey or user acceptance was executed or proved by this review."
+}

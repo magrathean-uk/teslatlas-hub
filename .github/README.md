@@ -4,7 +4,7 @@
 
 <h1 align="center">Teslatlas Hub</h1>
 
-<p align="center">Collect your Tesla vehicle history on your own Mac or Debian host.</p>
+<p align="center">Collect your Tesla vehicle history on your own Mac, Debian host, or locally built Docker Compose service.</p>
 
 <p align="center">
   <a href="../docs/guides/build-from-source.md">Build from source</a> ·
@@ -31,9 +31,12 @@ Hub is distributed as source. Prebuilt GitHub releases and installer downloads
 are no longer provided. Build your own package using the
 [source build guide](../docs/guides/build-from-source.md), then follow
 [Mac setup](../docs/guides/install-macos.md) or
-[Debian installation](../docs/guides/install-debian.md).
+[Debian installation](../docs/guides/install-debian.md). For the source-built
+Docker workflow, see the [Docker installation guide](../docs/guides/install-docker.md).
 
-Supported hosts are Apple-silicon macOS 13+ and Debian 13 on ARM64 or x86-64.
+Supported native hosts are Apple-silicon macOS 13+ and Debian 13 on ARM64 or
+x86-64. Docker is a local source-build candidate; claim an architecture only
+after its isolated Docker acceptance run.
 Local Mac builds do not automatically gain trusted signing or notarisation;
 use the combined installer for initial service installation. The Debian
 core-only build does not include Fleet companions. Back up before upgrading,

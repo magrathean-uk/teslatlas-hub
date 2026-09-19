@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import plistlib
 import re
@@ -18,6 +19,67 @@ from typing import Any, Protocol
 
 
 PRODUCT_VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.([1-9]|[1-4][0-9]|5[0-3])\.([1-9][0-9]*)$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+SOURCE_FINGERPRINT_RE = re.compile(
+    r"^git:[0-9a-f]{40,64};tracked-diff-sha256:[0-9a-f]{64};"
+    r"(?:content|snapshot)-manifest-sha256:[0-9a-f]{64}$"
+)
+
+G3_RECEIPTS = {
+    "hub/docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json":
+        "6efec1707c3a703f31c5d7db3c84fa2d44c9fdff49afe22644aa3cf863eb2a7b",
+    "teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json":
+        "35a5881ffceb5ee4db3157bddc2758cbbc4e1ce25b8e96bafd1e34eab6f008e5",
+    "hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json":
+        "d3e78ff9f98acdb45b6d691c295df80e9fb2fbc70eb5b189c6a575ecd6e2ac5c",
+    "teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json":
+        "42209a8231e4ac6881a3fc4896a95573e8ba032dbb990ea747ea877e19e485f7",
+    "hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json":
+        "37ee4c1376778392c94da1457c31b1b6e69210cb4c4d504b6f08d520a1d93bca",
+    "teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json":
+        "dd5cfb0087f0bcf89bf8a1ef33b7bcf2fd3a28430da373e78a1bb5862472fea8",
+}
+
+G2_HUB_SOURCE = (
+    "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;"
+    "tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;"
+    "content-manifest-sha256:e84233ed9641f525f6e4dba328700153983297932a277ebc544a75cc841cf823"
+)
+G5_HUB_SOURCE = (
+    "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;"
+    "tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;"
+    "snapshot-manifest-sha256:f3e9f240930c72909d982ad2f6429c4f6ab390eb34818505e92236f6027d443b"
+)
+G6_HUB_SOURCE = (
+    "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;"
+    "tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;"
+    "content-manifest-sha256:42f1787eb94ad81595fad1e5795d547633d0fea848735dfd47ab4e86ed53249d"
+)
+
+HUB_PROFILE_SHA256 = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+EDGE_PROFILE_SHA256 = "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+
+G3_PRODUCT_VERSION = "2026.36.2"
+G3_G2_RECEIPTS = (
+    "hub/docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json",
+    "teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json",
+)
+G3_G5_RECEIPTS = (
+    "hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+    "teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+)
+G3_G6_RECEIPTS = (
+    "hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+    "teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json",
+)
+G3_PROFILE_BINDINGS = {
+    "teslatlas-protocol/profiles/hub-http-v1/1.0.0/SHA256SUMS": HUB_PROFILE_SHA256,
+    "teslatlas-sdk-typescript/protocol/source/profiles/hub-http-v1/1.0.0/SHA256SUMS":
+        HUB_PROFILE_SHA256,
+    "teslatlas-sdk-swift/Sources/TeslatlasCurrentHub/Binding/SHA256SUMS":
+        HUB_PROFILE_SHA256,
+    "teslatlas-protocol/profiles/edge-delivery-v2/2.0.0/SHA256SUMS": EDGE_PROFILE_SHA256,
+}
 
 
 def parse_product_version(value: str) -> tuple[int, int, int]:
@@ -495,6 +557,24 @@ FIELDS: tuple[VersionField, ...] = (
 )
 
 
+G3_VERSION_FIELDS: tuple[VersionField, ...] = (
+    TomlSectionField("hub/Cargo.toml", "package"),
+    TomlPackageField("hub/Cargo.lock", "teslatlas-hub"),
+    TomlSectionField("teslatlas-protocol/pyproject.toml", "project"),
+    TomlPackageField("teslatlas-protocol/uv.lock", "teslatlas-protocol-conformance"),
+    TextField("teslatlas-protocol/VERSION"),
+    JsonField("teslatlas-sdk-typescript/package.json", (("version",),)),
+    JsonField(
+        "teslatlas-sdk-typescript/package-lock.json",
+        (("version",), ("packages", "", "version")),
+    ),
+    TextField("teslatlas-sdk-swift/VERSION"),
+    SwiftGeneratedField("teslatlas-sdk-swift/Sources/TeslatlasHubSDK/ProductVersion.swift"),
+    TomlSectionField("teslatlas-edge/Cargo.toml", "package"),
+    TomlPackageField("teslatlas-edge/Cargo.lock", "teslatlas-edge"),
+)
+
+
 def _check_plist_guards(workspace: Path) -> list[str]:
     relative = "hub/macos/TeslatlasHubApp/TeslatlasHubApp/Info.plist"
     try:
@@ -514,29 +594,257 @@ def _check_plist_guards(workspace: Path) -> list[str]:
     ]
 
 
-def _check_candidate_records(workspace: Path) -> list[str]:
+def _check_compatibility_records(workspace: Path, version: str) -> list[str]:
     errors: list[str] = []
-    for component in COMPATIBILITY_COMPONENTS:
-        relative = f"{component}/compatibility/hub.json"
+    relatives = [f"{component}/compatibility/hub.json" for component in COMPATIBILITY_COMPONENTS]
+    typescript_source = "teslatlas-sdk-typescript/protocol/source/compatibility/hub.json"
+    if (workspace / typescript_source).is_file():
+        relatives.append(typescript_source)
+    for relative in relatives:
         try:
             document = json.loads((workspace / relative).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             errors.append(f"{relative}: {error}")
             continue
-        if document.get("status") != "candidate":
+        status = document.get("status")
+        if status == "candidate":
+            requirements = (
+                ("tested_hub_versions", "candidate record must have no tested Hub versions"),
+                (
+                    "tested_hub_source_fingerprints",
+                    "candidate record must have no tested Hub source fingerprints",
+                ),
+                ("test_receipt_paths", "candidate record must have no test receipts"),
+            )
+            for key, message in requirements:
+                if document.get(key) != []:
+                    errors.append(f"{relative}:{key}: {message}")
             continue
-        requirements = (
-            ("tested_hub_versions", "candidate record must have no tested Hub versions"),
-            (
-                "tested_hub_source_fingerprints",
-                "candidate record must have no tested Hub source fingerprints",
-            ),
-            ("test_receipt_paths", "candidate record must have no test receipts"),
-        )
-        for key, message in requirements:
-            if document.get(key) != []:
-                errors.append(f"{relative}:{key}: {message}")
+        if status != "accepted":
+            errors.append(f"{relative}:status: expected candidate or accepted")
+            continue
+        profile = document.get("profile")
+        if not isinstance(profile, dict) or not isinstance(profile.get("sha256"), str) or SHA256_RE.fullmatch(profile["sha256"]) is None:
+            errors.append(f"{relative}:profile.sha256: accepted record requires an exact digest")
+        if document.get("tested_hub_versions") != [version]:
+            errors.append(f"{relative}:tested_hub_versions: accepted record must bind exactly {version}")
+        fingerprints = document.get("tested_hub_source_fingerprints")
+        if not isinstance(fingerprints, list) or not fingerprints or len(fingerprints) != len(set(fingerprints)) or any(
+            not isinstance(item, str) or SOURCE_FINGERPRINT_RE.fullmatch(item) is None
+            for item in fingerprints
+        ):
+            errors.append(f"{relative}:tested_hub_source_fingerprints: accepted record requires unique content-bound identities")
+        receipts = document.get("test_receipt_paths")
+        if not isinstance(receipts, list) or not receipts or len(receipts) != len(set(receipts)):
+            errors.append(f"{relative}:test_receipt_paths: accepted record requires unique receipts")
+        elif any(
+            not isinstance(item, str)
+            or Path(item).is_absolute()
+            or Path(item).as_posix() != item
+            or ".." in Path(item).parts
+            or not (workspace / item).is_file()
+            for item in receipts
+        ):
+            errors.append(f"{relative}:test_receipt_paths: accepted receipt path is missing or unsafe")
     return errors
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _accepted_record(
+    current: dict[str, Any], *, version: str, profile_sha256: str,
+    fingerprints: list[str], receipts: list[str]
+) -> dict[str, Any]:
+    updated = dict(current)
+    updated["status"] = "accepted"
+    profile = dict(updated["profile"])
+    profile["sha256"] = profile_sha256
+    updated["profile"] = profile
+    updated["tested_hub_versions"] = [version]
+    updated["tested_hub_source_fingerprints"] = fingerprints
+    updated["test_receipt_paths"] = receipts
+    return updated
+
+
+def _g3_specifications() -> dict[str, tuple[str, str, str, list[str], list[str]]]:
+    protocol_receipts = [*G3_G2_RECEIPTS, *G3_G5_RECEIPTS, *G3_G6_RECEIPTS]
+    return {
+        "teslatlas-protocol/compatibility/hub.json": (
+            "hub-http-v1", "1.0.0", HUB_PROFILE_SHA256,
+            [G2_HUB_SOURCE, G5_HUB_SOURCE, G6_HUB_SOURCE], protocol_receipts,
+        ),
+        "teslatlas-sdk-typescript/protocol/source/compatibility/hub.json": (
+            "hub-http-v1", "1.0.0", HUB_PROFILE_SHA256,
+            [G2_HUB_SOURCE, G5_HUB_SOURCE, G6_HUB_SOURCE], protocol_receipts,
+        ),
+        "teslatlas-sdk-typescript/compatibility/hub.json": (
+            "hub-http-v1", "1.0.0", HUB_PROFILE_SHA256,
+            [G2_HUB_SOURCE], list(G3_G2_RECEIPTS),
+        ),
+        "teslatlas-edge/compatibility/hub.json": (
+            "edge-delivery-v2", "2.0.0", EDGE_PROFILE_SHA256,
+            [G5_HUB_SOURCE], list(G3_G5_RECEIPTS),
+        ),
+        "teslatlas-sdk-swift/compatibility/hub.json": (
+            "hub-http-v1", "1.0.0", HUB_PROFILE_SHA256,
+            [G6_HUB_SOURCE], list(G3_G6_RECEIPTS),
+        ),
+    }
+
+
+def _check_g3_input_identities(workspace: Path) -> list[str]:
+    errors: list[str] = []
+    for relative, expected in G3_RECEIPTS.items():
+        path = workspace / relative
+        try:
+            actual = _sha256_file(path)
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            errors.append(f"G3 receipt identity mismatch: {relative}: {error}")
+            continue
+        if actual != expected:
+            errors.append(f"G3 receipt identity mismatch: {relative}")
+        if not isinstance(receipt, dict) or (
+            receipt.get("result") != "ACCEPTED"
+            and receipt.get("state") not in {"accepted_closed", "ACCEPTED"}
+        ):
+            errors.append(f"G3 receipt is not accepted: {relative}")
+
+    for relative, expected in G3_PROFILE_BINDINGS.items():
+        path = workspace / relative
+        try:
+            actual = _sha256_file(path)
+        except OSError as error:
+            errors.append(f"G3 profile identity mismatch: {relative}: {error}")
+            continue
+        if actual != expected:
+            errors.append(f"G3 profile identity mismatch: {relative}")
+    return errors
+
+
+def _check_g3_records(
+    workspace: Path, version: str, *, allow_candidates: bool
+) -> list[str]:
+    errors: list[str] = []
+    documents: dict[str, dict[str, Any]] = {}
+    for relative, specification in _g3_specifications().items():
+        profile_id, profile_revision, profile_sha256, fingerprints, receipts = specification
+        path = workspace / relative
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            errors.append(f"{relative}: {error}")
+            continue
+        if not isinstance(document, dict):
+            errors.append(f"{relative}: expected a JSON object")
+            continue
+        documents[relative] = document
+        if document.get("schema_version") != 1:
+            errors.append(f"{relative}:schema_version: expected 1")
+        if document.get("product_version") != version:
+            errors.append(
+                f"{relative}:product_version: expected {version}, "
+                f"found {document.get('product_version')!r}"
+            )
+        profile = document.get("profile")
+        if not isinstance(profile, dict):
+            errors.append(f"{relative}:profile: expected an object")
+            continue
+        if profile.get("id") != profile_id or profile.get("revision") != profile_revision:
+            errors.append(
+                f"{relative}:profile: expected {profile_id}@{profile_revision}"
+            )
+        expected = _accepted_record(
+            document,
+            version=version,
+            profile_sha256=profile_sha256,
+            fingerprints=fingerprints,
+            receipts=receipts,
+        )
+        status = document.get("status")
+        if status == "accepted":
+            if document != expected:
+                errors.append(f"refusing to rewrite a different accepted G3 record: {relative}")
+            continue
+        if status != "candidate":
+            errors.append(f"G3 compatibility status cannot transition: {relative}")
+            continue
+        if not allow_candidates:
+            errors.append(f"G3 compatibility record is not accepted: {relative}")
+        if profile.get("sha256") not in {None, profile_sha256}:
+            errors.append(f"{relative}:profile.sha256: unexpected candidate digest")
+        for key in (
+            "tested_hub_versions",
+            "tested_hub_source_fingerprints",
+            "test_receipt_paths",
+        ):
+            if document.get(key) != []:
+                errors.append(f"{relative}:{key}: candidate G3 field must be empty")
+
+    protocol_relative = "teslatlas-protocol/compatibility/hub.json"
+    vendored_relative = "teslatlas-sdk-typescript/protocol/source/compatibility/hub.json"
+    if protocol_relative in documents and vendored_relative in documents:
+        try:
+            if (workspace / protocol_relative).read_bytes() != (workspace / vendored_relative).read_bytes():
+                errors.append(
+                    f"{vendored_relative}: must be byte-identical to {protocol_relative}"
+                )
+        except OSError as error:
+            errors.append(f"G3 vendored compatibility readback failed: {error}")
+    return errors
+
+
+def check_g3_workspace(
+    workspace: Path, *, allow_candidates: bool = False
+) -> tuple[str, list[str]]:
+    """Validate only the active Hub, Protocol, TypeScript, Edge and Swift G3 boundary."""
+    version = _authority_version(workspace)
+    errors: list[str] = []
+    if version != G3_PRODUCT_VERSION:
+        errors.append(f"G3 admission is bound to product version {G3_PRODUCT_VERSION}")
+    for field in G3_VERSION_FIELDS:
+        try:
+            actual = field.read(workspace)
+            parse_product_version(actual)
+            if actual != version:
+                errors.append(f"{field.label}: expected {version}, found {actual}")
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
+            errors.append(f"{field.label}: {error}")
+    errors.extend(_check_g3_input_identities(workspace))
+    errors.extend(_check_g3_records(workspace, version, allow_candidates=allow_candidates))
+    return version, errors
+
+
+def admit_g3(workspace: Path) -> str:
+    """Admit exact G2/G4, G5 and G6 evidence through the scoped G3 boundary."""
+    version, errors = check_g3_workspace(workspace, allow_candidates=True)
+    if errors:
+        raise ValueError("G3 pre-admission validation failed:\n" + "\n".join(errors))
+
+    updates: dict[Path, str] = {}
+    for relative, specification in _g3_specifications().items():
+        _, _, profile_sha256, fingerprints, receipts = specification
+        path = workspace / relative
+        current = json.loads(path.read_text(encoding="utf-8"))
+        accepted = _accepted_record(
+            current,
+            version=version,
+            profile_sha256=profile_sha256,
+            fingerprints=fingerprints,
+            receipts=receipts,
+        )
+        updates[path] = json.dumps(accepted, indent=2) + "\n"
+
+    for path, updated in updates.items():
+        if path.read_text(encoding="utf-8") != updated:
+            path.write_text(updated, encoding="utf-8")
+
+    checked_version, errors = check_g3_workspace(workspace)
+    if errors:
+        raise ValueError("G3 scoped post-admission validation failed:\n" + "\n".join(errors))
+    return checked_version
 
 
 def _ecosystem_release_document(workspace: Path) -> tuple[Path, str, dict[str, Any]]:
@@ -662,7 +970,7 @@ def check_workspace(workspace: Path) -> tuple[str, list[str]]:
             errors.append(f"{field.label}: {error}")
     errors.extend(_check_plist_guards(workspace))
     errors.extend(_check_ecosystem_release(workspace, version))
-    errors.extend(_check_candidate_records(workspace))
+    errors.extend(_check_compatibility_records(workspace, version))
     return version, errors
 
 
@@ -689,6 +997,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--apply", action="store_true")
+    mode.add_argument("--admit-g3", action="store_true")
+    mode.add_argument("--check-g3", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -702,6 +1012,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"sync-ecosystem-versions: workspace does not exist: {workspace}", file=sys.stderr)
         return 2
     try:
+        if args.admit_g3:
+            version = admit_g3(workspace)
+            print(f"ecosystem G3 compatibility for product version {version} was admitted")
+            return 0
+        if args.check_g3:
+            version, errors = check_g3_workspace(workspace)
+            if errors:
+                for error in errors:
+                    print(f"sync-ecosystem-versions: {error}", file=sys.stderr)
+                return 1
+            print(f"ecosystem G3 compatibility for product version {version} is aligned")
+            return 0
         if args.apply:
             version = apply_workspace(workspace)
             print(f"ecosystem product version {version} was aligned")

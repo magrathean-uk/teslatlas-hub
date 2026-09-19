@@ -1,0 +1,1717 @@
+{
+  "schema_version": 1,
+  "product": "Teslatlas Protocol",
+  "repository": "teslatlas-protocol",
+  "state": "ACTIVE",
+  "native_goal_state": "complete",
+  "goal_objective": "Deliver usable, source-neutral current-Hub contracts, developer assets and conformance support for Debian 13 ARM64 and Apple-silicon Mac consumers. Keep formal parity gaps distinct; x86, amd64, Intel Mac, Azure and full cross-architecture acceptance are deferred and are not prerequisites for the current usable resources. Viewer development, packaging, integration and acceptance are excluded from the current goal; retained Viewer records are historical only. Add no Protocol daemon.",
+  "historical_full_plan_objective": "Complete the Protocol plan: supply the minimal truthful current-Hub contract and conformance resources needed by the first working bootstrap, support every companion, then finish real-runtime, developer-bundle and required platform compatibility acceptance without adding a daemon.",
+  "current_scope_exclusions": [
+    "Viewer development, packaging, integration and acceptance; retained source and evidence are historical only"
+  ],
+  "goal_control": {
+    "active_goal_lookup": "no active native goal; the completed goal is preserved",
+    "objective_update": "effective Viewer exclusion is recorded in this current STATUS/PLAN; supported goal controls cannot amend a completed or absent goal",
+    "replacement_created": false
+  },
+  "scope_authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "effective_execution_scope": "active_arm64_mac_working_products",
+  "native_goal_id": "01a082b7-86b3-72d2-b173-dbad9073ec2c",
+  "native_goal_created_at_unix": 1788961692,
+  "native_goal_creation_status": "completed_and_preserved_after_owner_restart",
+  "active_targets": [
+    "Debian 13 ARM64 existing guest and compatible ARM64 consumers",
+    "macOS on Apple silicon, including the existing macos13-arm64 guest and local Mac runtime"
+  ],
+  "paused_targets": [
+    "x86, x86_64 and amd64 development, compilation, image acquisition, VM provisioning, runtime/lifecycle tests and acceptance",
+    "Intel Mac development, compilation, runtime/lifecycle tests and acceptance",
+    "the preserved debian13-x86_64-20260909 VM and its unadmitted artifacts"
+  ],
+  "deferred_targets": [
+    "Azure requests and validation",
+    "full cross-architecture matrix and final cross-architecture closure",
+    "x86/amd64/Intel Mac final platform rows"
+  ],
+  "execution_scope_state": "resumed_2026_09_18_no_protocol_action_ready_resource_goal_complete",
+  "plan": "PLAN.md",
+  "current_stage": "ARM64/Mac Protocol resource goal complete; no action ready after 2026-09-18 audit; Viewer excluded; P5 conditional; P8 paused",
+  "first_milestone_after_start": "P3 — working Debian 13 ARM64 slice and P7 — working Apple-silicon Mac path",
+  "current_model": "gpt-5.6-luna",
+  "model_purpose": "owner-authorized development",
+  "last_verified": "2026-09-18",
+  "completed_this_programme": [
+    "P2 and Protocol-native portion of P3 — current-Hub profile correction plus fresh Debian 13 ARM64 fixture conformance (24/24); companion, browser and installed boundaries remain open",
+    "Protocol-native portion of P4/B2 — Swift public macOS consumer passed against a fresh Hub-owned fixture and the fixture was verified stopped and cleaned",
+    "B1/B2 non-Viewer consumer lanes — packed TypeScript Node and selected Home Assistant ARM64 Container journeys passed with independent cleanup or restart evidence; retained Viewer results are historical and out of current scope",
+    "Bounded R1 HA outage/recovery observation — the selected Debian ARM64 Container observed the disposable Hub fixture unavailable and recovered without credential or invitation replacement; named-source R1/P5 remains a separate acceptance track",
+    "Bounded B2.2 HA/Edge coexistence restart observation — HA retained all 26 entities and HTTP 200 while the isolated Edge receiver/delivery listeners remained present; active-target follow-up remains separate and deferred cross-architecture rows do not block it",
+    "Edge B2.1/B2.2 bounded ARM64 runtime — the sealed Edge receiver, encrypted spool and Hub pull/commit/ACK path passed duplicate, outage/restart, recovery and receiver-first restart checks in isolated disposable lanes; active ARM64/Mac follow-up remains separate",
+    "Edge receiver application-identity correction — the source generator and pinned receiver verifier accepted the required issuer/VIN/client-auth profile and rejected wrong-issuer and missing-identity-OID profiles; no live retry was authorized",
+    "Bounded r13 same-Hub Edge-to-HA delivery — one coordinator-authorized VehicleName-only actor call was admitted and ACKed, Hub durably drained the batch with lifecycle-only sequence artifacts classified, HA observed the name-only projection through a normal scheduler interval, and all disposable resources were cleaned with the primary lanes restored",
+    "Hub TeslaMate v4.2-compatible source mapping ledger — 17 reviewed domains with 16 preserved and addresses.raw deliberately excluded; source checks passed while live source admission, collection and parity remain unrun",
+    "Hub R1 recovery source regressions — 13 data-recovery cases plus binary observation-command and durable/monotonic-watermark checks pass; operational backup/restore and passive receipts remain unrun",
+    "Hub bounded synthetic data-only backup/restore continuation — one fresh isolated debug-binary root passed backup, immutable verification, restore, post-watermark observation comparison and truncated-copy rejection; disposable roots were cleaned to user Trash",
+    "Historical Viewer installed R1 data-state (retained; out of current scope) — a fresh packaged Debian ARM64 Viewer passed 51-drive 25/25/1 data loading, conditional 304 revalidation, unsupported zero-I/O, retained-data partial-failure recovery and cancellation without late repopulation; Viewer and Hub cleanup passed",
+    "Hub H7 named-source read-only evidence plan — source/CLI boundaries, protected PostgreSQL input, repeatable-read inventory, offline import/comparison separation and separately authorized passive/recovery/soak gates are documented; no source access was performed",
+    "D1 aggregate component manifest gap — source audit found no reviewed packaging/components.json selection contract; existing explicit component staging remains source evidence only",
+    "D1 aggregate source/package boundary — Hub independently verified the fail-closed packaging/components.json manifest, HA's sealed 31-file ARM64 component payload and bounded Container receipt, and Protocol's external immutable source handoff; retained Viewer source/package identities are historical and excluded from current Protocol work; the aggregate verifier passes 9/9 while active ARM64/Mac runtime selectors remain pending and deferred cross-architecture selectors do not block",
+    "Hub D1 source-only selector/provenance guard and disposable installer adapter — the admitted HA ARM64 Container plan is the only executable D1 selector, Hub core/Fleet are rejected before manifest access, HA target provenance is carried through install/status/repair, and a disposable local-candidate staging/link transaction preserved the existing sentinel and returned runtime_acceptance=false without starting HA. Fresh Hub source gates pass 80/80 companion tests, 9/9 aggregate-manifest checks, one bootstrap-catalog check and 11 Rust companion-delegation tests including five D1-specific cases; cargo fmt --check and the Hub binary build pass; no activation or installed receipt is claimed",
+    "D1 Protocol developer-resource handoff — supplied an external owner-only read-only 177-file source snapshot and Hub-compatible manifest, exact current-Hub/profile/compatibility/matrix/checker identities, and explicit no-service selector, lifecycle and receipt limits; Hub rechecked the snapshot twice and bound the identities into the aggregate",
+    "Home Assistant R1 snapshot serialization regression — overlapping refreshes are now explicitly covered by a lock red/green test and the full source suite remains clean; live passive parity remains open",
+    "Historical Viewer Recovery7 installed ARM64 lifecycle (retained; out of current scope) — current projection, Hub outage/restore, stale/offline presentation, operator revoke/401 session clearing and fresh-invitation re-pair passed against a frozen owner-controlled tuple with clean Hub/Viewer shutdown",
+    "Bounded packed TypeScript Node 51-drive consumer — the fresh Debian 13 ARM64 helper passed the selected 25/25/1 pagination, conditional-304/cursor, claim, rotation and default-Fetch journey, then the isolated fixture was closed cleanly"
+  ],
+  "needed_input": "Owner restart 2026-09-18 is recorded. The narrow post-pause audit found no new Hub or companion contract correction, so no Protocol action is ready and the completed native Protocol goal remains complete. Remain idle until a concrete ARM64/Mac Hub or companion handoff or a narrow contract correction arrives. Named TeslaMate source admission, passive parity and live-source recovery remain explicit R1 acceptance gaps; active-target D1 installed selectors, SessionInputs and lifecycle receipts remain Hub/companion dependencies; x86/x86_64/amd64, Intel Mac, Azure and full cross-architecture rows remain paused or deferred and cannot block the delivered ARM64/Mac resources",
+  "publication_authorized": false,
+  "environment_access": "../../../docs/development/VM_ACCESS.md",
+  "evidence": [
+    {
+      "kind": "native_goal_activation",
+      "status": "historical_full_plan_activation_before_goal_replacement",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "The prior owner-authorized full-plan goal was activated before the 2026-09-09 goal replacement. Its objective is retained only as dated history; it is not the current native goal."
+    },
+    {
+      "kind": "native_goal_creation",
+      "status": "created_and_revalidated_active",
+      "verified_at": "2026-09-09",
+      "goal_id": "01a082b7-86b3-72d2-b173-dbad9073ec2c",
+      "created_at_unix": 1788961692,
+      "tokens_used_at_creation": 0,
+      "objective": "Deliver usable, source-neutral current-Hub contracts, developer assets and conformance support for Debian 13 ARM64 and Apple-silicon Mac consumers. Keep formal parity gaps distinct; x86, amd64, Intel Mac, Azure and full cross-architecture acceptance are deferred and are not prerequisites for the current usable resources. Add no Protocol daemon.",
+      "what_it_proves": "The old goals were absent, exactly one fresh native goal was created with the owner-revised objective, and a subsequent goal read returned the same objective with status active."
+    },
+    {
+      "kind": "owner_scope_override",
+      "status": "active_arm64_mac_products_x86_and_full_matrix_paused",
+      "verified_at": "2026-09-09",
+      "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+      "active_targets": [
+        "Debian 13 ARM64 existing guest and compatible ARM64 consumers",
+        "macOS on Apple silicon, including the existing macos13-arm64 guest and local Mac runtime"
+      ],
+      "paused_targets": [
+        "x86, x86_64, amd64 and Intel Mac development, builds, images, VMs, runtime/lifecycle tests and acceptance",
+        "preserved debian13-x86_64-20260909 VM and unadmitted artifacts"
+      ],
+      "deferred_targets": [
+        "Azure",
+        "full cross-architecture matrix and final cross-architecture closure"
+      ],
+      "what_it_proves": "The active Protocol execution scope is usable ARM64/Mac product support. Deferred x86/amd64/Intel Mac/Azure/full-matrix work remains preserved and cannot block current usable resources.",
+      "limits": "Scope reprioritization only; it does not establish new runtime, installer, parity, profile-admission or platform-acceptance evidence."
+    },
+    {
+      "kind": "local_contract_gate",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "command": "./tools/check",
+      "what_it_proves": "Generated artifacts are current; 134 Protocol unit tests and 31 rich-profile reference cases pass; manifest digest is b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926."
+    },
+    {
+      "kind": "b1_probe_capability_correction",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "what_it_proves": "The bounded current-Hub probe accepts the profile's reduced query capability set and does not request optional drives without query.drives."
+    },
+    {
+      "kind": "b1_native_current_hub_fixture",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "fixture_id": "b1-formal-r2-20260908",
+      "profile": "hub-http-v1@1.0.0",
+      "product_version": "2026.36.2",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "binary_sha256": "c08083a25ea6f348e588f0386aca2218cfcf73f64126bb78f5844eb1f076b910",
+      "seed_sha256": "ba3a92ae8ddb9f9c34f05f12a773487d3951a44374da48cc6b7a8ea7739ac776b",
+      "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+      "what_it_proves": "A fresh Hub-owned Debian 13 ARM64 real-process fixture passed all 24/24 current-profile conformance cases with zero failures using the private ready.json descriptor and the adapter environment's jsonschema 4.26.0; the retained acceptance stderr was empty."
+    },
+    {
+      "kind": "d1_local_developer_bundle_gate",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "runtime": "uv-managed Python 3.11.16",
+      "commands": [
+        "uv lock --check",
+        "uv run python tools/build_hub_http_profile.py --check",
+        "uv run python tools/build_openapi.py --check",
+        "uv run python tools/build_conformance.py --check",
+        "git diff --check"
+      ],
+      "what_it_proves": "The locked developer environment is usable and the current Protocol profile, OpenAPI, conformance bundle and checksums are current; VERSION is 2026.36.2 and compatibility/hub.json remains explicitly candidate with no unaccepted Hub receipt inserted.",
+      "limits": "Local bundle readiness only; companion consumer results, Hub selection, installed receipts and final platform acceptance remain open."
+    },
+    {
+      "kind": "b2_swift_native_consumer",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "fixture_id": "b2-swift-handoff-r2-20260908",
+      "hub_id": "1d8ab817-d058-4125-9406-94e0f0b237f2",
+      "endpoint": "https://127.0.0.1:18482",
+      "profile": "hub-http-v1@1.0.0",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "product_version": "2026.36.2",
+      "what_it_proves": "The public macOS Swift CurrentHubLiveTests journey passed against a fresh Hub-owned Debian 13 ARM64 real-process fixture. The redacted receipt covered trusted TLS; identity, trust and leaf-pin negative cases; claim; bearer rotation and old-bearer rejection; pagination/ETag with three conditional 304 responses; null/zero units; cancellation; unsupported zero-I/O; and streamed oversize rejection. The fixture was then verified stopped with direct child exit 0 and no listener on port 18482.",
+      "limits": "Native consumer evidence only; it does not admit a Swift installed-matrix row, physical-device/iOS runtime, collection parity, migration, or final platform acceptance."
+    },
+    {
+      "kind": "b2_swift_adapter_rebind",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "adapter_hashes": {
+        "matrix_live.py": "a7242473cfb091db8cf812c56314e28ebaf559859b1d1e4981f81534ff92ff05",
+        "matrix_wire.py": "fa9cf4abfd072c1e167568aff6f1efb35b0078a228cadf94bf7f834da5d05422",
+        "matrix_contract.py": "1019fbfc64c91038dbc68025bf31fb9483abb0cba13588440ab0861892b083df"
+      },
+      "what_it_proves": "Hub independently re-reviewed and rebound the current Swift adapter bytes after the native consumer run; its focused entrypoint/installed tests passed 11/11 and the SDK matrix-adapter gate passed 28/28.",
+      "limits": "Source/integration binding only; it is not an installed runtime or acceptance row."
+    },
+    {
+      "kind": "b1_viewer_browser_consumer",
+      "status": "historical_preserved_out_of_current_scope",
+      "verified_at": "2026-09-08",
+      "fixture_id": "b1-viewer-handoff-r3-20260908",
+      "hub_id": "92c1fadb-ea21-49ee-a690-e110056e846e",
+      "profile": "hub-http-v1@1.0.0",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "scenario": "two-vehicles-five-drives",
+      "viewer_package_sha256": "30836eced2cd38d9c98374ea3247e1242c21e50832f41bcdd7e08bf779529851",
+      "what_it_proves": "The corrected Viewer browser smoke passed 1 test in 1.4 seconds under normal Chromium/NSS trust. It covered pairing and Hub identity, current values with observed timestamp presentation, ordered drives 105 through 101, empty-vehicle handling, refresh and local-session clearing; Viewer and Hub verified fixture/process cleanup with ports 18480 and 4173 closed.",
+      "limits": "Bounded five-drive browser evidence only; R1 51-drive paging, collection, migration, installed-matrix and final platform acceptance remain open."
+    },
+    {
+      "kind": "b1_typescript_packed_node_consumer",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "fixture_id": "b1-node-handoff-20260908",
+      "hub_id": "ef1f600c-713d-456e-9b20-d328ea5b2583",
+      "profile": "hub-http-v1@1.0.0",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "product_version": "2026.36.2",
+      "runtime": "Node 26.7.0 / npm 11.19.0 on Debian 13 ARM64",
+      "sdk_archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "node_entry_sha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+      "installed_manifest_sha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+      "installed_member_count": 81,
+      "what_it_proves": "The packed @teslatlas/sdk@2026.36.2 consumer passed discovery, health/readiness, invitation claim, two-vehicle response, current state, bounded drives, default Fetch with the fixture CA, and credential rotation. Hub verified owner-only custody, direct-child exit 0, stopped record mode 0600 and port 18481 closure.",
+      "limits": "Packed B1 consumer evidence only; it does not admit an installed Hub matrix, collection parity, migration or final platform acceptance."
+    },
+    {
+      "kind": "p4_typescript_pagination_helper_ready",
+      "status": "passed_source_readiness",
+      "verified_at": "2026-09-09",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "source": "Teslatlas TypeScript SDK current-Hub Node/browser helpers",
+      "result": "Variable-length drive history now walks to the terminal cursor with a bounded page loop, accepts drive_limit and expected_drive_count handoff inputs, and verifies conditional 304 followed by cursor continuation. The existing B1 default remains limit 2; the fresh R1 lane can bind limit 25 and expected count 51.",
+      "tests": "Focused pagination test passed; related Hub client/consumer/evidence tests 53 passed; Node syntax checks passed",
+      "what_it_proves": "The SDK consumer helpers are source-ready for the planned 51-drive handoff without hard-coding the five-drive B1 shape.",
+      "limits": "Source and local readiness only; the selected remote 51-drive consumer result is recorded separately, while passive parity, recovery breadth and installed-matrix closure remain open."
+    },
+    {
+      "kind": "b2_home_assistant_live_container",
+      "status": "passed",
+      "verified_at": "2026-09-08",
+      "runtime": "Debian 13 ARM64; Docker 26.1.5; Home Assistant Container 2026.8.3 arm64/linux",
+      "image_sha256": "e53b24b1bde9e471f5167a032d29d8de5956c374cba44205da0a017b71cc4362",
+      "profile": "hub-http-v1@1.0.0",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "what_it_proves": "The selected real HA Container paired with the disposable current-Hub lane and exposed two devices/26 entities. Scheduled refresh changed the first vehicle to 1% and 22.5 C while the second retained unknown values; UI reauthentication repaired a revoked bearer, reload succeeded, disable/enable unloaded and restored the entities, and Container stop/up returned HTTP 200 with the config entry retained. Credential-bearing HA files and fixture descriptors were observed at mode 600; invitation values remained redacted.",
+      "limits": "B2.1 ARM64 Container evidence only; B2.2 Edge coexistence, full R1 outage/partial-vehicle/parity, installer integration, native, x86 and final cross-platform acceptance remain open."
+    },
+    {
+      "kind": "r1_bounded_ha_outage_recovery",
+      "status": "passed_bounded_observation",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Home Assistant B2 fixture receipt; values redacted and not copied",
+      "runtime": "Debian 13 ARM64; Home Assistant Container 2026.8.3; existing hub-http-v1@1.0.0 session",
+      "fixture_id": "b2-home-assistant-handoff-20260908",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "outage": "Only the disposable Hub fixture was stopped; its port was absent. HA observed 26 Teslatlas sensors unavailable and 0 unknown.",
+      "recovery": "The same fixture binary/config was restarted and readyz returned 200. HA later observed 26 Teslatlas sensors with 1 unavailable and 21 unknown, while healthy vehicle activity was online and temperature was 22.5 C.",
+      "credential_or_invitation_change": "none; the existing HA session and same fixture identity/config were retained",
+      "what_it_proves": "A real bounded outage and recovery transition was observed on the selected Debian 13 ARM64 HA lane without replacing credentials or the invitation.",
+      "limits": "This is partial R1/P5 evidence only. Timeout, malformed-response, invalid-invitation, partial-vehicle, parity, replacement, Edge coexistence, installed composition and full matrix acceptance remain open."
+    },
+    {
+      "kind": "b2_2_ha_edge_coexistence_restart",
+      "status": "passed_bounded_coexistence",
+      "verified_at": "2026-09-09",
+      "runtime": {
+        "guest": "Debian 13 ARM64/aarch64",
+        "home_assistant": "Container on 8123",
+        "ha_hub_fixture": "isolated disposable Hub on 18483",
+        "edge_receiver_port": 18500,
+        "edge_delivery_port": 18510
+      },
+      "checks": {
+        "ha_container_restart": "docker compose restart homeassistant; HA returned HTTP 200 after one bounded poll",
+        "ha_fixture_ready": 200,
+        "ha_api_status": 200,
+        "teslatlas_registry_entities": 26,
+        "teslatlas_states_found": 26,
+        "state_buckets": {
+          "known": 4,
+          "unavailable": 1,
+          "unknown": 21
+        },
+        "config_entries_mode": 600
+      },
+      "what_it_proves": "The selected HA Container restarted successfully while the isolated Edge receiver and delivery listeners remained present; HA retained all 26 Teslatlas entities and state visibility, and the HA environment did not mount or modify Edge credentials, TLS keys, bearer material, spool or state.",
+      "limits": "Bounded HA-only coexistence evidence; HA remained paired to its separate 18483 fixture. Same-Hub Edge cohort admission, full R1/P5 parity/recovery, installed composition and cross-platform acceptance remain open."
+    },
+    {
+      "kind": "r1_ha_config_flow_negative_paths",
+      "status": "passed_bounded_reauth",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Home Assistant redacted R1 fixture receipt; values not copied",
+      "runtime": "Debian 13 ARM64; Home Assistant Container 2026.8.3; existing hub-http-v1@1.0.0 session",
+      "observations": {
+        "wrong_tls_pin": "Config flow retained the endpoint form with cannot_connect and HTTP 200 flow abort",
+        "invalid_invitation_after_revocation": "Reauth form retained with invalid_pairing_secret",
+        "replayed_invitation": "Reauth form retained with invalid_pairing_secret",
+        "valid_reauthentication": "Reauth completed successfully; the same config entry was preserved and no new entry was created",
+        "post_repair": "HA HTTP 200, fixture readyz 200, 26 Teslatlas sensors, 1 unavailable and 21 unknown"
+      },
+      "credential_or_invitation_change": "The existing HA session and fixture identity were retained; invitation values remained private and redacted.",
+      "what_it_proves": "The selected HA ARM64 consumer rejects wrong trust and invalid or replayed pairing inputs, then restores the existing entry through valid reauthentication.",
+      "limits": "Bounded R1 config-flow evidence only. Timeout, malformed-response, partial-vehicle, parity, replacement, full passive recovery, installed composition and cross-platform acceptance remain open."
+    },
+    {
+      "kind": "r1_ha_reconfigure_clean_restart",
+      "status": "passed_bounded_same_id_lifecycle",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Home Assistant redacted R1 fixture receipt; values not copied",
+      "runtime": "Debian 13 ARM64; Home Assistant Container 2026.8.3; existing hub-http-v1@1.0.0 session",
+      "checks": {
+        "same_id_reconfigure": "Real reconfigure_confirm flow aborted reconfigure_successful without creating a new entry",
+        "clean_container_restart": "Container stop removed HTTP 8123; docker compose up restored HTTP 200 and the fixture readyz returned 200",
+        "post_restart": "One stored Teslatlas entry, 26 sensors, 1 unavailable and 21 unknown; config_entries mode 600 after repair"
+      },
+      "what_it_proves": "HA preserves the existing Teslatlas identity through bounded reconfigure and clean Container stop/start on the selected ARM64 lane.",
+      "limits": "Bounded same-ID lifecycle only. Component or image replacement, interrupted upgrade, forced stop, full parity, installed composition and cross-platform acceptance remain open."
+    },
+    {
+      "kind": "r1_ha_diagnostics_redaction",
+      "status": "passed_bounded_redaction",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Home Assistant redacted diagnostics receipt; values not copied",
+      "runtime": "Debian 13 ARM64; Home Assistant Container 2026.8.3; existing hub-http-v1@1.0.0 session",
+      "checks": {
+        "http": 200,
+        "payload_shape": "Integration diagnostics contained only entry_data, entry_version and runtime",
+        "identity_and_bearer_values": "Absent from the returned diagnostics",
+        "vehicle_count": 2,
+        "issues": 0
+      },
+      "what_it_proves": "The selected HA diagnostics endpoint redacts endpoint identity and bearer values while returning the expected two-vehicle shape.",
+      "limits": "One diagnostics endpoint only; raw-response, log, entity-attribute, passive-provenance and full R1 privacy coverage remain open."
+    },
+    {
+      "kind": "b2_2_docker_edge_coexistence_boundary",
+      "status": "passed_bounded_secret_boundary",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Home Assistant redacted external Edge Docker receipt; values not copied",
+      "runtime": "Debian 13 ARM64 HA Container with isolated Docker Edge listeners",
+      "checks": {
+        "ha_http": 200,
+        "ha_state_api": 200,
+        "teslatlas_registry_entities": 26,
+        "teslatlas_states_found": 26,
+        "state_buckets": {
+          "known": 4,
+          "unavailable": 1,
+          "unknown": 21
+        },
+        "docker_edge_listeners": [19443, 19444],
+        "edge_paths_in_ha_mounts": 0,
+        "edge_references_in_ha_environment": 0,
+        "ha_compose_edge_reference": false,
+        "ha_mounts_unchanged": true
+      },
+      "what_it_proves": "The isolated Docker Edge listeners coexist with the selected HA Container without Edge credentials, TLS keys, bearer material or spool/state crossing into HA.",
+      "limits": "Coexistence boundary only; it does not establish Docker Edge as the HA Hub cohort or prove delivery, drain, package lifecycle or final platform acceptance."
+    },
+    {
+      "kind": "b2_2_docker_edge_auth_matrix",
+      "status": "passed_bounded_auth_matrix",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Edge redacted Docker receipt; values not copied",
+      "runtime": "Isolated Docker Edge receiver on Debian 13 ARM64",
+      "checks": {
+        "valid_client_and_bearer": 200,
+        "bad_bearer": 401,
+        "missing_client_certificate": "TLS failure / HTTP 000",
+        "untrusted_client_certificate": "TLS failure / HTTP 000",
+        "wrong_ca": "TLS failure / HTTP 000",
+        "wrong_hostname": "TLS failure / HTTP 000"
+      },
+      "what_it_proves": "The Docker Edge helper accepts the valid mTLS plus bearer combination and fails closed for invalid bearer, client certificate, trust and hostname inputs.",
+      "limits": "External helper auth boundary only. Same-Hub collector drain, queued-record recovery, package/Docker lifecycle and full platform acceptance remain open."
+    },
+    {
+      "kind": "b2_edge_sealed_fixture_binding",
+      "status": "passed_input_bound",
+      "verified_at": "2026-09-09",
+      "run_id": "edge-b2-20260909",
+      "cell_id": "edge_v2__debian13_arm64",
+      "session_id": "ff157419-53f6-4672-a338-003bee2f2a77",
+      "edge_profile_sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224",
+      "edge_vectors_sha256": "d40a853cd02111ff200083be81588526dc7d2cf28c3daa168d2ea7dd9dda6eb1",
+      "reservation_sha256": "fd126f668bc8fd0017bb11b768eda7824e9e0b87e7b2ffa1cc85ed2f570668ed",
+      "lease_sha256": "09b9e6760a92c4d992b2913293b97f8a89f9d515187860b88684e8c3094505fa",
+      "fixture_sha256": "7c25daae215a9970f0699b8c808c3c995fee12e69676d7266afea23b259cd4a9",
+      "fixture_bytes": 7349,
+      "lane_ports": [[18480, 18500, 18510], [18490, 18501, 18511], [18491, 18502, 18512], [18492, 18503, 18513]],
+      "custody_revalidation": "Edge corrected the synthetic private-key copies to mode 0600 and rebuilt the owner binding; owner, reservation and fixture content hashes remained unchanged. Hub confirmed the referenced key-role copies are regular, single-link mode-0600 files with matching digests.",
+      "what_it_proves": "Hub independently accepted the redacted Edge owner handoff, exact identity, 16 private custody roles, 19 public profile members and fresh four-lane reservation. Its targeted builder correction applies a 1 MiB bound only to public profile members and keeps private metadata, credentials and session inputs at 256 KiB.",
+      "limits": "Sealed input evidence only. No Edge receiver/spool/Hub runtime, launch, stop, cleanup, installed package, coexistence, R1/P5 or matrix acceptance is admitted."
+    },
+    {
+      "kind": "b2_edge_primary_runtime",
+      "status": "passed_isolated_process_path",
+      "verified_at": "2026-09-09",
+      "run_id": "edge-b2-20260909",
+      "guest": "teslatlas-debian13-arm64",
+      "identity": {
+        "os": "Debian 13.6",
+        "architecture": "aarch64",
+        "kernel": "6.12.95+deb13-cloud-arm64",
+        "systemd": "257.13",
+        "edge_sha256": "353551aa111be7959b18c907f4df860ea5086e1a0b770af212b6a2102d30265b",
+        "receiver_sha256": "22577092beac3622403328f3d0c6f13c4b7656e4ccfd80a75aa9bdedfada6b3b",
+        "receiver_wire_helper_sha256": "b77a4eba7174235619984cc644ad18aa751a8400f00a4400333e8bc9b49ec207"
+      },
+      "topology": {
+        "edge_admission": "127.0.0.1:8080",
+        "edge_delivery": "0.0.0.0:18510",
+        "receiver": "127.0.0.1:18500",
+        "hub_fixture": "127.0.0.1:18480"
+      },
+      "receipts": {
+        "hub_handoff": "Hub formal handoff docs/development/edge-b2.1-primary-hub-r4-runtime.json records the redacted r4 launch/stop/cleanup invocation and owner-only lifecycle metadata; its session-reader regression passed 8 tests.",
+        "health_and_readiness": "Edge healthz and readyz passed with queue zero before and after the live runs; the receiver mTLS WebSocket returned valid ACKs for every accepted synthetic submission.",
+        "duplicate": "Two submissions with fixed txid edge-b2-duplicate-fixed-0001 both received receiver ACKs. Hub r2 advanced ack_frontier from 5 to 11, recorded one duplicate/stable_record_already_applied disposition, and advanced the projected application ledger by one.",
+        "hub_outage": "With fresh Hub r3 stopped and port 18480 closed, one receiver-ACKed submission left Edge with 3 queued records and 1992 bytes; the spool contained owner-readable encrypted sequence data with no plaintext VIN, txid or payload marker.",
+        "edge_restart": "SIGKILL of the exact Edge candidate followed by restart with the same config preserved the 3-record queue and passed readyz; the missing serve subcommand was diagnosed from the private usage log and corrected.",
+        "hub_recovery": "Fresh Hub r4 drained the preserved queue: Edge returned to 0 records/0 bytes, r4 recorded first_spool_seq 12 and ack_frontier 14, connected consumer state and complete pending publication. Receiver-first stop left Edge ready; receiver restart and a new mTLS submission drained successfully, with r4 frontier reaching 17 and two complete pending publications.",
+        "spool_after_drain": "Only .lock, FORMAT and the encrypted sequence file remained; no plaintext transaction/VIN/payload marker was found."
+      },
+      "what_it_proves": "The real ARM64 Rust Edge, pinned ARM64 receiver, vehicle-mTLS WebSocket, loopback admission, encrypted spool, Hub mTLS/bearer pull, durable application, duplicate disposition, ACK frontier, Edge crash recovery, Hub outage recovery and receiver restart functioned in isolated disposable process lanes.",
+      "limits": "This does not prove package installation, Docker runtime, cross-platform lifecycle, passive vehicle provenance, production service acceptance, full R1/P5 parity or an installed-matrix row."
+    },
+    {
+      "kind": "d1_edge_arm64_package_install_lifecycle",
+      "status": "passed_arm64_installed_test_lane",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Edge redacted installed-package receipt; values not copied",
+      "guest": "teslatlas-debian13-arm64",
+      "package": "teslatlas-edge 2026.36.2-1 arm64; dpkg audit clean",
+      "receipts": {
+        "initialization": "Package init and doctor passed in an isolated ARM64 package root with owner-only state files",
+        "upgrade": "Corrected preinst/postinst/postrm hooks completed an in-place upgrade and failed-upgrade recovery while preserving the spool and disabled service state",
+        "receiver_wire": "Pinned receiver mTLS WebSocket submission returned receiver_wire=passed, ack=received, topic=V and txid_match=true using the synthetic TeslaMotors client leaf",
+        "queue": "Edge healthz/readyz remained status=ok with 9 queued records, 5962 bytes, zero corrupt or expired records and capacity_exhausted=false",
+        "lifecycle": "Receiver-first stop, full stop, Edge-first start and receiver start preserved state and restored readiness; final state had both services inactive and disabled, zero 8080/19843/19844 listeners and clean dpkg audit",
+        "ownership": "Spool, key and token files remained mode 0600 under teslatlas-edge ownership and stayed separate from installed Hub and HA fixtures"
+      },
+      "what_it_proves": "The ARM64 Debian Edge package installs, upgrades, exercises its optional receiver over real mTLS and preserves state through bounded service lifecycle operations.",
+      "limits": "ARM64 Edge package lane only; native amd64, full R1/P5, passive vehicle provenance, same-Hub Docker drain and final platform acceptance remain open."
+    },
+    {
+      "kind": "d1_edge_arm64_docker_runtime",
+      "status": "passed_isolated_runtime_shape",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Edge redacted Docker receipt; values not copied",
+      "guest": "teslatlas-debian13-arm64",
+      "project": "edge-d1-arm64-20260909",
+      "image": {
+        "tag": "teslatlas-edge:local",
+        "id": "sha256:c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+        "architecture": "arm64",
+        "os": "linux",
+        "layers": 8
+      },
+      "services": {
+        "edge": "running and healthy",
+        "receiver": "running",
+        "uid_gid": "10001:10001",
+        "ports": ["127.0.0.1:19443->8443/tcp", "127.0.0.1:19444->8444/tcp"],
+        "mount_separation": "Receiver mount has no spool key or Hub credentials; Edge image has no vehicle files"
+      },
+      "receipts": {
+        "initialization": "Docker init and doctor passed with fresh synthetic state, receiver secret, Hub TLS, vehicle TLS and configuration roots",
+        "receiver_wire": "Pinned Linux ARM64 helper delivered over mTLS to 127.0.0.1:19444 and received a valid ACK; Edge admitted the records into its encrypted queue",
+        "restart": "Compose stop and up --no-build restored both named services and preserved queued records",
+        "isolation": "Image history and file scans found no credential files or secret bytes; host bindings were loopback-only",
+        "hub_pairing": "Separate Hub r5 pairing was live and awaiting the owner-controlled same-Hub/HA observation; no Docker Hub drain was claimed"
+      },
+      "what_it_proves": "The ARM64 Docker image and two-service Compose runtime have the required target architecture, non-root UID/GID, loopback ports, mount separation, health, restart and secret isolation.",
+      "limits": "Isolated Docker runtime shape only; Docker-to-Hub durable ACK/drain, cross-platform lifecycle and final platform acceptance remain open."
+    },
+    {
+      "kind": "d1_edge_macos_arm64_package_lifecycle",
+      "status": "passed_bounded_installed_platform_subset",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Edge redacted macOS ARM64 package receipt; values not copied",
+      "guest": "teslatlas-macos13-arm64",
+      "identity": {
+        "os": "macOS 13.7.4",
+        "build": "22H420",
+        "architecture": "arm64",
+        "receiver_sha256": "8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1",
+        "wire_helper_sha256": "d2440e1043a22701ff086532f3b520af153e9098ad19a55e0ad214061370151e",
+        "product_sha256": "b74163fe6c67b28e8eeb6f0ee965c8b5016b1db1dd234fc5dc2acfb2cecd8650"
+      },
+      "receipts": {
+        "initial_state": "Fresh guest had no Edge state or LaunchAgents",
+        "installation": "Product installer registered core and receiver package IDs at version 2026.36.2; state and agents remained absent until explicit initialization",
+        "initialization": "Disposable config used hub_bind 0.0.0.0:18443 and receiver_bind 127.0.0.1:8080; init and doctor passed with state root mode 0700 and generated secret files mode 0600",
+        "launchagents": "Core and receiver LaunchAgents started independently; core-first start reached readyz status=ok before receiver start",
+        "receiver_wire": "Pinned Darwin ARM64 receiver accepted one synthetic vehicle-mTLS WebSocket submission and returned receiver_wire=passed, ack=received, topic=V and txid_match=true; Edge then reported 3 queued records/1975 bytes with zero corrupt or expired records and capacity_exhausted=false",
+        "lifecycle": "Receiver-first stop left Edge ready with 3 records; full stop removed listeners; Edge restart restored readiness and the same queue; receiver restart restored its listener and preserved the queue",
+        "uninstall": "Default uninstaller unloaded both agents and removed only package payload, leaving the mode-0700 data directory with one encrypted sequence file and no listeners"
+      },
+      "what_it_proves": "The macOS ARM64 Edge package's clean install, explicit initialization, independent LaunchAgent lifecycle, real receiver-wire path, restart continuity and data-preserving uninstall work in the prepared macOS 13 target.",
+      "limits": "Platform subset only; package upgrade/rollback, Docker-on-macOS, native amd64, passive vehicle provenance, full R1/P5 and final X1 acceptance remain open."
+    },
+    {
+      "kind": "b2_edge_docker_same_hub_delivery_attempt",
+      "status": "failed_bounded_transport_unavailable",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Edge and Home Assistant redacted same-Hub receipt; values not copied",
+      "runtime": "Debian 13 ARM64; isolated Docker Edge receiver on 19444; r5 Hub fixture on 18490; selected HA Container temporary entry attached",
+      "checks": {
+        "submission": "Exactly one approved synthetic record was accepted by the Docker receiver over mTLS and ACKed",
+        "receiver_queue": "One encrypted record remained queued after the bounded pull interval; queue bytes were 7464 and no plaintext marker was present",
+        "collector": "r5 reported edge transport unavailable/backoff",
+        "direct_hub_mtls_probe": "HTTP 200; exact configured URL returned a bounded 6358-byte v2 batch with 11 records and zero gaps",
+        "hub_ledger_rows": 0,
+        "durable_ack": false,
+        "ha_edge_delivered_value": false,
+        "duplicate_submission": false,
+        "cleanup": "r5 child exited 0, mode-0600 stopped receipt was retained, port 18490 closed; 8443, 18483 and 18480 remained listening",
+        "installed_services_touched": false
+      },
+      "what_it_proves": "The selected same-Hub attempt reached the receiver boundary, but the r5 collector did not consume the queued record or produce a durable Hub ledger result. A direct mTLS request succeeded, narrowing the failure to the in-process Hub collector transport path before durable acceptance.",
+      "limits": "Negative diagnostic and cleanup only; it is not Docker-to-Hub delivery, ACK/commit, HA observation or platform acceptance. The private session and queued record must not be replayed; a fresh corrected fixture/session and independent transport fix are required."
+    },
+    {
+      "kind": "b2_viewer_installed_recovery",
+      "status": "historical_preserved_out_of_current_scope",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Viewer redacted Recovery7 receipt; values not copied",
+      "runtime": "Debian 13 ARM64; Node v26.7.0; pinned Playwright Chromium; packaged Viewer",
+      "checks": {
+        "journey_duration": "4.1 minutes",
+        "current_projection": "passed",
+        "normal_history": "51 drives in exact 25/25/1 order, 1051 through 1001, with terminal history and an empty vehicle",
+        "hub_stop_start_outage_recovery": "passed",
+        "stale_offline_presentation": "passed",
+        "operator_revoke": "401 with session clearing passed",
+        "fresh_invitation_repair": "passed",
+        "viewer_cleanup": "process and port 4173 closed",
+        "hub_cleanup": "owner supervisor stopped, stopped record written, port 18480 closed",
+        "unrelated_listeners": "preserved"
+      },
+      "what_it_proves": "The corrected installed Viewer recovery journey handles current projection, Hub outage/restore, stale/offline presentation, revoke/session clearing and fresh-invitation re-pair against one frozen owner-controlled tuple with clean process cleanup.",
+      "limits": "Installed Viewer recovery evidence only; it does not admit the SDK Node helper, remaining installed matrix cells, passive collection parity or final platform acceptance."
+    },
+    {
+      "kind": "r1_edge_docker_credential_lifecycle",
+      "status": "passed_bounded_expiry_rotation_revocation",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Edge redacted Docker credential receipt; values not copied",
+      "runtime": "Debian 13 ARM64 isolated Docker Edge listener",
+      "checks": {
+        "one_second_bearer_before_expiry": 200,
+        "one_second_bearer_after_two_seconds": 401,
+        "old_bearer_before_rotation": 200,
+        "old_bearer_during_three_second_overlap": 200,
+        "new_bearer_immediately_after_rotation": 200,
+        "old_bearer_after_overlap": 401,
+        "new_bearer_after_overlap": 200,
+        "new_bearer_after_revoke": 401,
+        "cleanup": "Both disposable credentials revoked and scratch files removed; existing encrypted queue preserved"
+      },
+      "what_it_proves": "The live Docker Edge listener enforces bearer expiry, bounded rotation overlap and revocation while preserving the pending Edge queue.",
+      "limits": "Bounded R1 credential lifecycle only; full fault, parity, passive provenance, same-Hub drain, installed matrix and platform acceptance remain open."
+    },
+    {
+      "kind": "b2_typescript_packed_node_51_drive",
+      "status": "passed_selected_packed_consumer_and_cleaned",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted isolated Debian ARM64 Node fixture receipt",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "package": "@teslatlas/sdk@2026.36.2",
+      "sdk_archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "scenario": "2 vehicles; 51 drives; 25/25/1 pages",
+      "checks": [
+        "discovery",
+        "health/readiness",
+        "invitation claim",
+        "current state",
+        "conditional 304 and cursor continuation",
+        "credential rotation",
+        "default Fetch with the fixture CA"
+      ],
+      "cleanup": "Hub stopped only the verified fixture launcher and child, recorded child exit 0 in a mode-0600 stopped receipt, and verified port 18481 closed while installed Hub 8443 and HA 18483 remained listening.",
+      "what_it_proves": "The packed SDK Node consumer completed the selected real 51-drive primary-slice journey against a fresh Hub scenario and was cleaned up without touching the installed Hub or HA listeners.",
+      "limits": "Real packed Node primary-slice evidence only; it does not prove the installed Hub matrix, passive parity closure, broader R1/P5, or clean-host/platform closure."
+    },
+    {
+      "kind": "r1_edge_docker_r9_single_submission_failure",
+      "status": "failed_before_receiver_admission_no_retry",
+      "verified_at": "2026-09-09",
+      "source": "Edge/Hub redacted fresh r9 Docker cohort receipt",
+      "runtime": "Debian 13 ARM64; fresh isolated Docker Edge/receiver and temporary Hub/HA cohort",
+      "checks": {
+        "hub_ha_readiness": "passed",
+        "receiver_admission": false,
+        "receiver_ack": false,
+        "edge_record": false,
+        "hub_transport_attempt": true,
+        "hub_transport_category": "five safe connect categories; no public error detail or secret material",
+        "hub_ledger_mutation": false,
+        "hub_frontier_advance": false,
+        "ha_delivered_value": false,
+        "failure_boundary": "Edge helper TLS client-certificate presentation rejected before receiver admission; Hub collector separately recorded safe connect before ledger mutation",
+        "certificate_metadata": "Docker server certificate validated for 127.0.0.1 with server-auth purpose and valid chain; Hub client certificate validated with client-auth purpose against the runtime client CA",
+        "live_docker_reqwest_handshake": false
+      },
+      "cleanup": "The r9 Hub child exited normally; Hub port 18490 and Edge ports 20443/20444 closed; HA removed only the temporary entry and restored its original 18483 lane. The fresh Edge state was retained without a queued record, and installed Hub/HA listeners remained intact.",
+      "what_it_proves": "The fresh r9 cohort reached trusted Hub/HA readiness but the Edge helper did not enter the receiver, while the Hub collector independently reached its safe connect error boundary before durable ledger acceptance. Static certificate metadata ruled out malformed name, purpose and CA-chain branches, but no live Docker Rustls/reqwest handshake was demonstrated. Edge later verified that the helper used an old vehicle identity, so the producer branch is not a valid fresh-identity transport result.",
+      "limits": "Negative preparation/integration and bounded diagnostic evidence only; r5-r9 private roots, credentials, records and invitations are non-reusable. A corrected pinned receiver actor/invocation, a separately resolved Docker collector boundary and new owner authorization are required before another submission."
+    },
+    {
+      "kind": "r1_edge_receiver_actor_source_correction",
+      "status": "passed_source_only_mtls_regression",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Edge redacted source/build handoff; values not copied",
+      "source_files": [
+        "tools/interop/client_lanes/synthetic_vehicle.py",
+        "tools/interop/client_lanes/test_synthetic_vehicle.py"
+      ],
+      "source_sha256": {
+        "synthetic_vehicle.py": "a4eb195334de5f0188203cc5948d21db15eb1448cc563a46d05ce81bcc2e84ba",
+        "test_synthetic_vehicle.py": "bc1e0acb39f3c8563d378e365d59add0218aa10d94a28c84ec0d997eb7622529"
+      },
+      "checks": {
+        "identity_invocation": "2 passed",
+        "tls_path_selection": "1 passed",
+        "mutual_tls_loopback": "1 passed; server required and observed the selected client certificate",
+        "go_source_tests": "4 passed",
+        "existing_edge_matrix_contract": "7 passed",
+        "existing_edge_runner": "7 passed",
+        "python": "3.14; py_compile passed"
+      },
+      "helper_build": {
+        "upstream": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+        "toolchain": "go1.27.0",
+        "target": "linux-arm64",
+        "binary_sha256": "d5f1fa538086cd3f7b7acc74766d92e3e5d9bebf977787b67c1999d34f658d4c",
+        "binary": "ELF 64-bit LSB executable, ARM aarch64, statically linked",
+        "identity_marker": "teslatlas-synthetic-vehicle-identity-v2",
+        "embedded_vin": "absent",
+        "required_vin_flag": "present",
+        "tls_path_loader": "loadClientTLSConfig selects the explicitly passed client certificate, private key, and server CA paths"
+      },
+      "source_only_go_inputs": {
+        "main.go_sha256": "b27566c80766f4fa0823c2b797809ade65cf09a0d8dd080dd7d14efada34c698",
+        "main_test.go_sha256": "3d1b0c1e635771643b63e004eb6952cf5c19d111ff8b1b896ca56174a3ac5804"
+      },
+      "what_it_proves": "The Edge-owned source correction rejects the stale embedded-identity helper, derives the producer identity into an explicit helper argument, requires distinct client-certificate/key/server-CA paths, and builds a new linux-arm64 helper from the pinned source/toolchain. Its source regression also proves that the selected client certificate is presented to a loopback server that requires mutual TLS.",
+      "limits": "Source/build and loopback mTLS evidence only. No production or Docker helper runtime, same-Hub drain, durable ACK, or HA value has been proven; Hub's collector boundary and fresh cohort still require separate acceptance."
+    },
+    {
+      "kind": "r1_edge_docker_r10_empty_runtime_handoff",
+      "status": "passed_ready_for_single_hub_noop",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Edge redacted r10 runtime handoff; values withheld",
+      "run_id": "edge-r10-diagnostic-20260909",
+      "manifest": "edge-r1-primary-20260909",
+      "manifest_sha256": "137f527536dfcac7f52bb6e706014c16e9f4bff5ad8f80d05e2be3ac268c1d2f",
+      "guest": "teslatlas-debian13-arm64",
+      "image": {
+        "reference": "teslatlas-edge:local",
+        "sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+        "architecture": "linux/arm64"
+      },
+      "listeners": {
+        "edge_delivery": "https://127.0.0.1:20543",
+        "receiver": "wss://127.0.0.1:20544/",
+        "bind_scope": "loopback-only"
+      },
+      "state": {
+        "initialization": "init and doctor passed; Edge and receiver are running healthy",
+        "health_and_readiness": "healthz and readyz returned status ok inside the Edge container",
+        "queue": {
+          "records": 0,
+          "bytes": 0,
+          "corrupt_records": 0,
+          "expired_records": 0,
+          "pending_gap_notices": 0,
+          "capacity_exhausted": false
+        },
+        "persistent_files": "spool-key, hub-credentials.json, receiver-token, spool FORMAT/sequence and lock are 0600 owned by 10001:10001"
+      },
+      "hub_consumer_custody": {
+        "input_root": "owner-only 0700",
+        "server_ca": "0600; SHA256 2659381647f7204cfa50011ff9b8246fa0e3789c35bc302d9b84e100397258e0",
+        "client_certificate": "0600; SHA256 770804c8230e85fa63116ab786260c5ad4fa2d24678386ed203c1b0390bd0eae",
+        "client_private_key": "0600; value withheld",
+        "delivery_bearer": "0600; value withheld"
+      },
+      "helper": {
+        "sha256": "d5f1fa538086cd3f7b7acc74766d92e3e5d9bebf977787b67c1999d34f658d4c",
+        "invoked": false
+      },
+      "authorization": "Exactly one non-submitting Hub v2 GET against the empty spool is authorized; producer submission, HA attachment, vehicle commands and r5-r9 input reuse are prohibited.",
+      "what_it_proves": "A fresh isolated ARM64 Docker Edge/receiver runtime is healthy with a zero-record encrypted spool and a fresh owner-only Hub consumer bundle ready for one no-op pull. No producer record has been submitted and HA remains untouched.",
+      "limits": "Preparation and custody evidence only; the mTLS no-op request, Docker-to-Hub durable result, HA value, full R1/P5 and platform acceptance remain open."
+    },
+    {
+      "kind": "r1_edge_docker_r10_noop_trust_anchor_failure",
+      "status": "failed_before_http_trust_anchor_mismatch",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted exact-once r10 diagnostic receipt; values not copied",
+      "run_id": "edge-r10-diagnostic-20260909",
+      "runtime": "Debian 13 ARM64; fresh isolated Docker Edge/receiver and Hub consumer",
+      "checks": {
+        "authorized_v2_get_attempts": 1,
+        "hub_http_route_reached": false,
+        "receiver_ack": false,
+        "edge_record": false,
+        "hub_ledger_mutation": false,
+        "ha_delivered_value": false,
+        "producer_submission": false,
+        "retry": false,
+        "rustls_failure_boundary": "The supplied server CA file was the Edge server leaf, not its issuing CA trust anchor; Rustls rejected it before HTTP.",
+        "openssl_observation": "The leaf was parseable for inspection, but openssl verify against it failed at depth 0; neither established Rustls trust-anchor compatibility."
+      },
+      "cleanup": "The one-shot diagnostic was closed without replay; the r10 runtime remains preserved pending a fresh trust bundle, with no producer or HA action.",
+      "what_it_proves": "The authorized non-submitting v2 GET made exactly one attempt and failed before the HTTP route because the Hub CA slot contained a server leaf instead of the issuing CA. No receiver ACK, Edge record, Hub ledger mutation, frontier advance or HA value occurred.",
+      "limits": "Bounded negative transport/custody evidence only; it does not prove Docker-to-Hub delivery or a corrected trust bundle. The r10 private handoff is not reusable until Edge regenerates and test-validates the issuing-CA input; full R1/P5, D1 and X1 remain open."
+    },
+    {
+      "kind": "r1_edge_docker_r11_empty_runtime_handoff",
+      "status": "passed_ready_for_single_hub_noop",
+      "verified_at": "2026-09-09",
+      "source": "Edge redacted r11 runtime handoff; private values withheld",
+      "run_id": "edge-r11-diagnostic-20260909",
+      "manifest": "producer-handoff.json",
+      "manifest_sha256": "137f527536dfcac7f52bb6e706014c16e9f4bff5ad8f80d05e2be3ac268c1d2f",
+      "guest": "teslatlas-debian13-arm64",
+      "image": {
+        "sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+        "architecture": "linux/arm64"
+      },
+      "listeners": {
+        "edge_delivery": "https://127.0.0.1:20643",
+        "receiver": "wss://127.0.0.1:20644/",
+        "bind_scope": "loopback-only"
+      },
+      "public_certificates": {
+        "server_ca": "SHA256 aa7f2a66b6e0cbe95588ed35a9f0ea26420df76cbff58c011f0aec22f3bf993d; CA:TRUE self-issued",
+        "server_leaf": "SHA256 19fa782ed3cb1c2e58a95acfec88b04b19f3167e688bb31499c32076c714461b; serverAuth; IP SAN 127.0.0.1",
+        "hub_client_ca": "SHA256 ffae53116fd1197241c5f80435d544f0a751c80f0b9d5cd09ffea888b3d7bd56; CA:TRUE",
+        "hub_client_leaf": "SHA256 3eb5111a2d0390d82655ec5193d85e5fd62ddf5d889ea713c5746b7eb9b7d159; clientAuth"
+      },
+      "checks": {
+        "server_sslserver_verify_ip": "passed",
+        "client_sslclient_verify": "passed",
+        "client_key_match": "passed",
+        "preparer_sha256": "500531a755f50c01ae3eecfd1a7e9f68586109115cf6cc369711340d2fed6c53",
+        "focused_test_sha256": "f3cd93488bc7094dab70cb44147fb6aa699e0689b6336dae6b11793f546fa82c"
+      },
+      "state": {
+        "initialization": "init and doctor passed",
+        "health_and_readiness": "healthz and readyz returned ok",
+        "queue": {
+          "records": 0,
+          "bytes": 0,
+          "corrupt_records": 0,
+          "expired_records": 0,
+          "pending_gap_notices": 0,
+          "capacity_exhausted": false
+        },
+        "helper_invoked": false
+      },
+      "hub_consumer_custody": "Owner-only input root mode 0700; four files mode 0600 with nlink=1; client private key and bearer values withheld",
+      "authorization": "Exactly one fresh non-submitting Hub v2 GET against the empty spool is authorized; producer submission, HA attachment, vehicle commands, and r10/r5-r9 input reuse are prohibited.",
+      "cleanup_plan": "After the no-op result, stop receiver first and Edge second, verify 20643/20644 are closed, and retain the sealed root/state without deleting the spool.",
+      "what_it_proves": "A fresh isolated ARM64 Docker Edge/receiver pair has a test-validated issuing-CA trust bundle, healthy loopback listeners, a zero-record encrypted spool and four owner-only Hub inputs ready for one new non-submitting v2 GET. No producer record has been submitted and HA remains untouched.",
+      "limits": "Preparation and custody evidence only; the fresh mTLS no-op, Docker-to-Hub durable result, HA value, full R1/P5 and platform acceptance remain open."
+    },
+    {
+      "kind": "r1_edge_docker_r11_noop_pull_empty_success",
+      "status": "passed_empty_batch_no_ledger_mutation",
+      "verified_at": "2026-09-09",
+      "source": "Edge and Hub redacted r11 no-op/cleanup receipt; private values withheld",
+      "run_id": "edge-r11-diagnostic-20260909",
+      "runtime": "Debian 13 ARM64; fresh isolated Docker Edge/receiver and Hub consumer",
+      "checks": {
+        "authorized_v2_get_attempts": 1,
+        "batch_records": 0,
+        "hub_ledger_mutation": false,
+        "hub_frontier_advance": false,
+        "receiver_ack": false,
+        "edge_queue_after_poll": "0 records/0 bytes",
+        "producer_helper": false,
+        "ha_attachment": false,
+        "additional_poll": false
+      },
+      "cleanup": "Receiver stopped first with exit 143 and Edge second with exit 0; listeners 20643/20644 closed; sealed root and empty spool retained; r10 20543/20544 and HA 18483 remained listening.",
+      "what_it_proves": "The corrected fresh trust bundle allowed the real Hub EdgeConsumer to make exactly one non-submitting v2 poll and receive an empty batch without receiver, ledger or frontier mutation; the disposable pair then followed the required cleanup order.",
+      "limits": "Bounded empty-pull and cleanup evidence only; no producer submission, durable telemetry ACK/commit, HA delivered value, full R1/P5, D1 or X1 acceptance is established."
+    },
+    {
+      "kind": "b2_r12_coordinator_authorization",
+      "status": "passed_authority_bound",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted coordination handoff; no private values copied",
+      "coordinator_task_id": "01a0829e-751f-7d93-9c1f-4b1ffdbfc22e",
+      "scope": "Exactly one fresh bounded synthetic Edge-to-Hub-to-Home-Assistant journey",
+      "ordering": [
+        "Edge publishes a fresh sealed empty-readiness/trust/actor handoff",
+        "Hub validates isolated collector readiness",
+        "HA attaches one temporary entry",
+        "Exactly one producer record is submitted and observed through the bounded path",
+        "All disposable services and entries are cleaned"
+      ],
+      "constraints": "Fresh identities and inputs only; no r10/r11 or r5-r9 reuse; no vehicle commands; no additional poll/submission; retain original installed Hub/HA lanes.",
+      "what_it_proves": "The next data-bearing r12 lane has explicit coordinator authority and a closed execution order; it does not prove that any runtime, record, ACK, ledger mutation or HA value exists yet.",
+      "limits": "Authorization/sequence evidence only. Edge sealed handoff, Hub collector, one-record durable delivery, HA observation, cleanup and later R1/P5/D1/X1 acceptance remain required."
+    },
+    {
+      "kind": "b2_r12_setup_preflight_failure",
+      "status": "failed_before_runtime_setup",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted r12 coordination diagnostic; no private values copied",
+      "checks": {
+        "edge_root_reserved": true,
+        "hub_inputs_directory_at_check": false,
+        "edge_listener": false,
+        "hub_fixture": false,
+        "ha_temporary_entry": false,
+        "producer_record": false,
+        "hub_ledger_mutation": false
+      },
+      "failure_boundary": "The staged empty hub-inputs directory disappeared before any listener, container, Hub fixture launch or HA attachment.",
+      "cleanup": "No runtime or data-bearing action occurred; r11 and the original installed Hub/HA lanes remain untouched.",
+      "what_it_proves": "The authorized r12 journey did not reach runtime setup or produce any record; the missing Edge-owned staging directory is a setup-state failure requiring a fresh sealed handoff.",
+      "limits": "Negative preflight evidence only; it does not prove Edge/Hub transport, durable ACK/ledger/frontier, HA value, R1/P5, D1 or X1 acceptance."
+    },
+    {
+      "kind": "b2_r12_receiver_custody_failure",
+      "status": "failed_before_empty_readiness_receiver_key_permission",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted r12 coordination diagnostic; no private values copied",
+      "runtime": "Fresh authorized r12 replacement Edge/receiver lane; delivery service on loopback port 20743",
+      "checks": {
+        "edge_delivery_healthy": true,
+        "receiver_started": true,
+        "custom_ca_loaded": true,
+        "vehicle_key_readable_by_receiver": false,
+        "receiver_exit_code": 2,
+        "hub_fixture": false,
+        "ha_temporary_entry": false,
+        "producer_record": false,
+        "hub_ledger_mutation": false
+      },
+      "failure_boundary": "The receiver exited after loading its custom CA because the mounted vehicle-tls.key was unreadable to the receiver process (permission denied).",
+      "post_failure_state": "The receiver was later running after an in-place custody repair, but Hub did not admit that repaired root; Edge must provide source/test evidence and a distinct fresh replacement handoff.",
+      "cleanup": "No Hub fixture, temporary HA entry or producer action was started; no record, receiver ACK, Hub ledger/frontier mutation or HA value exists for this observation.",
+      "what_it_proves": "The r12 blocker is an Edge Docker receiver file-ownership/mode defect at the mounted vehicle private-key boundary, not a Hub trust-chain or collector transport result.",
+      "limits": "Bounded negative runtime evidence only; the repaired-in-place root is non-admissible. A distinct source/test-backed empty-ready handoff, then Hub collector readiness, one authorized producer record, durable delivery and HA observation remain required."
+    },
+    {
+      "kind": "b2_r12_fresh_empty_runtime_handoff",
+      "status": "diagnostic_only_repaired_in_place_replacement_required",
+      "verified_at": "2026-09-09",
+      "source": "Edge redacted r12 source/control handoff; private values withheld",
+      "run_id": "edge-r12-fresh-20260909",
+      "descriptor_sha256": "41fb5a6ff17bbc8aaec0f9d2a7b1d05a55fd68d4f2a3f453abe720316d4a1cfe",
+      "runtime": "Debian 13 ARM64; repaired-in-place Edge/receiver pair with delivery listener on 20743 and receiver on 20744",
+      "checks": {
+        "receiver_custody_repaired_and_tested": true,
+        "edge_delivery_healthy": true,
+        "receiver_healthy": true,
+        "edge_queue_records": 0,
+        "edge_queue_bytes": 0,
+        "receiver_uid_gid": "10001:10001",
+        "vehicle_tls_key_mode_owner": "0600 10001:10001",
+        "receiver_spool_key_visible": false,
+        "receiver_hub_tls_visible": false,
+        "source_packaging_contract_test": "6/6 passed",
+        "hub_fixture_owner_only": false,
+        "producer_submitted": false,
+        "ha_attached": false
+      },
+      "public_record_contract": "VehicleName=synthetic-b2; transaction type V; transaction id edge-r12-fresh-20260909-v-001; explicit created_at_ms 1788927737000; expected Hub canonical field vehicle_name=synthetic-b2 and record_id only after admission.",
+      "home_assistant_contract": "The actor emits no value-bearing battery, temperature, charging, range, odometer, access, activity or software field; the only supported direct HA projection is the device/vehicle display name synthetic-b2, with no entity id, value or units.",
+      "replacement": "The repaired-in-place root is diagnostic-only and non-reusable for acceptance. Edge must stage a distinct replacement root on 20843/20844 after Hub/HA review.",
+      "what_it_proves": "The minimal Docker ownership correction is source/test-backed and the repaired runtime is stable and isolated, but it is not an eligible fresh Hub/HA handoff; no data-bearing action has occurred.",
+      "limits": "Diagnostic source/runtime evidence only; the distinct replacement, fresh empty readiness, Hub/HA binding, durable producer delivery, receiver ACK, Hub ledger/frontier, HA observation, cleanup, full R1/P5, D1 and X1 remain open."
+    },
+    {
+      "kind": "b2_r12_hub_empty_pull_preflight",
+      "status": "passed_empty_poll_nonadmissible_root",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted r12 empty-readiness receipt; private values withheld",
+      "runtime": "Disposable owner-only Hub fixture on port 18491 against the repaired-in-place diagnostic Edge runtime on 20743",
+      "checks": {
+        "real_empty_delivery_poll": true,
+        "edge_queue_records": 0,
+        "hub_lineages": 0,
+        "hub_applications": 0,
+        "hub_sequences": 0,
+        "pending_publications": 0,
+        "ack_frontier": 0,
+        "producer_submission": false,
+        "ha_attachment": false
+      },
+      "cleanup": "Hub verified the direct-child fixture stopped with exit 0, retained a mode-0600 stopped receipt and closed 18491; no HA attachment or producer action occurred and the primary 8443/18483 lanes were preserved.",
+      "what_it_proves": "The Hub collector performed one bounded empty pull against the repaired diagnostic runtime and observed zero Edge queue and zero pre-record ledger/frontier state; this is not an acceptance handoff because the Edge root was repaired in place.",
+      "limits": "Non-admissible empty diagnostic only; it does not satisfy fresh replacement readiness, HA temporary-entry binding, the exactly one authorized producer record, durable receiver ACK/Hub drain, HA delivered value or cleanup for an eligible cohort."
+    },
+    {
+      "kind": "b2_r12_abort_primary_ha_integrity",
+      "status": "passed_primary_untouched_after_abort",
+      "verified_at": "2026-09-09",
+      "source": "Home Assistant redacted r12 abort receipt; private values withheld",
+      "runtime": "Selected Debian 13 ARM64 Home Assistant Container and primary Hub fixture",
+      "checks": {
+        "ha_http": 200,
+        "primary_hub_fixture_port": "18483 readyz 200",
+        "persisted_primary_teslatlas_entries": 1,
+        "temporary_r12_entry": false,
+        "credential_storage_mode": "0600",
+        "primary_lane_mutated": false
+      },
+      "what_it_proves": "After aborting the non-admissible 18491 diagnostic path, HA remained healthy and preserved the single primary Teslatlas entry and primary Hub lane without creating a temporary r12 entry or changing credential-bearing storage.",
+      "limits": "Primary-lane integrity only; it does not establish a fresh r12 replacement, producer delivery, durable ACK/ledger/frontier, HA delivered value, full R1/P5, D1 or X1 acceptance."
+    },
+    {
+      "kind": "b2_r12_name_only_ha_contract",
+      "status": "passed_source_bound_no_value_sensor",
+      "verified_at": "2026-09-09",
+      "source": "Home Assistant current integration source/tests; no private values copied",
+      "checks": {
+        "display_name_to_device_info_name": true,
+        "optional_vehicle_state_fields": true,
+        "omitted_current_fields": "None/unknown",
+        "name_sensor": false,
+        "value_or_units_for_name_only_actor": false,
+        "primary_ha_lane": "18483 unchanged"
+      },
+      "binding": "The r12 actor's supported HA projection is device/display name synthetic-b2 only; no numeric/state entity or units may be invented.",
+      "what_it_proves": "The selected HA integration can represent the exact r12 VehicleName-only contract as a device name while preserving omitted telemetry as unknown/None.",
+      "limits": "Source and test binding only; no temporary r12 entry, producer record, delivered HA value or eligible replacement runtime has yet been observed."
+    },
+    {
+      "kind": "b2_r12_distinct_empty_runtime_handoff",
+      "status": "passed_ready_for_hub_ha_binding",
+      "verified_at": "2026-09-09",
+      "source": "Edge redacted replacement handoff; private values withheld",
+      "run_id": "edge-r12-replacement-20260909",
+      "runtime": "Fresh Debian 13 ARM64 Docker Edge/receiver root on loopback delivery 20843 and receiver 20844",
+      "image_sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+      "descriptor_sha256": "62de0553f50aec8a00d28af39c6116cf35161948175d428ed6a9004ba6bdd5bc",
+      "manifest_sha256": "028b97b985c6f28cc9f43ec3eeb96cb57d92d816dd3c4a8c6529a946927cb320",
+      "actor_sha256": "d5f1fa538086cd3f7b7acc74766d92e3e5d9bebf977787b67c1999d34f658d4c",
+      "checks": {
+        "init_doctor": true,
+        "containers_uid_gid": "10001:10001",
+        "restart_counts": "0/0 after five seconds",
+        "healthz_readyz": "ok inside containers",
+        "records": 0,
+        "bytes": 0,
+        "corrupt": 0,
+        "expired": 0,
+        "pending_gap_notices": 0,
+        "capacity_exhausted": false,
+        "receiver_key": "0600 10001:10001 and readable by receiver",
+        "mount_isolation": true,
+        "hub_input_root": "0700 with four distinct 0600 files; private values withheld",
+        "producer_helper_invoked": false
+      },
+      "public_contract": "VehicleName=synthetic-b2; topic V; transaction edge-r12-fresh-20260909-v-001; created_at_ms=1788927737000",
+      "what_it_proves": "A distinct fresh ARM64 replacement is empty-ready with corrected receiver custody and owner-only Hub inputs for the authorized journey.",
+      "limits": "Preparation and custody evidence only; Hub/HA binding, producer admission, durable delivery, HA post-record observation, cleanup, full R1/P5, D1 and X1 remain open."
+    },
+    {
+      "kind": "b2_r12_hub_18492_pre_record_ha_attachment",
+      "status": "passed_bounded_pre_record",
+      "verified_at": "2026-09-09",
+      "source": "Hub and Home Assistant redacted r12 receipts; private values withheld",
+      "runtime": "Fresh isolated Hub fixture 18492 against replacement Edge delivery 20843/20844 and temporary HA entry",
+      "checks": {
+        "hub_healthz_readyz": 200,
+        "edge_delivery_connected": true,
+        "real_empty_edge_poll": true,
+        "hub_pre_record_ledger_rows": 0,
+        "ha_temporary_entry": true,
+        "ha_devices": 4,
+        "ha_entities": 52,
+        "synthetic_b2_entities": 13,
+        "name_sensor": false,
+        "producer_submitted": false
+      },
+      "ha_observation": "The temporary synthetic-b2 device was attached through the normal scheduler with no separate name sensor and no value-bearing name projection; the disposable fixture baseline was retained for the later data step.",
+      "what_it_proves": "The distinct replacement reached the required Hub/HA pre-record ordering boundary with an empty Edge poll and zero pre-record Hub ledger state.",
+      "limits": "The fixture expired before the producer step; this is not durable producer delivery, receiver ACK, post-record HA observation or acceptance."
+    },
+    {
+      "kind": "b2_r12_hub_18492_planned_expiry_before_record",
+      "status": "failed_before_producer_clean_planned_expiry",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted stop receipt; private values withheld",
+      "runtime": "Disposable Hub fixture 18492; configured lifetime_seconds=900",
+      "checks": {
+        "planned_lifetime_seconds": 900,
+        "started_at": "05:03:57",
+        "ended_at": "05:18:57",
+        "hub_exit_code": 0,
+        "producer_submitted": false,
+        "receiver_ack": false,
+        "hub_ledger_mutation": false,
+        "ha_post_record_value": false
+      },
+      "failure_boundary": "The fixture ended cleanly at its configured 900-second deadline before the producer step; it was not a crash.",
+      "cleanup": "The temporary HA entry and trust overlay were removed and the primary 18483 lane was restored before the next fresh session.",
+      "what_it_proves": "The first valid pre-record ordering did not consume the one-record authorization and did not mutate Edge, Hub or HA data state.",
+      "limits": "Bounded lifecycle failure only; no producer replay is inferred and the later 18493 session is a distinct fresh fixture."
+    },
+    {
+      "kind": "b2_r12_ha_cleanup_primary_integrity_after_18492",
+      "status": "passed_primary_restored",
+      "verified_at": "2026-09-09",
+      "source": "Home Assistant redacted cleanup receipt; private values withheld",
+      "runtime": "Selected Debian 13 ARM64 Home Assistant Container and primary Hub fixture",
+      "checks": {
+        "ha_http": 200,
+        "primary_hub_fixture": "18483 readyz 200",
+        "persisted_teslatlas_entries": 1,
+        "temporary_18492_entry": false,
+        "temporary_trust_directory": false,
+        "original_ca_file_restored": true,
+        "primary_lane_mutated": false
+      },
+      "what_it_proves": "The expired 18492 temporary entry was removed and the primary HA/Hub lane was restored without credential-bearing or data-state mutation.",
+      "limits": "Cleanup/integrity only; it does not establish the later 18493 producer path or full R1/P5/D1/X1 acceptance."
+    },
+    {
+      "kind": "b2_r12_hub_18493_fresh_pre_record_fixture",
+      "status": "passed_ready_for_single_record",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted 18493 handoff; private values withheld",
+      "runtime": "Fresh isolated Hub fixture 18493 against the distinct Edge replacement",
+      "checks": {
+        "lifetime_seconds": 3600,
+        "direct_child_and_launcher_witness": true,
+        "hub_healthz_readyz": 200,
+        "edge_delivery_connected": true,
+        "edge_delivery_poll_completed": true,
+        "pending_publications": 0,
+        "ack_frontier": null,
+        "hub_ledger_before_record": 0,
+        "producer_submitted": false
+      },
+      "what_it_proves": "A new longer-lived Hub fixture was bound to the eligible replacement with trusted readiness, connected empty delivery and zero pre-record durable state.",
+      "limits": "Pre-record readiness only; the producer result, durable receiver ACK/Hub drain/frontier and HA post-record observation were not established. Cleanup is recorded separately and complete."
+    },
+    {
+      "kind": "b2_r12_ha_18493_temporary_entry_attached",
+      "status": "passed_scheduler_ready_pre_record",
+      "verified_at": "2026-09-09",
+      "source": "Home Assistant redacted 18493 attachment receipt; private values withheld",
+      "runtime": "Selected Debian 13 ARM64 Home Assistant Container against fresh Hub fixture 18493",
+      "checks": {
+        "temporary_entry": true,
+        "ha_devices": 4,
+        "ha_entities": 52,
+        "synthetic_b2_entities": 13,
+        "normal_scheduler_interval": true,
+        "name_sensor": false,
+        "primary_18483_entry_preserved": true,
+        "producer_submitted": false
+      },
+      "observation": "The synthetic-b2 device was present with the fixture's expected initial telemetry baseline and no separate name sensor; the record step had not yet run.",
+      "what_it_proves": "The fresh 18493 Hub/HA attachment gate was satisfied before the one authorized producer invocation.",
+      "limits": "Pre-record companion readiness only; it does not prove post-record delivery, value freshness or durable ACK/ledger/frontier. Cleanup is recorded separately and complete."
+    },
+    {
+      "kind": "b2_r12_edge_producer_identity_authorization_failure",
+      "status": "failed_after_tls_before_edge_admission",
+      "verified_at": "2026-09-09",
+      "source": "Edge redacted one-shot producer receipt; private values withheld",
+      "runtime": "Distinct r12 replacement Edge/receiver 20843/20844 against fresh Hub fixture 18493 and temporary HA entry",
+      "checks": {
+        "authorized_producer_invocations": 1,
+        "helper_exit_code": 1,
+        "helper_error": "websocket: close 1006 (abnormal closure): unexpected EOF",
+        "tls_chain_to_mounted_client_ca": true,
+        "receiver_request_seen": true,
+        "receiver_identity_error": "extract_sender_id_err / create_identity issuer unauthorized certificate",
+        "actor_public_x509_extensions": false,
+        "actor_public_x509_eku_or_san": false,
+        "receiver_application_identity_authorized": false,
+        "edge_admission": false,
+        "receiver_ack": false,
+        "edge_queue_records": 0,
+        "edge_queue_bytes": 0,
+        "hub_ledger_mutation": false,
+        "hub_frontier_advance": false,
+        "ha_post_record_value": false,
+        "retry": false,
+        "restart": false,
+        "credential_change": false
+      },
+      "failure_boundary": "TLS client authentication reached the receiver, but application identity authorization rejected the actor's custom r12 issuer and absent X509 extensions before Edge admission.",
+      "what_it_proves": "The one authorized producer attempt was consumed and failed at the receiver identity boundary after TLS, with no admitted Edge record or downstream durable mutation.",
+      "limits": "Bounded negative data-path evidence only; do not retry or treat it as producer delivery. A reviewed source/identity correction and new explicit authorization would be required for any future data-bearing attempt; all later R1/P5/D1/X1 gates remain open."
+    },
+    {
+      "kind": "b2_r12_edge_cleanup_after_identity_failure",
+      "status": "passed_receiver_first_cleanup",
+      "verified_at": "2026-09-09",
+      "source": "Edge redacted cleanup receipt; private values withheld",
+      "runtime": "Distinct r12 replacement Edge/receiver compose project edge-r12-replacement-20260909",
+      "checks": {
+        "pre_stop_records": 0,
+        "pre_stop_bytes": 0,
+        "pre_stop_corrupt": 0,
+        "pre_stop_expired": 0,
+        "pre_stop_pending_gap": 0,
+        "receiver_exit_code": 143,
+        "edge_exit_code": 0,
+        "stop_order": "receiver first, Edge second",
+        "stop_grace_seconds": 10,
+        "restart_counts": "0/0",
+        "delivery_listener_20843": false,
+        "receiver_listener_20844": false,
+        "root_state_retained": true,
+        "hub_inputs_retained_mode": "0700",
+        "volume_deletion": false,
+        "credential_change": false,
+        "new_root_created": false,
+        "producer_retry": false
+      },
+      "what_it_proves": "The failed one-shot r12 Edge pair was stopped receiver-first, its listeners closed, its empty sealed state was retained, and no retry or destructive volume cleanup occurred.",
+      "limits": "No receiver ACK, admitted record, Hub durable delivery, HA post-record observation or full R1/P5/D1/X1 acceptance exists."
+    },
+    {
+      "kind": "b2_r12_hub_cleanup_after_identity_failure",
+      "status": "passed_fixture_stopped",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted cleanup receipt; private values withheld",
+      "runtime": "Disposable Hub fixture 18493 and the failed replacement Edge cohort",
+      "checks": {
+        "hub_fixture_18493": false,
+        "hub_direct_child_exit_code": 0,
+        "stopped_receipt_mode": "0600",
+        "hub_listener_18493": false,
+        "edge_delivery_listener_20843": false,
+        "edge_receiver_listener_20844": false,
+        "installed_hub_8443_healthy": true,
+        "retry": false,
+        "new_root": false
+      },
+      "what_it_proves": "Hub closed only the disposable 18493 launcher/direct child after the failed one-shot and retained a mode-0600 stop receipt; the failed r12 cohort left no live listener.",
+      "limits": "Bounded cleanup only; no producer admission, receiver ACK, durable delivery or full R1/P5/D1/X1 acceptance exists."
+    },
+    {
+      "kind": "b2_r12_ha_cleanup_primary_integrity_after_18493",
+      "status": "passed_primary_restored",
+      "verified_at": "2026-09-09",
+      "source": "Home Assistant redacted cleanup receipt; private values withheld",
+      "runtime": "Selected Debian 13 ARM64 Home Assistant Container and primary Hub fixture",
+      "checks": {
+        "temporary_18493_entry": false,
+        "primary_18483_entry": true,
+        "primary_teslatlas_entries": 1,
+        "ha_http": 200,
+        "primary_18483_readyz": 200,
+        "primary_ca_runtime_restored": true,
+        "primary_lane_mutated": false
+      },
+      "what_it_proves": "HA removed only the disposable 18493 entry and restored the original primary 18483 entry/runtime while preserving the primary lane.",
+      "limits": "Primary cleanup/integrity only; no post-record value, durable ACK/ledger/frontier, full R1/P5, D1 or X1 acceptance exists."
+    },
+    {
+      "kind": "r1_edge_receiver_identity_profile_pinned_verifier",
+      "status": "passed_source_only_pinned_verifier",
+      "verified_at": "2026-09-09",
+      "source": "Edge redacted source-only handoff; values not copied",
+      "source_files": {
+        "generator": "tools/interop/client_lanes/synthetic_vehicle_identity.py",
+        "generator_sha256": "878d98acb8f9d3aacf496d6d74f55daa732af800e38afce72a2a166150383b2d",
+        "generator_test": "tools/interop/client_lanes/test_synthetic_vehicle_identity.py",
+        "generator_test_sha256": "31290e9761c557d6ea6c2b0a989fc82e80fe6eb02dc047ba4f10f8827b3978af",
+        "pinned_verifier_harness": "tools/interop/client_lanes/test_pinned_receiver_identity.py",
+        "pinned_verifier_harness_sha256": "7d6636e00aade1e29e7b0682c1af3c9c3d86dd8779d65e96d882f0efb202deb9"
+      },
+      "profile": {
+        "issuer_common_name": "Tesla Motors Products CA",
+        "leaf_subject_common_name": "the supplied synthetic VIN",
+        "leaf_extensions": "CA:FALSE; critical digitalSignature/keyEncipherment; TLS Web Client Authentication",
+        "verification": "openssl verify -purpose sslclient returned OK against the generated client CA",
+        "custody": "output directory 0700; client CA certificate 0644; client certificate and private key 0600; CA private key stays in private staging and is not returned"
+      },
+      "pinned_verifier": {
+        "source_revision": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+        "file": "messages/identity.go",
+        "sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+        "toolchain": "go1.27.1 darwin/arm64",
+        "harness_result": "3 passed: generated profile accepted; wrong issuer rejected; known OID issuer without an identity OID rejected"
+      },
+      "commands": [
+        "/opt/homebrew/bin/python3.14 -m unittest tools/interop/client_lanes/test_synthetic_vehicle_identity.py",
+        "/opt/homebrew/bin/python3.14 tools/interop/client_lanes/test_pinned_receiver_identity.py --pinned-source <private exact pinned source root>"
+      ],
+      "runtime_boundary": "No receiver, Edge, Hub, HA, listener, producer helper, network request, credential mutation, replay or new runtime root was used.",
+      "what_it_proves": "The source generator now emits the application identity recognized by the pinned receiver, and the exact verifier accepts that generated profile while rejecting wrong or incomplete application identity metadata.",
+      "limits": "Source/application evidence only; the consumed r12 producer authorization remains closed, so this does not authorize or prove a live retry, Edge admission, durable ACK/ledger/frontier, HA value, full R1/P5, D1 or X1 acceptance."
+    },
+    {
+      "kind": "r1_edge_receiver_identity_hub_source_review",
+      "status": "passed_source_only_exact_pinned_parser",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted independent source-review receipt; values not copied",
+      "pinned_verifier": {
+        "source_revision": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+        "file": "messages/identity.go",
+        "sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+        "harness_result": "3 passed: generated profile accepted; wrong issuer rejected; known OID issuer without an identity OID rejected"
+      },
+      "checks": {
+        "generator_regression": "2/2 passed",
+        "exact_parser_harness": "3/3 passed",
+        "python_compilation": "passed",
+        "json_validation": "passed",
+        "whitespace_check": "passed"
+      },
+      "runtime_boundary": "No receiver, Edge, Hub, HA, listener, producer helper, network request, credential mutation, runtime root, fixture, replay or record submission was used.",
+      "what_it_proves": "Hub independently verified that the corrected generator profile reaches the pinned receiver identity branch, while an unrecognized issuer and a known OID issuer without an identity OID are rejected. The source correction is therefore reviewed at the application parser boundary rather than only at generic TLS-chain validation.",
+      "limits": "Source/application review only; the consumed r12 producer authorization remains closed and no live retry, Edge admission, durable ACK/ledger/frontier, HA value, full R1/P5, D1 or X1 acceptance is established."
+    },
+    {
+      "kind": "b2_fresh_one_record_coordinator_authorization",
+      "status": "passed_authority_bound",
+      "verified_at": "2026-09-09",
+      "source": "Coordinator redacted authority handoff; no private values copied",
+      "coordinator_task_id": "01a0829e-751f-7d93-9c1f-4b1ffdbfc22e",
+      "scope": "Exactly one wholly new fresh sealed synthetic Edge-to-Hub-to-Home-Assistant journey using the reviewed receiver identity profile",
+      "ordering": [
+        "Edge publishes fresh sealed empty readiness, actor digest and application-identity evidence",
+        "Hub validates and binds a fresh isolated collector fixture",
+        "Home Assistant attaches one temporary name-only entry",
+        "Exactly one synthetic VehicleName record is submitted and observed",
+        "Edge, Hub and Home Assistant clean only their disposable resources"
+      ],
+      "constraints": "Closed r12/r11/r10 and all prior private inputs are not reusable; no record replay, additional submission, retry, vehicle command, numeric Home Assistant sensor claim, production action or platform claim",
+      "what_it_proves": "A new explicit coordinator authority exists for one fresh data-bearing journey after the source/application identity correction passed independent review; it does not prove that any new runtime, record, receiver ACK, durable Hub state or Home Assistant value exists.",
+      "limits": "Authority and sequence only. Fresh Edge/Hub/HA readiness, one-record receiver admission, durable ACK/ledger/frontier/drain, name-only observation, cleanup, full R1/P5, D1 and X1 acceptance remain required."
+    },
+    {
+      "kind": "b2_fresh_r13_edge_reservation",
+      "status": "passed_reserved_pending_empty_readiness",
+      "verified_at": "2026-09-09",
+      "source": "Edge redacted fresh r13 reservation handoff; private values withheld",
+      "run_id": "edge-r13-authorized-20260909",
+      "runtime_root": "/home/bolyki.guest/teslatlas-edge-r13-authorized-20260909",
+      "lineage": "edge-spool-r13-authorized-20260909",
+      "planned_listeners": {
+        "edge_delivery": "https://127.0.0.1:20943",
+        "receiver": "wss://127.0.0.1:20944/",
+        "bind_scope": "loopback-only"
+      },
+      "identity": {
+        "source_id": "8c867580-27df-4e80-9a5f-c73f9864f809",
+        "vehicle_id": "024c338a-decd-4196-976e-29fe11b18111",
+        "vin": "5YJ3E1EA7KF000005",
+        "installation_id": "edge-r13-authorized-20260909",
+        "actor_sha256": "85c250307b4cefa4a58a0dd53bc921beb4ccc521dba78d05329bcc4a19f4c790",
+        "pinned_verifier_sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+        "pinned_verifier_result": "fresh generated certificate accepted 3/3"
+      },
+      "contract": {
+        "topic": "V",
+        "transaction_id": "edge-r13-authorized-20260909-v-001",
+        "created_at_ms": 1788933999000,
+        "field": "VehicleName",
+        "value": "synthetic-b2",
+        "home_assistant_projection": "device/display name synthetic-b2 only; no value, entity or units"
+      },
+      "runtime_boundary": "The lineage and actor are reserved, but Edge has not yet published the complete trust bundle or live health/empty-readiness receipt; no r13 listener/container, Hub fixture, HA entry, producer call or record exists.",
+      "what_it_proves": "A wholly new r13 identity/lineage was reserved under the fresh coordinator authority, and the new actor passed the reviewed pinned application-identity verifier. It is preparation evidence only, not live runtime readiness.",
+      "limits": "No complete trust custody, live empty queue/readiness, Hub binding, HA attachment, receiver admission, durable delivery, HA observation, cleanup, full R1/P5, D1 or X1 acceptance is established. Closed r12/r11/r10 inputs remain non-reusable."
+    },
+    {
+      "kind": "b2_fresh_r13_edge_empty_runtime",
+      "status": "passed_fresh_empty_ready",
+      "verified_at": "2026-09-09",
+      "source": "Edge redacted r13 runtime receipt; private trust and actor values withheld",
+      "run_id": "edge-r13-authorized-20260909",
+      "runtime_root": "/home/bolyki.guest/teslatlas-edge-r13-authorized-20260909",
+      "lineage": "edge-spool-r13-authorized-20260909",
+      "listeners": {
+        "edge_delivery": "https://127.0.0.1:20943",
+        "receiver": "wss://127.0.0.1:20944/",
+        "bind_scope": "loopback-only"
+      },
+      "identity": {
+        "source_id": "8c867580-27df-4e80-9a5f-c73f9864f809",
+        "vehicle_id": "024c338a-decd-4196-976e-29fe11b18111",
+        "vin": "5YJ3E1EA7KF000005",
+        "installation_id": "edge-r13-authorized-20260909",
+        "actor_sha256": "85c250307b4cefa4a58a0dd53bc921beb4ccc521dba78d05329bcc4a19f4c790",
+        "pinned_verifier_sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+        "pinned_verifier_result": "fresh generated certificate accepted 3/3"
+      },
+      "checks": {
+        "health": "ok",
+        "readiness": "ok",
+        "queue_records": 0,
+        "queue_bytes": 0,
+        "corrupt_records": 0,
+        "expired_records": 0,
+        "pending_gap_notices": 0,
+        "capacity_exhausted": false
+      },
+      "contract": {
+        "topic": "V",
+        "transaction_id": "edge-r13-authorized-20260909-v-001",
+        "created_at_ms": 1788933999000,
+        "field": "VehicleName",
+        "value": "synthetic-b2",
+        "home_assistant_projection": "device/display name synthetic-b2 only; no value, entity or units"
+      },
+      "runtime_boundary": "Fresh r13 Edge and receiver were live and empty-ready with the corrected actor identity; no prior root, credential or primary service was reused.",
+      "what_it_proves": "The newly authorized r13 runtime had matching fresh identity/trust custody, healthy listeners, an empty encrypted queue and the exact reviewed application-identity profile before Hub/HA binding.",
+      "limits": "Fresh runtime readiness only; it does not by itself prove Hub admission, durable delivery, HA observation or cleanup."
+    },
+    {
+      "kind": "b2_fresh_r13_hub_ha_pre_record",
+      "status": "passed_pre_record_name_only_baseline",
+      "verified_at": "2026-09-09",
+      "source": "Hub and Home Assistant redacted r13 receipts; private invitation/trust values withheld",
+      "hub_fixture": "b2-r13-authorized-20260909",
+      "hub_port": 18494,
+      "pre_record_checks": {
+        "edge_empty_poll": "passed",
+        "hub_edge_lineages": 0,
+        "hub_edge_applications": 0,
+        "hub_edge_sequence_dispositions": 0,
+        "hub_edge_pending_publications": 0,
+        "hub_edge_accumulator_states": 0,
+        "hub_ack_frontier": null,
+        "ha_devices": 2,
+        "ha_entities": 26,
+        "ha_target_display_name": "synthetic-b2",
+        "ha_normal_scheduler_baseline": "passed",
+        "ha_separate_name_sensor": false
+      },
+      "what_it_proves": "Hub and HA independently confirmed the same fresh r13 identity and name-only contract before the sole producer action; the primary HA/Hub lane remained preserved.",
+      "limits": "Pre-record ordering only; no producer, ACK, durable post-record state or cleanup was included in this evidence row."
+    },
+    {
+      "kind": "b2_fresh_r13_one_record_delivery",
+      "status": "passed_one_admitted_vehicle_name_and_durable_drain",
+      "verified_at": "2026-09-09",
+      "source": "Edge actor, Hub collector and HA redacted post-submit receipts; private payload/receipt values withheld",
+      "run_id": "edge-r13-authorized-20260909",
+      "actor": {
+        "invocations": 1,
+        "exit_code": 0,
+        "receiver_wire": "passed",
+        "ack": "received",
+        "topic": "V",
+        "transaction_id_match": true,
+        "retry": false
+      },
+      "edge_post_submit": {
+        "queue_records": 0,
+        "queue_bytes": 0,
+        "corrupt_records": 0,
+        "expired_records": 0,
+        "pending_gap_notices": 0,
+        "capacity_exhausted": false,
+        "restart_count_edge": 0,
+        "restart_count_receiver": 0,
+        "encrypted_receipts": 1,
+        "plaintext_payload_in_logs_or_state_names": false
+      },
+      "hub_post_submit": {
+        "edge_lineages": 1,
+        "edge_applications": 3,
+        "edge_sequence_dispositions": 3,
+        "ack_frontier": 3,
+        "pending_non_complete": 0,
+        "projected_sequence": "2: fleet_protojson_projected",
+        "lifecycle_sequences": [
+          "1: durable_non_projection_event / projection_unsupported",
+          "3: durable_non_projection_event / projection_unsupported"
+        ],
+        "accumulator": "VehicleName plus connection/state metadata only; no numeric telemetry"
+      },
+      "what_it_proves": "Exactly one authorized actor invocation was admitted and ACKed; Hub durably consumed the batch and classified the two additional sequence entries as connection/state lifecycle artifacts rather than telemetry, leaving one projected VehicleName item and no pending publication.",
+      "limits": "Bounded synthetic name-only same-Hub delivery only; it does not establish passive TeslaMate parity, full R1/P5, installed matrix or X1 acceptance."
+    },
+    {
+      "kind": "b2_fresh_r13_ha_observation",
+      "status": "passed_normal_scheduler_name_only_projection",
+      "verified_at": "2026-09-09",
+      "source": "Home Assistant redacted r13 post-submit receipt; private values withheld",
+      "hub_port": 18494,
+      "observation": {
+        "normal_scheduler_interval": "passed",
+        "target_display_name": "synthetic-b2",
+        "name_sensor": false,
+        "value": null,
+        "units": null,
+        "numeric_telemetry": false
+      },
+      "what_it_proves": "The selected real HA Container observed the admitted synthetic record through its normal scheduler as the documented device/display name only, without inventing a value-bearing entity or units.",
+      "limits": "Name-only projection evidence; it is not passive vehicle telemetry or full HA R1/P5 acceptance."
+    },
+    {
+      "kind": "b2_fresh_r13_cleanup",
+      "status": "passed_ordered_cleanup_primary_restored",
+      "verified_at": "2026-09-09",
+      "source": "Hub, Home Assistant and Edge redacted cleanup receipts; private state contents withheld",
+      "cleanup": {
+        "hub_fixture_port": "18494 closed",
+        "hub_child_exit": 0,
+        "ha_temporary_entry": "removed",
+        "ha_primary_entry": "18483 restored",
+        "ha_primary_readyz": 200,
+        "ha_http": 200,
+        "ha_remaining_teslatlas_entries": 1,
+        "ha_synthetic_devices": 0,
+        "ha_synthetic_entities": 0,
+        "edge_receiver_exit": 143,
+        "edge_exit": 0,
+        "edge_restart_counts": 0,
+        "edge_ports": "20943/20944 closed",
+        "edge_encrypted_state_retained": true,
+        "prior_r10_r11_r12_and_primary_lanes_touched": false
+      },
+      "what_it_proves": "Hub, HA and Edge removed only their disposable r13 resources in the required order, retained the sealed encrypted receipt/state, and restored the primary lanes without retry, volume deletion, credential change or prior-cohort mutation.",
+      "limits": "Cleanup and primary-lane integrity only; final R1/P5, D1, X1 and formal profile admission remain open."
+    },
+    {
+      "kind": "r1_hub_teslamate_source_mapping_ledger",
+      "status": "passed_source_mapping_review_operational_parity_unrun",
+      "verified_at": "2026-09-09",
+      "source_reference": {
+        "teslamate_version_compatibility": "v4.2.0-compatible",
+        "source_revision": "e8d24886f97f22469c2675f89be843f6d401c76a",
+        "migration_count": 105,
+        "migration_set_sha256": "ea850d1b038c4af950db32e7a0939aa5ebe8f1dcefe5e56dcd592f3451038868"
+      },
+      "ledger": {
+        "reviewed_domains": 17,
+        "preserved_typed_fingerprint_bound": 16,
+        "deliberately_excluded": "addresses.raw",
+        "all_teslamate_fields_preserved": false
+      },
+      "checks": "Four source boundary checks and seven physical-projection checks passed; no PostgreSQL connection or collector was started.",
+      "what_it_proves": "The named TeslaMate-compatible source mapping and fail-closed denominator are recorded, including the deliberate app-invisible addresses.raw exclusion; the local conversion/read-only boundaries are source-tested.",
+      "limits": "No live TeslaMate database, source backup, import, passive observation, migration, recovery, backup/restore or soak receipt exists; this is not full parity or collection acceptance."
+    },
+    {
+      "kind": "r1_ha_snapshot_serialization_regression",
+      "status": "passed_source_only_lock_red_green",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Home Assistant current-Hub client and integration test suite; live runtime untouched",
+      "source_hashes": {
+        "custom_components/teslatlas_hub/current_hub_client.py": "cf61c5b1f72c99c36fa5145c213bfbf863532348ff81513eaf08a9019f00f14b",
+        "tests/integration/test_current_hub_client.py": "39e6411d7e0604209d93cf628e8b0b98bd151e108df385099e9767836885c1a0",
+        "tests/test_coordinator.py": "c0197f3bd00f5ad35f9541983a6131cfeb444ee45eeb5d146b37a368930ac9b0"
+      },
+      "checks": "With the production snapshot lock deliberately removed, the overlap test failed because a second Hub read dispatched; with the lock restored it passed. Integration file 22/22, full suite 121 passed/2 skipped, and Ruff passed.",
+      "what_it_proves": "The HA source contract explicitly prevents overlapping snapshots from dispatching concurrent discovery/current reads, alongside stable per-vehicle failure and overflow rejection behavior.",
+      "limits": "Source and local test evidence only; no new live collection, TeslaMate parity, installed matrix or platform acceptance is established."
+    },
+    {
+      "kind": "r1_hub_data_recovery_source_regressions",
+      "status": "passed_source_only_operational_receipt_unrun",
+      "verified_at": "2026-09-09",
+      "source": "Teslatlas Hub TeslaMate/data-recovery source tests; no source database or collector accessed",
+      "checks": "13/13 data-recovery cases plus binary observation-command parsing and durable/monotonic watermark regressions passed.",
+      "coverage": "Private data-only backup creation and immutable verification; identity/lineage preservation; pairing and collector-authority removal; tamper, symlink and scope rejection; historical schema migration; and preservation of an existing restore destination.",
+      "what_it_proves": "The Hub recovery and passive-observation boundaries are source-tested and fail closed around identity, custody, authority and watermark handling.",
+      "limits": "No public backup, verify-backup or restore command ran against a durable R1 fixture or installed service; no live TeslaMate source, collector, passive recovery, retention or soak acceptance exists."
+    },
+    {
+      "kind": "r1_hub_synthetic_data_backup_restore_continuation",
+      "status": "passed_bounded_synthetic_data_only_and_cleaned",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted receipt hub/docs/development/r1-synthetic-data-recovery-2026-09-09.json; fresh isolated synthetic data root",
+      "commands": "advance; verify-observation; backup; verify-backup; restore-data; deliberately truncated-copy verify-backup and restore-data",
+      "checks": "Source and restored selected status shapes, durable watermarks and post-watermark observation matched; immutable backup verification passed; the truncated copy was rejected by verification and restore without creating an invalid destination, and the original backup remained unchanged.",
+      "cleanup": "Disposable roots moved to user Trash after validation; original paths absent and temporary ports 19495/19496 closed.",
+      "what_it_proves": "The public Hub data-only backup, verification, restore and continuation path works for one fresh synthetic debug-binary root and rejects a truncated backup fail closed.",
+      "limits": "Direct debug-binary synthetic evidence only. Pairing, decryption keys, TLS material, configuration, service state and collector authority were excluded; no named TeslaMate source, passive collection, migration, retention, soak, installed-package or clean-host acceptance exists."
+    },
+    {
+      "kind": "r1_viewer_installed_data_state",
+      "status": "historical_preserved_out_of_current_scope",
+      "verified_at": "2026-09-09T07:13:37Z",
+      "source": "Viewer redacted receipt teslatlas-viewer/docs/development/receipts/2026-09-09-r1-installed-data-state.json; fresh Hub-owned synthetic-real-process fixture",
+      "profile": "hub-http-v1@1.0.0",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "runtime": "Debian 13 ARM64; Node v26.7.0; Playwright 1.62.1; Chromium 152.0.7977.82",
+      "scenario": "viewer-r1-51-drives; 51 drives in 25/25/1 pages, IDs 1051 down through 1001",
+      "checks": "One installed browser test passed in 3.1s: three conditional 304 drive-page revalidations retained all 51 rows; unsupported resources produced explicit UI without unsupported route requests; a targeted drive failure retained data and recovered on clean refresh; delayed current cancellation after local-session clear produced no late repopulation.",
+      "cleanup": "Viewer and Hub stopped cleanly; the direct child exited 0 and listeners 127.0.0.1:4173 and 127.0.0.1:18480 were absent.",
+      "what_it_proves": "The packaged Viewer installed data-state journey handles cached history, explicit unsupported resources, retained-data partial failure and cancellation against one fresh synthetic Hub fixture.",
+      "limits": "Browser-owned abort/delay controls are Viewer data-state evidence, not Hub transport fault-injection. No named TeslaMate collection/parity, migration, D1 package/daemon/Docker, installed-matrix or X1 platform acceptance is established."
+    },
+    {
+      "kind": "r1_named_source_read_only_evidence_plan",
+      "status": "prepared_source_only_not_authorized",
+      "verified_at": "2026-09-09",
+      "source": "Hub plan hub/docs/development/r1-named-source-read-only-evidence-plan-2026-09-09.md; reviewed TeslaMate v4.2-compatible revision e8d24886f97f22469c2675f89be843f6d401c76a",
+      "checks": "The plan defines a password-free single-host PostgreSQL route with protected password input, read-only repeatable-read UTC sessions, source-only admission/inventory, separately authorized offline import/comparison, and distinct passive, recovery and soak gates.",
+      "what_it_proves": "The next H7 source lane is executable and fail-closed at the custody/authority boundary without accessing a named source or creating a Hub target.",
+      "limits": "No named TeslaMate source, backup, database credential, collector, Hub target, import, parity, collection, migration, recovery, backup/restore or soak receipt exists. It is a plan, not admission or acceptance."
+    },
+    {
+      "kind": "d1_aggregate_component_manifest_gap",
+      "status": "source_audit_missing_required_contract",
+      "verified_at": "2026-09-09",
+      "source": "Hub/HA source audit; required path packaging/components.json",
+      "observation": "No reviewed aggregate component manifest exists. Existing explicit Home Assistant selection/staging requires --ha-config, stages only the integration payload, and avoids a native HA service, but does not bind aggregate source/artifact digests, target/ownership/link rules, blocked reasons or a selection receipt.",
+      "what_it_proves": "The D1 aggregate installer-selection contract is an actual missing source boundary, not an installed acceptance result.",
+      "limits": "No installer mutation, runtime staging, credential change, native HA service, package or platform lifecycle acceptance was performed."
+    },
+    {
+      "kind": "d1_aggregate_component_selection_manifest_verified",
+      "status": "source_only_component_identities_bound_runtime_pending",
+      "verified_at": "2026-09-09",
+      "source": "Hub packaging/components.json; SHA256 37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa",
+      "components": {
+        "home_assistant": {
+          "payload_root": "custom_components/teslatlas_hub",
+          "payload_file_count": 31,
+          "raw_file_count": 41,
+          "excluded_generated_file_count": 10,
+          "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+          "selection_receipt_sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2",
+          "selector": "debian13-arm64-container",
+          "status": "accepted_primary_runtime_lane_only"
+        },
+        "viewer": {
+          "snapshot_manifest_sha256": "ce0e854bdddb5e6a87a9ab199b213b709df7b66c079140504ab6d706eb855b82",
+          "source_manifest_sha256": "b57d3e5b7c015bf397b55ab5823afe33d20c0b2296d0892f39c6bd683d6bae7a",
+          "source_file_count": 106,
+          "package_archive_sha256": "c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31",
+          "status": "historical_preserved_out_of_current_scope"
+        }
+      },
+      "checks": "Hub independently verified the HA payload file list and every listed digest and the HA bounded ARM64 Container receipt; retained Viewer source/package identities are historical and excluded from current Protocol work. Hub rechecked the Protocol external 177-file snapshot twice, matching source SHA256 efda1c9d31556871fe5be9965889083a7037b0c311945280631ce9dd21ce994f, then bound its current-Hub/profile/compatibility/matrix/offline-checker identities; the focused aggregate verifier passed 9/9.",
+      "what_it_proves": "The D1 aggregate source/package selection boundary is now present, reviewable and fail-closed, with explicit ownership, selector limits and runtime-receipt requirements.",
+      "limits": "Source and package identity preparation only; the Viewer portion is historical and out of current scope. No native package, image build, installer, service start, installed composition, cross-platform lifecycle, H7 named-source parity or X1 acceptance is established; all unsupplied component slots and runtime selectors remain blocked or pending. The earlier manifest-gap row is retained as superseded history."
+    },
+    {
+      "kind": "d1_hub_source_only_selector_target_provenance_guard",
+      "status": "passed_source_only_fail_closed_guard",
+      "verified_at": "2026-09-09",
+      "source": {
+        "launcher": "hub/scripts/bootstrap-companions.py",
+        "aggregate_manifest": "hub/packaging/components.json",
+        "aggregate_manifest_sha256": "37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa",
+        "source_hashes": {
+          "tools/companions/cli.py": "90986b7a26977eba6b4f3ca6b67cf9eb0ba06936728430e6093c9d8089a6ee60",
+          "tools/companions/core.py": "cf15086ad552283551b060afe1142fd6569059a28295b7630766b3bc4167bd23",
+          "tools/companions/targets.py": "ac316e98fb3deb886834171e4006ec8de29ead846fe36416f526392e384d1cda",
+          "tools/companions/tests/test_cli.py": "8373c37ef89a6604c6e33dd8e0af6312611481543d859c66bdc6b24558cb045f",
+          "tools/companions/tests/test_core.py": "a401eb5a5b1eb779a58808b50b73ff1de30081180c1f2bd8e2822672db263378",
+          "tools/companions/tests/test_targets.py": "fb096ff2c296d3cc3e2858e9fd99b7cada53adc14d1edc855cc4ec825f216b2c",
+          "tools/companions/catalog.schema.json": "72ceaae65da5d649f896958436442896f4757cce8a1fa8f003b5b01466a3bf24"
+        }
+      },
+      "selection": {
+        "accepted_component": "home-assistant",
+        "accepted_selector": "debian13-arm64-container",
+        "status": "planned_source_only",
+        "runtime_receipt_required": true,
+        "activation_authorized": false,
+        "candidate_source_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+        "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+        "selection_receipt_sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2"
+      },
+      "fail_closed": {
+        "hub_core": "D1 selection is blocked until candidate identities are admitted for hub-core",
+        "fleet_helpers": "D1 selection is blocked until candidate identities are admitted for fleet-helpers"
+      },
+      "checks": {
+        "companion_tests": "python3 -m unittest discover -s tools/companions/tests -p 'test_*.py': 75/75 passed",
+        "aggregate_manifest_tests": "python3 scripts/test_components_manifest.py: 9/9 passed",
+        "json_and_diff": "packaging/components.json and catalog.schema.json parsed; git diff --check passed",
+        "target_provenance": "HA catalog parsing requires payload and selection receipt hashes; install, status, activation and repair preserve or verify them and reject payload mismatch before relinking"
+      },
+      "what_it_proves": "Hub has a source-only, fail-closed D1 selector and target-provenance guard for the one admitted HA ARM64 Container candidate. Unbound Hub core and Fleet helper selections fail before manifest access, and the selector output cannot be mistaken for activation.",
+      "limits": "Source-only behavior and local tests. No component activation, installed composition, native package or image build, service start, Hub-core/Fleet artifact, installed SessionInput, runtime receipt, H7 named-source parity, X1 lifecycle acceptance or formal profile admission is established."
+    },
+    {
+      "kind": "d1_home_assistant_disposable_local_candidate_installer_adapter",
+      "status": "passed_source_only_disposable_transaction_not_runtime_acceptance",
+      "verified_at": "2026-09-09",
+      "source": {
+        "launchers": [
+          "hub/scripts/bootstrap-companions.py d1-plan",
+          "hub/scripts/bootstrap-companions.py d1-install"
+        ],
+        "aggregate_manifest": "hub/packaging/components.json",
+        "aggregate_manifest_sha256": "37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa",
+        "candidate_source_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+        "payload_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+        "selection_receipt_sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2"
+      },
+      "selection": {
+        "component": "home-assistant",
+        "selector": "debian13-arm64-container",
+        "product_version": "2026.36.2",
+        "profile": "hub-http-v1@1.0.0",
+        "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "runtime_receipt_required": true,
+        "activation_authorized": false
+      },
+      "checks": {
+        "companion_tests": "python3 -m unittest discover -s tools/companions/tests -p 'test_*.py': 80/80 passed",
+        "aggregate_manifest_tests": "python3 scripts/test_components_manifest.py: 9/9 passed",
+        "bootstrap_catalog_check": "one bootstrap-catalog check passed",
+        "rust_companion_delegation_tests": "11 passed, including 5 D1-specific cases",
+        "format_and_build": "cargo fmt --check passed; Hub binary build passed",
+        "disposable_transaction": "Existing HA staging/link path preserved its existing sentinel and returned runtime_acceptance=false; Home Assistant was not started"
+      },
+      "what_it_proves": "Hub has a source-only, fail-closed D1 selector, target-provenance guard and disposable local-candidate staging transaction for the one admitted HA ARM64 Container candidate. The transaction exercises source-side selection and link preservation without activation.",
+      "limits": "No persistent HA configuration, package, service, container, guest, credential, production selector, activation, installed SessionInput, runtime receipt, Hub-core/Fleet artifact, H7 named-source parity, X1 lifecycle acceptance or formal profile admission was changed or established."
+    },
+    {
+      "kind": "active_arm64_mac_protocol_asset_revalidation",
+      "status": "passed_source_only",
+      "verified_at": "2026-09-09",
+      "commands": [
+        "uv run python tools/build_hub_http_profile.py --check",
+        "uv run python tools/build_openapi.py --check",
+        "uv run python tools/build_conformance.py --check"
+      ],
+      "profile": "hub-http-v1@1.0.0",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "what_it_proves": "The current Protocol profile, OpenAPI artifact and conformance bundle are generated and up to date for the active ARM64/Mac developer-resource path; the profile reports 12 cases and 3 compatibility profiles.",
+      "limits": "Source/developer-asset checks only; no Hub runtime, installed target, package activation, named-source parity or platform lifecycle acceptance is established."
+    },
+    {
+      "kind": "d1_protocol_component_manifest_handoff",
+      "status": "immutable_source_and_contract_identity_verified_developer_resource_only",
+      "verified_at": "2026-09-09",
+      "source": "Protocol handoff teslatlas-protocol/docs/development/d1-component-manifest-handoff-2026-09-09.json; handoff SHA256 54907340ce8dd04ea93403d8ebf317783faa190a43c68745e3d470962df924bd",
+      "frozen_snapshot": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-protocol-d1-20260909-ro/frozen-source",
+        "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-protocol-d1-20260909-ro/local-sources.json",
+        "manifest_sha256": "e89ff7ecf4b9e0ddeebc6801ca4bf7a865b8c0561e12bb69e1c5d14f55b7ec24",
+        "source_sha256": "efda1c9d31556871fe5be9965889083a7037b0c311945280631ce9dd21ce994f",
+        "file_count": 177,
+        "read_only_path_count": 221,
+        "writable_path_count": 0
+      },
+      "developer_resource": {
+        "kind": "versioned_protocol_contract_bundle",
+        "product_version": "2026.36.2",
+        "current_hub_profile": "hub-http-v1@1.0.0",
+        "current_hub_profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "package_archive_sha256": null,
+        "checker_image_sha256": null,
+        "service_or_installed_runtime": false
+      },
+      "checks": "External source record was generated with the Hub source walker, its source digest and 177-file count were rechecked after read-only permissioning, and zero writable snapshot paths were observed; key VERSION/profile/compatibility/matrix/OpenAPI/checker identities are bound in the handoff. Hub independently ran source_manifest_for twice against the sealed snapshot, matched source SHA256 efda1c9d31556871fe5be9965889083a7037b0c311945280631ce9dd21ce994f, and bound the identities into aggregate packaging/components.json SHA256 37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa.",
+      "what_it_proves": "Protocol supplies the requested immutable source-only D1 developer-resource identity and explicit no-service/source-package selector boundary; Hub independently verified it twice and bound the exact identities into the aggregate.",
+      "limits": "Hub's two-check aggregate binding is complete for this source handoff; no Protocol package archive, image, service, listener, SessionInput, installed runtime, platform lifecycle, formal profile admission, H7 named-source parity or X1 acceptance is established. The post-freeze status update is intentionally outside the snapshot."
+    },
+    {
+      "kind": "native_goal_completion_audit",
+      "status": "complete_source_and_conformance_resources_verified",
+      "verified_at": "2026-09-09",
+      "objective": "Deliver usable, source-neutral current-Hub contracts, developer assets and conformance support for Debian 13 ARM64 and Apple-silicon Mac consumers. Keep formal parity gaps distinct; x86, amd64, Intel Mac, Azure and full cross-architecture acceptance are deferred and are not prerequisites for the current usable resources. Add no Protocol daemon.",
+      "checks": {
+        "focused_generated_assets": "build_hub_http_profile.py --check; build_openapi.py --check; build_conformance.py --check",
+        "full_gate": "./tools/check: 134 tests passed in 31.471s; 31/31 rich-profile runs passed across 3 profiles",
+        "integrity": "STATUS and D1 handoff JSON parsed; git diff --check passed",
+        "profile": "hub-http-v1@1.0.0 SHA256 b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+      },
+      "what_it_proves": "The Protocol-owned current-Hub contract, rich and Edge contract bundles, public documentation, conformance adapters/cases, current-Hub matrix boundary and ARM64/Mac developer-resource handoff are present, source-neutral and locally reproducible without adding a Protocol daemon.",
+      "limits": "Source/developer-resource completion only. It does not admit a deployed profile, install or activate companions, supply active-target runtime receipts, establish named TeslaMate parity/recovery, or close deferred architecture and X1 rows."
+    },
+    {
+      "kind": "owner_restart_revalidation",
+      "status": "resumed_no_new_protocol_action_required",
+      "verified_at": "2026-09-12",
+      "authority": "../../../docs/development/ACTIVE_SCOPE.md and owner restart direction",
+      "native_goal": {
+        "goal_id": "01a082b7-86b3-72d2-b173-dbad9073ec2c",
+        "state": "complete",
+        "replacement_created": false
+      },
+      "execution": {
+        "active_targets": [
+          "Debian 13 ARM64",
+          "macOS on Apple silicon"
+        ],
+        "x86_state": "paused",
+        "protocol_runtime_state": "no_in_flight_process_or_owned_lock",
+        "dirty_checkout": "preserved"
+      },
+      "what_it_proves": "The owner restart lifted the global pause for ARM64/Mac work. Protocol resumes as a completed resource task, available for a concrete contract correction or fresh Hub/companion handoff, without creating a replacement goal or inventing work.",
+      "limits": "This is a source/status revalidation only. It does not create fresh runtime evidence, change the completed resource boundary, resume x86 work, or claim companion installed receipts, TeslaMate parity or production acceptance."
+    },
+    {
+      "kind": "owner_scope_change_viewer_exclusion",
+      "status": "effective_current_scope_override",
+      "verified_at": "2026-09-12",
+      "authority": "Owner scope direction 2026-09-12",
+      "excluded_work": "Viewer development, packaging, integration and acceptance",
+      "historical_boundary": "Existing Viewer source, receipts and verification rows are retained as historical evidence and are not current Protocol requirements or dependencies.",
+      "goal_control": {
+        "active_goal_lookup": "no active native goal; the preserved native goal is complete",
+        "supported_objective_mutation": "not available for a completed or absent goal",
+        "effective_override_recorded": true,
+        "replacement_created": false
+      },
+      "what_it_proves": "The current Protocol scope excludes Viewer work while preserving the completed resource goal and its historical evidence. Protocol continues independently for its own current-Hub contracts, developer assets and conformance support.",
+      "limits": "This is a planning/status override only. It does not delete Viewer source or receipts, change public wire contracts, resume Viewer work, or establish new runtime evidence."
+    },
+    {
+      "kind": "owner_restart_2026_09_18_no_protocol_action_ready",
+      "status": "complete_objective_preserved_idle",
+      "verified_at": "2026-09-18",
+      "authority": "Owner restart direction 2026-09-18 and ../../../docs/development/ACTIVE_SCOPE.md",
+      "native_goal": {
+        "goal_id": "01a082b7-86b3-72d2-b173-dbad9073ec2c",
+        "state": "complete",
+        "replacement_created": false
+      },
+      "audit": {
+        "scope": "Debian 13 ARM64 and Apple-silicon Mac only; Viewer excluded; x86/amd64/Intel Mac/Azure/full matrix paused or deferred",
+        "protocol_checkout": "dirty main preserved; no post-pause Protocol commit",
+        "companion_metadata": "checked Hub, TypeScript, Swift, Home Assistant and Edge status/plan metadata remains at the 2026-09-12 checkpoint; no post-pause commits were present",
+        "finding": "No concrete Hub or companion Protocol-owned contract correction was identified; pending items are runtime or handoff dependencies",
+        "runtime_and_suites": "No runtime or daemon was created or changed; unchanged suites were not rerun"
+      },
+      "what_it_proves": "The 2026-09-18 owner restart is recorded, the completed ARM64/Mac Protocol developer-resource objective remains complete, and no new Protocol action is ready.",
+      "limits": "Read-only status audit only; it does not create fresh runtime or wire evidence, resolve sibling handoff dependencies, resume Viewer or deferred architectures, or authorize publication."
+    }
+  ],
+  "thread_id": "01a082b7-86b3-72d2-b173-dbad9073ec2c",
+  "reasoning_effort": "max",
+  "development_authorized_at": "2026-09-08T21:13:48.933123+00:00",
+  "blocker": "No blocker remains for the current native Protocol objective. Deferred x86/amd64/Intel Mac, Azure and full cross-architecture work is out of scope. Named TeslaMate parity/recovery, active-target installed composition and formal profile admission remain separate follow-on plan boundaries; the recorded source-only contract and developer resources do not claim those receipts.",
+  "blocker_owner": "Hub owns shared ARM64/Mac target, runner and runtime handoffs; each companion owns its active-target artifact and consumer receipts; programme owners control named-source R1 inputs and any later resumption of deferred x86/amd64/Intel Mac, Azure or full cross-architecture work",
+  "unblock_event": "No unblock event is required for the completed native Protocol goal. Follow-on R1, installed-target, formal-admission and deferred-architecture work is separately owned and separately gated.",
+  "next_ready_action": "No action is ready after the 2026-09-18 post-pause audit. Preserve the completed source-neutral resources and remain idle until a concrete Hub/companion contract correction or fresh ARM64/Mac handoff is requested; do not start x86/amd64/Intel Mac, Azure or full-matrix work, and do not add a daemon."
+}

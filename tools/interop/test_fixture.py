@@ -60,6 +60,69 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(staged.read_bytes()).hexdigest(), digest)
         self.assertEqual(staged.stat().st_mode & 0o777, 0o500)
 
+    def test_subprocess_diagnostic_reports_exit_without_child_stderr(self):
+        result = fixture.subprocess_diagnostic(
+            "seed", ["/bin/sh", "-c", "printf never-persist-this >&2; exit 7"], 5
+        )
+
+        self.assertEqual(result["stage"], "seed")
+        self.assertEqual(result["termination"], "exit")
+        self.assertEqual(result["exit_code"], 7)
+        self.assertIsInstance(result["elapsed_ms"], int)
+        self.assertGreaterEqual(result["elapsed_ms"], 0)
+        self.assertNotIn("stderr", result)
+        self.assertNotIn("never-persist-this", json.dumps(result))
+
+    def test_subprocess_diagnostic_reports_signal_without_child_stderr(self):
+        result = fixture.subprocess_diagnostic(
+            "seed", ["/bin/sh", "-c", "kill -TERM $$"], 5
+        )
+
+        self.assertEqual(result["stage"], "seed")
+        self.assertEqual(result["termination"], "signal")
+        self.assertEqual(result["signal"], "SIGTERM")
+        self.assertNotIn("stderr", result)
+
+    def test_subprocess_diagnostic_reports_timeout_without_child_stderr(self):
+        result = fixture.subprocess_diagnostic(
+            "seed", ["/bin/sh", "-c", "sleep 1"], 0.01
+        )
+
+        self.assertEqual(result["stage"], "seed")
+        self.assertEqual(result["termination"], "timeout")
+        self.assertNotIn("exit_code", result)
+        self.assertNotIn("stderr", result)
+
+    def test_subprocess_diagnostic_runs_child_with_private_umask(self):
+        previous = os.umask(0o002)
+        try:
+            result = fixture.subprocess_diagnostic(
+                "seed", ["/bin/sh", "-c", 'test "$(umask)" = 0077'], 5
+            )
+        finally:
+            os.umask(previous)
+
+        self.assertEqual(result["termination"], "exit")
+        self.assertEqual(result["exit_code"], 0)
+
+    def test_seed_failure_leaves_private_sanitized_diagnostic(self):
+        self.executable.write_text("#!/bin/sh\nprintf never-persist-this >&2\nexit 7\n")
+        self.executable.chmod(0o700)
+        config = self.load()
+
+        with self.assertRaisesRegex(RuntimeError, "synthetic seed failed"):
+            fixture.run(config)
+
+        diagnostic = self.root / "fixture-diagnostic.json"
+        saved = json.loads(diagnostic.read_text())
+        self.assertEqual(diagnostic.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(saved["stage"], "seed")
+        self.assertEqual(saved["termination"], "exit")
+        self.assertEqual(saved["exit_code"], 7)
+        self.assertIn("elapsed_ms", saved)
+        self.assertNotIn("never-persist-this", json.dumps(saved))
+        self.assertNotIn("stderr", saved)
+
     def test_missing_profile_binding_fails_before_state_creation(self):
         del self.config["profile_id"]
         with self.assertRaises(ValueError):
@@ -95,6 +158,44 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.load()
 
+    def test_viewer_r1_selector_emits_fixed_seed_argument_and_static_scenario(self):
+        self.config["scenario_id"] = "viewer-r1-51-drives"
+
+        loaded = self.load()
+
+        self.assertEqual(
+            fixture.seed_command(loaded, self.executable, self.root / "new", 18480)[-2:],
+            ["--scenario", "viewer-r1-51-drives"],
+        )
+        scenario = fixture.scenario_source(loaded)
+        self.assertEqual(scenario.name, "scenario-viewer-r1-51-drives.json")
+        expected = json.loads(scenario.read_text())
+        self.assertEqual(expected["drive_pages_at_limit_25"], [
+            list(range(1051, 1026, -1)),
+            list(range(1026, 1001, -1)),
+            [1001],
+        ])
+
+    def test_unknown_scenario_selector_fails_before_state_creation(self):
+        self.config["scenario_id"] = "../../untrusted"
+
+        with self.assertRaisesRegex(ValueError, "scenario"):
+            self.load()
+
+        self.assertFalse(Path(self.config["output_dir"]).exists())
+
+    def test_viewer_r1_scenario_copy_is_private_and_exact(self):
+        self.config["scenario_id"] = "viewer-r1-51-drives"
+        loaded = self.load()
+
+        copied, digest = fixture.copy_selected_scenario(self.root, loaded)
+
+        expected = fixture.scenario_source(loaded).read_bytes()
+        self.assertEqual(copied, self.root / "scenario.json")
+        self.assertEqual(copied.read_bytes(), expected)
+        self.assertEqual(digest, hashlib.sha256(expected).hexdigest())
+        self.assertEqual(copied.stat().st_mode & 0o777, 0o600)
+
     def test_allowed_origins_are_appended_to_seeded_config(self):
         path = self.root / "config.toml"
         path.write_text('bind = "127.0.0.1:1234"\n')
@@ -102,6 +203,167 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             path.read_text(),
             'bind = "127.0.0.1:1234"\n[http]\nallowed_origins = ["http://localhost:43123"]\n',
+        )
+
+    def test_edge_collector_overlay_emits_exclusive_fleet_pull_config(self):
+        private = {}
+        for name in ("ca.pem", "client.pem", "client-key.pem", "bearer"):
+            path = self.root / name
+            path.write_text(name)
+            path.chmod(0o600)
+            private[name] = str(path)
+        self.config["edge_collector"] = {
+            "base_url": "https://127.0.0.1:18510/",
+            "ca_certificate_path": private["ca.pem"],
+            "client_certificate_path": private["client.pem"],
+            "client_private_key_path": private["client-key.pem"],
+            "bearer_token_path": private["bearer"],
+            "installation_id": "edge-b2-20260909",
+            "lineage": "edge-v2-primary",
+            "source_id": "11111111-1111-4111-8111-111111111111",
+            "vehicle_id": "22222222-2222-4222-8222-222222222222",
+            "vin": "5YJ3E1EA7KF000001",
+            "car_id": 9,
+        }
+        loaded = self.load()
+        path = self.root / "config.toml"
+        path.write_text(
+            '[collector]\ninterval_seconds = 0\nowner_api_base_url = "https://127.0.0.1:1/"\n'
+            '[collector.legacy_auth]\nenabled = false\n[terrain]\nenabled = false\n'
+        )
+
+        fixture.configure_edge_collector(path, loaded["edge_collector"])
+
+        rendered = path.read_text()
+        self.assertIn('[collector]\nprovider = "fleet"\ninterval_seconds = 0', rendered)
+        self.assertIn('[collector.edge]\nbase_url = "https://127.0.0.1:18510/"', rendered)
+        self.assertIn('bearer_token_path = ' + json.dumps(private["bearer"]), rendered)
+        self.assertNotIn("[collector.fleet_telemetry]", rendered)
+
+    def test_edge_collector_accepts_fresh_docker_delivery_endpoints_and_rejects_receiver_ports(self):
+        private = {}
+        for name in ("ca.pem", "client.pem", "client-key.pem", "bearer"):
+            path = self.root / name
+            path.write_text(name)
+            path.chmod(0o600)
+            private[name] = str(path)
+        self.config["edge_collector"] = {
+            "base_url": "https://127.0.0.1:20443/",
+            "ca_certificate_path": private["ca.pem"],
+            "client_certificate_path": private["client.pem"],
+            "client_private_key_path": private["client-key.pem"],
+            "bearer_token_path": private["bearer"],
+            "installation_id": "edge-b2-20260909",
+            "lineage": "edge-spool-b2-20260909",
+            "source_id": "04d1bc2f-0e9a-4f84-9ac5-492955dd8d5e",
+            "vehicle_id": "11111111-1111-4111-8111-111111111111",
+            "vin": "5YJ3E1EA7KF000001",
+            "car_id": 9,
+        }
+
+        for delivery_endpoint, receiver_endpoint in (
+            ("https://127.0.0.1:20443/", "https://127.0.0.1:20444/"),
+            ("https://127.0.0.1:20543/", "https://127.0.0.1:20544/"),
+            ("https://127.0.0.1:20743/", "https://127.0.0.1:20744/"),
+            ("https://127.0.0.1:20843/", "https://127.0.0.1:20844/"),
+            ("https://127.0.0.1:20943/", "https://127.0.0.1:20944/"),
+        ):
+            self.config["edge_collector"]["base_url"] = delivery_endpoint
+            self.assertEqual(self.load()["edge_collector"]["base_url"], delivery_endpoint)
+
+            self.config["edge_collector"]["base_url"] = receiver_endpoint
+            with self.assertRaises(ValueError):
+                self.load()
+
+    def test_seeded_config_applies_edge_collector_before_http_origins(self):
+        private = {}
+        for name in ("ca.pem", "client.pem", "client-key.pem", "bearer"):
+            path = self.root / name
+            path.write_text(name)
+            path.chmod(0o600)
+            private[name] = str(path)
+        self.config["edge_collector"] = {
+            "base_url": "https://127.0.0.1:18510/",
+            "ca_certificate_path": private["ca.pem"],
+            "client_certificate_path": private["client.pem"],
+            "client_private_key_path": private["client-key.pem"],
+            "bearer_token_path": private["bearer"],
+            "installation_id": "edge-b2-20260909",
+            "lineage": "edge-v2-primary",
+            "source_id": "11111111-1111-4111-8111-111111111111",
+            "vehicle_id": "22222222-2222-4222-8222-222222222222",
+            "vin": "5YJ3E1EA7KF000001",
+            "car_id": 9,
+        }
+        self.config["allowed_origins"] = ["http://127.0.0.1:4173"]
+        loaded = self.load()
+        path = self.root / "config.toml"
+        path.write_text(
+            '[collector]\ninterval_seconds = 0\nowner_api_base_url = "https://127.0.0.1:1/"\n'
+            '[collector.legacy_auth]\nenabled = false\n[terrain]\nenabled = false\n'
+        )
+
+        fixture.configure_seeded_config(path, loaded)
+
+        rendered = path.read_text()
+        self.assertLess(rendered.index("[collector.edge]"), rendered.index("[http]"))
+        self.assertIn('allowed_origins = ["http://127.0.0.1:4173"]', rendered)
+
+    def test_edge_collector_rejects_a_group_readable_credential_path(self):
+        private = {}
+        for name in ("ca.pem", "client.pem", "client-key.pem", "bearer"):
+            path = self.root / name
+            path.write_text(name)
+            path.chmod(0o600)
+            private[name] = str(path)
+        Path(private["bearer"]).chmod(0o640)
+        self.config["edge_collector"] = {
+            "base_url": "https://127.0.0.1:18510/",
+            "ca_certificate_path": private["ca.pem"],
+            "client_certificate_path": private["client.pem"],
+            "client_private_key_path": private["client-key.pem"],
+            "bearer_token_path": private["bearer"],
+            "installation_id": "edge-b2-20260909",
+            "lineage": "edge-v2-primary",
+            "source_id": "11111111-1111-4111-8111-111111111111",
+            "vehicle_id": "22222222-2222-4222-8222-222222222222",
+            "vin": "5YJ3E1EA7KF000001",
+            "car_id": 9,
+        }
+
+        with self.assertRaises(ValueError):
+            self.load()
+
+    def test_edge_collector_seed_command_binds_the_sealed_source_identity(self):
+        private = {}
+        for name in ("ca.pem", "client.pem", "client-key.pem", "bearer"):
+            path = self.root / name
+            path.write_text(name)
+            path.chmod(0o600)
+            private[name] = str(path)
+        self.config["edge_collector"] = {
+            "base_url": "https://127.0.0.1:18510/",
+            "ca_certificate_path": private["ca.pem"],
+            "client_certificate_path": private["client.pem"],
+            "client_private_key_path": private["client-key.pem"],
+            "bearer_token_path": private["bearer"],
+            "installation_id": "edge-b2-20260909",
+            "lineage": "edge-spool-b2-20260909",
+            "source_id": "04d1bc2f-0e9a-4f84-9ac5-492955dd8d5e",
+            "vehicle_id": "11111111-1111-4111-8111-111111111111",
+            "vin": "5YJ3E1EA7KF000001",
+            "car_id": 9,
+        }
+        loaded = self.load()
+
+        command = fixture.seed_command(loaded, self.executable, self.root / "new", 18480)
+
+        self.assertEqual(
+            command,
+            [str(self.executable), "--output", str(self.root / "new"), "--port", "18480",
+             "--source-id", "04d1bc2f-0e9a-4f84-9ac5-492955dd8d5e",
+             "--vehicle-id", "11111111-1111-4111-8111-111111111111",
+             "--vin", "5YJ3E1EA7KF000001", "--car-id", "9"],
         )
 
     def test_shared_readable_config_rejected(self):

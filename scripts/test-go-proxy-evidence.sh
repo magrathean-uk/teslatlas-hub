@@ -31,7 +31,7 @@ lock = json.loads((root / "scripts" / "tesla-proxy-lock.json").read_text())
 
 assert lock["schema"] == "teslatlas.tesla-proxy-lock/v3"
 policy = module.validate_lock(copy.deepcopy(lock))["build_host"]
-assert len(policy["go"]) == 2
+assert len(policy["go"]) == 3
 assert policy["go"] == sorted(
     policy["go"], key=lambda item: (item["path"], item["sha256"], item["goroot"])
 )
@@ -45,8 +45,14 @@ homebrew = {
     "sha256": "71c4991041d8e44975c882e4f72005719c958013d3340dc665a3808b72ddf702",
     "goroot": "/opt/homebrew/Cellar/go/1.27.0/libexec",
 }
+user_owned = {
+    "path": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64/bin/go",
+    "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
+    "goroot": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64",
+}
 assert official in policy["go"]
 assert homebrew in policy["go"]
+assert user_owned in policy["go"]
 
 def rejected(action, message):
     try:
@@ -56,7 +62,7 @@ def rejected(action, message):
     else:
         raise AssertionError(f"accepted invalid host policy: {message}")
 
-for selected in (official, homebrew):
+for selected in (official, homebrew, user_owned):
     observed = {
         "go": copy.deepcopy(selected),
         "compiler": copy.deepcopy(policy["compiler"]),
@@ -189,6 +195,11 @@ import tarfile
 evidence = Path(sys.argv[1])
 proxy = Path(sys.argv[2])
 digest = lambda data: hashlib.sha256(data).hexdigest()
+user_owned = {
+    "path": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64/bin/go",
+    "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
+    "goroot": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64",
+}
 
 manifest = json.loads((evidence / "go-component-manifest.json").read_text())
 assert manifest["schema"] == "teslatlas.go-proxy-evidence/v2"
@@ -237,11 +248,7 @@ assert "DefaultGODEBUG" not in {
     item["Key"] for item in receipt["build_info"]["Settings"]
 }
 assert len(receipt["build_host"]["go"]["sha256"]) == 64
-assert receipt["build_host"]["go"] == {
-    "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
-    "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
-    "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64",
-}
+assert receipt["build_host"]["go"] == user_owned
 assert len(receipt["build_host"]["compiler"]["sha256"]) == 64
 assert receipt["build_host"]["go"]["goroot"]
 assert receipt["build_host"]["xcode"]["version"].startswith("Xcode ")

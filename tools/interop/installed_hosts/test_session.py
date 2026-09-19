@@ -7,8 +7,11 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.interop.installed_hosts.contract import ContractError
+from tools.interop.installed_hosts.bounded import Deadline
+from tools.interop.installed_hosts import session as session_module
 from tools.interop.installed_hosts.session import CleanupError, InstalledSession, SessionError
 from tools.interop.installed_hosts.guest import GuestController
 from tools.interop.installed_hosts.test_contract import config, registration
@@ -31,7 +34,7 @@ class FakeTransport:
         self.running = True
         self.generation = 1
 
-    def open(self, registered):
+    def open(self, registered, deadline=None):
         self.registered = registered
         if self.fail == "open":
             raise RuntimeError("synthetic open failure")
@@ -191,7 +194,55 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(transport.requests[0]["challenge"], CHALLENGE_0)
             with self.assertRaises(CleanupError):
                 session.close()
+
+    def test_open_passes_the_enclosing_deadline_to_transport(self):
+        class DeadlineTransport(FakeTransport):
+            def open(self, registered, deadline):
+                self.open_deadline = deadline
+                return super().open(registered)
+
+        with tempfile.TemporaryDirectory() as raw:
+            cfg, inventory = inputs(Path(raw))
+            deadline = Deadline(1)
+            transport = DeadlineTransport()
+            session = InstalledSession.open(
+                cfg, inventory, transport=transport, verify_local_inputs=False, deadline=deadline,
+            )
+            try:
+                self.assertIs(deadline, transport.open_deadline)
+            finally:
+                session.close()
             self.assertTrue(transport.closed)
+
+    def test_open_stops_local_input_hashing_when_deadline_expires(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            cfg, inventory = inputs(directory)
+            transport = FakeTransport()
+            deadline = Deadline(0.01)
+            manifest = {
+                "package_sha256": "d" * 64,
+                "product_version": "2026.36.2",
+                "os": "Debian 13",
+                "architecture": "amd64",
+                "hub_executable": {"path": "/usr/bin/teslatlas-hub", "sha256": "f" * 64},
+            }
+
+            def slow_hash(_binding, _label, deadline=None):
+                deadline.remaining()
+                time.sleep(0.02)
+                deadline.remaining()
+
+            with mock.patch("tools.interop.installed_hosts.transport._verify_provider_tool", return_value=None), \
+                    mock.patch.object(session_module, "_hash_regular_file", side_effect=slow_hash), \
+                    mock.patch.object(session_module, "_read_json_file", return_value=manifest), \
+                    mock.patch.object(session_module, "validate_package_manifest", return_value=manifest):
+                with self.assertRaises(TimeoutError):
+                    InstalledSession.open(
+                        cfg, inventory, transport=transport, verify_local_inputs=True, deadline=deadline,
+                    )
+
+            self.assertIsNone(transport.registered)
 
     def test_copied_proof_from_another_session_is_not_admitted(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -252,6 +303,7 @@ class SessionTests(unittest.TestCase):
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
                 client.connect(descriptor["broker_socket"])
                 greeting = json.loads(client.makefile("rb").readline())
+                self.assertEqual(greeting["challenge"], CHALLENGE_0)
                 request = {
                     "schema_version": 1, "session_id": descriptor["session_id"],
                     "sequence": 1, "challenge": greeting["challenge"], "op": "verify",
@@ -259,6 +311,8 @@ class SessionTests(unittest.TestCase):
                 client.sendall(json.dumps(request).encode() + b"\n")
                 reply = json.loads(client.makefile("rb").readline())
                 self.assertEqual(reply["type"], "reply")
+                self.assertEqual(reply["result"]["proof"]["challenge"], request["challenge"])
+                self.assertEqual(reply["challenge"], session._guest_challenge)
                 client.sendall(json.dumps(request).encode() + b"\n")
                 error = json.loads(client.makefile("rb").readline())
                 self.assertEqual(error["error"]["code"], "invalid-request")
@@ -300,6 +354,185 @@ class SessionTests(unittest.TestCase):
             self.assertTrue(any(item["kind"] == "failure" and item["operation"] == "pair" for item in entries))
             self.assertTrue(transport.closed)
 
+    def test_failed_dispatched_operation_has_a_redacted_public_record(self):
+        with tempfile.TemporaryDirectory() as raw:
+            session = self.open_session(Path(raw), FakeTransport(fail="verify"))
+            with self.assertRaisesRegex(RuntimeError, "verify failure"):
+                session.request({"op": "verify"})
+
+            records = session.operation_records_snapshot(Deadline(1))
+
+            self.assertEqual(1, len(records))
+            self.assertEqual(
+                {
+                    "operation": "verify",
+                    "request": {"op": "verify"},
+                    "request_binding": {"op": "verify", "sequence": 1, "challenge": CHALLENGE_0},
+                    "processed_binding": None,
+                    "status": "failed",
+                    "failure": "RuntimeError",
+                    "result_binding": None,
+                    "result_sha256": None,
+                    "proof": None,
+                    "invitation": None,
+                    "expired_invitation": None,
+                    "advance": None,
+                    "events_sha256": None,
+                    "final_stopped": None,
+                },
+                {key: records[0][key] for key in (
+                    "operation", "request", "request_binding", "processed_binding", "status", "failure", "result_binding",
+                    "result_sha256", "proof", "invitation", "expired_invitation", "advance",
+                    "events_sha256", "final_stopped",
+                )},
+            )
+            self.assertGreaterEqual(records[0]["finished_monotonic_ns"], records[0]["started_monotonic_ns"])
+            self.assertNotIn("synthetic verify failure", json.dumps(records, sort_keys=True))
+            with self.assertRaises(CleanupError):
+                session.close()
+
+    def test_operation_record_snapshot_retains_processed_public_facts_without_secrets(self):
+        with tempfile.TemporaryDirectory() as raw:
+            session = self.open_session(Path(raw))
+            verified = session.request({"op": "verify"})
+            session.request({"op": "stop"})
+
+            records = session.operation_records_snapshot(Deadline(1))
+
+            self.assertEqual(["verify", "stop"], [item["operation"] for item in records])
+            verify, stop = records
+            self.assertEqual({"op": "verify"}, verify["request"])
+            self.assertEqual(
+                {"op": "verify", "sequence": 1, "challenge": CHALLENGE_0},
+                verify["request_binding"],
+            )
+            self.assertEqual(verify["request_binding"], verify["processed_binding"])
+            self.assertEqual(verified["proof"], verify["proof"])
+            self.assertEqual(
+                {
+                    "pairing_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "endpoint": "https://127.0.0.1:18480",
+                    "tls_pin": "1" * 64,
+                },
+                {key: verify["invitation"][key] for key in ("pairing_id", "endpoint", "tls_pin")},
+            )
+            self.assertIsInstance(verify["invitation"]["expires_at_ms"], int)
+            self.assertEqual(stop["request_binding"], stop["processed_binding"])
+            self.assertIsNone(stop["proof"])
+            self.assertGreaterEqual(verify["finished_monotonic_ns"], verify["started_monotonic_ns"])
+            self.assertIsInstance(verify["observed_at_ms"], int)
+            result_binding = verify["result_binding"]
+            persisted_result = json.loads(Path(result_binding["path"]).read_text(encoding="utf-8"))
+            self.assertEqual(result_binding["sha256"], verify["result_sha256"])
+            self.assertEqual(result_binding["sha256"], hashlib.sha256(Path(result_binding["path"]).read_bytes()).hexdigest())
+            self.assertEqual("private", persisted_result["invitation"]["secret"])
+            self.assertNotIn("descriptor", persisted_result)
+            self.assertNotIn('"secret":"private"', json.dumps(records, sort_keys=True))
+            self.assertIsInstance(verify["result_sha256"], str)
+            self.assertEqual(64, len(verify["result_sha256"]))
+
+            journal = [
+                json.loads(line)
+                for line in Path(session.journal.path).read_text(encoding="utf-8").splitlines()
+            ]
+            retained = [item for item in journal if item.get("kind") == "operation-record"]
+            self.assertEqual(2, len(retained))
+            self.assertEqual("admitted", retained[0]["status"])
+            self.assertEqual(verify["request_binding"], retained[0]["request_binding"])
+            self.assertEqual(verify["processed_binding"], retained[0]["processed_binding"])
+            self.assertEqual(verify["result_sha256"], retained[0]["result_binding"]["sha256"])
+            self.assertNotIn("private", json.dumps(retained, sort_keys=True))
+
+            records[0]["proof"]["service"]["generation"] = "changed"
+            self.assertNotEqual(
+                "changed",
+                session.operation_records_snapshot(Deadline(1))[0]["proof"]["service"]["generation"],
+            )
+
+    def test_request_does_not_return_success_after_deadline_expires_during_retention(self):
+        with tempfile.TemporaryDirectory() as raw:
+            session = self.open_session(Path(raw))
+            original = session_module.durable_bytes
+
+            def slow_durable_bytes(path, payload):
+                time.sleep(0.02)
+                return original(path, payload)
+
+            with mock.patch.object(session_module, "durable_bytes", side_effect=slow_durable_bytes):
+                with self.assertRaises(TimeoutError):
+                    session.request({"op": "verify"}, deadline=Deadline(0.01))
+
+            records = session.operation_records_snapshot(Deadline(1))
+            self.assertEqual("failed", records[-1]["status"])
+            self.assertEqual("TimeoutError", records[-1]["failure"])
+            with self.assertRaises(CleanupError):
+                session.close()
+
+    def test_close_expired_between_stages_keeps_cleanup_errors_and_failed_evidence(self):
+        with tempfile.TemporaryDirectory() as raw:
+            transport = FakeTransport()
+            session = self.open_session(Path(raw), transport)
+            deadline = Deadline(1)
+            calls = {"count": 0}
+
+            def expires_between_stages(cap=None):
+                calls["count"] += 1
+                if calls["count"] > 3:
+                    raise TimeoutError("synthetic cleanup deadline")
+                return min(0.01, cap) if cap is not None else 0.01
+
+            deadline.remaining = expires_between_stages
+            with self.assertRaises(CleanupError) as captured:
+                session.close(deadline=deadline)
+
+            evidence = captured.exception.evidence
+            self.assertEqual("failed", evidence.state)
+            self.assertTrue(transport.closed)
+            self.assertTrue(any(item["error"] == "TimeoutError" for item in evidence.cleanup_errors))
+            self.assertIs(evidence, session._final_evidence)
+
+    def test_final_stopped_skips_failed_or_unprocessed_stop_records(self):
+        with tempfile.TemporaryDirectory() as raw:
+            transport = FakeTransport(fail="stop")
+            session = self.open_session(Path(raw), transport)
+            with self.assertRaises(CleanupError) as captured:
+                session.close()
+
+            serialized = json.dumps(captured.exception.evidence.cleanup_errors, sort_keys=True)
+            self.assertNotIn("NoneType", serialized)
+            self.assertNotIn("not subscriptable", serialized)
+
+    def test_cleanup_stop_record_binds_the_independent_stopped_proof(self):
+        with tempfile.TemporaryDirectory() as raw:
+            session = self.open_session(Path(raw))
+            session.request({"op": "verify"})
+
+            evidence = session.close()
+            stop = session.operation_records_snapshot(Deadline(1))[-1]
+            stopped = evidence.final_stopped["service"]["owned_generation"]["stop_evidence"]
+
+            self.assertEqual("stop", stop["operation"])
+            self.assertEqual(evidence.final_stopped, stop["final_stopped"])
+            self.assertEqual(stopped["operation_sequence"], stop["processed_binding"]["sequence"])
+            self.assertEqual(stopped["operation_challenge"], stop["processed_binding"]["challenge"])
+
+    def test_close_clamps_transport_cleanup_to_the_supplied_deadline(self):
+        class DeadlineCloseTransport(FakeTransport):
+            def close(self, timeout=None, preserve_recovery=False):
+                self.close_timeout = timeout
+                return super().close(timeout=timeout, preserve_recovery=preserve_recovery)
+
+        with tempfile.TemporaryDirectory() as raw:
+            transport = DeadlineCloseTransport()
+            session = self.open_session(Path(raw), transport)
+            session.request({"op": "verify"})
+            cleanup_deadline = Deadline(1)
+
+            session.close(deadline=cleanup_deadline)
+
+            self.assertGreater(transport.close_timeout, 0)
+            self.assertLessEqual(transport.close_timeout, 1)
+
     def test_cleanup_attempts_transport_close_after_stop_and_verifier_failures(self):
         with tempfile.TemporaryDirectory() as raw:
             transport = FakeTransport(fail="stop")
@@ -337,10 +570,50 @@ class SessionTests(unittest.TestCase):
             cfg["client_id"] = "home_assistant"
             transport = FakeTransport()
             session = InstalledSession.open(cfg, inventory, transport=transport, verify_local_inputs=False)
-            result = session.advance_once_for_ha()
+            advance_deadline = Deadline(1)
+            result = session.advance_once_for_ha(deadline=advance_deadline)
             self.assertEqual(result["advance"]["after_store_sha256"], "8" * 64)
             self.assertEqual(transport.requests[-1]["op"], "advance-once")
+            records = session.operation_records_snapshot(Deadline(1))
+            self.assertEqual(["verify", "advance-once"], [item["operation"] for item in records])
+            advance = records[-1]
+            self.assertEqual(advance["request_binding"], advance["processed_binding"])
+            self.assertEqual(
+                {
+                    "before_store_sha256": "7" * 64,
+                    "after_store_sha256": "8" * 64,
+                    "scenario_sha256": "3" * 64,
+                    "seed_sha256": "1" * 64,
+                },
+                advance["advance"],
+            )
             session.close()
+
+    def test_failed_ha_advance_has_a_redacted_public_record(self):
+        with tempfile.TemporaryDirectory() as raw:
+            directory = Path(raw)
+            cfg, inventory = inputs(directory)
+            cfg["cell_id"] = "home_assistant__debian13_amd64"
+            cfg["adapter_id"] = "home_assistant"
+            cfg["client_id"] = "home_assistant"
+            session = InstalledSession.open(
+                cfg, inventory, transport=FakeTransport(fail="advance-once"), verify_local_inputs=False,
+            )
+            with self.assertRaisesRegex(RuntimeError, "advance-once failure"):
+                session.advance_once_for_ha(deadline=Deadline(1))
+
+            records = session.operation_records_snapshot(Deadline(1))
+
+            self.assertEqual(["verify", "advance-once"], [item["operation"] for item in records])
+            failed = records[-1]
+            self.assertEqual("failed", failed["status"])
+            self.assertEqual("RuntimeError", failed["failure"])
+            self.assertEqual({"op": "advance-once"}, {"op": failed["request"]["op"]})
+            self.assertIsNone(failed["result_binding"])
+            with self.assertRaises(CleanupError):
+                session.close()
+            session.journal.close()
+            session._host_lease.release()
 
     def test_guest_controller_rejects_unknown_revoke_and_cleans_interrupted_pair(self):
         class Platform:

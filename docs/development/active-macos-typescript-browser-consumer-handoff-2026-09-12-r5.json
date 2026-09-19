@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_consumer_final_prelaunch_rebinding",
+  "date": "2026-09-12",
+  "state": "ready_for_one_supervised_sequential_browser_attempt",
+  "authority": "Final versioned pre-launch correction under the already authorized single fresh attempt. The r4-bound supervisor exited during empty-port preflight before creating a socket/state/profile or spawning Chrome; no browser or keychain action occurred and the attempt remains unconsumed.",
+  "superseded_rebinding": {
+    "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r4.json",
+    "sha256": "b10da3249b1aed20afbed84e9bc91d6950bc057deaa6e93723470e2f71ce0983",
+    "state": "superseded_before_chrome_spawn",
+    "reason": "Node execFile exposed lsof's expected empty-port exit as numeric error.code=1, while the supervisor command-capture helper read only error.status."
+  },
+  "unchanged_contract": "All fresh Hub runtime, certificate DER digest, credential, package, scenario, API assertions, sequential trust ordering, supervised lifecycle, forbidden actions and cleanup fields remain exactly those bound by r4 and its referenced r3 handoff.",
+  "corrected_typescript_binding": {
+    "repository_preparation_receipt": {
+      "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-control-preparation-2026-09-12-r2.json",
+      "sha256": "0791e488ad7143ef74ac61c2fd0576b0a15987bf0bf799a60c942b365a66a551",
+      "mode": "0600"
+    },
+    "control_preparation_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/preparation.json",
+    "control_preparation_sha256": "8e0995e4e37a000a568aa39f2c6fb2b0e686326153e023777f96a1f4bc7aca64",
+    "supervisor": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/supervisor.mjs",
+      "sha256": "f8ac5f5b50d9defc2402cbf21dd9b451f0b9a4ff5367cae1e1d3af407ecf0f1b",
+      "mode": "0700",
+      "correction": "Command capture now accepts numeric execFile error.code when error.status is absent, so lsof exit 1 remains the expected closed-port result."
+    },
+    "trust_hooks_sha256": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+    "untrusted_control_sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c"
+  },
+  "prelaunch_verification": {
+    "node_syntax": "PASS",
+    "targeted_biome": "PASS reported by TypeScript owner",
+    "hash_and_json_cross_check": "PASS",
+    "ports_closed": [4175, 9234, 9235],
+    "socket_state_profiles_event_log_export_witness_and_acceptance_absent": true,
+    "chrome_started": false,
+    "keychain_touched": false,
+    "attempt_consumed": false
+  },
+  "execution_contract": "Run exactly one attempt using the corrected hashes above and every unchanged r4/r3 field. No further preflight revision is authorized after Chrome spawn; any runtime failure consumes the attempt and must clean fail-closed without retry.",
+  "proof_boundary": "This final rebinding proves only the corrected prelaunch control contract. It does not prove browser, TLS, trust, CORS, SDK API, installation, service, release, production, vehicle or user acceptance."
+}

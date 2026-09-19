@@ -73,6 +73,36 @@ fn unused_port() -> u16 {
         .port()
 }
 
+#[tokio::test]
+#[ignore = "requires an explicitly authorized empty-spool Edge input file"]
+async fn external_empty_spool_edge_consumer_probe_uses_one_v2_pull() {
+    let config_path = std::env::var_os("TESLATLAS_EDGE_EMPTY_SPOOL_PROBE_CONFIG")
+        .expect("authorized private probe config path");
+    let config: EdgeCollectorConfig =
+        serde_json::from_slice(&fs::read(config_path).expect("authorized private probe config"))
+            .expect("valid Edge collector config");
+    let temporary = tempfile::tempdir().expect("private temporary store");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("empty Hub store");
+    let consumer = EdgeConsumer::from_config(&config, Duration::from_secs(900))
+        .expect("configured Edge consumer");
+
+    let report = consumer.poll_once(&store).await.expect("empty Edge batch");
+
+    assert!(!report.batch_id.is_empty());
+    assert!(report.accepted.is_empty());
+    assert_eq!(
+        store
+            .edge_ledger_counts(&config.installation_id, &config.lineage)
+            .expect("zero Edge ledger"),
+        teslatlas_hub::db::EdgeLedgerCounts {
+            applications: 0,
+            sequences: 0,
+            pending_publications: 0,
+            ack_frontier: None,
+        }
+    );
+}
+
 fn private_file(path: &Path, bytes: &[u8]) {
     let mut file = OpenOptions::new()
         .write(true)
@@ -456,6 +486,7 @@ async fn run_actual_parity_lane(
         certificate_path: fixture_root.join("server.pem"),
         invitation_path: fixture_root.join("invitation.json"),
         hub_id: template.hub_id,
+        source_id,
         endpoint: format!("https://localhost:{hub_port}"),
         vehicle_ids: template.vehicle_ids,
     };

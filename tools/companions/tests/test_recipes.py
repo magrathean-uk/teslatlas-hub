@@ -82,7 +82,7 @@ class RecipeTests(unittest.TestCase):
     def test_edge_accepts_only_a_content_bound_go_override_inside_its_tool_root(
         self, _which, version, _system
     ) -> None:
-        version.side_effect = lambda command: {
+        version.side_effect = lambda command, _context: {
             "cargo": "cargo 1.98.0",
             "rustc": "rustc 1.98.0 (fixture)",
             "go": "go version go1.27.0 linux/arm64",
@@ -123,6 +123,27 @@ class RecipeTests(unittest.TestCase):
     def test_home_assistant_requires_an_explicit_config_environment(self) -> None:
         with self.assertRaisesRegex(BootstrapError, "HA config"):
             check_recipe_environment("home-assistant", RecipeContext())
+
+    def test_node_bin_is_used_when_the_pinned_npm_launcher_resolves_node(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            node_bin = Path(temporary) / "node-bin"
+            node_bin.mkdir()
+            node = node_bin / "node"
+            node.write_text(
+                "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo v26.7.0; else echo 11.19.0; fi\n",
+                encoding="utf-8",
+            )
+            node.chmod(0o755)
+            npm = node_bin / "npm"
+            npm.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+            npm.chmod(0o755)
+
+            self.assertEqual(
+                check_recipe_environment(
+                    "sdk-typescript", RecipeContext(node_bin=node_bin)
+                ),
+                {"node": "26.7.0", "npm": "11.19.0"},
+            )
 
     def test_recipe_subprocess_timeout_is_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

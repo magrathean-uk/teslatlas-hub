@@ -1,0 +1,192 @@
+{
+  "created_at": "2026-09-18T15:15:16.409570+00:00",
+  "purpose": "Pre-reset current authority and plans; historical only",
+  "files": [
+    {
+      "source": "AGENTS.md",
+      "archive": "docs/development/archive/2026-09-18-reset/AGENTS.md",
+      "sha256": "2575c53526ddb418ff0836668312d7a11dc4bc6d60563b55fa32e6869c577958",
+      "bytes": 3987
+    },
+    {
+      "source": "WORKSPACE_AUTHORITY.md",
+      "archive": "docs/development/archive/2026-09-18-reset/WORKSPACE_AUTHORITY.md",
+      "sha256": "84e26a889006a82f031323ae13464f732543fc5bd29e5b3c82e6792152113d6a",
+      "bytes": 7080
+    },
+    {
+      "source": "docs/development/ACTIVE_SCOPE.md",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/ACTIVE_SCOPE.md",
+      "sha256": "9ac1ccff543047fdaa02358dba0a089f4c30760b90684b626688d4603c25179b",
+      "bytes": 9334
+    },
+    {
+      "source": "docs/development/START_AUTHORIZATION.md",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/START_AUTHORIZATION.md",
+      "sha256": "9523cf92298f1fcbf32796dc4a603111fb48a7ecd752c8ed1c17a157fa5a2ffd",
+      "bytes": 4099
+    },
+    {
+      "source": "docs/development/COORDINATION.md",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/COORDINATION.md",
+      "sha256": "800f70c6014abda69e632a1f3cac62d6822301bb33423880226167245cd71e62",
+      "bytes": 8661
+    },
+    {
+      "source": "docs/development/MASTER_PLAN.md",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/MASTER_PLAN.md",
+      "sha256": "9c41a22cb76269527042255420e464c964345117da19d86caf562aa4d1e86e39",
+      "bytes": 12695
+    },
+    {
+      "source": "docs/development/PRODUCT_SPEC.md",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/PRODUCT_SPEC.md",
+      "sha256": "bad7ab2a40ee70833a378550801078a200603ab33aa24f75d46aaf328458b01e",
+      "bytes": 8441
+    },
+    {
+      "source": "docs/development/ENVIRONMENT.md",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/ENVIRONMENT.md",
+      "sha256": "5a280ea2790e90e81d6b8a9e023eca8eeba0f237081d55a844d993d26c11a765",
+      "bytes": 12323
+    },
+    {
+      "source": "docs/development/VM_ACCESS.md",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/VM_ACCESS.md",
+      "sha256": "cc92dd3eb4fb1afa81f000c3aefa660b7dc5980fddf0f06af45915bc9b704435",
+      "bytes": 8905
+    },
+    {
+      "source": "docs/development/TASKS.json",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/TASKS.json",
+      "sha256": "f69f556e5f27c2c725b2323a98d9b5b05e4f1fa7b5ba398a76c68973b92683c5",
+      "bytes": 25860
+    },
+    {
+      "source": "docs/development/COORDINATOR_STATUS.json",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/COORDINATOR_STATUS.json",
+      "sha256": "b2ab2d9cb0c96560b7b15b5836c64154ee3c5339e1b4cca64cb1872017a92ddb",
+      "bytes": 67677
+    },
+    {
+      "source": "docs/development/SUPERSEDED_PLANS.md",
+      "archive": "docs/development/archive/2026-09-18-reset/docs/development/SUPERSEDED_PLANS.md",
+      "sha256": "faa937554e18a612e1e49ccbb12161d69a6e4e95b702447ca6511baafd272970",
+      "bytes": 10857
+    },
+    {
+      "source": "hub/AGENTS.md",
+      "archive": "docs/development/archive/2026-09-18-reset/hub/AGENTS.md",
+      "sha256": "4ab767b1ada872b493eb1c9d59fe19da9cc2f5a755561c83e48e2adee1b887fb",
+      "bytes": 1903
+    },
+    {
+      "source": "hub/docs/development/PLAN.md",
+      "archive": "docs/development/archive/2026-09-18-reset/hub/docs/development/PLAN.md",
+      "sha256": "c8d6cd757aa036ace4a1021b1c5af648e89618a8a2ea7156d3f244da98c3b834",
+      "bytes": 58895
+    },
+    {
+      "source": "hub/docs/development/STATUS.json",
+      "archive": "docs/development/archive/2026-09-18-reset/hub/docs/development/STATUS.json",
+      "sha256": "3aca24b6bd9560dbd00c0635dbdb948034b9319600dfb3806c3a14dc819bfefe",
+      "bytes": 134013
+    },
+    {
+      "source": "teslatlas-protocol/AGENTS.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-protocol/AGENTS.md",
+      "sha256": "d01513d65927c6bc031e22dc43f85f3b5ce1d18b48d52f0317b20279eea62ea0",
+      "bytes": 2495
+    },
+    {
+      "source": "teslatlas-protocol/docs/development/PLAN.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/PLAN.md",
+      "sha256": "18fbf692962b419f86784e44b83d0252478bfd459b6f22dee12cf5aa6172f50a",
+      "bytes": 28157
+    },
+    {
+      "source": "teslatlas-protocol/docs/development/STATUS.json",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json",
+      "sha256": "03892ffb0700dfafb7d65303dd23c6c9cec2a39c6326742b8bf34800cfc17e1e",
+      "bytes": 125276
+    },
+    {
+      "source": "teslatlas-sdk-typescript/AGENTS.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/AGENTS.md",
+      "sha256": "3cabbcd65e7a3a1a2507f28b8f05774417dfe44dd51dda70e4726d23ba0a5125",
+      "bytes": 674
+    },
+    {
+      "source": "teslatlas-sdk-typescript/docs/development/PLAN.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/PLAN.md",
+      "sha256": "19c62b81bb90aaebcb719142b3886c1c82d1b3d17e02efd45d89b27c9a83f166",
+      "bytes": 30801
+    },
+    {
+      "source": "teslatlas-sdk-typescript/docs/development/STATUS.json",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json",
+      "sha256": "383ea716d70f20cafe43d32c107433546f26622088fc08f8c5f98b8fe0a4061a",
+      "bytes": 109532
+    },
+    {
+      "source": "teslatlas-sdk-swift/AGENTS.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/AGENTS.md",
+      "sha256": "39adb176b4f4f66ed6f325929844ce5d922630fb0522b2b7c6e0b8ab7801928f",
+      "bytes": 1854
+    },
+    {
+      "source": "teslatlas-sdk-swift/docs/development/PLAN.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/PLAN.md",
+      "sha256": "f4e886f4db5b5f46bbd06a859fb469f6431298d5bb706bb7cdac5cf2d27cb7c6",
+      "bytes": 17402
+    },
+    {
+      "source": "teslatlas-sdk-swift/docs/development/STATUS.json",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/STATUS.json",
+      "sha256": "89b4c3071dbc3be5e2a5ab3f74b5fb66c0e4b8913df9225a7bec5f7f793eac16",
+      "bytes": 36312
+    },
+    {
+      "source": "teslatlas-home-assistant/AGENTS.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/AGENTS.md",
+      "sha256": "50ab4052d4005f8d100a5a7f1939ae94ea010cb941ea656a9753664d04b9de02",
+      "bytes": 1277
+    },
+    {
+      "source": "teslatlas-home-assistant/docs/development/PLAN.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/PLAN.md",
+      "sha256": "a2d0d6fb071bfdd393d04c89b5230ae6f8bbf6adfbeb23818e373a87d1588ac8",
+      "bytes": 24186
+    },
+    {
+      "source": "teslatlas-home-assistant/docs/development/STATUS.json",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json",
+      "sha256": "bf05e2f773d22d5c9c68bdecc68e5ddffb6b1502ccc0938def10b8c5c7c92013",
+      "bytes": 122726
+    },
+    {
+      "source": "teslatlas-edge/AGENTS.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-edge/AGENTS.md",
+      "sha256": "bfa762e9b842899543304ce850a5d95cb60b673618a8d67ea6c9ba7336ef1e27",
+      "bytes": 689
+    },
+    {
+      "source": "teslatlas-edge/docs/development/PLAN.md",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/PLAN.md",
+      "sha256": "99853ea3ef3c233c4edd102137cf6ea94276e0491f3fdb64e7d52b150523c899",
+      "bytes": 34779
+    },
+    {
+      "source": "teslatlas-edge/docs/development/STATUS.json",
+      "archive": "docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/STATUS.json",
+      "sha256": "d421f8d36c02419ade13d017dc043832edc159e7e5d1511cd2ff1eec2388932a",
+      "bytes": 212191
+    },
+    {
+      "source": "/Users/bolyki/.codex/automations/teslatlas-hourly-development-coordination/automation.toml",
+      "archive": "docs/development/archive/2026-09-18-reset/automation.toml",
+      "sha256": "0cf003d771abb0b6772dbabee3952cca52dff30a5fb36c686a013f564310f764",
+      "bytes": 1558
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_control_package_review_r7",
+  "date": "2026-09-12",
+  "state": "accepted_preparation_only_no_runtime_authorization",
+  "typescript_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-control-package-preparation-2026-09-12-r7.json",
+    "sha256": "9b2c29fbdd2bd87fc0eab6abecff77dbee9513e37bd4f48d9e865b7b797b10c0"
+  },
+  "preparation_manifest": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7/preparation.json",
+    "sha256": "8e8d7c5df4c7bd885292cf32195b6cba63ecf6b982972ce91e80349ff8c2070a",
+    "mode": "0600"
+  },
+  "accepted_source_binding": {
+    "v2_preflight_receipt_sha256": "d14f0f9a404a9cd83996779f45f0e9eecbcced8dc74c70c6f9e10cf98b475bf1",
+    "hub_v2_review_sha256": "a99cf4cc6277daf0fa641a45e01772fbb863b5d59d216c61e3326bfc16693382",
+    "prepare_script_sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+    "preflight_regression_sha256": "1789949b89b1afe474e305914c9680371aca9706d0f19b6fae15f9fee1785488",
+    "supervisor_sha256": "b3eb52e9538f7ccd98c5a05b1722529f4518a8e4e0c9ce64678249976ec43a7d",
+    "trust_hooks_sha256": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+    "untrusted_control_sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+    "ipc_regression_sha256": "c6db7081b0f7221b99c24d344681f1ac9b8526643bf85bb8e10f87b7be5e2334"
+  },
+  "fresh_candidate": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7",
+    "root_mode": "0700",
+    "symlinks": 0,
+    "origin": "http://localhost:4177",
+    "trusted_cdp": "http://127.0.0.1:9238",
+    "untrusted_cdp": "http://127.0.0.1:9239",
+    "candidate_hub_endpoint": "https://localhost:18529",
+    "closed_ports": [4177, 9238, 9239, 18529],
+    "scoped_node_processes": 0
+  },
+  "package": {
+    "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "name": "@teslatlas/sdk",
+    "version": "2026.36.2",
+    "installed_file_count": 81,
+    "package_json_sha256": "1f0c127f3896dadcb77deccf4526ce14277f65ee85abd4536fb4cd4fbf084cf0"
+  },
+  "independent_checks": {
+    "pinned_node_syntax": "PASS for four r7 control files",
+    "ipc_regression": "PASS for immediate, delayed and failure response paths with client half-close and socket removal",
+    "targeted_biome": "Checked 4 files; no fixes applied",
+    "repository_diff_check": "PASS",
+    "manifest_and_receipt_json": "PASS",
+    "runtime_paths_absent": "PASS except the intentionally pre-created empty runner.stdout and runner.stderr",
+    "runner_outputs": "Both are mode 0600, size zero and SHA256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "browser_or_supervisor_started": false,
+    "hub_or_keychain_action": false,
+    "credential_or_certificate_created": false
+  },
+  "next_gate": "Hub may prepare one fresh one-use r7 Hub endpoint, identity, certificate and credential bound to this exact immutable preparation. No TypeScript supervisor, Chrome, helper, keychain or SDK API runtime may start until the complete Hub handoff is independently checked and explicitly authorized.",
+  "proof_boundary": "This accepts only r7 control/package preparation. It is not browser, SDK API, TLS, CORS, Hub API, package journey, installation, service, release, production, vehicle or user acceptance evidence."
+}

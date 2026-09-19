@@ -1,0 +1,509 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.d1-component-selection-manifest",
+  "status": "source_only_not_a_package_or_runtime_receipt",
+  "product_version": "2026.36.2",
+  "components": [
+    {
+      "id": "hub-core",
+      "status": "blocked_missing_candidate_artifact_identity",
+      "blocked_reason": "The aggregate manifest does not replace the required frozen core package or image candidate, its source digest, and its platform lifecycle receipt.",
+      "selection": "core is required when a D1 candidate is supplied"
+    },
+    {
+      "id": "fleet-helpers",
+      "status": "blocked_missing_reviewed_component_artifacts",
+      "blocked_reason": "The optional Tesla command proxy and Fleet Telemetry receiver require their reviewed architecture-specific binaries, legal material, sidecar locks, and lifecycle receipt.",
+      "selection": "optional; never selected by Hub core implicitly"
+    },
+    {
+      "id": "protocol",
+      "status": "prepared_optional_protocol_source_review",
+      "source": {
+        "repository": "teslatlas-protocol",
+        "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+        "product_version": "2026.36.2",
+        "profile_id": "hub-http-v1@1.0.0",
+        "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "handoff_file_count": 177,
+        "handoff_source_sha256": "efda1c9d31556871fe5be9965889083a7037b0c311945280631ce9dd21ce994f",
+        "handoff_manifest_sha256": "e89ff7ecf4b9e0ddeebc6801ca4bf7a865b8c0561e12bb69e1c5d14f55b7ec24",
+        "frozen_snapshot": {
+          "path": "/Users/bolyki/.codex/artifacts/teslatlas-protocol-d1-20260909-ro/frozen-source",
+          "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-protocol-d1-20260909-ro/local-sources.json",
+          "manifest_sha256": "e89ff7ecf4b9e0ddeebc6801ca4bf7a865b8c0561e12bb69e1c5d14f55b7ec24",
+          "owner_only": true,
+          "read_only_path_count": 221
+        }
+      },
+      "developer_resource": {
+        "kind": "versioned_protocol_contract_bundle",
+        "version": "2026.36.2",
+        "compatibility_hub_sha256": "db8ac0037f8b4929897c1b06718b70e0d5c0384d70d0f24ce8c57f2009f8ed21",
+        "matrix_contract_sha256": "75bdb6380f70dc30b0f91abf92edbe7024fe0617402c67025bd5ec5dca609ca8",
+        "checker_sha256": "22cff4d2e7f58b7e394869c8498a73ab7b925b9f821b2d7ea4a6ea5d444266af",
+        "package_archive_present": false,
+        "image_digest": null,
+        "selection_limit": "A source bundle only: no installed package, image, service, listener, profile admission, or downstream runtime is bound."
+      },
+      "selectors": [
+        {
+          "id": "protocol-source",
+          "status": "supported_source_candidate_not_installed",
+          "mode": "developer_resource",
+          "artifact": "external frozen Protocol contract source snapshot; explicit aggregate selection required",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "protocol-offline-checker",
+          "status": "source_candidate_test_environment_not_runtime",
+          "mode": "test_environment",
+          "artifact": "Dockerfile and tools/check source identities only; no image or installed package identity retained",
+          "runtime_receipt_required": true,
+          "selection_limit": "An offline checker must not be selected as a Hub or collector service."
+        },
+        {
+          "id": "native-protocol-service",
+          "status": "unsupported_by_protocol_contract",
+          "mode": "service",
+          "blocked_reason": "Protocol is a developer contract/resource and does not implement Hub storage, collection, bootstrap, service lifecycle, installer daemon, or listener.",
+          "runtime_receipt_permitted": false
+        }
+      ],
+      "ownership": {
+        "service": "Protocol owns schemas, profiles, OpenAPI, fixtures, conformance cases, and adapters; it owns no Hub service, daemon, listener, database, collector, installer, Hub socket, or vehicle command.",
+        "selection": "Hub owns explicit aggregate selection, activation, target choice, and any retained downstream receipt.",
+        "removal": "Remove only selected Protocol source/output and its selection record; preserve Hub, companion services, applications, credentials, databases, and unrelated component state."
+      },
+      "lifecycle": {
+        "stage": "Verify the owner-only source manifest twice and bind VERSION, profile, compatibility, matrix, and checker identities before any downstream build.",
+        "activate": "D1 source selection does not authorize a service, listener, Hub socket, database, credential, installer, or installed-matrix run.",
+        "cleanup": "A future downstream receipt must show test process/container exit and no Protocol-owned listener; this source handoff performs no runtime cleanup."
+      },
+      "selection_limit": "Protocol is optional and source-only. Its offline checker and every downstream installed/runtime selector require separate fresh owner-authorized evidence.",
+      "handoff": "teslatlas-protocol/docs/development/d1-component-manifest-handoff-2026-09-09.json"
+    },
+    {
+      "id": "sdk-typescript",
+      "status": "prepared_optional_developer_resource_review",
+      "source": {
+        "repository": "teslatlas-sdk-typescript",
+        "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+        "product_version": "2026.36.2",
+        "profile_id": "hub-http-v1@1.0.0",
+        "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "handoff_file_count": 254,
+        "handoff_source_sha256": "1f4e2ad068de14285f7fbe9f462fde6ee384ff992cce17ff13cbfea8d53a53f8",
+        "frozen_snapshot": {
+          "path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/frozen-source",
+          "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/local-sources.json",
+          "manifest_sha256": "4264d380a1d4f8e9ae8bb5d1b76c99bcbf4da89eb89906f79f40c10929d80067",
+          "owner_only": true
+        },
+        "handoff_manifest_sha256": "4264d380a1d4f8e9ae8bb5d1b76c99bcbf4da89eb89906f79f40c10929d80067"
+      },
+      "package_archive": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/teslatlas-sdk-2026.36.2.tgz",
+        "sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "member_count": 81,
+        "node_entry_sha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+        "browser_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e",
+        "owner_only": true
+      },
+      "selectors": [
+        {
+          "id": "debian13-arm64-node-developer-resource",
+          "status": "source_package_supported_primary_receipt_available",
+          "mode": "developer_resource",
+          "artifact": "retained npm library archive; caller-owned Node consumer only",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "debian13-arm64-browser-developer-resource",
+          "status": "source_package_supported_primary_receipt_available",
+          "mode": "developer_resource",
+          "artifact": "retained npm library archive; caller-owned browser consumer only",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "macos13-arm64-developer-node-browser",
+          "status": "source_package_supported_runtime_pending",
+          "mode": "developer_resource",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "debian13-amd64-developer-node-browser",
+          "status": "source_package_supported_runtime_pending",
+          "mode": "developer_resource",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "any-installed-hub-service",
+          "status": "blocked_not_a_service",
+          "mode": "service",
+          "blocked_reason": "The TypeScript SDK is a caller-imported library and cannot be selected as a Hub, Viewer, Home Assistant, or Edge service.",
+          "runtime_receipt_permitted": false
+        }
+      ],
+      "ownership": {
+        "service": "The SDK owns no daemon, service manager registration, listener, Hub storage, collector, pairing administration, or aggregate activation.",
+        "consumer": "The caller owns its Node process, browser page, origin, TLS/CORS policy, credentials, and consumer root.",
+        "removal": "Remove only the SDK package and caller-owned consumer artifacts; preserve every product service, credential store, database, browser profile, and unrelated listener."
+      },
+      "lifecycle": {
+        "install": "Verify the retained archive before staging it in a fresh caller-owned consumer root; do not change a service or sibling component.",
+        "start": "There is no SDK start action: the caller imports a public entry and owns its process or page.",
+        "uninstall": "Remove only the caller-owned SDK package and generated output."
+      },
+      "selection_limit": "Source and package identities establish only an optional developer resource. No service, host, runtime, Docker, browser, platform, or installed-matrix acceptance is bound.",
+      "handoff": "teslatlas-sdk-typescript/docs/development/d1-component-manifest-handoff-2026-09-09.json"
+    },
+    {
+      "id": "sdk-swift",
+      "status": "prepared_optional_swiftpm_source_review",
+      "source": {
+        "repository": "teslatlas-sdk-swift",
+        "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+        "product_version": "2026.36.2",
+        "profile_id": "hub-http-v1@1.0.0",
+        "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "handoff_file_count": 158,
+        "handoff_source_sha256": "9076fbe1f5e0e20fde929cc7f5e0093e93e5216fa98b67e32c90e9b10a4dec6b",
+        "handoff_manifest_sha256": "18a950c20e5b3c423d99b9556e3b044bf0f46a2da31df45633011c166613685c",
+        "frozen_snapshot": {
+          "path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-swift-d1-20260909-ro/frozen-source",
+          "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-swift-d1-20260909-ro/local-sources.json",
+          "manifest_sha256": "18a950c20e5b3c423d99b9556e3b044bf0f46a2da31df45633011c166613685c",
+          "owner_only": true,
+          "read_only_path_count": 201
+        }
+      },
+      "swiftpm": {
+        "package_swift_sha256": "cfae0738fec873d0b5361aae8ddc4f33e37bf2f42ee4e40259e23e23875e898f",
+        "version": "2026.36.2",
+        "product_count": 5,
+        "minimum_platforms": {
+          "ios": "17",
+          "macos": "14"
+        },
+        "package_archive_present": false,
+        "selection_limit": "SwiftPM source identity only; no release-product archive, native build output, image, runtime, or installed lifecycle receipt is bound."
+      },
+      "selectors": [
+        {
+          "id": "swiftpm-source",
+          "status": "supported_source_candidate_not_installed",
+          "mode": "developer_resource",
+          "artifact": "external frozen SwiftPM source snapshot; explicit aggregate selection required",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "swift__macos_arm64",
+          "status": "blocked_missing_installed_receipt",
+          "mode": "developer_resource",
+          "blocked_reason": "No Hub-admitted Swift SessionInput, target receipt, observed runtime inventory, or cleanup receipt exists.",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "swift__debian13_arm64",
+          "status": "blocked_missing_installed_receipt",
+          "mode": "developer_resource",
+          "blocked_reason": "No Swift installed row has been admitted or exercised on Debian 13 ARM64.",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "swift__debian13_amd64",
+          "status": "blocked_missing_fresh_target_and_receipt",
+          "mode": "developer_resource",
+          "blocked_reason": "No fresh authorized Debian 13 amd64 target or Swift installed receipt is available.",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "macos13_arm64",
+          "status": "blocked_platform_floor",
+          "mode": "developer_resource",
+          "blocked_reason": "Package.swift declares macOS 14 as the minimum supported platform.",
+          "runtime_receipt_permitted": false
+        },
+        {
+          "id": "ios17_simulator_test_host",
+          "status": "supported_test_host_only_not_installed_selector",
+          "mode": "test_host",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "native_swift_hub_service",
+          "status": "unsupported_by_swift_sdk_contract",
+          "mode": "service",
+          "blocked_reason": "The Swift SDK is a client/developer resource and does not implement a Hub service, listener, storage, collection, bootstrap, or installer lifecycle.",
+          "runtime_receipt_permitted": false
+        }
+      ],
+      "ownership": {
+        "service": "No Swift service, daemon, listener, database, collector, installer daemon, or Hub lifecycle is owned or started by this component.",
+        "selection": "Hub owns explicit component selection, activation, target choice, and any retained output receipt.",
+        "removal": "Remove only selected Swift source/output and its selection record; preserve Hub, Home Assistant, Edge, Viewer, credentials, databases, and unrelated state."
+      },
+      "lifecycle": {
+        "stage": "Verify the owner-only source manifest twice and bind Package.swift, VERSION, profile, and contract identities before any later build.",
+        "activate": "D1 source selection does not authorize a service, listener, Hub socket, database, credential, or installed-matrix run.",
+        "cleanup": "A future runtime receipt must show process/container exit and no SDK-owned listener; this handoff performs no runtime cleanup."
+      },
+      "selection_limit": "The Swift selector is optional and source-only. Every target-specific installed selector remains blocked pending a fresh Hub SessionInput, target receipt, observed runtime, lifecycle result, and cleanup receipt.",
+      "handoff": "teslatlas-sdk-swift/docs/development/d1-component-manifest-handoff-2026-09-09.json"
+    },
+    {
+      "id": "viewer",
+      "status": "prepared_for_aggregate_review",
+      "source": {
+        "repository": "teslatlas-viewer",
+        "head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+        "profile_id": "hub-http-v1@1.0.0",
+        "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "handoff_file_count": 106,
+        "handoff_manifest_sha256": "b57d3e5b7c015bf397b55ab5823afe33d20c0b2296d0892f39c6bd683d6bae7a",
+        "frozen_snapshot": {
+          "path": "/Users/bolyki/.codex/artifacts/teslatlas-viewer-d1-20260909/frozen-source",
+          "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-viewer-d1-20260909/local-sources.json",
+          "manifest_sha256": "ce0e854bdddb5e6a87a9ab199b213b709df7b66c079140504ab6d706eb855b82",
+          "owner_only": true
+        }
+      },
+      "verified_supporting_identities": {
+        "dockerfile_sha256": "d1f9509a4d4d2efc15afa32f8fcd82950bd67dced732f2429ade35cae9f94a51",
+        "compose_sha256": "2298aed0aa44cadcf775381df8d0679ecf2e143f7ae5557dff0d03f70b8be4bf",
+        "healthcheck_sha256": "0aaef16ac1aca5f52c81ba8c3f6e69a5173264fb0f71313fc687f93b43a37aaf",
+        "sdk_package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
+      },
+      "package_archive": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-viewer-d1-20260909/teslatlas-viewer-2026.36.2.tgz",
+        "sha256": "c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31",
+        "member_count": 10,
+        "owner_only": true
+      },
+      "package_archive_present": true,
+      "docker_runtime_receipt": {
+        "path": "teslatlas-viewer/docs/development/receipts/2026-09-09-d1-container-source.json",
+        "sha256": "80598bad57fe34a679deafa1bb7c7f08862f65e030f7481dda087491a70d2331",
+        "scope": "cleaned isolated Debian 13 ARM64 Docker Viewer runtime only; no Hub, browser TLS/CORS, helper, native, macOS, amd64, upgrade, rollback, or aggregate acceptance"
+      },
+      "selectors": [
+        {
+          "id": "debian13-arm64-docker",
+          "status": "runtime_passed_limited_cleaned",
+          "artifact": {
+            "kind": "source-built-viewer-image",
+            "image_sha256": "sha256:6791fa6d019028ae4d0c3cad926207852830188ccf5dcc70e4e01b00d76e5ea6"
+          },
+          "selection_receipt": "teslatlas-viewer/docs/development/receipts/2026-09-09-d1-container-source.json",
+          "runtime_receipt_required": true,
+          "selection_limit": "A cleaned isolated Docker runtime passed, but it is not final aggregate, Hub-integrated, browser, native-package, macOS, amd64, upgrade, rollback, or installed-matrix acceptance."
+        },
+        {
+          "id": "debian13-arm64-native",
+          "status": "source_candidate_package_pending",
+          "artifact": "retained npm static-service package; native package digest absent",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "macos13-arm64-launchagent",
+          "status": "source_candidate_package_pending_runtime",
+          "artifact": "retained npm static-service package; native package digest absent",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "debian13-x86_64",
+          "status": "blocked_no_fresh_authorized_target",
+          "runtime_receipt_required": true
+        }
+      ],
+      "selection_limit": "Viewer source and package identities plus one cleaned isolated Debian ARM64 Docker image/runtime receipt are verified. No native package, Hub-integrated/browser, macOS, amd64, upgrade, rollback, cross-platform lifecycle, or final acceptance is bound."
+    },
+    {
+      "id": "home-assistant",
+      "status": "accepted_primary_runtime_lane_only",
+      "source": {
+        "repository": "teslatlas-home-assistant",
+        "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+        "product_version": "2026.36.2",
+        "profile_id": "hub-http-v1@1.0.0",
+        "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+      },
+      "payload": {
+        "kind": "custom_components_source_payload",
+        "root": "custom_components/teslatlas_hub",
+        "handoff_file_count": 31,
+        "raw_file_count": 41,
+        "excluded_generated_file_count": 10,
+        "payload_file_count": 31,
+        "handoff_manifest_sha256": "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940",
+        "handoff_manifest": "teslatlas-home-assistant/docs/development/d1-aggregate-manifest-payload-2026-09-09.txt",
+        "standalone_package": false,
+        "selection_limit": "This frozen file manifest is source-payload identity only. Each selector remains subject to its stated runtime receipt requirement."
+      },
+      "selection_receipt": {
+        "path": "teslatlas-home-assistant/docs/development/d1-debian13-arm64-container-selection-receipt-2026-09-09.json",
+        "sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2",
+        "selector_id": "debian13-arm64-container",
+        "scope": "accepted primary Debian 13 ARM64 Home Assistant Container lane only; not a standalone package, macOS, x86_64, full profile, or final acceptance result"
+      },
+      "selectors": [
+        {
+          "id": "debian13-arm64-container",
+          "status": "accepted_primary_runtime_lane_only",
+          "runtime": "Debian 13 ARM64 with Docker Engine 26.1.5+dfsg1, Compose 2.26.1, and ghcr.io/home-assistant/home-assistant:2026.8.3@sha256:e53b24b1bde9e471f5167a032d29d8de5956c374cba44205da0a017b71cc4362",
+          "target": "selected persistent HA /config mount; only custom_components/teslatlas_hub is staged read-only",
+          "selection_receipt": "teslatlas-home-assistant/docs/development/d1-debian13-arm64-container-selection-receipt-2026-09-09.json",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "existing-ha-config",
+          "status": "supported_source_candidate_not_live_admitted",
+          "target": "caller-supplied existing absolute HA config directory",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "macos-selected-ha-runtime",
+          "status": "blocked_no_selected_ha_os_container_or_vm_target",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "debian13-x86_64-container",
+          "status": "blocked_no_fresh_authorized_target",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "native-macos-home-assistant-service",
+          "status": "unsupported_by_ha_integration_contract",
+          "runtime_receipt_permitted": false
+        }
+      ],
+      "ownership": {
+        "config_owner": "selected Home Assistant runtime",
+        "component_action": "validate target, refuse overwrite, then stage/link only an immutable integration payload",
+        "never_owned": [
+          "Home Assistant database",
+          "registry",
+          "credentials",
+          "native Home Assistant service"
+        ]
+      },
+      "lifecycle": {
+        "install": "explicit selected HA runtime/config only",
+        "remove": "operator stops HA and restores the paired previous component/config backup",
+        "restart": "operator reloads the integration or restarts the selected Container; Hub never starts HA"
+      },
+      "handoff": "teslatlas-home-assistant/docs/development/d1-aggregate-manifest-handoff-2026-09-09.json"
+    },
+    {
+      "id": "edge",
+      "status": "prepared_source_candidate_review_runtime_limited",
+      "source": {
+        "repository": "teslatlas-edge",
+        "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+        "product_version": "2026.36.2",
+        "profile_id": "edge-delivery-v2@2.0.0",
+        "profile_sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224",
+        "handoff_file_count": 87,
+        "handoff_source_sha256": "301ed74968778298619afeb9b9db90b55837b16304aac5f7a68da4684fd28fe1",
+        "handoff_manifest_sha256": "b178a64de064c8e95cbf7e2d36811bb720084924e81f4eb359a4e6da629b6eb9",
+        "frozen_snapshot": {
+          "path": "/Users/bolyki/.codex/artifacts/teslatlas-edge-d1-20260909-immutable/frozen-source",
+          "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-edge-d1-20260909-immutable/local-sources.json",
+          "manifest_sha256": "b178a64de064c8e95cbf7e2d36811bb720084924e81f4eb359a4e6da629b6eb9",
+          "owner_only": true,
+          "read_only": true,
+          "executable_file_count": 12
+        }
+      },
+      "supporting_source_identities": {
+        "Dockerfile": "d0b3b47f04afdf049ad2bd0b06e134401d73031e6224c9759282615069a4632a",
+        "compose.yaml": "9b43d123303c3e296891fb25a916f622371d1b6f687ef8bdbba0239563defc66",
+        "linux_control": "8d37734f71014a540b18362ac9a5cef4ec6ac9bf781903586e42627394ef2b85",
+        "linux_edge_service": "684a5b9da934e606984949b8549ce6173f0d577ca0333029761618f6bfaf4bad",
+        "linux_receiver_service": "b8f4472a34bd4ad329a91399de2cf10fa80e191669c72650744b868446464a8e"
+      },
+      "candidate_identities": {
+        "debian13_arm64_edge_binary_sha256": "353551aa111be7959b18c907f4df860ea5086e1a0b770af212b6a2102d30265b",
+        "debian13_arm64_receiver_binary_sha256": "22577092beac3622403328f3d0c6f13c4b7656e4ccfd80a75aa9bdedfada6b3b",
+        "debian13_arm64_package_sha256": "64e78d1c3ff22871b840c72023a0702773900edab1cb3acce4f0cecda52027cc",
+        "macos13_arm64_package_sha256": "38cedc9dba8cd2000f4bf52629ade3c5374ee6bcf9b50f5eb32af2f8f9d7d3b3",
+        "docker_arm64_image_sha256": "c04e30499821f8f412764541a2627e038fb9703a6f2f884c4e9525fe8005b2a4",
+        "debian13_amd64_package_sha256": null,
+        "debian13_amd64_image_sha256": null
+      },
+      "selectors": [
+        {
+          "id": "debian13-arm64-native",
+          "status": "runtime_subset_passed_not_final_acceptance",
+          "mode": "service",
+          "runtime_receipt_required": true,
+          "limit": "Only ARM64 package lifecycle and receiver-wire subset are recorded; native amd64, full R1, passive provenance, and X1 remain open."
+        },
+        {
+          "id": "debian13-arm64-docker",
+          "status": "runtime_shape_passed_no_durable_hub_ack",
+          "mode": "service",
+          "runtime_receipt_required": true,
+          "limit": "No Docker-to-Hub durable commit or ACK receipt is bound."
+        },
+        {
+          "id": "macos13-arm64-launchagent",
+          "status": "runtime_subset_passed_not_final_acceptance",
+          "mode": "service",
+          "runtime_receipt_required": true,
+          "limit": "Upgrade/rollback, Docker on macOS, native amd64, passive provenance, and full X1 remain unproven."
+        },
+        {
+          "id": "debian13-x86_64-native",
+          "status": "blocked_no_fresh_authorized_target",
+          "mode": "service",
+          "blocked_reason": "No fresh authorized Debian 13 x86_64 target receipt is available; retained or quarantined guests cannot be promoted.",
+          "runtime_receipt_required": true
+        },
+        {
+          "id": "debian13-x86_64-docker",
+          "status": "source_candidate_runtime_pending",
+          "mode": "service",
+          "runtime_receipt_required": true,
+          "limit": "The architecture mapping is source/build evidence only; no amd64 image, mount, service, or lifecycle acceptance is claimed."
+        }
+      ],
+      "ownership": {
+        "edge": "Edge owns its core binary, encrypted spool, receiver payload, pinned bridge inputs, package recipes, service units, LaunchAgents, Docker/Compose source, and operational documentation.",
+        "hub": "Hub owns aggregate selectors, installer orchestration, credentials, fixtures, ledger, and runtime receipts; it must not promote a snapshot, static parse, package build, or isolated runtime shape into installed acceptance.",
+        "receiver": "The receiver owns its Fleet Telemetry mTLS/WebSocket inputs and process; it must not read Edge spool/key/state or Hub client identity/bearer."
+      },
+      "lifecycle": {
+        "selection": "Require an explicit Edge selector and preserve core-only versus core-plus-receiver selection; Hub core never silently enables a receiver.",
+        "install": "Verify frozen source/candidate identities before a later build or staging step; source preparation never starts a service.",
+        "remove": "Stop selected receiver before Edge, remove only owned payloads, and preserve spool/state unless an explicit destructive option is authorized."
+      },
+      "selection_receipt": {
+        "schema": "teslatlas.d1-component-selection-receipt/v1",
+        "runtime_receipt_required": true,
+        "promotion_rule": "A source payload, static check, package build, image digest, or isolated runtime shape never becomes installed selector acceptance without a target receipt."
+      },
+      "selection_limit": "Source and candidate identities are bound with their historical limits only; never treat any recorded subset, candidate hash, or source selector as aggregate runtime, installed, collection, passive-parity, or platform acceptance.",
+      "handoff": "teslatlas-edge/docs/development/edge-d1-component-manifest-handoff-2026-09-09.json"
+    }
+  ],
+  "selection_receipt": {
+    "schema": "teslatlas.d1-component-selection-receipt/v1",
+    "runtime_receipt_required": true,
+    "required_fields": [
+      "selector_id",
+      "component_ids",
+      "component_manifest_sha256",
+      "candidate_source_and_artifact_identities",
+      "platform_and_runtime",
+      "ownership_and_paths",
+      "install_remove_restart_actions",
+      "readiness_and_function_result",
+      "data_identity_before_after",
+      "redaction_check",
+      "cleanup_and_listener_state"
+    ],
+    "promotion_rule": "A blocked selector, source payload, static check, or package build is never an installed selector acceptance result."
+  }
+}

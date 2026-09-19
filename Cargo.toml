@@ -18,9 +18,15 @@ path = "src/lib.rs"
 name = "teslatlas-hub"
 path = "src/application/main.rs"
 
+[[example]]
+name = "interop_fixture"
+path = "examples/interop_fixture.rs"
+required-features = ["interop-fixture"]
+
 [features]
 default = []
 edge-test-faults = []
+interop-fixture = []
 
 [dependencies]
 getrandom = "0.4.3"

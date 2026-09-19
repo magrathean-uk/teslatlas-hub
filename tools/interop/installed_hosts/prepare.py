@@ -318,7 +318,7 @@ class HostPreparer:
             raise RuntimeError("installed executable version differs from session")
         stopped_observation = self._observe_stopped()
         for member in manifest["payload_members"]:
-            member_digest_argv = ["/usr/bin/sha256sum", member["path"]] if reg["provider"] == "lima-debian" else ["/usr/bin/shasum", "-a", "256", member["path"]]
+            member_digest_argv = ["/usr/bin/sudo", "-n", "/usr/bin/sha256sum", member["path"]] if reg["provider"] == "lima-debian" else ["/usr/bin/shasum", "-a", "256", member["path"]]
             actual = self._remote(member_digest_argv, 30).stdout.decode("utf-8").split()[0]
             if actual != member["sha256"]:
                 raise RuntimeError("installed payload member differs from package manifest")

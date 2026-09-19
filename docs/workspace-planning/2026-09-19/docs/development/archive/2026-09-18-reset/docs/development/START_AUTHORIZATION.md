@@ -1,0 +1,20 @@
+> OWNER RESTART — 2026-09-18: The owner explicitly resumed development on the six in-scope products and ecosystem orchestration. Do not use fast mode. Resume Hub with Sol/high and Protocol, TypeScript SDK, Swift SDK, Home Assistant and Edge with Luna/max from preserved checkpoints. Viewer remains excluded and all x86/amd64/Intel work remains paused. The App keeps its separately authorized scope.
+
+> APP-ONLY RESTART EXCEPTION — 2026-09-12T16:53:09.669326+00:00: The App task reports the owner directly authorized continued App work. App v6, its localization workers and its own heartbeat may resume under that task. Hub, Protocol, TypeScript SDK, Swift SDK, Home Assistant, Edge and ecosystem coordination remain paused until explicit owner restart. Viewer remains excluded; x86 remains paused.
+
+> OWNER PAUSE — 2026-09-12T16:51:03.456724+00:00: The owner paused this work and all development on this project. Stop development, reviews, tests, builds, runtime preparation, delegation and polling until explicit owner restart. This supersedes earlier restart and standing execution authority, including r11. Preserve dirty source, evidence and goals. Hourly coordination is PAUSED. Viewer remains excluded; x86 remains paused.
+
+# Development start authorization
+
+> OWNER SCOPE — 2026-09-12: Viewer is excluded from all active development, goals, plans, packaging and acceptance dependencies. Preserve its existing source and historical evidence; do not schedule or resume Viewer work. Six products remain: Hub, Protocol, TypeScript SDK, Swift SDK, Home Assistant and Edge.
+
+
+> OWNER RESTART — 2026-09-12: The owner explicitly said restart on all. Development and hourly coordination resume from preserved checkpoints for Debian ARM64 and Apple-silicon Mac. The 2026-09-10 global pause is lifted; x86 remains paused. Hub Sol/high, companions Luna/max. Preserve existing goals, dirty checkouts and completed evidence; revalidate current runtime state and use fresh expiring inputs.
+
+The owner authorized development in all six in-scope existing tasks on 2026-09-08. Hub uses gpt-5.6-sol with high reasoning; every companion uses gpt-5.6-luna with max reasoning. This supersedes the earlier planning hold and model recommendations. On 2026-09-09 the owner deleted all seven old native goals and authorized fresh goals for the working Debian ARM64 and Apple-silicon Mac outcomes in [ACTIVE_SCOPE.md](ACTIVE_SCOPE.md). Verify native state and create one revised goal per existing task when none is unfinished, with no token budget, then execute ready owned work. All x86/amd64/Intel Mac development and acceptance work is paused, including full cross-architecture/Azure gates. Missing named-source R1 inputs must not block independent active-target usability work; minimum installation/service work needed to run the products can proceed before polished distribution.
+
+The coordinator is authorized to check these tasks hourly, deliver dependency handoffs, resume idle tasks when useful work is ready, and correct sequencing/resource conflicts. This does not authorize publication, commits/pushes, production changes, vehicle commands, App edits, usage resets, or starting retained/quarantined guests.
+
+All six in-scope tasks may work concurrently in their own repositories. Hub owns the primary VM and shared Hub/installer/runner files. Companion tasks must coordinate guest changes with Hub. Only one heavy build or VM installation may run at once. Claim the shared directory `~/dev/teslatlas-lab/locks/heavy-build` atomically with `mkdir`, record the task ID and process PID inside it, and release it on exit. If it exists, inspect its owner; do not delete a live lock or spin on it. Continue lightweight owned work and report the dependency. Reclaim a stale lock only after verifying its recorded process is gone.
+
+Follow [COORDINATION.md](COORDINATION.md), [VM_ACCESS.md](VM_ACCESS.md), and the saved goal objectives/status files. Hourly checks should stay quiet when nothing material changes and notify on a milestone, failure, meaningful blocker, required owner action, or completion.

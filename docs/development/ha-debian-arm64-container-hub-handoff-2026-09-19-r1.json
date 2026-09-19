@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.hub.home-assistant-debian-arm64-handoff/v1",
+  "state": "accepted_and_closed",
+  "recorded_at": "2026-09-19T10:10:12Z",
+  "cohort_id": "ha-debian-final-20260919-r1",
+  "source_binding": {
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "source_fingerprint": "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;snapshot-manifest-sha256:f3e9f240930c72909d982ad2f6429c4f6ab390eb34818505e92236f6027d443b",
+    "binary_sha256": "4b965423364160d597bd9e4f1a1d5b73be49c13edb0df3f8c4896fe6a973c433",
+    "interop_fixture_sha256": "45387ccc807fc486ee917f81d44fd9d47dece3dd6a8c79b1dc72e585fe998ff1",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "product_version": "2026.36.2"
+  },
+  "handoff": {
+    "fresh_identity_ca_invitation_and_store": true,
+    "normal_tls": true,
+    "claim_status": 200,
+    "replay_status": 401,
+    "two_vehicle_current_projection": true,
+    "scheduled_change": "numeric zero to one",
+    "outage_unavailable_and_same_store_restart_recovery": true,
+    "revoked_device_and_fresh_same_entry_reauthentication": true,
+    "final_devices": {"total": 2, "revoked": 1, "active": 1},
+    "peer_receipt": "teslatlas-home-assistant/docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json"
+  },
+  "cleanup": {
+    "closed_endpoint": "https://127.0.0.1:18560",
+    "hub_process_absent": true,
+    "home_assistant_process_and_container_absent": true,
+    "private_guest_root_absent": true,
+    "guest_stopped": true,
+    "ports_60022_8123_18560_closed": true,
+    "heavy_build_lock_absent": true
+  },
+  "scope": "Fresh source-built synthetic Debian 13 ARM64 Hub handoff to one official Home Assistant 2026.8.3 Container. No package/service, production, real-data, App, Viewer, HACS, HA OS, x86, Intel or Azure acceptance."
+}

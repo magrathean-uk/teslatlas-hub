@@ -1,0 +1,94 @@
+{
+  "schema": "teslatlas.hub.active-target-handoff/v1",
+  "state": "completed_and_cleaned",
+  "prepared_at": "2026-09-12T09:32:40Z",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "scope": "One external CurrentHubConsumer release build and live invocation on the supported local Apple-silicon Mac against one fresh finite Hub fixture. Viewer is excluded. No App, installed package/service, production, vehicle, Home Assistant, Edge, x86, commit, push, CI or release action.",
+  "runtime": {
+    "status": "stopped_cleanly_after_success",
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1",
+    "endpoint": "https://127.0.0.1:18494",
+    "hub_id": "0f299bcf-735a-4b2e-9173-854b23dba694",
+    "launcher_pid": 3568,
+    "hub_pid": 3673,
+    "listener": "127.0.0.1:18494 only",
+    "health_and_readiness": "HTTPS /healthz and /readyz returned 200 through the fresh CA.",
+    "ready_descriptor": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/run/ready.json",
+    "ready_descriptor_sha256": "4c3f7c9fd6f1a04c55c73638aa880f40c9892428839464302584850c6a2987de",
+    "fixture_lifetime_seconds": 1800
+  },
+  "hub_candidate": {
+    "source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "binary_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+    "seed_sha256": "b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce",
+    "fixture_script_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+    "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+    "boundary": "Disposable candidate-process evidence, not installed, release, notarization or platform-matrix acceptance."
+  },
+  "swift_source": {
+    "original_path": "/Users/bolyki/dev/teslatlas-lab/candidates/swift-debian-arm64-libcurl-r3-20260909/source",
+    "invocation_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/swift-source/teslatlas-sdk-swift",
+    "commit": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+    "source_sha256": "234b352d2b692d667287c6db0896c7981c1a62b925c6aa4ba603fee002407751",
+    "file_count": 158,
+    "manifest": "/Users/bolyki/dev/teslatlas-lab/candidates/swift-debian-arm64-libcurl-r3-20260909/local-sources.json",
+    "manifest_sha256": "d25e1453259ae7ce73e105fa7797ad6c3a5c0205ce4f6d21cce65e3ae17f6d34",
+    "source_mode": "The invocation path is a fresh read-only 158-file byte-identical copy whose basename preserves SwiftPM package identity teslatlas-sdk-swift; build output uses a separate scratch path.",
+    "verification": "All 158 copied files matched local-sources.json and swift package describe passed using the corrected path. The first wrapper attempt against the original folder basename source failed at package-graph resolution before build or pairing, released the lock, and is retained as diagnostic evidence."
+  },
+  "private_inputs": {
+    "consumer_config": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/swift-input/current-hub-consumer.json",
+    "consumer_config_sha256": "1f941ec21078642b456f0fbf08c12341f5872f2d39f314c804100f7b195c8687",
+    "ca_der": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/swift-input/hub-ca.der",
+    "ca_der_sha256": "50897cbf35d65e4a217cb34d8e2a589f726ecc68a56178f0bae27f5960f913a8",
+    "invitation": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/run/cli-invitation.json",
+    "invitation_sha256": "e0ffb6c2fbec3dc073b59d99df3885d74f5b25e7d5e55538fe6d9237e2028e59",
+    "invitation_expires_at_utc": "2026-09-12T09:45:47.576000Z",
+    "custody": "All inputs are owner-only regular single-link files. The invitation was consumed by the successful run and is non-reusable. Never expose invitation, pairing URI, secret or pin."
+  },
+  "swift_action": {
+    "owner_task_id": "01a082b7-e4c5-7383-bd9f-25a538c31e86",
+    "wrapper": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/run-swift-consumer-under-lock.sh",
+    "allowed": "Run the corrected wrapper exactly once before invitation expiry. It atomically claims the shared heavy-build lock, records the real wrapper PID and Swift task ID, builds only CurrentHubConsumer from the byte-identical package-identity-preserving source path in a fresh separate scratch path, invokes it once, records redacted output and releases the lock.",
+    "expected_result": "Exit 0 with discovery, claim, health, readiness, vehicles, current, paginated drives and credential rotation succeeding. Return exit code and redacted status/count output only.",
+    "forbidden": "Do not rerun tests, disclose private input contents, alter Hub runtime, use Viewer, touch installed software or extend scope. If the lock is owned, the endpoint mismatches or the invitation expires, stop and report rather than improvise."
+  },
+  "cleanup": {
+    "hub_owner": "Completed: Hub validated launcher PID 3568 and direct child PID 3673 against the exact root, interrupted only the attached launcher, observed launcher exit 0 and Hub child exit 0, and verified both PIDs and port 18494 closed.",
+    "swift_owner": "Completed: Swift returned the redacted result, released the shared lock and removed only its exact swift-build-r2 scratch directory after recording the executable identity.",
+    "stopped_descriptor": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/run/stopped.json",
+    "stopped_descriptor_sha256": "de2e954e498b18d0c5a6ffca84b6a03a62519c3d36088d6bfc160d875bb9966f",
+    "hub_exit_code": 0,
+    "lock": "absent after Swift exit",
+    "evidence": "Hub retains the owner-only root and redacted result as non-reusable historical evidence."
+  },
+  "result": {
+    "exit_code": 0,
+    "journey": {
+      "discovery": "ok",
+      "claim": "ok",
+      "health": "ok",
+      "readiness": "ready",
+      "vehicles": 2,
+      "current": "ok",
+      "drive_pages": 3,
+      "drives": 5,
+      "credential_rotation": "ok"
+    },
+    "consumer_artifact_before_scratch_cleanup": {
+      "identity": "Mach-O arm64",
+      "size_bytes": 816592,
+      "mode": "0700",
+      "sha256": "e6767824159bda2a715b4466fccf6dc1b04125fab1e57b485e0f12a37bc3b4d7"
+    },
+    "redacted_output": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-swift-20260912-r1/swift-consumer-output.log",
+    "redacted_output_sha256": "9b203cf835a00b47c53e3a998bc964010f46f7f9703c5ff8f3f61739fe5add51",
+    "proof_boundary": "One external public CurrentHubConsumer build and live synthetic current-Hub journey on the supported local Apple-silicon Mac."
+  },
+  "limits": [
+    "This can prove one external supported-Mac SDK journey against synthetic current-Hub data; it does not prove installed Hub, release, production, device, vehicle, HA, Edge or x86 acceptance.",
+    "The sole native Hub goal is preserved; its control API remains paused and cannot be amended or resumed by the available goal tools, while the owner's restart and Viewer-exclusion directions are the effective saved objective."
+  ]
+}

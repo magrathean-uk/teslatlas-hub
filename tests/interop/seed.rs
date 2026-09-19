@@ -16,8 +16,8 @@ use teslatlas_hub::{
         HubStore, ObservationInput, SourceDescriptor, TeslaMateLegacyTokenStore, VehicleDescriptor,
     },
     hub_pack::{
-        ProjectionBinding, ProjectionCar, ProjectionCharge, ProjectionDrive, ProjectionPackRequest,
-        ProjectionPackWriter, ProjectionSnapshot,
+        ProjectionBinding, ProjectionCar, ProjectionCarSettings, ProjectionCharge, ProjectionDrive,
+        ProjectionPackRequest, ProjectionPackWriter, ProjectionSnapshot,
     },
     protocol::{SequenceRange, Sha256Digest},
     teslamate_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
@@ -28,6 +28,25 @@ use uuid::Uuid;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const OBSERVED_AT_MS: i64 = 1_788_566_400_000;
 
+#[derive(Clone, Copy)]
+pub enum FixtureScenario {
+    B1,
+    ViewerR1,
+}
+
+#[derive(Clone, Copy)]
+struct FixtureVehicleIdentity<'a> {
+    vehicle_id: Uuid,
+    vin: &'a str,
+    car_id: i64,
+    name: &'a str,
+}
+
+const DEFAULT_PRIMARY_VEHICLE_ID: Uuid = Uuid::from_u128(0x11111111111141118111111111111111);
+const DEFAULT_SECONDARY_VEHICLE_ID: Uuid = Uuid::from_u128(0x22222222222242228222222222222222);
+const DEFAULT_PRIMARY_VIN: &str = "5YJ3E1EA7KF000001";
+const DEFAULT_SECONDARY_VIN: &str = "5YJ3E1EA7KF000002";
+
 #[derive(Serialize)]
 pub struct PreparedFixture {
     pub schema_version: u8,
@@ -35,13 +54,246 @@ pub struct PreparedFixture {
     pub certificate_path: PathBuf,
     pub invitation_path: PathBuf,
     pub hub_id: Uuid,
+    pub source_id: Uuid,
     pub endpoint: String,
     pub vehicle_ids: [Uuid; 2],
 }
 
+/// One sealed source/vehicle tuple for an empty, synthetic Edge control
+/// fixture. It is compiled only when the explicit interop feature is enabled.
+#[cfg(feature = "interop-fixture")]
+#[derive(Clone)]
+pub struct EmptyEdgeBinding {
+    pub installation_id: String,
+    pub lineage: String,
+    pub source_id: Uuid,
+    pub vehicle_id: Uuid,
+    pub vin: String,
+    pub car_id: i64,
+}
+
+#[cfg(feature = "interop-fixture")]
+#[derive(Serialize)]
+pub struct PreparedEmptyEdgeBinding {
+    pub schema_version: u8,
+    pub data_dir: PathBuf,
+    pub installation_id: String,
+    pub lineage: String,
+    pub hub_id: Uuid,
+    pub source_id: Uuid,
+    pub vehicle_id: Uuid,
+    pub vin: String,
+    pub car_id: i64,
+    pub base_snapshot_id: Uuid,
+    pub base_sequence: u64,
+}
+
+/// Create one fresh, empty Edge-bound Hub catalogue. This intentionally uses
+/// the normal source, vehicle, and settings APIs; it never rewrites catalogue
+/// rows or seeds observations or Edge receipts. It publishes the one empty
+/// base required by normal macOS preflight to recognise the configured car.
+#[cfg(feature = "interop-fixture")]
+pub fn prepare_empty_edge_binding(
+    root: &Path,
+    binding: &EmptyEdgeBinding,
+) -> Result<PreparedEmptyEdgeBinding> {
+    if !root.is_absolute()
+        || binding.source_id.is_nil()
+        || binding.vehicle_id.is_nil()
+        || binding.car_id <= 0
+    {
+        return Err(
+            "empty Edge fixture requires absolute root and sealed non-nil identities".into(),
+        );
+    }
+
+    fs::DirBuilder::new().mode(0o700).create(root)?;
+    let data_dir = root.join("hub");
+    let store = HubStore::initialize(&data_dir)?;
+    let source = store.register_interop_source_with_id(
+        &SourceDescriptor::new("owner_api_compat", "local_installation_v1"),
+        OBSERVED_AT_MS,
+        binding.source_id,
+    )?;
+    let mut vehicle = VehicleDescriptor::new(source.source_id, binding.car_id.to_string())
+        .with_tesla_identity(Some(binding.car_id), None);
+    vehicle.vin = Some(binding.vin.clone());
+    vehicle.display_name = Some("Empty Edge binding".into());
+    store.register_vehicle_with_id(&vehicle, OBSERVED_AT_MS, binding.vehicle_id)?;
+    store.upsert_car_settings(
+        binding.vehicle_id,
+        binding.car_id,
+        &ProjectionCarSettings::default(),
+    )?;
+    let hub_id = store.installation_id()?;
+    let cursor_key = load_or_create_cursor_key(&data_dir)?;
+    let car: ProjectionCar = serde_json::from_value(json!({
+        "id": binding.car_id,
+        "name": "Empty Edge binding",
+        "model": "model3",
+        "vin": binding.vin,
+        "source_eid": binding.car_id,
+        "firmware_version": "synthetic-empty-base"
+    }))?;
+    let snapshot = ProjectionSnapshot {
+        cars: vec![car],
+        drives: Vec::new(),
+        positions: Vec::new(),
+        charges: Vec::new(),
+        charge_samples: Vec::new(),
+    };
+    store.persist_materialised_car_if_absent(binding.vehicle_id, &snapshot.cars[0])?;
+    let base_sequence = store.next_full_snapshot_sequence(binding.vehicle_id)?;
+    let base_snapshot_id = Uuid::new_v4();
+    let request = ProjectionPackRequest {
+        pack_id: Uuid::new_v4(),
+        snapshot_id: base_snapshot_id,
+        ordinal: 0,
+        binding: ProjectionBinding {
+            installation_id: hub_id,
+            account_id: source.source_id,
+            vehicle_id: binding.vehicle_id,
+            generation: source.generation,
+            selected_car_id: binding.car_id,
+        },
+        sequence: SequenceRange {
+            from_exclusive: base_sequence,
+            to_inclusive: base_sequence,
+        },
+        snapshot: &snapshot,
+    };
+    let built = ProjectionPackWriter::new(store.packs_dir())
+        .write_full_snapshot_with_states_and_updates(&request, &[], &[])?;
+    let manifest =
+        request.signed_manifest_with_states_and_updates(&built, &[], &[], &cursor_key)?;
+    store.finalize_import_snapshot_with_binding(
+        &manifest,
+        Sha256Digest::from_bytes([0xE0; 32]),
+        &[],
+        &request.binding,
+    )?;
+
+    Ok(PreparedEmptyEdgeBinding {
+        schema_version: 2,
+        data_dir,
+        installation_id: binding.installation_id.clone(),
+        lineage: binding.lineage.clone(),
+        hub_id,
+        source_id: source.source_id,
+        vehicle_id: binding.vehicle_id,
+        vin: binding.vin.clone(),
+        car_id: binding.car_id,
+        base_snapshot_id,
+        base_sequence,
+    })
+}
+
 pub fn prepare(root: &Path, port: u16) -> Result<PreparedFixture> {
+    prepare_with_source_id(root, port, Uuid::new_v4())
+}
+
+pub fn prepare_viewer_r1(root: &Path, port: u16) -> Result<PreparedFixture> {
+    prepare_with_scenario_and_source_id(root, port, FixtureScenario::ViewerR1, Uuid::new_v4())
+}
+
+/// Prepare a fixture with the exact source identity required by an isolated
+/// interop lane. The caller must provide a non-nil UUID before any vehicle or
+/// projection rows are created.
+pub fn prepare_with_source_id(root: &Path, port: u16, source_id: Uuid) -> Result<PreparedFixture> {
+    prepare_with_scenario_and_source_id(root, port, FixtureScenario::B1, source_id)
+}
+
+pub fn prepare_with_scenario_and_source_id(
+    root: &Path,
+    port: u16,
+    scenario: FixtureScenario,
+    source_id: Uuid,
+) -> Result<PreparedFixture> {
+    prepare_with_vehicle_identities(
+        root,
+        port,
+        scenario,
+        source_id,
+        [
+            FixtureVehicleIdentity {
+                vehicle_id: DEFAULT_PRIMARY_VEHICLE_ID,
+                vin: DEFAULT_PRIMARY_VIN,
+                car_id: 9,
+                name: "Interop – Árvíztűrő 🚗",
+            },
+            FixtureVehicleIdentity {
+                vehicle_id: DEFAULT_SECONDARY_VEHICLE_ID,
+                vin: DEFAULT_SECONDARY_VIN,
+                car_id: 10,
+                name: "Interop empty",
+            },
+        ],
+    )
+}
+
+/// Prepare a synthetic fixture whose first vehicle exactly matches a sealed
+/// Edge binding. The second, empty fixture vehicle remains distinct so normal
+/// public-client discovery still has two vehicles.
+pub fn prepare_with_scenario_source_and_primary_vehicle(
+    root: &Path,
+    port: u16,
+    scenario: FixtureScenario,
+    source_id: Uuid,
+    primary_vehicle_id: Uuid,
+    primary_vin: &str,
+    primary_car_id: i64,
+) -> Result<PreparedFixture> {
+    if primary_vehicle_id.is_nil()
+        || primary_vehicle_id == DEFAULT_PRIMARY_VEHICLE_ID
+        || primary_car_id <= 0
+        || primary_car_id == 9
+        || primary_vin.len() != 17
+        || !primary_vin.is_ascii()
+        || !primary_vin.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        || primary_vin
+            .bytes()
+            .any(|byte| matches!(byte, b'I' | b'O' | b'Q'))
+        || primary_vin == DEFAULT_PRIMARY_VIN
+    {
+        return Err(
+            "fixture primary vehicle identity is invalid or conflicts with its secondary vehicle"
+                .into(),
+        );
+    }
+    prepare_with_vehicle_identities(
+        root,
+        port,
+        scenario,
+        source_id,
+        [
+            FixtureVehicleIdentity {
+                vehicle_id: primary_vehicle_id,
+                vin: primary_vin,
+                car_id: primary_car_id,
+                name: "Interop – Árvíztűrő 🚗",
+            },
+            FixtureVehicleIdentity {
+                vehicle_id: DEFAULT_PRIMARY_VEHICLE_ID,
+                vin: DEFAULT_PRIMARY_VIN,
+                car_id: 9,
+                name: "Interop empty",
+            },
+        ],
+    )
+}
+
+fn prepare_with_vehicle_identities(
+    root: &Path,
+    port: u16,
+    scenario: FixtureScenario,
+    source_id: Uuid,
+    vehicle_identities: [FixtureVehicleIdentity<'_>; 2],
+) -> Result<PreparedFixture> {
     if !root.is_absolute() || port == 0 {
         return Err("fixture requires an absolute new directory and nonzero port".into());
+    }
+    if source_id.is_nil() {
+        return Err("fixture source identity must be non-nil".into());
     }
     // Atomic create rejects existing paths, including symlinks. No production
     // directory can be accidentally overwritten by invoking this helper twice.
@@ -49,44 +301,62 @@ pub fn prepare(root: &Path, port: u16) -> Result<PreparedFixture> {
     let data_dir = root.join("hub");
     let store = HubStore::initialize(&data_dir)?;
     let key = load_or_create_cursor_key(&data_dir)?;
-    let source = store.register_source(
+    let mut source = store.register_source(
         &SourceDescriptor::new("owner_api_compat", "local_installation_v1"),
         OBSERVED_AT_MS,
     )?;
+    if source.source_id != source_id {
+        // This test-only seed has no source-owned rows yet. Rebind its one
+        // freshly-created identity before any vehicle, projection, or
+        // observation data refers to it, so an external synthetic producer
+        // and this Hub fixture share one sealed source identity.
+        let mut connection = store.open()?;
+        let transaction = connection.transaction()?;
+        transaction.execute_batch("PRAGMA defer_foreign_keys = ON")?;
+        let identities = transaction.execute(
+            "UPDATE source_identities SET source_id = ?1 WHERE source_id = ?2",
+            rusqlite::params![source_id.to_string(), source.source_id.to_string()],
+        )?;
+        let sources = transaction.execute(
+            "UPDATE sources SET source_id = ?1 WHERE source_id = ?2",
+            rusqlite::params![source_id.to_string(), source.source_id.to_string()],
+        )?;
+        if identities != 1 || sources != 1 {
+            return Err("fixture source identity rebind failed".into());
+        }
+        transaction.commit()?;
+        source.source_id = source_id;
+    }
     let hub_id = store.installation_id()?;
-    let vehicle_ids = [
-        Uuid::parse_str("11111111-1111-4111-8111-111111111111")?,
-        Uuid::parse_str("22222222-2222-4222-8222-222222222222")?,
-    ];
-    for (index, vehicle_id) in vehicle_ids.iter().enumerate() {
-        let car_id = 9 + index as i64;
-        let name = if index == 0 {
-            "Interop – Árvíztűrő 🚗"
-        } else {
-            "Interop empty"
-        };
-        let vin = if index == 0 {
-            "5YJ3E1EA7KF000001"
-        } else {
-            "5YJ3E1EA7KF000002"
-        };
-        let mut descriptor = VehicleDescriptor::new(source.source_id, &car_id.to_string())
+    let vehicle_ids = vehicle_identities.map(|identity| identity.vehicle_id);
+    for (index, identity) in vehicle_identities.iter().enumerate() {
+        let vehicle_id = identity.vehicle_id;
+        let car_id = identity.car_id;
+        let name = identity.name;
+        let vin = identity.vin;
+        let mut descriptor = VehicleDescriptor::new(source.source_id, car_id.to_string())
             .with_tesla_identity(Some(car_id), None);
         descriptor.display_name = Some(name.into());
         descriptor.vin = Some(vin.into());
-        store.register_vehicle_with_id(&descriptor, OBSERVED_AT_MS, *vehicle_id)?;
+        store.register_vehicle_with_id(&descriptor, OBSERVED_AT_MS, vehicle_id)?;
         let car: ProjectionCar = serde_json::from_value(json!({
             "id":car_id,"name":name,"model":"model3","vin":vin,"source_eid":car_id,"firmware_version":"2026.20"
         }))?;
         let mut drives = Vec::new();
         if index == 0 {
-            for (id, offset) in [
-                (101, 500_000),
-                (102, 400_000),
-                (103, 300_000),
-                (104, 200_000),
-                (105, 200_000),
-            ] {
+            let drive_schedule: Vec<(i64, i64)> = match scenario {
+                FixtureScenario::B1 => vec![
+                    (101, 500_000),
+                    (102, 400_000),
+                    (103, 300_000),
+                    (104, 200_000),
+                    (105, 200_000),
+                ],
+                FixtureScenario::ViewerR1 => (1001_i64..=1051_i64)
+                    .map(|id| (id, (1052_i64 - id) * 60_000_i64))
+                    .collect(),
+            };
+            for (id, offset) in drive_schedule {
                 let drive: ProjectionDrive = serde_json::from_value(json!({
                     "id":id,"car_id":car_id,"start_date_ms":OBSERVED_AT_MS-offset,
                     "end_date_ms":OBSERVED_AT_MS-offset+60_000,
@@ -115,7 +385,7 @@ pub fn prepare(root: &Path, port: u16) -> Result<PreparedFixture> {
             charges,
             charge_samples: vec![],
         };
-        store.persist_materialised_car_if_absent(*vehicle_id, &snapshot.cars[0])?;
+        store.persist_materialised_car_if_absent(vehicle_id, &snapshot.cars[0])?;
         // Publishing a transport pack does not materialise query rows. This
         // harness-only setup seeds the same catalogue tables as lifecycle
         // writes; it is HTTP/query evidence, not a TeslaMate import receipt.
@@ -136,7 +406,7 @@ pub fn prepare(root: &Path, port: u16) -> Result<PreparedFixture> {
         }
         transaction.commit()?;
         drop(connection);
-        let sequence = store.next_full_snapshot_sequence(*vehicle_id)?;
+        let sequence = store.next_full_snapshot_sequence(vehicle_id)?;
         let request = ProjectionPackRequest {
             pack_id: Uuid::new_v4(),
             snapshot_id: Uuid::new_v4(),
@@ -144,7 +414,7 @@ pub fn prepare(root: &Path, port: u16) -> Result<PreparedFixture> {
             binding: ProjectionBinding {
                 installation_id: hub_id,
                 account_id: source.source_id,
-                vehicle_id: *vehicle_id,
+                vehicle_id,
                 generation: source.generation,
                 selected_car_id: car_id,
             },
@@ -165,7 +435,7 @@ pub fn prepare(root: &Path, port: u16) -> Result<PreparedFixture> {
         )?;
         if index == 0 {
             store.append_observation(&ObservationInput {
-                source_id:source.source_id,vehicle_id:*vehicle_id,observed_at_ms:OBSERVED_AT_MS,
+                source_id:source.source_id,vehicle_id,observed_at_ms:OBSERVED_AT_MS,
                 payload:json!({"record_type":"owner_api_vehicle_data_v1","source_vehicle_state":"online","display_name":name,
                     "vehicle_data":{"drive_state":{"speed":10,"active_route_miles_to_arrival":12.5},
                         "charge_state":{"battery_level":0,"est_battery_range":100.0,"charging_state":"Disconnected","scheduled_charging_start_time":1788570000_i64},
@@ -226,6 +496,7 @@ pub fn prepare(root: &Path, port: u16) -> Result<PreparedFixture> {
         certificate_path,
         invitation_path,
         hub_id,
+        source_id: source.source_id,
         endpoint,
         vehicle_ids,
     };
@@ -252,7 +523,10 @@ pub fn advance(root: &Path) -> Result<()> {
         serde_json::from_slice(&fs::read(root.join("connection.json"))?)?;
     let expected: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("scenario.json"))?)?;
-    if expected["name"] != "two-vehicles-five-drives" || expected["provenance"] != "synthetic-only"
+    if !matches!(
+        expected["name"].as_str(),
+        Some("two-vehicles-five-drives") | Some("viewer-r1-51-drives")
+    ) || expected["provenance"] != "synthetic-only"
     {
         return Err("synthetic scenario required".into());
     }

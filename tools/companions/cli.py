@@ -10,6 +10,7 @@ import http.client
 import json
 import os
 import signal
+import socket
 import ssl
 import stat
 import tempfile
@@ -17,7 +18,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from .core import (
     BootstrapError,
@@ -38,6 +39,7 @@ from .core import (
 )
 from .processes import ProcessFailure, run_process
 from .recipes import (
+    EXPECTED_PROFILES,
     KNOWN_REPOSITORIES,
     RecipeContext,
     bind_viewer_sdk_artifact,
@@ -55,6 +57,17 @@ MAX_CATALOG_BYTES = 1024 * 1024
 CATALOG_HOST = "raw.githubusercontent.com"
 CATALOG_PATH = "/magrathean-uk/teslatlas-hub/refs/heads/main/tools/companions/catalog-current.json"
 CATALOG_TIMEOUT_SECONDS = 15
+
+D1_HOME_ASSISTANT_COMPONENT = "home-assistant"
+D1_HOME_ASSISTANT_AGGREGATE_REPOSITORY = "teslatlas-home-assistant"
+D1_HOME_ASSISTANT_SELECTOR = "debian13-arm64-container"
+D1_HOME_ASSISTANT_SOURCE_HEAD = "f650331a1af0cf33cec271bc7eefc0f1201ebd4e"
+D1_HOME_ASSISTANT_PAYLOAD_MANIFEST_SHA256 = (
+    "73d702a85e0d79116c6a82f936080a2e393ac0b92e3ab0afa86d38f405a90940"
+)
+D1_HOME_ASSISTANT_SELECTION_RECEIPT_SHA256 = (
+    "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2"
+)
 
 
 class _CatalogDeadlineExpired(TimeoutError):
@@ -124,7 +137,7 @@ def _fetch_canonical_catalog() -> bytes:
                     remaining_bytes -= len(chunk)
             finally:
                 connection.close()
-    except TimeoutError as error:
+    except (TimeoutError, socket.timeout) as error:
         raise BootstrapError(
             "canonical companion catalog refresh exceeded its deadline"
         ) from error
@@ -356,7 +369,16 @@ def _parser() -> argparse.ArgumentParser:
     parser = JsonArgumentParser(prog="bootstrap-companions.py", add_help=True)
     parser.add_argument(
         "action",
-        choices=("install", "update", "status", "rollback", "dry-run", "manifest"),
+        choices=(
+            "install",
+            "update",
+            "status",
+            "rollback",
+            "dry-run",
+            "manifest",
+            "d1-plan",
+            "d1-install",
+        ),
     )
     parser.add_argument("--components")
     parser.add_argument("--prefix", type=Path)
@@ -368,6 +390,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--local-sources", type=Path)
     parser.add_argument("--source", action="append", default=[])
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--component-manifest", type=Path)
+    parser.add_argument("--selector")
     parser.add_argument("--node-bin", type=Path)
     parser.add_argument("--ha-config", type=Path)
     parser.add_argument("--edge-target", choices=("local-linux",))
@@ -478,6 +502,172 @@ def _manifest(arguments: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _d1_plan(arguments: argparse.Namespace) -> dict[str, Any]:
+    """Bind the single reviewed D1 selector without authorizing installation."""
+    requested = tuple(
+        item.strip() for item in (arguments.components or "").split(",") if item.strip()
+    )
+    blocked = set(requested) & {"hub-core", "fleet-helpers"}
+    if blocked:
+        raise BootstrapError(
+            "D1 selection is blocked until candidate identities are admitted for "
+            + ", ".join(sorted(blocked))
+        )
+    if requested != (D1_HOME_ASSISTANT_COMPONENT,):
+        raise BootstrapError(
+            "D1 selection currently supports only home-assistant as one explicit component"
+        )
+    if arguments.selector != D1_HOME_ASSISTANT_SELECTOR:
+        raise BootstrapError("D1 selection does not admit the requested selector")
+    manifest_path = _require_path(
+        arguments.component_manifest, "--component-manifest", existing=True
+    )
+    try:
+        raw = manifest_path.read_bytes()
+        document = json.loads(raw)
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise BootstrapError("D1 component manifest could not be read") from error
+    if (
+        not isinstance(document, dict)
+        or document.get("schema_version") != 1
+        or document.get("kind") != "teslatlas.d1-component-selection-manifest"
+        or document.get("status") != "source_only_not_a_package_or_runtime_receipt"
+        or document.get("product_version") != "2026.36.2"
+        or not isinstance(document.get("components"), list)
+    ):
+        raise BootstrapError("D1 component manifest is not an admitted source-only manifest")
+    matches = [
+        component
+        for component in document["components"]
+        if isinstance(component, dict) and component.get("id") == D1_HOME_ASSISTANT_COMPONENT
+    ]
+    if len(matches) != 1:
+        raise BootstrapError("D1 Home Assistant component record is missing or ambiguous")
+    component = matches[0]
+    source = component.get("source")
+    payload = component.get("payload")
+    receipt = component.get("selection_receipt")
+    selectors = component.get("selectors")
+    selector_matches = (
+        [
+            value
+            for value in selectors
+            if isinstance(value, dict)
+            and value.get("id") == D1_HOME_ASSISTANT_SELECTOR
+        ]
+        if isinstance(selectors, list)
+        else []
+    )
+    if (
+        component.get("status") != "accepted_primary_runtime_lane_only"
+        or not isinstance(source, dict)
+        or source.get("repository") != D1_HOME_ASSISTANT_AGGREGATE_REPOSITORY
+        or source.get("head") != D1_HOME_ASSISTANT_SOURCE_HEAD
+        or source.get("product_version") != document["product_version"]
+        or source.get("profile_id") != "hub-http-v1@1.0.0"
+        or source.get("profile_sha256") != EXPECTED_PROFILES[
+            D1_HOME_ASSISTANT_COMPONENT
+        ]["sha256"]
+        or not isinstance(payload, dict)
+        or payload.get("handoff_manifest_sha256")
+        != D1_HOME_ASSISTANT_PAYLOAD_MANIFEST_SHA256
+        or payload.get("standalone_package") is not False
+        or not isinstance(receipt, dict)
+        or receipt.get("selector_id") != D1_HOME_ASSISTANT_SELECTOR
+        or receipt.get("sha256") != D1_HOME_ASSISTANT_SELECTION_RECEIPT_SHA256
+        or len(selector_matches) != 1
+        or selector_matches[0].get("status") != "accepted_primary_runtime_lane_only"
+        or selector_matches[0].get("runtime_receipt_required") is not True
+    ):
+        raise BootstrapError("D1 Home Assistant selector is not admitted")
+    return {
+        "schema": "teslatlas.companion-d1-plan/v1",
+        "status": "planned_source_only",
+        "product_version": document["product_version"],
+        "component_ids": [D1_HOME_ASSISTANT_COMPONENT],
+        "selector_id": D1_HOME_ASSISTANT_SELECTOR,
+        "aggregate_manifest_sha256": hashlib.sha256(raw).hexdigest(),
+        "component_manifest_sha256": D1_HOME_ASSISTANT_PAYLOAD_MANIFEST_SHA256,
+        "candidate_source_and_artifact_identities": {
+            "source_repository": KNOWN_REPOSITORIES[D1_HOME_ASSISTANT_COMPONENT],
+            "source_head": D1_HOME_ASSISTANT_SOURCE_HEAD,
+            "payload_manifest_sha256": D1_HOME_ASSISTANT_PAYLOAD_MANIFEST_SHA256,
+            "selection_receipt_sha256": D1_HOME_ASSISTANT_SELECTION_RECEIPT_SHA256,
+        },
+        "runtime_receipt_required": True,
+        "activation_authorized": False,
+    }
+
+
+def _d1_catalog(plan: Mapping[str, Any], record: Mapping[str, Any]) -> dict[str, Any]:
+    """Translate one admitted D1 record into the established local cohort schema."""
+    identities = plan["candidate_source_and_artifact_identities"]
+    if (
+        not isinstance(record, Mapping)
+        or record.get("component") != D1_HOME_ASSISTANT_COMPONENT
+        or identities.get("source_repository")
+        != KNOWN_REPOSITORIES[D1_HOME_ASSISTANT_COMPONENT]
+        or record.get("repository") != identities["source_repository"]
+        or record.get("commit") != identities["source_head"]
+        or not isinstance(record.get("source_sha256"), str)
+    ):
+        raise BootstrapError("D1 Home Assistant local source identity does not match")
+    return {
+        "schema_version": 1,
+        "cohorts": [
+            {
+                "product_version": plan["product_version"],
+                "publication_status": "local-unpublished",
+                "admitted_hub_versions": [plan["product_version"]],
+                "components": {
+                    D1_HOME_ASSISTANT_COMPONENT: {
+                        "repository": record["repository"],
+                        "commit": record["commit"],
+                        "source_sha256": record["source_sha256"],
+                        "product_version": plan["product_version"],
+                        "profile": EXPECTED_PROFILES[D1_HOME_ASSISTANT_COMPONENT],
+                        "artifacts": {
+                            "payload_manifest_sha256": identities[
+                                "payload_manifest_sha256"
+                            ],
+                            "selection_receipt_sha256": identities[
+                                "selection_receipt_sha256"
+                            ],
+                        },
+                    }
+                },
+            }
+        ],
+    }
+
+
+def _d1_install(arguments: argparse.Namespace) -> dict[str, Any]:
+    """Run one explicitly supplied D1 source through the normal local transaction."""
+    if arguments.mode != "local-candidate":
+        raise BootstrapError("D1 Home Assistant installation requires local-candidate mode")
+    plan = _d1_plan(arguments)
+    local_sources = _require_path(
+        arguments.local_sources, "--local-sources", existing=True
+    )
+    records = _load_local_sources(local_sources, (D1_HOME_ASSISTANT_COMPONENT,))
+    catalog = _d1_catalog(plan, records[D1_HOME_ASSISTANT_COMPONENT])
+    with tempfile.TemporaryDirectory(prefix="teslatlas-d1-catalog-") as temporary:
+        catalog_path = Path(temporary) / "catalog.json"
+        _write_private_json(catalog_path, catalog)
+        forwarded = argparse.Namespace(**vars(arguments))
+        forwarded.action = "install"
+        forwarded.catalog = catalog_path
+        result = _operate(forwarded)
+    result["d1_selector"] = {
+        "component_id": D1_HOME_ASSISTANT_COMPONENT,
+        "selector_id": D1_HOME_ASSISTANT_SELECTOR,
+        "activation_authorized": True,
+        "installation_mode": "local-unpublished",
+        "runtime_acceptance": False,
+    }
+    return result
+
+
 def _load_local_sources(path: Path, components: tuple[str, ...]) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -561,6 +751,10 @@ def _download_sources(
 def _operate(arguments: argparse.Namespace) -> dict[str, Any]:
     if arguments.action == "manifest":
         return _manifest(arguments)
+    if arguments.action == "d1-plan":
+        return _d1_plan(arguments)
+    if arguments.action == "d1-install":
+        return _d1_install(arguments)
     if os.geteuid() == 0:
         raise BootstrapError("companion bootstrap mutations must not run as root")
     prefix = _prefix_path(_require_path(arguments.prefix, "--prefix"))

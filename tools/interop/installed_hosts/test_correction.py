@@ -438,7 +438,7 @@ class CorrectionTests(unittest.TestCase):
     def test_partial_open_uses_quarantined_session_cleanup(self):
         class PartialOpen(FakeTransport):
             def __init__(self): super().__init__(); self.close_args=[]
-            def open(self,registered): self.registered=registered; raise RuntimeError("synthetic partial open")
+            def open(self,registered,deadline=None): self.registered=registered; raise RuntimeError("synthetic partial open")
             def close(self,timeout=None,preserve_recovery=False): self.close_args.append(preserve_recovery); raise RuntimeError("synthetic retained partial root")
         with tempfile.TemporaryDirectory() as raw:
             transport=PartialOpen()
@@ -930,7 +930,7 @@ class CorrectionTests(unittest.TestCase):
             directory=Path(raw); cfg,inventory=inputs(directory)
             package=directory/"package.deb"; package.write_bytes(b"candidate-package")
             cfg["package"]={"path":str(package),"sha256":hashlib.sha256(package.read_bytes()).hexdigest()}
-            members=[{"path":"/usr/bin/teslatlas-hub","sha256":"f"*64},{"path":"/usr/lib/systemd/system/teslatlas-hub.service","sha256":"a"*64}]
+            members=[{"path":"/usr/bin/teslatlas-hub","sha256":"f"*64},{"path":"/usr/lib/systemd/system/teslatlas-hub.service","sha256":"a"*64},{"path":"/etc/teslatlas-hub/config.toml","sha256":"c"*64}]
             manifest={"schema_version":1,"kind":"installed-host-package","package_sha256":cfg["package"]["sha256"],"product_version":"2026.36.2","package_manager_version":"2026.36.2-1","store_schema_version":59,"os":"Debian 13","architecture":"amd64","hub_executable":members[0],"platform_payload":{"hub_executable":members[0],"systemd_unit":members[1]},"payload_manifest_sha256":payload_manifest_digest(members),"payload_members":members,"package_scripts":{},"source_export_sha256":"b"*64,"source_manifest_sha256":"c"*64,"build_manifest_sha256":"d"*64}
             manifest_path=directory/"manifest.json"; manifest_path.write_text(json.dumps(manifest))
             cfg["package_manifest"]={"path":str(manifest_path),"sha256":hashlib.sha256(manifest_path.read_bytes()).hexdigest()}
@@ -950,6 +950,15 @@ class CorrectionTests(unittest.TestCase):
                     elif argv[:2]==["/usr/bin/dpkg-query","-W"]: out=b"2026.36.2-1"
                     elif "/usr/bin/dpkg" in argv and "--install" in argv: self.installed=True
                     elif "/bin/systemctl" in argv and "stop" in argv and not self.installed: status=5
+                    elif argv==["/usr/bin/sha256sum","/etc/teslatlas-hub/config.toml"]:
+                        raise RuntimeError("unprivileged config digest denied")
+                    elif argv==["/usr/bin/sudo","-n","/usr/bin/sha256sum","/etc/teslatlas-hub/config.toml"]:
+                        target=argv[-1]; digest="c"*64
+                        out=(digest+"  "+target+"\n").encode()
+                    elif argv[:3]==["/usr/bin/sudo","-n","/usr/bin/sha256sum"]:
+                        target=argv[-1]; digest="f"*64 if target=="/usr/bin/teslatlas-hub" else "a"*64 if target=="/usr/lib/systemd/system/teslatlas-hub.service" else None
+                        if digest is None: raise AssertionError("unexpected privileged payload digest")
+                        out=(digest+"  "+target+"\n").encode()
                     elif argv[0]=="/usr/bin/sha256sum":
                         target=argv[-1]; digest=cfg["package"]["sha256"] if target.startswith("/tmp/teslatlas-package-") else "f"*64 if target=="/usr/bin/teslatlas-hub" else "a"*64
                         out=(digest+"  "+target+"\n").encode()

@@ -3,7 +3,7 @@
 use std::{
     fmt, fs,
     io::Read,
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     time::Duration,
@@ -25,6 +25,29 @@ use crate::{
 };
 
 const MAX_CONFIG_BYTES: usize = 1024 * 1024;
+pub(crate) const FLEET_TELEMETRY_INGRESS_PORT: u16 = 8080;
+
+/// The patched Fleet receiver forwards plaintext telemetry to this fixed,
+/// private endpoint. It is separate from the configured public Hub listener
+/// whenever TLS is enabled.
+pub(crate) fn fleet_telemetry_ingress_bind() -> SocketAddr {
+    SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        FLEET_TELEMETRY_INGRESS_PORT,
+    )
+}
+
+fn fleet_telemetry_listener_collides(bind: SocketAddr) -> bool {
+    if bind.port() != FLEET_TELEMETRY_INGRESS_PORT {
+        return false;
+    }
+    match bind.ip() {
+        IpAddr::V4(address) => address.is_unspecified() || address == Ipv4Addr::LOCALHOST,
+        // An IPv6 wildcard may also claim the IPv4 loopback port on platforms
+        // with dual-stack sockets, so reject it conservatively.
+        IpAddr::V6(address) => address.is_unspecified(),
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -517,8 +540,8 @@ impl EdgeCollectorConfig {
 /// Public Tesla Fleet Telemetry endpoint and its local Hub ingress secret.
 ///
 /// The hostname is sent to the vehicle. TLS termination happens in the
-/// companion receiver; the Rust Hub remains bound to its configured local
-/// address.
+/// companion receiver; the Rust Hub uses the fixed private loopback ingress
+/// alongside its configured public TLS listener when both are enabled.
 #[derive(Clone, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct FleetTelemetryConfig {
@@ -1057,9 +1080,14 @@ impl HubConfig {
             telemetry.validate()?;
             if self.collector.provider != CollectorProvider::Fleet
                 || self.collector.fleet_command_proxy_url.is_none()
-                || self.bind.ip() != std::net::Ipv4Addr::LOCALHOST
-                || self.bind.port() != 8080
             {
+                return Err(ConfigError::InvalidFleetTelemetry);
+            }
+            if let Some(_tls) = &self.tls {
+                if fleet_telemetry_listener_collides(self.bind) {
+                    return Err(ConfigError::FleetTelemetryListenerCollision);
+                }
+            } else if self.bind != fleet_telemetry_ingress_bind() {
                 return Err(ConfigError::InvalidFleetTelemetry);
             }
         }
@@ -1168,6 +1196,10 @@ pub enum ConfigError {
     InvalidFleetCommandProxy,
     #[error("Fleet Telemetry configuration is invalid or unsafe")]
     InvalidFleetTelemetry,
+    #[error(
+        "Fleet Telemetry private ingress uses 127.0.0.1:8080; choose another TLS bind address or port"
+    )]
+    FleetTelemetryListenerCollision,
     #[error(
         "Edge collector configuration is invalid or conflicts with another ingestion authority"
     )]

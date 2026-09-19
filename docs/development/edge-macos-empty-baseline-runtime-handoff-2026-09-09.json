@@ -1,0 +1,114 @@
+{
+  "schema": "teslatlas.hub.edge-macos-empty-baseline-runtime-handoff/v1",
+  "state": "bounded_empty_edge_hub_control_completed_and_cleaned_with_independent_sqlite_read_limitation",
+  "date": "2026-09-09",
+  "owner": "Hub",
+  "authority": {
+    "edge_proposal": "../../../teslatlas-edge/docs/development/edge-macos-forwarding-handoff-proposal-2026-09-09.json",
+    "edge_proposal_sha256": "fae8432e8ddd32c798dcc36c2ee102ca2537c94076ad70f8e57044213005e7ea",
+    "coordinator_resolution": "After independent review of the explicit-address repair and focused tests, current authority covers source/candidate staging, fresh PKI/config, init/doctor, bounded launch, and the empty receiver/Hub control baseline. It never authorizes a producer event."
+  },
+  "target": {
+    "guest_alias": "macos13-arm64",
+    "os": "macOS 13.7.4",
+    "architecture": "arm64",
+    "uid": 501,
+    "private_address": "192.168.64.10",
+    "edge_health": "127.0.0.1:8080",
+    "edge_delivery": "192.168.64.10:21443",
+    "receiver": "127.0.0.1:21444",
+    "hub_fixture_reserved": "127.0.0.1:18488"
+  },
+  "fresh_root": {
+    "path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909",
+    "state_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/state",
+    "input_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs",
+    "handoff_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/handoff",
+    "metadata": "The root and its state/inputs/handoff children were absent before creation and are current-admin-owned, 0700, directories and non-symlinked. The retained /Users/Shared/TeslatlasEdge root is outside this handoff and must remain untouched."
+  },
+  "candidate": {
+    "package_path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-arm64-20260909-config-hardening/TeslatlasEdge-2026.36.2-config-hardening.pkg",
+    "package_sha256": "68b96e8f111f7d21df75279fa75f017a2a1697d18ba09a00961da91c195954e8",
+    "package_size_bytes": 11414094,
+    "edge_binary_sha256": "880ee095f6d96f465a73dfc5285851ffadb102494a624d654802f108fda2a882",
+    "receiver_binary_sha256": "8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1",
+    "architecture_verification": "Both payload binaries were independently expanded without installation and identified as Mach-O arm64.",
+    "staging_rule": "Stage only into the fresh root for direct disposable execution. Do not run the package installer or replace /usr/local/libexec/teslatlas-edge or its LaunchAgents."
+  },
+  "post_repair_custody_gate": {
+    "input_preparer": "../../../teslatlas-edge/tools/interop/client_lanes/prepare_hub_consumer_inputs.sh",
+    "input_preparer_sha256": "3f6dd002485f8f93e5c293237244dd9959f472686a207597559acb03b873e124",
+    "focused_test": "../../../teslatlas-edge/tools/interop/client_lanes/test_prepare_hub_consumer_inputs.py",
+    "focused_test_sha256": "501458b88eb23639d8d41320d2c8fb264a09ae6154caf2724987f95249bf360a",
+    "independent_result": "The Edge owner added a test-first concrete tte1 UUID/43-character base64url-secret bearer check after the original generic visible-token preparer admitted an unusable 64-byte token. The focused validator was red before the change and green after it; client-lane unittest discovery passed 16/16. Hub independently staged exactly this preparer SHA256, then used it on the target without exposing bearer contents.",
+    "private_identity_handoff": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/handoff/identity-edge-binding-fae8432e.json",
+    "private_identity_handoff_sha256": "506de22d377e1cde994fb518226eba119112ba2c2dc52199e71a5280c7ee6e88",
+    "private_identity_versioning_receipt": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/handoff/identity-binding-versioning-fae8432e.json",
+    "private_identity_versioning_receipt_sha256": "d68d74bd5fb7750990ab550cab995b63124df528c5d2281f959f5fddf5e5ec16",
+    "private_identity_rule": "The earlier identity.json is unbound and ineligible; the c789b68c, ba05200c and 80c39bb4 records remain preserved superseded evidence. The fae8432e-bound record carried the unchanged unused synthetic-V contract. Edge later enrolled one short-lived active credential in its fresh state and atomically replaced its delivery-bearer input; Hub created a separate consumer-input directory rather than modifying the original identity or input bundle. No bearer value is recorded here."
+  },
+  "hub_link_tls_preparation": {
+    "state": "passed_fresh_output_owner_only",
+    "procedure": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/handoff/prepare-hub-link-tls.sh",
+    "procedure_sha256": "46a3e312a61c99212c08a3e77f1c5ff4cecbee60c1d37328706b2e120cad7b15",
+    "output_directory": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/hub-tls",
+    "output_directory_mode": "0700",
+    "output_directory_owner_uid": 501,
+    "files": {
+      "hub_server_ca": {"path": "hub-server-ca.crt", "mode": "0600", "links": 1, "sha256": "6e67f2b5eb47e8c9f75897ec09e83e87f532a75b7fa19c6fad1ea163f84dd8d3"},
+      "hub_server_leaf": {"path": "hub-server.crt", "mode": "0600", "links": 1, "sha256": "1a0f5588e522a6dac16db5aedd7b2f0ed25f516fadd2108680bcefdc2c1351f8"},
+      "hub_server_key": {"path": "hub-server.key", "mode": "0600", "links": 1, "sha256": "65116e54b9db1e18950b97e8ee233d94aa78f009f212a60012a9b931a89fa53d"},
+      "hub_client_ca": {"path": "hub-client-ca.crt", "mode": "0600", "links": 1, "sha256": "9a87667b39e84d25476b91d9632abe04afa3884ad25e653a342d15e12777ce9b"},
+      "hub_client_leaf": {"path": "hub-client.crt", "mode": "0600", "links": 1, "sha256": "9ea9666674a391f0625dc93714b2b92d8bdd7c00b76a305e9052698aa7177171"},
+      "hub_client_key": {"path": "hub-client.key", "mode": "0600", "links": 1, "sha256": "dc4b69c8da2d427134a6c633bcba46aed125d411fbce82e2242ee3cf15464451"},
+      "delivery_bearer": {"path": "delivery-bearer", "state": "superseded_unusable_non_tte1_input", "original_metadata": "0600 single-link, 64 bytes; its value is not retained here", "replacement_consumer_bundle": "handoff/hub-consumer-inputs-tte1-r1/delivery-bearer", "replacement_metadata": "0600 single-link, 85-byte tte1-shaped credential; value and digest withheld"}
+    },
+    "verification": "The target's LibreSSL 3.3.6 verified both issuer chains with sslserver/sslclient purpose and both leaf/key public-key pairs. The procedure's portable X.509 text parser accepted only exactly one server IP SAN 192.168.64.10. It printed no key, certificate or bearer content; 8080, 21443, 21444 and 18488 remained unbound.",
+    "discarded_private_stages": [
+      {"path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/handoff/hub-tls-attempt1-libressl-verify-ip-unsupported", "mode": "0700", "regular_files": 12, "symlinks": 0, "reason": "LibreSSL lacks openssl verify -verify_ip; no final output was created."},
+      {"path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/handoff/hub-tls-attempt2-libressl-serial-cleanup", "mode": "0700", "regular_files": 21, "symlinks": 0, "reason": "LibreSSL omits optional serial files; the stage was not reused."},
+      {"path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/handoff/hub-tls-attempt3-libressl-bearer-newline", "mode": "0700", "regular_files": 21, "symlinks": 0, "reason": "LibreSSL hex output carried one trailing newline rejected by the visible-token rule; the stage was not reused."}
+    ]
+  },
+  "future_config_shape": {
+    "edge_config": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/config.toml",
+    "receiver_config": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/fleet-telemetry.json",
+    "state_files": ["receiver-token", "spool-key", "hub-credentials.json"],
+    "hub_link_inputs": ["hub-server-ca.crt", "hub-server.crt", "hub-server.key", "hub-client-ca.crt", "hub-client.crt", "hub-client.key", "delivery-bearer"],
+    "vehicle_receiver_inputs": ["vehicle-tls.crt", "vehicle-tls.key", "vehicle-client-ca.crt", "vehicle-server-ca.crt"],
+    "binding_rule": "The Hub-link server leaf must verify under its issuing CA for sslserver and carry exactly the recorded non-loopback delivery IP; vehicle-receiver TLS remains a separate loopback contract.",
+    "pre_init_contract_resolution": "The final frozen proposal had the exact strict EdgeConfig [spool] table and receiver JSON that matches the pinned fleet-telemetry example: all 11 Edge root keys, five spool keys, no spool_limits alias, the exact receiver TLS object, bearer only through TESLATLAS_FLEET_TELEMETRY_BEARER_FILE, and the fixed dispatcher separately recorded. The configuration, init, doctor, corrected bearer handoff and bounded empty control were subsequently completed on the exact target."
+  },
+  "vehicle_tls_preparation": {
+    "state": "passed_fresh_atomic_output_owner_only",
+    "procedure_sha256": "ea0225408a6b6c8ed52740b5bc8027a741522d13739fed3ad3eda01d6cc187aa",
+    "output_directory": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/inputs/vehicle-tls",
+    "output_directory_mode": "0700",
+    "output_directory_owner_uid": 501,
+    "files": {
+      "receiver_server_ca": {"path": "vehicle-server-ca.crt", "mode": "0600", "links": 1, "sha256": "e6cb36bee95859cfa29f1f82b74486cd2cbab4beec899530de7338d82f37167f"},
+      "receiver_server_leaf": {"path": "vehicle-tls.crt", "mode": "0600", "links": 1, "sha256": "d0b4fa47e8961272bb7948cf20e5426e919f4a07beebf1af925b17507a8ddf43"},
+      "receiver_server_key": {"path": "vehicle-tls.key", "mode": "0600", "links": 1, "sha256": "e6b39ba5bbf29e5ea8f790578b6f8b5f812b8490ca8576f5e91cf03d40e393b2"},
+      "client_issuer_ca": {"path": "vehicle-client-ca.crt", "mode": "0600", "links": 1, "sha256": "feee11cee84cbcb7f1656f63fbc59199eeba90c22e69ecd1cf871b9086202a14"},
+      "client_leaf": {"path": "vehicle-client.crt", "mode": "0600", "links": 1, "sha256": "81af2f30043141c43e23c5d085065f7c40a7bd0eb40b8ddd6c7916a9a94bf56d"},
+      "client_key": {"path": "vehicle-client.key", "mode": "0600", "links": 1, "sha256": "c02b71f3137aeba56bb87419dd299b3035a6048aa05619456384b9a806e13385"}
+    },
+    "verification": "The exact pinned messages/identity.go verifier SHA256 20ff7be5 accepted the final-bound client leaf in all three source-only checks. The atomic target procedure verified separate sslserver/sslclient chains, a sole 127.0.0.1 receiver-server IP SAN, both leaf/key pairs and owner-only custody. A temporary owner-only verification copy was removed automatically; the client key never left the target. No listener was opened."
+  },
+  "runtime_execution": {
+    "hub_fixture_root": "/Users/admin/teslatlas-hub-empty-edge-baseline-20260909",
+    "hub_candidate": {"source_baseline": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc", "sole_overlay": "src/runtime/diagnostics.rs", "overlay_sha256": "3b004bb59aa371279d3b22ff2cb1130241109150137a8de053a0649ded8ba970", "binary_sha256": "eaf44a2803723b4a9d961c2dfac6057db94e3da36110070f9abdc49ce22abfad", "architecture": "Mach-O arm64"},
+    "diagnostic_policy_repair": "The first fixture doctor correctly exposed a Hub defect: Edge transport was configured and startable, but doctor demanded unused direct Fleet credentials and scopes. A test-first regression exercised the sealed empty Edge binding; the focused feature suite passed 8/8 and the default library check passed. The repair requires direct-provider credentials only when Hub has no Edge transport.",
+    "corrected_consumer_handoff": "Hub staged the exact corrected Edge preparer and generated a separate 0700 consumer directory with server-ca.pem, hub-client.crt, hub-client.key and delivery-bearer as uid 501, 0600, single-link files. The bearer was UTF-8 tte1-shaped, 85 bytes, with a 43-character final base64url component; no value was printed or stored in this receipt. A separate 0600 Hub config referenced only this replacement bundle; the original config and failed bearer path were preserved.",
+    "doctor_and_runtime": "The replacement config doctor passed all checks before launch. The first direct Hub serve with the old bearer exited before bind; its retained owner-only log classified the token as non-tte1. With the corrected bundle, the next direct Hub PID 4829 first had one normal startup probe race, then returned health=ok and ready=ready over four consecutive HTTP 200 pairs. It listened only on 127.0.0.1:18488. Hub status while live reported Edge connected, pending publications 0, ACK frontier null, no direct Fleet credential, and latest observation 0/null.",
+    "empty_control_result": "After Hub stopped, its native doctor again passed all checks and reported one configured vehicle, raw observations 0, current observations 0, Edge pending publications 0 and ACK frontier null. The source policy sends no ACK for an empty batch; no producer, vehicle event, replay, Fleet discovery, direct credential setup, Edge ingress record, projection or ACK was invoked.",
+    "independent_count_limit": "The macOS sqlite3 CLI and Python sqlite URI both returned unable-to-open-database when asked to inspect the stopped Hub database read-only, even though the native candidate doctor and status commands had just read it successfully. The zero-byte failed query receipt was removed. Therefore this handoff does not claim an external direct count of Edge applications or sequence rows; it records native status/doctor evidence and the no-event boundary separately.",
+    "cleanup": "Hub PID 4829 was absent before Edge cleanup. The pinned receiver PID 3681 was then terminated before Edge PID 3617. TCP 8080, 21443, 21444 and 18488 were all closed afterward; 18487 was closed before and after. The fresh roots, staged candidates and owner-only evidence files remain preserved; no package, LaunchAgent or retained global path was changed."
+  },
+  "baseline_and_stop_rules": {
+    "allowed": ["init", "doctor", "empty health/ready receipt", "one trusted empty Hub control pull", "native zero-ledger-status receipt"],
+    "forbidden": ["producer helper", "VehicleName event", "retry or replay", "existing state reuse", "global installation", "LaunchAgent mutation", "Viewer or HA attachment"],
+    "process_ownership": "Hub owned its fresh fixture/config/candidate and stopped its direct Hub process. Edge owned the corrective credential enrollment and its fresh direct Edge/receiver pair; the agreed receiver-first, Edge-second cleanup was completed after Hub's empty control.",
+    "stop_on": "Any custody, trust, listener, doctor, health, empty-poll or zero-ledger mismatch ends this preparation without an event; record the result and stop only fresh owned disposable processes. This bounded preparation has completed and its event prohibition remains in force."
+  }
+}

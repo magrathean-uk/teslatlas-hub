@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "state": "built_from_stable_current_dirty_source",
+  "platform": "macos13-arm64",
+  "source": {
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "status_digest_sha256": "5262ffbe599450c26817e499992d91ab770c323fe54a0fb485d4ee51b373eb2d",
+    "manifest_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r1/hub-build-receipt/source-manifest-before.txt",
+    "manifest_sha256": "2cbbabc6ede091c9197e8958a27e4a9152a015546f009b8f4c78ec9f7728090b",
+    "input_count": 195,
+    "stable_before_after_build": true,
+    "receipt_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r1/hub-build-receipt.json",
+    "receipt_sha256": "731de5a9ee0158bedc4866aecf7e955fb9a061e270956a640c8c61fb54ad3df6"
+  },
+  "build": {
+    "command": "rustup run 1.98.0 cargo build --locked --release --features interop-fixture --bin teslatlas-hub --example interop_fixture",
+    "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "target": "aarch64-apple-darwin",
+    "shared_heavy_build_lock_used": true,
+    "hub": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/build/hub/edge-empty-baseline-20260912-r1/release/teslatlas-hub",
+      "sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+      "format": "Mach-O 64-bit executable arm64",
+      "minimum_macos": "11.0",
+      "sdk": "27.0"
+    },
+    "interop_fixture": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/build/hub/edge-empty-baseline-20260912-r1/release/examples/interop_fixture",
+      "sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+      "format": "Mach-O 64-bit executable arm64"
+    },
+    "hub_dynamic_dependencies": [
+      "SystemConfiguration.framework",
+      "CoreFoundation.framework",
+      "Security.framework",
+      "/usr/lib/libiconv.2.dylib",
+      "/usr/lib/libSystem.B.dylib"
+    ]
+  },
+  "limitations": [
+    "This is source-bound candidate-process evidence only.",
+    "It does not establish package, installer, LaunchAgent, service, upgrade, release, or user acceptance."
+  ]
+}

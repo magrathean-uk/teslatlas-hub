@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "state": "passed_fresh_locked_source_to_binary_build",
+  "platform": "macos-arm64",
+  "purpose": "Fresh r2 Hub and interop-fixture candidates for the wholly fresh Edge empty-baseline cohort; no runtime, credential or event action.",
+  "source": {
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "manifest_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/hub-build-receipt/source-manifest.txt",
+    "manifest_sha256": "2cbbabc6ede091c9197e8958a27e4a9152a015546f009b8f4c78ec9f7728090b",
+    "input_count": 195,
+    "rust_source_count": 189,
+    "manifest_revalidated_before_and_after_build": true,
+    "full_working_tree_status_after_build": {
+      "path_count": 160,
+      "sha256": "87d43fa792337883308e2042e25f528d07c5f7e4b456fdcbe9152e676e827892",
+      "boundary": "Recorded after the build for dirty-tree preservation only; source-to-binary stability is established by the exact 195-input manifest before and after the build."
+    }
+  },
+  "build": {
+    "working_directory": "/Users/bolyki/dev/source/teslatlas-service/hub",
+    "command": "rustup run 1.98.0 cargo build --locked --release --features interop-fixture --bin teslatlas-hub --example interop_fixture --target-dir /Users/bolyki/dev/teslatlas-lab/build/hub/edge-empty-baseline-20260912-r2",
+    "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18); cargo 1.98.0 (797e8a9bc 2026-08-05); host aarch64-apple-darwin; LLVM 22.1.8",
+    "target": "aarch64-apple-darwin",
+    "profile": "release",
+    "duration": "1m 07s",
+    "result": "Finished release profile [optimized] target(s)",
+    "shared_heavy_build_lock": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+      "acquired_before_build": true,
+      "released_after_build": true,
+      "post_build_recheck": "absent"
+    }
+  },
+  "outputs": {
+    "hub": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/build/hub/edge-empty-baseline-20260912-r2/release/teslatlas-hub",
+      "sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+      "bytes": 22944400,
+      "mode_uid_gid": "0755 501:20",
+      "type": "Mach-O 64-bit executable arm64"
+    },
+    "interop_fixture": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/build/hub/edge-empty-baseline-20260912-r2/release/examples/interop_fixture",
+      "sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+      "bytes": 5085024,
+      "mode_uid_gid": "0755 501:20",
+      "type": "Mach-O 64-bit executable arm64"
+    },
+    "deterministic_comparison": "Both output hashes match the prior r1 candidate bytes, but these are new r2 build outputs at new paths with a new lock occurrence and receipt."
+  },
+  "safety_boundary": {
+    "guest_started": false,
+    "listener_started": false,
+    "credential_created_or_expired": false,
+    "producer_invoked": false,
+    "event_sent": false,
+    "installed_service_mutated": false,
+    "publication_or_upload": false
+  },
+  "limitations": [
+    "This is source-bound candidate-build evidence only.",
+    "It does not establish runtime, forwarding, durable commit/ACK/frontier, Home Assistant, installation, service, release, production, vehicle or user acceptance."
+  ]
+}

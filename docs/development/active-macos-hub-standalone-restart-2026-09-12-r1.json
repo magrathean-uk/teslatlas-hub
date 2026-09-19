@@ -1,0 +1,58 @@
+{
+  "schema": "teslatlas.hub.active-target-handoff/v1",
+  "state": "passed_candidate_process_restart_and_retained_state",
+  "prepared_at": "2026-09-12",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "selected_gap": "The current Apple-silicon candidate-process evidence had not independently shown a real process restart retaining Hub identity, paired credential usability and seeded current/history data through native administration commands. The unsigned local package remains explicitly ineligible for manual installation, so this run does not cross the package or LaunchAgent boundary.",
+  "target": {
+    "kind": "existing_local_apple_silicon_mac",
+    "architecture": "arm64",
+    "host_os": "macOS 27.0",
+    "endpoint": "https://127.0.0.1:18522"
+  },
+  "candidate": {
+    "id": "hub-macos-arm64-20260909-r2",
+    "binary_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+    "seed_sha256": "b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce",
+    "fixture_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+  },
+  "runtime": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-standalone-restart-20260912-r1",
+    "fixture_config_sha256": "40447f8945348179482285be636873c6f70e14bf3486494b7d19361671ea67d5",
+    "ready_descriptor_sha256": "e4ae7c3462a5cd7b1619cf4266603164cc8994e78ed21e5a762d340ea254fcd0",
+    "server_certificate_sha256": "72c5f8b842548d82f4b219fbc58814e84d90a3e6d073b291cac8bca1fb844840",
+    "config_sha256": "6dceb074487dc6fc420a54532a6db056f28ce9d11a26d2e7c3f16dce6031d0ca",
+    "hub_id": "841f1d73-ce8b-4bb9-99fb-10547d399bf5",
+    "first_process": {
+      "launcher_pid": 3022,
+      "hub_pid": 3135,
+      "listener": "127.0.0.1:18522 only",
+      "native_status": "status ok; ready true; version 2026.36.2; two vehicles",
+      "native_doctor": "status ok; schema 59; all checks passed; two vehicles; paired devices changed from zero to one after the fresh claim",
+      "client_result": "Hub identity matched; two vehicles; current present; five drives in three pages; fresh credential created privately",
+      "client_result_sha256": "114bd01802eaa326f4fb4cbe70e18a7d32a0b16ed84477b2492f97e062af4bd0",
+      "exit_code": 0,
+      "stopped_descriptor_sha256": "308d05a4a1309fe67a39f3a135ccfae4edd2e2f75efa49d79d5a87d09371cdbf"
+    },
+    "restart_process": {
+      "hub_pid": 8333,
+      "new_process": true,
+      "same_binary": true,
+      "same_config_and_data_root": true,
+      "listener": "127.0.0.1:18522 only",
+      "native_status": "status ok; ready true; version 2026.36.2; two vehicles",
+      "native_doctor": "status ok; schema 59; all checks passed; same installation ID; two vehicles; one paired device",
+      "client_result": "Same Hub identity; the same paired credential remained valid; two vehicles; current present; five drives in three pages",
+      "client_result_sha256": "913df14a79528286b434ebd09c05141d2f4e5bd6f0c02553ad2aa3a274d24ab4",
+      "exit_code": 0
+    },
+    "final_state": "Both process generations are absent and port 18522 is closed. Native doctor after final stop still reports status ok, schema 59, the same installation ID, two vehicles, one paired device and all checks passed. The heavy-build lock is absent."
+  },
+  "credential_boundary": "One fresh owner-only 0600 credential was created from the run's single-use invitation and reused only to verify the same Hub after restart. Its value, device identifier and digest are not recorded. The retained root is non-reusable evidence.",
+  "sqlite_observation": "A host Python read-only SQLite URI succeeded while the first process was active but returned unable-to-open-database after its clean stop, matching the previously recorded external macOS SQLite-reader limitation. No count is inferred from that failed reader. Native Hub doctor succeeded before restart, after restart and after final stop and is the administration witness used for retained identity/catalogue/pairing state.",
+  "proof_boundary": "This proves one synthetic-data candidate Hub can be administered with native status/doctor, stopped, restarted as a new process against the same config/store, retain installation identity and pairing, and serve the same two vehicles/current/five drives. It is not ordinary setup UI, package installation, LaunchAgent/service lifecycle, upgrade, backup/restore, uninstall, real collection, production, release or platform acceptance."
+}

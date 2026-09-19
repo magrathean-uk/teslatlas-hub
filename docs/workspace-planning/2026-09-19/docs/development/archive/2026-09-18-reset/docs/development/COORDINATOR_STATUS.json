@@ -1,0 +1,810 @@
+{
+  "last_checked_at": "2026-09-18T14:12:00Z",
+  "automation_id": "teslatlas-hourly-development-coordination",
+  "automation_status": "ACTIVE",
+  "cadence": "every 1 hour",
+  "stage": "ARM64_MAC_SIX_PRODUCT_EXECUTION_ACTIVE_WITH_ENVIRONMENT_BLOCK",
+  "dispatch_result": "Six in-scope product tasks are resumed with Hub on Sol/high and companions on Luna/max, no fast mode. Protocol and Swift remain complete. Edge r11 source/profile gates passed; TypeScript repair passed owner tests and awaits queued Hub review. No approved ARM64 guest is currently present, so no shared runtime was started.",
+  "native_goals": "Preserved native goals: Protocol and Swift complete per current owner STATUS; other native states recorded separately in TASKS. No duplicate or false completion. Viewer excluded by effective scope.",
+  "next_action": "Complete the queued Hub r3 review of the final TypeScript source repair. Keep Protocol and Swift quiet, preserve Edge r11 as inactive evidence, and wait for an existing approved ARM64 guest plus fresh inputs before Hub, Edge or HA runtime work.",
+  "model_policy": {
+    "hub": "gpt-5.6-sol / high",
+    "companions": "gpt-5.6-luna / max",
+    "coordinator": "gpt-6-astra / medium"
+  },
+  "confirmed_goal_products": [
+    "Teslatlas Hub",
+    "Teslatlas Protocol",
+    "Teslatlas TypeScript SDK",
+    "Teslatlas Swift SDK",
+    "Teslatlas Home Assistant",
+    "Teslatlas Edge"
+  ],
+  "verified_current_evidence": {
+    "r9": "Owner records: single helper call failed certificate-required before queue admission; separate Hub connect-category errors and zero ledger; disposable cleanup completed.",
+    "edge_new_test": "Latest STATUS now records mutual_tls_loopback passed with server demanding/observing selected certificate; native Go4 tests and ARM64 helper d5f1fa53. Awaiting independent Hub review and guest runtime validation.",
+    "hub_diagnostic": "Owner records: real released-socket regression now distinguishes connect_refused without public secret-bearing errors; not retroactive classification of closed r9.",
+    "task_state": "05:22 Hub now interrupted/notLoaded; resumed existing task Sol/high from completed r2 config/init/doctor, with process/expiry reconciliation first. Prior active snapshots were not reliable completion evidence.",
+    "heavy_build_lock": "Absent at02:12Z.",
+    "edge_actor_hub_review": {
+      "scope": "Hub-reported independent source/build review, not guest runtime acceptance",
+      "native_go_tests": "4/4 including server requiring and verifying selected client certificate",
+      "helper_sha256": "d5f1fa538086cd3f7b7acc74766d92e3e5d9bebf977787b67c1999d34f658d4c",
+      "embedded_vin": false,
+      "hub_candidate_sha256": "d242cbf0b361cea6b5735b9aaf9c3301319df85c9abee3f377f6b1d77359f8de",
+      "seed_sha256": "8a293fe891552cee643e42aa5b522a1c938bdbe1b33ac4b4ae9ae77ef24daf74"
+    },
+    "r10_trust_root_cause": {
+      "reported_by": "Hub task",
+      "result": "Root cause identified; not yet corrected-runtime acceptance",
+      "root_cause": "Consumer server-ca.pem was byte-identical to server leaf, CA:FALSE/serverAuth, instead of its issuing CA. Issuer verification failed at depth0; reqwest correctly rejected before HTTP.",
+      "r10": "Probe consumed; no route/ACK/producer/HA action reported; preserve inputs and do not retry.",
+      "next_authorization": "After reviewed test-backed trust-generation repair, one fresh sealed runtime/input root and one non-submitting exact EdgeConsumer probe; no telemetry/HA attachment."
+    },
+    "r11_collector_probe": {
+      "source": "Hub owner handoff",
+      "status": "passed_empty_collector_probe_and_cleaned",
+      "result": "Reviewed CA trust repair; real EdgeConsumer.poll_once v2 passed1/1 empty batch; zero applications/sequences/pending/ACK; no submission or HA action.",
+      "cleanup": "Owner reports receiver-first stop,20643/20644 closed; r10 and original HA untouched; r11 not reusable.",
+      "scope": "Actual collector transport proof only, not telemetry delivery."
+    },
+    "r12_preparation": {
+      "result": "Source staged; latest setup command stopped at jq not found before completed readiness. Edge is actively preparing a manifest alternative.",
+      "task_snapshot_limit": "Edge compact snapshot repeatedly shows interrupted old turn, but direct recent task read confirms inProgress and current commands; no resume needed.",
+      "acceptance": "Historical preparation snapshot; the r12 result is recorded separately as a bounded non-acceptance."
+    },
+    "r12_replacement": {
+      "source": "Read Edge and Protocol owner evidence",
+      "custody_repair": "Private receiver key owner10001:10001 mode0600, matching container user; read witness passed; no spool/Hub-key mounts.",
+      "root": "Distinct replacement on20843/20844, imagec04e3049, empty queue and zero restarts at handoff.",
+      "contract": "VehicleName=synthetic-b2; HA device/display name only, no numeric sensor or units.",
+      "ha_current": "Latest HA task reports TLS-verified200 for primary18483 and temporary18492, then fresh config-flow retry.",
+      "acceptance": "No record submission or delivered HA name yet."
+    },
+    "r12_application_identity_failure": {
+      "source": "Hub owner outcome",
+      "result": "single_submission_failed_application_identity_and_cleaned",
+      "failure": "TLS completed; pinned receiver rejected certificate lacking required X.509 identity extensions and carrying unauthorized custom issuer.",
+      "data": "No Edge admission/ACK/queue record; Hub applications,sequences,pending,accumulator=0 and ack=null; no Edge-origin HA value.",
+      "cleanup": "Temporary HA entry removed and primary18483 restored; Hub child exit0 and18493 closed; receiver-first Edge shutdown and20843/20844 closed; installed8443/primary18483 healthy.",
+      "authority": "Single record consumed; no retry/reuse."
+    },
+    "certificate_application_profile_review": {
+      "reported_by": "Hub independent review",
+      "scope": "source/parser proof only",
+      "generator_tests": "2/2 using corrected explicit sibling PYTHONPATH",
+      "pinned_parser_tests": "3/3; known issuer Tesla Motors Products CA resolves leaf VIN to vehicle_device; wrong issuer and no-OID alternative issuer rejected",
+      "python_compilation": "passed",
+      "runtime": "none"
+    },
+    "r13_preparation": {
+      "source": "Current Hub task snapshot corroborated by HA/Viewer snapshots; owner STATUS files lag active work",
+      "reported": "Fresh Edge zero-queue health/readiness; Hub verified certificate issuer,VIN subject,fingerprint,key match. The tested 20943 fixture gate then bound the completed r13 cohort.",
+      "limits": "Preparation snapshot only; the complete r13 result and cleanup are recorded in r13_complete.",
+      "heavy_build_lock": "Absent"
+    },
+    "r13_complete": {
+      "evidence_sources": [
+        "hub/docs/development/STATUS.json",
+        "teslatlas-edge/docs/development/STATUS.json",
+        "teslatlas-home-assistant/docs/development/STATUS.json"
+      ],
+      "result": "bounded_same_hub_name_only_path_passed_and_cleaned",
+      "submission_count": 1,
+      "receiver_ack": true,
+      "hub": {
+        "lineages": 1,
+        "applications": 3,
+        "sequences": 3,
+        "ack_frontier": 3,
+        "pending_non_complete": 0,
+        "projected_sequence": 2,
+        "nonprojection_sequences": [
+          1,
+          3
+        ]
+      },
+      "ha": "Normal scheduler observed device/display name synthetic-b2 only; no numeric telemetry/unit/new name sensor.",
+      "cleanup": "Temporary HA18494 removed and original18483 trust restored; Hub child exit0/18494 closed; receiver143 then Edge0, restarts0,20943/20944 closed; roots retained.",
+      "limits": "One actor datum is not one stored sequence; synthetic primary integration only, not full R1/parity/production/platform acceptance."
+    },
+    "r1_parity_preparation": {
+      "source": "Hub owner report",
+      "table": "hub/docs/development/teslamate-parity-evidence-2026-09-09.md",
+      "reference": "TeslaMate v4.2.0 revision e8d24886 prefix",
+      "scope": "17-domain ledger;16 captured/typed/fingerprint-bound; addresses.raw unread/unhashed; full-field false; H7 operations unrun.",
+      "checks": "Mapping boundaries and7 physical projection source cases; recovery13/13 plus CLI/watermark checks reported passed.",
+      "limits": "No live TeslaMate, vehicle, collector or backup/restore acceptance."
+    },
+    "synthetic_data_recovery": {
+      "receipt": "hub/docs/development/r1-synthetic-data-recovery-2026-09-09.json",
+      "verification": "Coordinator read structured receipt",
+      "result": "backup/verify/restore passed; two vehicles and observation2/watermark checks matched; truncated backup verify/restore both exited1, invalid destination absent, original digest unchanged.",
+      "limits": "Direct debug binary; data-only without pairing, keys, config or collector authority; cleanHostReady=false; no live TeslaMate import proof.",
+      "cleanup": "Owner receipt: working roots moved recoverably to Trash, original paths absent,19495/19496 closed."
+    },
+    "r1_viewer_data_state": {
+      "receipt": "teslatlas-viewer/docs/development/receipts/2026-09-09-r1-installed-data-state.json",
+      "verification": "Coordinator read structured receipt and Hub owner independent cleanup report",
+      "result": "1 Playwright pass in 3.1s on Debian 13 ARM64; 51 rows across 25/25/1 pages retained after three 304 responses; unsupported resources zero I/O; browser-controlled partial failure retains/recoveries and cancellation prevents late repopulation.",
+      "hub_id": "5334ff3f-bd07-4c48-bc74-cebd6c7c526a",
+      "viewer_package_sha256": "96cbea31be369729f61eb99b73c18343b5d7555106486e7d868a0dfc24946454",
+      "cleanup": "Viewer exact process stopped; Hub owner stopped verified launcher 170788, child 170804 exit 0, stopped receipt 0600, 18480/4173 closed.",
+      "limits": "Synthetic browser data-state behavior only; no named-source parity, passive collection, migration, soak, distribution or platform acceptance."
+    },
+    "h7_read_only_plan": {
+      "path": "hub/docs/development/r1-named-source-read-only-evidence-plan-2026-09-09.md",
+      "status": "reviewed; requested phase sequencing correction verified",
+      "finding": "Phase A creates no target; Phase B is source-only inventory; Phase C explicitly requires offline import into a fresh target before source-to-Hub comparison. Isolated local PostgreSQL from a preserved backup is the proposed import lane.",
+      "missing_input": "Owner-selected preserved TeslaMate backup/source; no source or path selected yet.",
+      "authority": "Plan preparation only; no database, restore, credential or runtime action."
+    },
+    "d1_aggregate_source_audit": {
+      "source": "Hub owner independent audit reported to coordinator",
+      "result": "Aggregate packaging/components.json and D1 package/bundle selector absent; current companion catalog schema 1 has zero cohorts. Existing bootstrap and core/Fleet-sidecar deb paths do not establish aggregate package selection.",
+      "ha_boundary": "Explicit --ha-config immutable-release symlink; no native HA packaging/start. Hub reports focused target tests 4/4 passed.",
+      "dependency_owner": "Hub aggregate manifest/selector; companions supply per-component manifest inputs",
+      "unblock_event": "Reviewed aggregate contract and component bindings, followed by separately scoped D1 runtime receipts after R1 sequencing permits.",
+      "limits": "Source audit and reported tests only; no package lifecycle acceptance or runtime changes."
+    },
+    "d1_aggregate_manifest_preparation": {
+      "verification": "Coordinator read and hashed manifest; Hub reports focused tests 2/2",
+      "path": "hub/packaging/components.json",
+      "sha256": "4e84c2d7e671c16f590c1e29c76f5a5072e32e7b10b385a50484ac6ea46ab582",
+      "result": "Eight component slots and required selection-receipt fields now exist as source-only preparation. Supersedes prior manifest-absent audit; no executable selector or installed acceptance inferred.",
+      "ha_blocker": "31-file handoff digest differs from current payload; blocked_payload_identity_reverification_failed",
+      "owner_and_unblock": "HA supplies regenerated frozen payload identity; Hub independently verifies before binding. Other component owners must supply their own immutable handoffs.",
+      "limits": "No H7 source access or runtime action; R1 remains current stage."
+    },
+    "d1_viewer_handoff": {
+      "source": "Hub owner report; coordinator read current manifest",
+      "manifest_sha256": "f5eaeb88aa8fbdf419b4c3d9f6298ccdcc4e4a1f4311b8104a25819b80bed358",
+      "status": "blocked_source_identity_reverification_failed",
+      "result": "Supporting source/container/SDK identities verified by Hub; complete source identity mismatch: Hub 107 files versus handoff 106. Claimed Viewer package archive unavailable locally.",
+      "checks": "Hub reports focused red/green regression and 3/3 passing tests",
+      "dependency_owner": "Viewer frozen candidate handoff; Hub independent verification",
+      "unblock_event": "Viewer produces an external manifest for a frozen source snapshot, with an accessible matching package archive; Hub verifies without weakening walker policy.",
+      "limits": "Source preparation only; no runtime or H7 acceptance.",
+      "root_cause": "Hub reports the handoff includes itself in the full source walker, creating self-reference."
+    },
+    "d1_ha_frozen_handoff": {
+      "source": "Hub independent byte verification reported; coordinator read updated manifest",
+      "manifest_sha256": "cbc54c4f7ffe766cdd56c0a4381f8a03bde84883acec86c4e0459f47c03d40ef",
+      "status": "prepared_for_aggregate_review",
+      "result": "31 sorted component-root file-list entries independently matched current bytes; Hub reports manifest digest prefix 73d702 and 3/3 focused tests.",
+      "limits": "Prepared for aggregate review only; selectors and runtime acceptance remain pending."
+    },
+    "d1_aggregate_latest_binding": {
+      "verification": "Coordinator read current aggregate manifest; Hub reports independent exact source/package/receipt rechecks and 4/4 focused tests",
+      "manifest_sha256": "2a1ac8bf2ad4daf0ab44780f9c034ab4f85760a2d981a26430efcfa0137ef612",
+      "ha": "Only debian13-arm64-container source/runtime selection receipt accepted; SHA256 2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2",
+      "viewer": "External frozen source and accessible 10-member package c0ef6f9222fde6e06a6476dbed586b8f630f9abd9d3ed4587b4d9a50dfd8fb31 accepted for aggregate review; all Viewer runtime/platform selectors pending.",
+      "supersedes": "Earlier HA/Viewer source identity blockers resolved; previous observations retained as history.",
+      "limits": "Receipt bindings only; no new host/runtime/H7 action or full D1/X1 acceptance."
+    },
+    "d1_typescript_source_binding": {
+      "verification": "Coordinator read aggregate entry; Hub reports independent frozen snapshot and archive verification",
+      "status": "prepared_optional_developer_resource_review",
+      "aggregate_manifest_sha256": "95445f62d794aa9761369077bbfd542316a3ab148c2a842e2bb0f1ed27a98110",
+      "source_file_count": 254,
+      "source_sha256": "1f4e2ad068de14285f7fbe9f462fde6ee384ff992cce17ff13cbfea8d53a53f8",
+      "snapshot_manifest_sha256": "4264d380a1d4f8e9ae8bb5d1b76c99bcbf4da89eb89906f79f40c10929d80067",
+      "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "checks": "Hub reports 5/5 focused verifier tests plus JSON/whitespace checks",
+      "limits": "Optional caller-owned developer resources only; no service, runtime, installed-target or full D1 acceptance."
+    },
+    "d1_swift_edge_source_bindings": {
+      "verification": "Coordinator read aggregate statuses; Hub reports two exact source checks per immutable replacement and zero writable bits",
+      "aggregate_manifest_sha256": "b4ba2bf0fed3c46d99e8fad8b600a1d2f31eaa5969b0bbc3772a8b65dfe0ea1a",
+      "swift_status": "prepared_optional_swiftpm_source_review",
+      "edge_status": "prepared_source_candidate_review_runtime_limited",
+      "swift_scope": "Optional SwiftPM source only; installed targets blocked.",
+      "edge_scope": "87 files / 12 executables; candidate identities retain native/macOS lifecycle subsets, Docker without durable ACK limit and pending amd64.",
+      "checks": "Hub reports focused verifier 7/7, JSON and whitespace checks passed",
+      "remaining_unbound": [
+        "hub-core",
+        "fleet-helpers",
+        "protocol"
+      ],
+      "limits": "Source/receipt binding only; no new runtime, host, service, credential or fixture action; no installed or full D1/X1 acceptance."
+    },
+    "viewer_docker_runtime": {
+      "receipt": "teslatlas-viewer/docs/development/receipts/2026-09-09-d1-container-source.json",
+      "verification": "Coordinator read receipt and aggregate binding",
+      "result": "Debian13 ARM64 image 6791fa6d: health, HTTP200, uid1000, no mounts, restart, container/network removal and 4173 closed; image retained.",
+      "limits": "No Hub/browser TLS/CORS, native service, macOS/x86, upgrade/rollback/forced-stop or aggregate acceptance."
+    },
+    "d1_optional_handoffs_reviewed": {
+      "verification": "Coordinator read aggregate statuses; Hub reports two independent Protocol source checks and guest Viewer cleanup observation",
+      "manifest_sha256": "37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa",
+      "component_statuses": {
+        "hub-core": "blocked_missing_candidate_artifact_identity",
+        "fleet-helpers": "blocked_missing_reviewed_component_artifacts",
+        "protocol": "prepared_optional_protocol_source_review",
+        "sdk-typescript": "prepared_optional_developer_resource_review",
+        "sdk-swift": "prepared_optional_swiftpm_source_review",
+        "viewer": "prepared_for_aggregate_review",
+        "home-assistant": "accepted_primary_runtime_lane_only",
+        "edge": "prepared_source_candidate_review_runtime_limited"
+      },
+      "protocol": "177 immutable files, optional developer resource only; no package/image/service/runtime/profile admission.",
+      "viewer": "Docker selector runtime_passed_limited_cleaned only; Hub reports zero Viewer containers/networks/listener and retained exact image.",
+      "checks": "Hub reports manifest verifier 9/9 and JSON/whitespace checks clean.",
+      "remaining_artifact_gaps": [
+        "hub-core",
+        "fleet-helpers"
+      ],
+      "limits": "Does not complete D1/X1. R1 named-source lane remains pending owner backup selection; no broader installer/platform campaign."
+    },
+    "edge_cleanup_scope_reconciliation": {
+      "source": "Hub owner read-only live inspection report",
+      "result": "Reported discrepancy was a scope mix-up. Retained running r10 diagnostic 20543/20544 and r12-fresh 20743/20744 are distinct from cleaned r12-replacement 20843/20844 and r13 20943/20944.",
+      "cleanup": "Hub reports replacement/r13 ports closed; stopped containers retained as evidence.",
+      "retained_runtime": "r10 and r12-fresh diagnostic projects run with unless-stopped; not covered by replacement/r13 cleanup claims.",
+      "followup": "Hub asked HA to narrow its overbroad audit entry.",
+      "limits": "Coordinator records owner observation; no container/service/data changes or blanket all-diagnostics-cleaned claim."
+    },
+    "ha_installer_provenance_gap": {
+      "source": "Hub owner read-only source audit",
+      "reported_checks": "32 focused companion tests passed for explicit absolute config, no-overwrite, owned-link, journal and rollback boundaries.",
+      "gap": "Durable target binding/receipt carries ha_config only; frozen payload manifest SHA73d702 and selection receipt SHA2f7b are not validated before linking or persisted as provenance.",
+      "dependency_owner": "Hub companion installer implementation",
+      "unblock_event": "Add cohort provenance fields, pre-link identity verification, fail-closed mismatch coverage and persisted receipt binding before installer-contract promotion.",
+      "limits": "Existing bounded HA Container receipt remains distinct; no installer-contract acceptance, runtime changes or R1 advancement."
+    },
+    "ha_installer_provenance_source_fix": {
+      "source": "Hub owner implementation and test report",
+      "result": "Catalog schema and parser require both HA artifact identities. Normal install binds catalog-derived identities into input_sha256 and receipt.targets. Status/reuse/repair verify retained artifacts agree with receipt targets; local coherence only, not signature/authentication.",
+      "checks": "Hub reports 72 companion tests, bootstrap catalog 1/1, aggregate verifier 9/9 and JSON/whitespace checks passing. Full suite initially found 17 shared fixture-factory regressions; missing artifact fields corrected. Catalog-shaped regression covers binding, unlink/repair and split receipt rejection.",
+      "supersedes": "Previously reported missing HA installer provenance guard at source level.",
+      "remaining": "R1 named-source admission and all live installer/runtime acceptance remain pending.",
+      "limits": "Hub-reported source and local test evidence; uncommitted; no runtime mutation or selector promotion."
+    },
+    "d1_ha_planning_interface": {
+      "source": "Hub owner implementation and fresh binary verification report",
+      "command": "teslatlas-hub companions d1-plan --components home-assistant --selector debian13-arm64-container --component-manifest ABS_PATH",
+      "scope": "Only exact HA Debian13 ARM64 Container selection; binds source, payload manifest and receipt identities; emits activation_authorized:false and never opens install target.",
+      "rejections": "Rust rejects other selectors/component sets; helper independently rejects unbound Hub core/Fleet. Built binary returned exit2 for Fleet.",
+      "checks": "Hub reports red/green; companion75/75, manifest9/9, bootstrap1/1, focused Rust3/3, format/build/changed-path checks passed; fresh binary emitted HA source-only plan.",
+      "limits": "Uncommitted selection/planning interface only; no package/runtime/target/guest/credential/device action or aggregate acceptance. R1 unchanged."
+    },
+    "d1_ha_local_install_adapter": {
+      "source": "Hub owner implementation and test report",
+      "result": "HA-only d1-install routes immutable source and aggregate identities through existing local-candidate catalog/recipe/transaction/target path; validates version, repository, source head, profile and HA artifact digests. Receipt retains source/content and target bindings; runtime_acceptance=false.",
+      "checks": "Hub reports companion80/80, manifest9/9, bootstrap1/1, Rust5/5, format/build/Python/whitespace checks passed. Disposable integration test preserved storage sentinel and linked only owned integration; mismatch cases reject before source/prefix mutation. Built binary rejects Fleet with exit2.",
+      "limits": "Uncommitted source and disposable local test evidence only; no primary HA config, guest, service/container, credentials or publication action. No live installer, clean-host, platform, aggregate or R1 acceptance."
+    },
+    "ha_x86_lane_reconciliation": {
+      "source": "Coordinator read new HA STATUS evidence",
+      "status": "Build finished; x86 VM/lifecycle/source artifacts remain unadmitted and preserved. Further x86 actions paused pending recovery decision.",
+      "target": "debian13-x86_64-20260909, HA Container, reverse route28483 to primary18483",
+      "reported_scope": "Pairing, reauth, reload, restarts, disable/enable, component rollback, clean/forced stop observations; further limits in HA receipt.",
+      "action": "Hub instructed to correct owned record, preserve state, let current build finish and report once without further setup; no retrospective authorization or lock evidence.",
+      "ha_response": "Fresh QEMU/Lima VM, not retired guest; HA owns product staged root and receipts. HA reports current2026.8.3 with HTTP200/Hub200, temporary upgrade paths removed; no further mutations.",
+      "remaining_gap": "Exact sender/text/timestamp for claimed fixture request; VM creator and lifecycle authority; contemporaneous heavy-build lock and cleanup-owner record. Requested from Hub and HA without retrospective authorization.",
+      "hub_response": "Hub did not create/admit VM. Existing guest received isolated Hub/protocol source snapshot, Rust1.98 and C prerequisites, and native build after a claimed coordinator-sourced request. No fixture/listener/invitation/config/HA mutation reported; further setup paused; existing build may finish naturally.",
+      "hub_authority_correction": "Hub explicitly confirms no received X1 fixture authorization exists. The earlier coordinator-sourced claim originated solely in its own checkpoint at2026-09-09T13:12:44Z and incorrectly identified HA as coordinator; it must not be used as authority.",
+      "heavy_build_control_failure": "Shared atomic heavy-build lock was not acquired and no task/PID handoff existed before native build. Hub reports guest PID9457 still running naturally.",
+      "ha_creation_audit": "HA confirms it created fresh debian13-x86_64-20260909 at2026-09-09T12:25:37.299487Z based on inferred future X1 scope. No x86-specific user authorization or Hub creation/admission handoff exists.",
+      "build_final": "Hub reports guest PID9457 completed naturally in11m38s. Final read-only check: build PIDs absent,18485/18486 closed,no fixture config/output root or HA attachment. Only unadmitted debug binary remains under isolated source copy."
+    },
+    "fresh_native_goals": {
+      "verified_at": "2026-09-09T13:52:20.140574+00:00",
+      "count": 7,
+      "status": "active",
+      "source": "Product STATUS creation/re-read evidence and owner acknowledgements",
+      "scope": "Working ARM64/Mac products; deferred architecture, named-source parity and polished distribution are separate plan obligations."
+    },
+    "mac_ha_consumer_reachability": {
+      "verified_at": "2026-09-09T13:54:32.694437+00:00",
+      "source": "teslatlas-home-assistant/docs/development/STATUS.json: mac_host_arm64_ha_consumer_path_2026_09_09",
+      "coordinator_verification": "Existing Mac loopback forward 127.0.0.1:18123 independently returned HTTP 200.",
+      "owner_observation": "HA login page rendered in the Mac browser; no credentials entered.",
+      "limits": "Reachability only; signed-in workflow, pairing and new Mac Hub handoff not verified. Existing ARM64 HA runtime; no native Mac HA installation or new VM."
+    },
+    "edge_macos_uninstall_preflight": {
+      "verified_at": "2026-09-09T13:58:19.515092+00:00",
+      "implementation": "teslatlas-edge/packaging/macos/scripts/uninstall-teslatlas-edge.sh",
+      "test": "teslatlas-edge/tests/packaging_contract.rs",
+      "coordinator_inspection": "Explicit data-deletion target checks occur before LaunchAgent stop and payload removal; default uninstall retains the state root.",
+      "owner_reported_validation": "Focused source-order assertion failed before the change and passed afterward; packaging contract 6/6 and format/shell/plist/JSON/diff checks passed.",
+      "limits": "Source inspection and static contract checks only. No uninstall execution, installed Mac lifecycle, package install or runtime acceptance."
+    },
+    "swift_debian_toolchain_preflight": {
+      "source": "teslatlas-sdk-swift/docs/development/STATUS.json: debian_arm64_preflight",
+      "owner_report": "Existing Debian 13 aarch64 guest reachable; Swift and clang absent; Docker server aarch64 available through sudo inspection, ordinary socket access denied. Existing containers untouched.",
+      "action": "Hub asked to sequence the smallest supported toolchain and ordinary public-consumer handoff after current Mac work, using the existing guest and shared heavy-build lock. Formal installed-matrix requirements are separate unless actually required by the consumer.",
+      "limits": "Read-only environment evidence, not Swift Linux package or consumer acceptance."
+    },
+    "ha_mac_access_helper": {
+      "source": "teslatlas-home-assistant/docs/development/STATUS.json: mac_consumer_forward_helper_2026_09_09",
+      "coordinator_inspection": "Read tools/mac-consumer-forward: uses an existing SSH config and guest alias, loopback-only forward to existing HA port8123, exits on forwarding failure.",
+      "owner_validation": "Shell syntax and invalid-port guard passed; package/documentation 7 passed. Temporary port18125 returned HTTP200, helper stopped and port closed; existing18123 preserved.",
+      "limits": "Mac access helper only; no authenticated HA pairing/workflow or native Mac HA runtime acceptance."
+    },
+    "hub_mac_go_path_check": {
+      "source": "Independent read-only reviewer and newer Hub owner result",
+      "verified": "Both existing Go executables match SHA256 a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267 and have corresponding GOROOTs. Current lock includes the lab path and still requires the complete path/hash/GOROOT binding.",
+      "owner_reported_result": "Fresh r2 Apple-silicon candidate built successfully with HEAD7fe8cb plus one exact documented lock overlay; focused provenance regression passed. Shared heavy-build lock released.",
+      "candidate": "Local unsigned/ad-hoc-signed arm64 app and unsigned 69314955-byte package; no installation, Hub/Viewer start, pairing or service/listener acceptance.",
+      "next": "Hub completes package/lifecycle inspection and records the exact isolated runtime handoff. No owner input needed for the resolved Go path issue."
+    },
+    "mac_r2_profile_selection": {
+      "decision": "Current b80 profile from existing frozen Protocol bundle selected for the fresh isolated Mac r2 fixture.",
+      "verification": "Coordinator rehashed manifest and all17 profile files in frozen and current trees; no mismatches; frozen profile has no writable paths.",
+      "receipt": "coordination/2026-09-09-mac-r2-profile-selection.json",
+      "limits": "External fixture input separate from Hub r2 binary provenance; no formal profile or runtime acceptance."
+    },
+    "swift_arm64_package_consumer": {
+      "source": "teslatlas-sdk-swift/docs/development/STATUS.json: debian_arm64_container_consumer",
+      "owner_report": "Pinned swift6.0.3-jammy image ran linux/arm64 as swiftuser on existing Debian ARM64 Docker. Root non-live148/148 and nested consumer9/9 passed; both release builds passed. Owned image/context/containers removed and lock released.",
+      "limits": "Linux ARM64 container package/test/build proof, not a live Hub consumer, native Debian Swift toolchain installation or full lifecycle acceptance."
+    },
+    "ha_mac_signed_in_route": {
+      "decision": "Existing ARM64 HA instance selected for normal Mac browser use under ACTIVE_SCOPE; independent of the separate Mac r2 Hub fixture.",
+      "next": "HA to use only existing authorized private dev credentials/session inputs for signed-in UI/navigation through existing18123, preserve entries/fixtures and close owned session. If unavailable, report exact missing input once.",
+      "limits": "No credentials reset, new integration entry, VM, production account or runtime replacement."
+    },
+    "protocol_working_resource_goal_complete": {
+      "source": "teslatlas-protocol/docs/development/STATUS.json: native_goal_completion_audit",
+      "result": "Fresh native goal complete for source-neutral ARM64/Mac contracts and usable developer/conformance resources.",
+      "evidence": "Generated profile/OpenAPI/conformance checks current; owner full gate134tests and31rich-profile runs passed. Coordinator independently verified frozen b80manifest/all17 profile files during Mac handoff selection.",
+      "limits": "No installed-profile admission, runtime activation, real-source parity or deferred architecture completion."
+    },
+    "ha_mac_auth_dependency": {
+      "source": "HA owner original B2.1 private-input provenance check and one bounded login attempt",
+      "result": "Historical development input does not match current auth provider and was rejected by the Mac login UI. Browser fields cleared and session closed. No current reusable authenticated state found.",
+      "required_input": "Operator signs in to existing development HA through127.0.0.1:18123, or supplies an already available current private dev login/session input through an appropriate private channel.",
+      "action": "Browser panel request queued for the coordinator task; existing HA URL also available for manual sign-in. Other products continue.",
+      "limits": "No password reset, account/entry recreation or runtime/guest/x86 change authorized or performed."
+    },
+    "mac_r2_process_ready": {
+      "verified_at": "2026-09-09T14:20:09.584127+00:00",
+      "handoff": "hub/docs/development/active-macos-hub-viewer-toolchain-handoff-2026-09-09.json",
+      "status": "real_https_ready_viewer_handoff_published",
+      "candidate_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+      "endpoint": "https://127.0.0.1:18487",
+      "coordinator_probe": "TLS-verified /readyz HTTP200",
+      "viewer_scope": "One fresh pairing/smoke run; Viewer already received the handoff and owns only its local process.",
+      "cleanup": "Hub owns recorded launcher35922 and child36006, then verifies stopped receipt and18487closure after Viewer result/expiry.",
+      "limits": "Synthetic candidate process only; unsigned package not installed; existing app/LaunchAgent unchanged. No real collection or formal profile admission."
+    },
+    "edge_bootstrap_configuration_fixes": {
+      "source": "teslatlas-edge/docs/development/STATUS.json",
+      "recorded_evidence_kinds": [
+        "config_runtime_path_collision_regression",
+        "config_state_path_symlink_regression"
+      ],
+      "owner_report": "Reject colliding runtime paths before initialization, then reject symlinked state-path parent components before creating state/secrets. Focused regressions failed before and passed after; latest config9/9 and fullRust79/79, clippy/fmt passed.",
+      "limits": "Owner-reported source/test verification, not Mac installed/runtime acceptance.",
+      "next": "Edge asked to identify the next actual Mac working-service gap and provide a bounded candidate/action/input/cleanup proposal; current Mac Hub fixture reserved for Viewer."
+    },
+    "edge_macos_forwarding_proposal_review": {
+      "proposal": "teslatlas-edge/docs/development/edge-macos-forwarding-handoff-proposal-2026-09-09.json",
+      "status": "Edge_empty_runtime_healthy_Hub_config_only_fixture_addition_authorized",
+      "source_findings": "Current Edge rejects loopback delivery bind but accepts a specific non-loopback IP; preserve validator and prefer existing Mac guest private IP rather than wildcard.",
+      "required_amendments": [
+        "Exact producer and receiver-side PKI/identity/custody binding",
+        "Stable empty Edge and trusted empty Hub control baseline",
+        "One actor and one VehicleName projection; classify all additional lifecycle sequences",
+        "Bounded drain, no actor retry, all exact process/listener cleanup including8080 and Hub"
+      ],
+      "routing": "Edge owns proposal/source; Hub queues exact existing-target preflight and handoff after current Viewer/consumer work. No actor submission authorized by the incomplete draft.",
+      "coordinator_local_preflight": "Proposed local Mac fixed Edge paths absent and ports8080/18488/21443/21444 not accepting at inspection; guest must be separately preflighted.",
+      "limits": "Read-only source/proposal review; no runtime, install, VM start, cleanup or event submission.",
+      "reviewed_sha256": "2e952faf7b90d48700a9c2b01ad8da30f9aa1a31bc5f0a46b2f8e004eb1a366a",
+      "remaining_correction": null,
+      "execution_boundary": "Specification approved for preparing the fresh Hub-owned runtime contract. Actual target/PKI/actor bindings, empty readiness and coordinator submit-once decision still required before the event.",
+      "binding_correction": "Exact non-loopback private guest address required for delivery21443; wildcard and loopback delivery binds excluded. Health8080 and receiver21444 remain loopback. Actual address comes from Hub target preflight.",
+      "existing_target_preflight": {
+        "source": "Hub owner report",
+        "receipt": "hub/docs/development/edge-macos-existing-target-preflight-2026-09-09.json",
+        "result": "Exact existing guest started from recorded stopped state; target compatible, required ports free.",
+        "coordinator_authorization": "Start only exact existing macos13-arm64 development guest after identity/state verification, within started development scope; record prior state and follow shared lock rules. No VM creation, replacement, reconfiguration or target substitution.",
+        "next": "Hub and Edge prepare uniquely named fresh private root, new synthetic identity and PKI/bearer custody, exact candidate binding and empty control baseline.",
+        "event_submission_authorized": false,
+        "target": {
+          "os": "macOS 13.7.4",
+          "architecture": "arm64",
+          "uid": 501,
+          "private_ip": "192.168.64.10"
+        },
+        "retained_state": "/Users/Shared/TeslatlasEdge is 0700 non-symlink, nonempty; preserve without reuse."
+      },
+      "latest_owner_report": "Hub independently verified updated proposal prefix c789b68c and sealed aligned private identity handoff; earlier unbound record preserved and barred. Fresh root /Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909 has empty state/inputs/handoff children, all0700.",
+      "reviewed_sha256_note": "2e952faf is historical reviewed specification; Hub reports newer candidate-bound proposal c789b68c. Verify full current hash before readiness admission.",
+      "sequencing_resolution": {
+        "prerequisites": "Tested Edge explicit-address repair, independent Hub review, exact changed candidate/helper bindings.",
+        "authorized_phase": "Hub records concrete target/action/input/process/cleanup handoff, then fresh-root staging, PKI/config creation, init/doctor, launch and empty receiver/Hub baseline under existing authority.",
+        "proposal_action": "Edge amends blanket no-runtime wording to reflect this phase; no additional runtime approval required.",
+        "excluded": "Event submission, retained state reuse, existing installation replacement or target expansion.",
+        "ownership": "Edge source; Hub all shared runtime; coordinator later single-event readiness decision."
+      },
+      "latest_proposal_sha256": "fae8432e8ddd32c798dcc36c2ee102ca2537c94076ad70f8e57044213005e7ea",
+      "reported_SAN_repair": {
+        "preparer_sha256": "48f5f75de2b8eaf63f5150bffc6c91c4b83ed4673671f575f6c28f9aac0ad099",
+        "tests": "Edge reports TDD red then focused4/4 and client8/8 green; Python/shell syntax pass.",
+        "behavior": "Explicit canonical server IPv4, exactly matching IP SAN, preserved CA/purpose/key/custody validation and explicit loopback support.",
+        "candidate": "Unchanged package68b96e8f, Edge880ee095, receiver8abeeb2a",
+        "runtime": "None by Edge; Hub independently verifies before authorized empty baseline."
+      },
+      "config_review": "Edge reports exact spool schema/limits, distinct absolute fresh-root paths and address validation passed; coordinator verified current proposal digest.",
+      "runtime_owner_report": "Edge core/receiver healthy on fresh root,8080/21443/21444 exact,queue/gap/corruption zero;Hub18488unused.",
+      "fixture_authorization": {
+        "reason": "Normal Mac Serve preflight requires configured enabled vehicle; existing fixtures always seed telemetry and product setup requires live credentials.",
+        "scope": "Additive test-only empty-edge-binding scenario using existing source/vehicle registration APIs and sealed synthetic tuple.",
+        "verification": "Focused test proves required binding and no observations/projections/telemetry/ingress/application/ACK writes; exact artifact/overlay recorded under heavy-build lock.",
+        "excluded": "Production gate changes, direct SQL injection, live credentials, telemetry seed and producer event.",
+        "revised_setup_boundary": "Normal configured vehicle lookup requires v2 base/snapshot. Minimal synthetic setup publication is authorized through validated APIs; exact setup projections and any required bookkeeping observations must be counted before collector start. No drive/charge data or producer event. Zero Edge-origin ingress/application/ACK deltas and empty Edge queue remain required. Production preflight unchanged; no feature-gated bypass.",
+        "explicit_source_api": "Test/interop-only exact source UUID registration authorized, sharing existing transaction/validation and preserving production UUID generation; conflict tests reported green."
+      },
+      "latest_Hub_report": {
+        "source": "Direct Hub owner message",
+        "build": "ARM64 Hub7fe8cb plus diagnostics overlay; focused8/8; read-only doctor passed.",
+        "serve": "Exited before binding; no Hub listener or Edge mutation/event.",
+        "blocker": "Supplied64-byte ASCII bearer lacks required tte1 UUID/secret format; Edge owns exact credential-contract correction.",
+        "limits": "Doctor/build proof only, no integrated empty-control pass."
+      }
+    },
+    "mac_r2_viewer_trust_block": {
+      "source": "Hub owner verified Viewer result and exact child cleanup; current Mac handoff",
+      "result": "Viewer stopped before pairing because locked macOS prevented system local-CA trust setup. No TLS bypass or invitation consumption.",
+      "cleanup": "Hub reports SIGTERM to owned launcher35922; child36006 exit0; stopped receipt0600;18487 and4173closed.",
+      "limits": "HTTPS Hub process readiness passed, browser pairing did not. No package installation or existing app/LaunchAgent change.",
+      "next": "Fresh browser root/endpoint/CA/invitation only after Mac unlock/trust availability. Independent fresh packed Node and ARM64 Swift CLI consumer handoffs continue using normal explicit-CA verification."
+    },
+    "mac_packed_node_handoff": {
+      "source": "Hub direct owner handoff",
+      "state": "consumer_passed_and_cleaned",
+      "endpoint": "https://127.0.0.1:18489",
+      "candidate": "r2 Hub SHA895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+      "profile": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "custody": "Distinct0700root, fresh CA/descriptor/invitation; normal strict Node CA route. No Viewer18487 or reserved Edge18488 reuse.",
+      "cleanup_owner": "Hub launcher65782/direct child65785 after bounded SDK result; separate ARM64 Swift handoff follows.",
+      "limits": "Owner-reported ready handoff, not a Node consumer pass."
+    },
+    "mac_packed_node_result": {
+      "source": "TypeScript owner fresh handoff result",
+      "result": "passed_actual_packed_apple_silicon_node_consumer",
+      "observations": "2vehicles,5drives over3pages at limit2;304 and subsequent cursor continuation;claim,rotation and default fetch.",
+      "package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "installed_members": 81,
+      "custody": "Credential and receipt owner-only.",
+      "cleanup": "Hub independently verified health/readiness, then stopped owned launcher65782/direct child65785; child exit0, stopped receipt0600,18489closed. Cleanup confirmed by Hub owner.",
+      "limits": "Packed Node consumer only; Mac Viewer/browser pairing remains separately blocked on trust setup."
+    },
+    "swift_arm64_live_staging": {
+      "handoff": "hub/docs/development/debian-arm64-swift-consumer-handoff-2026-09-09.json",
+      "state": "r2_swift_linux_trust_failure_cleaned",
+      "port": 18498,
+      "heavy_build_lock": "absent at coordinator check",
+      "observation": "Handoff reflects completed staging, while Hub STATUS still names candidate/runner build. Compact snapshot revision15 is stale despite newer owner progress.",
+      "action": "Swift owns test-backed Linux trust design; Hub waits for verified correction before fresh handoff.",
+      "limits": "Trusted-ready fixture and prepared container are owner-reported; live Swift result and exact cleanup remain pending.",
+      "failure": "Hub reports the authorized launch executed but failed before readiness; no Hub/Swift consumer or listener remained. Original partial root is retained and forbidden for reuse.",
+      "diagnostic": "Exact seed passes three standalone variants; both failed stores stop after first vehicle/5drives/1charge. Original native cause unavailable because stderr was suppressed.",
+      "second_failure": "Controlled retry also failed at the seed subprocess boundary; both roots preserved and18495closed; no Swift consumer.",
+      "authorization_receipt": "coordination/2026-09-09-swift-fixture-diagnostic-authorization.json",
+      "staging_metadata": {
+        "path": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-retry1-20260909/run/hub/packs/.staging",
+        "mode": "0775",
+        "uid": 501,
+        "gid": 1000,
+        "symlink": false,
+        "available_bytes": 6686474240,
+        "interpretation": "Observed writable staging matches the validator rejection condition. Inherited umask cause and repair still require Hub confirmation and fresh runtime verification."
+      },
+      "repair": {
+        "source": "Hub direct owner report",
+        "root_cause": "Inherited guest umask 0002 created 0775 pack staging; candidate validator rejected group write before chmod.",
+        "diagnostic": "Fresh instrumented 18496 seed exited 1 in 57 ms with private diagnostic and no raw stderr disclosure.",
+        "fix": "Seed child umask 0077",
+        "focused_tests_passed": 25,
+        "fresh_runtime": "Clean HEAD plus repair overlay under parent umask 0002 produced 0700 staging and healthy/ready candidate Hub.",
+        "launcher_pid": 71136,
+        "child_pid": 71152,
+        "hub_id": "ad8e7769-844f-492f-b89d-35159bd62134",
+        "consumer": "Swift container not yet started; fresh one-use input being staged.",
+        "limits": "Owner-reported repaired Hub fixture readiness; live Swift acceptance and cleanup still pending."
+      },
+      "consumer_launch_failure": {
+        "source": "Swift owner direct report",
+        "exit_code": 1,
+        "error": "no executable product named 'CurrentHubConsumer'",
+        "cause": "Container invoked swift run from SDK root rather than nested Examples/CurrentHubConsumer package.",
+        "authority": "Hub owns narrow command correction, package-selection verification and one fresh handoff; failed container and one-use inputs are not reusable.",
+        "transport_started": false
+      },
+      "corrected_handoff": {
+        "source": "Hub owner direct report",
+        "previous_run": "Root/input/container preserved; exact fixture launcher stopped and port closure verified.",
+        "fresh_run": "Distinct R2 fixture trusted-ready on 18498 with new Hub ID, CA and invitation.",
+        "container": "Created, not started, swiftuser; verified nested-package command.",
+        "routing": "Fresh one-shot handoff delivered to Swift.",
+        "limits": "Consumer result and R2 cleanup pending; no installed-service or package acceptance."
+      },
+      "r2_result": {
+        "source": "Hub owner direct diagnosis and cleanup report",
+        "consumer": "Nested-package command built; redacted transport_failure.",
+        "pairing": "No Hub claim/session rows written.",
+        "diagnostic": "Credential-free in-image libcurl probe under matching swiftuser, host-network and SSL_CERT_FILE returned code 60 / HTTP 0; OpenSSL and host curl accepted same CA.",
+        "source_observation": "Frozen SDK shim has no CAINFO/CAPATH configuration.",
+        "interpretation": "Evidence localizes failure to Swift Linux process trust configuration; test-backed trust design required.",
+        "cleanup": "Only owned R2 launcher/child stopped, stopped receipt 0600 retained, 18498 closed.",
+        "retry": "No new invitation or retry issued."
+      }
+    },
+    "usage_interruption_recovery": {
+      "failure": "Hub and Edge last turns failed with usage-limit error.",
+      "current_usage": "71% consumed,29% remaining;zero purchase/reset credits;none consumed.",
+      "action": "Resumed both existing tasks with prescribed models; compact snapshots confirm both active/inProgress.",
+      "lock": "Empty heavy-build directory observed; Hub instructed to reconcile live processes before stale-lock recovery.",
+      "remaining": "Swift trust source fixed awaiting new Hub inputs; Viewer/TS Mac trust and HA login unchanged; Protocol complete."
+    },
+    "mac_edge_empty_control_result": {
+      "source": "Hub direct report corroborated by Edge owner",
+      "result": "Bounded real runtime empty control passed and cleaned",
+      "observations": "Four consecutive health/ready200; Edge connected,pending0,ack null,latest observation0/null; post-stop native doctor ok.",
+      "cleanup": "Hub then receiver3681 thenEdge3617;8080/21443/21444/18488closed.",
+      "events": 0,
+      "limits": "Direct SQLite/Python read-only queries failed to open DB; independent applications/sequences counts not asserted. Not installed-product acceptance.",
+      "next": "Fresh ready event handoff and verifiable baseline required before separate submit-once decision."
+    },
+    "mac_event_prep_cleanup": {
+      "result": "Expired cleaned without event",
+      "cleanup": "Hub5772 then receiver5718 thenEdge5711;18489/21544/21545/21543/8080closed.",
+      "producer": "Darwin db916a5 independently source-reviewed b27566c; behavioral tests pending.",
+      "action": "Edge observed idle; resumed bounded local mock tests, no live event. Hub active and asked to prepare repaired Swift lane."
+    },
+    "swift_R3_live_pass": {
+      "source": "Hub owner report",
+      "receipt": "hub/docs/development/debian-arm64-swift-consumer-handoff-2026-09-09.json",
+      "result": "One public ARM64 consumer exit0; discovery,claim,readiness,vehicles,current,drives,rotation;2vehicles5drives3pages.",
+      "counts": "paired_devices1,outbound_request_receipts0,stream_session_receipts0",
+      "cleanup": "18499closed;exactR3container/input/image/remote source removed;R1/R2preserved.",
+      "limits": "Bounded public consumer; installed/matrix acceptance not claimed."
+    },
+    "mac_event_r1_cleanup": {
+      "receipt": "hub/docs/development/edge-macos-event-preparation-handoff-2026-09-09-r1.json",
+      "result": "Empty prep cleaned without event; wildcard status binding blocked submission.",
+      "cleanup": "Receiver7503 stopped21:05:17Z;Hub7539 thenEdge7461 stopped after expiry observed21:06:05Z;8080/21643/21644/21645/18490closed.",
+      "blocker": "Receiver status *:21645 requires loopback-only or safely disabled optional listener.",
+      "owner": "Edge narrow config/source repair and socket-binding proof; Hub independent review and any future runtime."
+    },
+    "swift_remaining_working_goal": "Current Swift STATUS clarifies ordinary external Apple-silicon CurrentHubConsumer run remains; formal installed/matrix and cross-product lifecycle backlog separate. Routed minimal fresh Mac handoff to Hub.",
+    "receiver_review": "Hub independently reviewed exact direct-digest receipt and narrow status bind patch; C0 source review, no rerun; live loopback socket verification remains required.",
+    "track_check_20260910": {
+      "result": "Owned next steps routed; not all products accepted.",
+      "Hub": "Sol/high; prioritize ordinary Mac Swift handoff; reconcile stale STATUS.",
+      "Edge": "Active target-compatible receiver rebuild; previous a701 missingZeroMQdylib/minos27;R2cleaned noevent.",
+      "Swift": "ARM64livepassed;oneexternalMacconsumerremains.",
+      "Viewer": "Active read-only recheck of yesterday lock/trust assumption.",
+      "TypeScript": "MacNodepassed;browserdependsViewerfreshhandoff.",
+      "HA": "Validdevelopmentloginstillmissing.",
+      "Protocol": "Currentresourcegoalcomplete."
+    },
+    "mac_trust_availability_refresh": {
+      "source": "Viewer read-only desktop check",
+      "result": "Mac unlocked andChrome accessible;oldlockblockercleared.",
+      "next": "Fresh normalHubViewerhandoff; actualtemporaryCAtrust/pairingnotyetverified."
+    },
+    "macos13_receiver_candidate": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-receiver-status-loopback-macos13-20260910/teslatlas-fleet-telemetry",
+      "sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+      "owner_report": "CGO0,minos13,systemdylibsonly;focusedtests passed.",
+      "remaining": "Hub independent metadata/source review and actual guest loader/loopback check; no event."
+    }
+  },
+  "actions_taken": [
+    "Owner paused all x86 work and prioritized working ARM64/Mac products.",
+    "Created ACTIVE_SCOPE and revised shared plans, authority and task scope; dispatched exact amendment to all seven existing tasks.",
+    "After the owner deleted all old goals, dispatched replacement to all seven existing tasks, verified fresh active goal records, removed obsolete current goal wording, reconciled registry and updated the existing hourly monitor."
+  ],
+  "dependencies": [
+    {
+      "product": "Teslatlas Hub",
+      "effective_execution_state": "WAITING_ENVIRONMENT_AND_REVIEW",
+      "dependency_owner": "Environment owner for an existing approved ARM64 guest; Hub for TypeScript r3 review; HA for private session.",
+      "unblock_event": "Existing approved ARM64 guest plus fresh Hub runtime inputs; separately, Hub accepts the final TypeScript source package."
+    },
+    {
+      "product": "Teslatlas Protocol",
+      "effective_execution_state": "CURRENT_OBJECTIVE_COMPLETE",
+      "dependency_owner": "Hub owns shared ARM64/Mac target, runner and runtime handoffs; each companion owns its active-target artifact and consumer receipts; programme owners control named-source R1 inputs and any later resumption of deferred x86/amd64/Intel Mac, Azure or full cross-architecture work",
+      "unblock_event": "Owner restart is recorded; the current native Protocol goal remains complete. No new Protocol action is currently required. Follow-on work may proceed only for a concrete ARM64/Mac Hub or companion handoff or a narrow contract correction: named TeslaMate source admission, passive parity and live-source recovery remain explicit R1 acceptance gaps; active-target D1 installed selectors, SessionInputs and lifecycle receipts remain Hub/companion dependencies; x86/x86_64/amd64, Intel Mac, Azure and full cross-architecture rows remain paused or deferred and cannot block the delivered ARM64/Mac resources"
+    },
+    {
+      "product": "Teslatlas TypeScript SDK",
+      "effective_execution_state": "WAITING_HUB_SOURCE_REVIEW",
+      "dependency_owner": "Hub owns queued independent r3 source review and future fresh runtime handoff.",
+      "unblock_event": "Hub accepts receipt 8c686933 and later supplies a wholly fresh bounded browser handoff."
+    },
+    {
+      "product": "Teslatlas Swift SDK",
+      "effective_execution_state": "CURRENT_OBJECTIVE_COMPLETE",
+      "dependency_owner": "Swift owns Linux process-trust source correction; Hub owns fresh runtime after verification.",
+      "unblock_event": "No further Swift input is required for the current ARM64/Mac working product. The accepted live receipts are the fresh Debian ARM64 and corrected supported-Mac external `Examples/CurrentHubConsumer` journeys, with both one-use runtimes cleaned. Formal installed/matrix/lifecycle, cross-product restart/data-preservation, named-source R1, and deferred x86/amd64/Intel/Azure work remain separate backlog items; a future follow-on requires a concrete owner-authorized scope or fresh handoff."
+    },
+    {
+      "product": "Teslatlas Home Assistant",
+      "effective_execution_state": "WAITING_EXTERNAL_INPUT",
+      "dependency_owner": "Environment owner for an existing approved ARM64 guest; Hub for runtime handoff; HA owner for private session.",
+      "unblock_event": "Existing approved ARM64 target, fresh Hub handoff, and valid private HA development login/session."
+    },
+    {
+      "product": "Teslatlas Edge",
+      "effective_execution_state": "WAITING_APPROVED_ARM64_TARGET",
+      "dependency_owner": "Environment owner for an existing approved ARM64 guest; Hub owns future fresh runtime/cleanup.",
+      "unblock_event": "Existing approved ARM64 guest and wholly fresh Hub-owned cohort; synthetic producer/event remains separately gated."
+    }
+  ],
+  "snapshot": "coordination/2026-09-12T1619Z.json",
+  "priority_dependency": {
+    "owner": "Environment owner and Hub",
+    "unblock_event": "Restore or supply an existing approved ARM64 guest; then create fresh bounded runtime inputs. Do not reuse r11 credentials."
+  },
+  "last_handoff_at": "2026-09-18T14:12:00Z",
+  "coordination_tool_limitation": null,
+  "last_owner_nudge_at": "2026-09-09T11:19:50.650266+00:00",
+  "task_tools_restored": "Live send_message_to_thread callable again; all seven owner-requested nudges accepted with assigned Terra/xhigh and Luna/max models.",
+  "active_scope": "ACTIVE_SCOPE.md",
+  "active_targets": [
+    "debian13-arm64",
+    "macos-apple-silicon"
+  ],
+  "paused_targets": [
+    "x86",
+    "x86_64",
+    "amd64",
+    "intel-macos"
+  ],
+  "scope_revised_at": "2026-09-09T13:39:08.892483+00:00",
+  "scope_amendments_confirmed": [
+    "hub",
+    "teslatlas-protocol",
+    "teslatlas-sdk-typescript",
+    "teslatlas-sdk-swift",
+    "teslatlas-viewer",
+    "teslatlas-home-assistant",
+    "teslatlas-edge"
+  ],
+  "native_goal_states_reported": {
+    "hub": "active",
+    "teslatlas-protocol": "complete",
+    "teslatlas-sdk-typescript": "blocked",
+    "teslatlas-sdk-swift": "blocked",
+    "teslatlas-viewer": "active",
+    "teslatlas-home-assistant": "active",
+    "teslatlas-edge": "blocked"
+  },
+  "scope_limits": "Fresh working-product goals exclude deferred architecture, named-source parity and polished distribution completion prerequisites. Keep those separate plan obligations and report actual usability evidence honestly.",
+  "goal_replacement": {
+    "owner_authorized": true,
+    "verification": "all_seven_created_and_revalidated_active",
+    "confirmed_at": "2026-09-09T13:52:20.140574+00:00",
+    "receipt": "coordination/2026-09-09-fresh-working-product-goals.json",
+    "new_task_count": 0,
+    "token_budget_requested": false
+  },
+  "coordinator_model_change": {
+    "requested_by_owner": true,
+    "applied_at": "2026-09-09T14:03:28.057573+00:00",
+    "model": "gpt-6-astra",
+    "reasoning": "medium",
+    "tool_result": "Existing coordinator task accepted a follow-up with the explicit model and reasoning overrides; no new task created."
+  },
+  "owner_pause": {
+    "requested_at": "2026-09-12T16:51:03.456724+00:00",
+    "directive": "pause down on this and all dev on this project.",
+    "supersedes": "All prior restart and standing execution authority, including r11",
+    "execution": "All six product tasks observed idle after stop delivery; active App review task observed idle/interrupted. No live coordinator child agents.",
+    "schedule": "SUPERSEDED_BY_2026_09_18_RESTART",
+    "schedules": {
+      "teslatlas-hourly-development-coordination": "ACTIVE after 2026-09-18 owner restart",
+      "teslatlas-v6-and-luna-orchestration": "App owner reports resumed under direct App-only authority",
+      "monitor-teslatlas-grok-goal": "already PAUSED"
+    },
+    "app_exception": {
+      "reported_at": "2026-09-12T16:53:09.669326+00:00",
+      "source_thread_id": "01a089e3-1c4c-76e1-a828-27eb0ec01a34",
+      "owner_instruction_reported": "you can keep working on the app.",
+      "scope": "App v6, localization workers and App heartbeat only; no Hub/companion/coordinator restart",
+      "state": "App task reports resumed; coordinator did not poll or modify App execution"
+    }
+  },
+  "owner_restart": {
+    "at": "2026-09-18T13:20:05Z",
+    "directive": "continue development on them, don't use fast mode. you are the orchestator.",
+    "supersedes_pause": true,
+    "dispatch": "Six existing in-scope product tasks resumed with Hub Sol/high and companions Luna/max; hourly coordinator restored. Viewer remains excluded, x86 remains paused, and App keeps separate authority."
+  },
+  "excluded_products": [
+    "Teslatlas Viewer"
+  ],
+  "viewer_exclusion": "Owner2026-09-12: execution stopped and scope excluded, native immutable/cancel control limitations must not be reported as goal completion.",
+  "current_evidence": {
+    "swift": {
+      "state": "current_objective_complete_per_owner",
+      "receipt": "hub/docs/development/active-macos-swift-consumer-handoff-2026-09-12-r1.json",
+      "verification": "Restart recheck found no new concrete Swift gap; accepted Debian ARM64 and supported Apple-silicon consumer evidence is preserved.",
+      "limits": "Synthetic candidate consumer proof, not installed/release/parity acceptance."
+    },
+    "edge_receiver": {
+      "state": "readiness_passed_and_cleaned",
+      "receipt": "hub/docs/development/edge-macos13-receiver-readiness-handoff-2026-09-12-r1.json",
+      "verification": "Coordinator read receipt: exact c2ace receiver on macOS13, loopback21444/21445, HTTP200/ok, zero events, exact PID/ports gone and guest stopped.",
+      "limits": "No Edge-core forwarding, Hub/HA integration or producer acceptance."
+    },
+    "ha": {
+      "state": "waiting_external_input",
+      "verification": "2026-09-18 read-only checks: no Lima instance, SSH 60022 listener, Mac forward 18123, browser session, or current private HA login/session.",
+      "next": "Existing approved ARM64 target, fresh Hub runtime handoff, and valid private HA development session."
+    },
+    "protocol": "Current ARM64/Mac developer-resource objective remains complete; no concrete correction is pending.",
+    "typescript": {
+      "state": "final_source_repair_passed_owner_tests_hub_r3_review_queued",
+      "package": "teslatlas-sdk-typescript/docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+      "package_sha256": "8c686933275cd3233ca2fbf0dbe29b3e547fe37f7850968faab620f552a1bbdb",
+      "orchestrator_sha256": "7232768d3a96f49fdf2b831b03ca95929c83ca4d6c35ccc24c7d512cf07034ff",
+      "regression_sha256": "3c2dadf277706e6250440b3cf00ab33d4d80334d4e3c8d0244b21b22b4ed6ac9",
+      "verification": "Pinned Node 26.7.0 syntax, preflight, seven browser-free lifecycle cases, Biome, receipt/status hashes, closed ports and temporary-root cleanup passed.",
+      "next": "Hub independently reviews the exact final bytes; no browser runtime before a fresh accepted handoff."
+    },
+    "hub_model": "Hub runs gpt-5.6-sol/high; no fast mode.",
+    "edge_empty_baseline": {
+      "receipt": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r1.json",
+      "sha256": "4fd3ed7237f7ae15e83176d611d76e0761fb4abcb4170f462cfa562bfb5a52eb",
+      "state": "closed_rejected_zero_submission",
+      "verification": "Coordinator read public handoff, accepted contract review and underlying readiness receipt. Edge queues/metrics zero, authenticated delivery empty, receiver200, Hub native status ready and observations zero.",
+      "pending": "Fresh baseline preparation authorized after certificate reconciliation; old r1 cannot reopen.",
+      "event_authorized": false,
+      "credential_expiry_ms": 1789212504583,
+      "cleanup": "Hub and Edge records confirm old cohort cleaned, zero submission."
+    },
+    "edge_certificate_reconciliation": {
+      "snapshot": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r1-final.json",
+      "sha256": "df9f19a5f8368beafa88068f34c4239cf9ee4294bb6885fb97de76707b07939b",
+      "receipt_sha256": "b8e64d764252581c50a13b6e046399729aa3a755e317dfc64a8f856862658407",
+      "finding": "Recorded PEM hash error and inapplicable SAN check; pinned parser uses CommonName. Corrected certificate checks pass; old cohort remains closed.",
+      "authority": "One wholly fresh empty baseline authorized; Hub stages inputs, Edge independently verifies before runtime; event separately gated."
+    },
+    "edge_r2": {
+      "receipt": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r2.json",
+      "sha256": "21f46025eb51344e5403b94e37aa937eb2e7f86c2ecf301ddd72821d1b352867",
+      "state": "empty_baseline_passed_and_cleaned_no_event",
+      "source": "Hub and Edge owner records plus compact Edge completion snapshot",
+      "reason_no_event": "No r2 actor/one-call guard in reviewed preparation. Next work is source-only full actor contract, before more runtime.",
+      "event_authorized": false
+    },
+    "edge_actor": {
+      "state": "r11_concrete_profile_accepted_inactive_runtime_unavailable",
+      "hub_preparation_receipt": "hub/docs/development/edge-macos-one-event-r11-concrete-preparation-2026-09-18.json",
+      "hub_preparation_sha256": "96a1342128f2d10fec169ea2beae02c22ee790980261146cb2ff188c32f6d664",
+      "edge_acceptance_receipt": "teslatlas-edge/docs/development/edge-macos-one-event-r11-concrete-profile-acceptance-2026-09-18.json",
+      "edge_acceptance_sha256": "a3386134b0271574b7e908592df2590c3fce18f879ef484c988bc8d4c1754c4c",
+      "verification": "Exact inputs/artifacts/configs, secret metadata boundaries, immutable query-only seven-relationship store, inactive binding, launch contract, absent guest root, closed ports and no processes passed.",
+      "runtime_authorized": false,
+      "event_authorized": false,
+      "environment": "No Lima instance and the approved Tart VM backing directory is absent; no VM was created or started. The one-use preparer will not be rerun."
+    },
+    "edge_r9": {
+      "state": "closed_non_reusable_before_pki_runtime",
+      "receipt": "hub/docs/development/edge-macos-one-event-preparation-closure-2026-09-12-r9.json",
+      "sha256": "b5dc5195f503da657ff82cb3c6362d98c192b4e479dee8daae7364d25472a3da",
+      "verification": "Coordinator read and rehashed closure; Edge independently accepted closure and stopped-snapshot validator correction. Diagnostic sidecars removed by Hub; no event.",
+      "event_authorized": false
+    },
+    "edge_r10": {
+      "state": "source_only_pending_edge_review",
+      "spec_sha256": "9c3fd83cab426f2bc6123cbcc443d0f8e3091b4b08cec100f8d7a7087a0a9840",
+      "preparer_sha256": "3ded9580a4d62ac5a25ac5ad2e63770b17bc5e6e89e8cf051c4d18e6e7b84035",
+      "validator_sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819",
+      "test_sha256": "c3697062b280c4d119b1da3861a8bf5b8d97473eadbd2d3a49acfc03d996bae0",
+      "reported_tests": "6/6 including real accepted Rust fixture tree preservation; live observer retains normal read-only WAL semantics.",
+      "event_authorized": false
+    }
+  },
+  "historical_evidence_note": "verified_current_evidence contains accumulated historical observations, not current runtime availability. current_evidence and dated owner receipts supersede old snapshots; all Viewer entries are historical/excluded."
+}

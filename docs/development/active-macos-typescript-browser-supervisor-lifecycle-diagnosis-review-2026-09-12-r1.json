@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_supervisor_lifecycle_diagnosis_review_r1",
+  "date": "2026-09-12",
+  "state": "accepted_bounded_diagnosis_no_source_fix_or_runtime_authorization",
+  "typescript_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-supervisor-lifecycle-diagnosis-2026-09-12-r7.json",
+    "sha256": "2641ae931469e079797f991daccefdb0c52088e2cc45686cf155d203f8f72fad"
+  },
+  "diagnostic_script": {
+    "path": "teslatlas-sdk-typescript/scripts/test-browser-supervisor-lifecycle.mjs",
+    "sha256": "746c944f654f82dcbe42d23b82f638dbdc5276b2e3d0a6c356206a99332d7505"
+  },
+  "source_binding": {
+    "supervisor_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7/supervisor.mjs",
+    "supervisor_sha256": "b3eb52e9538f7ccd98c5a05b1722529f4518a8e4e0c9ce64678249976ec43a7d",
+    "untrusted_control_sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c"
+  },
+  "independent_check": {
+    "node": "v26.7.0",
+    "syntax": "PASS",
+    "command": "node-v26.7.0 test-browser-supervisor-lifecycle.mjs <exact-r7-supervisor> <exact-r7-untrusted-control>",
+    "result": "PASS in a newly generated temporary root",
+    "server": "direct non-detached child of one awaited parent; exit 0, close 0, no signal",
+    "client": "direct non-detached child of the same awaited parent; exit 0, close 0, no signal; shutdown response observed=true, closed=true, portClosed=true",
+    "stopped_state": "status stopped, phase idle",
+    "socket_removed": true,
+    "temporary_root_removed": true,
+    "browser_spawned": false,
+    "hub_contacted": false,
+    "keychain_touched": false
+  },
+  "finding": "The transformed exact r7 supervisor/control lifecycle completes normally when one parent owns, awaits and captures both children. Retained r7 evidence has empty supervisor logs, stale serving state and no exit/close/signal boundary, so the external termination mechanism cannot be named and no supervisor implementation defect was reproduced.",
+  "accepted_correction_boundary": "Any future lane must use one parent-owned, awaited orchestration process and persist supervisor/control error, exit, close, signal and response evidence. This is an orchestration and observability requirement, not a source implementation fix.",
+  "non_authority": "r7 remains consumed, closed and non-reusable. This review authorizes no fresh Hub tuple, credential, supervisor, Chrome, keychain or SDK API runtime.",
+  "proof_boundary": "This accepts only the browser-free lifecycle diagnosis and the requirement for single-parent ownership plus explicit lifecycle capture. It does not identify r7's external terminator and is not browser, SDK API, TLS, CORS, Hub API, package journey, service, release, production, vehicle or user acceptance evidence."
+}

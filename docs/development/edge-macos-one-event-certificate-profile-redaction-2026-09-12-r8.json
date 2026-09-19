@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_certificate_profile_redaction_r8",
+  "date": "2026-09-12",
+  "state": "public_receipt_redacted_private_machine_receipt_preserved",
+  "proposal_sha256": "494f32a5b56a8dd370f6b0dc1bdd4b0111561bbb7e24cd172875269af416110b",
+  "machine_receipt": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r8/evidence/certificate-profile-private.json",
+    "sha256": "b50741c762571cb4d051376780889c06c83b837ac58bc16cbf65eae96e182d26",
+    "mode": "0600",
+    "custody": "Hub and Edge independent profile review only; do not publish or copy into a public receipt."
+  },
+  "public_receipt": {
+    "path": "hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r8.json",
+    "sha256": "046dfb1f7377ff1b1f2e3a55f916ce2edb172567b1caf3db34166fbcfe653d60",
+    "redaction": "The vehicle client subject CommonName is replaced by WITHHELD_SEALED_SYNTHETIC_VIN. All PEM/DER hashes, issuer, constraints, key usage, EKU, SAN, paths, validity, profile checks and non-secret bindings are unchanged."
+  },
+  "binding": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r8/staging/actor/binding.json",
+    "sha256": "fecc4ca78c149e097b7d89b9dd766e2bc95fcf8a50fe482c39fc9e882f7b9376",
+    "mode": "0600",
+    "event_authorized": false,
+    "transaction_id": "edge-mac-r8-20260912-v-001",
+    "vehicle_identity_sha256": "c8cfec2e9251dcc6f8836aaee60431a5db77f726c3ecce03cd443a0244682531"
+  },
+  "verification": {
+    "private_subject_matches_private_binding": "PASS",
+    "public_identity_hash_matches_private_binding": "PASS",
+    "raw_identity_absent_from_public_profile_and_source_receipts": true,
+    "private_machine_receipt_owner_only": true,
+    "profile_or_binding_semantics_changed": false
+  },
+  "runtime_boundary": "No guest, listener, runtime, producer or event started during generation or redaction. Event authorization remains false."
+}

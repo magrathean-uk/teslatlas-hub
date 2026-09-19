@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_sequential_runtime_closure",
+  "date": "2026-09-12",
+  "state": "closed_untrusted_cdp_lifecycle_failure_no_acceptance_no_retry",
+  "hub_handoff": {
+    "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r2.json",
+    "ready_state_sha256_consumed_by_sdk": "55aefb27645e873471c31518116ee455b7bad81a13d2b85d4ae46836447336a0",
+    "closed_state_sha256": "fabcee02c39b14d189750d6e70eae8f7dfb259c5481cb831884d46f476ba5e0f"
+  },
+  "sdk_failure_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r2.json",
+    "sha256": "19463790cad3a217a4a366c2c94d58f8ef3be7aa30c464a9bec9c99aaeff0323",
+    "mode": "0600"
+  },
+  "result": {
+    "attempts": 1,
+    "error": "browserType.connectOverCDP: connect ECONNREFUSED 127.0.0.1:9232 at the first untrusted attachment",
+    "supported_observation": "The exact fresh untrusted Chrome command line and CDP readiness were observed before the runner; the endpoint was unavailable when the runner first attached.",
+    "root_cause": "unproven",
+    "certificate_import_started": false,
+    "trusted_browser_started": false,
+    "sdk_route_started": false,
+    "witness_created": false,
+    "acceptance_receipt_created": false,
+    "retry_authorized": false
+  },
+  "cleanup": {
+    "typescript_ports_closed": [4174, 9231, 9232],
+    "hub_port_closed": 18525,
+    "fresh_certificate_present_in_login_keychain": false,
+    "profiles_state_export_witness_acceptance_and_consumer_paths_absent": true,
+    "hub_launcher_pid_absent": true,
+    "hub_child_pid_absent": true,
+    "hub_child_exit_code": 0,
+    "hub_stopped_receipt_sha256": "0ed603f57e561687c1698895c1351099b97704a839db2533920668e83ca58cac"
+  },
+  "proof_boundary": "This closure records the failed browser-control liveness boundary and exact cleanup only. It is not TLS-negative, CA-import, CORS, SDK API, Hub API, installed-service, release, production, vehicle or user acceptance evidence."
+}

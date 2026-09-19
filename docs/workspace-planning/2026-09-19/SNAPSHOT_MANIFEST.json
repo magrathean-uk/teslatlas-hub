@@ -1,0 +1,309 @@
+{
+  "created_at": "2026-09-19T10:48:05.836944+00:00",
+  "purpose": "Restore-ready root planning and dev wrappers; workspace root is not a Git repository",
+  "base": "/Users/bolyki/dev/source/teslatlas-service",
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "c2efbda5a3d01028d81fb616243fd610b59556c5baa8d0a793b0cdf98cdb1a01"
+    },
+    {
+      "path": "WORKSPACE_AUTHORITY.md",
+      "sha256": "0c031a8c9b477a0e0a71ea9afa144b4ceae48e13141718834c58adfd954768ff"
+    },
+    {
+      "path": "docs/development/ACTIVE_SCOPE.md",
+      "sha256": "c38d3257a3674cdfdec758f7ac87f8ea2e9fa99155cf0a9dbf7c542dbd15a16c"
+    },
+    {
+      "path": "docs/development/APP_V7_READINESS.md",
+      "sha256": "68fe2e4a01624c05ce314df183e863826aad517afdf94e77dc03974a13dffeca"
+    },
+    {
+      "path": "docs/development/COORDINATION.md",
+      "sha256": "fdfa2381afa840496f56400fe84fa53d137a361dee7f40a2778a9feef9c16c93"
+    },
+    {
+      "path": "docs/development/ENVIRONMENT.md",
+      "sha256": "d4b50d36eab381ae40c817b317de5e1555d96badc0b23dca31b53e8ae319f13f"
+    },
+    {
+      "path": "docs/development/GOAL_PROMPT.md",
+      "sha256": "7f6d83345c38de621a6fd81ecb7dde2183cb47253d167f112fcae377a2453e04"
+    },
+    {
+      "path": "docs/development/HANDOFF_PROMPT.md",
+      "sha256": "f041a9b40f96de300281564188cbaf462d8afa2ebbd4aec11cb6a0b051f1807f"
+    },
+    {
+      "path": "docs/development/HISTORY_REVIEW.md",
+      "sha256": "54940525ffa7fd63dead2977fa7d079a1c7ec13a44c3e4d1d4aa81d96af3498a"
+    },
+    {
+      "path": "docs/development/MASTER_PLAN.md",
+      "sha256": "680f22d3df50a06f1d4e0c7f33482f096d2ddad94ba3e3be225999236a4d70de"
+    },
+    {
+      "path": "docs/development/NEXT_PHASE_PLAN.md",
+      "sha256": "f285f61e39f1b4e8b34b89994c2389b621b1871988112a86ecebf0eaceee2013"
+    },
+    {
+      "path": "docs/development/PRODUCT_SPEC.md",
+      "sha256": "72751cd5152bfc4c35a0449fb841fc4d089099b19a265ba50ccaf82b5a717e98"
+    },
+    {
+      "path": "docs/development/REASSESSMENT.md",
+      "sha256": "5f548e830fc0633a47dfed1d910d4274b8c31565e89b324281719dc72b776c5a"
+    },
+    {
+      "path": "docs/development/RESEARCH.md",
+      "sha256": "f6f230c74959355511e0e4aee45118fce34013c98a4c137841f890d947116fdd"
+    },
+    {
+      "path": "docs/development/START_AUTHORIZATION.md",
+      "sha256": "3058f924e47eacfe588696cf48e5f1ffe6375a20267e463112d2a3140a1a89ca"
+    },
+    {
+      "path": "docs/development/SUPERSEDED_PLANS.md",
+      "sha256": "13f46d045bb186ffbe92f65cbcc7ad1da57f8429a276f7b04628b0b6b2913f5c"
+    },
+    {
+      "path": "docs/development/VM_ACCESS.md",
+      "sha256": "b50ec743a0ab49f44a5086986805f0b4522e6aee262c096f2abb234821f961a6"
+    },
+    {
+      "path": "docs/development/COORDINATOR_STATUS.json",
+      "sha256": "a21c14582890c0ced4fc43cd30782bbdd8dba4e87f97ff9be5b09c42e144f938"
+    },
+    {
+      "path": "docs/development/TASKS.json",
+      "sha256": "7e222efeb2a61d5d7f875ebc09215b39e39f03cda5fdbe71edda05dcafc3737d"
+    },
+    {
+      "path": "docs/development/UPLOAD_STATUS.json",
+      "sha256": "199dccdadeb9d4a4557bce33d666e873828698aa58a0b0ee81b97e0069b0d294"
+    },
+    {
+      "path": "docs/development/superseded-plans.json",
+      "sha256": "33308b6074a11ad7934c87badf993b6eee49ad132c50dde7fa3455d1f9692ea4"
+    },
+    {
+      "path": "scripts/dev/debian13-arm64.yaml",
+      "sha256": "0b9db70da2c1d9611822ef212f88e5bed1678e8db4328364a5da4bedcaf37836"
+    },
+    {
+      "path": "scripts/dev/env.sh",
+      "sha256": "8608db15b442baf463701838047044f39a4c2616b68950b8b658c7cf59f7d10d"
+    },
+    {
+      "path": "scripts/dev/run.sh",
+      "sha256": "2e54e4e6e9ced5ecb6f23ba20e32dc87a643220374fc48d5276a5135de3783c1"
+    },
+    {
+      "path": "scripts/dev/storage.sh",
+      "sha256": "c39a823733d36b26dd70a9352963933737445ae50fb71cc7cee7652ac5d37c74"
+    },
+    {
+      "path": "scripts/dev/vm.sh",
+      "sha256": "eb39af99b7377e37fd07dc5a223427320d24f0ad09d0e65e229792195b3245aa"
+    },
+    {
+      "path": "docs/development/assessments/planning-reconciliation-2026-09-19.json",
+      "sha256": "056eeb9eb7284c2b73092fc8074d6bdf6088b855756a4023475a36e8f2f22140"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/WORKSPACE_AUTHORITY.md",
+      "sha256": "84e26a889006a82f031323ae13464f732543fc5bd29e5b3c82e6792152113d6a"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/manifest.json",
+      "sha256": "b30e16ee76cd1077db949a4fe36bb8151ea4e827e6cbb914a81480e4187dba9e"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/AGENTS.md",
+      "sha256": "2575c53526ddb418ff0836668312d7a11dc4bc6d60563b55fa32e6869c577958"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/AGENTS.md",
+      "sha256": "39adb176b4f4f66ed6f325929844ce5d922630fb0522b2b7c6e0b8ab7801928f"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/AGENTS.md",
+      "sha256": "3cabbcd65e7a3a1a2507f28b8f05774417dfe44dd51dda70e4726d23ba0a5125"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/AGENTS.md",
+      "sha256": "50ab4052d4005f8d100a5a7f1939ae94ea010cb941ea656a9753664d04b9de02"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-edge/AGENTS.md",
+      "sha256": "bfa762e9b842899543304ce850a5d95cb60b673618a8d67ea6c9ba7336ef1e27"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/hub/AGENTS.md",
+      "sha256": "4ab767b1ada872b493eb1c9d59fe19da9cc2f5a755561c83e48e2adee1b887fb"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-protocol/AGENTS.md",
+      "sha256": "d01513d65927c6bc031e22dc43f85f3b5ce1d18b48d52f0317b20279eea62ea0"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/PLAN.md",
+      "sha256": "18fbf692962b419f86784e44b83d0252478bfd459b6f22dee12cf5aa6172f50a"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json",
+      "sha256": "03892ffb0700dfafb7d65303dd23c6c9cec2a39c6326742b8bf34800cfc17e1e"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/hub/docs/development/PLAN.md",
+      "sha256": "c8d6cd757aa036ace4a1021b1c5af648e89618a8a2ea7156d3f244da98c3b834"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/hub/docs/development/STATUS.json",
+      "sha256": "3aca24b6bd9560dbd00c0635dbdb948034b9319600dfb3806c3a14dc819bfefe"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/PLAN.md",
+      "sha256": "99853ea3ef3c233c4edd102137cf6ea94276e0491f3fdb64e7d52b150523c899"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-edge/docs/development/STATUS.json",
+      "sha256": "d421f8d36c02419ade13d017dc043832edc159e7e5d1511cd2ff1eec2388932a"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/ENVIRONMENT.md",
+      "sha256": "5a280ea2790e90e81d6b8a9e023eca8eeba0f237081d55a844d993d26c11a765"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/ACTIVE_SCOPE.md",
+      "sha256": "9ac1ccff543047fdaa02358dba0a089f4c30760b90684b626688d4603c25179b"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/COORDINATION.md",
+      "sha256": "800f70c6014abda69e632a1f3cac62d6822301bb33423880226167245cd71e62"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/START_AUTHORIZATION.md",
+      "sha256": "9523cf92298f1fcbf32796dc4a603111fb48a7ecd752c8ed1c17a157fa5a2ffd"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/VM_ACCESS.md",
+      "sha256": "cc92dd3eb4fb1afa81f000c3aefa660b7dc5980fddf0f06af45915bc9b704435"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/PRODUCT_SPEC.md",
+      "sha256": "bad7ab2a40ee70833a378550801078a200603ab33aa24f75d46aaf328458b01e"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/MASTER_PLAN.md",
+      "sha256": "9c41a22cb76269527042255420e464c964345117da19d86caf562aa4d1e86e39"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/COORDINATOR_STATUS.json",
+      "sha256": "b2ab2d9cb0c96560b7b15b5836c64154ee3c5339e1b4cca64cb1872017a92ddb"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/TASKS.json",
+      "sha256": "f69f556e5f27c2c725b2323a98d9b5b05e4f1fa7b5ba398a76c68973b92683c5"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/docs/development/SUPERSEDED_PLANS.md",
+      "sha256": "faa937554e18a612e1e49ccbb12161d69a6e4e95b702447ca6511baafd272970"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/PLAN.md",
+      "sha256": "a2d0d6fb071bfdd393d04c89b5230ae6f8bbf6adfbeb23818e373a87d1588ac8"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json",
+      "sha256": "bf05e2f773d22d5c9c68bdecc68e5ddffb6b1502ccc0938def10b8c5c7c92013"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/PLAN.md",
+      "sha256": "19c62b81bb90aaebcb719142b3886c1c82d1b3d17e02efd45d89b27c9a83f166"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json",
+      "sha256": "383ea716d70f20cafe43d32c107433546f26622088fc08f8c5f98b8fe0a4061a"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/PLAN.md",
+      "sha256": "f4e886f4db5b5f46bbd06a859fb469f6431298d5bb706bb7cdac5cf2d27cb7c6"
+    },
+    {
+      "path": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-swift/docs/development/STATUS.json",
+      "sha256": "89b4c3071dbc3be5e2a5ab3f74b5fb66c0e4b8913df9225a7bec5f7f793eac16"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/WORKSPACE_AUTHORITY.md",
+      "sha256": "6e6e3b3ad78d8ffdf641e59d58147c84e5b3fd5a9dfe458b1b7b981cf9fd36d6"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/manifest.json",
+      "sha256": "de9f495e8c8ed953ccbc0b1a07cc68e71e71e549682fa5c85d93f98ea72ca6ee"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/ENVIRONMENT.md",
+      "sha256": "32c06567d2835c1c8a44d73e191c4c6159ab92b9800cf16420ed44ef85b05da1"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/ACTIVE_SCOPE.md",
+      "sha256": "983cf1d12082448f5700704d266e78b89492b8449c4fd822aff105cd1b62993b"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/APP_V7_READINESS.md",
+      "sha256": "9ca6a57eed7829ae8984b8885fe29e92920b00ea8570ff08f50a4778642d206e"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/REASSESSMENT.md",
+      "sha256": "15526dc6373989398c6b8291c69183a3d22b3704af8ab2e980d4c78ebfcf21fa"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/COORDINATION.md",
+      "sha256": "7943fbfd9b1df7c599e6edaafd62602c7dfe5eed25aed539a0abb6cf8a9c99a0"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/START_AUTHORIZATION.md",
+      "sha256": "7507e312baa4a86ac6926f4e01863db45de8c18c68e9d5d763a49daffed34602"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/HANDOFF_PROMPT.md",
+      "sha256": "e7f2844c89545243a749a2edd55856075f3d3f9bb9d7948172b6b63b3eda3d93"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/VM_ACCESS.md",
+      "sha256": "b50ec743a0ab49f44a5086986805f0b4522e6aee262c096f2abb234821f961a6"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/PRODUCT_SPEC.md",
+      "sha256": "814cc567bca9fd49a07498e2cdd9eeb7414933baba240496c0b8da031cc6ea91"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/MASTER_PLAN.md",
+      "sha256": "8eabe56da416dd6e62bc961d4d0ea1156f419d2be714096483a05a15672eff51"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/RESEARCH.md",
+      "sha256": "f6f230c74959355511e0e4aee45118fce34013c98a4c137841f890d947116fdd"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/COORDINATOR_STATUS.json",
+      "sha256": "41aafee82d7328b205761659133fb3acef75e4f1abc42ecac9234b6dfdc3e324"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/superseded-plans.json",
+      "sha256": "33308b6074a11ad7934c87badf993b6eee49ad132c50dde7fa3455d1f9692ea4"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/TASKS.json",
+      "sha256": "9a19e7ee5aa3f54d23c901751f282818f86f0e5861482ab91fec958f67f0b5f8"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-planning-reconciliation/docs/development/SUPERSEDED_PLANS.md",
+      "sha256": "09d2bb4a1f6f6fff37a98fa678e44d50457402e5ebc9f66b9478fef6463e800b"
+    }
+  ],
+  "excluded": "App/Viewer source and plans, raw chat transcripts, local/private tooling and archived automation settings",
+  "publication_status": "Pre-commit snapshot. The live workspace UPLOAD_STATUS.json receives exact remote verification after all pushes. This bundle retains the original preparation state."
+}

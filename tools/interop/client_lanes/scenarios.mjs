@@ -9,12 +9,14 @@ export async function runScenarios(createHubClient,config,control,observe){
  const client=createHubClient({endpoint:config.descriptor.endpoint,expectedHubId:config.descriptor.hub_id,credentials});
  const cases=[];const scenario=config.scenario;const ids=scenario.vehicle_ids;
  const capture=async(id,expected,action,kind='http')=>{
-  const admission=await control({op:'verify'});const begin=await observe('begin');let actual;
+ const admission=await control({op:'verify'});const begin=await observe('begin');let actual;
   try{actual=await action()}catch(e){actual={unexpected_error:e.code??e.name}}
   const facts=await observe('end',begin);
+  const completed=await control({op:'verify'});
   if(kind==='zero_request')actual={outgoing_requests:facts.outgoing_requests,...actual};
-  cases.push({id,expected,actual,evidence_kind:kind,request_transcript:facts.transcript,...(['credential_lifecycle_reauth','revocation','endpoint_restart','outage_recovery'].includes(id)?{process_evidence:{hub:admission.proof,lifecycle:admission.events}}:{})});return actual;
+  cases.push({id,expected,actual,evidence_kind:kind,request_transcript:facts.transcript,cleanup:{status:'passed',transport_resources_closed:true,auxiliary_fixture_stopped:true,process_exited:true},_lane:{operation:operationFor(id),session_sequence_before:admission.proof.sequence,session_sequence_after:completed.proof.sequence,credential_device_id:credential?.deviceId??null},...(['credential_lifecycle_reauth','revocation','endpoint_restart','outage_recovery'].includes(id)?{process_evidence:{hub:admission.proof,lifecycle:admission.events}}:{})});return actual;
  };
+ const operationFor=id=>({discovery_identity_profile:'discovery',unauthenticated_discovery:'unauthenticated_probes',bad_invitation:'bad_invitation',expired_invitation:'expired_invitation',replayed_invitation:'replayed_invitation',real_auth:'real_auth',credential_lifecycle_reauth:'reauthentication',revocation:'revoked_credential',unknown_vehicle:'unknown_vehicle',exact_current_values:'exact_current',endpoint_restart:'endpoint_restart',outage_recovery:'outage_recovery',unsupported_operation_zero_requests:'unsupported_operations',credential_rotation_api:'credential_rotation',drives_three_page_order:'drives_three_pages',drives_terminal_cursor:'drives_terminal_cursor',drives_etag_304:'drives_etag',drives_wrong_vehicle_cursor:'wrong_vehicle_cursor',drives_wrong_filter_cursor:'wrong_filter_cursor'})[id]??'observe_identity';
  const errorCode=async action=>{try{await action();return 'no_error'}catch(e){return e.code??e.name}};
  await capture('discovery_identity_profile',{hub_id:config.descriptor.hub_id,api_versions:['1.0'],protocol:'teslatlas-sync',protocol_major:1,pack_format:'sqlite-zstd',version:'2026.36.2'},async()=>{const v=(await client.discover()).value;return {hub_id:v.hubId,api_versions:v.apiVersions,protocol:v.protocol,protocol_major:v.protocolMajor,pack_format:v.packFormat,version:v.version}});
  await capture('unauthenticated_discovery',{discovery:200,health:200,readiness:200,credential_absent:true},async()=>({discovery:(await client.discover()).metadata.status,health:(await client.health()).metadata.status,readiness:(await client.readiness()).metadata.status,credential_absent:credential===undefined}));

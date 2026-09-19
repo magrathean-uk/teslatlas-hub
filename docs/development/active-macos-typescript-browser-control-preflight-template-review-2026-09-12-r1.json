@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_control_preflight_template_review_r1",
+  "date": "2026-09-12",
+  "state": "rejected_root_symlink_followed_no_runtime_authorization",
+  "typescript_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-control-preflight-template-correction-2026-09-12.json",
+    "sha256": "6d0a04818f9e5d50df8edbdb8564dbedc29c26cad3bedca0ac86b944cc6c0ac2"
+  },
+  "reviewed_sources": {
+    "template": {
+      "path": "teslatlas-sdk-typescript/scripts/browser-control-preflight-template.mjs",
+      "sha256": "8625950ed211ce15e97cd85619207bafbd02ce0a8003b62c1d94bb736bca8214"
+    },
+    "regression": {
+      "path": "teslatlas-sdk-typescript/scripts/test-browser-control-preflight-template.mjs",
+      "sha256": "afc4e34feae7419204e1a15e20b59edcada363ce4443557c0a153d56a3f29ae9"
+    }
+  },
+  "accepted_checks": {
+    "pinned_node_syntax": "PASS",
+    "submitted_regression": "PASS for fresh creation, second-invocation sentinel preservation, and nine listed stale artifacts",
+    "targeted_biome": "Checked 2 files; no fixes applied",
+    "exclusive_output_creation": true,
+    "stale_artifact_checks_precede_normal_mutation": true,
+    "r6_reopened": false,
+    "runtime_started": false
+  },
+  "blocking_finding": {
+    "id": "TEMPLATE-ROOT-SYMLINK-FOLLOW",
+    "evidence": "An absolute symlink supplied as controlRoot returned status passed. stat(controlRoot) followed the symlink; the target mode changed from 0755 to 0700 and target/evidence/runner.stdout plus runner.stderr were created.",
+    "impact": "The template can mutate an unintended directory through a root symlink despite the required fresh non-symlinked root boundary.",
+    "required_correction": "Before any artifact check or mutation, lstat controlRoot and require a non-symlink directory. Add a regression proving root-symlink rejection with target mode/content unchanged."
+  },
+  "coverage_gap": {
+    "evidence": "runtimeArtifactPaths includes control.sock, but the submitted STALE_ARTIFACTS regression list omits it.",
+    "required_correction": "Add control.sock to the stale-artifact pre-mutation regression cases."
+  },
+  "temporary_reproducer_cleanup": "The isolated /tmp reproducer was moved recoverably to /Users/bolyki/.Trash/teslatlas-preflight-root-symlink.bIMg1d.",
+  "next_gate": "TypeScript supplies one additive source-only superseding template and regression covering root-symlink rejection and control.sock. No r7 or runtime tuple may be prepared from r1.",
+  "proof_boundary": "This review rejects source-template readiness. It is not browser, SDK API, TLS, CORS, Hub API, package installation, service, release, production, vehicle or user acceptance evidence."
+}

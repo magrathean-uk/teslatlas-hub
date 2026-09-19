@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_receiver_route_source_review_r1",
+  "date": "2026-09-12",
+  "state": "accepted_source_only_canonical_root_route",
+  "pinned_source": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-one-event-actor-r5-20260912/source",
+    "server_path": "server/streaming/server.go",
+    "server_sha256": "0c13cd62ce1e8955bcfd0d100fca73b352438c83e54f26ad5e6bb9b0bf0c5e25",
+    "producer_test_path": "cmd/synthetic-vehicle/main_test.go",
+    "producer_test_sha256": "a60bdba6bb71da8af5e4ede33627affda55efbd813efe2705108211391eca40d"
+  },
+  "source_observation": {
+    "registered_data_pattern": "/",
+    "registered_status_pattern": "/status",
+    "data_handler": "socketServer.ServeBinaryWs(c)",
+    "named_telemetry_handler_present": false,
+    "go_mux_behavior_limit": "The registered root pattern is a catch-all for otherwise unmatched paths, so /telemetry may dispatch to the same handler. That does not make /telemetry the source-defined canonical path.",
+    "helper_validation": "The accepted helper test explicitly accepts a wss://127.0.0.1:<port>/ endpoint."
+  },
+  "independent_check": {
+    "command": "GOPROXY=off GOTOOLCHAIN=local /opt/homebrew/bin/go test -mod=readonly ./server/streaming",
+    "result": "PASS",
+    "network_used": false,
+    "runtime_started": false
+  },
+  "decision": {
+    "canonical_r7_endpoint": "wss://127.0.0.1:21450/",
+    "supersedes_r6_endpoint": "wss://127.0.0.1:21448/telemetry",
+    "rule": "The r7 binding, authorization, contract and helper invocation must use the canonical root endpoint byte-for-byte. Any alternate path requires a new reviewed binding."
+  },
+  "proof_boundary": "This proves the pinned receiver source route registration, helper endpoint acceptance, and focused source test only. It is not TLS, listener, WebSocket, receiver, Edge, Hub, forwarding, event, guest, service, release, production, vehicle or user acceptance evidence."
+}

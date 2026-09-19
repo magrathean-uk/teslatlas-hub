@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_certificate_profile_preparation_r9",
+  "date": "2026-09-12",
+  "state": "source_only_fixture_first_reservation_no_profile_inputs_created",
+  "superseded_preparation": {
+    "closure_path": "hub/docs/development/edge-macos-one-event-preparation-closure-2026-09-12-r8.json",
+    "closure_sha256": "7fb85e51c40fbaa34efdc024e041a5b06319a35e9b89e5b6ff803e95a349190b",
+    "r8_reuse_allowed": false,
+    "rule": "No r8 root, fixture, identity, certificate, credential, binding, config or runtime output is an r9 input."
+  },
+  "exact_reservation": {
+    "cohort_id": "edge-macos-one-event-20260912-r9",
+    "host_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r9",
+    "receiver_endpoint": "wss://127.0.0.1:21454/",
+    "receiver_data_port": 21454,
+    "receiver_status_port": 21455,
+    "edge_internal_port": 8085,
+    "edge_hub_facing_address": "192.168.64.10",
+    "edge_hub_facing_port": 21848,
+    "hub_api_port": 18533,
+    "transaction_id": "edge-mac-r9-20260912-v-001",
+    "binding_host_staging_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9/guest-stage/actor/binding.json",
+    "binding_guest_path": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r9/actor/binding.json",
+    "fixture_database_host_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9/guest-stage/hub/hub.sqlite",
+    "fixture_database_guest_path": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r9/hub/hub.sqlite",
+    "future_actual_receipt_path": "hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r9.json",
+    "future_actual_receipt_sha256": null
+  },
+  "fixture_first_correction": {
+    "step_1": "Create one fresh host-side Hub fixture with the supported interop_fixture empty-edge-binding scenario and fresh Edge installation, lineage, source, vehicle, VIN and car identities.",
+    "step_2": "Capture the fixture's authoritative returned hub_id in an owner-only receipt.",
+    "step_3": "Seal that exact returned hub_id and the six supplied identity relationships into the inactive binding.",
+    "step_4": "Validate the binding against the fixture result and the actual hub.sqlite opened mode=ro with PRAGMA query_only=ON.",
+    "step_5": "Run an in-memory hub_installation_id mismatch and require fail-closed rejection before PKI, Edge init, credential creation, guest work or runtime.",
+    "step_6": "Only after both validations pass, stage accepted binaries, generate one-use PKI, initialise inactive Edge state, enrol an expiring credential and write redacted public evidence.",
+    "relationships_checked_together": [
+      "hub_installation_id",
+      "edge_installation_id",
+      "edge_lineage",
+      "source_id",
+      "vehicle_id",
+      "vehicle_identity",
+      "car_id"
+    ]
+  },
+  "focused_regression": {
+    "validator_path": "hub/tools/interop/edge_fixture_binding.py",
+    "validator_sha256": "42bfa6a477c02b9ba00ea70640a055c191be16c581ce92b52ec7d34ad3d37c88",
+    "test_path": "hub/tools/interop/test_edge_fixture_binding.py",
+    "test_sha256": "e75fb11dac3fe2721aa13a0ad15093533aa1fc675a9326fb4555820c19bdf0fc",
+    "command": "python3 -m unittest tools.interop.test_edge_fixture_binding tools.interop.test_edge_ledger_observer",
+    "result": "PASS 4/4",
+    "negative_case": "A modified in-memory binding Hub ID is rejected with hub_installation_id mismatch while the database bytes remain unchanged and no credential or runtime path exists."
+  },
+  "accepted_immutable_builds": {
+    "rule": "Revalidate exact accepted source manifests and binary hashes, then copy those immutable build artifacts into the fresh r9 staging root. Do not rebuild unchanged binaries or rerun unrelated suites.",
+    "hub_receipt_path": "hub/docs/development/hub-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+    "hub_receipt_sha256": "d7d3d2499370c4c344e3db77e06cd5db14ff954d86e29bd1ef68745a17767103",
+    "hub_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "interop_fixture_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+    "edge_receipt_path": "teslatlas-edge/docs/development/edge-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+    "edge_receipt_sha256": "aead774fcec533eb65f71e48bd0f38d141aa7be63cd9beb195420d304406a309",
+    "edge_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "helper_sha256": "4b7c0170888d9f45fcd145bf3d34eecf7363898036daca6332b67354fc47ea59",
+    "guard_sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+    "ledger_observer_sha256": "098c543a0fafc1d2c3c6c16f554f321c7c0535ffefff24778df33f548cbd35a2"
+  },
+  "one_use_preparer": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r9.py",
+    "sha256": "1496e044fa3a463f590b544765fb17d0597e7a53df3b8ad09eef069ec76ef2b3",
+    "mode": "0500",
+    "argv": [
+      "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r9.py",
+      "the SHA-256 of the exact accepted r9 proposal"
+    ],
+    "public_redaction": "The public profile is redacted at first write. It records hashes for all seven identity relationships and withholds the synthetic VIN CommonName; no post-write redaction is planned.",
+    "failure_boundary": "Any mismatch after the exclusive r9 root is created closes r9 without repair or reuse."
+  },
+  "non_mutating_preflight": {
+    "python_syntax": "PASS",
+    "validator_tests": "PASS 4/4",
+    "hub_source_manifest": "PASS 195/195",
+    "edge_source_manifest": "PASS 15/15",
+    "reviewed_exact_inputs": "PASS 14/14 including the accepted Hub manifest and Edge receipt anchors",
+    "openssl": "OpenSSL 3.6.4 25 Aug 2026",
+    "rustc": "rustc 1.98.0 aarch64-apple-darwin",
+    "macos13_arm64_dhcp_lease": "PASS; teslatls13arm64 currently maps to 192.168.64.10 without guest start",
+    "host_root_absent": true,
+    "public_profile_absent": true,
+    "shared_heavy_build_lock_absent": true,
+    "shared_heavy_build_lock_required": false,
+    "ports_closed": [8085, 21848, 21454, 21455, 18533],
+    "guest_root_absence": "Must be checked immediately before any later guest copy; no guest was started for source-only preflight."
+  },
+  "authority": "After Edge independently accepts this exact corrected source package and fresh reservation, coordinator standing authority permits one r9 source/profile preparation without another confirmation. After both-owner acceptance of the concrete machine-written profile and inactive binding, it permits one zero-event baseline. No producer event is authorized.",
+  "proof_boundary": "This is source, focused test and non-mutating preflight evidence only. No r9 root, fixture, PKI, credential, guest, listener, runtime, producer or event exists."
+}

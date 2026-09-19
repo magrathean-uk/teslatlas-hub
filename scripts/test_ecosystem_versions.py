@@ -300,6 +300,38 @@ class EcosystemVersionCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_accepted_record_requires_content_bound_source_and_existing_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            make_workspace(workspace)
+            receipt = workspace / "hub/docs/development/accepted.json"
+            write(receipt, '{"state":"accepted_closed"}\n')
+            record_path = workspace / "teslatlas-sdk-swift/compatibility/hub.json"
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            record.update(
+                {
+                    "status": "accepted",
+                    "tested_hub_versions": [PRODUCT_VERSION],
+                    "tested_hub_source_fingerprints": [
+                        "git:" + "a" * 40
+                        + ";tracked-diff-sha256:" + "b" * 64
+                        + ";content-manifest-sha256:" + "c" * 64
+                    ],
+                    "test_receipt_paths": ["hub/docs/development/accepted.json"],
+                }
+            )
+            record["profile"]["sha256"] = "d" * 64
+            write(record_path, json.dumps(record, indent=2) + "\n")
+
+            accepted = run_script(workspace, "--check")
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            record["tested_hub_source_fingerprints"] = ["a" * 40]
+            write(record_path, json.dumps(record, indent=2) + "\n")
+            rejected = run_script(workspace, "--check")
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("requires unique content-bound identities", rejected.stderr)
+
     def test_check_rejects_stale_candidate_artifact_and_source_tag_bindings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory).resolve()

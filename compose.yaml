@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: teslatlas-hub
+
+services:
+  hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: teslatlas-hub:local
+    command: ["--config", "/etc/teslatlas-hub/config.toml", "serve"]
+    user: "10001:10001"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
+    ports:
+      - "127.0.0.1:8443:8443"
+    volumes:
+      - hub-data:/var/lib/teslatlas-hub
+      - ./config.toml:/etc/teslatlas-hub/config.toml:ro
+      - ./tls:/etc/teslatlas-hub/tls:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl --fail --silent --show-error
+          --cacert /etc/teslatlas-hub/tls/ca.pem
+          https://127.0.0.1:8443/healthz
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  hub-data:
+    name: teslatlas-hub-data

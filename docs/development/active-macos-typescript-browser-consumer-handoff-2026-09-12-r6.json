@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_consumer_handoff_r6",
+  "date": "2026-09-12",
+  "state": "ready_for_one_supervised_sequential_browser_attempt",
+  "authority": "One separately authorized fresh Apple-silicon browser attempt after independent source and fresh-control review. The closed r5 tuple remains ineligible and no retry is authorized.",
+  "source_review": {
+    "path": "hub/docs/development/active-macos-typescript-browser-control-ipc-source-review-2026-09-12-r5.json",
+    "sha256": "c0c47baf20618edc6ea7a1d3291acc9a524e80c8bc82651061cea1d0b6409c0d"
+  },
+  "preparation_review": {
+    "path": "hub/docs/development/active-macos-typescript-browser-control-preparation-review-2026-09-12-r6.json",
+    "sha256": "fba764e69897d5704786795b0930b70fbfbe9ec24bd39fe81db0c2ae7b103ca1"
+  },
+  "typescript_preparation": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-control-preparation-2026-09-12-r6.json",
+    "sha256": "62b61961c389586495069e68e29910bcf4dd7721f39dcf4b78430f15315cd070",
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6",
+    "manifest_sha256": "786b86e992edadbb8754d93bda03fe91e17cbc73b1d0208d099e7715c1c1e19a",
+    "supervisor_sha256": "4038d26f8631fc79b01ebb0b402613f79378128697ffb16daeac668f44340e88",
+    "trust_hooks_sha256": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+    "untrusted_control_sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+    "ipc_regression_sha256": "c6db7081b0f7221b99c24d344681f1ac9b8526643bf85bb8e10f87b7be5e2334"
+  },
+  "hub_runtime": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r6",
+    "fixture_config_sha256": "d442b390c0236cc1f59a7a22fad4cab0f496e07539340a89618b3c898b5e2af3",
+    "ready_descriptor": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r6/run/ready.json",
+    "ready_descriptor_sha256": "2241739e824af77326bce703e29b7422faf0edfcc7fcc35bd1ad47bb761963d4",
+    "endpoint": "https://127.0.0.1:18528",
+    "browser_endpoint": "https://localhost:18528",
+    "hub_id": "5e0fb4a6-00bd-40bb-b4a3-9c6472f7d64f",
+    "launcher_pid": 80680,
+    "hub_pid": 80778,
+    "listener": "127.0.0.1:18528 only",
+    "binary_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "seed_binary_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+    "allowed_origins": [
+      "http://localhost:4176"
+    ],
+    "health": "HTTP 200 status ok",
+    "readiness": "HTTP 200 status ready",
+    "lifetime_seconds": 1800
+  },
+  "certificate": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r6/run/server.pem",
+    "pem_sha256": "39fe35ca030cad44ab0884396159e2a5596e5973a12356bc908d54f3b4d0cd85",
+    "der_sha256": "ca8682252ea925440bfbebe3fca54dbe37c6d9a4ec8bbb463c6d551bd77b6658",
+    "sha1_fingerprint": "341BC3EC8C266D472430E3BA998764107B9AF513",
+    "subject_alternative_names": [
+      "DNS:localhost",
+      "IP:127.0.0.1"
+    ],
+    "mode": "0600",
+    "present_in_login_keychain_before_attempt": false
+  },
+  "credential": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r6/browser-input/credential.json",
+    "sha256": "70927920d2e15ea1c7c27686bb5334e2a5a598bcd6fb9d3c4b0d554847141a68",
+    "mode": "0600",
+    "bytes": 161,
+    "expires_at_ms": 1791812126444,
+    "raw_value_and_device_id_recorded": false,
+    "invitation_claims_allowed": 0
+  },
+  "package": {
+    "archive": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/teslatlas-sdk-2026.36.2.tgz",
+    "sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "name": "@teslatlas/sdk",
+    "version": "2026.36.2",
+    "installed_file_count": 81,
+    "package_json_sha256": "1f0c127f3896dadcb77deccf4526ce14277f65ee85abd4536fb4cd4fbf084cf0"
+  },
+  "browser_tuple": {
+    "origin": "http://localhost:4176",
+    "trusted_cdp": "http://127.0.0.1:9236",
+    "untrusted_cdp": "http://127.0.0.1:9237",
+    "hub": "https://localhost:18528"
+  },
+  "required_sequence": [
+    "Start the persistent supervisor and exact untrusted Chrome child.",
+    "Attach to the supervisor-returned untrusted CDP and require ERR_CERT_AUTHORITY_INVALID for the Hub health request before import.",
+    "Close and verify the untrusted child/CDP before importing the exact fresh certificate.",
+    "Import only the exact fresh certificate into the normal login keychain, then start a distinct trusted child.",
+    "Run the packed public SDK browser route with CORS preflight, discovery/readiness, two vehicles/current, five drives in 2/2/1 pages, ETag 304 plus cursor continuation, credential rotation and a following default Fetch request.",
+    "Close the trusted child/CDP, remove only the exact fresh certificate, verify it absent, stop the supervisor and clean only r6 TypeScript artifacts."
+  ],
+  "attempt_policy": {
+    "attempt_limit": 1,
+    "retry_or_tuple_reuse": false,
+    "failure_policy": "Any identity, trust-order, browser-lifecycle, API assertion or cleanup mismatch consumes the attempt and fails closed without repair or retry."
+  },
+  "cleanup": {
+    "typescript_owner": "Stop the exact supervisor and owned Chrome children; remove only the fresh r6 package/profile/socket/state/export/witness/control artifacts; verify 4176/9236/9237 closed and the exact certificate absent from the login keychain on every exit.",
+    "hub_owner": "After the TypeScript result, remove the one-use credential, stop only launcher PID 80680 and direct child PID 80778, record stopped evidence and verify 18528 closed.",
+    "credential_reuse": false
+  },
+  "forbidden": [
+    "TLS or certificate bypass flags",
+    "closed r1/r2/r5 tuple, credential, browser profile, socket, state or evidence reuse",
+    "extra invitation claim, retry, replacement attempt or live repair after Chrome spawn",
+    "Viewer, x86, production, vehicle, deployment, publication or release action"
+  ],
+  "proof_boundary": "This handoff authorizes one synthetic candidate-process browser attempt only. It does not itself prove browser, SDK, package installation, service, release, production, vehicle or user acceptance."
+}

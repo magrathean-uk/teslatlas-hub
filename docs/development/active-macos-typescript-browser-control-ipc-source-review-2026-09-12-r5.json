@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_control_ipc_source_review",
+  "date": "2026-09-12",
+  "state": "accepted_source_only_no_runtime_authorization",
+  "typescript_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-control-ipc-correction-2026-09-12-r5.json",
+    "sha256": "d91b5c3c8f0a449fc75c25a99b2aa70b906f142d77a8eb0a377b7fab7d209046",
+    "mode": "0600"
+  },
+  "reviewed_sources": {
+    "supervisor": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/supervisor.mjs",
+      "sha256": "5e12b921a1ba1ab4e66b5f406aa206561b782c2a5ccc0c03495f4bfb5fa16a37",
+      "mode": "0700"
+    },
+    "regression": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/test-browser-control-ipc.mjs",
+      "sha256": "c6db7081b0f7221b99c24d344681f1ac9b8526643bf85bb8e10f87b7be5e2334",
+      "mode": "0700"
+    },
+    "trust_hooks_unchanged_sha256": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+    "untrusted_control_unchanged_sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c"
+  },
+  "review": {
+    "cause_match": "The r5 client sends a newline-terminated request with socket.end. Node's default server half-open policy closed the writable response path while the supervisor awaited Chrome readiness.",
+    "correction": "createJsonLineServer now uses createServer({allowHalfOpen:true}) and explicitly ends the socket after either a successful dispatch result or a structured failure response.",
+    "scope": "The change is isolated to the source-only control supervisor and regression. It adds no retry, delay, browser launch, Hub contact, keychain action or runtime authority.",
+    "finding": "accepted"
+  },
+  "independent_verification": {
+    "node_runtime": "v26.7.0",
+    "supervisor_syntax": "PASS",
+    "regression_syntax": "PASS",
+    "regression_result": {
+      "status": "passed",
+      "allowHalfOpen": true,
+      "cases": [
+        "immediate",
+        "delayed",
+        "failure"
+      ],
+      "clientHalfClose": true,
+      "socketRemoved": true
+    },
+    "targeted_biome": "Checked 2 files; no fixes applied",
+    "browser_started": false,
+    "hub_contacted": false,
+    "keychain_touched": false,
+    "runtime_retry": false
+  },
+  "next_gate": "A future browser acceptance attempt requires a separately authorized wholly fresh Hub tuple, fresh credential and fresh TypeScript control/package root bound to this reviewed correction. The closed r5 tuple remains non-reusable.",
+  "proof_boundary": "This is independent source and browser-free IPC regression evidence only. It does not prove Chrome runtime behavior, TLS negative control, CA import, CORS, SDK API, Hub API, package installation, service, release, production, vehicle or user acceptance."
+}

@@ -303,6 +303,9 @@ impl OwnedServer {
 
     async fn graceful_shutdown_and_wait(&mut self) -> std::io::Result<()> {
         self.handle.graceful_shutdown(Some(SERVER_GRACE_PERIOD));
+        if self.task.is_none() {
+            return Ok(());
+        }
         let result = tokio::time::timeout(
             SERVER_GRACE_WAIT_LIMIT,
             self.task
@@ -637,6 +640,34 @@ fn router_with_access_telemetry_and_http(
     )
 }
 
+/// Private loopback-only Fleet receiver router. It deliberately contains no
+/// public health, pairing, query, or sync routes; the public TLS listener gets
+/// a separate ordinary router when this ingress is enabled.
+fn fleet_telemetry_router(
+    store: HubStore,
+    cursor_key: CursorKey,
+    native_config_digest: Sha256Digest,
+    fleet_telemetry: FleetTelemetryIngress,
+) -> Router {
+    let router = Router::new()
+        .route("/v1/internal/fleet-telemetry", post(ingest_fleet_telemetry))
+        .layer(DefaultBodyLimit::max(MAX_FLEET_TELEMETRY_INPUT_BYTES))
+        .layer(TraceLayer::new_for_http())
+        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+        .with_state(AppState::new(
+            store,
+            false,
+            false,
+            false,
+            None,
+            Some(cursor_key),
+            Some(native_config_digest),
+            Some(fleet_telemetry),
+        ));
+    apply_http_resource_limits(router, MAX_IN_FLIGHT_HTTP_REQUESTS, HTTP_HANDLER_TIMEOUT)
+}
+
 fn apply_http_resource_limits(router: Router, maximum: usize, timeout: Duration) -> Router {
     router
         .layer(GlobalConcurrencyLimitLayer::new(maximum))
@@ -658,6 +689,48 @@ fn apply_http_resource_limits_with_cors(
     apply_http_resource_limits(router, maximum, timeout).layer(
         axum::middleware::from_fn_with_state(cors, browser_cors::decorate_resource_limit_response),
     )
+}
+
+fn unexpected_listener_result(name: &str, result: std::io::Result<()>) -> std::io::Result<()> {
+    match result {
+        Ok(()) => Err(std::io::Error::other(format!(
+            "{name} listener stopped unexpectedly"
+        ))),
+        Err(error) => Err(error),
+    }
+}
+
+async fn serve_two_owned_servers<F>(
+    mut public_server: OwnedServer,
+    mut private_server: OwnedServer,
+    shutdown: F,
+) -> std::io::Result<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    tokio::select! {
+        result = public_server.wait() => {
+            let public_result = unexpected_listener_result("public TLS", result);
+            if let Err(error) = private_server.graceful_shutdown_and_wait().await {
+                tracing::error!(%error, "private Fleet listener failed while stopping after public listener failure");
+            }
+            public_result
+        }
+        result = private_server.wait() => {
+            let private_result = unexpected_listener_result("private Fleet", result);
+            if let Err(error) = public_server.graceful_shutdown_and_wait().await {
+                tracing::error!(%error, "public TLS listener failed while stopping after private listener failure");
+            }
+            private_result
+        }
+        () = shutdown => {
+            let (public_result, private_result) = tokio::join!(
+                public_server.graceful_shutdown_and_wait(),
+                private_server.graceful_shutdown_and_wait(),
+            );
+            public_result.and(private_result)
+        }
+    }
 }
 
 /// Serve from the one admitted Hub process. Its durable cursor key is kept
@@ -748,36 +821,100 @@ where
         })?;
         let tls_config = rustls_config_from_identity(tls).await?;
         revalidate_server_admission(admission.as_ref())?;
-        let listener = std::net::TcpListener::bind(config.bind)?;
-        listener.set_nonblocking(true)?;
-        let handle = axum_server::Handle::new();
-        let server = axum_server::from_tcp_rustls(listener, tls_config)?.handle(handle.clone());
-        let mut server_task = OwnedServer::new(
-            handle,
-            tokio::spawn(
-                server.serve(
-                    router_with_access_telemetry_and_http(
-                        store,
-                        supervised_collector_required,
-                        true,
-                        true,
-                        Some(ManifestSigning::from_cursor_key(&cursor_key)),
-                        Some(cursor_key.clone()),
-                        Some(native_config_digest),
-                        fleet_telemetry,
-                        CorsPolicy::for_config(config),
-                    )
-                    .into_make_service(),
+        if let Some(fleet_telemetry) = fleet_telemetry {
+            let public_listener = std::net::TcpListener::bind(config.bind).map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!(
+                        "failed to bind public TLS listener at {}: {error}",
+                        config.bind
+                    ),
+                )
+            })?;
+            public_listener.set_nonblocking(true)?;
+            let private_bind = crate::config::fleet_telemetry_ingress_bind();
+            let private_listener = std::net::TcpListener::bind(private_bind).map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!(
+                        "failed to bind private Fleet Telemetry ingress at {private_bind}: {error}"
+                    ),
+                )
+            })?;
+            private_listener.set_nonblocking(true)?;
+
+            let public_handle = axum_server::Handle::new();
+            let public_server = axum_server::from_tcp_rustls(public_listener, tls_config)?
+                .handle(public_handle.clone());
+            let private_handle = axum_server::Handle::new();
+            let private_server =
+                axum_server::from_tcp(private_listener)?.handle(private_handle.clone());
+            let public_task = OwnedServer::new(
+                public_handle,
+                tokio::spawn(
+                    public_server.serve(
+                        router_with_access_telemetry_and_http(
+                            store.clone(),
+                            supervised_collector_required,
+                            true,
+                            true,
+                            Some(ManifestSigning::from_cursor_key(&cursor_key)),
+                            Some(cursor_key.clone()),
+                            Some(native_config_digest),
+                            None,
+                            CorsPolicy::for_config(config),
+                        )
+                        .into_make_service(),
+                    ),
                 ),
-            ),
-        );
-        let result = tokio::select! {
-            result = server_task.wait() => result,
-            () = shutdown => {
-                server_task.graceful_shutdown_and_wait().await
-            }
-        };
-        result
+            );
+            let private_task = OwnedServer::new(
+                private_handle,
+                tokio::spawn(
+                    private_server.serve(
+                        fleet_telemetry_router(
+                            store,
+                            cursor_key,
+                            native_config_digest,
+                            fleet_telemetry,
+                        )
+                        .into_make_service(),
+                    ),
+                ),
+            );
+            serve_two_owned_servers(public_task, private_task, shutdown).await
+        } else {
+            let listener = std::net::TcpListener::bind(config.bind)?;
+            listener.set_nonblocking(true)?;
+            let handle = axum_server::Handle::new();
+            let server = axum_server::from_tcp_rustls(listener, tls_config)?.handle(handle.clone());
+            let mut server_task = OwnedServer::new(
+                handle,
+                tokio::spawn(
+                    server.serve(
+                        router_with_access_telemetry_and_http(
+                            store,
+                            supervised_collector_required,
+                            true,
+                            true,
+                            Some(ManifestSigning::from_cursor_key(&cursor_key)),
+                            Some(cursor_key.clone()),
+                            Some(native_config_digest),
+                            None,
+                            CorsPolicy::for_config(config),
+                        )
+                        .into_make_service(),
+                    ),
+                ),
+            );
+            let result = tokio::select! {
+                result = server_task.wait() => result,
+                () = shutdown => {
+                    server_task.graceful_shutdown_and_wait().await
+                }
+            };
+            result
+        }
     } else {
         revalidate_server_admission(admission.as_ref())?;
         // Keep the same cancellation ownership as the TLS path. A dropped

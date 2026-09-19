@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_source_bound_empty_baseline_closed_handoff_r2",
+  "date": "2026-09-12",
+  "state": "closed_zero_event_baseline_passed_no_producer_submission",
+  "authority": "Owner restart and coordinator-authorized wholly fresh r2 preparation. Hub owned the shared runtime. This receipt closes the empty-baseline cohort only; it does not grant or claim producer-event authority.",
+  "cohort": {
+    "id": "edge-hub-empty-baseline-20260912-r2",
+    "target": "macOS 13.7.4 arm64",
+    "host_staging_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2",
+    "fresh_guest_root_absent_before_create": true,
+    "r1_runtime_identity_or_state_reused": false
+  },
+  "source_and_identity_binding": {
+    "edge_source_receipt": {
+      "path": "teslatlas-edge/docs/development/edge-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+      "sha256": "aead774fcec533eb65f71e48bd0f38d141aa7be63cd9beb195420d304406a309"
+    },
+    "receiver_receipt": {
+      "path": "teslatlas-edge/docs/development/edge-macos-r2-receiver-candidate-receipt-2026-09-12.json",
+      "sha256": "45a7e4b14fae9f6caade094831abd1a760299116b97a5c76b129de61aa71c2f9"
+    },
+    "hub_source_receipt": {
+      "path": "hub/docs/development/hub-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+      "sha256": "d7d3d2499370c4c344e3db77e06cd5db14ff954d86e29bd1ef68745a17767103"
+    },
+    "certificate_profile_receipt": {
+      "path": "teslatlas-edge/docs/development/edge-macos-r2-certificate-profile-receipt-2026-09-12.json",
+      "sha256": "6897a292b5a0d11081319be7bc53b1d13272bc81b3800d8748fe1805b421740e",
+      "result": "PASS; exact PEM and DER hashes, Subject.CommonName sealed binding, issuer, CA:FALSE, key usage, clientAuth EKU, key correspondence and exact receiver CA trust passed. SAN was absent and is not required or read by the pinned known-issuer parser."
+    },
+    "source_candidate_manifest_sha256": "a74718fb5f99db1f22004b155e503886cfd2ced0528fa18dbef7e2c3a4ab55d0",
+    "staging_manifest_sha256": "807e3d5fe305f4b2a387c29232dc8a7c7be72377787a6abbf8445b0f91d8a93d",
+    "sealed_binding_sha256": "245d96da6a34f671759de0296d24efd33b7244ca6df24a9c5486f78bdb020091",
+    "candidates": {
+      "edge_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+      "receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+      "hub_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+      "interop_fixture_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6"
+    }
+  },
+  "guest_preparation": {
+    "preparation_receipt": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/runtime-evidence/preparation-result.json",
+      "sha256": "e7c414bb60665e4b9a9e26b639e37b38f60ce4eb5a7ce03c9f35aeb8d2a20a16"
+    },
+    "credential_metadata": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/runtime-evidence/credential-metadata.json",
+      "sha256": "cdcf8b722bff3993e334cf4b333abb006131cececfdc3a69d4911f9044e43dc3",
+      "format": "tte1",
+      "ttl_seconds": 1800,
+      "raw_value_recorded": false
+    },
+    "edge_init_and_doctor": "PASS",
+    "hub_init_and_doctor": "PASS",
+    "initial_spool_file_count": 0,
+    "event_authorized": false
+  },
+  "empty_baseline": {
+    "result": "PASS",
+    "ready_receipt": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/runtime-evidence/empty-baseline-ready-r2.json",
+      "sha256": "993504550afff9d71441c288793f300ad4ddffdfa7a06f3217908018b18c00c3"
+    },
+    "stable_seconds": 5,
+    "edge": "Health and readiness were exact empty state twice; spool records/bytes/corrupt/expired/gaps and all receiver admission/duplicate/rejection metrics were zero.",
+    "receiver": "Loopback status returned HTTP 200 with body ok.",
+    "delivery": "Authenticated mTLS Hub poll returned HTTP 200 with records=[] and gaps=[].",
+    "hub": "Health, readiness, native status and all doctor checks passed with one sealed vehicle, raw/current observations zero and latestObservationId 0.",
+    "independent_status_recheck": {
+      "ready": true,
+      "edge_delivery_state": "connected",
+      "edge_delivery_detail": "edge delivery poll completed",
+      "pending_publications": 0,
+      "ack_frontier": null,
+      "latest_observation_id": 0
+    },
+    "listener_owners": [
+      {"pid": 494, "role": "Edge", "ports": [8081, 21844]},
+      {"pid": 496, "role": "receiver", "ports": [21446, 21447]},
+      {"pid": 497, "role": "Hub", "ports": [18526]}
+    ]
+  },
+  "producer_decision": {
+    "reserved_transaction": "edge-r2-fresh-20260912-v-001",
+    "reserved_identifier_is_authorization": false,
+    "event_authorized": false,
+    "producer_invoked": false,
+    "event_sent": false,
+    "authorization_file_present": false,
+    "invocation_guard_present": false,
+    "invocation_result_present": false,
+    "reason": "The reviewed r2 preparation contained no source-bound r2 producer actor or one-call guard. The coordinator therefore closed the proven empty baseline without inferring submission authority."
+  },
+  "cleanup": {
+    "receipt": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/runtime-evidence/empty-baseline-cleanup-r2.json",
+      "sha256": "47f18783329bf653bc2cb98dd28cedc6b7c4c0ea11592b665c09042f84f49523"
+    },
+    "processes": [
+      {"pid": 494, "role": "Edge", "exit_code": 0},
+      {"pid": 496, "role": "receiver", "exit_code": -15},
+      {"pid": 497, "role": "Hub", "exit_code": 0}
+    ],
+    "ports_closed": [8081, 21844, 21446, 21447, 18526],
+    "guest_stopped": true,
+    "shared_heavy_build_lock_absent": true
+  },
+  "result": "The corrected, wholly fresh certificate/profile path and source-bound candidate set reached and retained an exact zero-event Mac baseline, then cleaned exactly. This proves readiness only; durable forwarding and ACK/frontier advancement remain untested for this r2 cohort.",
+  "limitations": [
+    "No synthetic producer event, Edge admission, Hub durable commit, ACK or frontier advancement occurred.",
+    "This is candidate-process evidence, not installation, LaunchAgent, service, package, release, production, vehicle, Home Assistant, user or Apple acceptance.",
+    "The stopped r2 cohort and its expiring credentials are non-reusable."
+  ]
+}

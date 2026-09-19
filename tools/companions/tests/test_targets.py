@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -94,6 +95,12 @@ class TargetTests(unittest.TestCase):
 
             binding = validate_targets(prefix, ("home-assistant",), context)
             self.assertEqual(binding, {"ha_config": str(config.resolve())})
+            binding.update(
+                {
+                    "ha_payload_manifest_sha256": "b720c922e53edd47a62de17d99ff1d32c638706886d32a5e2fd7339b11d78347",
+                    "ha_selection_receipt_sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2",
+                }
+            )
             plan = prepare_target_transition(
                 prefix,
                 "release-1",
@@ -126,6 +133,78 @@ class TargetTests(unittest.TestCase):
                     RecipeContext(ha_config=config),
                 )
             self.assertEqual((target / "owned.py").read_text(), "keep\n")
+
+    def test_ha_transition_rejects_payload_digest_mismatch_before_relinking(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = root / "prefix"
+            old_payload = (
+                prefix
+                / "releases"
+                / "release-1"
+                / "components"
+                / "home-assistant"
+                / "output"
+                / "custom_components"
+                / "teslatlas_hub"
+            )
+            new_payload = (
+                prefix
+                / "releases"
+                / "release-2"
+                / "components"
+                / "home-assistant"
+                / "output"
+                / "custom_components"
+                / "teslatlas_hub"
+            )
+            old_payload.mkdir(parents=True)
+            new_payload.mkdir(parents=True)
+            (old_payload / "manifest.json").write_text("old\n")
+            (new_payload / "manifest.json").write_text("new\n")
+            (prefix / "releases" / "release-2" / "receipt.json").write_text(
+                json.dumps(
+                    {
+                        "components": {
+                            "home-assistant": {
+                                "artifacts": {
+                                    "payload_manifest_sha256": "0" * 64,
+                                    "selection_receipt_sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2",
+                                }
+                            }
+                        }
+                    }
+                )
+            )
+            (prefix / "active").symlink_to("releases/release-1")
+            config = root / "ha-config"
+            target = config / "custom_components" / "teslatlas_hub"
+            target.parent.mkdir(parents=True)
+            target.symlink_to(old_payload.resolve())
+            binding = {
+                "ha_config": str(config),
+                "ha_payload_manifest_sha256": "0fbe2f7f230c2e3c436b23b96a8a5599e74f98efeb1f426621df0fa257db6817",
+                "ha_selection_receipt_sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2",
+            }
+            components = {
+                "home-assistant": {
+                    "artifacts": {
+                        "payload_manifest_sha256": "0fbe2f7f230c2e3c436b23b96a8a5599e74f98efeb1f426621df0fa257db6817",
+                        "selection_receipt_sha256": "2f7b2b933f1f970fad49786530286fe3dadd463d3b063c4a6ffa50327e4f2be2",
+                    }
+                }
+            }
+
+            with self.assertRaisesRegex(BootstrapError, "payload manifest"):
+                prepare_target_transition(
+                    prefix,
+                    "release-2",
+                    components,
+                    binding,
+                    None,
+                )
+
+            self.assertEqual(os.readlink(target), str(old_payload.resolve()))
 
 
 if __name__ == "__main__":

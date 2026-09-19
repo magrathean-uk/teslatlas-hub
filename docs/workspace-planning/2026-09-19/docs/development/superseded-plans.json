@@ -1,0 +1,236 @@
+[
+  {
+    "path": "docs/2026-08-11_execution-plan-teslatlas-mac.md",
+    "canonical_plan": "docs/development/MASTER_PLAN.md",
+    "archive": "docs/development/archive/2026-09-08/docs/2026-08-11_execution-plan-teslatlas-mac.md",
+    "original_sha256": "17a9324288393eb7523839cfcbf841994a75b119b4ad28b8da5adfc8e355efa0"
+  },
+  {
+    "path": "docs/review-2026-08-08/08-SCHEMA-2.2-FLEET-PARITY-PLAN.md",
+    "canonical_plan": "docs/development/MASTER_PLAN.md",
+    "archive": "docs/development/archive/2026-09-08/docs/review-2026-08-08/08-SCHEMA-2.2-FLEET-PARITY-PLAN.md",
+    "original_sha256": "43d5e492aadb0b05bcbcec4cc5bdd6caf03f1b381ebbabace718b9fe5d778583"
+  },
+  {
+    "path": "docs/superpowers/plans/2026-09-05-hub-ecosystem-compatibility.md",
+    "canonical_plan": "docs/development/MASTER_PLAN.md",
+    "archive": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-05-hub-ecosystem-compatibility.md",
+    "original_sha256": "a72f2b5e6d4de64466b0b80bb1ff10103aa315ddc61c7cf3b685afd5b74dd381"
+  },
+  {
+    "path": "docs/superpowers/plans/2026-09-08-ecosystem-resumption.md",
+    "canonical_plan": "docs/development/MASTER_PLAN.md",
+    "archive": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-ecosystem-resumption.md",
+    "original_sha256": "f8e5309af3ccd10046769f017a2587dfe9b82159ad4b949ebd2ac44a676afc2a"
+  },
+  {
+    "path": "hub/docs/maintainers/plans/2026-09-04-macos-app-native-fidelity-correction.md",
+    "canonical_plan": "hub/docs/development/PLAN.md",
+    "archive": "hub/docs/development/archive/2026-09-08/docs/maintainers/plans/2026-09-04-macos-app-native-fidelity-correction.md",
+    "original_sha256": "619785a8bb838686f2e6c1a87ea4d2731923a4acbe81b8acc459756366accbcb"
+  },
+  {
+    "path": "hub/docs/maintainers/plans/2026-09-04-macos-app-redesign-fidelity-completion.md",
+    "canonical_plan": "hub/docs/development/PLAN.md",
+    "archive": "hub/docs/development/archive/2026-09-08/docs/maintainers/plans/2026-09-04-macos-app-redesign-fidelity-completion.md",
+    "original_sha256": "9b767fa686bddf3352dc86b1b8258a80154f1840ec0b4aea29f93beefe906be1"
+  },
+  {
+    "path": "hub/docs/maintainers/plans/2026-09-04-macos-app-redesign.md",
+    "canonical_plan": "hub/docs/development/PLAN.md",
+    "archive": "hub/docs/development/archive/2026-09-08/docs/maintainers/plans/2026-09-04-macos-app-redesign.md",
+    "original_sha256": "1241295bf370975ab4787bc87cf0db7d328bcecf4f4d41449aa8e152918599cb"
+  },
+  {
+    "path": "hub/docs/superpowers/plans/2026-09-08-docker-product.md",
+    "canonical_plan": "hub/docs/development/PLAN.md",
+    "archive": "hub/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-docker-product.md",
+    "original_sha256": "fee96b9fbfadb45ca30ab96ff400e0808382465da1f1e65efeb3555bae7c8e45"
+  },
+  {
+    "path": "hub/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "canonical_plan": "hub/docs/development/PLAN.md",
+    "archive": "hub/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "original_sha256": "4062062b500c666ce642bc17e8a5b13adc5859d51e03153408d6f9c0f68ee8f4"
+  },
+  {
+    "path": "hub/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "canonical_plan": "hub/docs/development/PLAN.md",
+    "archive": "hub/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "original_sha256": "fdc37d50d6b84ea10d877500556bc796ba8e6d2d5d925da41aef21195d807308"
+  },
+  {
+    "path": "teslatlas-protocol/docs/plans/2026-08-30-foundation.md",
+    "canonical_plan": "teslatlas-protocol/docs/development/PLAN.md",
+    "archive": "teslatlas-protocol/docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+    "original_sha256": "8191c5c6600a5c13dcce64f7eb6100d5958d5245ebff28faa8ddc335adfa0941"
+  },
+  {
+    "path": "teslatlas-protocol/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "canonical_plan": "teslatlas-protocol/docs/development/PLAN.md",
+    "archive": "teslatlas-protocol/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "original_sha256": "309036906afc2e8102cd51279aaf13c9acd8abaefa1b2b0d15e79e86af3e640e"
+  },
+  {
+    "path": "teslatlas-protocol/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "canonical_plan": "teslatlas-protocol/docs/development/PLAN.md",
+    "archive": "teslatlas-protocol/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "original_sha256": "7b3319a7b8d523149a9185c529d59266ac3d1f1f9bd2385bc385ee2f780764de"
+  },
+  {
+    "path": "teslatlas-sdk-typescript/docs/plans/2026-08-30-foundation.md",
+    "canonical_plan": "teslatlas-sdk-typescript/docs/development/PLAN.md",
+    "archive": "teslatlas-sdk-typescript/docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+    "original_sha256": "84554bba27e3dac2936d77cdd3a1d6310f6c8692198d02b2f7cec0fb8c87721f"
+  },
+  {
+    "path": "teslatlas-sdk-typescript/docs/superpowers/plans/2026-08-30-sdk-foundation.md",
+    "canonical_plan": "teslatlas-sdk-typescript/docs/development/PLAN.md",
+    "archive": "teslatlas-sdk-typescript/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-30-sdk-foundation.md",
+    "original_sha256": "65a80638defa2aa3600edb9378aa2c84cc29a8dba015da182fdc6057a6a3b4ba"
+  },
+  {
+    "path": "teslatlas-sdk-typescript/docs/superpowers/plans/2026-08-31-protocol-client-reconciliation.md",
+    "canonical_plan": "teslatlas-sdk-typescript/docs/development/PLAN.md",
+    "archive": "teslatlas-sdk-typescript/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-protocol-client-reconciliation.md",
+    "original_sha256": "dea101ef21b992ee0969facf6b70f94524c417e6f7120d024f37e28bca90ea3d"
+  },
+  {
+    "path": "teslatlas-sdk-typescript/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "canonical_plan": "teslatlas-sdk-typescript/docs/development/PLAN.md",
+    "archive": "teslatlas-sdk-typescript/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "original_sha256": "aba682354d07fc711ab03da120a9239c395f4cbe35dc19649530d25da1f7f15e"
+  },
+  {
+    "path": "teslatlas-sdk-typescript/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "canonical_plan": "teslatlas-sdk-typescript/docs/development/PLAN.md",
+    "archive": "teslatlas-sdk-typescript/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "original_sha256": "e35a270e723919ac2d78ff849fb280a7c40dff9f826f36a2b4a78feb46064d0a"
+  },
+  {
+    "path": "teslatlas-sdk-swift/docs/plans/2026-08-30-foundation.md",
+    "canonical_plan": "teslatlas-sdk-swift/docs/development/PLAN.md",
+    "archive": "teslatlas-sdk-swift/docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+    "original_sha256": "fd301c81592bb4549804eca5742172806fe44d69be58c4e740874bcbf1d52ed3"
+  },
+  {
+    "path": "teslatlas-sdk-swift/docs/superpowers/plans/2026-08-30-protocol-gated-foundation.md",
+    "canonical_plan": "teslatlas-sdk-swift/docs/development/PLAN.md",
+    "archive": "teslatlas-sdk-swift/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-30-protocol-gated-foundation.md",
+    "original_sha256": "b810dee949b02e9f5d1fbf44f04cb4cf171abe138eac26d68c1179971a00f9f9"
+  },
+  {
+    "path": "teslatlas-sdk-swift/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "canonical_plan": "teslatlas-sdk-swift/docs/development/PLAN.md",
+    "archive": "teslatlas-sdk-swift/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "original_sha256": "dc5cbf1af30308f9993354e9782d1d0909131dbf203986b184b60238b6af4551"
+  },
+  {
+    "path": "teslatlas-sdk-swift/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "canonical_plan": "teslatlas-sdk-swift/docs/development/PLAN.md",
+    "archive": "teslatlas-sdk-swift/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "original_sha256": "fde6b26a2673f0a914d03550a894764ac2779269e96c8dcba63bc8f2f5aa6924"
+  },
+  {
+    "path": "teslatlas-viewer/docs/plans/2026-08-30-foundation.md",
+    "canonical_plan": "teslatlas-viewer/docs/development/PLAN.md",
+    "archive": "teslatlas-viewer/docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+    "original_sha256": "bc7f970a2de3ebf68268d53b7e33c306c113315ea8b324400a257a66e8cb755b"
+  },
+  {
+    "path": "teslatlas-viewer/docs/public-sdk-integration-roadmap.md",
+    "canonical_plan": "teslatlas-viewer/docs/development/PLAN.md",
+    "archive": "teslatlas-viewer/docs/development/archive/2026-09-08/docs/public-sdk-integration-roadmap.md",
+    "original_sha256": "cb3cca0f6ab8ce91290fafd7bc50df1326de4af4d69545ddbb93688d0a90046e"
+  },
+  {
+    "path": "teslatlas-viewer/docs/superpowers/plans/2026-08-30-reference-client.md",
+    "canonical_plan": "teslatlas-viewer/docs/development/PLAN.md",
+    "archive": "teslatlas-viewer/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-30-reference-client.md",
+    "original_sha256": "a02f144eebaab38372661d69d4462219a376528f17fc52bcc35ccda45d2f7443"
+  },
+  {
+    "path": "teslatlas-viewer/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "canonical_plan": "teslatlas-viewer/docs/development/PLAN.md",
+    "archive": "teslatlas-viewer/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "original_sha256": "2119b1b341e54033ea701aca232da491029ec02e11f741d777d671709a0829ba"
+  },
+  {
+    "path": "teslatlas-viewer/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "canonical_plan": "teslatlas-viewer/docs/development/PLAN.md",
+    "archive": "teslatlas-viewer/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "original_sha256": "efb02c191c33faddf3ca0cb23ed042f9ec89a0510fe18aa138ee2b44e0e08c18"
+  },
+  {
+    "path": "teslatlas-home-assistant/docs/plans/2026-08-30-foundation.md",
+    "canonical_plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+    "archive": "teslatlas-home-assistant/docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+    "original_sha256": "92fef8dd78bc9cb25deb66f52070b8335dd34843505cec443b8da55cf3f6e636"
+  },
+  {
+    "path": "teslatlas-home-assistant/docs/superpowers/plans/2026-08-30-hacs-local-push-foundation.md",
+    "canonical_plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+    "archive": "teslatlas-home-assistant/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-30-hacs-local-push-foundation.md",
+    "original_sha256": "b9b14a9c977cfda0e0a3e9f2b0a0e649b6e62db5c63d45275575c921d9f9497e"
+  },
+  {
+    "path": "teslatlas-home-assistant/docs/superpowers/plans/2026-08-31-contract-security-foundation.md",
+    "canonical_plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+    "archive": "teslatlas-home-assistant/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-contract-security-foundation.md",
+    "original_sha256": "168e7fcac1ca63ead04bb21d5c80cd29a79ca1282f2bc03270ec621e9cc83059"
+  },
+  {
+    "path": "teslatlas-home-assistant/docs/superpowers/plans/2026-08-31-entity-registry-alignment.md",
+    "canonical_plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+    "archive": "teslatlas-home-assistant/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-entity-registry-alignment.md",
+    "original_sha256": "bba49624db005b18ae57714b72da71e0b47f14a16f82c17e822d2e6ec7fca32a"
+  },
+  {
+    "path": "teslatlas-home-assistant/docs/superpowers/plans/2026-08-31-readiness-verification.md",
+    "canonical_plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+    "archive": "teslatlas-home-assistant/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-readiness-verification.md",
+    "original_sha256": "43f79fea604b67e4c5c9d0f3ad57a24e17410286cf9c91345ecccb86f7aaebe4"
+  },
+  {
+    "path": "teslatlas-home-assistant/docs/superpowers/plans/2026-08-31-runtime-continuity-state-machine.md",
+    "canonical_plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+    "archive": "teslatlas-home-assistant/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-runtime-continuity-state-machine.md",
+    "original_sha256": "9ec24eebf8966588b9e083057f6d1ca7d4e96362ca44e6554995aed94a14088a"
+  },
+  {
+    "path": "teslatlas-home-assistant/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "canonical_plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+    "archive": "teslatlas-home-assistant/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "original_sha256": "b613ddbf6bbe23aa613b1b9c064e74899fde634d8737507f27518e1387658f80"
+  },
+  {
+    "path": "teslatlas-home-assistant/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "canonical_plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+    "archive": "teslatlas-home-assistant/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "original_sha256": "a22c6603f282424c6cac27c8696ba0012e9872e789aeb770c14406d0edc4d13d"
+  },
+  {
+    "path": "teslatlas-edge/docs/plans/2026-08-30-fleet-telemetry-ingress-implementation.md",
+    "canonical_plan": "teslatlas-edge/docs/development/PLAN.md",
+    "archive": "teslatlas-edge/docs/development/archive/2026-09-08/docs/plans/2026-08-30-fleet-telemetry-ingress-implementation.md",
+    "original_sha256": "a12a1f0f0fb7c7ef7b5007fe73f96d9fffa0245e62d7cb918e0e554a8fd1a5b7"
+  },
+  {
+    "path": "teslatlas-edge/docs/plans/2026-08-30-foundation.md",
+    "canonical_plan": "teslatlas-edge/docs/development/PLAN.md",
+    "archive": "teslatlas-edge/docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+    "original_sha256": "1ca65f694a749ee87f90b2778e87288db3b36cf1b56a888e047fc156903be173"
+  },
+  {
+    "path": "teslatlas-edge/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "canonical_plan": "teslatlas-edge/docs/development/PLAN.md",
+    "archive": "teslatlas-edge/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+    "original_sha256": "738ca18e9bb3da9cddb0517abeaa4c354a2d72cb7642cb119e29b234ddbc4e51"
+  },
+  {
+    "path": "teslatlas-edge/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "canonical_plan": "teslatlas-edge/docs/development/PLAN.md",
+    "archive": "teslatlas-edge/docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+    "original_sha256": "6e2a3300d808fd52ce8a4c6cf92ae5549774cf0ffc1859c2281d5b8b011b6f7e"
+  }
+]

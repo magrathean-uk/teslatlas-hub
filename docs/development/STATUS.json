@@ -1,0 +1,122 @@
+{
+  "schema_version": 2,
+  "product": "Hub",
+  "updated_at": "2026-09-19T10:30:43Z",
+  "update_scope": "post_adoption_next_phase_planning_no_execution",
+  "programme": "2026-09-18-app-v7-readiness",
+  "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
+  "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
+  "current_gate_ids": [],
+  "accepted_gate_ids": [
+    "G0",
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G5",
+    "G6"
+  ],
+  "workspace_adoption_state": "APP_V7_ADOPTION_READY_G0_G7_ACCEPTED",
+  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Preserve the accepted App v7 baseline and prepare the first installed Hub lifecycle deliverable on Debian ARM64.",
+  "source": {
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "branch": "main",
+    "dirty_entries": 119,
+    "checked_at": "2026-09-19T10:30:43Z"
+  },
+  "current_worker": null,
+  "model_policy": {
+    "implementation": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/max",
+    "coordinator": "gpt-5.6-sol/max",
+    "fast_mode": false
+  },
+  "evidence_summary": [
+    "G1 remains accepted on fresh source-built Debian ARM64 synthetic runtime.",
+    "G2 accepted: the exact dirty Hub snapshot was built once natively on macOS arm64 and a fresh synthetic cohort passed setup rejection, one-use claim/replay, both current routes, 2/2/1 drive pagination, 304, doctor and restart identity/bearer/data continuity.",
+    "G4 accepted on the same final Mac cohort: the exact packed TypeScript SDK passed Node and Chrome 153 consumers with normal TLS, seven CORS preflights, scoped user-Keychain trust/removal, pagination/304/cursor and rotation.",
+    "G5 accepted on fresh Debian 13 ARM64 cohort r5: one guarded V event survived bounded Hub outage and Edge restart, retained stable batch/record identity, committed before occurrence-bound ACK, projected exactly one readable synthetic-b2 vehicle, advanced frontier 0 to 1, and remained durable through Hub restart with no duplicate projection.",
+    "The r4 helper/receiver mismatch was closed without replay, repaired to the exact pinned empty-MessageID ACK contract, and covered by focused Go plus live pinned receiver/bridge tests before fresh r5.",
+    "G6 accepted on a wholly fresh macOS 27 arm64 cohort: the maintained external SwiftPM consumer passed exact discovery/profile/product/capabilities, normal TLS, claim/replay rejection, both current results, 2/2/1 pagination with three 304s, rotation/old-token rejection/new-token readback and Hub restart continuity.",
+    "The accepted G6 Hub and Swift builds were sequential under the shared lock; both fresh private runtime roots are absent, owned processes/listeners are absent, and reproducible build artifacts remain.",
+    "G3 accepted the exact product 2026.36.2 compatibility records using the final content-bound G2/G4, G5 and G6 Hub fingerprints and canonical receipt paths; scoped five-product admission/readback, TypeScript lock and vendored-copy readback pass.",
+    "The G3 checker repair is bound by r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865; its admission and read-only check do not invoke the generic full-workspace checker or read Viewer.",
+    "Secondary Home Assistant acceptance passed on a fresh Debian 13.6 ARM64 Hub handoff: normal TLS, one-use claim/replay rejection, 2-device/26-entity polling, scheduled change, Hub outage/restart recovery and revoked-bearer same-entry reauthentication; the closed peer receipt is SHA-256 2fd542ed21b55531994e7b3e8dc6aa4918777d94af355a81a2103368de18927e."
+  ],
+  "evidence_paths": [
+    "docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json",
+    "docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json",
+    "docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r3.json",
+    "docs/development/edge-macos-one-event-r11-concrete-preparation-2026-09-18.json",
+    "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+    "docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+    "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+    "docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json"
+  ],
+  "remaining": [
+    "L1: Debian ARM64 installed Hub baseline-to-candidate upgrade, fail-closed rollback and data-preserving removal.",
+    "L2: isolated Apple-silicon installed lifecycle, with the Hub macOS 13 floor kept distinct from Swift's macOS 14 floor.",
+    "Named-source and real-data parity require fresh owner input and must never reuse a historical fixture."
+  ],
+  "next_goal_draft": {
+    "id": "L1_HUB_DEBIAN_ARM64_INSTALLED_LIFECYCLE",
+    "state": "DRAFT_NOT_STARTED",
+    "objective": "Install an exact baseline package, upgrade to the exact candidate, prove ordinary installed-service behavior and retained identity/data, verify backup/restore, exercise fail-closed rollback, then remove code/services while preserving data and configuration by default.",
+    "prerequisites": [
+      "Freeze previous-working and candidate package, payload, profile, unit and target identities.",
+      "Create a fresh Hub-owned cohort; do not reuse closed credentials, roots or receipts.",
+      "Acquire the shared heavy-build lock only when execution is separately started."
+    ],
+    "acceptance_evidence": [
+      "Package hashes and dpkg-query identity",
+      "Actual systemd unit, executable, argv, user/group, modes and listeners",
+      "Installed setup, pairing, current/history and restart continuity",
+      "Successful upgrade, failed-candidate rollback and unchanged data/identity fingerprints",
+      "Verified backup/restore with recorded identity and data readable afterward",
+      "Removal with services/listeners absent and data/configuration preserved; no purge"
+    ],
+    "execution_authorized": false
+  },
+  "last_acceptance": {
+    "gate_id": "G6",
+    "state": "ACCEPTED",
+    "receipt": "docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+    "source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "hub_binary_sha256": "8577ec7cf4aa3017df4fb90cc0523d46436245031260b6a65418ce1a273abaae",
+    "interop_fixture_sha256": "c9398d5a7fdf218dd2dc072c3920e99dca84d91f14655b00a135af9380ff6ab0",
+    "peer_binary_sha256": "17f9b72497a231bf47ce39169bbc99379012e2ee18e353badfbbbfad1eadd8b9",
+    "platform": "macOS 27.0 arm64",
+    "runtime_kind": "source-built synthetic Hub and external SwiftPM consumer",
+    "cleanup_complete": true
+  },
+  "secondary_acceptance": {
+    "product": "Home Assistant",
+    "state": "ACCEPTED_SCOPED",
+    "receipt": "docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json",
+    "receipt_sha256": "2fd542ed21b55531994e7b3e8dc6aa4918777d94af355a81a2103368de18927e",
+    "platform": "Debian GNU/Linux 13.6 aarch64",
+    "cleanup_complete": true
+  },
+  "historical_status": {
+    "path": "docs/development/archive/2026-09-18-reset/hub/docs/development/STATUS.json",
+    "sha256": "3aca24b6bd9560dbd00c0635dbdb948034b9319600dfb3806c3a14dc819bfefe",
+    "note": "Exact pre-reset STATUS with detailed receipt keys, historical goals and assertions; not live execution authority."
+  },
+  "legacy_task": {
+    "thread_id": "01a082b7-37ed-7ea3-98fc-849284695b63",
+    "state": "ARCHIVED",
+    "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+    "native_goal_state": "historical_not_mutated_by_archival"
+  },
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; all HA/Hub private inputs, processes, container, image and listeners absent; debian13-arm64 stopped; no current handoff",
+  "acceptance_limits": [
+    "G2 is source-built synthetic runtime evidence, not macOS installer/notarization/service acceptance",
+    "Current macOS 27.0 was exercised; the documented macOS 13 minimum floor was not independently run",
+    "No real account, vehicle, collection, named-source or production acceptance",
+    "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
+    "G6 is current macOS 27 arm64 external-consumer evidence; declared minimum floors were not independently exercised",
+    "No App integration acceptance",
+    "Viewer excluded; x86/Intel paused"
+  ]
+}

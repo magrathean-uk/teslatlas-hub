@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_certificate_profile_preparation_r8",
+  "date": "2026-09-12",
+  "state": "source_only_superseding_reservation_no_profile_inputs_created",
+  "inherits_complete_contract": {
+    "path": "hub/docs/development/edge-macos-one-event-certificate-profile-preparation-2026-09-12-r7.json",
+    "sha256": "50cb138b279b566a80c826d8eaca6e392f2ee09ea0d911fd3e075bf066b852d5",
+    "rule": "Every requirement and proof boundary is unchanged except the exact replacements listed below. The closed r7 root and any r7 identity slot are not inputs."
+  },
+  "superseded_failure": {
+    "path": "hub/docs/development/edge-macos-one-event-preparation-failure-2026-09-12-r7.json",
+    "sha256": "75a76594228f33b4d660266ee46f781ac0306dc8db57ba10f5cc26807b912c3a",
+    "r7_reuse_allowed": false
+  },
+  "exact_replacements": {
+    "cohort_id": "edge-macos-one-event-20260912-r8",
+    "host_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r8",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r8",
+    "receiver_endpoint": "wss://127.0.0.1:21452/",
+    "receiver_data_port": 21452,
+    "receiver_status_port": 21453,
+    "edge_internal_port": 8084,
+    "edge_hub_facing_port": 21847,
+    "hub_api_port": 18532,
+    "transaction_id": "edge-mac-r8-20260912-v-001",
+    "binding_host_staging_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r8/staging/actor/binding.json",
+    "binding_guest_path": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r8/actor/binding.json",
+    "future_actual_receipt_path": "hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r8.json",
+    "future_actual_receipt_sha256": null
+  },
+  "corrected_preparer": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r8.py",
+    "sha256": "e38792e36e8c48f29e0e12d7f41cebd4067c54bdf24e0bbe9679a18009d105cb",
+    "mode": "0500",
+    "argv": [
+      "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r8.py",
+      "the exact accepted r8 proposal SHA-256"
+    ],
+    "correction": "Use verified /opt/homebrew/bin/rustup instead of nonexistent /Users/bolyki/.cargo/bin/rustup.",
+    "preflight": {
+      "python_syntax": "PASS with Python 3.11.16",
+      "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18), aarch64-apple-darwin, LLVM 22.1.8",
+      "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+      "openssl": "OpenSSL 3.6.4 25 Aug 2026",
+      "go_test_environment": "GOPROXY=off and GOTOOLCHAIN=local are set by the preparer before root claim",
+      "macos13_arm64_dhcp_lease": "PASS; host lease name teslatls13arm64 binds 192.168.64.10 without starting the guest",
+      "root_absent": true,
+      "shared_build_lock_absent": true,
+      "ports_closed": [8084, 21847, 21452, 21453, 18532]
+    },
+    "safety": "The preparer refuses an existing root, lock or changed DHCP binding; verifies every accepted immutable helper/guard/observer/receiver input before claiming the root; runs the receiver/helper checks offline; records public certificate basic constraints, key usage, EKU and SAN; creates all outputs exclusively; withholds raw identity/key/bearer/credential values; and releases the exact build lock in an unconditional inner-finally while retaining both lock records at mode 0600."
+  },
+  "authority": "After independent Edge acceptance of the r8 proposal and this exact preparer, the coordinator's standing authority covers one fresh source/profile preparation. After both-owner certificate/profile and inactive-binding verification, it covers one zero-event baseline. No producer event is authorized.",
+  "proof_boundary": "This is a corrected source-only r8 preparation specification and non-mutating toolchain preflight. No r8 root, build, PKI, credential, guest, listener, runtime, producer or event exists."
+}

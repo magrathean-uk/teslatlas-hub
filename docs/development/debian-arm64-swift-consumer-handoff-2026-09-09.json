@@ -1,0 +1,318 @@
+{
+  "schema": "teslatlas.hub.active-target-handoff/v1",
+  "state": "r3_public_consumer_passed_and_cleaned",
+  "prepared_at": "2026-09-09",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "target": {
+    "kind": "existing_debian13_arm64_guest",
+    "access": "scripts/dev/vm.sh debian ssh",
+    "architecture": "aarch64",
+    "os": "Debian 13",
+    "purpose": "one ordinary public Swift CurrentHubConsumer in a fresh nonprivileged Linux ARM64 container"
+  },
+  "preflight": {
+    "guest_hub_source": "/home/bolyki.guest/teslatlas-workspace/hub-current-20260908",
+    "guest_hub_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "guest_worktree": "dirty and preserved; it is only the git-archive source and is never staged directly",
+    "candidate_root": "/home/bolyki.guest/teslatlas-candidates/hub-debian-arm64-swift-20260909",
+    "fixture_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-retry1-20260909",
+    "preserved_prior_fixture_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-20260909",
+    "swift_consumer_root": "/home/bolyki.guest/teslatlas-consumers/swift-debian-arm64-20260909",
+    "port": 18495,
+    "endpoint": "https://127.0.0.1:18495",
+    "selected_roots_absent": true,
+    "selected_port_available": true,
+    "existing_services_preserved": [
+      "primary Hub service on 127.0.0.1:8443",
+      "Home Assistant fixture on 127.0.0.1:18483",
+      "running Edge/receiver containers and every historical fixture root"
+    ]
+  },
+  "candidate_build": {
+    "heavy_build_lock": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+    "snapshot_method": "Create the absent candidate root only from `git archive` of guest_hub_head; copy no dirty or untracked Hub worktree content.",
+    "command": "cargo build --locked --release --bin teslatlas-hub --example interop_fixture",
+    "working_directory": "/home/bolyki.guest/teslatlas-candidates/hub-debian-arm64-swift-20260909",
+    "expected_outputs": [
+      "target/release/teslatlas-hub",
+      "target/release/examples/interop_fixture"
+    ],
+    "result": {
+      "status": "passed_under_shared_lock",
+      "architecture": "ELF Linux aarch64",
+      "hub_binary_sha256": "0687a619d009debd48ad7f67501e52d0d147402001e262f03a4c54b63fc99d14",
+      "seed_binary_sha256": "bfc494e1f182951123e55da9cc987b016aa64528ac7efd44200a5cb326ce7707",
+      "fixture_source_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+      "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+      "runtime_started": false
+    },
+    "boundaries": [
+      "One guest build under the recorded shared lock; no package install, system service, existing source, existing target or historical fixture mutation.",
+      "Record exact ELF ARM64 hashes after the build. A build is only a candidate identity, not a runtime or installed acceptance."
+    ]
+  },
+  "frozen_profile": {
+    "id": "hub-http-v1@1.0.0",
+    "host_source": "/Users/bolyki/.codex/artifacts/teslatlas-protocol-d1-20260909-ro/frozen-source/profiles/hub-http-v1/1.0.0",
+    "manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "source_manifest_sha256": "e89ff7ecf4b9e0ddeebc6801ca4bf7a865b8c0561e12bb69e1c5d14f55b7ec24",
+    "staging_requirement": "Transfer only this fixed 17-member profile into the fresh fixture root, recheck every member and make it non-writable. Do not use a moving Protocol worktree."
+  },
+  "swift_runner": {
+    "source_snapshot": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-swift-d1-20260909-refresh-ro/frozen-source",
+    "source_sha256": "e92f4b75ac6da0ba62d78b1ac0c3ed1eacf4b779c753a570c722e9053ca9b7cb",
+    "source_manifest_sha256": "4ebf48d90013fab1ed354703d305b8d9170d240cb7526d7d57b18a1c96c34a8c",
+    "source_commit": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+    "base_image": "swift:6.0.3-jammy@sha256:1ad73b8f2a2300c650da0949519418565661d802765b9a99435df22bc947e2b4",
+    "dockerfile_sha256": "4ce3ec0511c0b17372fa5d548b6c9fab95a2211ec87c3254a8a54445e8cb42a4",
+    "source_transfer": "A first raw macOS tar transfer stopped before build because it carried AppleDouble metadata and readonly directory modes; its two partial source directories are retained under the fresh consumer root. A separate data-only rsync trial excluded AppleDouble files and did not preserve source permissions during extraction; source_manifest_for then matched all 158 listed files and source SHA256 e92f4b75 with no symlinks. Only that verified copy was promoted and made non-writable before build.",
+    "build_requirement": "No Swift image was retained on the active Debian guest. Build one fresh, private, Linux/ARM64 image from the immutable snapshot under the same shared lock, then record image ID/digest and remove only that tag/image after the consumer result. Do not change Docker permissions, existing containers, images or daemon configuration.",
+    "build_result": {
+      "status": "passed_under_shared_lock",
+      "image_ref": "teslatlas-swift-current-consumer:debian-arm64-20260909",
+      "image_id": "sha256:84f242c2ecf2a6e8f8113c26f2fceb062fce7b0f1d85afd6c84df7c511b1d1ea",
+      "architecture": "arm64",
+      "image_user": "swiftuser",
+      "runtime_started": false
+    },
+    "precreated_container_contract": {
+      "name": "teslatlas-swift-current-consumer-debian-arm64-r2-20260909",
+      "image_ref": "teslatlas-swift-current-consumer:debian-arm64-20260909",
+      "network_mode": "host",
+      "image_user": "swiftuser",
+      "command": "swift run --package-path Examples/CurrentHubConsumer -c release CurrentHubConsumer /tmp/swift-input/current-hub-consumer.json",
+      "input_copy": "Hub staged exactly the new config, fixture CA and one-use invitation as UID/GID 10001 mode 0600 under the fresh owner-only input directory, then used docker cp --archive to create /tmp/swift-input with the same owner/mode. No host source mount or Docker socket is present.",
+      "process_trust": "The Linux public consumer omits caPath as required by its source. Its image-defined swiftuser process receives SSL_CERT_FILE=/tmp/swift-input/server.pem. A separate short-lived non-networked swiftuser probe in the pinned image verified that this isolated OpenSSL store validates the fixture certificate for IP 127.0.0.1; the probe container was removed before this container was created.",
+      "container_state": "created_not_started"
+    },
+    "execution": "Swift owns one public Examples/CurrentHubConsumer invocation only. The container runs nonprivileged as its image-defined swiftuser with `--network host`; it receives a newly created 0600 config plus CA and invitation by bounded copy, never a host source mount or Docker socket. Hub owns the guest fixture and container lifecycle boundary; Swift owns only its public executable, redacted output and client credential.",
+    "not_matrix": "Do not admit an X1 matrix row or use the fixed matrix worker/SessionInput contract in this ordinary consumer lane."
+  },
+  "runtime": {
+    "control_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-retry1-20260909",
+    "output_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-retry1-20260909/run",
+    "private_fixture_config": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-retry1-20260909/fixture-config.json",
+    "private_fixture_config_sha256": "9885a714601ea629cb1e9d373c9969e38602bbda53681023ec5f1e132a3acbc9",
+    "private_fixture_config_mode": "0600",
+    "staging_validation": "Before launch, the first root was preserved after a pre-ready failure and the fresh retry root had a distinct owner-only configuration accepted by the real candidate fixture loader; fixture/scenario/native-evidence hashes and all 17 frozen profile members matched, its output was absent and TCP 18495 was free.",
+    "port": 18495,
+    "endpoint": "https://127.0.0.1:18495",
+    "fixture_lifetime_seconds": 1800,
+    "invitation_lifetime_seconds": 900,
+    "state": "retry_pre_ready_failed_preserved",
+    "launch_result": "The retry staged the exact candidate Hub and seed and created only the same partial private output store before exiting nonzero. It created no connection descriptor, CA, invitation, ready/stopped descriptor, Hub listener, container or Swift consumer. This root is retained and may not be reused."
+  },
+  "preserved_first_attempt": {
+    "state": "pre_ready_failure_preserved_not_reused",
+    "control_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-20260909",
+    "output_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-20260909/run",
+    "observed": "The fixture staged the exact candidate Hub and seed and created only a partial private output store before exiting nonzero. It created no connection descriptor, CA, invitation, ready/stopped descriptor, Hub listener, container or Swift consumer.",
+    "diagnosis_boundary": "The source fixture suppresses the seed child stderr and persisted no failure evidence before its generic error, so that one exit has no recoverable specific cause. Both complete fixture attempts reached the same seed boundary: one vehicle, five materialised drives and one materialised charge persisted, but no transport pack/import snapshot/observation/pairing and no top-level connection/CA/invitation were created. Three separately named seed-only diagnostics using the same candidate/staged bytes exited zero with zero stderr, including an exact nested control-root/run layout with its staged 0500 executable and TCP 18495 reserved. The candidate binary, its staged copy, output layout and port reservation therefore do not reproduce the opaque full-run failure. The authorized retry is exhausted; a further failure must be retained and diagnosed through source-level instrumentation or a different owner direction, not retried again."
+  },
+  "instrumented_seed_diagnostic": {
+    "authorization": "../../../docs/development/coordination/2026-09-09-swift-fixture-diagnostic-authorization.json",
+    "purpose": "One source-instrumented diagnostic run only; it is not a Swift consumer or acceptance run.",
+    "control_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-instrumented-diagnostic-20260909",
+    "output_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-instrumented-diagnostic-20260909/run",
+    "port": 18496,
+    "lifetime_seconds": 60,
+    "base_fixture_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+    "overlay_fixture_sha256": "53278b7cf4ff9131c24bcc1c8633775366ece49b26b40dedb34975713656181e",
+    "overlay_scope": "A clean HEAD fixture copy plus only seed-child stage, elapsed-time, exit/signal/timeout, command/cwd/environment-name hashes, standard-stream setup, inherited limit and parent-memory metadata. It never persists raw child stderr, payloads, arguments or environment values.",
+    "working_source_test": {
+      "fixture_sha256": "9e14781743896d94835551eed58c3d20e8d33246fd95ed80d75984efaf5ac2f3",
+      "test_sha256": "d207ef873b78bbfb825fd28bea6534896629e71072d9c09360184b6ee819c56c",
+      "command": "python3 tools/interop/test_fixture.py",
+      "result": "passed 24 tests, including controlled exit, signal, timeout and integrated private-redaction cases"
+    },
+    "private_fixture_config_sha256": "a8cb0ecb2177e7ad1f4af773c1076073d26e7909fed5d2a146437b50b8003d79",
+    "candidate_hub_sha256": "0687a619d009debd48ad7f67501e52d0d147402001e262f03a4c54b63fc99d14",
+    "candidate_seed_sha256": "bfc494e1f182951123e55da9cc987b016aa64528ac7efd44200a5cb326ce7707",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "staging_validation": "The owner-only instrumented control root/configuration and fixed fixture/scenario/native helper/profile bytes were verified; the real instrumented loader accepted the absent output and TCP 18496 was free.",
+    "result": "The one authorized instrumented run exited before readiness. Its new mode-0600 fixture-diagnostic SHA256 8fbcad11411c4b24f42e68321494445977ec08ec7b98c7f23e12d96d52f78041 reports only seed/exit/1/57ms plus redacted command/cwd/environment-name hashes, standard-stream shape, inherited limits and parent memory. It contains no raw stderr, payload, arguments or environment values. No listener, CA, invitation, container, consumer or Swift input was created."
+  },
+  "demonstrated_cause_and_repair": {
+    "cause": "The full guest SSH runner inherits umask 0002. Both preserved failed roots have an owner-only run/hub/packs tree but a group-writable run/hub/packs/.staging directory (0775). The candidate pack writer calls ensure_private_staging_directory before it can chmod the directory; that function rejects mode bits 0022, exactly after the first vehicle's five materialised drives and one charge but before the first pack. The three successful standalone seed diagnostics explicitly set umask 0077. Read-only kernel/cgroup evidence has zero OOM kills and the guest had 6,653,857,792 bytes free, so resource exhaustion is excluded from this failure.",
+    "repair": "The runner now invokes every observed seed child with subprocess umask=0o077, preserving Hub's fail-closed rejection of preexisting unsafe staging paths rather than weakening it. A real child test first forced parent umask 0002 and required a child-visible 0077; it failed before this repair (child exit 1) and the focused suite then passed 25 tests, including the controlled exit/signal/timeout/redaction cases.",
+    "working_source": {
+      "fixture_sha256": "6c8108ebb354f16a4338ac971327cb16f052882cbbae288c752f05fda7a2bea3",
+      "test_sha256": "e0b3111b35901c491b440cecd16696272b5845e0014534c1be80cef992ea2dbd",
+      "test_command": "python3 tools/interop/test_fixture.py",
+      "test_result": "passed 25 tests"
+    }
+  },
+  "repaired_fixture": {
+    "purpose": "One fresh repaired real-Hub readiness run; no Swift consumer starts until Hub independently publishes its ready handoff.",
+    "control_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-20260909",
+    "output_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-20260909/run",
+    "port": 18497,
+    "lifetime_seconds": 1800,
+    "base_fixture_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+    "repaired_overlay_sha256": "58796263f2d5d7a3726f6f9f441d319e921aab2b5c13c1ce05a4b00e82a7f20a",
+    "overlay_scope": "Only the test-backed seed-subprocess diagnostic and child umask=0077 repair applied to a clean candidate-HEAD fixture source; no unrelated dirty Hub source is included.",
+    "private_fixture_config_sha256": "ddec6844b00ef840646f759e9e30a4a5f4b7bd255c4ed4b42f733f9b33cfb815",
+    "candidate_hub_sha256": "0687a619d009debd48ad7f67501e52d0d147402001e262f03a4c54b63fc99d14",
+    "candidate_seed_sha256": "bfc494e1f182951123e55da9cc987b016aa64528ac7efd44200a5cb326ce7707",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "staging_validation": "Before launch, the distinct 0700 control root, 0600 configuration, repaired overlay, default scenario, frozen native helper and all 17 frozen profile members were verified. The real repaired loader accepted the absent output and TCP 18497 was free. The resulting live runtime is recorded separately in repaired_ready_runtime."
+  },
+  "repaired_ready_runtime": {
+    "state": "closed_after_first_container_pre_transport_command_failure",
+    "control_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-20260909",
+    "output_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-20260909/run",
+    "endpoint": "https://127.0.0.1:18497",
+    "hub_id": "ad8e7769-844f-492f-b89d-35159bd62134",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "candidate_hub_sha256": "0687a619d009debd48ad7f67501e52d0d147402001e262f03a4c54b63fc99d14",
+    "candidate_seed_sha256": "bfc494e1f182951123e55da9cc987b016aa64528ac7efd44200a5cb326ce7707",
+    "ready_descriptor": {
+      "path": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-20260909/run/ready.json",
+      "mode": "0600",
+      "sha256": "8e664f9d440214e475342b8821a7191ef96fe898857bd91915c5334e8066f7c2"
+    },
+    "trust": {
+      "private_ca_path": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-20260909/run/server.pem",
+      "mode": "0600",
+      "sha256": "48bd47d7cc04def233bc067591a38338ef454bfc3cfbda855a4414dc0e49e4c2",
+      "independent_check": "Host-side curl with this CA returned HTTP 200 for both /healthz and /readyz; no trust bypass was used."
+    },
+    "invitation": {
+      "private_path": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-20260909/run/cli-invitation.json",
+      "mode": "0600",
+      "handling": "Its contents and digest are not recorded. It is copied only to the fresh container input, remains one-use and expires independently."
+    },
+    "cleanup": "The first container exited before any network or credential read because its repository-root command could not find the nested executable product. Hub then stopped only its verified launcher PID 71136, observed direct Hub child PID 71152 exit, retained a 0600 stopped descriptor and closed 18497. This root, CA, invitation, descriptor, input and exited container are preserved and not reused."
+  },
+  "staged_swift_container": {
+    "name": "teslatlas-swift-current-consumer-debian-arm64-20260909",
+    "state": "exited_pre_transport_preserved_not_reusable",
+    "input_root": "/home/bolyki.guest/teslatlas-consumers/swift-debian-arm64-20260909/input-fixed-20260909",
+    "config_sha256": "b5933cf549226116c9423de978bdee30e69f891d7df7d6bf3e9c1584441de7b5",
+    "ca_sha256": "48bd47d7cc04def233bc067591a38338ef454bfc3cfbda855a4414dc0e49e4c2",
+    "input_metadata": "config, CA and invitation are regular UID/GID 10001 mode-0600 files; Docker copied an owner-only /tmp/swift-input directory containing only those three files.",
+    "container_metadata": "image-defined swiftuser, host network, zero mounts and SSL_CERT_FILE=/tmp/swift-input/server.pem. The exact repository-root command exited 1 before transport with no executable product named CurrentHubConsumer, because that public executable belongs to the nested Examples/CurrentHubConsumer package. Hub did not start the public Swift consumer successfully, and the container/input are retained rather than reused."
+  },
+  "corrected_r2_runtime": {
+    "state": "closed_after_public_consumer_transport_failure",
+    "control_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-r2-20260909",
+    "output_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-r2-20260909/run",
+    "private_fixture_config_sha256": "6033aa39f2772c22dafe0febf9eb27dc5831bc34bd0c7ceff041e86f3b5a3054",
+    "port": 18498,
+    "endpoint": "https://127.0.0.1:18498",
+    "hub_id": "c4f5c1df-0e85-4090-8396-5be446245b9e",
+    "launcher_pid": 76169,
+    "hub_pid": 76185,
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "candidate_hub_sha256": "0687a619d009debd48ad7f67501e52d0d147402001e262f03a4c54b63fc99d14",
+    "candidate_seed_sha256": "bfc494e1f182951123e55da9cc987b016aa64528ac7efd44200a5cb326ce7707",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+    "repaired_fixture_sha256": "58796263f2d5d7a3726f6f9f441d319e921aab2b5c13c1ce05a4b00e82a7f20a",
+    "ready_descriptor": {
+      "path": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-r2-20260909/run/ready.json",
+      "mode": "0600",
+      "sha256": "a1e34416490d5723b0ac4d9bea4f6f6e44715d133e5bd15985647263d89c5052"
+    },
+    "trust": {
+      "private_ca_path": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-r2-20260909/run/server.pem",
+      "mode": "0600",
+      "sha256": "f55cdb406bc1a9501eece7eac05a88682c7fed3dcc9fa7416b0f0569599a174a",
+      "independent_check": "Host-side curl with this CA returned HTTP 200 for both /healthz and /readyz; a short-lived non-networked image-defined swiftuser OpenSSL probe also validated it for IP 127.0.0.1 and was removed."
+    },
+    "invitation": {
+      "private_path": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-fixed-r2-20260909/run/cli-invitation.json",
+      "mode": "0600",
+      "handling": "The contents and digest are not recorded. It was copied only to the new owner-only R2 container input and remains one-use."
+    },
+    "cleanup": "After the Swift-owned R2 public invocation returned a redacted transport failure, Hub verified no paired devices, outbound-request receipts or stream-session receipts, then stopped only verified launcher PID 76169/direct Hub child PID 76185. The 0600 stopped descriptor remains and port 18498 is closed."
+  },
+  "corrected_r2_container": {
+    "name": "teslatlas-swift-current-consumer-debian-arm64-r2-20260909",
+    "state": "exited_transport_failure_then_removed_by_swift",
+    "input_root": "/home/bolyki.guest/teslatlas-consumers/swift-debian-arm64-r2-20260909/input",
+    "config_sha256": "f70a15bfb2ed319790b0df2f65cad126c6cad330b60510c206acc56d27004c1b",
+    "ca_sha256": "f55cdb406bc1a9501eece7eac05a88682c7fed3dcc9fa7416b0f0569599a174a",
+    "input_metadata": "Only new config, CA and invitation were copied as regular UID/GID 10001 mode-0600 files into an owner-only /tmp/swift-input directory.",
+    "container_metadata": "The pinned ARM64 image's swiftuser, host network, zero mounts and SSL_CERT_FILE=/tmp/swift-input/server.pem were verified. Its corrected nested-package command built successfully and then returned only the redacted status=transport_failure. Swift removed exactly this R2 container and input root; it did not restart or reuse them.",
+    "command_selection_check": "A no-network swift package --package-path Examples/CurrentHubConsumer describe check resolved the executable product, and a no-network swift run --package-path Examples/CurrentHubConsumer --help check accepted the corrected package-path option before the new invitation was minted."
+  },
+  "r2_transport_diagnosis": {
+    "classification": "swift_linux_process_trust_not_applied_by_libcurl_default_path",
+    "server_side_boundary": "The Hub fixture remained independently trusted-ready. Its final read-only SQLite counts are paired_devices=0, outbound_request_receipts=0 and stream_session_receipts=0, so no claim, credential-bearing request or consumer session was admitted.",
+    "controlled_probe": "A temporary noncredential C probe in the same pinned image, image-defined swiftuser, host network and SSL_CERT_FILE=/tmp/server.pem environment used curl_easy_init plus URL/NOSIGNAL/write-discard only—the same default CAINFO/CAPATH boundary as the SDK shim—and returned curl_code=60 with HTTP status 0 on /healthz. It used no invitation or bearer, then its exact temporary container/CA copy was removed.",
+    "comparison": "The same certificate passes an image-defined swiftuser OpenSSL default-store probe and host-side trusted /healthz=/readyz checks. The frozen SDK shim sets no CURLOPT_CAINFO or CURLOPT_CAPATH before curl_easy_perform, so the tested libcurl default path did not consume SSL_CERT_FILE in this image.",
+    "conclusion": "This is not a Hub readiness, request routing, pairing, invitation, credential or product-selection failure. A further live Swift retry requires a Swift-owned, test-backed Linux process-trust design that makes the configured private CA reach libcurl while preserving hostname verification, invitation leaf pinning, owner-only file handling and the no-mount/no-socket boundary."
+  },
+  "repaired_r3_public_consumer": {
+    "state": "passed_once_then_cleaned",
+    "purpose": "One fresh public CurrentHubConsumer journey against a finite Debian ARM64 Hub fixture after Swift's test-backed libcurl CA-path repair. It is live consumer evidence only, not installed, service, named-source parity or matrix acceptance.",
+    "swift_source": {
+      "base_snapshot": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-swift-d1-20260909-refresh-ro/frozen-source",
+      "base_source_sha256": "e92f4b75ac6da0ba62d78b1ac0c3ed1eacf4b779c753a570c722e9053ca9b7cb",
+      "base_manifest_sha256": "4ebf48d90013fab1ed354703d305b8d9170d240cb7526d7d57b18a1c96c34a8c",
+      "base_commit": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+      "repair_overlay": {
+        "Sources/CurrentHubCurlShim/CurrentHubCurlShim.c": "9647f4f6000af20207a3acb0d0231913b3d390f08008c0381151f7f200aab844",
+        "Tests/TeslatlasCurrentHubTests/CurrentHubTransportTests.swift": "8365b37a8d2ba8b2cc4ac64418cd84a824aea491b58ea863a3721918020bad60",
+        "scope": "The C shim maps nonempty SSL_CERT_FILE and SSL_CERT_DIR to CURLOPT_CAINFO and CURLOPT_CAPATH while keeping peer and hostname validation enabled; its Swift transport test was supplied by Swift as red-code-60 then green evidence and was not rerun by Hub."
+      },
+      "composite_source_sha256": "234b352d2b692d667287c6db0896c7981c1a62b925c6aa4ba603fee002407751",
+      "local_sources_manifest_sha256": "d25e1453259ae7ce73e105fa7797ad6c3a5c0205ce4f6d21cce65e3ae17f6d34",
+      "transfer_validation": "The fresh remote source matched all 158 frozen members and composite digest, had no symlinks or writable paths, and was removed by exact manifest after image cleanup."
+    },
+    "image": {
+      "reference": "teslatlas-swift-current-consumer:debian-arm64-libcurl-r3-20260909",
+      "id": "sha256:b84ffb6dfe951d5692b0a450c82b25cd576b2dad05e2bd30eac1bcd23ae505e4",
+      "architecture": "linux/arm64",
+      "image_user": "swiftuser",
+      "source_label_sha256": "234b352d2b692d667287c6db0896c7981c1a62b925c6aa4ba603fee002407751",
+      "build": "Built once under the shared heavy-build lock from the fresh immutable composite source, then removed after the result. No R2 image or source binding was reused."
+    },
+    "fixture": {
+      "control_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-libcurl-r3-20260909",
+      "port": 18499,
+      "endpoint": "https://127.0.0.1:18499",
+      "hub_id": "e14ec585-5ce6-4fd1-a038-2fad3c8ade40",
+      "lifetime_seconds": 1800,
+      "invitation_lifetime_seconds": 900,
+      "candidate_hub_sha256": "0687a619d009debd48ad7f67501e52d0d147402001e262f03a4c54b63fc99d14",
+      "candidate_seed_sha256": "bfc494e1f182951123e55da9cc987b016aa64528ac7efd44200a5cb326ce7707",
+      "repaired_fixture_sha256": "58796263f2d5d7a3726f6f9f441d319e921aab2b5c13c1ce05a4b00e82a7f20a",
+      "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "readiness": "Fresh config was mode 0600 and port 18499 was free. The real fixture launched successfully; both health and readiness returned HTTP 200 before the one consumer invocation."
+    },
+    "consumer_handoff": {
+      "input_root": "/home/bolyki.guest/teslatlas-fixtures/swift-debian-arm64-libcurl-r3-20260909/consumer-input",
+      "input_handling": "Fresh config, fixture CA and one-use invitation only; the private directory was UID/GID 10001 mode 0700 and its three regular inputs were mode 0600 with link count one. No raw invitation or credential is recorded.",
+      "container": "teslatlas-swift-current-consumer-debian-arm64-libcurl-r3-20260909",
+      "runtime_boundary": "The image-defined swiftuser container used host networking, zero mounts, no Docker socket, SSL_CERT_FILE=/tmp/swift-input/server.pem and exactly `swift run --package-path Examples/CurrentHubConsumer -c release CurrentHubConsumer /tmp/swift-input/current-hub-consumer.json`."
+    },
+    "one_authorized_result": {
+      "container_exit": 0,
+      "public_operations": "The sole public invocation compiled the consumer and completed discovery, claim, health, readiness, vehicles, current, drives and rotation.",
+      "returned_data_summary": "vehicles=2; drives pagination reported pages=3 and count=5.",
+      "server_side_read_only_counts": "paired_devices=1; outbound_request_receipts=0; stream_session_receipts=0.",
+      "interpretation": "This proves a bounded real public consumer journey through the repaired Linux libcurl trust path. It does not prove installed-host acceptance or any unexercised companion/product path."
+    },
+    "cleanup": {
+      "owner": "Hub",
+      "fixture": "Hub verified the exact fixture launcher and direct child, stopped only that launcher, recorded the private stopped result with matching PIDs and exit 0, and verified port 18499 closed.",
+      "consumer": "Hub then removed exactly the R3 container, private input root and R3 image; the fresh remote build context was removed by its exact manifest. Subsequent checks confirmed input, container, image and remote context absent.",
+      "preserved": "R1/R2 roots and their evidence remain untouched. No existing Hub, Home Assistant, Edge or other service changed."
+    }
+  },
+  "swift_start_guard": "No R1, R2 or R3 restart or retry is permitted. Preserve all historical roots and handoff evidence. The R3 finite fixture and private consumer boundary were cleaned after their one authorized successful invocation; any later work requires new authority and fresh identities/inputs.",
+  "required_before_launch": [
+    "The candidate and runner builds complete under the shared lock, their source/artifact hashes are recorded, and the lock is released.",
+    "Hub stages only fixed candidate fixture/scenario, frozen profile/native helper and 0600 fixture configuration into the fresh fixture root; verify output absence and port availability.",
+    "Swift source snapshot and Dockerfile are reverified after transfer. The fresh image runs as non-root Linux/ARM64; its intended container/network/copy/delete actions and Swift cleanup owner are recorded before the Hub fixture creates a finite-lived invitation.",
+    "Launch the exactly one staged repaired fixture on fresh TCP 18497. Verify real HTTPS health/readiness and the new private-process ownership before publishing a fresh Swift handoff. Never use the preserved partial roots or the instrumented diagnostic root as consumer inputs."
+  ],
+  "cleanup_owner": "The R1/R2 ownership record above is historical. For R3, Hub stopped only its recorded fixture launcher/direct child and removed only the exact fresh container, image and private input/context after the result. Neither owner may change existing Hub, HA, Edge or historical runtime state.",
+  "limits": [
+    "No app/package installation, LaunchAgent/systemd change, Viewer/Node reuse, Edge action, Home Assistant action, vehicle action, production, x86/amd64/Intel/Azure/full-matrix work.",
+    "No trust bypass, host source mount, Docker socket in the consumer, Docker permission change or reuse of former Swift/Viewer/Node roots, CA, invitation, descriptor, process or credentials."
+  ]
+}

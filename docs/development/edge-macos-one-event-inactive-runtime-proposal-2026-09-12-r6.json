@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_inactive_actor_guard_profile_runtime_event_proposal_r6",
+  "date": "2026-09-12",
+  "state": "proposal_only_inactive_no_pki_guest_runtime_or_event_authorization",
+  "authority": {
+    "current_scope": "Hub may publish one complete fresh inactive proposal after Edge independently accepts the r5 source-to-binary binding.",
+    "edge_independent_source_binary_review": "PASS reported by task 01a082b7-9723-7211-b9f0-8b505e450b7e; no rejection reason",
+    "pki_creation": false,
+    "credential_creation": false,
+    "guest_start": false,
+    "process_or_listener_start": false,
+    "network_request": false,
+    "producer_invocation": false,
+    "event_submission": false,
+    "event_authorized": false,
+    "runtime_authorized": false,
+    "separate_decisions": [
+      "Coordinator must first authorize fresh staging, PKI/profile verification and zero-event runtime preparation against this accepted proposal.",
+      "After the empty baseline and all bindings pass, coordinator must separately authorize exactly one submit-once event before authorization.json, contract.json, the guard or the producer may exist."
+    ]
+  },
+  "accepted_actor_binding": {
+    "hub_source_binary_receipt": {
+      "path": "hub/docs/development/edge-macos-one-event-actor-source-binary-receipt-2026-09-12-r5.json",
+      "sha256": "e5e8e87c5ecbf191ef30a46de4e5f55796b22d7b193a84da6784a9e6e28ec4d5"
+    },
+    "helper": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-one-event-actor-r5-20260912/bin/synthetic-vehicle-darwin-arm64",
+      "sha256": "4b7c0170888d9f45fcd145bf3d34eecf7363898036daca6332b67354fc47ea59",
+      "bytes": 13673794,
+      "mode": "0500",
+      "uid": 501,
+      "hard_links": 1,
+      "type": "Mach-O 64-bit executable arm64",
+      "minimum_macos": "13.0",
+      "identity_marker": "teslatlas-synthetic-vehicle-identity-v2"
+    },
+    "producer_source_sha256": "d59c5e38245113bebdfe2635f1f3e42cfa4052f269d45d5fbd0b392a12697df2",
+    "producer_test_sha256": "a60bdba6bb71da8af5e4ede33627affda55efbd813efe2705108211391eca40d",
+    "guard_source": {
+      "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-r5/guard/invoke_one_event.py",
+      "sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+      "future_staged_mode": "0500"
+    },
+    "guard_test_sha256": "ab95b8f1eb2bc8ed922209c3e648fdfd4b28d4646ce6d5a18ed405b0c296a983",
+    "preflight_contract": "All input and output paths are absolute, owner-only, single-link and non-symlink. Guard/result/output/result-temp are pairwise distinct, disjoint from every input and absent before the single clock read. O_CREAT|O_EXCL and atomic result publication remain mandatory; no retry or replay path exists."
+  },
+  "fresh_cohort_reservation": {
+    "cohort_id": "edge-macos-one-event-20260912-r6",
+    "target": "macOS 13.7.4 arm64 guest on Apple-silicon host",
+    "host_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r6",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6",
+    "host_root_absent_at_proposal": true,
+    "guest_root_state": "reserved name only; must be proven absent before future creation",
+    "host_root_future_mode": "0700",
+    "guest_root_future_mode": "0700",
+    "symlinks_allowed": false,
+    "r1_or_r2_runtime_material_reused": false,
+    "closed_cohort_reuse_allowed": false
+  },
+  "placeholder_identities": {
+    "hub_id": {
+      "value": null,
+      "assignment": "Generate once inside the fresh r6 Hub data root after a future preparation authorization."
+    },
+    "source_id": {
+      "value": null,
+      "assignment": "Generate once for the fresh synthetic vehicle source and seal it into the Hub fixture binding."
+    },
+    "vehicle_identity": {
+      "value": null,
+      "assignment": "Generate a new valid 17-character synthetic VIN after PKI preparation is authorized; do not record it in public receipts.",
+      "certificate_binding": "The vehicle leaf Subject.CommonName maps to the sealed identity under pinned Fleet Telemetry identity.go SHA256 20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5. SAN is not required or read for the known issuer."
+    },
+    "transaction_id": {
+      "value": null,
+      "assignment": "Generate once only after the empty baseline passes and the coordinator grants the submit-once decision. A reserved identifier is never authority."
+    },
+    "event_timestamp_ms": {
+      "value": null,
+      "assignment": "Read CLOCK_REALTIME exactly once inside the guard after complete input/output preflight and exclusive authorization validation."
+    }
+  },
+  "reserved_paths": {
+    "host_staging": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r6/staging",
+    "host_evidence": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r6/runtime-evidence",
+    "guest_bin": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/bin",
+    "guest_config": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/config",
+    "guest_state": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/state",
+    "guest_private": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private",
+    "guest_actor": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/actor",
+    "guest_evidence": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/evidence",
+    "staged_edge": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/bin/teslatlas-edge",
+    "staged_receiver": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/bin/teslatlas-fleet-telemetry",
+    "staged_hub": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/bin/teslatlas-hub",
+    "staged_seed": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/bin/interop_fixture",
+    "staged_helper": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/bin/synthetic-vehicle-darwin-arm64",
+    "staged_guard": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/actor/invoke_one_event.py",
+    "actor_contract": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/actor/contract.json",
+    "actor_authorization": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/actor/authorization.json",
+    "actor_binding": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/actor/binding.json",
+    "actor_guard": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/actor/guard.json",
+    "actor_result": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/actor/result.json",
+    "actor_result_temp": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/actor/.result.json.tmp",
+    "actor_output": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/actor/helper-output.log",
+    "vehicle_certificate": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/vehicle-client.crt",
+    "vehicle_private_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/vehicle-client.key",
+    "vehicle_client_ca": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/vehicle-client-ca.crt",
+    "receiver_server_certificate": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/receiver-server.crt",
+    "receiver_server_private_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/receiver-server.key",
+    "receiver_server_ca": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/receiver-server-ca.crt",
+    "edge_spool_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/edge-spool.key",
+    "edge_hub_server_certificate": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/edge-hub-server.crt",
+    "edge_hub_server_private_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/edge-hub-server.key",
+    "edge_hub_server_ca": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/edge-hub-server-ca.crt",
+    "hub_edge_client_certificate": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/hub-edge-client.crt",
+    "hub_edge_client_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/hub-edge-client.key",
+    "hub_bearer": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/private/hub-bearer",
+    "edge_state_db": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/state/edge.sqlite3",
+    "hub_state_db": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r6/state/hub.sqlite3"
+  },
+  "reserved_ports": {
+    "edge_internal": "127.0.0.1:8082",
+    "edge_hub_facing": "192.168.64.10:21845",
+    "receiver_data": "127.0.0.1:21448",
+    "receiver_status": "127.0.0.1:21449",
+    "hub_api": "127.0.0.1:18530",
+    "observed_closed_at_proposal": [
+      8082,
+      21845,
+      21448,
+      21449,
+      18530
+    ],
+    "future_rule": "Recheck every port and the actual guest-host interface immediately before staging and again before process start; any occupant rejects the cohort without substitution."
+  },
+  "future_source_and_staging_gate": {
+    "shared_build_lock": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+    "lock_absent_at_proposal": true,
+    "required": [
+      "Acquire the shared heavy-build lock before any Edge, receiver or Hub source-to-binary build or candidate staging and write a mode-0600 owner record.",
+      "Build or copy each runtime binary into the fresh r6 staging root from its independently revalidated current source/candidate input; never copy a binary, config or state file from an r1/r2 runtime root.",
+      "Stage the accepted r5 helper bytes and guard source under the reserved guest paths and require the exact accepted hashes and owner-only executable modes.",
+      "Create a public source-candidate manifest containing exact hashes, sizes, modes, source revisions and receipt paths; withhold private values and private-key hashes.",
+      "Release the shared build lock before any guest, PKI expiry clock, process or listener starts and prove it absent."
+    ],
+    "required_fresh_receipts": [
+      "Edge current-source-to-fresh-r6-binary receipt",
+      "Pinned Fleet Telemetry source-to-fresh-r6-receiver receipt",
+      "Hub current-source-to-fresh-r6-binary and interop-fixture receipt",
+      "Accepted r5 actor helper/guard staging receipt"
+    ]
+  },
+  "future_pki_and_profile_gate": {
+    "must_follow_separate_preparation_authorization": true,
+    "must_precede_guest_start": true,
+    "requirements": [
+      "Generate a wholly fresh vehicle client CA/leaf/key and a distinct receiver server CA/leaf/key under the fresh host root, then stage them once into owner-only guest paths.",
+      "Generate fresh Edge-to-Hub mTLS material, Hub bearer and encrypted-spool key; never print raw values or private-key hashes.",
+      "Derive PEM and DER SHA-256 digests from the exact staged public vehicle certificate bytes and bind the receiver server CA public hash.",
+      "Verify Subject.CommonName maps to the sealed vehicle identity under the pinned known-issuer parser; verify issuer, CA:FALSE, critical digitalSignature/keyEncipherment, clientAuth EKU, validity and key correspondence.",
+      "Verify the vehicle leaf with the exact staged vehicle-client CA for sslclient purpose. Verify the receiver server leaf with the actor's exact receiver-server CA for sslserver purpose and require an IP SAN for 127.0.0.1 matching wss://127.0.0.1:21448/telemetry.",
+      "Independently verify every public hash, owner UID, mode, single-link and non-symlink property and publish a redacted certificate/profile receipt before any guest or expiry-sensitive runtime starts."
+    ],
+    "failure_policy": "Any mismatch closes the fresh r6 preparation before guest start. Do not repair the root, substitute a path or carry any generated identity into another cohort."
+  },
+  "future_runtime_topology": {
+    "authorization_required": "A separate coordinator preparation/runtime decision after source/staging and profile review.",
+    "start_order": [
+      "Start the fresh guest and prove the reserved guest root absent before owner-only creation.",
+      "Stage and independently rehash all public runtime inputs; record private path metadata without values.",
+      "Start receiver bound only to 127.0.0.1:21448 and 127.0.0.1:21449.",
+      "Start Edge bound only to 127.0.0.1:8082 and the verified guest-host interface port 21845 with a fresh empty encrypted spool.",
+      "Start Hub bound only to 127.0.0.1:18530 with a fresh data root, fresh Hub/source/vehicle identities and the exact Edge delivery trust/auth inputs.",
+      "Record exact launcher/direct-child PID, PPID, UID, argv, listener ownership, binary hash and start time for receiver, Edge and Hub."
+    ],
+    "actor_state_before_event": "binding.json, contract.json, authorization.json, guard.json, result.json, .result.json.tmp and helper-output.log must all remain absent through the complete empty-baseline gate. The fresh vehicle identity is sealed separately in the profile/runtime binding receipt; event binding.json is created only after the coordinator's submit-once decision and must contain event_authorized=false."
+  },
+  "empty_baseline_gate": {
+    "stable_seconds": 5,
+    "required_before_event_decision": [
+      "Take two independently timestamped snapshots at least five seconds apart while all exact processes and listeners remain owned and healthy.",
+      "Receiver status is HTTP 200 with body ok and zero admitted/rejected/duplicate messages.",
+      "Edge init/doctor/health/readiness pass with spool records, bytes, corrupt, expired, gap, admission, duplicate and rejection metrics all zero.",
+      "Authenticated Hub delivery pull returns HTTP 200 with records=[] and gaps=[]; no insecure TLS or certificate bypass is permitted.",
+      "Hub health/readiness/status/doctor pass with exactly the one sealed synthetic vehicle, zero raw/current observations, pending publications zero, ACK frontier null and latest observation ID zero.",
+      "A supported read-only ledger observer records zero Edge lineages, sequence dispositions, applications and pending publications before submission; inability to open the ledger is not a zero assertion and closes the gate.",
+      "The shared build lock is absent and actor contract/authorization/guard/result/temp/output paths remain absent."
+    ],
+    "receipt": "Publish one owner-only ready descriptor and one redacted Hub review receipt. Both Edge and Hub must independently accept exact hashes, identities, PIDs, listeners and zero-state values before the coordinator can consider a submit-once decision."
+  },
+  "submit_once_event_gate": {
+    "coordinator_decision_required_after_baseline": true,
+    "default": "not_authorized",
+    "authorized_event": "Exactly one synthetic VehicleName-only V datum through the accepted helper and r5 guard; no retry, replay, duplicate or second timestamp.",
+    "receiver_endpoint": "wss://127.0.0.1:21448/telemetry",
+    "payload": {
+      "topic": "V",
+      "transaction_type": "V",
+      "field": "VehicleName",
+      "value": "synthetic-b2",
+      "value_type": "string",
+      "timestamp_source": "single-wrapper-created-at-ms"
+    },
+    "authorization_file_exact_keys": [
+      "schema_version",
+      "event_authorized",
+      "cohort_id",
+      "binding_sha256",
+      "helper_sha256",
+      "transaction_id",
+      "payload_sha256",
+      "endpoint",
+      "certificate_sha256",
+      "key_sha256",
+      "server_ca_sha256",
+      "invocation_count",
+      "retry_or_replay",
+      "timeout_seconds",
+      "expires_at_ms"
+    ],
+    "sealing_order_after_authorization": [
+      "Assign the fresh transaction ID and canonical VehicleName payload inside the already admitted cohort.",
+      "Write binding.json at mode 0600 with event_authorized=false, the exact sealed identity, endpoint, transaction ID and canonical payload; compute its SHA-256 without publishing the identity value.",
+      "Write authorization.json at mode 0600 with event_authorized=true, invocation_count=1, retry_or_replay=false, exact binding/helper/payload/TLS hashes, bounded timeout and short expiry.",
+      "Write contract.json at mode 0600 embedding the byte-exact authorization object and exact path/hash/mode references for binding, helper, TLS inputs and outputs.",
+      "Independently rehash and compare contract, authorization, binding, helper and TLS public inputs; verify all actor outputs including the derived temporary path are absent and disjoint.",
+      "Invoke the exact r5 guard once with the ten reserved absolute path arguments. The guard reads one clock, exclusively creates guard/output, spawns the helper once and atomically publishes exactly one result."
+    ],
+    "attempt_policy": {
+      "invocation_count": 1,
+      "retry_or_replay": false,
+      "repair_after_guard_claim": false,
+      "substitute_helper_or_path": false,
+      "failure_consumes_event": true
+    }
+  },
+  "post_event_observation": {
+    "required_success_evidence": [
+      "Actor result is completed with exit code 0, the one guard record and one final result bind the exact transaction, payload, helper and certificate hashes, and no result temporary file remains.",
+      "Helper output contains the accepted identity marker and one matching binary receiver ACK for the exact topic, transaction ID and message ID; it contains no private key or bearer value.",
+      "Receiver reports exactly one newly admitted message for the sealed vehicle identity and no duplicate or rejection increment.",
+      "Edge records exactly one new admission and one durable encrypted spool sequence for the event, with no corruption, expiry, gap, retry or duplicate.",
+      "Hub's supported read-only ledger observer records one matching lineage/sequence disposition/application and the exact assigned identifiers, while the public projection exposes exactly one VehicleName value for the sealed vehicle.",
+      "The Hub durable commit record must precede the Edge ACK/frontier advancement in the ordered evidence; timestamp-only inference is insufficient when durable sequence identifiers can be compared.",
+      "Edge advances the ACK frontier through the exact event sequence only after Hub commit, removes the acknowledged spool record and reaches pending/spool zero.",
+      "A following authenticated Hub pull returns records=[] and gaps=[]; a second producer invocation is absent and all admission/application counts remain stable for a final five-second observation."
+    ],
+    "ledger_receipt_fields": [
+      "cohort_id",
+      "sealed_identity_hash",
+      "transaction_id",
+      "edge_sequence",
+      "lineage_id",
+      "disposition",
+      "application_count",
+      "pending_publications",
+      "ack_frontier_before",
+      "ack_frontier_after",
+      "latest_observation_id_before",
+      "latest_observation_id_after",
+      "post_ack_records",
+      "post_ack_gaps"
+    ],
+    "acceptance_rule": "Every exact event, durability, frontier, projection and cleanup assertion must pass. A receiver ACK alone, a health response, logs, a synthetic fixture, or a candidate build is not forwarding acceptance."
+  },
+  "failure_and_cleanup_contract": {
+    "failure_policy": [
+      "Before guard claim, any mismatch closes the cohort without an event and without path substitution.",
+      "After guard claim, any timeout, child failure, missing/invalid ACK, ledger mismatch or observation failure consumes the one event attempt; no retry, replay or live repair is allowed.",
+      "Preserve the guard, final result, redacted helper output and mismatch evidence as owner-only immutable failure evidence; never relabel partial evidence as acceptance."
+    ],
+    "cleanup_owner": "Hub owns the bounded shared runtime supervisor and exact fresh r6 inputs. Edge owns only its independent evidence review. Neither owner may touch installed Hub 8443, existing HA 18483, historical cohorts, unrelated processes or keychain entries.",
+    "ordered_cleanup": [
+      "Stop only the exact Hub launcher/direct child and record exit result.",
+      "Stop only the exact receiver PID after no producer child remains and record exit result.",
+      "Stop only the exact Edge PID after final spool/frontier evidence and record exit result.",
+      "Remove one-use authorization, bearer, credential and private-key files after their hashes/bindings are sealed in redacted receipts; retain no reusable secret copy.",
+      "Verify 18530, 21448, 21449, 21845 and 8082 closed, every recorded PID absent, the guest stopped and the shared heavy-build lock absent.",
+      "Retain only the versioned owner-only evidence roots and redacted receipts as closed non-reusable evidence."
+    ],
+    "cleanup_required_on_every_exit": true
+  },
+  "non_reuse_and_forbidden": [
+    "No r1/r2 root, identity, certificate, key, bearer, spool, state database, credential, transaction, port, runtime descriptor, readiness receipt, guard, result or event evidence may be read as an r6 runtime input.",
+    "Immutable source artifacts may match prior digests only through a fresh r6 source/staging receipt; no file may be copied from a closed runtime root.",
+    "No TLS bypass, arbitrary endpoint, remote/non-loopback receiver listener, extra invitation claim, producer retry, second event, Viewer action, x86 work, deployment, publication, production or vehicle action is allowed."
+  ],
+  "current_observation": {
+    "host_root_absent": true,
+    "ports_closed": [
+      8082,
+      21845,
+      21448,
+      21449,
+      18530
+    ],
+    "shared_heavy_build_lock_absent": true,
+    "pki_or_private_inputs_created": false,
+    "guest_or_runtime_started": false,
+    "producer_invoked": false,
+    "event_sent": false
+  },
+  "next_gate": "Edge independently reviews this exact proposal. If accepted, the coordinator decides whether to authorize fresh staging, PKI/profile verification and a zero-event runtime only. A submit-once event remains a later separate decision after both-owner empty-baseline acceptance.",
+  "proof_boundary": "This document is an inactive proposal and path/port reservation only. It is not source build beyond the already accepted actor helper, PKI, guest, receiver, Edge, Hub, baseline, forwarding, durable commit, ACK/frontier, projection, installation, service, release, production, vehicle or user acceptance evidence."
+}

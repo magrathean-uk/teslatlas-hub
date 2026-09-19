@@ -1,0 +1,189 @@
+{
+  "schema": "teslatlas.hub.active-target-handoff/v1",
+  "state": "r2_candidate_process_fixture_closed_viewer_macos_trust_blocked",
+  "prepared_at": "2026-09-09",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "target": {
+    "kind": "existing_local_apple_silicon_mac",
+    "architecture": "arm64",
+    "os_version_observed": "27.0",
+    "active_scope": "Hub-only and Hub-plus-Viewer usable route"
+  },
+  "source": {
+    "hub_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "viewer_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a"
+  },
+  "observed_preflight": {
+    "xcode": "27.0 (27A5252f)",
+    "rust_toolchain": "1.98.0-aarch64-apple-darwin",
+    "node": "v26.8.1",
+    "npm": "11.19.0",
+    "viewer_worktree_dependencies": "present",
+    "existing_app": "Teslatlas Hub 2026.36.1 is installed but no Hub LaunchAgent, service binary, data directory, or listener is present",
+    "build_gate_failure": "scripts/build-macos-app.sh --check-go-toolchain-chain rejects the only discovered Go 1.27.1 because the repository requires go1.27.0 exactly"
+  },
+  "first_authorized_action": {
+    "purpose": "Provision only the exact user-owned Go 1.27.0 Darwin ARM64 toolchain needed to pass the existing fail-closed Mac build prerequisite.",
+    "heavy_build_lock": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+    "source_url": "https://go.dev/dl/go1.27.0.darwin-arm64.tar.gz",
+    "source_sha256": "90493b3bbd5e10f91d12153198bf1994fd756399b4fec93b49b0c6e2acdeeb3e",
+    "destination": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64",
+    "verification": [
+      "verify the downloaded archive SHA-256 before extraction",
+      "verify the extracted executable is arm64 and reports GOVERSION exactly go1.27.0 with GOENV=off, GOWORK=off, and GOTOOLCHAIN=local",
+      "set TESLATLAS_GO only for a repeat of scripts/build-macos-app.sh --check-go-toolchain-chain"
+    ],
+    "result": "completed under the shared lock; archive retained as a verified provenance input and the full existing Go-toolchain chain passed"
+  },
+  "next_authorized_action": {
+    "purpose": "Build only a current-Hub Apple-silicon candidate from a fresh disposable snapshot that binds the one reviewed user-owned Go policy change, so the dirty Hub checkout, existing 2026.36.1 app, and historical dist/target artifacts remain untouched.",
+    "heavy_build_lock": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+    "snapshot_root": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2",
+    "snapshot_method": "git archive of Hub HEAD 7fe8cb202c0eb7e291901a9b719d3fbe65c675bc, then copy only the reviewed scripts/tesla-proxy-lock.json overlay from the Hub worktree; it must not copy any other untracked or dirty workspace content",
+    "source_identity": {
+      "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+      "reviewed_overlay_path": "scripts/tesla-proxy-lock.json",
+      "reviewed_overlay_sha256": "b4b02f44698d4d394d1e3dd1407d25f7223ad475b407eea109b844616c8244d2",
+      "reviewed_overlay_reason": "The r1 archive correctly rejected the user-owned Go path because HEAD does not yet include its exact path/SHA256/GOROOT binding. The overlay adds only that complete binding; the full fail-closed Go provenance regression passed before this r2 handoff."
+    },
+    "command": "TESLATLAS_GO=/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64/bin/go sh scripts/build-macos-app.sh",
+    "expected_outputs": [
+      "snapshot dist/Teslatlas Hub.app",
+      "snapshot dist/TeslatlasHub.pkg",
+      "snapshot arm64 Hub binary and package metadata"
+    ],
+    "owner": "Hub",
+    "cleanup_owner": "Hub retains the disposable candidate root until its candidate identity and next runtime handoff are recorded; no existing app, service, or worktree path is replaced or cleaned."
+  },
+  "candidate_result": {
+    "id": "hub-macos-arm64-20260909-r2",
+    "status": "built_and_verified_local_unsigned_not_installed",
+    "candidate_root": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2",
+    "package": {
+      "path": "dist/TeslatlasHub.pkg",
+      "sha256": "c3b50aecce3958bd2b434a5382e178e01f99638a203b214576631c3b4ef085d4",
+      "bytes": 69314955,
+      "signature": "none; local product output only"
+    },
+    "app": {
+      "path": "dist/Teslatlas Hub.app",
+      "version": "2026.36.2",
+      "architecture": "arm64",
+      "signature": "locally valid ad-hoc signature; no release Team ID or notarization",
+      "embedded_hub_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55"
+    },
+    "verification": [
+      "The complete fail-closed Go provenance regression passed with the reviewed user-owned Go binding before this candidate build.",
+      "The combined installer expands successfully, has arm64-only distribution metadata, and its expanded payload contains no AppleDouble files.",
+      "The candidate app verifies with codesign --verify --deep --strict and embeds arm64 Mach-O Hub, command-proxy, and Fleet Telemetry binaries with a macOS 13.0 deployment minimum."
+    ],
+    "installation_boundary": "The app's EmbeddedInstaller rejects this local output because signed release metadata, package digest metadata, a release Team ID, and notarization are intentionally absent. Do not bypass this gate or install the package manually.",
+    "runtime_boundary": "At the candidate-build checkpoint, no app/package installation, LaunchAgent, Hub listener, configuration/data root, Viewer process, pairing invitation, vehicle, credential, or shared-guest change occurred. The separately recorded candidate-process fixture below is the sole later runtime action."
+  },
+  "candidate_process_fixture": {
+    "status": "stopped_after_viewer_macos_trust_blocked_before_pairing",
+    "purpose": "Exercise the r2 embedded Hub binary only as one fresh owner-controlled synthetic-real-process fixture for the normal local Viewer origin. This is a candidate-process runtime receipt, not package-install, release, collection, or formal profile acceptance.",
+    "profile": {
+      "id": "hub-http-v1@1.0.0",
+      "manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "source": "/Users/bolyki/.codex/artifacts/teslatlas-protocol-d1-20260909-ro/frozen-source/profiles/hub-http-v1/1.0.0",
+      "source_manifest_sha256": "e89ff7ecf4b9e0ddeebc6801ca4bf7a865b8c0561e12bb69e1c5d14f55b7ec24",
+      "source_validation": "The frozen source profile directory is owner-readable and non-writable; all 17 SHA256SUMS members were independently verified before this handoff. It is a fixed external fixture input, distinct from the Hub HEAD-plus-lock-overlay candidate identity."
+    },
+    "fixture_source": {
+      "candidate_fixture_py_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+      "frozen_protocol_native_evidence_sha256": "09fdd31510470577c1e22da0969c6762f933aa06b087b6959a7d520b29159bd0",
+      "scenario_id": "b1-five-drives",
+      "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3"
+    },
+    "seed_build": {
+      "required": "cargo build --locked --release --example interop_fixture",
+      "working_directory": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2",
+      "expected_binary": "target/release/examples/interop_fixture",
+      "must_use_heavy_build_lock": true,
+      "must_complete_before_fixture_staging_or_launch": true,
+      "result": {
+        "status": "passed",
+        "architecture": "arm64",
+        "sha256": "b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce",
+        "runtime_started": false
+      }
+    },
+    "runtime": {
+      "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-r2-20260909",
+      "output_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-r2-20260909/run",
+      "private_config_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-r2-20260909/fixture-config.json",
+      "private_config_sha256": "feae8bf1b937012ccc85c0b3495679c1839a11fa756b581fc3b84bbed6a46af0",
+      "staging_validation": "The candidate fixture loader accepted the owner-only configuration; its output root was absent and TCP 18487/4173 had no listeners. This validation created no runtime file or process.",
+      "port": 18487,
+      "endpoint": "https://127.0.0.1:18487",
+      "viewer_origin": "http://127.0.0.1:4173",
+      "fixture_lifetime_seconds": 1800,
+      "invitation_lifetime_seconds": 900,
+      "candidate_hub_binary_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+      "ready_descriptor_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-r2-20260909/run/ready.json",
+      "ready_descriptor_sha256": "a9979b7111d30ee88292a7a6736ed64ee673a996d6c008d8d4af0837f121f3cc",
+      "ready_descriptor_mode": "0600",
+      "readyz": "HTTPS GET /readyz returned 200 with status ready using the fresh local CA",
+      "certificate_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-r2-20260909/run/server.pem",
+      "certificate_sha256": "a58543d25e7baba3d5a31518b1a6dee6371e8c91e25cb6a3cdaefe093d7eff0c",
+      "certificate_mode": "0600",
+      "invitation_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-r2-20260909/run/cli-invitation.json",
+      "invitation_format": "supported Hub CLI pair --json output; content remains private and is never recorded in this handoff or chat",
+      "invitation_mode": "0600",
+      "config_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-r2-20260909/run/config.toml",
+      "config_mode": "0600",
+      "hub_id": "7980ebf7-04a8-47a5-b4ae-5d17d356b618",
+      "fixture_launcher_pid": 35922,
+      "hub_child_pid": 36006,
+      "process_verification": "The recorded launcher directly owned the staged candidate Hub child, which alone listened on 127.0.0.1:18487. HTTPS /healthz and /readyz both returned 200 through the fresh CA immediately before cleanup; the fixture's fresh CLI invitation was requested with a 900-second expiry and was for this Viewer handoff only.",
+      "stopped_descriptor_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-r2-20260909/run/stopped.json",
+      "stopped_descriptor_sha256": "cf7fd1e745edf8c57653134d1ffae565e87c2c4827b6b2d8b88647d0d10d9657",
+      "stopped_descriptor_mode": "0600",
+      "cleanup": "Hub sent SIGTERM only to recorded fixture launcher PID 35922. Its direct child PID 36006 exited 0; both PIDs are absent and ports 18487 and 4173 are closed. The owner-only evidence root is retained."
+    },
+    "execution_order": [
+      "Recheck that TCP 4173 and 18487 are unused and every named output path is absent.",
+      "Acquire the shared heavy-build lock, build only the r2 interop-fixture seed, record its exact arm64 identity, and release the lock.",
+      "Stage only the fixed Hub fixture script/scenario, frozen Protocol native-evidence helper/profile, and private 0600 fixture configuration into the named fresh control root; reverify every staged SHA-256 before launch.",
+      "Launch the fixture once. It stages the candidate Hub and seed into run-owned inodes, creates fresh TLS/config/data state, uses the supported CLI to create one 900-second invitation, and reports ready only after real HTTPS readiness.",
+      "Send Viewer only the private local invitation path, endpoint, CA path/digest, candidate/profile/scenario identities, and the stop/cleanup boundary. Never copy a secret into a chat, repository, or public receipt.",
+      "After Viewer reports its bounded result or the fixture lifetime expires, Hub verifies only its owned launcher/child and listener, sends SIGTERM to the owned launcher, verifies stopped.json and listener closure, and retains the private evidence root."
+    ],
+    "viewer_handoff": {
+      "consumer": "Viewer browser B1",
+      "status": "returned_blocked_before_pairing_and_cleaned",
+      "allowed_inputs": "Use only endpoint, local CA path and SHA-256, the private local invitation path, and the recorded candidate/profile/scenario identities in this object. Read the invitation locally; do not disclose, copy, or persist its secret in a repository or chat.",
+      "viewer_owned_action": "Start only the Viewer-owned local process on http://127.0.0.1:4173, perform one bounded pairing/smoke route, return a redacted receipt, then stop only that Viewer process. Hub stays responsible for the launcher, Hub child, port 18487, and retained private fixture evidence.",
+      "result": "Viewer started and cleanly stopped its local process; Chrome reached the Viewer but wrong-UUID discovery stopped with Hub discovery unavailable before pairing. Direct supplied-CA checks to Hub health, readiness, and CORS discovery passed. The macOS host was locked, and both CLI/UI trust-settings routes were unavailable; no certificate-bypass flag was used. The invitation was not consumed because pairing was never reached.",
+      "hub_cleanup_trigger": "Viewer result, failed/expired pairing, or fixture lifetime expiration; Hub then sends SIGTERM only to fixture_launcher_pid 35922 and verifies its direct child, stopped.json, and port closure.",
+      "retry_boundary": "A future retry requires a newly unlocked Mac trust setup and a completely fresh candidate fixture with distinct endpoint, CA, invitation, descriptor, root, and cleanup receipt. The closed 18487 inputs may not be reused."
+    },
+    "owner": "Hub",
+    "cleanup_owner": "Hub stops only the recorded direct launcher/Hub child and retains the private fixture evidence; Viewer stops only its own process. Neither may alter the installed 2026.36.1 app, a LaunchAgent, any old fixture, Home Assistant, Edge, a vehicle, credential, or shared guest.",
+    "limits": [
+      "No package/app installation, app replacement, launchd action, production, vehicle, credential, collection, migration, R1, Home Assistant, Edge, or deferred-architecture action.",
+      "No profile promotion or formal installed/platform acceptance claim.",
+      "No reuse of a former endpoint, CA, invitation, port, descriptor, scenario, process, or evidence root."
+    ]
+  },
+  "previous_candidate": {
+    "id": "hub-macos-arm64-20260909-r1",
+    "snapshot_root": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909",
+    "status": "rejected_before_package_or_app_output",
+    "failure": "The clean HEAD snapshot lacked the exact user-owned Go path/SHA256/GOROOT triple and go-proxy-evidence therefore rejected the supplied toolchain before package or app output.",
+    "reuse": "forbidden"
+  },
+  "following_handoff_required": {
+    "before": "any app/package installation, LaunchAgent action, Hub listener, pairing input, Viewer process, or shared guest change",
+    "owner": "Hub",
+    "must_record": "exact candidate identity, selected local data/configuration root, service/app lifecycle, fresh Viewer endpoint/CA/invitation handoff, and cleanup owner"
+  },
+  "viewer_boundary": "Viewer has no action until Hub supplies a fresh active-Mac endpoint, trusted CA path, and normal invitation/pairing input after the Hub route is ready. No previous ARM64 fixture, private descriptor, invitation, or browser state may be reused.",
+  "limits": [
+    "No x86, x86_64, amd64, Intel Mac, Azure, VM, image, or matrix action.",
+    "No package installation, service start, app replacement, Viewer start, pairing, vehicle, credential, production, or Home Assistant action is included in this handoff.",
+    "The existing 2026.36.1 app and all dirty worktrees remain untouched."
+  ]
+}

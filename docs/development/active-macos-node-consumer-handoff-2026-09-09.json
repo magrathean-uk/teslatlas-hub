@@ -1,0 +1,100 @@
+{
+  "schema": "teslatlas.hub.active-target-handoff/v1",
+  "state": "closed_node_passed_cleanup_verified",
+  "prepared_at": "2026-09-09",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "target": {
+    "kind": "existing_local_apple_silicon_mac",
+    "architecture": "arm64",
+    "purpose": "one ordinary packed TypeScript Node consumer with explicit CA trust"
+  },
+  "preflight": {
+    "selected_port": 18489,
+    "port_available": true,
+    "control_root_absent": true,
+    "closed_inputs_forbidden": [
+      "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-r2-20260909",
+      "the closed Viewer endpoint 127.0.0.1:18487 and its CA, invitation, descriptor, scenario, process and evidence root"
+    ]
+  },
+  "candidate": {
+    "id": "hub-macos-arm64-20260909-r2",
+    "source_identity": "Hub HEAD 7fe8cb202c0eb7e291901a9b719d3fbe65c675bc plus the reviewed Go-lock overlay SHA256 b4b02f44698d4d394d1e3dd1407d25f7223ad475b407eea109b844616c8244d2",
+    "hub_binary_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2/target/release/teslatlas-hub",
+    "hub_binary_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+    "seed_binary_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2/target/release/examples/interop_fixture",
+    "seed_binary_sha256": "b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce",
+    "fixture_source_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2/tools/interop/fixture.py",
+    "fixture_source_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+    "frozen_protocol_native_evidence_sha256": "09fdd31510470577c1e22da0969c6762f933aa06b087b6959a7d520b29159bd0"
+  },
+  "profile": {
+    "id": "hub-http-v1@1.0.0",
+    "frozen_source": "/Users/bolyki/.codex/artifacts/teslatlas-protocol-d1-20260909-ro/frozen-source/profiles/hub-http-v1/1.0.0",
+    "manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "source_manifest_sha256": "e89ff7ecf4b9e0ddeebc6801ca4bf7a865b8c0561e12bb69e1c5d14f55b7ec24",
+    "staging_requirement": "Copy only the verified frozen profile into the fresh owner-only control root and verify every listed member before launch. Do not read the moving Protocol worktree."
+  },
+  "runtime": {
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-node-20260909",
+    "output_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-node-20260909/run",
+    "private_fixture_config": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-node-20260909/fixture-config.json",
+    "private_fixture_config_sha256": "eeedf0c2dbec5ea82ad77fea19ac03aa93241281e9b553e0a3d4232600c83de8",
+    "private_fixture_config_mode": "0600",
+    "staging_validation": "The real candidate fixture loader accepted the owner-only configuration; all 17 frozen-profile members, fixture/scenario/native-evidence hashes, absent output root and free port were verified. No process, output, CA, invitation or listener exists yet.",
+    "endpoint": "https://127.0.0.1:18489",
+    "port": 18489,
+    "allowed_origins": [],
+    "fixture_lifetime_seconds": 1800,
+    "invitation_lifetime_seconds": 900,
+    "state": "stopped_after_node_consumer",
+    "ready_descriptor_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-node-20260909/run/ready.json",
+    "ready_descriptor_sha256": "10b3dd79b433ca4850f79f30751dab88526b11167e08a7c4fc725cf92fe5d46d",
+    "ready_descriptor_mode": "0600",
+    "certificate_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-node-20260909/run/server.pem",
+    "certificate_sha256": "71b2eb76d4d632cfee63d554fed4ea0893cc46d440c95e4982fbbd91bf87a5d5",
+    "certificate_mode": "0600",
+    "invitation_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-node-20260909/run/cli-invitation.json",
+    "invitation_format": "supported Hub CLI pair --json output; its private content is not recorded in this handoff or chat",
+    "invitation_mode": "0600",
+    "hub_id": "a95c379d-3b10-4af0-920a-1907981083c8",
+    "fixture_launcher_pid": 65782,
+    "hub_child_pid": 65785,
+    "process_verification": "The direct Hub child listened only on 127.0.0.1:18489 under the recorded fixture launcher. HTTPS /healthz and /readyz both returned 200 using the fresh local CA immediately before cleanup.",
+    "stopped_descriptor_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-node-20260909/run/stopped.json",
+    "stopped_descriptor_sha256": "2dfa6ad997aa03c6158b363b951489f39c8ddf5bec68c11c23fe74e6fb2d1665",
+    "stopped_descriptor_mode": "0600",
+    "cleanup": "Hub sent SIGTERM only to fixture launcher PID 65782. Direct Hub child PID 65785 exited 0; both PIDs are absent and TCP 18489 is closed. The owner-only evidence root is retained."
+  },
+  "consumer_handoff": {
+    "consumer": "TypeScript packed Node",
+    "consumer_owner": "TypeScript SDK",
+    "status": "passed_and_cleaned",
+    "required_environment": [
+      "TESLATLAS_HUB_HTTP_CONFIG=<fresh owner-only ready descriptor>",
+      "NODE_EXTRA_CA_CERTS=<fresh owner-only Hub CA>",
+      "TESLATLAS_HUB_SDK_PACKAGE_ROOT, TESLATLAS_HUB_SDK_TARBALL and TESLATLAS_HUB_SDK_TARBALL_SHA256 bound by the SDK owner",
+      "fresh owner-only credential and redacted receipt paths owned by the SDK run"
+    ],
+    "limits": [
+      "Use strict normal Node TLS with the supplied CA; do not disable certificate verification.",
+      "Read the fresh invitation locally from the descriptor; never copy its content into chat, repository or redacted receipt.",
+      "Run one bounded public packed-Node route, then stop only the Node-owned process and return a redacted receipt.",
+      "This is ordinary consumer evidence, not an installed-matrix row, app/package installation, release, collection, migration, profile or platform acceptance."
+    ],
+    "result": "The SDK owner's redacted Node v26.7.0 receipt binds Hub ID a95c379d-3b10-4af0-920a-1907981083c8, API 1.0, four capabilities, two vehicles, five drives across three pages with limit two, conditional 304 and cursor continuation, successful one-time claim and credential rotation, default Fetch, and the verified 81-member @teslatlas/sdk 2026.36.2 package. No invitation or credential content was disclosed."
+  },
+  "execution_order": [
+    "Stage only the named candidate fixture/scenario, frozen Protocol profile/native helper and a 0600 fixture configuration into the absent 0700 control root; reverify every staged input and config before launch.",
+    "Launch the fixture once, verify real HTTPS /healthz and /readyz using its new CA, and record the exact direct launcher/Hub-child ownership before sending the Node handoff.",
+    "After the SDK owner's bounded result or expiry, Hub verifies its owned launcher/child/listener, sends SIGTERM only to the recorded launcher, verifies a 0600 stopped descriptor and port closure, and retains private evidence.",
+    "Only after Node cleanup may Hub create a distinct Debian ARM64 Swift fixture; it must not reuse this root, CA, descriptor, invitation, port or process."
+  ],
+  "cleanup_owner": "Hub owns the fixture launcher, Hub child, endpoint 18489 and private runtime evidence. TypeScript owns only its own Node process/credential/receipt paths.",
+  "limits": [
+    "No existing app replacement, package installation, LaunchAgent action, Viewer/browser, Swift, Edge, Home Assistant, vehicle, credential reuse, shared guest, x86/amd64/Intel/Azure or full-matrix action.",
+    "No launch occurs until staging and the recorded preflight validate."
+  ]
+}

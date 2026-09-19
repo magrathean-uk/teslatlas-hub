@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_inactive_actor_guard_profile_runtime_event_proposal_r9",
+  "date": "2026-09-12",
+  "state": "source_only_fixture_first_fresh_reservation_pending_edge_review",
+  "inherits_behavioral_contract": {
+    "path": "hub/docs/development/edge-macos-one-event-inactive-runtime-proposal-2026-09-12-r7.json",
+    "sha256": "409bdfe7dd60b31622a9fea36ac80c1e5eff0929c5bccb0cba10fdfd3311fd7c",
+    "edge_review": "PASS",
+    "rule": "All accepted actor, canonical-root-route, certificate, inactive-binding, read-only-ledger, zero-baseline, submit-once, every-sequence classification, projection, failure and cleanup requirements remain unchanged except the fresh r9 replacements and fixture-first correction stated here."
+  },
+  "r8_closure": {
+    "path": "hub/docs/development/edge-macos-one-event-preparation-closure-2026-09-12-r8.json",
+    "sha256": "7fb85e51c40fbaa34efdc024e041a5b06319a35e9b89e5b6ff803e95a349190b",
+    "reason": "r8 proposed a Hub installation ID before the supported fixture created the authoritative store ID.",
+    "r8_root_or_output_reuse_allowed": false,
+    "runtime_or_event_occurred": false
+  },
+  "exact_fresh_replacements": {
+    "cohort_id": "edge-macos-one-event-20260912-r9",
+    "host_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r9",
+    "host_root_absent_at_proposal": true,
+    "guest_root_must_be_proven_absent_before_later_copy": true,
+    "edge_internal": "127.0.0.1:8085",
+    "edge_hub_facing_address": "192.168.64.10",
+    "edge_hub_facing_port": 21848,
+    "receiver_data": "127.0.0.1:21454",
+    "receiver_status": "127.0.0.1:21455",
+    "hub_api": "127.0.0.1:18533",
+    "receiver_endpoint": "wss://127.0.0.1:21454/",
+    "transaction_id": "edge-mac-r9-20260912-v-001",
+    "host_staged_binding": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9/guest-stage/actor/binding.json",
+    "guest_binding": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r9/actor/binding.json",
+    "host_fixture_database": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9/guest-stage/hub/hub.sqlite",
+    "guest_fixture_database": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r9/hub/hub.sqlite",
+    "host_staged_ledger_observer": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r9/guest-stage/bin/edge_ledger_observer.py",
+    "guest_ledger_observer": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r9/bin/edge_ledger_observer.py",
+    "cleanup_ports": [8085, 21848, 21454, 21455, 18533]
+  },
+  "fixture_first_sealing": {
+    "source": "The supported interop_fixture --scenario empty-edge-binding path creates the fresh host fixture and returns its authoritative hub_id.",
+    "order": [
+      "Generate the six caller-supplied fresh identity values in memory.",
+      "Create the fresh Hub fixture before any binding, PKI, credential, guest, listener or runtime action.",
+      "Capture the returned hub_id owner-only.",
+      "Seal the exact returned hub_id plus Edge installation, lineage, source, vehicle, VIN and car identities into binding.json.",
+      "Open the actual fixture hub.sqlite read-only/query-only and validate all seven relationships against both the fixture result and binding.",
+      "Modify only an in-memory Hub ID and require fail-closed rejection before proceeding.",
+      "Only then stage accepted artifacts and create inactive profile inputs."
+    ],
+    "public_evidence": "Only hashes of all seven identity values are published. The fixture result, binding and raw validation result remain owner-only.",
+    "validator_path": "hub/tools/interop/edge_fixture_binding.py",
+    "validator_sha256": "42bfa6a477c02b9ba00ea70640a055c191be16c581ce92b52ec7d34ad3d37c88",
+    "validator_test_path": "hub/tools/interop/test_edge_fixture_binding.py",
+    "validator_test_sha256": "e75fb11dac3fe2721aa13a0ad15093533aa1fc675a9326fb4555820c19bdf0fc",
+    "focused_test_result": "PASS 4/4 including the existing ledger observer tests"
+  },
+  "source_profile_preparation": {
+    "path": "hub/docs/development/edge-macos-one-event-certificate-profile-preparation-2026-09-12-r9.json",
+    "sha256": "a410aa6df2cd3fea36122cf42fa1ede895f81a80ccb4464ac596e13130489198",
+    "preparer_path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r9.py",
+    "preparer_sha256": "1496e044fa3a463f590b544765fb17d0597e7a53df3b8ad09eef069ec76ef2b3",
+    "preparer_mode": "0500",
+    "preparer_argv": [
+      "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r9.py",
+      "the SHA-256 of this exact accepted proposal"
+    ],
+    "preflight": {
+      "syntax": "PASS",
+      "hub_build_input_manifest": "PASS 195/195",
+      "edge_build_input_manifest": "PASS 15/15",
+      "reviewed_inputs": "PASS 14/14 including the accepted Hub manifest and Edge receipt anchors",
+      "host_root_absent": true,
+      "public_profile_absent": true,
+      "shared_heavy_build_lock_absent": true,
+      "ports_closed": [8085, 21848, 21454, 21455, 18533],
+      "guest_started": false
+    }
+  },
+  "accepted_immutable_inputs": {
+    "rebuild_performed_or_planned": false,
+    "rule": "The accepted Hub manifest file and Edge source receipt are hash-pinned, then every listed source input and binary hash is revalidated immediately before r9 root creation. The accepted receiver, helper, actor guard and ledger observer bytes are also revalidated. No unchanged binary is rebuilt and no unrelated suite is rerun.",
+    "hub_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "interop_fixture_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+    "edge_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "helper_sha256": "4b7c0170888d9f45fcd145bf3d34eecf7363898036daca6332b67354fc47ea59",
+    "guard_sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f",
+    "ledger_observer_sha256": "098c543a0fafc1d2c3c6c16f554f321c7c0535ffefff24778df33f548cbd35a2",
+    "receiver_route_review_sha256": "341054d5e1750fac7189f1ade51242f5219495b95a50e8c7743905871465425b",
+    "ledger_observer_review_sha256": "d7973ad946203f50f080b5818a8fa3d82389ec5fdd06aad16e1da8c3bff4de31"
+  },
+  "inactive_binding_and_event": {
+    "binding_stage": "The fixture-returned Hub ID and six caller-supplied values are sealed into one fresh owner-only binding with event_authorized=false, transaction edge-mac-r9-20260912-v-001, transaction type V, canonical root endpoint, VehicleName payload and helper hash. TLS hashes remain separately bound by the later one-shot authorization contract.",
+    "guest_copy_rule": "After independent profile acceptance, copy the exact guest-stage tree once to a freshly proven-absent guest root and rehash before zero-event review.",
+    "authorization_contract_guard_and_outputs": "authorization.json, contract.json, guard.json, result.json, .result.json.tmp and helper-output.log remain absent through the zero-event baseline.",
+    "projection_rule": "A future separately authorized single submission must produce exactly one intended VehicleName projection while every actual lifecycle and telemetry application/sequence is observed and classified. Total sequence count is not predicted.",
+    "event_authorized": false
+  },
+  "authority": {
+    "source_profile_preparation": "After Edge independently accepts this exact r9 proposal, validator and preparer, coordinator standing authority permits one fresh fixture-first preparation without another confirmation.",
+    "zero_event_runtime": "After Hub and Edge independently accept the machine-written r9 public certificate/profile receipt, exact inactive binding hash and fixture-store validation receipt, coordinator standing authority permits one zero-event baseline without another confirmation.",
+    "producer_event": "Not authorized. A later explicit coordinator decision remains mandatory after both-owner baseline acceptance.",
+    "current_actions_performed": "Source, focused tests and non-mutating preflight only; no r9 root, fixture, PKI, credential, guest, listener, runtime, producer or event exists."
+  },
+  "failure_and_cleanup": "Any mismatch after r9 root creation closes r9 without repair or reuse. Stop only exact owned processes if any, close the five reserved ports, remove one-use secrets at final cleanup, and preserve redacted evidence. Installed Hub 8443, Home Assistant 18483, historical roots, unrelated processes and keychain entries remain untouched.",
+  "proof_boundary": "This is a source-only r9 reservation and fixture-first preparer review package. It is not fixture execution, build, staging, certificate, credential, guest, listener, zero baseline, forwarding, event, service, release, production, vehicle or user acceptance."
+}

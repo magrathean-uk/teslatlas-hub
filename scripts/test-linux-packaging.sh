@@ -441,8 +441,8 @@ PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" \
 printf '%s\n' unconfigured-active-binary > "$installed_binary"
 printf '%s\n' unconfigured-active-unit > "$installed_unit"
 PATH="$maintainer_bin:$PATH" SYSTEMCTL_LOG="$systemctl_log" HUB_STATUS_LOG="$hub_status_log" \
-    SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=1 HUB_PREFLIGHT_READY=0 \
-    HUB_UNCONFIGURED=1 HUB_DOCTOR_READY=1 \
+    SYSTEMCTL_ACTIVE=1 SYSTEMCTL_ENABLED=1 HUB_PREFLIGHT_READY=1 \
+    HUB_UNCONFIGURED=1 HUB_DOCTOR_READY=0 \
     sh "$test_root/postinst" configure 1.0.0
 require_log 'start teslatlas-hub.service'
 grep -Fqx unconfigured-active-binary "$installed_binary" \

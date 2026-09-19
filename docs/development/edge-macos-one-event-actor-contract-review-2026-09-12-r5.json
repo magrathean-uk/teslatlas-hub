@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_actor_contract_review_r5",
+  "date": "2026-09-12",
+  "state": "accepted_source_only_no_staging_build_runtime_or_event_authorization",
+  "edge_proposal": {
+    "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r5.json",
+    "sha256": "d205d56076798696715d501252f5f67f83fc6e6e07143ed2683ecc4f495ff49f"
+  },
+  "edge_receipt": {
+    "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-guard-correction-receipt-2026-09-12-r5.json",
+    "sha256": "26d93e0085e52dfca25517a7b8c613c846a3f64dc98e1beff0f7dae35a9bad2b"
+  },
+  "accepted_sources": {
+    "producer": {
+      "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/producer/main.go",
+      "sha256": "d59c5e38245113bebdfe2635f1f3e42cfa4052f269d45d5fbd0b392a12697df2",
+      "status": "unchanged fresh source candidate; not historical binary proof"
+    },
+    "producer_test": {
+      "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-r4/producer/main_test.go",
+      "sha256": "a60bdba6bb71da8af5e4ede33627affda55efbd813efe2705108211391eca40d"
+    },
+    "guard": {
+      "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-r5/guard/invoke_one_event.py",
+      "sha256": "889d79fff2ec6154993a72a65c2161240df999666cd97bee9c34e1b9ecb51d1f"
+    },
+    "guard_test": {
+      "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-r5/guard/test_invoke_one_event.py",
+      "sha256": "ab95b8f1eb2bc8ed922209c3e648fdfd4b28d4646ce6d5a18ed405b0c296a983"
+    }
+  },
+  "accepted_contract": {
+    "pre_clock_order": "Validate contract/input hashes and modes, derive result temporary path, reject output aliases and occupants, then read the clock once and claim the exclusive guard.",
+    "absent_paths": ["guard", "result", "output", "derived result temporary"],
+    "alias_boundary": "All four output paths are pairwise distinct and disjoint from contract, authorization, binding, helper, client certificate, client key and server CA paths.",
+    "exclusive_creation": "Guard, output and result temporary use O_CREAT|O_EXCL; result is published by same-directory hard link and never overwrites.",
+    "retry_or_replay": false
+  },
+  "independent_checks": {
+    "stable_files": "New r5 files are regular mode-0644 uid-501 single-link files and rehash exactly.",
+    "guard_syntax": "PASS",
+    "guard_focused_tests": "PASS 7/7 with local fake helper and no network",
+    "covered_rejections": [
+      "existing guard before clock/spawn",
+      "existing result sentinel before clock/guard/spawn",
+      "existing output sentinel before clock/guard/spawn",
+      "existing result-temporary sentinel before clock/guard/spawn",
+      "result/guard, result/output and guard/output aliases before clock/guard/spawn",
+      "output/input alias before clock/guard/spawn with input preserved"
+    ],
+    "valid_path": "One local fake-helper invocation and final completed result",
+    "proposal_json": "PASS",
+    "repository_diff_check": "PASS",
+    "runtime_started": false,
+    "network_used": false,
+    "credential_or_pki_action": false,
+    "producer_event_submitted": false
+  },
+  "superseded_review": {
+    "path": "hub/docs/development/edge-macos-one-event-actor-contract-review-2026-09-12-r4.json",
+    "sha256": "932bde29461221aabf99a2e5dc00990c3f882923c380530846329e9086d3cf0a",
+    "status": "retained rejected historical evidence"
+  },
+  "next_gate": "Hub may stage the exact accepted source set into a wholly fresh source/build root under the shared heavy-build lock, build a new darwin-arm64 helper from pinned Fleet Telemetry d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, and produce a source-to-binary receipt. No PKI, guest, runtime or event is authorized.",
+  "proof_boundary": "This accepts only the source-level producer and guard contract. It is not helper-binary, installed, receiver, Edge, Hub, forwarding, durable commit, ACK/frontier, projection, service, release, production, vehicle or user acceptance evidence."
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_r2_pre_runtime_staging",
+  "date": "2026-09-12",
+  "state": "staged_awaiting_edge_independent_certificate_review",
+  "cohort": "edge-hub-empty-baseline-20260912-r2",
+  "target": "macOS 13.7.4 arm64",
+  "reviewed_edge_inputs": {
+    "proposal": {
+      "path": "teslatlas-edge/docs/development/edge-macos-forwarding-contract-proposal-2026-09-12-r2.json",
+      "sha256": "4e9ead6ac56006ed3ef9844e4fc302e52c9779ab1a5d075154c1868957ead5c2"
+    },
+    "inventory": {
+      "path": "teslatlas-edge/docs/development/edge-macos-r2-source-candidate-inventory-2026-09-12.json",
+      "sha256": "c682e7b06cb35881e7f16fb16c2a70b1138ff624aeba37e1c2ae9f51d60e93c9"
+    },
+    "edge_source_receipt": {
+      "path": "teslatlas-edge/docs/development/edge-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+      "sha256": "aead774fcec533eb65f71e48bd0f38d141aa7be63cd9beb195420d304406a309"
+    },
+    "receiver_receipt": {
+      "path": "teslatlas-edge/docs/development/edge-macos-r2-receiver-candidate-receipt-2026-09-12.json",
+      "sha256": "45a7e4b14fae9f6caade094831abd1a760299116b97a5c76b129de61aa71c2f9"
+    }
+  },
+  "hub_source_receipt": {
+    "path": "hub/docs/development/hub-macos-arm64-source-binary-receipt-2026-09-12-r2.json",
+    "sha256": "d7d3d2499370c4c344e3db77e06cd5db14ff954d86e29bd1ef68745a17767103"
+  },
+  "host_staging": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2",
+    "guest_root_reserved": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r2",
+    "source_candidate_manifest": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/source-candidate-manifest.json",
+      "sha256": "a74718fb5f99db1f22004b155e503886cfd2ced0528fa18dbef7e2c3a4ab55d0"
+    },
+    "staging_manifest": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging-manifest.json",
+      "sha256": "807e3d5fe305f4b2a387c29232dc8a7c7be72377787a6abbf8445b0f91d8a93d",
+      "private_key_hashes_withheld": true,
+      "private_key_entry_count": 5
+    }
+  },
+  "candidates": {
+    "edge_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "hub_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "interop_fixture_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+    "fresh_paths": true,
+    "deterministic_bytes_may_match_prior_builds": true
+  },
+  "fresh_identity_set": {
+    "vehicle_client_certificate_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client.crt",
+    "vehicle_client_pem_sha256": "44a7c93772422f29cab0574fb9a224a07228fd94a4f0f2b71f9095f7e49cd58a",
+    "vehicle_client_der_sha256": "27a772da81b8d73f135e8234a005f2b6368a4b92f79bebf327842c0138ba1e3c",
+    "receiver_ca_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client-ca.crt",
+    "receiver_ca_pem_sha256": "0ab9ee01765c8d72d0b180948ebc4823f48d160c0c2d100b951ce97e2932e5f6",
+    "private_key_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-hub-empty-baseline-20260912-r2/staging/vehicle-tls/vehicle-client.key",
+    "private_key_hash": "withheld",
+    "sealed_binding_sha256": "245d96da6a34f671759de0296d24efd33b7244ca6df24a9c5486f78bdb020091",
+    "event_authorized": false
+  },
+  "hub_side_preflight": {
+    "subject_common_name_matches_sealed_binding": "PASS; value withheld",
+    "issuer": "PASS; Tesla Motors Products CA",
+    "basic_constraints": "PASS; CA:FALSE",
+    "key_usage": "PASS; Digital Signature and Key Encipherment",
+    "extended_key_usage": "PASS; TLS Web Client Authentication",
+    "key_correspondence": "PASS; public derivations matched without recording private bytes or hash",
+    "receiver_ca_trust": "PASS; openssl verify -purpose sslclient",
+    "edge_independent_verification": "required before runtime"
+  },
+  "fresh_ports": {
+    "edge_internal": 8081,
+    "edge_hub": 21844,
+    "receiver_data": 21446,
+    "receiver_status": 21447,
+    "hub": 18526
+  },
+  "prepared_helpers": {
+    "input_generator_sha256": "4b2bc17289364d7720e309fc3cc0405f44da90748b432144a0bc004707e36a6a",
+    "guest_preparer_sha256": "96a01d35b6573c117bfcd593403ede282521aa2989ec3c933a3560ac9e9a06a9",
+    "empty_baseline_supervisor_sha256": "4e11509b55613716c166eff24b2573c97c704323ebb35e220e4492b282be08b7",
+    "syntax_check": "PASS",
+    "execution": "not run"
+  },
+  "runtime_boundary": {
+    "guest_state": "stopped",
+    "guest_root_created": false,
+    "listeners_started": false,
+    "credential_created_or_expired": false,
+    "edge_receiver_or_hub_started": false,
+    "producer_invoked": false,
+    "event_sent": false,
+    "shared_heavy_build_lock": "absent"
+  },
+  "next_gate": "Edge independently verifies the exact staged public certificate, sealed CommonName binding, profile, key correspondence and receiver CA and returns a hash-bound receipt. Only after that review may Hub start the guest, transfer the fresh staged cohort, enrol an expiring credential and run the empty baseline. Producer submission remains separately forbidden."
+}

@@ -5,13 +5,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-import importlib.util
 from pathlib import Path
-import stat
 import sys
 import threading
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
+
+from .adapter_wire import (WireError, deep_freeze, execute_reviewed_module,
+                           read_bound_file, read_safe_file, strict_json)
 
 
 class SwiftEntrypointError(RuntimeError):
@@ -47,19 +48,36 @@ class SwiftLauncherCapability:
     registry.  Session, adapter, or worker JSON cannot add or replace them.
     """
 
-    __slots__ = ("_workers", "_observations")
+    __slots__ = ("_workers", "_observations", "_session_id", "_deadline", "_issued", "_launched")
 
     def __init__(
         self,
         workers: Mapping[str, Callable[[Mapping[str, str], Callable[[Mapping[str, Any]], Mapping[str, Any]]], Mapping[str, Any]]],
-        observations: Mapping[int, Mapping[str, Any]],
+        observations: Callable[[], Mapping[int, Mapping[str, Any]]],
+        *, session_id: str | None = None, deadline=None,
     ):
-        if set(workers) - {"swift_macos", "swift_linux"} or not all(callable(item) for item in workers.values()):
+        if set(workers) != {"swift_macos", "swift_linux"} or not all(callable(item) for item in workers.values()):
             raise SwiftEntrypointError("Swift worker registry is invalid")
-        if any(type(key) is not int or key <= 0 or not isinstance(value, dict) for key, value in observations.items()):
+        if not callable(observations) or not isinstance(session_id, str) or not session_id or not callable(getattr(deadline, "remaining", None)):
             raise SwiftEntrypointError("controller observation registry is invalid")
         self._workers = MappingProxyType(dict(workers))
-        self._observations = MappingProxyType({key: MappingProxyType(dict(value)) for key, value in observations.items()})
+        self._observations = observations
+        self._session_id = session_id
+        self._deadline = deadline
+        self._issued = {}
+        self._launched = set()
+
+    def remaining_cell_ms(self, actor_id):
+        if actor_id not in self._workers or actor_id in self._launched:
+            raise SwiftEntrypointError("Swift worker deadline actor is invalid")
+        try:
+            remaining = int(self._deadline.remaining() * 1000)
+        except TimeoutError as error:
+            raise SwiftEntrypointError("Swift cell deadline expired") from error
+        if remaining <= 0:
+            raise SwiftEntrypointError("Swift cell deadline expired")
+        self._issued[actor_id] = remaining
+        return remaining
 
     def run_worker(self, actor_id, worker_config_binding, phase_callback):
         worker = self._workers.get(actor_id)
@@ -69,35 +87,49 @@ class SwiftLauncherCapability:
             raise SwiftEntrypointError("Swift worker config binding is invalid")
         if not callable(phase_callback):
             raise SwiftEntrypointError("Swift phase callback is invalid")
+        try:
+            config = strict_json(read_bound_file(worker_config_binding, label="Swift worker config",
+                                maximum=1_048_576, deadline=self._deadline))
+            self._deadline.remaining()
+        except (WireError, TimeoutError) as error:
+            raise SwiftEntrypointError("Swift worker config cannot be admitted") from error
+        if (not isinstance(config, dict) or config.get("session_id") != self._session_id
+                or config.get("actor_id") != actor_id or actor_id in self._launched
+                or type(config.get("remaining_cell_ms")) is not int
+                or config["remaining_cell_ms"] != self._issued.get(actor_id)):
+            raise SwiftEntrypointError("Swift worker config lacks the issued remaining cell budget")
+        self._launched.add(actor_id)
         return worker(worker_config_binding, phase_callback)
 
     def controller_observations(self, session_id):
-        if not isinstance(session_id, str) or not session_id:
+        if session_id != self._session_id:
             raise SwiftEntrypointError("Swift observation session is invalid")
-        return self._observations
+        try:
+            self._deadline.remaining()
+            observations = self._observations()
+            self._deadline.remaining()
+        except Exception as error:
+            raise SwiftEntrypointError("Swift controller observations unavailable") from error
+        if (not isinstance(observations, Mapping) or not observations
+                or any(type(key) is not int or key <= 0 or not isinstance(value, Mapping)
+                       or value.get("session_id") != self._session_id
+                       for key, value in observations.items())):
+            raise SwiftEntrypointError("Swift controller observations have a foreign identity")
+        return deep_freeze(observations)
 
 
 def _read_reviewed(path_value: str, digest: str, label: str) -> tuple[Path, bytes]:
     path = Path(path_value)
     try:
-        metadata = path.lstat()
-        raw = path.read_bytes()
-    except OSError as error:
+        raw = read_bound_file({"path": path_value, "sha256": digest},
+                              label="reviewed Swift " + label, maximum=1_048_576)
+    except (OSError, WireError) as error:
         raise SwiftEntrypointError(f"reviewed Swift {label} cannot be read") from error
-    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or stat.S_IMODE(metadata.st_mode) & 0o077:
-        raise SwiftEntrypointError(f"reviewed Swift {label} is not an owner-only regular file")
-    if hashlib.sha256(raw).hexdigest() != digest:
-        raise SwiftEntrypointError(f"reviewed Swift {label} digest changed")
     return path, raw
 
 
-def _module(name: str, path: Path):
-    specification = importlib.util.spec_from_file_location(name, path)
-    if specification is None or specification.loader is None:
-        raise SwiftEntrypointError("reviewed Swift module cannot be loaded")
-    module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(module)
-    return module
+def _module(name: str, path: Path, raw: bytes):
+    return execute_reviewed_module(name, path, raw)
 
 
 def _load_and_run(reviewed: ReviewedSwiftAdapter, session: Path,
@@ -114,17 +146,19 @@ def _load_and_run(reviewed: ReviewedSwiftAdapter, session: Path,
     prior = {}
     with _IMPORT_LOCK:
         try:
-            for item, path, _raw in dependencies:
+            prior["_teslatlas_reviewed_swift_matrix"] = sys.modules.get("_teslatlas_reviewed_swift_matrix")
+            for item, path, raw in dependencies:
                 prior[item.name] = sys.modules.get(item.name)
-                sys.modules[item.name] = _module(item.name, path)
-            adapter = _module("_teslatlas_reviewed_swift_matrix", adapter_path)
+                sys.modules[item.name] = _module(item.name, path, raw)
+            adapter = _module("_teslatlas_reviewed_swift_matrix", adapter_path, adapter_raw)
+            sys.modules[adapter.__name__] = adapter
             if not callable(getattr(adapter, "run_installed", None)):
                 raise SwiftEntrypointError("reviewed Swift adapter interface is incomplete")
             result = adapter.run_installed(str(session), launcher)
-            if hashlib.sha256(adapter_path.read_bytes()).digest() != hashlib.sha256(adapter_raw).digest():
+            if _read_reviewed(str(adapter_path), reviewed.sha256, "adapter")[1] != adapter_raw:
                 raise SwiftEntrypointError("reviewed Swift adapter changed during execution")
             for item, path, raw in dependencies:
-                if hashlib.sha256(path.read_bytes()).digest() != hashlib.sha256(raw).digest():
+                if _read_reviewed(str(path), item.sha256, item.name)[1] != raw:
                     raise SwiftEntrypointError(f"reviewed Swift {item.name} changed during execution")
             return result
         except SwiftEntrypointError:
@@ -132,13 +166,11 @@ def _load_and_run(reviewed: ReviewedSwiftAdapter, session: Path,
         except Exception as error:
             raise SwiftEntrypointError("reviewed Swift adapter import or execution failed") from error
         finally:
-            sys.modules.pop("_teslatlas_reviewed_swift_matrix", None)
-            for item, _path, _raw in dependencies:
-                old = prior.get(item.name)
+            for name, old in prior.items():
                 if old is None:
-                    sys.modules.pop(item.name, None)
+                    sys.modules.pop(name, None)
                 else:
-                    sys.modules[item.name] = old
+                    sys.modules[name] = old
 
 
 def run(session_input_path: Path | str, launcher: SwiftLauncherCapability,
@@ -148,8 +180,10 @@ def run(session_input_path: Path | str, launcher: SwiftLauncherCapability,
     if not isinstance(launcher, SwiftLauncherCapability):
         raise SwiftEntrypointError("Swift launcher capability is invalid")
     session = Path(session_input_path)
-    if not session.is_absolute() or not session.is_file():
-        raise SwiftEntrypointError("Swift session input is invalid")
+    try:
+        read_safe_file(session, label="Swift session input", maximum=1_048_576)
+    except WireError as error:
+        raise SwiftEntrypointError("Swift session input is invalid") from error
     result = _load_and_run(reviewed, session, launcher)
     if type(result) is not int or result != 0:
         raise SwiftEntrypointError("reviewed Swift adapter failed")

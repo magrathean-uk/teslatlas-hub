@@ -411,6 +411,29 @@ def validate_session_config(value):
     return dict(obj)
 
 
+def validate_edge_session_config(value, *, adapter_id, client_id, cell_id):
+    """Validate the additive private session-v2 envelope used only by Edge.
+
+    This is deliberately separate from :func:`validate_session_config`: the
+    installed-host v1 object remains exact and no other adapter can select the
+    Edge fixture acquisition path.
+    """
+    if adapter_id != "edge_v2" or client_id != "edge_v2" or not isinstance(cell_id, str) or not re.fullmatch(
+        r"edge_v2__(macos_arm64|debian13_amd64|debian13_arm64)", cell_id
+    ):
+        _fail("session.schema_version", "session v2 is Edge-only")
+    obj = _exact(
+        value,
+        ("schema_version", "run_id", "edge_fixture", "scenario"),
+        "edge_session",
+    )
+    _integer_literal(obj["schema_version"], 2, "edge_session.schema_version")
+    _token(obj["run_id"], "edge_session.run_id")
+    validate_file_binding(obj["edge_fixture"], "edge_session.edge_fixture")
+    validate_file_binding(obj["scenario"], "edge_session.scenario")
+    return dict(obj)
+
+
 def _read_bounded_regular_json(path, label):
     target = Path(path)
     info = target.lstat()
@@ -421,10 +444,36 @@ def _read_bounded_regular_json(path, label):
     raw = target.read_bytes()
     if len(raw) != info.st_size:
         _fail(label, "changed while reading")
+
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                _fail(label, "duplicate JSON key")
+            value[key] = item
+        return value
+
     try:
-        return raw, json.loads(raw.decode("utf-8"))
+        return raw, json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ContractError("{}: invalid UTF-8 JSON".format(label)) from error
+
+
+def read_edge_session_config(binding, *, adapter_id, client_id, cell_id):
+    """Read and validate one owner-only, hash-bound Edge session-v2 file."""
+    checked = validate_file_binding(binding, "edge_session_binding")
+    target = Path(checked["path"])
+    info = target.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        _fail("edge_session_binding.path", "must be a single-link regular file")
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        _fail("edge_session_binding.path", "must be owner-only")
+    raw, value = _read_bounded_regular_json(target, "edge_session")
+    if hashlib.sha256(raw).hexdigest() != checked["sha256"]:
+        _fail("edge_session_binding.sha256", "digest changed")
+    return validate_edge_session_config(
+        value, adapter_id=adapter_id, client_id=client_id, cell_id=cell_id,
+    )
 
 
 def read_registered_config(value, registration_inventory, required_install_state="installed"):

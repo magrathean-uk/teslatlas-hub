@@ -4,8 +4,9 @@
 
 use std::{
     collections::HashSet,
+    error::Error as _,
     fs,
-    io::Read,
+    io::{ErrorKind, Read},
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -40,6 +41,43 @@ const MAX_BATCH_ITEMS: usize = 1_024;
 const MAX_ACK_RESPONSE_BYTES: usize = 256 * 1024;
 const MAX_PEM_BYTES: usize = 128 * 1024;
 const MAX_BEARER_BYTES: usize = 4 * 1024;
+
+fn transport_diagnostic_code(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        return "timeout";
+    }
+    let mut cause = error.source();
+    while let Some(value) = cause {
+        if let Some(io_error) = value.downcast_ref::<std::io::Error>() {
+            match io_error.kind() {
+                ErrorKind::ConnectionRefused => return "connect_refused",
+                _ => {}
+            }
+        }
+        let text = value.to_string().to_ascii_lowercase();
+        if text.contains("certificate") || text.contains("tls") {
+            return "tls";
+        }
+        cause = value.source();
+    }
+    if error.is_connect() {
+        "connect"
+    } else if error.is_body() {
+        "body"
+    } else if error.is_request() {
+        "request"
+    } else {
+        "other"
+    }
+}
+
+fn transport_failure(error: reqwest::Error) -> EdgeDeliveryError {
+    tracing::warn!(
+        edge_transport_code = transport_diagnostic_code(&error),
+        "Edge delivery transport failed"
+    );
+    EdgeDeliveryError::Transport
+}
 
 #[derive(Debug, Error)]
 pub enum EdgeDeliveryError {
@@ -195,11 +233,15 @@ impl EdgeConsumer {
             .header("accept-encoding", "identity")
             .send()
             .await
-            .map_err(|_| EdgeDeliveryError::Transport)?;
+            .map_err(transport_failure)?;
         if response.status() == StatusCode::UNAUTHORIZED {
             return Err(EdgeDeliveryError::Authentication);
         }
         if response.status() != StatusCode::OK {
+            tracing::warn!(
+                edge_transport_code = "unexpected_status",
+                "Edge delivery transport failed"
+            );
             return Err(EdgeDeliveryError::Transport);
         }
         let body = bounded_body(response, MAX_BATCH_RESPONSE_BYTES).await?;
@@ -290,11 +332,15 @@ impl EdgeConsumer {
             .json(&request)
             .send()
             .await
-            .map_err(|_| EdgeDeliveryError::Transport)?;
+            .map_err(transport_failure)?;
         if response.status() == StatusCode::UNAUTHORIZED {
             return Err(EdgeDeliveryError::Authentication);
         }
         if response.status() != StatusCode::OK {
+            tracing::warn!(
+                edge_transport_code = "unexpected_status",
+                "Edge delivery transport failed"
+            );
             return Err(EdgeDeliveryError::Transport);
         }
         #[cfg(feature = "edge-test-faults")]
@@ -872,5 +918,23 @@ mod tests {
     fn duplicate_ack_keys_fail_before_acknowledgement_is_trusted() {
         let duplicate = br#"{"version":2,"version":2,"acknowledged_record_ids":[],"acknowledged_gap_notice_ids":[],"unknown_record_ids":[],"unknown_gap_notice_ids":[]}"#;
         assert!(parse_unique_json::<AckResponse>(duplicate).is_err());
+    }
+
+    #[tokio::test]
+    async fn transport_diagnostic_code_distinguishes_a_refused_connect_without_url_data() {
+        crate::crypto::install_default_provider();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let error = Client::new()
+            .get(format!("https://127.0.0.1:{port}/private-request-marker"))
+            .send()
+            .await
+            .unwrap_err();
+
+        let code = transport_diagnostic_code(&error);
+
+        assert_eq!(code, "connect_refused");
+        assert!(!code.contains("private-request-marker"));
     }
 }

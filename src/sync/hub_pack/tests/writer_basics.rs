@@ -337,6 +337,30 @@ fn startup_cleanup_removes_only_owned_staging_files() {
 }
 
 #[test]
+fn staging_directory_creation_is_private_under_a_group_writable_umask() {
+    const PROBE: &str = "TESLATLAS_HUB_STAGING_UMASK_PROBE";
+    if env::var_os(PROBE).is_some() {
+        rustix::process::umask(rustix::fs::Mode::from_bits_retain(0o002));
+        let temporary = crate::private_tempdir().expect("pack root");
+        let staging = temporary.path().join(".staging");
+        ensure_private_staging_directory(&staging).expect("private staging under umask 0002");
+        assert_eq!(
+            fs::symlink_metadata(staging).unwrap().permissions().mode() & 0o777,
+            PRIVATE_STAGING_DIRECTORY_MODE,
+        );
+        return;
+    }
+
+    let status = std::process::Command::new(env::current_exe().expect("current test binary"))
+        .arg("sync::hub_pack::tests::staging_directory_creation_is_private_under_a_group_writable_umask")
+        .arg("--exact")
+        .env(PROBE, "1")
+        .status()
+        .expect("run isolated umask probe");
+    assert!(status.success(), "isolated umask probe must pass");
+}
+
+#[test]
 fn startup_cleanup_rejects_an_owned_name_symlink() {
     use std::os::unix::fs::symlink;
 

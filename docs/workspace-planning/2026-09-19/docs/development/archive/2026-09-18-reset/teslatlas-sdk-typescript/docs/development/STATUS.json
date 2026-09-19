@@ -1,0 +1,1561 @@
+{
+  "schema_version": 1,
+  "product": "Teslatlas TypeScript SDK",
+  "repository": "teslatlas-sdk-typescript",
+  "state": "IN_PROGRESS",
+  "native_goal_state": "active",
+  "goal_objective": "Deliver usable packed public Node/browser consumers on Debian 13 ARM64 and Apple-silicon macOS. Keep named-source TeslaMate parity as a separate acceptance gap and defer x86, Intel Mac, Azure and full cross-architecture acceptance.",
+  "native_goal_objective": "Deliver usable packed public Node/browser consumers on Debian 13 ARM64 and Apple-silicon macOS. Keep named-source TeslaMate parity as a separate acceptance gap and defer x86, Intel Mac, Azure and full cross-architecture acceptance.",
+  "native_goal_creation": {
+    "thread_id": "01a082b7-890b-70b3-8a0e-9e964636849f",
+    "objective": "Deliver usable packed public Node/browser consumers on Debian 13 ARM64 and Apple-silicon macOS, and support the real Viewer route through the public SDK. Keep named-source TeslaMate parity as a separate acceptance gap and defer x86, Intel Mac, Azure and full cross-architecture acceptance.",
+    "record_type": "immutable_native_goal_creation_record",
+    "status": "active",
+    "tokens_used": 0,
+    "created_at_unix": 1788961689
+  },
+  "native_goal_effective_override": {
+    "effective_from": "2026-09-12",
+    "objective": "Deliver usable packed public Node/browser consumers on Debian 13 ARM64 and Apple-silicon macOS. Keep named-source TeslaMate parity as a separate acceptance gap and defer x86, Intel Mac, Azure and full cross-architecture acceptance.",
+    "removed_scope": [
+      "Viewer development",
+      "Viewer packaging",
+      "Viewer integration",
+      "Viewer-specific acceptance"
+    ],
+    "control_limitation": "The available native-goal controls expose status only and provide no supported objective-edit or cancellation operation. The original native goal is preserved as an immutable creation record; this effective override governs the current SDK task without creating a duplicate goal.",
+    "historical_evidence_policy": "Existing Viewer source, receipts and handoff records remain retained as historical evidence only and are not current dependencies."
+  },
+  "scope_override": {
+    "source": "../../../docs/development/ACTIVE_SCOPE.md",
+    "effective_from": "2026-09-09",
+    "active_targets": [
+      "debian13-arm64",
+      "macos13-arm64"
+    ],
+    "paused_targets": [
+      "x86",
+      "x86_64",
+      "amd64",
+      "Intel Mac",
+      "Azure",
+      "full cross-architecture matrix"
+    ],
+    "excluded_scope": [
+      "Viewer development",
+      "Viewer packaging",
+      "Viewer integration",
+      "Viewer-specific acceptance"
+    ],
+    "excluded_scope_effect": "The generic public browser SDK remains in scope, but no Viewer product work or Viewer-specific handoff is a current dependency. Historical Viewer evidence remains retained and labeled by its original receipt.",
+    "working_product_priority": "ARM64 Hub-only and public Node/browser consumer usability first; Apple-silicon Mac next; minimum package/bootstrap/service work is in scope, while polished distribution follows later.",
+    "native_goal_control_note": "The single preserved native goal remains the source goal. The owner removed Viewer work from this task's effective scope on 2026-09-12; the original creation objective is retained immutably and the effective override records the supported-control limitation without creating a duplicate."
+  },
+  "active_targets": [
+    "debian13-arm64",
+    "macos13-arm64"
+  ],
+  "paused_targets": [
+    "x86/x86_64/amd64",
+    "Intel Mac",
+    "Azure",
+    "full cross-architecture installed matrix"
+  ],
+  "plan": "PLAN.md",
+  "current_stage": "2026-09-18: optional receipt freshness repaired before preflight; pinned Node 26.7.0 seven-case browser-free suite passed; fresh Hub re-review remains pending; no live runtime",
+  "active_progress": "The source package now checks any configured receiptPath and the orchestration capture directory before preflight can mutate the control root, while preserving stale sentinels; ordered cleanup and its attempt ledger remain intact. Pinned Node v26.7.0 syntax, source Biome, preflight regression and all seven browser-free orchestration cases passed. No Chrome, Hub, keychain or live-fixture action occurred.",
+  "first_milestone_after_start": "T3",
+  "current_model": "gpt-5.6-luna",
+  "model_purpose": "owner-authorized development",
+  "last_verified": "2026-09-18",
+  "needed_input": "The one separately authorized r6 Apple-silicon supervised attempt spawned and attached the fresh untrusted Chrome child on 9237, then was consumed before the packed SDK browser runner started because the operator-controlled stderr redirection path was made non-traversable by an incorrect 0600 evidence-directory mode. Exact child, supervisor, port, profile and keychain cleanup passed; no SDK browser route, Hub API request, CA import, trusted browser or acceptance receipt was produced. Hub rejected v1 of the reusable preflight template because it could normalize stale artifacts, truncate existing outputs and follow a root symlink. Hub accepted v2 after the lstat/root-symlink, control.sock, stale-artifact and exclusive-output regressions passed. TypeScript prepared the wholly fresh r7 source/package candidate, Hub published the complete handoff, and TypeScript independently matched the exact root/scripts/archive/endpoint/certificate/credential/expiry/process/cleanup bindings. The sole r7 attempt then consumed at the supervisor IPC boundary before Chrome spawn: the supervisor was observed serving, but the control client received ECONNREFUSED after the supervisor process disappeared while its socket/state remained. Exact TypeScript cleanup passed; no Chrome, helper, SDK browser route, Hub API request, CA import, trusted browser or keychain mutation ran. The failure receipt is docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r7.json and the runtime evidence is retained under /Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7/evidence. Do not retry r7; Hub owns cleanup of its exact credential and Hub processes. Viewer is excluded from this task and is not a dependency. Named-source TeslaMate parity remains a separate acceptance gap; no x86, Intel Mac, Azure or full-matrix SessionInput is required for the active milestone.",
+  "publication_authorized": false,
+  "environment_access": "../../../docs/development/VM_ACCESS.md",
+  "evidence": [
+    {
+      "kind": "native_goal_activation",
+      "verified_at": "2026-09-08T21:13:48.933123+00:00",
+      "status": "superseded_historical",
+      "objective": "Complete the TypeScript SDK plan: provide one verified public Node/browser package for the first Hub and Viewer bootstrap, support actual Hub consumer and recovery paths, then finish package identity, developer installation and required installed Node/browser platform acceptance."
+    },
+    {
+      "kind": "b1_package_checks",
+      "verified_at": "2026-09-08",
+      "runtime": "Node v26.8.1 diagnostic host; required Node 26.7.0",
+      "results": {
+        "build": "pass",
+        "typecheck": "pass",
+        "format": "pass",
+        "lint": "pass",
+        "diff_check": "pass",
+        "node_conformance": "12 passed",
+        "browser_conformance": "13 passed with Playwright Chromium",
+        "hub_consumer_and_example": "9 passed",
+        "focused_hub_client_and_models": "47 passed",
+        "focused_docs_surface": "2 passed"
+      },
+      "limits": "Package, synthetic consumer and conformance evidence only; no real Hub or Viewer runtime acceptance."
+    },
+    {
+      "kind": "t1_environment",
+      "verified_at": "2026-09-08",
+      "result": "The initial host Node v26.8.1 mismatch was resolved without changing the package floor by provisioning the official Node v26.7.0 darwin-arm64 runtime privately under the lab tooling directory. It reports npm 11.19.0; npm ci --ignore-scripts passes.",
+      "browser": "Playwright 1.62.1 Chromium is present; Firefox and WebKit are absent.",
+      "limits": "The runtime is task-scoped tooling, not a product installation or acceptance host."
+    },
+    {
+      "kind": "source_correction",
+      "verified_at": "2026-09-08",
+      "path": "tests/unit/docs-surface.test.ts",
+      "result": "Updated the stale historical-plan assertion from removed executed wording to Superseded; the focused docs-surface test passes."
+    },
+    {
+      "kind": "t2_gate",
+      "verified_at": "2026-09-08",
+      "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "package": "@teslatlas/sdk@2026.36.2",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "profile": {
+        "id": "hub-http-v1",
+        "revision": "1.0.0",
+        "status": "candidate",
+        "bundleSha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "inputSha256": "68dca68355cd1011c31004f7d39eaabfef068706fb89ef0a5823496f26d3727e",
+        "generatedOutputSha256": "3769abc73e927d20cd5842eed3a076b05bf436d1eba3026e324b5d5dfbe7c6b9"
+      },
+      "results": {
+        "npm_ci": "pass",
+        "protocol_check": "pass",
+        "typecheck": "pass",
+        "unit": "271 passed",
+        "node_browser_conformance": "25 passed",
+        "protocol_cases": "52 passed",
+        "package_surface": "81 files verified"
+      },
+      "limits": "SDK package and synthetic consumer evidence only; T3 real Debian ARM64 Hub/Viewer acceptance remains outstanding."
+    },
+    {
+      "kind": "t3_hub_handoff_check",
+      "verified_at": "2026-09-08",
+      "guest": "debian13-arm64",
+      "result": "Historical pre-fixture check: Hub release binary existed after cargo build, but the service and private handoff had not yet been started or supplied.",
+      "limits": "Superseded by the later Hub fixture and redacted native receipt; no private credential or descriptor contents were read."
+    },
+    {
+      "kind": "t3_sdk_artifact_gate",
+      "verified_at": "2026-09-08",
+      "result": "Historical artifact gate: the real Debian ARM64 Hub installer accepted the current SDK archive identity 03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c with 81 members under Node 26.7.0/npm 11.19.0; the first combined bootstrap stopped at Hub's then-unfixed post-install readiness rollback.",
+      "limits": "This proves artifact admission only; it does not prove discovery, claim, vehicles, current, drives, browser trust/CORS, or Viewer acceptance. The rollback observation is superseded by the corrected fixture gates."
+    },
+    {
+      "kind": "t6_package_identity_check",
+      "verified_at": "2026-09-08",
+      "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "package": "@teslatlas/sdk@2026.36.2",
+      "archiveSha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "members": 81,
+      "entrySha256": {
+        "dist/node.js": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+        "dist/browser.js": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e"
+      },
+      "limits": "Current archive and entry identity only; this does not prove real Hub/Viewer execution or installed matrix acceptance."
+    },
+    {
+      "kind": "t3_packed_node_consumer",
+      "verified_at": "2026-09-08",
+      "guest": "debian13-arm64",
+      "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "profile": "hub-http-v1@1.0.0",
+      "profileBundleSha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "hubId": "ef1f600c-713d-456e-9b20-d328ea5b2583",
+      "results": {
+        "discovery": "passed",
+        "health": "passed",
+        "readiness": "passed",
+        "invitationClaim": "passed",
+        "vehicleCount": 2,
+        "current": "passed",
+        "boundedDrivesPage": "passed",
+        "driveCount": 2,
+        "credentialRotation": "passed",
+        "defaultFetch": true
+      },
+      "packedSdk": {
+        "package": "@teslatlas/sdk@2026.36.2",
+        "tarballSha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "entry": "dist/node.js",
+        "entrySha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+        "installedContentManifestSha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+        "installedMemberCount": 81
+      },
+      "limits": "Real packed Node consumer evidence on the disposable Debian ARM64 Hub fixture with Hub-verified direct-child shutdown, owner-only stopped record and port closure; this is not installed-matrix acceptance."
+    },
+    {
+      "kind": "t3_viewer_browser_consumer",
+      "verified_at": "2026-09-08",
+      "guest": "debian13-arm64",
+      "consumer": "Teslatlas Viewer through the packed SDK",
+      "profile": "hub-http-v1@1.0.0",
+      "runtime": "Node v26.7.0 / Playwright 1.62.1 / Chromium 152.0.7977.82",
+      "results": {
+        "browserSmoke": "passed",
+        "durationSeconds": 1.4,
+        "pairingAndIdentity": "passed",
+        "currentStateAndObservedTimestamp": "passed",
+        "orderedFiveDrivePaging": "passed",
+        "emptyVehicleHandling": "passed",
+        "refresh": "passed",
+        "localSessionClear": "passed",
+        "cleanup": "passed"
+      },
+      "limits": "Viewer-owned current-scenario browser evidence with normal TLS/NSS trust and cleanup; it does not prove the SDK-owned test-hub-browser helper, collection/recovery parity, or the six installed-matrix cells."
+    },
+    {
+      "kind": "documentation_reconciliation",
+      "verified_at": "2026-09-09",
+      "result": "Removed a malformed duplicated historical acceptance paragraph, added the redacted real B1 Node/Viewer receipt summary, clarified that disposable ARM64 B1 is distinct from installed-service acceptance, and retained explicit installed-matrix limits.",
+      "tests": "docs-surface: 2 passed (rechecked after table correction)",
+      "limits": "Documentation and focused surface-test evidence only; it does not advance T4/T5 or installed acceptance."
+    },
+    {
+      "kind": "t4_missing_input_fail_closed",
+      "verified_at": "2026-09-09",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "results": {
+        "test-hub-node": "exit 1: TESLATLAS_HUB_HTTP_CONFIG is required",
+        "test-hub-browser": "exit 1: TESLATLAS_HUB_HTTP_CONFIG is required"
+      },
+      "limits": "Missing-input boundary only; no Hub, browser, credential, recovery or installed-matrix behavior was exercised."
+    },
+    {
+      "kind": "t5_local_recovery_consumer",
+      "verified_at": "2026-09-09",
+      "runtime": "Node v26.7.0 / npm 11.19.0 / Playwright Chromium",
+      "result": "The browser consumer recovery test passed against isolated local Hub fixtures: credential scoping across Hub identities, 401 re-pair, outage 503 handling, refresh recovery, and local session reset.",
+      "tests": "1 passed, 6 skipped",
+      "limits": "Synthetic local-fixture recovery evidence only; no remote Hub, passive collection parity, or installed-matrix acceptance."
+    },
+    {
+      "kind": "t4_pagination_helper_ready",
+      "verified_at": "2026-09-09",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "result": "SDK-owned Node and browser Hub helpers now walk variable-length drive history to the terminal cursor, enforce a bounded page loop, accept drive_limit/expected_drive_count handoff inputs, and verify conditional 304 plus cursor continuation after 304. The default remains limit 2 for the existing five-drive B1 fixture; the fresh R1 lane can bind limit 25 and count 51.",
+      "tests": "Focused pagination test: 1 passed; related Hub client/consumer/evidence tests: 53 passed; Node syntax checks passed",
+      "limits": "Helper readiness and local test evidence only; no remote 51-drive, passive parity, recovery, or installed-matrix receipt exists yet."
+    },
+    {
+      "kind": "t6_installed_contract_source_gate",
+      "verified_at": "2026-09-09",
+      "runtime": "Python 3 / Node diagnostic JSON parser",
+      "results": {
+        "pure_contract_tests": "6 passed",
+        "validator_syntax": "passed",
+        "manifest_and_schema_json": "4 parsed",
+        "bound_source_hashes": "6 matched the documented contract tuple"
+      },
+      "limits": "Source-bound adapter and schema evidence only; installed-service runtime remains runner-owned and no target matrix cell is accepted."
+    },
+    {
+      "kind": "t6_developer_package_consumer",
+      "verified_at": "2026-09-09",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "package": "@teslatlas/sdk@2026.36.2",
+      "results": {
+        "clean_stale_pack_equivalence": "passed",
+        "packed_declaration_consumers": "passed",
+        "archiveSha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
+      },
+      "limits": "Independent package/developer-consumer evidence only; no live Hub, browser-trust, recovery, or installed-service matrix acceptance."
+    },
+    {
+      "kind": "t4_external_runtime_boundary_revalidated",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted Edge runtime-interface handoff and live coordinator state",
+      "result": "Hub's sealed Edge fixture and launch inventory are valid inputs, but the actual four-lane start/stop/cleanup boundary is Hub-owned and not yet implemented. No running descriptor, certificate handoff, invitation, runtime evidence, or cleanup receipt exists for SDK consumption.",
+      "next": "Wait for the Hub-owned root runner to produce a fresh owner-only 51-drive R1 descriptor and recovery controls; do not reuse sealed inputs or start a lane from job expectations.",
+      "limits": "External dependency evidence only; no SDK runtime or installed-matrix acceptance."
+    },
+    {
+      "kind": "t4_external_custody_hold",
+      "verified_at": "2026-09-09",
+      "source": "Live Hub/Edge custody revalidation",
+      "result": "The previously published sealed-input admissibility claim was withdrawn after generated synthetic private-key material was found with incorrect custody permissions; Hub/Edge are revalidating the owner-only root and redacted interface. No process, descriptor, credential, or SDK lane was started.",
+      "next": "Wait for a newly validated owner-only fixture and executable root-runner handoff before requesting the fresh 51-drive R1 descriptor.",
+      "limits": "The withdrawn sealed-input document is not a usable SDK input and provides no runtime acceptance evidence."
+    },
+    {
+      "kind": "t4_external_custody_revalidated",
+      "verified_at": "2026-09-09",
+      "source": "Independent Hub/Edge metadata-only custody check",
+      "result": "The sealed fixture digest is unchanged; all ten root/local key-role copies are regular owner-only mode-0600 files with matching digests; the redacted interface is syntactically valid and restored to runtime-pending.",
+      "next": "Wait for the root runner to produce actual four-lane runtime, descriptor/certificate, launch/stop, and cleanup evidence before starting the SDK 51-drive lane.",
+      "limits": "Custody and interface evidence only; no guest process, SDK descriptor, Viewer R1 session, or installed-matrix acceptance exists."
+    },
+    {
+      "kind": "t4_external_runner_boundary_preparation",
+      "verified_at": "2026-09-09",
+      "source": "Live Hub/Edge coordination state",
+      "result": "Edge has begun a test-first owner-runner boundary that binds the sealed fixture identity, fixed primary ports/artifacts, owner-only materialized paths, bounded process lifecycle, and redacted receipts; the active Hub service remains out of scope.",
+      "next": "Consume only the resulting actual runtime descriptor and cleanup receipt, then run SDK Node/browser 25/25/1 pagination and recovery checks.",
+      "limits": "Runner preparation only; no Edge process, SDK descriptor, 51-drive receipt, Viewer R1 session, or installed-matrix acceptance exists."
+    },
+    {
+      "kind": "t4_external_primary_root_available",
+      "verified_at": "2026-09-09",
+      "source": "Live Hub/Edge coordination state",
+      "result": "Edge reports its primary root available. Hub is now checking that the isolated synthetic Hub seed binds the exact source and vehicle identities required by the sealed Edge credentials before writing guest configuration.",
+      "next": "Wait for identity-bound guest configuration, actual four-lane runtime evidence, and cleanup receipt before requesting SDK 51-drive inputs.",
+      "limits": "Root availability and identity-preflight only; no running guest, SDK descriptor, Viewer R1 session, or installed-matrix acceptance exists."
+    },
+    {
+      "kind": "t4_external_guest_preflight",
+      "verified_at": "2026-09-09",
+      "source": "Live Edge coordination state",
+      "result": "The isolated guest is clean on the required lane ports, and Edge has initialized only the fresh state root and verified its configuration boundary. The installed Hub service and Home Assistant fixture remain untouched.",
+      "next": "Wait for Hub's exact source/vehicle identity binding and then consume only the resulting running descriptor and cleanup receipt.",
+      "limits": "Guest preflight only; no process, SDK descriptor, 51-drive receipt, Viewer R1 session, or installed-matrix acceptance exists."
+    },
+    {
+      "kind": "t4_external_identity_bound",
+      "verified_at": "2026-09-09",
+      "source": "Live Hub/Edge coordination state",
+      "result": "The sealed source identity matches the synthetic Hub seed. A separate Hub config in the fresh guest root validates edgeDelivery.configured=true for the bound vehicle/source cohort and contains no Tesla credentials; the installed /etc/teslatlas-hub service remains untouched.",
+      "next": "Consume the isolated Hub/Edge runtime descriptor and cleanup receipt after the process starts, then run the SDK's 51-drive Node/browser and recovery consumers.",
+      "limits": "Identity-bound configuration only; the isolated process and SDK descriptor are not yet verified, and no Viewer R1 or installed-matrix acceptance exists."
+    },
+    {
+      "kind": "t4_external_receiver_edge_listeners",
+      "verified_at": "2026-09-09",
+      "source": "Live Edge guest observation",
+      "result": "The isolated receiver and Edge are listening on ports 18500 and 18510 only; the isolated Hub port 18480 remains free, and the installed Hub/HA listeners are preserved. A guest-bound credential-path preflight correction is still pending.",
+      "next": "Complete the guest-bound preflight, start the isolated Hub on 18480, and consume only the resulting redacted runtime/cleanup receipt.",
+      "limits": "Listener preflight only; no Hub runtime descriptor, SDK 51-drive receipt, Viewer R1 session, or installed-matrix acceptance exists."
+    },
+    {
+      "kind": "t4_external_edge_runtime_b2_1",
+      "verified_at": "2026-09-09",
+      "source": "Redacted Hub/Edge B2.1 runtime handoff",
+      "result": "The isolated Debian ARM64 Edge-to-Hub path completed real vehicle-wire mTLS WebSocket admission with a protobuf V record and receiver ACK; the byte-equivalent duplicate path was exercised and separated from durable ledger application. The Hub-outage to Edge-restart path retained three encrypted queued records, then drained them after a fresh Hub returned: the spool reached zero data records, Hub recorded ack_frontier=14 with complete pending publication, and the fresh fixture closed cleanly with the formal session-reader regression passing 8 tests.",
+      "limits": "Real Edge/Hub recovery evidence only; it does not prove the SDK-owned 51-drive Node/browser helper, Viewer R1 browser trust/CORS, or any installed-matrix cell."
+    },
+    {
+      "kind": "t5_installed_viewer_recovery_fail_closed",
+      "verified_at": "2026-09-09",
+      "source": "Viewer redacted installed ARM64 recovery run",
+      "result": "The fresh installed Viewer recovery spec did not pass: the bounded stop/start/revoke/re-pair lane timed out after 240 seconds, and the fresh invitation path ended in a mode-0600 zero-byte file. A separate installed smoke also failed before the Hub health region became visible. The failed run is retained as diagnostic evidence only; no credential was reused and no installed acceptance was claimed.",
+      "next": "Viewer must repair the supervisor invitation/fixture handoff, issue a new independent invitation, and produce a complete redacted recovery plus cleanup receipt before the SDK can count T5 installed recovery.",
+      "limits": "Negative installed evidence only; it does not invalidate the already evidenced 51-drive browser journey, and it does not prove any installed matrix cell."
+    },
+    {
+      "kind": "t5_installed_viewer_recovery_transitions_partial",
+      "verified_at": "2026-09-09",
+      "source": "Viewer redacted second installed ARM64 recovery run",
+      "result": "With a fresh invitation and isolated recovery controls, the second run exercised Hub outage, restore, device revocation, and fresh re-pair successfully. The run stopped before a clean test exit because the assertion still assumed re-pair navigated to Hub health; the app correctly remained on the selected Current view, and the supervisor lease expired before the corrected assertion could rerun.",
+      "next": "Obtain a fresh Hub-owned recovery supervisor handoff and rerun the corrected assertion plus cleanup; count T5 only after the complete test and redacted receipt pass.",
+      "limits": "Partial transition evidence only; no complete installed recovery acceptance or cleanup receipt."
+    },
+    {
+      "kind": "t4_installed_viewer_r1_51_drive_browser",
+      "verified_at": "2026-09-09",
+      "source": "Viewer redacted fresh R1 installed ARM64 browser run",
+      "result": "The fresh Viewer R1 normal journey passed against Hub scenario viewer-r1-51-drives: two vehicles and drive history were served with limit 25 as 25/25/1 pages using fresh TLS/NSS trust, an independent invitation, and the packaged Viewer/Playwright runner. The first invitation was rejected before current/history and was not reused; the replacement invitation produced the passing journey.",
+      "next": "Run the SDK-owned Node helper against the same class of fresh 51-drive descriptor and finish the corrected installed recovery assertion with a complete cleanup receipt.",
+      "limits": "Installed Viewer browser journey only; it does not prove the SDK Node helper, recovery completion, or the remaining installed matrix cells."
+    },
+    {
+      "kind": "t5_recovery_descriptor_shape_fail_closed",
+      "verified_at": "2026-09-09",
+      "source": "Viewer redacted recovery5 run",
+      "result": "The fresh recovery run failed closed before pairing because the redacted ready descriptor did not contain the public tls_pin field required by the harness, while Hub's full invitation was staged separately at its declared private invitation path. No partial credential was consumed and no product recovery assertion ran.",
+      "next": "Use the declared owner-only invitation path as the authoritative full six-field input, or have Hub add the required public endpoint/TLS fields to the descriptor, then rerun within a fresh valid lease.",
+      "limits": "Handoff-shape evidence only; no installed recovery acceptance."
+    },
+    {
+      "kind": "t5_recovery_tuple_rotation_fail_closed",
+      "verified_at": "2026-09-09",
+      "source": "Viewer redacted recovery6 run",
+      "result": "The recovery run failed closed before pairing because Hub rotated the invitation and identity certificate while Viewer was starting; the browser therefore observed a transport failure with the older CA. No recovery assertion ran and no credential was reused.",
+      "next": "Require Hub to freeze one matching invitation, server CA, descriptor and listener tuple for the entire bounded run; validate the tuple metadata-only before launching the browser.",
+      "limits": "Handoff-timing evidence only; no installed recovery acceptance."
+    },
+    {
+      "kind": "t5_installed_viewer_recovery",
+      "verified_at": "2026-09-09",
+      "source": "Viewer redacted Recovery7 installed ARM64 receipt",
+      "runtime": "Node v26.7.0 / pinned Playwright Chromium / packaged Viewer",
+      "result": "The corrected installed recovery journey passed in 4.1 minutes against the frozen owner-controlled Hub tuple. It verified the current projection, Hub stop/start outage recovery, stale/offline presentation, operator revoke with 401 session clearing, and fresh-invitation re-pair. The Viewer process was terminated cleanly, the owned Hub supervisor wrote its stopped record, the 18480 and 4173 listeners were closed, and unrelated installed listeners were preserved.",
+      "next": "Run the SDK-owned Node helper against a fresh 51-drive descriptor, then complete the remaining installed matrix cells with independent SessionInputs.",
+      "limits": "Installed Viewer recovery acceptance only; the SDK Node helper and remaining installed matrix cells are still open."
+    },
+    {
+      "kind": "t4_packed_node_51_drive",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted isolated Debian ARM64 Node fixture receipt",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "package": "@teslatlas/sdk@2026.36.2",
+      "result": "The packed SDK Node consumer passed against the fresh Hub scenario with 2 vehicles and 51 drives across 25/25/1 pages. Discovery, health/readiness, invitation claim, current, conditional 304, cursor continuation after 304, credential rotation and default fetch all passed. The installed package had 81 members and matched archive SHA-256 03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c. Hub then stopped only the fixture launcher/child, wrote a mode-0600 stopped receipt with child exit 0, and verified port 18481 closed while installed 8443 and HA 18483 remained listening.",
+      "next": "Run the remaining independent installed Node/browser matrix cells with fixed SessionInputs.",
+      "limits": "Real packed Node primary-slice evidence only; it does not prove the six-cell T7 matrix, passive parity closure, or clean-host closure."
+    },
+    {
+      "kind": "t6_full_verify",
+      "verified_at": "2026-09-09",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "result": "The exact npm run verify gate passed after adding the declaration boundary for the new pagination helper: format, lint, typecheck, protocol lock, build, 272 unit tests, 25 Node/browser conformance tests, 52 protocol cases, Node example, 81-member package check, and clean/stale package consumer equivalence. The packed archive remained SHA-256 03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c.",
+      "source_change": "scripts/drive-pagination.d.mts supplies the strict TypeScript declaration for scripts/drive-pagination.mjs; no package member or runtime behavior changed.",
+      "limits": "SDK source/package verification only; installed matrix and passive parity evidence remain external gates."
+    },
+    {
+      "kind": "t7_canonical_sequencing_hold",
+      "verified_at": "2026-09-09",
+      "source": "Hub T7 coordination handoff",
+      "result": "The source-fixed six-cell registry and its focused checks are ready, but Hub's coordinator deferred opening any T7 SessionInput or target while the fresh B2 fixture is corrected for the sealed Edge vehicle and then revalidated through collector admission/actionable R1. The explicitly requested first row, typescript_node__debian13_arm64, was not launched.",
+      "next": "Keep all T7 cells stopped. Resume only after the corrected B2 fixture/collector path and passive-parity receipt are cleared, then authorize one named target with fresh private inputs.",
+      "limits": "Preparation and sequencing evidence only; no T7 runtime, installed matrix, passive parity, or completion claim."
+    },
+    {
+      "kind": "t5_b2_r9_fail_closed",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted r9 diagnostic and cleanup handoff",
+      "result": "The one separately authorized synthetic submission failed closed before Edge admission: the pinned helper returned remote TLS `certificate required`. An independent non-submitting probe with the same fresh certificate, key, and CA succeeded, isolating the defect to helper/client-certificate presentation or invocation. Edge's queue and the fresh Hub ledger remained empty. Hub separately retained only its safe connect-category diagnostic. The disposable Edge 20443/20444, Hub 18490, and temporary HA entry were cleaned, while installed Hub 8443 and HA 18483 remained intact.",
+      "next": "Hub/Edge must produce a reviewed Docker-published TLS/client-certificate diagnostic or correction and then supply a separate fresh authorization and fixture before any retry; no r5/r9 private inputs may be reused.",
+      "limits": "B2 failure and cleanup evidence only; it does not prove passive parity, an SDK Node/browser consumer, or any installed-matrix cell."
+    },
+    {
+      "kind": "b2_r13_name_only_edge_hub_ha",
+      "verified_at": "2026-09-09",
+      "source": "hub/docs/development/STATUS.json checked-in r13 evidence",
+      "result": "The fresh coordinator-authorized r13 cohort passed a bounded same-Hub Edge-to-Hub-to-Home-Assistant name-only path and cleanup. Edge submitted one VehicleName=synthetic-b2 actor call; the receiver ACKed it, Hub committed and drained the lineage, and Home Assistant observed the existing device/display name without a new numeric value, unit or name sensor. The disposable Edge, Hub and temporary Home Assistant inputs were removed or restored, while primary listeners remained intact.",
+      "limits": "This is bounded synthetic B2 integration evidence. Hub records three classified ingress sequences for the one actor datum, so it does not prove a one-actor-payload-to-one-stored-sequence invariant, named-source passive parity, collection, migration, soak or installed-matrix acceptance. The expected standalone coordinator receipt was not present; the checked-in Hub STATUS is the source used here."
+    },
+    {
+      "kind": "t5_installed_viewer_data_state",
+      "verified_at": "2026-09-09",
+      "source": "teslatlas-viewer/docs/development/receipts/2026-09-09-r1-installed-data-state.json plus Hub cleanup verification",
+      "runtime": "Debian 13 ARM64 / Node v26.7.0 / Playwright 1.62.1 / Chromium 152.0.7977.82",
+      "result": "The fresh installed Viewer data-state smoke passed against the viewer-r1-51-drives scenario: all 51 rows were retained across 25/25/1 pages after three conditional 304 responses; unsupported resources made no requests; a browser-owned partial drive failure retained data and recovered on refresh; and clearing the local session canceled delayed current data without late repopulation. Viewer and Hub cleanup passed, with ports 4173 and 18480 closed and the unrelated installed listeners preserved.",
+      "limits": "Selected Viewer browser data-state evidence only. It does not prove the SDK Node helper, named-source passive parity, Docker or migration acceptance, or the six remaining installed Node/browser matrix cells."
+    },
+    {
+      "kind": "d1_typescript_component_manifest_handoff",
+      "verified_at": "2026-09-09",
+      "source": "docs/development/d1-component-manifest-handoff-2026-09-09.json",
+      "handoff_sha256": "a9f7c4ebc12f0cfd4b8d0c087abb011f2a5d980d70e61fd9eb20cb6a2252c7e3",
+      "external_snapshot": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/frozen-source",
+      "external_manifest_sha256": "4264d380a1d4f8e9ae8bb5d1b76c99bcbf4da89eb89906f79f40c10929d80067",
+      "package": {
+        "name": "@teslatlas/sdk",
+        "version": "2026.36.2",
+        "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "members": 81,
+        "node_entry_sha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+        "browser_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e"
+      },
+      "result": "Prepared a source-only D1 aggregate handoff that binds the owner-only 254-file frozen source snapshot and exact retained 81-member developer archive, identifies Node/browser developer-resource selectors, and blocks any service selector because the SDK owns no daemon, listener, service-manager registration, data store or aggregate activation.",
+      "limits": "Source/package identity and ownership evidence only; no Hub edit, runtime start, service installation, publication, Docker/native package, live consumer or installed acceptance was performed."
+    },
+    {
+      "kind": "d1_hub_aggregate_source_review",
+      "verified_at": "2026-09-09",
+      "source": "hub/docs/development/STATUS.json d1_typescript_sdk_component_handoff_source_review and d1_aggregate_component_selection_manifest",
+      "result": "Hub independently reconciled the SDK's 254-file frozen source record twice, confirmed the read-only snapshot, current-Hub profile identity and exact 81-member archive/entry hashes, and bound only optional caller-owned Node/browser developer-resource selectors in packaging/components.json. The SDK service selector remains blocked.",
+      "limits": "Hub aggregate source/selector review only; no SDK service, host, consumer, browser, Docker image, credential, listener, package installation or installed/platform acceptance was changed or claimed."
+    },
+    {
+      "kind": "owner_active_scope_override",
+      "verified_at": "2026-09-09",
+      "source": "../../../docs/development/ACTIVE_SCOPE.md",
+      "result": "The effective SDK objective is now working packed public Node/browser consumers on Debian 13 ARM64 and Apple-silicon macOS, with the real Viewer route supported through the public SDK. Minimum bootstrap/install/service work needed for those products is in scope; named-source TeslaMate parity remains an explicit acceptance gap that must not stall independent usability.",
+      "active_targets": [
+        "debian13-arm64",
+        "macos13-arm64"
+      ],
+      "paused_targets": [
+        "x86/x86_64/amd64",
+        "Intel Mac",
+        "Azure",
+        "full cross-architecture installed matrix"
+      ],
+      "native_goal_status": "The prior blocked native goal was deleted by the owner and superseded by the fresh active working-product goal recorded at the document root; this scope evidence preserves the deferred-target boundary.",
+      "limits": "Paused rows remain preserved neither passed nor failed and cannot block the active milestone. No deferred-target build, image, VM, runtime, test or cleanup action is authorized."
+    },
+    {
+      "kind": "native_goal_recreated",
+      "verified_at": "2026-09-09",
+      "thread_id": "01a082b7-890b-70b3-8a0e-9e964636849f",
+      "objective": "Deliver usable packed public Node/browser consumers on Debian 13 ARM64 and Apple-silicon macOS, and support the real Viewer route through the public SDK. Keep named-source TeslaMate parity as a separate acceptance gap and defer x86, Intel Mac, Azure and full cross-architecture acceptance.",
+      "status": "active",
+      "created_at_unix": 1788961689,
+      "tokens_used": 0,
+      "result": "The owner-deleted native-goal state was verified as absent, exactly one fresh native goal was created, and a follow-up goal read confirmed this objective is active. The former blocked/full-plan objective is historical and superseded.",
+      "limits": "Goal activation evidence only; it does not prove package, consumer, Viewer, parity or platform acceptance."
+    },
+    {
+      "kind": "hub_mac_active_target_preflight",
+      "verified_at": "2026-09-09",
+      "source": "../../../hub/docs/development/active-macos-hub-viewer-toolchain-handoff-2026-09-09.json",
+      "target": "existing Apple-silicon macOS ARM64 target; observed macOS 27.0",
+      "source_heads": {
+        "hub": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+        "viewer": "ba5424dcfeab59ac9fea0106f84fb5281672751a"
+      },
+      "result": "Read-only Hub preflight confirms Xcode 27.0, Rust 1.98.0-aarch64-apple-darwin, Node v26.8.1/npm 11.19.0, and Viewer worktree dependencies. The exact Go 1.27.0 Darwin ARM64 toolchain was provisioned and its existing fail-closed toolchain chain passed. Hub prepared a clean git-archive snapshot build procedure under the shared heavy-build lock without touching the existing app, dirty worktree, service, Viewer, or pairing state.",
+      "next": "Hub must return the disposable candidate package/binary identity from the locked snapshot build, then provide a fresh active-Mac endpoint, trusted CA, normal invitation/pairing controls, selected data/configuration root, lifecycle and cleanup owner before any SDK or Viewer runtime lane starts.",
+      "limits": "Preflight and source/build handoff evidence only; no Mac package installation, LaunchAgent action, Hub listener, Viewer process, pairing, credential use, or SDK consumer acceptance was performed."
+    },
+    {
+      "kind": "hub_mac_candidate_build_fail_closed",
+      "verified_at": "2026-09-09",
+      "source": "Hub disposable candidate /Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909/build-macos-app.log",
+      "result": "The clean snapshot compiled the Rust Hub release target, then stopped at go-proxy-evidence before producing a complete app/package. The selected Go 1.27.0 Darwin ARM64 executable had SHA-256 a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267 and passed the full downstream toolchain-selection chain, but its lab path was not one of the two exact Go paths allowed by scripts/tesla-proxy-lock.json. The first allowed path is present locally and has the same SHA-256; the Homebrew path is absent.",
+      "next": "Hub must rerun from a fresh or explicitly verified disposable candidate under the heavy-build lock with the existing allowed Go binding, or make a reviewed source-bound binding correction with the same hash. Do not weaken path/hash identity admission.",
+      "limits": "Fail-closed candidate-build diagnostic only; no complete Mac app/package identity, installation, LaunchAgent, Hub listener, Viewer process, pairing, or SDK consumer acceptance exists."
+    },
+    {
+      "kind": "hub_mac_r2_go_policy_overlay_handoff",
+      "verified_at": "2026-09-09",
+      "source": "../../../hub/docs/development/active-macos-hub-viewer-toolchain-handoff-2026-09-09.json",
+      "overlay": "scripts/tesla-proxy-lock.json",
+      "overlay_sha256": "b4b02f44698d4d394d1e3dd1407d25f7223ad475b407eea109b844616c8244d2",
+      "result": "Hub's reviewed r2 overlay adds only the complete lab Go 1.27.0 Darwin ARM64 path/SHA-256/GOROOT binding; the existing strict Go provenance regression passed. The fresh candidate root is hub-macos-arm64-20260909-r2 and remains unstarted.",
+      "next": "Hub must acquire the shared heavy-build lock and build the fresh r2 snapshot, then return exact app/package/binary identities and a separate runtime handoff before installation, LaunchAgent, Viewer, pairing, or SDK consumer work.",
+      "limits": "Source-bound handoff only; no successful r2 build, Mac app/package, installation, service, Viewer, pairing, or SDK consumer acceptance is recorded yet."
+    },
+    {
+      "kind": "hub_mac_r2_candidate_artifact",
+      "verified_at": "2026-09-09",
+      "source": "Hub disposable candidate /Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2",
+      "source_identity": {
+        "hub_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+        "overlay_sha256": "b4b02f44698d4d394d1e3dd1407d25f7223ad475b407eea109b844616c8244d2"
+      },
+      "package": {
+        "version": "2026.36.2",
+        "app_executable_sha256": "2d5bba42ea16deceaa821677ea1f5a4fd7116f0d1197ee18e17d65875202dc22",
+        "embedded_hub_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+        "pkg_sha256": "c3b50aecce3958bd2b434a5382e178e01f99638a203b214576631c3b4ef085d4"
+      },
+      "result": "Hub built the fresh Apple-silicon candidate under the shared heavy-build lock. The arm64 app, embedded Hub binary, package, dependency legal bundle and Go/Fleet evidence are present; the Go receipt binds go1.27.0, Darwin arm64, the corrected lab path and SHA-256 a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267. The candidate is explicitly local unsigned.",
+      "next": "Hub must provide the separate runtime handoff: selected Mac app/data/configuration root, service or user-process lifecycle, fresh Hub endpoint and trust input, normal Viewer origin/invitation/pairing controls, and cleanup owner. Only then may the SDK consume the packed Node/browser or Viewer route.",
+      "limits": "Candidate artifact evidence only; no app/package installation, LaunchAgent, Hub listener, Viewer process, pairing, credential, restart, retained-data, or SDK consumer acceptance was performed."
+    },
+    {
+      "kind": "t3_macos_packed_node_consumer",
+      "verified_at": "2026-09-09",
+      "target": "macos13-arm64",
+      "source": "Hub handoff hub/docs/development/active-macos-node-consumer-handoff-2026-09-09.json and fresh owner-only Node receipt",
+      "profile": "hub-http-v1@1.0.0",
+      "scenarioSha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+      "runtime": "Node v26.7.0 / npm 11.19.0",
+      "hubId": "a95c379d-3b10-4af0-920a-1907981083c8",
+      "results": {
+        "discovery": "passed",
+        "health": "passed",
+        "readiness": "passed",
+        "invitationClaim": "passed",
+        "vehicleCount": 2,
+        "driveCount": 5,
+        "drivePages": "2/2/1",
+        "conditional304": "passed",
+        "cursorContinuationAfter304": "passed",
+        "credentialRotation": "passed",
+        "defaultFetch": true
+      },
+      "packedSdk": {
+        "package": "@teslatlas/sdk@2026.36.2",
+        "tarballSha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "entry": "dist/node.js",
+        "entrySha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+        "installedContentManifestSha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+        "installedMemberCount": 81
+      },
+      "cleanup": {
+        "launcherPid": 65782,
+        "hubChildPid": 65785,
+        "hubChildExit": 0,
+        "stoppedReceiptMode": "0600",
+        "stoppedReceiptSha256": "2dfa6ad997aa03c6158b363b951489f39c8ddf5bec68c11c23fe74e6fb2d1665",
+        "port18489": "closed",
+        "credentialAndReceiptMode": "0600"
+      },
+      "limits": "Real packed Node consumer evidence on the fresh Apple-silicon Hub fixture with strict supplied-CA TLS, owner-only credential/receipt custody and Hub-verified launcher/child cleanup. This is not browser/Viewer acceptance, named-source TeslaMate parity, or installed-matrix acceptance; the handoff tuple is closed and cannot be reused."
+    },
+    {
+      "kind": "t3_macos_browser_handoff_fail_closed",
+      "verified_at": "2026-09-09",
+      "source": "Hub redacted browser-handoff result after the closed packed-Node fixture",
+      "target": "macos13-arm64",
+      "result": "No distinct browser/Viewer handoff was admitted. The Mac is locked and normal local-CA browser trust cannot be configured in the current state. Hub did not launch a browser route and no certificate or origin bypass was used.",
+      "next": "After the Mac is unlocked, Hub must create a wholly fresh browser fixture with a new endpoint, CA, invitation, descriptor, selected data root and cleanup owner. The closed Node tuple is not reusable.",
+      "limits": "Fail-closed handoff evidence only; no browser, Viewer, CORS, pairing, retained-data or cleanup acceptance was claimed."
+    },
+    {
+      "kind": "t3_macos_browser_handoff_unlocked_pending",
+      "verified_at": "2026-09-10",
+      "source": "Coordinator redacted dependency update and Hub preparation state",
+      "target": "macos13-arm64",
+      "result": "The Mac is unlocked and Chrome is accessible; a read-only login-keychain trust-availability check passed. No CA import or trust mutation occurred. Hub is preparing a wholly fresh normal browser/Viewer handoff; no endpoint, CA, invitation, origin/data root or cleanup descriptor has been admitted to the SDK.",
+      "next": "Wait for the exact Hub/Viewer handoff, then run only the public packed browser route with normal local-CA trust. Do not start a competing listener or reuse the closed Node or r2 inputs.",
+      "limits": "Preparation state only; no browser, Viewer, CORS, pairing, retained-data or cleanup acceptance exists yet."
+    },
+    {
+      "kind": "owner_restart_reconciliation",
+      "verified_at": "2026-09-12",
+      "source": "../../../docs/development/ACTIVE_SCOPE.md and owner restart authority",
+      "native_goal": {
+        "existing_goal_preserved": true,
+        "duplicate_created": false,
+        "task_record_state": "active",
+        "scheduler_status_observed": "paused; direct owner restart supersedes the global pause"
+      },
+      "scope": {
+        "active_targets": [
+          "debian13-arm64",
+          "macos13-arm64"
+        ],
+        "paused_targets": [
+          "x86",
+          "x86_64",
+          "amd64",
+          "Intel Mac",
+          "Azure",
+          "full cross-architecture matrix"
+        ]
+      },
+      "runtime_reconciliation": {
+        "disposable_sdk_or_viewer_listener": "none observed",
+        "heavy_build_lock": "absent",
+        "closed_mac_node_fixture": "not reusable",
+        "owner_stopped_viewer_fixture": "not reusable"
+      },
+      "result": "The owner restart lifts the prior global pause for the active ARM64/Mac scope. The SDK resumes from its preserved active goal and dirty main checkout; it does not create a duplicate goal or claim a fresh browser runtime. The next executable step remains a new Hub-owned Apple-silicon generic browser-consumer handoff.",
+      "limits": "Restart and read-only reconciliation only; no deferred target, production, vehicle, commit, push, CI, release, runtime start, credential creation, pairing or browser acceptance was performed."
+    },
+    {
+      "kind": "owner_scope_change_viewer_excluded",
+      "verified_at": "2026-09-12",
+      "source": "Owner scope change delivered through coordinator",
+      "effective_objective": "Deliver usable packed public Node/browser consumers on Debian 13 ARM64 and Apple-silicon macOS. Keep named-source TeslaMate parity as a separate acceptance gap and defer x86, Intel Mac, Azure and full cross-architecture acceptance.",
+      "removed_scope": [
+        "Viewer development",
+        "Viewer packaging",
+        "Viewer integration",
+        "Viewer-specific acceptance"
+      ],
+      "retained_history": "Existing Viewer source, handoffs, receipts and tests remain in the dirty checkout or historical evidence records and are not deleted or relabeled as current SDK acceptance.",
+      "goal_control": "The existing native goal's original objective remains immutable because available controls expose status only and do not support objective editing or cancellation. The effective SDK override is recorded without creating a duplicate goal.",
+      "runtime_action": "The live r4 Viewer fixture was not consumed by the SDK; Hub/Viewer were asked to stop and clean it under their existing ownership contract.",
+      "limits": "Scope reconciliation only; no Viewer route, browser, credential, pairing, listener or deferred-target action was performed by the SDK."
+    },
+    {
+      "kind": "generic_browser_consumer_proposal",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-sdk-consumer-proposal-2026-09-12.json",
+      "proposal_id": "macos13-arm64-generic-browser-2026-09-12-v1",
+      "proposal_sha256": "57b959da15dfb8b408882bd40e392b5c9256c28b7811f96fe4808fbbbb45e2e7",
+      "source_binding": {
+        "sdk_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+        "package": "@teslatlas/sdk@2026.36.2",
+        "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "browser_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e",
+        "profile": "hub-http-v1@1.0.0",
+        "hub_candidate_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+        "hub_fixture_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+        "hub_native_evidence_sha256": "09fdd31510470577c1e22da0969c6762f933aa06b087b6959a7d520b29159bd0"
+      },
+      "fixed_contract": {
+        "hub_port": 18521,
+        "browser_origin": "http://localhost:4174",
+        "scenario": "b1-five-drives; drive_limit=2; expected_drive_count=5",
+        "handoff": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r1.json",
+        "ready_descriptor_sha256": "d951269551bb580761dc481a876745df5502af1fd6b70a4bf63d27a71ef15157",
+        "certificate_sha256": "e7ab389dd48451b1527dc53297ef408c132354dd24c92132ad04f761191f49a0",
+        "hub_cleanup_owner": "Hub",
+        "sdk_cleanup_owner": "TypeScript SDK"
+      },
+      "result": "A source/package-bound, runnable generic browser harness contract was reviewed by Hub and exercised against its fresh 18521 handoff. It requires normal trusted TLS, fail-closed untrusted TLS, exact CORS origin/preflight, discovery/readiness, credential use, vehicles/current, 2/2/1 drive pagination, 304/cursor continuation, rotation/default Fetch and split cleanup evidence.",
+      "next": "Do not reuse the closed tuple. Future execution requires independently isolated trusted/untrusted macOS browser trust contexts.",
+      "limits": "Proposal and contract evidence only; no fixture, listener, credential, pairing, browser, runtime or receipt was started or consumed. Viewer remains excluded and all prior tuples remain non-reusable."
+    },
+    {
+      "kind": "generic_browser_consumer_trust_isolation_blocked",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r1.json and SDK runner output",
+      "handoff": {
+        "endpoint": "https://127.0.0.1:18521",
+        "hub_id": "483e02c5-857d-4483-9ae3-039946135e78",
+        "descriptor_sha256": "d951269551bb580761dc481a876745df5502af1fd6b70a4bf63d27a71ef15157",
+        "certificate_sha256": "e7ab389dd48451b1527dc53297ef408c132354dd24c92132ad04f761191f49a0",
+        "credential_mode": "0600",
+        "listener": "127.0.0.1:18521 only",
+        "origin": "http://localhost:4174"
+      },
+      "source_binding": {
+        "sdk_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+        "package": "@teslatlas/sdk@2026.36.2",
+        "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "browser_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e",
+        "profile": "hub-http-v1@1.0.0",
+        "scenario": "b1-five-drives; drive_limit=2; expected_drive_count=5"
+      },
+      "attempts": [
+        {
+          "control_setup": "temporary keychain plus profile-local HOME",
+          "result": "Trusted Chrome ignored the profile-local trust and logged Chromium net_error -202 (ERR_CERT_AUTHORITY_INVALID)."
+        },
+        {
+          "control_setup": "default macOS HOME with the fresh certificate added to login keychain after untrusted startup",
+          "result": "Untrusted Chrome rejected the certificate before import, then accepted it after login-keychain import; test:hub:browser stopped at the untrusted negative-control gate."
+        }
+      ],
+      "bypass": false,
+      "api_acceptance": false,
+      "receipt": "not produced",
+      "cleanup": {
+        "sdk": "passed: helper 4174, Chrome/CDP 9227/9228, temporary login-keychain certificate, profiles and fresh install closed/removed from the consumer root",
+        "hub": "pending Hub-owned stop verification for launcher 91606, child 91611 and port 18521"
+      },
+      "result": "The current macOS Chrome controls cannot provide distinct trusted and untrusted roots for this runner. This is a host/browser-control blocker, not SDK API acceptance.",
+      "unblock": "Review the source-only correction proposal, authorize the sequential runner contract, then supply a wholly fresh handoff; do not retry the current credential or runtime tuple.",
+      "limits": "One corrected trust-control attempt only; no Viewer work, no stale-input reuse, no API/data/rotation claim, no certificate bypass and no third attempt."
+    },
+    {
+      "kind": "generic_browser_trust_sequence_correction_proposal",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-trust-isolation-correction-2026-09-12.json",
+      "proposal_id": "macos13-arm64-generic-browser-trust-sequence-2026-09-12-v1",
+      "proposal_sha256": "98ebe5a6195db9bff8b8310942be5aa18a40492682f423a56dbcc8a01307519a",
+      "status": "implemented_reviewed_runtime_pending",
+      "correction": "Use sequential macOS login-keychain phases: untrusted fresh control rejects the fresh Hub health URL before CA import and is closed; the fresh CA is then imported with normal trust; a new trusted control runs the packed SDK route with normal TLS/CORS/data assertions. The implementation uses shell-free JSON argv hooks, actual CDP observations and neutral certificateExportPath/trustStorePath witness fields.",
+      "preserved_checks": [
+        "ERR_CERT_AUTHORITY_INVALID is still required for the pre-import negative control",
+        "certificate-bypass flags remain forbidden",
+        "trusted normal TLS and exact-origin CORS preflight remain required",
+        "discovery/readiness, credential, vehicles/current, 2/2/1 drives, 304/cursor, rotation/default Fetch and cleanup remain required"
+      ],
+      "new_limit": "The resulting receipt may claim sequential negative-before-trust and positive-after-trust behavior only; it must not claim simultaneous per-profile trust isolation.",
+      "approval_gate": "The coordinator authorized the bounded source change and focused tests; Hub completed substantive source review. Hub must now publish a wholly fresh matching handoff. No new runtime, keychain change or third attempt was performed.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_trust_sequence_source_correction",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "SDK working-tree correction after coordinator authorization",
+      "files": [
+        "scripts/test-hub-browser.mjs",
+        "scripts/browser-hub-runner.mjs",
+        "scripts/browser-trust-sequence.mjs",
+        "scripts/hub-acceptance-evidence.mjs",
+        "scripts/browser-trust-sequence.d.mts",
+        "scripts/hub-acceptance-evidence.d.mts",
+        "tests/unit/browser-trust-sequence.test.ts",
+        "tests/unit/hub-acceptance-evidence.test.ts"
+      ],
+      "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "hub_review_receipt": {
+        "path": "hub/docs/development/active-macos-typescript-browser-source-review-2026-09-12-r1.json",
+        "sha256": "8f037ad095146f8d7030229ae18eabfbd97418d16f0a7ebd3da6fc5c784e3096",
+        "result": "Hub independently accepted the sequential source contract and reran the 13 focused tests, typecheck, targeted eight-file Biome check and diff check successfully."
+      },
+      "result": "The browser runner now selects sequential-macos-login-keychain explicitly, closes the negative control before import, invokes owner-supplied trust hooks with shell=false and one JSON payload, starts the trusted control from the hook's observed CDP URL, requires an independent canonical export path absent before import, uses an exact trusted-browser cleanup/port-verification hook on every import-started failure path, writes neutral v2 witness fields only after both live phases, and emits the redacted receipt only after browser/server cleanup. The legacy simultaneous path remains available for historical witnesses.",
+      "source_sha256": {
+        "scripts/test-hub-browser.mjs": "ce6def4e982ea848561c844bfd52e53021bb40fa802895dbbbff72342b757e6d",
+        "scripts/browser-hub-runner.mjs": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+        "scripts/browser-trust-sequence.mjs": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+        "scripts/hub-acceptance-evidence.mjs": "6b6eeb0e93bc08e261b1db02f2cd0de3672f42d4a0cba5c312ce2cf2e2590136",
+        "tests/unit/browser-trust-sequence.test.ts": "9232544d2298bbcde7d2315a547f67971ad9d602051cb25b7ca0032714dcbd6d",
+        "tests/unit/hub-acceptance-evidence.test.ts": "e91ada4f9eabe76459d114c3d2f91d73966cac396538f61d374d43bd04a31762"
+      },
+      "focused_tests": {
+        "browser-trust-sequence_and_evidence": "13 passed",
+        "typecheck": "passed",
+        "syntax": "passed",
+        "format": "passed",
+        "diff_check": "passed"
+      },
+      "runtime": "not run",
+      "handoff": "No fresh Hub handoff was consumed; the closed 18521 tuple remains non-reusable.",
+      "next": "Await a wholly fresh matching Hub handoff before one bounded fresh sequential runtime.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_trust_sequence_runtime_failure",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r2.json",
+      "receipt_sha256": "3896f1a77d659a37d77d5ce89b42f96446c355c4b8f5dd7c093c12acae7785a7",
+      "handoff": {
+        "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r2.json",
+        "sha256": "55aefb27645e873471c31518116ee455b7bad81a13d2b85d4ae46836447336a0",
+        "post_cleanup_sha256": "fabcee02c39b14d189750d6e70eae8f7dfb259c5481cb831884d46f476ba5e0f",
+        "ready_descriptor_sha256": "6dd9b7c53b40c8b0994793cc4b77244522b613d2f0068be7f5c9e08fef311e4a",
+        "endpoint": "https://127.0.0.1:18525",
+        "browser_endpoint": "https://localhost:18525",
+        "hub_id": "48530fd7-d0a4-4a96-b9a3-faedf9331246",
+        "certificate_sha256": "857dfb1bdaf4b11bf1e264d51f6cdba01e637db34a8ecb9ff01e841b61e86a80"
+      },
+      "source_binding": {
+        "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+        "package": "@teslatlas/sdk@2026.36.2",
+        "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "trust_hooks_sha256": "9c03572afd40e79a410e151e425d8072b72ad4d4da405511f3544e6a95ab5f79",
+        "untrusted_control_sha256": "9fc160593d8bb8ae3ccaa875b2c89fa73e2bfcb4e5ea3d14c8b5c7b5b911617e"
+      },
+      "attempt": {
+        "count": 1,
+        "pre_attach_control": "Untrusted Chrome was verified live on 9232 with the exact handoff command line and CDP readiness immediately before the runner.",
+        "runner_error": "browserType.connectOverCDP: connect ECONNREFUSED 127.0.0.1:9232",
+        "runner_call_log": "retrieving websocket url from http://127.0.0.1:9232",
+        "failure_location": [
+          "scripts/browser-hub-runner.mjs:310",
+          "scripts/browser-trust-sequence.mjs:35"
+        ],
+        "boundary": "The control became unavailable before the runner's first untrusted attach; the cause of that transition is unproven.",
+        "diagnosis": "A benign detached-child probe remained alive after the launching tool returned, so generic tool-return teardown is not demonstrated. The Chrome PID/listener state and exit/error/stderr evidence were not captured at the exact attach failure; no SDK source lifecycle defect is demonstrated.",
+        "smallest_next_diagnostic": "If explicitly authorized later, supervise the untrusted launcher in a persistent owner-controlled session and capture PID/lsof state plus Chrome exit/error/signal/stderr evidence at attach time.",
+        "certificate_import_started": false,
+        "trusted_route_started": false,
+        "sdk_api_acceptance": false,
+        "witness": "not produced",
+        "acceptance_receipt": "not produced"
+      },
+      "cleanup": {
+        "typescript": "Untrusted cleanup returned observed=true, closed=true and portClosed=true; 4174/9231/9232 closed; certificate absent; profiles, state, export, witness, final receipt and consumer path absent. The consumer installation was moved recoverably to the explicit user Trash path.",
+        "hub": "Launcher 54565 and child 54573 absent; child exit 0; stopped record mode 0600 SHA-256 0ed603f57e561687c1698895c1351099b97704a839db2533920668e83ca58cac; 18525 closed.",
+        "scope": "Only the fresh TypeScript controls/package and Hub-owned r2 fixture were cleaned; no unrelated process or service was changed."
+      },
+      "result": "One fresh sequential Mac handoff was consumed once and failed before untrusted CDP attachment. This is not SDK API, Hub API, TLS-after-import or browser-root-cause evidence.",
+      "next": "Do not retry the r2 handoff or runtime tuple. Any future Mac attempt requires explicit owner/coordinator direction and a wholly fresh handoff.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_control_lifecycle_diagnostic",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-control-diagnostic-2026-09-12-r1.json",
+      "receipt_sha256": "5518674d981c8a4d0542d2b31ccc554afe0218c59c834a1d9920a69005e90f3b",
+      "runtime": {
+        "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-control-diagnostic-20260912-r1",
+        "cdp_url": "http://127.0.0.1:9233",
+        "profile": "fresh owner-only temporary profile moved to the explicit user Trash after teardown",
+        "launcher_script_sha256": "e9bbb3cf1d0ce7eb467bef7260471915b985f08c2fdacd1748a0183438b6c726",
+        "runtime_receipt_sha256": "6342af5dc44b99e7580b38517f91e56f740d4a75f861ee86fc01d1f5f052017d",
+        "stderr_sha256": "71247b001b80e222431b4fbadae08229a13d05869f6f160ee9c76c6f15eb82f4"
+      },
+      "result": {
+        "status": "passed_lifecycle_diagnostic",
+        "child_pid": 6171,
+        "listener_pids_at_attach": [6171],
+        "cdp_attach": "passed",
+        "cdp_command": "Browser.getVersion passed",
+        "child_exit_code": 0,
+        "child_signal": null,
+        "port_9233_closed": true,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "sdk_api_acceptance": false
+      },
+      "stderr_boundary": "Only redacted Chrome startup/environment warnings were retained, including repeated CVDisplayLinkCreateWithCGDisplay failed: -6670; no lifecycle error or exit failure was observed.",
+      "diagnostic_limit": "This validates supervised launch/attach/command/teardown only. It does not prove why the prior detached 9232 control became unavailable.",
+      "review_gate": "Hub should review the detached=false, stderr-piped, event-capturing supervision plan before any future full SDK handoff.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_sequential_control_preparation",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-sequential-control-preparation-2026-09-12-r2.json",
+      "preparation_manifest": {
+        "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/preparation.json",
+        "sha256": "8e0995e4e37a000a568aa39f2c6fb2b0e686326153e023777f96a1f4bc7aca64",
+        "mode": "0600"
+      },
+      "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2",
+      "tuple": {
+        "origin": "http://localhost:4175",
+        "trusted_cdp": "http://127.0.0.1:9234",
+        "untrusted_cdp": "http://127.0.0.1:9235",
+        "hub_runtime_port": 18527
+      },
+      "scripts": {
+        "supervisor.mjs": "f8ac5f5b50d9defc2402cbf21dd9b451f0b9a4ff5367cae1e1d3af407ecf0f1b",
+        "untrusted-control.mjs": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+      "trust-hooks.mjs": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4"
+      },
+      "preflight": {
+        "4175_closed": true,
+        "9234_closed": true,
+        "9235_closed": true,
+        "chrome_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "certificate_material_created": false,
+        "runtime_state_created": false,
+        "retry_performed": false
+      },
+      "supervision": "Future Chrome children are spawned detached=false and shell=false with piped/redacted stderr; the persistent supervisor captures PID/lsof/command at attach and error/exit/close/signal at teardown.",
+      "result": "Fresh static control root is prepared_not_run. No Chrome, helper server, Hub 18527 endpoint, browser credential, keychain operation, certificate export, profile, witness, or acceptance receipt was created.",
+      "next": "Hub may review this root and publish one fresh 18527 handoff; no live run or retry is authorized by this preparation record.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_sequential_control_runtime_failure",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r5.json",
+      "receipt_sha256": "653cfd2c656e7bea65aa575f6a5dde5cd373b76405e28efe843dffaa8dab1d45",
+      "handoff": {
+        "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r5.json",
+        "sha256": "91edb32761ad5d8ce5e83c301e2942efbe2f469313c3eaf0d15e8773b8ec3520",
+        "ready_descriptor_sha256": "84dadaae9a0addb87aeff03f396fcf7de466bdddd57929eaf26a83f5e303a226",
+        "endpoint": "https://localhost:18527",
+        "certificate_der_sha256": "7340fe9ecaaa3c2098d591d2da67ac86b0fd29185de50f3682411a7d1912c18a"
+      },
+      "attempt": {
+        "count": 1,
+        "supervisor_pid": 58880,
+        "untrusted_child_pid": 59172,
+        "untrusted_attach": "passed with Chrome/152.0.7977.83, Protocol 1.3, listener PID 59172 and exact command snapshot",
+        "client_failure": "Supervisor client received closed request without a response after delayed Chrome readiness; invalid diagnostic request through the same socket returned normally.",
+        "sdk_runner_started": false,
+        "helper_4175_started": false,
+        "certificate_import_started": false,
+        "trusted_started": false,
+        "keychain_mutation": false,
+        "acceptance_receipt": "not produced"
+      },
+      "cleanup": {
+        "untrusted_exit_code": 0,
+        "untrusted_exit_signal": null,
+        "untrusted_close_code": 0,
+        "untrusted_close_signal": null,
+        "untrusted_port_9235_closed": true,
+        "ports_4175_9234_9235_closed": true,
+        "supervisor_stopped": true,
+        "socket_removed": true,
+        "untrusted_profile_removed": true,
+        "trusted_profile_absent": true,
+        "export_witness_receipt_absent": true,
+        "consumer_moved_to_trash": "/Users/bolyki/.Trash/teslatlas-sdk-browser-consumer-sequential-20260912-r5",
+        "event_log_sha256": "f6207b3818719732b612d9e10d2fc6d1c3ff10fcaa22dcd410e6d5cbee97a8da"
+      },
+      "result": "One authorized fresh r5 attempt was consumed at the control IPC boundary before the SDK runner, Hub request, CA import, trusted browser or acceptance route. No retry is admissible.",
+      "proof_boundary": "This proves only supervised untrusted Chrome launch/attach/teardown and the control IPC failure; it is not SDK, TLS-after-import, CORS, API, package, release or user acceptance.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_control_ipc_correction",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-control-ipc-correction-2026-09-12-r5.json",
+      "receipt_sha256": "d91b5c3c8f0a449fc75c25a99b2aa70b906f142d77a8eb0a377b7fab7d209046",
+      "prior_runtime_attempt_consumed": true,
+      "source_binding": {
+        "supervisor.mjs": "5e12b921a1ba1ab4e66b5f406aa206561b782c2a5ccc0c03495f4bfb5fa16a37",
+        "trust-hooks.mjs": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+        "untrusted-control.mjs": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+        "regression": "c6db7081b0f7221b99c24d344681f1ac9b8526643bf85bb8e10f87b7be5e2334"
+      },
+      "behavior": {
+        "default_node_allowHalfOpen": false,
+        "legacy_delayed_response": "empty response and timeout after client half-close",
+        "corrected_regression": "passed immediate, delayed and failure responses, complete client close and temporary socket removal"
+      },
+      "live_runtime": false,
+      "hub_or_keychain": false,
+      "next": "Independent Hub/coordinator review before any future fresh handoff; no r5 retry.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_sequential_control_package_preparation_r6",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-sequential-control-preparation-2026-09-12-r6.json",
+      "receipt_sha256": "62b61961c389586495069e68e29910bcf4dd7721f39dcf4b78430f15315cd070",
+      "state": "prepared_not_run_source_only",
+      "hub_review": {
+        "path": "hub/docs/development/active-macos-typescript-browser-control-ipc-source-review-2026-09-12-r5.json",
+        "sha256": "c0c47baf20618edc6ea7a1d3291acc9a524e80c8bc82651061cea1d0b6409c0d",
+        "state": "accepted_source_only_no_runtime_authorization"
+      },
+      "root": {
+        "control": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6",
+        "preparation_manifest": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/preparation.json",
+        "preparation_manifest_sha256": "786b86e992edadbb8754d93bda03fe91e17cbc73b1d0208d099e7715c1c1e19a",
+        "package": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/consumer/node_modules/@teslatlas/sdk",
+        "package_archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "package_version": "2026.36.2",
+        "package_file_count": 81
+      },
+      "tuple": {
+        "origin": "http://localhost:4176",
+        "trusted_cdp": "http://127.0.0.1:9236",
+        "untrusted_cdp": "http://127.0.0.1:9237",
+        "hub_endpoint_binding": "https://localhost:18528",
+        "ports_closed": [4176, 9236, 9237, 18528]
+      },
+      "scripts": {
+        "supervisor.mjs": "4038d26f8631fc79b01ebb0b402613f79378128697ffb16daeac668f44340e88",
+        "trust-hooks.mjs": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+        "untrusted-control.mjs": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+        "test-browser-control-ipc.mjs": "c6db7081b0f7221b99c24d344681f1ac9b8526643bf85bb8e10f87b7be5e2334"
+      },
+      "preflight": {
+        "chrome_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "fresh_credential_minted": false,
+        "fresh_certificate_material_created": false,
+        "runtime_state_created": false,
+        "attempt_consumed": false,
+        "r5_tuple_or_evidence_reused": false
+      },
+      "result": "Fresh r6 control and offline package roots are prepared and independently checked. The pinned Node syntax, targeted Biome, browser-free IPC regression, package archive identity, installed package version and 81-file package root all passed. No browser, Hub, keychain, credential, certificate, runtime state, socket, profile, witness or acceptance receipt was created.",
+      "next": "Hub must review this receipt and publish a separately authorized fresh Hub tuple and credential; no live run is authorized by this preparation.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_sequential_control_runtime_failure_r6",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r6.json",
+      "receipt_sha256": "4d76afb0ccf30ad044a5bc3040df74001508a933cdc1307c87705a3651a70f76",
+      "handoff": {
+        "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r6.json",
+        "sha256": "3334c6e1bb5e47723b362cb10748970ae53596be26a1bd79631f0eabe00983d3",
+        "ready_descriptor_sha256": "2241739e824af77326bce703e29b7422faf0edfcc7fcc35bd1ad47bb761963d4",
+        "endpoint": "https://localhost:18528",
+        "certificate_der_sha256": "ca8682252ea925440bfbebe3fca54dbe37c6d9a4ec8bbb463c6d551bd77b6658"
+      },
+      "attempt": {
+        "count": 1,
+        "untrusted_child_pid": 85816,
+        "untrusted_attach": "passed on 9237 with Chrome/152.0.7977.83, Protocol 1.3 and listener PID 85816",
+        "runner_started": false,
+        "failure": "owner-only stderr redirection failed after evidence directory was mistakenly set to mode 0600",
+        "sdk_browser_route": false,
+        "hub_api_request": false,
+        "certificate_import": false,
+        "trusted_started": false,
+        "keychain_mutation": false,
+        "acceptance_receipt": false
+      },
+      "cleanup": {
+        "event_log_sha256": "4adb858ccb93f86322730327d6a4d7a7b3aef6def02b8d28fc805fb1fa7b7164",
+        "untrusted_stderr_sha256": "45483ef8ce06de7655e034357a50457b3c8f93ff13600149760c905f28905c99",
+        "child_exit_code": 0,
+        "child_close_code": 0,
+        "ports_4176_9236_9237_closed": true,
+        "supervisor_stopped": true,
+        "socket_removed": true,
+        "profiles_export_witness_receipt_absent": true,
+        "fresh_certificate_absent_from_login_keychain": true
+      },
+      "result": "One fresh r6 attempt was consumed after supervised untrusted Chrome attach but before the SDK browser runner; exact cleanup passed and no acceptance route ran.",
+      "next": "Do not retry r6. Preserve the failure and cleanup evidence and await a separately authorized future decision with wholly fresh inputs.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_control_preflight_template_correction_rejected",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64-source-only",
+      "source": "docs/development/macos-browser-control-preflight-template-correction-2026-09-12.json",
+      "receipt_sha256": "6d0a04818f9e5d50df8edbdb8564dbedc29c26cad3bedca0ac86b944cc6c0ac2",
+      "state": "rejected_by_hub_superseded",
+      "prior_review": {
+        "r6_bound_receipt": "docs/development/macos-browser-control-preflight-files-correction-2026-09-12-r6.json",
+        "r6_bound_receipt_sha256": "71830a133f111bb5b38f1711f32bd89b9dd31922007b9c7e64b9837010bdf544",
+        "result": "Hub rejected before execution because stale artifacts were normalized and runner outputs used truncating write mode; r6 remains non-reusable."
+      },
+      "stable_source": {
+        "prepare_script": "scripts/browser-control-preflight-template.mjs",
+        "prepare_script_sha256": "8625950ed211ce15e97cd85619207bafbd02ce0a8003b62c1d94bb736bca8214",
+        "regression": "scripts/test-browser-control-preflight-template.mjs",
+        "regression_sha256": "afc4e34feae7419204e1a15e20b59edcada363ce4443557c0a153d56a3f29ae9"
+      },
+      "regression": {
+        "status": "passed",
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "second_invocation_rejected_without_truncation": true,
+        "stale_artifacts_rejected_before_mutation": true,
+        "runner_outputs_created_exclusively": true,
+        "directory_mode": "0700",
+        "sensitive_file_mode": "0600",
+        "temporary_roots_removed": true,
+        "typescript_ports_4176_9236_9237_closed": true
+      },
+      "result": "Corrected source/test is parameterized for a fresh controlRoot and is not bound to r6 or any execution-ready root. No r7 was created and no runtime action occurred.",
+      "next": "Superseded by the v2 receipt after Hub found root-symlink path traversal; do not use this v1 receipt.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_control_preflight_template_correction_v2",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64-source-only",
+      "source": "docs/development/macos-browser-control-preflight-template-correction-v2-2026-09-12.json",
+      "receipt_sha256": "d14f0f9a404a9cd83996779f45f0e9eecbcced8dc74c70c6f9e10cf98b475bf1",
+      "state": "corrected_source_only_no_runtime",
+      "supersedes": {
+        "receipt": "docs/development/macos-browser-control-preflight-template-correction-2026-09-12.json",
+        "sha256": "6d0a04818f9e5d50df8edbdb8564dbedc29c26cad3bedca0ac86b944cc6c0ac2"
+      },
+      "stable_source": {
+        "prepare_script": "scripts/browser-control-preflight-template.mjs",
+        "prepare_script_sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+        "regression": "scripts/test-browser-control-preflight-template.mjs",
+        "regression_sha256": "1789949b89b1afe474e305914c9680371aca9706d0f19b6fae15f9fee1785488"
+      },
+      "regression": {
+        "status": "passed",
+        "root_symlink_rejected_before_mutation": true,
+        "symlink_target_mode_and_content_preserved": true,
+        "control_socket_stale_artifact_covered": true,
+        "second_invocation_rejected_without_truncation": true,
+        "all_stale_artifacts_rejected_before_mutation": true,
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "typescript_ports_4176_9236_9237_closed": true
+      },
+      "result": "The reusable source/test is parameterized for a fresh real directory and is not bound to r6 or an execution-ready root. No r7 or runtime action occurred.",
+      "next": "Review this v2 source/template correction only; do not retry r6 or request a runtime from this receipt.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_sequential_control_package_preparation_r7",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64-source-only",
+      "source": "docs/development/macos-browser-sequential-control-package-preparation-2026-09-12-r7.json",
+      "receipt_sha256": "9b2c29fbdd2bd87fc0eab6abecff77dbee9513e37bd4f48d9e865b7b797b10c0",
+      "preparation_manifest": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7/preparation.json",
+      "preparation_manifest_sha256": "8e8d7c5df4c7bd885292cf32195b6cba63ecf6b982972ce91e80349ff8c2070a",
+      "state": "prepared_not_run_source_only",
+      "hub_review": {
+        "path": "hub/docs/development/active-macos-typescript-browser-control-preflight-template-review-2026-09-12-r2.json",
+        "sha256": "a99cf4cc6277daf0fa641a45e01772fbb863b5d59d216c61e3326bfc16693382",
+        "state": "accepted_source_only_no_runtime"
+      },
+      "root": {
+        "control": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7",
+        "package": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7/consumer/node_modules/@teslatlas/sdk",
+        "package_archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "package_version": "2026.36.2",
+        "package_file_count": 81,
+        "control_root_mode": "0700",
+        "package_root_mode": "0700"
+      },
+      "tuple": {
+        "origin": "http://localhost:4177",
+        "trusted_cdp": "http://127.0.0.1:9238",
+        "untrusted_cdp": "http://127.0.0.1:9239",
+        "candidate_hub_endpoint": "https://localhost:18529",
+        "ports_closed": [4177, 9238, 9239, 18529]
+      },
+      "scripts": {
+        "stable_prepare_script": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+        "stable_regression": "1789949b89b1afe474e305914c9680371aca9706d0f19b6fae15f9fee1785488",
+        "supervisor.mjs": "b3eb52e9538f7ccd98c5a05b1722529f4518a8e4e0c9ce64678249976ec43a7d",
+        "trust-hooks.mjs": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+        "untrusted-control.mjs": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+        "test-browser-control-ipc.mjs": "c6db7081b0f7221b99c24d344681f1ac9b8526643bf85bb8e10f87b7be5e2334"
+      },
+      "preflight": {
+        "status": "passed",
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "runtime_state_created": false,
+        "profiles_created": false,
+        "certificate_created": false,
+        "witness_created": false,
+        "acceptance_receipt_created": false,
+        "runner_outputs": {
+          "names": ["runner.stdout", "runner.stderr"],
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size_bytes": 0,
+          "mode": "0600"
+        },
+        "runtime_paths_absent_before_preflight": true,
+        "no_r6_runtime_input_reused": true
+      },
+      "verification": {
+        "pinned_node_syntax": "passed",
+        "targeted_biome": "passed",
+        "browser_free_ipc_regression": "passed",
+        "package_identity": "passed",
+        "supervisor_or_chrome_started": false,
+        "helper_started": false,
+        "hub_contacted": false,
+        "keychain_action": false,
+        "sdk_browser_api_started": false
+      },
+      "result": "Fresh r7 source and offline package preparation passed the accepted preflight and browser-free checks. Only the two exclusive 0600 runner output files were created; no runtime state or acceptance artifacts exist.",
+      "next": "Hub must review this r7 preparation receipt. Do not start Chrome, supervisor, helper, Hub, keychain or SDK runtime from this source-only receipt.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_sequential_control_runtime_failure_r7",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64",
+      "source": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r7.json",
+      "receipt_sha256": "7d6a14cd14bd765c0d56cc31b16a9c4037810e12650244cb46ea9d26dd77e6d9",
+      "runtime_failure_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7/evidence/browser-acceptance-receipt.json",
+      "runtime_failure_receipt_sha256": "9e3a8881250e696ab0245160510517f7680c6f46bf0d693376c71b5dc6915bcb",
+      "handoff": {
+        "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r7.json",
+        "sha256": "1cd5dfc4710cad3de26f72cd3adfac7a827813c50e118b70d7fbe12fc4f8c46d",
+        "hub_id": "6c1ac4c7-f545-48d2-a80e-b980f8be756d",
+        "endpoint": "https://localhost:18529",
+        "certificate_pem_sha256": "9bb796fa01d3bdf174a0b94edcecf8c24aff9fb36ed6e67554ef33bbbddf0bdd",
+        "credential_sha256": "b124efed876063e4ee8427e69e9cc8360ee24928e299d485adaec6b29f3ea8c0"
+      },
+      "attempt": {
+        "count": 1,
+        "supervisor_pid": 47036,
+        "supervisor_start_observed": true,
+        "untrusted_control_exit": "1 / ECONNREFUSED on control.sock",
+        "chrome_started": false,
+        "untrusted_cdp_attached": false,
+        "sdk_runner_started": false,
+        "helper_started": false,
+        "hub_api_request": false,
+        "certificate_import": false,
+        "trusted_started": false,
+        "keychain_mutation": false,
+        "acceptance_route": false
+      },
+      "cleanup": {
+        "supervisor_process_absent": true,
+        "socket_removed": true,
+        "state_removed": true,
+        "profiles_absent": true,
+        "certificate_export_witness_absent": true,
+        "ports_4177_9238_9239_closed": true,
+        "fresh_certificate_absent_from_login_keychain": true,
+        "hub_cleanup_delegated": true
+      },
+      "hub_closure": {
+        "path": "hub/docs/development/active-macos-typescript-browser-consumer-closure-2026-09-12-r7.json",
+        "sha256": "5a5cb4ab6914d69ffe1997bbdabef25be2e12bd9a1049d454ced43bd2e182bfd",
+        "stopped_receipt_sha256": "cdfe0a3ac0b7471629e82ded170823ee09e2d9e6ca50e10f6b88e44bdb033ceb",
+        "credential_removed": true,
+        "hub_processes_stopped": true,
+        "hub_port_18529_closed": true
+      },
+      "result": "The sole r7 attempt was consumed before Chrome spawn at the supervisor IPC boundary. Exact TypeScript cleanup passed; no browser or SDK acceptance route ran.",
+      "next": "Do not retry or repair r7. Hub must complete its own credential and Hub-process cleanup; any future lane requires a separate decision and fresh inputs.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_supervisor_lifecycle_diagnosis_r7",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64-source-only",
+      "source": "docs/development/macos-browser-supervisor-lifecycle-diagnosis-2026-09-12-r7.json",
+      "receipt_sha256": "2641ae931469e079797f991daccefdb0c52088e2cc45686cf155d203f8f72fad",
+      "diagnostic_script": "scripts/test-browser-supervisor-lifecycle.mjs",
+      "diagnostic_script_sha256": "746c944f654f82dcbe42d23b82f638dbdc5276b2e3d0a6c356206a99332d7505",
+      "source_supervisor_sha256": "b3eb52e9538f7ccd98c5a05b1722529f4518a8e4e0c9ce64678249976ec43a7d",
+      "run_output_sha256": "5da287496171cc00b0e6430a849116af07701271a6547ad1714d4546b8c3cfc4",
+      "regression": {
+        "one_parent_orchestrator": true,
+        "detached": false,
+        "fresh_temporary_root": true,
+        "fresh_temporary_socket": true,
+        "server_exit": { "code": 0, "signal": null },
+        "server_close": { "code": 0, "signal": null },
+        "control_client_exit": { "code": 0, "signal": null },
+        "control_client_close": { "code": 0, "signal": null },
+        "control_response": { "observed": true, "closed": true, "portClosed": true },
+        "stopped_state_persisted": true,
+        "socket_removed": true,
+        "temporary_root_removed": true,
+        "browser_spawned": false,
+        "hub_contacted": false,
+        "keychain_touched": false
+      },
+      "diagnosis": "The exact r7 supervisor lifecycle passes when the server and control client are owned and awaited by one parent. The retained r7 evidence cannot identify the external termination signal because exit/close/signal were not captured; empty logs and a stale serving state are consistent with the detached process lifecycle boundary. No supervisor source defect was reproduced and no production supervisor correction is warranted.",
+      "result": "The demonstrated lifecycle correction is parent-owned orchestration with explicit server/client error, exit, close, signal and response capture. This is source/lifecycle evidence only and does not advance browser or SDK acceptance.",
+      "next": "Do not retry or repair r7. Before any separately authorized future lane, use the parent-owned awaited lifecycle pattern and review this receipt; do not start Hub, Chrome, keychain or another acceptance runtime from this diagnosis.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_supervisor_lifecycle_diagnosis_review_r1",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64-source-only",
+      "source": "hub/docs/development/active-macos-typescript-browser-supervisor-lifecycle-diagnosis-review-2026-09-12-r1.json",
+      "receipt_sha256": "ddcfeb5c1f303d217cc863f9f4ee31672daaee1c5aa2804bbbeab53f331e6476",
+      "state": "accepted_bounded_diagnosis_no_source_fix_or_runtime_authorization",
+      "accepted_boundary": "Hub independently confirmed the exact r7 source/control lifecycle passes under one awaited parent with direct non-detached children, persisted lifecycle evidence and no browser, Hub or keychain action. No supervisor implementation defect was reproduced.",
+      "future_requirement": "Any future lane requires one parent-owned awaited orchestration process and persisted error, exit, close, signal and response evidence.",
+      "r7_reusable": false,
+      "runtime_authorized": false,
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_supervisor_orchestration_source_package_r1",
+      "verified_at": "2026-09-12",
+      "target": "macos13-arm64-source-only",
+      "source": "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+      "receipt_sha256": "75e23ba81eff2179a81299065f58bbf2399ea3dcf3881d6d6e75a32dbb284436",
+      "orchestrator": {
+        "path": "scripts/browser-control-orchestrator.mjs",
+        "sha256": "ed565ac109e93414365b759682690a4c19151f5d3f5a1ec192e9e6261dffed0d"
+      },
+      "regression": {
+        "path": "scripts/test-browser-control-orchestrator.mjs",
+        "sha256": "8b5c7c25781b8c9a81712cf7179fdb158d5187464b142465945500b08c6273ef",
+        "status": "passed",
+        "cases": ["success", "supervisor-failure", "runner-failure", "control-failure"],
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "fresh_live_fixture": false
+      },
+      "bound_hooks": {
+        "preflight_sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+        "sequential_trust_sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+        "browser_runner_sha256": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+        "trust_mode": "sequential-macos-login-keychain"
+      },
+      "invocation": "node scripts/browser-control-orchestrator.mjs <fresh-config.json>",
+      "result": "Source-only package prepared. One parent owns the full direct process tree, cleanup is awaited before forced escalation, and runner stdout/stderr are also persisted to the reviewed preflight output files.",
+      "next": "Hub must review the exact source package and invocation. Do not create a fresh live fixture or reopen r7 from this receipt.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_supervisor_orchestration_revalidation_after_owner_restart_2026_09_18",
+      "verified_at": "2026-09-18",
+      "target": "macos13-arm64-source-only",
+      "source": "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+      "package_receipt_sha256": "75e23ba81eff2179a81299065f58bbf2399ea3dcf3881d6d6e75a32dbb284436",
+      "source_hashes_unchanged": true,
+      "orchestrator": {
+        "path": "scripts/browser-control-orchestrator.mjs",
+        "sha256": "ed565ac109e93414365b759682690a4c19151f5d3f5a1ec192e9e6261dffed0d"
+      },
+      "regression": {
+        "path": "scripts/test-browser-control-orchestrator.mjs",
+        "sha256": "8b5c7c25781b8c9a81712cf7179fdb158d5187464b142465945500b08c6273ef",
+        "status": "passed",
+        "cases": [
+          "success",
+          "supervisor-failure",
+          "runner-failure",
+          "control-failure"
+        ],
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "fresh_live_fixture": false
+      },
+      "preflight_regression": {
+        "path": "scripts/test-browser-control-preflight-template.mjs",
+        "status": "passed",
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "fresh_live_fixture": false
+      },
+      "bound_hooks": {
+        "preflight_sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+        "sequential_trust_sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+        "browser_runner_sha256": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+        "trust_mode": "sequential-macos-login-keychain"
+      },
+      "verification": {
+        "json_parse": "passed",
+        "node_syntax": "passed",
+        "biome_source_check": "passed_with_organize_imports_assist_excluded",
+        "biome_full_check": "not_clean: STATUS.json formatting and test-harness organize-imports assist; no fixes applied",
+        "ports_4177_9238_9239_18529": "closed",
+        "r7_reused": false,
+        "r7_reopened": false,
+        "r7_artifacts_touched": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "fresh_live_fixture": false,
+        "external_process_observed": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome (pid 11529 at check time); not started, attached, controlled or modified by this task"
+      },
+      "invocation": "node scripts/browser-control-orchestrator.mjs <fresh-config.json>",
+      "result": "The preserved one-parent orchestration source package and exact recorded hashes remain valid after the 2026-09-18 owner restart. Source-only browser-free regression evidence passed; no live runtime evidence was created.",
+      "next": "Hub must review this exact source package and supply a wholly fresh accepted browser handoff. Continue only source work or concrete Hub review findings; do not retry or reopen r7.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_supervisor_orchestration_repair_revalidation_2026_09_18",
+      "verified_at": "2026-09-18",
+      "target": "macos13-arm64-source-only",
+      "source": "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+      "package_receipt_sha256": "83d3f0485d47d714535d0b450020604eca3361922788e3b585ef9947843e193c",
+      "runtime": {
+        "node": "v26.7.0",
+        "source": "official node-v26.7.0-darwin-arm64.tar.xz",
+        "archive_sha256": "595d2f934e081b82961d1a5fd41c6dbd0c5a952d9e8be5b4566ab754426968d2"
+      },
+      "repairs": {
+        "stale_evidence": {
+          "status": "passed",
+          "behavior": "The orchestration capture path is checked before prepareBrowserControlFiles; an existing capture fails before evidence or runner output mutation.",
+          "regression_case": "stale-capture-before-preflight-mutation",
+          "preflight_called": false,
+          "runner_outputs_created": false,
+          "stale_marker_preserved": true
+        },
+        "cleanup_sequencing": {
+          "status": "passed",
+          "behavior": "Every configured cleanup command runs in order without a supervisor-closed short-circuit; attempts and failures are recorded, then supervisor closure is verified.",
+          "regression_case": "cleanup-sequence-after-supervisor-close",
+          "configured_commands": 3,
+          "attempted_commands": 3,
+          "attempt_statuses": ["passed", "failed", "passed"],
+          "supervisor_closed": true
+        }
+      },
+      "orchestrator": {
+        "path": "scripts/browser-control-orchestrator.mjs",
+        "sha256": "a66c2cfd284cb0b1aff713fc6cb3654307583da7765e51535215df622f0dee66"
+      },
+      "regression": {
+        "path": "scripts/test-browser-control-orchestrator.mjs",
+        "sha256": "1b74b93a740f6d24aa91213795a1deae455962e404f1a735e6a3de12ec1cd20e",
+        "status": "passed",
+        "cases": [
+          "stale-capture-before-preflight-mutation",
+          "success",
+          "supervisor-failure",
+          "runner-failure",
+          "control-failure",
+          "cleanup-sequence-after-supervisor-close"
+        ],
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "fresh_live_fixture": false
+      },
+      "bound_hooks": {
+        "preflight_sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+        "sequential_trust_sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+        "browser_runner_sha256": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+        "trust_mode": "sequential-macos-login-keychain"
+      },
+      "verification": {
+        "json_parse": "passed",
+        "node_syntax": "passed",
+        "biome_source_check": "passed",
+        "pinned_browser_free_suite": "passed",
+        "preflight_regression": "passed",
+        "orchestrator_regression": "passed",
+        "temporary_fixture_roots_removed": true,
+        "r7_reused": false,
+        "r7_reopened": false,
+        "r7_artifacts_touched": false,
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "fresh_live_fixture": false
+      },
+      "invocation": "node scripts/test-browser-control-orchestrator.mjs",
+      "result": "Both Hub-reported fail-closed defects are repaired and covered by focused browser-free regressions under pinned Node v26.7.0. The source package remains runtime-prohibited and r7 remains closed.",
+      "next": "Hub must independently review the repaired exact source package and supply a wholly fresh accepted browser handoff before any runtime action.",
+      "viewer_dependency": false
+    },
+    {
+      "kind": "generic_browser_supervisor_orchestration_receipt_freshness_repair_revalidation_2026_09_18",
+      "verified_at": "2026-09-18",
+      "target": "macos13-arm64-source-only",
+      "source": "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+      "review_finding": {
+        "path": "hub/docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r2.json",
+        "sha256": "0ff0987b65f29bef4d5c12b4885a7b90f2a055444915b2ebaf67589a9bb24ecd",
+        "status": "read_only_rejection_addressed"
+      },
+      "package_receipt_sha256": "8c686933275cd3233ca2fbf0dbe29b3e547fe37f7850968faab620f552a1bbdb",
+      "runtime": {
+        "node": "v26.7.0",
+        "path": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+        "npm": "11.19.0"
+      },
+      "receipt_freshness": {
+        "status": "passed",
+        "behavior": "A pre-existing optional receiptPath is rejected immediately after normalization and before capture precheck, preflight, capture creation or any child lifecycle.",
+        "regression_case": "stale-receipt-before-preflight-mutation",
+        "sentinel_preserved": true,
+        "preflight_called": false,
+        "capture_created": false,
+        "runner_outputs_created": false,
+        "supervisor_started": false,
+        "controls_attempted": 0,
+        "cleanup_attempted": 0,
+        "receipt_emission_retried_after_rejection": false
+      },
+      "orchestrator": {
+        "path": "scripts/browser-control-orchestrator.mjs",
+        "sha256": "7232768d3a96f49fdf2b831b03ca95929c83ca4d6c35ccc24c7d512cf07034ff"
+      },
+      "regression": {
+        "path": "scripts/test-browser-control-orchestrator.mjs",
+        "sha256": "3c2dadf277706e6250440b3cf00ab33d4d80334d4e3c8d0244b21b22b4ed6ac9",
+        "status": "passed",
+        "cases": [
+          "stale-receipt-before-preflight-mutation",
+          "stale-capture-before-preflight-mutation",
+          "success",
+          "supervisor-failure",
+          "runner-failure",
+          "control-failure",
+          "cleanup-sequence-after-supervisor-close"
+        ],
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "fresh_live_fixture": false
+      },
+      "bound_hooks": {
+        "preflight_sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+        "sequential_trust_sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+        "browser_runner_sha256": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+        "trust_mode": "sequential-macos-login-keychain"
+      },
+      "verification": {
+        "json_parse": "passed",
+        "node_syntax": "passed",
+        "biome": "passed",
+        "preflight_regression": "passed",
+        "complete_browser_free_suite": "passed",
+        "temporary_fixture_roots_remaining": 0,
+        "r7_reused": false,
+        "r7_reopened": false,
+        "r7_artifacts_touched": false,
+        "browser_started": false,
+        "hub_contacted": false,
+        "keychain_touched": false,
+        "fresh_live_fixture": false
+      },
+      "invocation": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node scripts/test-browser-control-orchestrator.mjs",
+      "result": "The optional receiptPath freshness defect is repaired and covered alongside the stale-capture and cleanup corrections. The exact pinned runtime passed syntax, preflight and all seven browser-free orchestration cases.",
+      "next": "Hub must independently review the repaired exact source package; no browser/runtime authority is created by this source-only receipt.",
+      "viewer_dependency": false
+    }
+  ],
+  "thread_id": "01a082b7-890b-70b3-8a0e-9e964636849f",
+  "reasoning_effort": "max",
+  "development_authorized_at": "2026-09-08T21:13:48.933123+00:00",
+  "completed_this_programme": [
+    "T2 — exact current-Hub profile/generated tuple and SDK client gates verified under Node 26.7.0/npm 11.19.0",
+    "T3 — Debian ARM64 packed Node and browser consumer B1 journeys verified with independent cleanup evidence",
+    "T4 — fresh 51-drive packed Node and browser helpers verified with 25/25/1 pagination, 304/cursor continuation and cleanup",
+    "T6 — exact 2026.36.2 package identity and developer-consumer composition verified with archive SHA 03dddd..."
+  ],
+  "blocker": "The active SDK source/package path has no SDK-owned API or package-code blocker. The r5 control-IPC failure was corrected and independently accepted, but the one separately authorized r6 supervised sequential attempt was consumed after the fresh untrusted Chrome child attached on 9237 and before the packed SDK browser runner started: the operator-controlled stderr redirection path failed because the evidence directory had been mistakenly chmodded 0600. Exact r6 cleanup passed and no SDK acceptance route ran. Hub rejected the r6-bound preflight correction and v1 stable template for stale-artifact normalization, truncating output writes and root-symlink traversal. Hub accepted v2 after the reusable source/template rejected root symlinks and every runtime artifact before mutation, used exclusive runner-output creation and passed second-run/stale-artifact/symlink tests. TypeScript prepared r7, Hub published a complete fresh handoff, and TypeScript independently verified every root/script/archive/endpoint/certificate/credential/expiry/process/cleanup binding. The one authorized r7 attempt was then consumed before Chrome spawn because the TypeScript supervisor was observed serving but disappeared before the control client connected, producing ECONNREFUSED on control.sock. Exact TypeScript cleanup passed; no Chrome, SDK browser route, Hub API request, CA import, trusted browser or keychain mutation ran. The exact r2 failure, r1 diagnostic, r2 preparation, r5 runtime failure, correction, r6 preparation, r6 runtime failure, v1 rejection, v2 correction, r7 preparation, r7 handoff and r7 runtime failure evidence are recorded in docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r2.json, docs/development/macos-browser-control-diagnostic-2026-09-12-r1.json, docs/development/macos-browser-sequential-control-preparation-2026-09-12-r2.json, docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r5.json, docs/development/macos-browser-control-ipc-correction-2026-09-12-r5.json, docs/development/macos-browser-sequential-control-preparation-2026-09-12-r6.json, docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r6.json, docs/development/macos-browser-control-preflight-template-correction-2026-09-12.json, docs/development/macos-browser-control-preflight-template-correction-v2-2026-09-12.json, docs/development/macos-browser-sequential-control-package-preparation-2026-09-12-r7.json and docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r7.json. Viewer development and Viewer-specific acceptance are excluded and cannot be used as a dependency. No certificate bypass or stale tuple reuse is admissible. Named-source TeslaMate parity remains an explicit acceptance gap but does not block independent usability. Historical x86/amd64/Intel Mac/Azure and full-matrix rows are paused and cannot block this milestone.",
+  "blocker_owner": "Hub task / coordinator / macOS browser-control owner",
+  "unblock_event": "The r6 handoff is consumed and cannot be retried. The r7 handoff was independently verified, but its single attempt is now consumed at supervisor IPC before Chrome spawn and its TypeScript cleanup passed. Hub must finish cleanup of the exact r7 credential and Hub processes; no r7 retry or repair is admissible. Any future Mac browser lane requires a separate decision and wholly fresh inputs.",
+  "next_ready_action": "Hub independently reviews the repaired docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json and supplies a wholly fresh accepted browser handoff. Until then, continue only source work or concrete Hub review findings; do not start a browser/keychain/Hub/SDK runtime, create a live fixture, or reuse any r7 input."
+}

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "objective": "Implement all Hub ecosystem compatibility plan tasks",
-  "status": "active",
-  "plan": "/Users/bolyki/dev/source/teslatlas-service/docs/superpowers/plans/2026-09-05-hub-ecosystem-compatibility.md",
+  "status": "paused_by_owner",
+  "plan": "/Users/bolyki/dev/source/teslatlas-service/docs/development/MASTER_PLAN.md",
   "candidate_product_version": "2026.36.2",
   "baseline": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/baseline.json",
   "tasks": {
@@ -15,7 +15,7 @@
     "7": "complete",
     "8": "complete",
     "9": "complete",
-    "10": "core_and_node_browser_approved_installed_host_and_remaining_adapters_pending",
+    "10": "core_typescript_node_browser_source_gate_passed_canonical_profile_sibling_refresh_complete_installed_runtime_pending",
     "11": "pending",
     "12": "pending",
     "10a": "standalone_and_hub_integration_approved_final_installed_matrix_pending"
@@ -35,8 +35,15 @@
     "Latest Hub source-only distribution policy supersedes older downloadable-release prose. Build/install tests remain local evidence only.",
     "App has 52 preserved dirty files in the execution baseline and is not an implementation target.",
     "User all-in-bulk: independent Tasks6/7/8 run concurrently, one writer per repository, unique fixture ports and runtime paths; shared Hub edits serialized.",
-    "Owner companion installation amendment: no separate companion macOS installers or embedded companion payloads; one CLI/source bootstrap optionally invoked by Hub setup resolves current to an immutable verified Hub-compatible cohort.",
-    "Task10a standalone bootstrap owns only new tools/companions and scripts/bootstrap-companions.py; Task9 retains existing Rust/config/storage/test ownership. Shared CLI/package/metadata edits remain serialized."
+    "SUPERSEDED by 2026-09-08 selectable-installation direction: Owner companion installation amendment: no separate companion macOS installers or embedded companion payloads; one CLI/source bootstrap optionally invoked by Hub setup resolves current to an immutable verified Hub-compatible cohort.",
+    "Task10a standalone bootstrap owns only new tools/companions and scripts/bootstrap-companions.py; Task9 retains existing Rust/config/storage/test ownership. Shared CLI/package/metadata edits remain serialized.",
+    "2026-09-08 Protocol admission audit: current source gate passes, but fixed installed registry remains closed because the reviewed Protocol contract publication and v2 SessionInput/file-evidence/runner-close-ack branch are absent; no installed row is admitted.",
+    "2026-09-08 current adapter inventory snapshot: Protocol, Swift, Home Assistant, Viewer and Edge remain outside the fixed installed registry; this snapshot predates the later Hub TypeScript source binding recorded under task10_typescript_installed_lane_2026_09_08.",
+    "2026-09-08 Home Assistant correction-3 current review: exact ten-file adapter and 31-file component manifests match the current checkout; semantic source review, adapter (49 passed, 2 skipped), product (111 passed, 2 skipped) and Ruff checks pass. Installed/runtime, Docker, real Hub, UI, lifecycle, transport cleanup and Home Assistant registry admission remain pending; the fixed registry has only the separate Hub TypeScript source entries.",
+    "2026-09-08 sibling candidates and Hub follow-up: the TypeScript Node/browser contract snapshot passes its pinned source verification, and Hub now binds those exact contracts to two fixed source-owned installed entries with the reviewed SDK archive and v2 lane; installed runtime rows remain pending. The Home Assistant static Compose candidate passes configuration checks but Docker runtime is unavailable.",
+    "2026-09-08 canonical current-Hub profile ruling: Hub source enforces a 4,096-byte ordinary request limit and Axum claim extraction returns bounded text/plain rejection bodies for malformed or unsupported JSON; the newer Protocol profile SHA256SUMS b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926 is the canonical current-Hub identity. Sibling b391 snapshots remain historical/source-pending until refreshed by their owners.",
+    "2026-09-08 TypeScript installed-lane integrity correction: service mode is accepted only when the runner proof agrees with the expected installed mode, and runtime_actual is sourced from the fixed adapter runtime inventory rather than copied from job runtime metadata. Installed capability remains false.",
+    "2026-09-08 master reconciliation: Hub primary, optional helpers, App excluded. Simple primary Debian ARM64 working bootstrap first; polished .deb/pkg/Docker and cross-platform acceptance last. Selectable macOS companion packages are planned. Product coding and native goals held until owner start; preparation/verified cleanup separately authorized. Existing task/receipt counters preserved as historical/current unaccepted evidence."
   ],
   "evidence": {
     "baseline_tls_e2e": {
@@ -154,6 +161,16 @@
     },
     "edge_linux_baseline": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/edge-linux-baseline/receipt.json",
     "edge_linux_bridge_baseline": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/edge-linux-baseline/bridge-receipt.json",
+    "edge_dispatcher_live_admission_dedup": {
+      "source": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-edge/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "status": "bounded_local_dispatcher_to_live_edge_admission_dedup_passed",
+      "scope": "Pinned Go 1.27.0 producer sent the same decoded synthetic record twice to a live Edge release process; both admissions were acknowledged and one encrypted pending record remained without plaintext VIN or payload. A response-loss proxy retransmission also left one pending record.",
+      "vehicle_wire": "pending",
+      "hub_drain": "pending",
+      "installed_matrix": "pending",
+      "docker_runtime": "pending",
+      "service_manager_restart": "pending"
+    },
     "task5_viewer": {
       "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-5-report.md",
       "review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-5-review-package.md",
@@ -338,7 +355,21 @@
       "fix3_review_package": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-3-review-package.md",
       "fix3_report_sha256": "ef50addd57a4bd29f186f691e8d864e3f8b4cbff97c5f14f6d2d7b5ccab6a0cf",
       "fix3_review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10a-core-fix-3-review.md",
-      "fix3_review_sha256": "0d926aa0de50c20f7c6d2dcaad89c983725a6074a8ba090413fed1014754910f"
+      "fix3_review_sha256": "0d926aa0de50c20f7c6d2dcaad89c983725a6074a8ba090413fed1014754910f",
+      "current_companion_bootstrap_tests": {
+        "status": "passed",
+        "files": 5,
+        "passed": 66,
+        "failed": 0,
+        "command": "for f in tools/companions/tests/test_*.py; do python3 -B $f; done",
+        "stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-companion-bootstrap/companion-tests.stdout",
+        "stdout_sha256": "951ccd46abc08374627ac2a38f02131c97a9ca125d4058688cec2ea79faa4967",
+        "python314_stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-companion-bootstrap/companion-tests-python314.stdout",
+        "python314_stdout_sha256": "bc7d234db207eec088d6ba043c11772b4ca956d445a282b4ebf0dd350286d481",
+        "source_fix": "tools/companions/cli.py classifies socket.timeout as a catalog deadline failure on the supported Python 3.9 runtime",
+        "source_sha256": "428558d1fc87225561ab665353ca173ba689dd07b9d8208b7f1aa22cbf27e878",
+        "scope": "source-level companion bootstrap regression gate; installed cohort and public catalog acceptance remain pending"
+      }
     },
     "task4_clean_source_build": {
       "status": "approved",
@@ -547,6 +578,40 @@
       "sha256": "7a1e3b5b720ca998a45c34890401aaac568363827e17be7eb3ee819f5ecfaa59",
       "scope": "Fresh six-source local manifest, five unchanged digests and Swift metadata-only update; not public Git or install acceptance"
     },
+    "latest_local_companion_source_manifest": {
+      "status": "created_current_dirty_six_source_manifest",
+      "manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-companion-bootstrap/local-sources-current.json",
+      "sha256": "fc663b9895af9bca4039d68c85373fc244c2ad62955cb18d168a8582ad7a66c1",
+      "stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-companion-bootstrap/local-sources-current.stdout",
+      "stdout_sha256": "84f3d9e7350c5ca432a61a6c228c10f0567dad646d40bec1d8230d8166028d4f",
+      "components": {
+        "protocol": {
+          "files": 160,
+          "commit": "05225bd5b2f56885025180d68fedf3a42baaa90b"
+        },
+        "sdk-typescript": {
+          "files": 229,
+          "commit": "b1cd548fef7ddd26be2637c14bb435480166cef7"
+        },
+        "sdk-swift": {
+          "files": 142,
+          "commit": "51494612db6aa3d0b0dafd08001ce432befa7fbf"
+        },
+        "viewer": {
+          "files": 79,
+          "commit": "ba5424dcfeab59ac9fea0106f84fb5281672751a"
+        },
+        "home-assistant": {
+          "files": 76,
+          "commit": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e"
+        },
+        "edge": {
+          "files": 60,
+          "commit": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2"
+        }
+      },
+      "scope": "Read-only manifest from current sibling checkouts; dirty source and local-candidate only, no public Git or install acceptance"
+    },
     "task12_license_headers": {
       "status": "approved",
       "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-12-license-headers-brief.md",
@@ -703,7 +768,7 @@
       "scope": "Operating system/SSH/Python prerequisites only; no candidate Hub install or matrix pass"
     },
     "task10_amd64_current_rust_build": {
-      "status": "single_job_attempt3_in_progress",
+      "status": "historical_build_attempt_preserved_current_package_recorded_separately",
       "evidence": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-build",
       "source_manifest_sha256": "59109d7c50daf0910d31929662a591428694ea7b055b231a109ce4604a85f301",
       "source_export_sha256": "e65af5391b6ef5e71eb7115534b93f2e027f037871786d1846fd5f4850f6e970",
@@ -711,6 +776,34 @@
       "attempt2_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-build/hub-release-attempt2-receipt.json",
       "probe_receipt": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-build/rustversion-link-probe-receipt.json",
       "probe_scope": "Failed dependency built successfully with one job; does not isolate exact cause of previous QEMU collect2 segmentation fault"
+    },
+    "current_runtime_inventory_2026_09_08": {
+      "status": "read_only_snapshot_no_mutation",
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-working-product/current-runtime-inventory.json",
+      "sha256": "6f396f9029bbe785ddfb4ef2f095aed21a3e8254846ee02dfebd7f72388c45dc",
+      "prepared_matrix_hosts": "macos_arm64, debian13_arm64 and debian13_amd64 stopped; package_installed=false; registration_ready=false",
+      "current_lima_matrix_ports": {
+        "debian13_amd64": 54518,
+        "debian13_arm64": 57067
+      },
+      "quarantined_arm_touched": false,
+      "protected_macos": "running per retained after-stop observation",
+      "docker_daemon": "unavailable; client version command exit 1",
+      "scope": "Current read-only host/runtime observation; no SSH, VM, Docker, service or production mutation"
+    },
+    "current_package_inputs_2026_09_08": {
+      "status": "built_candidates_review_pending_installed_acceptance_pending",
+      "amd64_deb": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-package/teslatlas-hub_2026.36.2-1_amd64-current.deb",
+        "sha256": "5025383ca2053ea47c4d039f4719084ea2c9b9896c525cf91aef247642df80d8",
+        "verification": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-amd64-package/verification/package-verification.json",
+        "scope": "AMD64 package assembly and expanded helper status; no installed systemd or source-denied acceptance; QEMU user emulation"
+      },
+      "macos_pkg": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-current-mac-package/TeslatlasHub-2026.36.2-macos13-arm64-current.pkg",
+        "sha256": "3a8af8985713502b6c772adcf045ce41b966f68b1463e654f827f5f19368b6f4",
+        "scope": "Named current package candidate; bounded package lifecycle review pending"
+      }
     },
     "app_external_advance": {
       "scope": "other work advanced App; no App writes by this ecosystem task",
@@ -819,7 +912,7 @@
       "ruling": "Exact rich ready/ack shapes refine preliminary examples; HA alone uses top-level Docker stdio; Swift host coordinator owns one Unix attachment across native and Docker workers. No public operation or descriptor change."
     },
     "task10_ha_matrix_adapter": {
-      "status": "correction2_in_progress_after_fix1_review_C0_I7_M0",
+      "status": "correction3_semantic_source_review_pass_provenance_pending_installed_acceptance_pending",
       "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-brief.md",
       "scope": "All18 cases, real installed HA flow/client harness and pure contracts; runtime execution and installed acceptance pending",
       "report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-report.md",
@@ -846,7 +939,54 @@
         "sha256": "ce2c6710d753e3134d898e35fb6aa70806bfbe8fffca729893571875d801d89b"
       },
       "correction2_brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-ha-adapter-fix-2-brief.md",
-      "correction2_before_sha256": "d8561bd54751707aff464f6f3cce307022e75d0185c1296f22137428086cb30a"
+      "correction2_before_sha256": "d8561bd54751707aff464f6f3cce307022e75d0185c1296f22137428086cb30a",
+      "correction3_current_source": {
+        "status": "semantic_source_review_pass_provenance_pending_installed_acceptance_pending",
+        "addendum": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-ha-adapter-fix-3-current/current-source-evidence-addendum.md",
+        "addendum_sha256": "db9dba27e782c356be7ae59f9774a577bead8db6630fe7cc445abdaa5b8a62b2",
+        "manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-ha-adapter-fix-3-current/source-after-current.json",
+        "manifest_sha256": "bc0920620d2dd6660d762a7274b029edbd46e334e2280a9fba9ab73db0bdc7c1",
+        "review": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-ha-adapter-fix-3-current/independent-review.md",
+        "review_sha256": "9d64d6a1896396039bfc9cab1aa34eb955e3322daff32d215987f935686737d3",
+        "local_gates": {
+          "affected_suite": "49 passed, 2 skipped",
+          "ruff": "passed",
+          "schema_gates": "2 passed"
+        },
+        "source_delta": "tests/test_matrix_live.py only; test-only later-poll and unchanged-outage-generation regressions",
+        "scope": "Current ten-file source identity and synthetic/local gates; no pinned container, installed lifecycle, real Hub, UI, transport cleanup or registry admission"
+      },
+      "current_review_2026_09_08": {
+        "status": "source_semantics_and_provenance_pass_installed_acceptance_pending",
+        "review": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-independent-review.json",
+        "review_sha256": "eec781894f5d31194d93c5c0797bfa30ea44c65baee53fd0b4bb5ca117222bfc",
+        "review_markdown": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-independent-review.md",
+        "review_markdown_sha256": "9de747e35bfe00bc3ec905451e0d7bd7612b8affd39be154765c3ccb3bf10318",
+        "current_source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-source-manifest.json",
+        "current_source_manifest_sha256": "bff35f1342e4bb262dd9e06599695139df53631f613d38d48bcd698185eeb7c7",
+        "current_component_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-component-manifest.json",
+        "current_component_manifest_sha256": "d8993f901c7b4733fa2c3e3692125d6fceda0e1bbb5ec115f0b9e73a69f6d845",
+        "checkout_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+        "source_bundle": "exact current ten-file correction-3 adapter bundle; one test-only delta from the frozen manifest",
+        "component_bundle": "31 current custom_components/teslatlas_hub files, including diagnostics fix and three diagnostics tests",
+        "local_gates": {
+          "adapter": "49 passed, 2 skipped",
+          "adapter_stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/adapter-suite.stdout",
+          "adapter_stdout_sha256": "ce7795e847b3e740dc80869b5de357c76c2aa0f3e3cdaf75039a0785d6e78bb6",
+          "product": "111 passed, 2 skipped",
+          "product_stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/product-suite.stdout",
+          "product_stdout_sha256": "67fdb7ec581f26d823032415cc933cedee536245f11b3a6cd4b4658d806febeb",
+          "ruff_check": "passed",
+          "ruff_stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/ruff.stdout",
+          "ruff_stdout_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+          "affected_format_check": "2 files already formatted",
+          "whole_tree_format_check": "not passed: five existing files would be reformatted; no mutation"
+        },
+        "admission_boundary": "No pinned container, installed package, real Hub, UI, lifecycle, final stop, transport cleanup, or Home Assistant registry admission was performed; the fixed registry contains only the separate Hub TypeScript source entries.",
+        "provenance_launcher_binding": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/provenance-launcher-binding.json",
+        "provenance_launcher_binding_sha256": "45ddef5ccde8503137b3781e3b8fafd7fba3aafd54cb884fb267d901403c606e",
+        "product_environment": "Python 3.14.7 / Home Assistant 2026.8.3"
+      }
     },
     "task10_current_amd64_seed": {
       "status": "built_schema59_and_advance_smoke_passed",
@@ -944,20 +1084,184 @@
       }
     },
     "task10_shared_installed_integration": {
-      "status": "implementation_in_progress",
+      "status": "correction3_I16_and_I14_I15_source_corrections_independently_rereviewed_installed_acceptance_pending",
       "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-shared-installed-integration-brief.md",
+      "correction_report": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-shared-installed-integration-fix-1-report.md",
       "baseline": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-shared-installed-integration-before/files.json",
       "baseline_sha256": "56627080c0f808d8222d88f662080ddec2791a0301d68e3017947ab763126457",
-      "scope": "Actual runtime orchestration/registry/semantic receipt parsers; no installed acceptance yet"
+      "scope": "Deadline-aware runtime orchestration, registry and semantic receipt corrections; current I14/I15 producer/evidence correction independently rereviewed with no material source residual; installed acceptance remains pending",
+      "local_gates": {
+        "installed_host_tests": 132,
+        "full_interop_tests": 175,
+        "matrix_correction_focused": "24 passed (workspace-parent package invocation)",
+        "python_compile": "passed",
+        "shared_continuation": {
+          "matrix_runner_tests": 36,
+          "docker_pipe_tests": 3,
+          "node_client_lane_tests": 27,
+          "ha_initial_final_barrier": "passed_local_subprocess",
+          "supplement_row_rejection": "passed_redacted_failed_row",
+          "operation_record_journal_binding": "passed_fixture"
+        },
+        "hub_rust_tests": "903 library + 64 binary + 2 Edge E2E + 2 interop + 2 TLS E2E + 3 doc tests passed; 2 ignored",
+        "cargo_fmt": "passed",
+        "cargo_clippy": "passed_locked_all_targets_all_features_warnings_denied",
+        "docker_static": "passed_daemon_runtime_unavailable",
+        "repository_layout": "passed",
+        "provenance": "passed",
+        "receipt_i15_followup": "producer-observation documents with explicit input/output bindings, command/cwd log binding, historical lineage and comparator database-file binding passed parser tests",
+        "receipt_i14_i15_correction": {
+          "status": "source_correction_local_gates_passed",
+          "receipt_validation_tests": 10,
+          "full_interop_tests": 175,
+          "matrix_execution_log_binding": "passed_direct_helper_test",
+          "matrix_identity_role_set_binding": "passed_negative_subset_test",
+          "producer_observation_binding": "passed_negative_boolean_test",
+          "producer_observation_shape": "value_plus_hash_bound_document_with_explicit_inputs_and_outputs",
+          "installed_acceptance": false
+        }
+      },
+      "correction2_report": "hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-shared-installed-integration-fix-2-report.md",
+      "correction2_report_sha256": "3645680298ca18f7b010bef113736e249982f3818c47dd8fdf2796c973753e12",
+      "correction2_status": "source_correction_local_gates_passed_focused_rereview_I1_I3_pass_I16_partial_superseded_by_current_I16_correction",
+      "current_shared_review": {
+        "status": "superseded_by_post_i14_i15_independent_I1_I18_rereview",
+        "review": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-current-review/review.md",
+        "review_sha256": "0fe2bfb0f8f34b43b66152acb9e9abddac276bb710bc44e045544dc015424464",
+        "verdict": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-current-review/verdict.json",
+        "verdict_sha256": "ab7ada289504fad84f576dc46be06f4d2bbed2382acc2e2294bf7a59fd5a4aaf",
+        "source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-current-review/sha256.txt",
+        "source_manifest_sha256": "0174a243d1d6011d942344c620d75578c993321fe7425283b4ea0f3f2acaf18e",
+        "artifact_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-current-review/artifact-sha256.txt",
+        "artifact_manifest_sha256": "8b8345965c26ede80cfc70eb96583ddd2bda2656d552d0f1b337d605a5b14ca0",
+        "scope": "Read-only current-source review of I1, I3 and I16; no source, registry, installed-host, production or live-service changes",
+        "verdicts": {
+          "I1": "pass_source_pending_capability",
+          "I3": "pass_source_no_installed_acceptance",
+          "I16": "partial_nested_javascript_session_and_result_validation_remains_shallow"
+        },
+        "tests": {
+          "runner_help_exit": 0,
+          "registry_import_exit": 0,
+          "node_contract_suites": "21 passed"
+        },
+        "acceptance": {
+          "installed_host": false,
+          "production_broker": false,
+          "full_matrix": false,
+          "fixed_installed_registry_entries": 0
+        }
+      },
+      "i16_current_correction": {
+        "status": "independent_rereview_pass_installed_acceptance_pending",
+        "report": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-i16-fix/i16-current-correction.md",
+        "report_sha256": "76fbadc98aae1bda2cbad316e58d57ff53aa45db3705296787a3eda9a61dd34c",
+        "source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-i16-fix/source-current.json",
+        "source_manifest_sha256": "56503626de4aa79a07aa068769e7d82aee6fe761f5695961137391b95f2da3e9",
+        "source_manifest_sidecar_sha256": "b480c1b617dba72e6bc221ac7fa47d4bd47e641d5aa5bd622138095d405b2d7c",
+        "local_gates": {
+          "node_contract_and_cleanup_tests": "27 passed",
+          "strict_installed_contract_tests": "8 passed",
+          "full_interop_tests": "175 passed",
+          "py_compile": "passed",
+          "node_syntax": "passed",
+          "git_diff_check": "passed"
+        },
+        "artifact_hashes": {
+          "node_tests_stdout": "462285d8c1ab596e892cadac25a48936cc33d2add7d86bb279ca3036558c4a29",
+          "interop_tests_stdout": "099e95768e2e23f93ad802c5ef52f1a12c4831fd8c6edfac4534e5f520b9d4f1",
+          "commands_log": "8b4a37ec1b53390b67b119a65d762dff80d34e2af754087b26e80c1800042c2b"
+        },
+        "scope": "Current Node/private-broker installed-contract correction, challenge-chain source change and local tests; independent rereview passes with no material source residual; no registry admission, installed host, production broker, full matrix, Docker runtime or live service",
+        "independent_rereview": {
+          "status": "pass_no_material_source_residual_installed_acceptance_pending",
+          "review": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-i16-fix/independent-rereview.md",
+          "review_sha256": "e3a66e062ae7dd2a6211ed0b055d1732a28428110139174f5f198b65934db679",
+          "source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-i16-fix/source-current.json",
+          "source_manifest_sha256": "56503626de4aa79a07aa068769e7d82aee6fe761f5695961137391b95f2da3e9",
+          "verdict": "pass_challenge_chain_nested_contract_deadline_sequence_wire_latch_ack_output",
+          "scope": "Read-only review of exact current ten-file I16 bundle; no repository source, registry, installed-host, production-broker, Docker or live-service execution",
+          "checks": {
+            "node_strict_tests": "8 passed",
+            "python_session_tests": "22 passed",
+            "node_syntax": "passed",
+            "python_compile": "passed",
+            "git_diff_check": "passed",
+            "installed_capability": "not_established",
+            "production_broker": "not_executed",
+            "full_matrix": "not_executed"
+          },
+          "residual": "No material source residual within the reviewed I16 scope; installed capability and runtime acceptance remain pending."
+        }
+      },
+      "current_i16_review": {
+        "status": "pass_no_material_source_residual_installed_acceptance_pending",
+        "review": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-i16-fix/independent-rereview.md",
+        "review_sha256": "e3a66e062ae7dd2a6211ed0b055d1732a28428110139174f5f198b65934db679",
+        "source_manifest_sha256": "56503626de4aa79a07aa068769e7d82aee6fe761f5695961137391b95f2da3e9",
+        "node_tests": "27 combined; 8 strict installed-contract",
+        "python_session_tests": "22 passed",
+        "registry_entries": 0,
+        "installed_acceptance": false
+      },
+      "post_i14_i15_rereview": {
+        "status": "independent_rereview_pass_no_material_source_residual_installed_acceptance_pending",
+        "report": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-i1-i18-rereview-post-i14-i15/independent-rereview.md",
+        "scope": "Read-only independent current-source I1-I18 review after I14/I15 parser correction; no registry, host, Docker runtime, live service, production broker, vehicle or publication changes; the later Hub TypeScript source binding is recorded separately and does not change this historical review result.",
+        "report_sha256": "dc3b383e87ca4f4d4ebbedf150210add27a9aa0c15ca75fe2fae1357be3bfb67",
+        "source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-shared-i1-i18-rereview-post-i14-i15/source-current.json",
+        "source_manifest_sha256": "168cffba737889abda4575dc750835f96d114152f79b42585dffd4f2abd5c5e0",
+        "source_manifest_sidecar_sha256": "2a3b6e1c4c642a28a5c24c68b424b9e488593a06286ecde3dcd4704b6ccae107",
+        "verdict": "pass_no_material_source_residual_I1_I18_installed_acceptance_pending",
+        "local_gates": {
+          "receipt_validation_tests": "10 passed",
+          "shared_correction_tests": "24 passed",
+          "full_interop_tests": "175 passed",
+          "node_client_lane_tests": "27 passed",
+          "node_syntax": "passed",
+          "python_compile": "passed",
+          "git_diff_check": "passed"
+        }
+      },
+      "hub_typescript_follow_up": {
+        "status": "source_bound_final_archive_manifest_bindings_current_runtime_pending",
+        "registry_entries": [
+          "typescript_node",
+          "typescript_browser"
+        ],
+        "local_gates": {
+          "node_client_lane_tests": "28 passed",
+          "strict_installed_lane_tests": "9 passed",
+          "installed_host_tests": "132 passed",
+          "full_interop_tests": "176 passed",
+          "python_compile": "passed",
+          "node_syntax": "passed",
+          "git_diff_check": "passed"
+        },
+        "sdk_archive": {
+          "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-working-product/sdk-m1-node-26.7.0-pack/teslatlas-sdk-2026.36.2.tgz",
+          "sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+          "member_count": 81,
+          "version": "2026.36.2",
+          "node_runtime_entry_sha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+          "browser_runtime_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e",
+          "sdk_content_witness_sha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+          "hub_staged_private_manifest_expected_sha256": "480226f91ef676461b171b131a0184aed72d94f1748e28752c4dd0d2164f2618",
+          "hub_staged_private_manifest_evidence_boundary": "Staged-product integrity evidence only after Hub verifies the actual owner-only 0600 installed-package manifest; not installed runtime evidence.",
+          "verification_runtime": "Node 26.7.0/npm 11.19.0 without --force or an engine override",
+          "clean_npm_ci_and_full_verify": "passed"
+        },
+        "scope": "Hub source and local integration gate only; no installed host, Docker, production broker, vehicle, live-service or final matrix execution."
+      }
     },
     "task10_provider_preflight": {
-      "status": "actual_local_guard_failure_bounded_fix_prepared",
+      "status": "accepted_C0_I0_M0_actual_ARM64_prepare_reached_postinstall_payload_check",
       "brief": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-provider-preflight-fix-brief.md",
       "evidence": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/provider-tool-preflight.json",
-      "scope": "Required Lima Homebrew alias rejected by generic non-symlink guard; package installation pending correction and review"
+      "scope": "Required Lima Homebrew alias correction independently accepted; actual ARM64 preparation passed provider admission and reached post-install payload verification"
     },
     "task10_actual_installed_prerequisites": {
-      "status": "arm64_fresh_host_identity_and_package_manifest_ready_provider_guard_fix_pending",
+      "status": "arm64_package_installed_service_stopped_quarantined_after_root_only_payload_read_failure",
       "evidence_root": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites",
       "arm64_observation": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/arm64/observation-current-boot.record.json",
       "machine_identity_preserved": true,
@@ -966,8 +1270,8 @@
         "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/arm64/package/package-manifest.json",
         "sha256": "6e018240f1c03207a3fefc05088d87fd56b502abe563528d2f7f4b54a86c5470"
       },
-      "installation_started": false,
-      "note": "Fresh guest current public key independently obtained through exact local Lima control plane after old pin refusal; original machine ID matches, current strict SSH passes. ssh.overVsock false on only fresh uninstalled guest. Cause of host key rotation not claimed.",
+      "installation_started": true,
+      "note": "Fresh guest current public key independently obtained through exact local Lima control plane after old pin refusal; original machine ID matches, current strict SSH passes. ssh.overVsock false on only fresh uninstalled guest. Cause of host key rotation not claimed. The frozen package installed, then manifest verification tried to read root:teslatlas 0640 /etc/teslatlas-hub/config.toml as the login user; the guest is durably quarantined and preserved.",
       "macos_package_manifest": {
         "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/macos/package/package-manifest.json",
         "sha256": "1e2add80a5b1e2c16cc76df0a0bb5aa1ea228894cc1d359529ae66b4bb8f6aad"
@@ -977,13 +1281,564 @@
         "sha256": "d5ce2c157299b395ea5e806f79dee008b2ef14db8b6f08aa8884a7ae3684796b"
       },
       "provider_cli_red": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/arm64/provider-cli-preflight-red.record.json",
-      "provider_fix_status": "implementation_in_progress_with_shared_session_caller_change"
+      "provider_fix_status": "accepted_independent_review_C0_I0_M0",
+      "reviewed_prepare_failure": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/arm64/reviewed-prepare.record.json",
+      "postfailure_root_observation": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/task10-installed-lifecycle-prerequisites/arm64/postfailure-root-observation.record.json",
+      "payload_hash_correction": {
+        "status": "accepted_C0_I0_M0_fresh_guest_runtime_retry_pending",
+        "report": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-arm64-root-payload-hash-fix/task-10-arm64-root-payload-hash-fix-report.md",
+        "report_sha256": "926bad1f600253d18422cf4d56f522446ef1c2bfe7ea0fa5fac4245891fa9209",
+        "review": "/Users/bolyki/dev/source/teslatlas-service/hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-arm64-root-payload-hash-fix-review.md",
+        "review_sha256": "8a5821166ed4da257b2456c9fe1d2917a661c620a514ae478ac358e8f38399ac"
+      }
+    },
+    "hub_execution_2026_09_08": {
+      "status": "bounded_source_and_local_gate_execution_complete_installed_live_and_publication_pending",
+      "scope": "Controller/session cleanup, deadline-aware installed runner, native Fleet public/private listener split, package-safe interop imports, core Docker packaging and documentation",
+      "rust": {
+        "cargo_test_locked": {
+          "library": 904,
+          "binary": 64,
+          "edge_e2e": 2,
+          "interop": 2,
+          "tls_e2e": 2,
+          "doc": 3,
+          "failed": 0,
+          "ignored": 2
+        },
+        "cargo_fmt_check": "passed",
+        "cargo_clippy_locked_all_targets_all_features_warnings": "passed",
+        "fleet_listener_targeted": "passed"
+      },
+      "python": {
+        "installed_host_tests": 132,
+        "full_interop_tests": 176,
+        "matrix_correction_focused": "24 passed (workspace-parent package invocation)",
+        "py_compile": "passed",
+        "companion_bootstrap_tests": 66,
+        "companion_bootstrap_files": 5,
+        "companion_bootstrap_python39_stdout_sha256": "951ccd46abc08374627ac2a38f02131c97a9ca125d4058688cec2ea79faa4967",
+        "companion_bootstrap_python314_stdout_sha256": "bc7d234db207eec088d6ba043c11772b4ca956d445a282b4ebf0dd350286d481"
+      },
+      "shared_continuation": {
+        "matrix_runner_tests": 36,
+        "docker_pipe_tests": 3,
+        "node_client_lane_tests": 28,
+        "ha_initial_final_barrier": "passed_local_subprocess",
+        "supplement_row_rejection": "passed_redacted_failed_row",
+        "operation_record_journal_binding": "passed_fixture",
+        "receipt_validation_tests": 10,
+        "receipt_i14_i15_source_correction": "passed"
+      },
+      "packaging": {
+        "docker_static_checks": "passed",
+        "repository_layout_tests": "passed",
+        "tracked_layout_verifier": "pending_untracked_install_docker_guide_in_index",
+        "candidate_layout_verifier": "passed_507_files_post_i14_i15",
+        "tracked_provenance": "passed_495_files",
+        "candidate_provenance": "passed_507_files_post_i14_i15",
+        "candidate_manifest_scope": "507 current candidate files verified after final I14/I15 receipt corrections and ledger reconciliation with private source and temporary provenance manifests; manifest bytes and digest are retained outside the repository",
+        "docker_private_config_mount": "passed_root_config_toml_mount_and_gitignore_boundary",
+        "docker_static_gate_after_config_fix": "passed",
+        "git_diff_check": "passed",
+        "candidate_manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-companion-bootstrap/current-hub-candidate-source-manifest-post-i14-i15-final.json",
+        "candidate_provenance_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-companion-bootstrap/current-hub-candidate-provenance-manifest.json"
+      },
+      "limits": [
+        "Docker daemon was unavailable; no container build or runtime acceptance was performed.",
+        "Installed macOS/Linux matrix rows, remaining sibling adapters, full live Fleet/Edge acceptance and final source publication remain pending.",
+        "No commit, push, release, CI, artifact upload, service restart, vehicle action or live deployment was performed.",
+        "The independent I1-I18 source rereview passed with no material residual in the reviewed scope; the Hub-owned TypeScript source entries are locally bound, while installed capability remains pending because fixed-runtime host lanes are unavailable."
+      ],
+      "targeted_rust": {
+        "tls_import_e2e": "2 passed",
+        "interop_fixture": "2 passed",
+        "sync_hub_pack": "43 passed, 1 ignored",
+        "sync_updates_delivery": "9 passed"
+      },
+      "docker_static": {
+        "compose_config": "passed with docker-compose 5.5.1 without daemon/container creation",
+        "packaging_script": "passed with legacy docker-compose fallback"
+      }
     },
     "app_external_edits_latest": {
       "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-05-execution/app-external-edits-20260906-005446-checkpoint.json",
       "sha256": "49345a618addd6d2f7d4c507f0815be2b11a74467c33e7f18a5b037e7a1c6db3",
       "head": "5c12c6c8dba859c2a6e91bd8c9c29ff28e8a696a",
       "status_lines": 51
+    },
+    "agent_guidance_inventory": {
+      "status": "authoritative_non_app_coverage_recorded",
+      "report": "hub/.superpowers/sdd/2026-09-05-hub-ecosystem-compatibility/task-10-agent-guidance-inventory.md",
+      "report_sha256": "739a1fa5afc1559e9d765447708dbfad4332e5702d1c41c89ee3fe185bb9af81",
+      "workspace_root": "AGENTS.md",
+      "product_roots": [
+        "hub",
+        "teslatlas-protocol",
+        "teslatlas-sdk-typescript",
+        "teslatlas-sdk-swift",
+        "teslatlas-viewer",
+        "teslatlas-home-assistant",
+        "teslatlas-edge"
+      ],
+      "app_excluded": true,
+      "active_nested_product_files": 0,
+      "historical_or_unrelated_classified": true,
+      "astra_guide_recheck": {
+        "status": "passed_read_only_recheck",
+        "url": "https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra",
+        "date": "2026-09-08",
+        "scope": "authorized follow-through, instruction priority, concise communication, bounded delegation and proportionate verification"
+      }
+    },
+    "documentation_link_check": {
+      "status": "passed_local_relative_links",
+      "files": [
+        ".github/README.md",
+        "docs/index.md",
+        "docs/guides/install-docker.md"
+      ],
+      "missing": 0,
+      "scope": "relative Markdown targets only; external URLs not fetched"
+    },
+    "task10_sibling_admission_boundary": {
+      "status": "no_new_adapter_admissions",
+      "protocol": "approved_bounded_adapter_final_installed_integration_pending",
+      "swift": "current_source_rereview_passed_hub_fixed_seam_and_installed_runtime_pending",
+      "home_assistant": "correction3_semantic_source_review_pass_provenance_pending_installed_acceptance_pending",
+      "viewer": "independent_installed_acceptance_pending",
+      "edge": "local_dispatcher_evidence_only_installed_and_vehicle_wire_pending",
+      "registry": "Hub-owned TypeScript Node/browser entries are source-bound; Protocol, Swift, Home Assistant, Viewer and Edge remain outside the fixed registry.",
+      "rule": "No sibling local gate or source report promotes an adapter into installed matrix support without current reviewed contract, runtime inventory and independent admission.",
+      "shared_integration": "I1-I18 independent rereview passes with no material source residual; TypeScript source admission is locally verified, while fixed-runtime and installed acceptance remain pending."
+    },
+    "task10_swift_current_admission_audit_2026_09_08": {
+      "status": "current_source_rereview_passed_hub_fixed_seam_and_installed_runtime_pending",
+      "bundle": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/swift-to-hub-admission-bundle.json",
+      "bundle_sha256": "a3310c56aa8867f243e4eb5d8ec60bea1b53690bc709d4a0a810ebc724181eeb",
+      "source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/source-current.json",
+      "source_manifest_sha256": "c3555e20524fc66cdf56e8e4b4ce6950a458f3765c3301c27bcaca7acd66a655",
+      "launcher_worker_evidence": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/launcher-worker-evidence.json",
+      "launcher_worker_evidence_sha256": "ca71b768ff515c8b68904dab777b5d7273bcfcd7a4931c3fcaaddd2cc138174a",
+      "gate_results": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/gate-results.json",
+      "gate_results_sha256": "3abc907a2007a5bc2d7a9b918432dec1de03eda54032f201639278784a8a985e",
+      "source_identity": {
+        "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+        "working_tree_status_sha256": "a54fb381a610a35ff319afaf9b871785bd729618effaee4f1192c173282c91bd",
+        "adapter_diff_sha256": "026fa255fca803d49e27e9748be152541cfc8222100eaa6a7d5bbf5754eeaaa1",
+        "files_verified": 16
+      },
+      "contract": {
+        "manifest_sha256": "8057eae6af5dfeb55e14544c2a8fa10cdf132f40638fa6b2072c78004dcef823",
+        "validator_sha256": "1019fbfc64c91038dbc68025bf31fb9483abb0cba13588440ab0861892b083df",
+        "raw_schema_sha256": "bd2d525a52e31651aac5357256c57243ebefdbde0fc191fb63d2ce822393bac7",
+        "required_cases": 25,
+        "required_actors": [
+          "swift_macos",
+          "swift_linux"
+        ],
+        "independent_manifest_check": "passed: 25 cases, 2 actors",
+        "independent_adapter_check": "26 passed"
+      },
+      "independent_rereview": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/independent-review.md",
+        "sha256": "f9e2a6ed4ea8908a679539bf1fa9769b867b3dfe2960ea975d2c58dccd9713d8",
+        "source_verdict": "I1-I5 and I7-I9 closed at source/synthetic level; I6 materially closed with installed/root provenance residual",
+        "I6_residual": "Response cursor/body provenance and actual live HTTP header/cursor execution remain installed/root evidence; worker-supplied cursor hashes are bound to request scopes, and cross-case anchors remain enforced by ordered coordinator finalization",
+        "I3_residual": "coherent wrong-secret invitation HTTP 401 remains installed/runtime evidence",
+        "I9_residual": "exceptional cleanup, overrun and installed runtime lanes remain unexecuted"
+      },
+      "canonical_profile": {
+        "id": "hub-http-v1",
+        "revision": "1.0.0",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "members_verified": 18,
+        "swift_binding_byte_identical_to_protocol": true
+      },
+      "manifest_validation": "refreshed bundle records a passing direct validation: 25 cases, 2 actors",
+      "registry": {
+        "swift_entry_present": false,
+        "reason": "The Hub now verifies a bounded Swift product archive's root, required matrix sources and embedded VERSION; validates a selected installed-product inventory against the exact Swift artifact/package/version; and can source-bind a Unix broker override for a docker-exec worker. SessionInput staging, the fixed macOS/docker worker launch wiring, and admit/supplement/log/runtime hooks remain absent; a registry row before those callables exist would be non-operational and cannot satisfy the fixed-entry boundary.",
+        "required_cells": [
+          "swift__macos_arm64",
+          "swift__debian13_amd64",
+          "swift__debian13_arm64"
+        ],
+        "accepted_rows": 0
+      },
+      "scope": "Read-only Swift source and artifact verification plus local contract checks. No Swift registry entry, host, Docker, service, production, vehicle or publication operation was performed."
+    },
+    "task10_protocol_registry_admission_2026_09_08": {
+      "status": "source_gate_passed_registry_admission_pending",
+      "audit": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-protocol-registry-audit/current-audit.json",
+      "audit_sha256": "dc30738798aa97063b1df8c04c201b1082f75a0c4d7081d859ee8d386804427c",
+      "current_protocol_head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+      "current_source_hashes": {
+        "conformance/adapters/actual-hub": "b4a87f6aaf464f81ff4fa8fa60a55571401aee28f3a7b4bf6275101818ca6b3a",
+        "conformance/hub_matrix.py": "f2eebf3a11e4630768a9bc863403b13a529d32cd7cb1c3e01a7867d405ae2594",
+        "conformance/hub_control.py": "907065ee7b0a0665533f6ca674bee577bf70c6004fc58dbf0bd866c7dd674430"
+      },
+      "source_gate": {
+        "status": "passed",
+        "command": "./tools/check",
+        "result": "119 tests passed; profiles=3 runs=31 passed=31 failed=0",
+        "metadata": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-protocol-current-source-gate/metadata.json",
+        "metadata_sha256": "84bd4883cde74899d3e7774e58b2e9160c9fd9761e9bfc52456e0a9eeee430f6",
+        "transient_attempt": "one prior uncaptured ./tools/check attempt hit the test harness outer 5-second timeout in test_adapter_line_timeout_is_bounded; isolated reproduction passed 10/10, three full unittest reruns passed, and the subsequent captured ./tools/check passed"
+      },
+      "registry": {
+        "fixed_entries": 0,
+        "status": "pending",
+        "reason": "current Protocol tree has no reviewed matrix-contract.json or matrix_contract.py and the adapter remains v1 stdout-only without SessionInput/file evidence/runner close-ack lifecycle"
+      },
+      "installed_acceptance": false,
+      "scope": "read-only source/admission audit; no sibling edits, host, VM, Docker, service, production, vehicle or publication operation"
+    },
+    "task10_current_adapter_inventory_2026_09_08": {
+      "status": "read_only_current_contract_and_admission_inventory_superseded_by_later_hub_typescript_binding",
+      "artifact": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-current-adapter-inventory/current-adapter-inventory.json",
+      "artifact_sha256": "132e0cc65237b447d9c1b622f147da4667cac83e246b1cd34f6d370e7a7f1bc4",
+      "protocol": {
+        "status": "source_gate_passed_registry_admission_pending",
+        "blocker": "current v1 stdout adapter lacks reviewed v2 matrix contract, SessionInput/file evidence and runner close acknowledgement"
+      },
+      "swift": {
+        "status": "contract_present_current_independent_review_pending_installed_acceptance_pending",
+        "blocker": "current contract bundle has no current independent closure of the prior nine Important findings and no executed worker/runtime lane",
+        "source_gate": {
+          "status": "passed",
+          "tests": 23,
+          "command": "python3 -m unittest -v tools.test_matrix_adapter",
+          "stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-current-adapter-inventory/swift-source-gate.stdout",
+          "stdout_sha256": "ad9219bcb9182183c69515f1ec8db6843ede06b44a3e3b030f72df8980f9264d",
+          "scope": "current source-only contract/wire/coordinator tests; no installed worker/runtime acceptance"
+        }
+      },
+      "home_assistant": {
+        "status": "correction3_semantic_source_review_pass_provenance_pending_installed_acceptance_pending",
+        "blocker": "source bundle and component provenance are now independently bound and reviewed; pinned HA/Hub/runtime execution, installed lifecycle, and registry admission remain absent",
+        "source_gates": {
+          "matrix_live": {
+            "status": "passed",
+            "tests": 49,
+            "command": ".venv/bin/pytest -q tests/test_matrix_live.py",
+            "stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-current-adapter-inventory/ha-matrix-source-gate.stdout",
+            "stdout_sha256": "ee5dfcd072014c8106b65985652cbe10e5d761ad678ebfbcc9f326c4f8c45da3"
+          },
+          "product": {
+            "status": "passed",
+            "tests": 36,
+            "command": ".venv/bin/pytest -q tests/test_config_flow.py tests/test_diagnostics.py tests/test_init.py tests/test_migration.py tests/test_package.py tests/test_sensor.py",
+            "stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-current-adapter-inventory/ha-product-source-gate.stdout",
+            "stdout_sha256": "433537300ed5e9c2f449184506dabf08f02dee08b375c3ba713a1735fbc46072"
+          }
+        },
+        "current_review": {
+          "status": "source_semantics_and_provenance_pass_installed_acceptance_pending",
+          "review": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-independent-review.json",
+          "review_sha256": "eec781894f5d31194d93c5c0797bfa30ea44c65baee53fd0b4bb5ca117222bfc",
+          "current_source_manifest_sha256": "bff35f1342e4bb262dd9e06599695139df53631f613d38d48bcd698185eeb7c7",
+          "current_component_manifest_sha256": "d8993f901c7b4733fa2c3e3692125d6fceda0e1bbb5ec115f0b9e73a69f6d845",
+          "adapter_tests": "49 passed, 2 skipped",
+          "product_tests": "111 passed, 2 skipped",
+          "ruff_check": "passed",
+          "whole_tree_format": "not passed due five existing files; no mutation",
+          "registry_admission": false
+        }
+      },
+      "viewer": {
+        "status": "contract_publication_absent",
+        "blocker": "no current matrix contract or validator files in the sibling checkout"
+      },
+      "edge": {
+        "status": "contract_publication_absent_installed_acceptance_pending",
+        "blocker": "local dispatcher evidence is bounded and does not establish the installed matrix or vehicle wire lane"
+      },
+      "decision": "Historical snapshot retained; its zero-entry decision predates the later Hub TypeScript source binding. Protocol, Swift, Home Assistant, Viewer and Edge remain outside the fixed registry.",
+      "runtime_boundary": {
+        "prepared_host_inventory": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-working-product/current-runtime-inventory.json",
+        "installed_acceptance": false,
+        "publication_performed": false
+      },
+      "matrix": {
+        "path": "hub/docs/compatibility/matrix.json",
+        "sha256": "a412c45931c8d4e2e6c8384ed98c5c5dae6640a4085aef69e6034de6b8b10569",
+        "cells": 21,
+        "slots": 444,
+        "cohort_requirements": 10,
+        "all_cells_pending_due_to_no_installed_runtime_acceptance": true
+      },
+      "superseded_by": "task10_typescript_installed_lane_2026_09_08",
+      "post_hub_typescript_registry_entries": [
+        "typescript_node",
+        "typescript_browser"
+      ],
+      "post_hub_typescript_installed_acceptance": false,
+      "historical_fixed_registry_entries": 0,
+      "current_hub_typescript_registry_entries": 2
+    },
+    "current_completion_audit_2026_09_08": {
+      "status": "not_complete_mandatory_installed_runtime_and_publication_gates_pending",
+      "artifact": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-current-adapter-inventory/completion-audit.json",
+      "artifact_sha256": "0d9bf147b489bb0391755b0774dd478aa76b6e6763999822bc0007a5b796ff74",
+      "matrix": {
+        "cells": 21,
+        "slots": 444,
+        "cohorts": 10,
+        "accepted_cells": 0,
+        "accepted_slots": 0,
+        "accepted_cohorts": 0
+      },
+      "safety": {
+        "quarantined_arm_untouched": true,
+        "production_services_untouched": true,
+        "no_vehicle_commands": true,
+        "no_service_restart": true,
+        "no_git_write": true,
+        "no_publication": true
+      },
+      "authoritative_inventory_sha256": "132e0cc65237b447d9c1b622f147da4667cac83e246b1cd34f6d370e7a7f1bc4",
+      "home_assistant_review_sha256": "eec781894f5d31194d93c5c0797bfa30ea44c65baee53fd0b4bb5ca117222bfc",
+      "typescript_candidate_contracts": "7800f75b03e046f53e56b7356fac95089aae73ab7719e82ead88f39e45ae3299/3a04e33415330d2d3ce53d489841f0a28b768d982d2af5f255323d2f0cf6acb9",
+      "ha_compose_static_sha256": "56e80502e4fd22274d4a4bb03e4eb25b04227a69cb37eea72e0d05b22ae81ed3"
+    },
+    "task10_ha_current_review_2026_09_08": {
+      "status": "source_semantics_and_provenance_pass_installed_acceptance_pending",
+      "review": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-independent-review.json",
+      "review_sha256": "eec781894f5d31194d93c5c0797bfa30ea44c65baee53fd0b4bb5ca117222bfc",
+      "review_markdown": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-independent-review.md",
+      "review_markdown_sha256": "9de747e35bfe00bc3ec905451e0d7bd7612b8affd39be154765c3ccb3bf10318",
+      "source_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-source-manifest.json",
+      "source_manifest_sha256": "bff35f1342e4bb262dd9e06599695139df53631f613d38d48bcd698185eeb7c7",
+      "component_manifest": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/current-component-manifest.json",
+      "component_manifest_sha256": "d8993f901c7b4733fa2c3e3692125d6fceda0e1bbb5ec115f0b9e73a69f6d845",
+      "checkout_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+      "tests": {
+        "adapter": "49 passed, 2 skipped",
+        "adapter_stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/adapter-suite.stdout",
+        "adapter_stdout_sha256": "ce7795e847b3e740dc80869b5de357c76c2aa0f3e3cdaf75039a0785d6e78bb6",
+        "product": "111 passed, 2 skipped",
+        "product_stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/product-suite.stdout",
+        "product_stdout_sha256": "67fdb7ec581f26d823032415cc933cedee536245f11b3a6cd4b4658d806febeb",
+        "ruff_check": "passed",
+        "ruff_stdout": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/ruff.stdout",
+        "ruff_stdout_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+        "whole_tree_format": "not passed: five existing files would be reformatted; no mutation"
+      },
+      "scope": "read-only current Home Assistant correction-3 adapter/component provenance and semantic review; no installed/runtime/Docker/Hub/UI/publication acceptance",
+      "adapter_inventory": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-current-adapter-inventory/current-adapter-inventory.json",
+      "adapter_inventory_sha256": "132e0cc65237b447d9c1b622f147da4667cac83e246b1cd34f6d370e7a7f1bc4",
+      "completion_audit": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-current-adapter-inventory/completion-audit.json",
+      "completion_audit_sha256": "0d9bf147b489bb0391755b0774dd478aa76b6e6763999822bc0007a5b796ff74",
+      "provenance_launcher_binding": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/provenance-launcher-binding.json",
+      "provenance_launcher_binding_sha256": "45ddef5ccde8503137b3781e3b8fafd7fba3aafd54cb884fb267d901403c606e",
+      "product_environment": "Python 3.14.7 / Home Assistant 2026.8.3"
+    },
+    "task10_ha_admission_handoff_2026_09_08": {
+      "status": "source_bound_canonical_profile_refreshed_installed_runtime_pending",
+      "handoff": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/hub-admission-handoff-2026-09-08.json",
+      "handoff_sha256": "5cd4c83f7488cbcd66baa00941a1475dd4bd6f8dade650cb6b7a741bd59de29d",
+      "checkout_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "component_manifest_sha256": "0a4ec2d743a3f181423c24bbf7c6d9d7e0feef5dc0f0fc3e5d3d69150945e896",
+      "provenance_binding_sha256": "33cda376023bfff2b1f2361abc52bc110bdd21387b15a712c2d7dafebc49415e",
+      "independent_review_json_sha256": "e34992c94c93438142f21bcb1d23b883aabfb5d33da43c8d72bb8bbc7d6ef53f",
+      "local_gates": {
+        "focused": "68 passed",
+        "full": "115 passed, 2 skipped",
+        "ruff": "passed",
+        "compose_static": "passed",
+        "manifest_recheck": "passed"
+      },
+      "scope": "HA-owned source/provenance handoff only; no installed host, Docker runtime, real Hub, UI, scheduler, replacement, live transport, publication or registry mutation",
+      "installed_acceptance": false
+    },
+    "task10_typescript_contract_candidate_2026_09_08": {
+      "status": "sibling_profile_lock_and_manifest_bindings_refreshed_source_gate_passed_hub_runtime_pending",
+      "repo": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript",
+      "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "source_status": "dirty main; unrelated edits preserved",
+      "contracts": {
+        "node": {
+          "manifest": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/matrix-contract-node.json",
+          "manifest_sha256": "7800f75b03e046f53e56b7356fac95089aae73ab7719e82ead88f39e45ae3299",
+          "validator": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/matrix_contract_node.py",
+          "validator_sha256": "600e1cc363d309e163b87e19498e1daf4ba309c325aeb8402513168ff1c12ef2",
+          "raw_schema": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/typescript-node-raw-v1.schema.json",
+          "raw_schema_sha256": "5a4ad38caa2dee8432eef0e8dd2f7c00b92db0aa3946eb2dab93c4fc13ad6908",
+          "required_cases": 21,
+          "actor": "sdk_node"
+        },
+        "browser": {
+          "manifest": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/matrix-contract-browser.json",
+          "manifest_sha256": "3a04e33415330d2d3ce53d489841f0a28b768d982d2af5f255323d2f0cf6acb9",
+          "validator": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/matrix_contract_browser.py",
+          "validator_sha256": "784d1618efdc6739248426d7ee6538772a3560c1569c903f75fb2af72755bf92",
+          "raw_schema": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/typescript-browser-raw-v1.schema.json",
+          "raw_schema_sha256": "638feee0156286a9103148ed775ee126bbdc198f9a8e21210652c1871704415c",
+          "required_cases": 23,
+          "actor": "sdk_browser"
+        }
+      },
+      "tests": {
+        "contract_tests": "5 passed, 1 failed (stale validator hash binding)",
+        "focused_final_candidate_tests": "42 passed",
+        "claim_preflight": "compact UTF-8 claim JSON <=4096 bytes; nonempty claim 400/415/422 text/plain maps to body-free hub_http_error",
+        "py_compile": "passed",
+        "draft_2020_12": "valid",
+        "biome": "passed",
+        "full_npm_verify": "passed (271 unit, 25 conformance, 52 protocol; fixture/pack/consumer checks)",
+        "current_contract_hash_binding": "passed: manifests bind current validator hashes 600e1cc3/784d1618",
+        "sdk_archive_path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-working-product/sdk-m1-node-26.7.0-pack/teslatlas-sdk-2026.36.2.tgz",
+        "sdk_archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "sdk_archive_member_count": 81,
+        "node_runtime_entry_sha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+        "browser_runtime_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e",
+        "sdk_content_witness_sha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+        "hub_staged_private_manifest_expected_sha256": "480226f91ef676461b171b131a0184aed72d94f1748e28752c4dd0d2164f2618",
+        "hub_staged_private_manifest_evidence_boundary": "Staged-product integrity evidence only after Hub verifies the actual owner-only 0600 installed-package manifest; not installed runtime evidence.",
+        "verification_runtime": "Node 26.7.0/npm 11.19.0 without --force or an engine override",
+        "clean_npm_ci_and_full_verify": "passed"
+      },
+      "admission_boundary": "Candidate contract source is bound by Hub fixed entries with current manifest/validator hash bindings; installed host/runtime and final matrix acceptance remain pending.",
+      "hub_execution_blocker": "The Hub-owned v2 lane is implemented and locally verified, but no required macOS/Debian installed cell has been run. Runtime identity, clean service stop and complete matrix evidence are still required before support can be claimed."
+    },
+    "task10_ha_docker_static_candidate_2026_09_08": {
+      "status": "static_compose_candidate_passed_runtime_pending",
+      "artifact": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-ha-current-review/ha-compose-static.json",
+      "artifact_sha256": "56e80502e4fd22274d4a4bb03e4eb25b04227a69cb37eea72e0d05b22ae81ed3",
+      "source_files": {
+        "compose": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/compose.yaml",
+        "compose_sha256": "120382da9b70c0971791bf343d3a8ff2a7c79c244f65a087f12467f89c5994ea",
+        "docs": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/docker.md",
+        "docs_sha256": "4c49b7c17a608d9c0243d4b736fa38fed1af3bb74e7240699b5f802ae2e89a32",
+        "gitignore_sha256": "2f363f9204fea2a1e5cb210cbed247e8c874a1e3128d342b5e09dbaf7a8ac5a9"
+      },
+      "checks": "docker-compose 5.5.1 config --quiet, ignore boundaries, Ruff, link existence and git diff --check passed",
+      "docker_daemon": "unavailable (docker version exit 1; no /var/run/docker.sock)",
+      "scope": "static Compose/documentation evidence only; no image pull/build, Linux runtime, UI, pairing, scheduler, replacement or shutdown acceptance"
+    },
+    "task10_typescript_installed_lane_2026_09_08": {
+      "status": "hub_profile_selected_typescript_source_gate_passed_installed_runtime_and_matrix_pending",
+      "scope": "Hub-owned fixed Node/browser installed adapters for the reviewed TypeScript contracts; local source/integration evidence only. The canonical profile, lock and current validator manifest bindings are present; installed runtime and matrix acceptance remain pending.",
+      "registry": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/hub/tools/interop/matrix_runner/installed_registry.py",
+        "entries": [
+          "typescript_node",
+          "typescript_browser"
+        ],
+        "runtime_job_selection": "fixed_source_only",
+        "installed_capability_claimed": false
+      },
+      "sdk_archive": {
+        "path": "/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-working-product/sdk-m1-node-26.7.0-pack/teslatlas-sdk-2026.36.2.tgz",
+        "sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "version": "2026.36.2",
+        "member_count": 81,
+        "node_runtime_entry_sha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+        "browser_runtime_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e",
+        "sdk_content_witness_sha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+        "hub_staged_private_manifest_expected_sha256": "480226f91ef676461b171b131a0184aed72d94f1748e28752c4dd0d2164f2618",
+        "hub_staged_private_manifest_evidence_boundary": "Staged-product integrity evidence only after Hub verifies the actual owner-only 0600 installed-package manifest; not installed runtime evidence.",
+        "verification_runtime": "Node 26.7.0/npm 11.19.0 without --force or an engine override",
+        "clean_npm_ci_and_full_verify": "passed"
+      },
+      "sibling_contracts": {
+        "node": {
+          "manifest": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/matrix-contract-node.json",
+          "manifest_sha256": "7800f75b03e046f53e56b7356fac95089aae73ab7719e82ead88f39e45ae3299",
+          "validator": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/matrix_contract_node.py",
+          "validator_sha256": "600e1cc363d309e163b87e19498e1daf4ba309c325aeb8402513168ff1c12ef2",
+          "actor": "sdk_node",
+          "required_cases": 21
+        },
+        "browser": {
+          "manifest": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/matrix-contract-browser.json",
+          "manifest_sha256": "3a04e33415330d2d3ce53d489841f0a28b768d982d2af5f255323d2f0cf6acb9",
+          "validator": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/matrix_contract_browser.py",
+          "validator_sha256": "784d1618efdc6739248426d7ee6538772a3560c1569c903f75fb2af72755bf92",
+          "actor": "sdk_browser",
+          "required_cases": 23
+        }
+      },
+      "hub_lane_sources": {
+        "run.mjs": "7faa39b56310c0a2cec1de36327743cae9700bb19cd1118993aed8cffb20afe3",
+        "installed_contract.mjs": "cc8f124090655d9c86ff9861ccb826fcc88a7bb2839db435ffbc3882a13f8fb5",
+        "typescript_lane.mjs": "55833f7d8dc16434009d13c7398ddd40404fc836082e1bbe39083a9ac0addcf2",
+        "scenarios.mjs": "f04aa42956d1476dc3fbd21eab60200bf12cf3e823fdddfcc472aaf0f85b2dcd",
+        "node-worker.mjs": "f1dfea5570dd93906028b5a3214dc0aecf241f98a7ccc41b2a52e1f395f161bf",
+        "browser.mjs": "2a698cb07adec2ec336b2ffb15208a62c135f721cfc43f34ce382a7302022677"
+      },
+      "local_gates": {
+        "node_client_lanes": "28 passed",
+        "strict_installed_lane": "9 passed",
+        "installed_host": "132 passed",
+        "full_hub_interop": "176 passed",
+        "python_compile": "passed",
+        "node_syntax": "passed",
+        "typescript_contract_source_gate": "6 passed; current manifest/validator hash bindings match",
+        "hub_registry_binding_check": "11 passed across installed and installed_registry focused suites",
+        "json_and_diff_checks": "passed",
+        "companion_bootstrap": "66 passed across 5 files"
+      },
+      "runtime_boundary": {
+        "installed_service_runtime": "runner-owned and pending actual host execution",
+        "macos_arm64": "pending",
+        "debian13_amd64": "pending",
+        "debian13_arm64": "pending",
+        "docker_runtime": "pending_docker_daemon_unavailable",
+        "production_broker": "not_executed",
+        "final_matrix": "pending"
+      },
+      "safety": {
+        "quarantined_arm_untouched": true,
+        "production_services_untouched": true,
+        "no_vehicle_commands": true,
+        "no_service_restart": true,
+        "no_publication": true
+      },
+      "hub_sources": {
+        "tools/interop/matrix_runner/typescript_installed.py": "17e6bc43af6b571151aa91b54dbb017cd5eec04ca1674143330a6a591c489f1a",
+        "tools/interop/matrix_runner/installed_registry.py": "35700f6012d568beb888773f28b23a7a9b0bef37ce55069066b6cd97204e6a9a",
+        "tools/interop/matrix_runner/installed.py": "569eeaed5f316aeb92f963a0a9242f0bccdb0ae783dd95807c75ffadb695616f",
+        "tools/interop/run.py": "0c60aa7d3700494fe2067de06334ea2ec5d0382fe85158247ccfd0203eac68f5"
+      },
+      "canonical_profile": {
+        "id": "hub-http-v1",
+        "revision": "1.0.0",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+        "source": "teslatlas-protocol/profiles/hub-http-v1/1.0.0/SHA256SUMS",
+        "semantic_delta": [
+          "max_claim_request_bytes=4096",
+          "claim 400/415/422 declare bounded text/plain"
+        ],
+        "hub_verification": {
+          "ordinary_router_body_limit_bytes": 4096,
+          "claim_extractor": "Axum Json rejection produces text/plain body for malformed/unsupported JSON"
+        },
+        "sibling_refresh_pending": {},
+        "sibling_refresh_complete": {
+          "home_assistant_embedded_profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+          "handoff_sha256": "5cd4c83f7488cbcd66baa00941a1475dd4bd6f8dade650cb6b7a741bd59de29d",
+          "component_manifest_sha256": "0a4ec2d743a3f181423c24bbf7c6d9d7e0feef5dc0f0fc3e5d3d69150945e896",
+          "provenance_binding_sha256": "33cda376023bfff2b1f2361abc52bc110bdd21387b15a712c2d7dafebc49415e",
+          "independent_review_json_sha256": "e34992c94c93438142f21bcb1d23b883aabfb5d33da43c8d72bb8bbc7d6ef53f",
+          "full_suite": "115 passed, 2 skipped",
+          "ruff": "passed",
+          "typescript_vendored_profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+          "typescript_protocol_lock_sha256": "98f5c297067a09bd61540c474f2850a592bb41f7d694690a093aff20ddaacdef",
+          "typescript_validator_manifest_rebind": {
+            "node_manifest_sha256": "7800f75b03e046f53e56b7356fac95089aae73ab7719e82ead88f39e45ae3299",
+            "node_validator_sha256": "600e1cc363d309e163b87e19498e1daf4ba309c325aeb8402513168ff1c12ef2",
+            "browser_manifest_sha256": "3a04e33415330d2d3ce53d489841f0a28b768d982d2af5f255323d2f0cf6acb9",
+            "browser_validator_sha256": "784d1618efdc6739248426d7ee6538772a3560c1569c903f75fb2af72755bf92"
+          },
+          "typescript_sdk_archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+          "typescript_sdk_content_witness_sha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+          "typescript_hub_staged_private_manifest_expected_sha256": "480226f91ef676461b171b131a0184aed72d94f1748e28752c4dd0d2164f2618",
+          "typescript_hub_staged_private_manifest_evidence_boundary": "Staged-product integrity evidence only after Hub verifies the actual owner-only 0600 installed-package manifest; not installed runtime evidence."
+        }
+      }
     }
   }
 }

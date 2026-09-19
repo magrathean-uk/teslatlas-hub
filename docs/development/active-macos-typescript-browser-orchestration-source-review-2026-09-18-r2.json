@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.hub.active_macos_typescript_browser_orchestration_source_review",
+  "date": "2026-09-18",
+  "verified_at": "2026-09-18T13:55:40Z",
+  "status": "rejected_optional_receipt_freshness_checked_after_mutation_no_runtime_authorization",
+  "authority": "Independent Hub-owned read-only review of the repaired TypeScript source handoff after Hub rejection SHA256 2e9653c8. No TypeScript file was edited and no browser, Hub runtime, credential, Keychain, SDK API or live fixture was started or touched.",
+  "supersedes_review": {
+    "path": "docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r1.json",
+    "sha256": "2e9653c8b5c3719a4b62170129ca7f2f61ad0ba03a48adee265b5e66448b7a1c",
+    "required_boundary": "Capture directory and any optional receipt path must be absent before preflight changes modes or creates runner outputs; sentinels must be preserved on rejection."
+  },
+  "reviewed_input": {
+    "source_receipt": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+      "sha256": "83d3f0485d47d714535d0b450020604eca3361922788e3b585ef9947843e193c"
+    },
+    "orchestrator": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/browser-control-orchestrator.mjs",
+      "sha256": "a66c2cfd284cb0b1aff713fc6cb3654307583da7765e51535215df622f0dee66"
+    },
+    "browser_free_regression": {
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/scripts/test-browser-control-orchestrator.mjs",
+      "sha256": "1b74b93a740f6d24aa91213795a1deae455962e404f1a735e6a3de12ec1cd20e"
+    },
+    "bound_hooks": {
+      "preflight_template_sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+      "preflight_correction_receipt_sha256": "d14f0f9a404a9cd83996779f45f0e9eecbcced8dc74c70c6f9e10cf98b475bf1",
+      "sequential_trust_sequence_sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+      "browser_runner_sha256": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004"
+    }
+  },
+  "toolchain": {
+    "node": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+      "version": "v26.7.0"
+    },
+    "npm_version": "11.19.0"
+  },
+  "accepted_checks": {
+    "node_check": "PASS for orchestrator and browser-free regression",
+    "declared_browser_free_regression": {
+      "status": "PASS",
+      "cases": [
+        "stale-capture-before-preflight-mutation",
+        "success",
+        "supervisor-failure",
+        "runner-failure",
+        "control-failure",
+        "cleanup-sequence-after-supervisor-close"
+      ],
+      "temporary_fixture_roots_remaining": 0
+    },
+    "stale_capture_boundary": "PASS: lines 429-436 assert capture absence before preflight; regression preserves stale marker and proves runner outputs, supervisor and cleanup remain absent",
+    "cleanup_sequence": "PASS: lines 476-524 attempt every cleanup in configured order without a supervisor-closed break, record passed/failed/passed attempts, then verify or force bounded supervisor closure",
+    "failure_recording": "PASS: cleanup attempts retain sequence, status, record, error and failure; cleanup failures make an otherwise successful orchestration fail",
+    "closure_verification": "PASS: supervisorClosed is true in success and cleanup-sequence regressions; forced stop is separately recorded",
+    "scoped_ports_closed": [
+      4177,
+      9238,
+      9239,
+      18529
+    ],
+    "runtime_boundary": "Browser-free temporary Node fixtures only; no Chrome command, Hub runtime, Keychain, credential or live fixture was used."
+  },
+  "rejection_finding": {
+    "id": "optional_receipt_freshness_checked_after_full_orchestration_mutation",
+    "severity": "blocking",
+    "source_locations": [
+      "scripts/browser-control-orchestrator.mjs:139-151",
+      "scripts/browser-control-orchestrator.mjs:429-436",
+      "scripts/browser-control-orchestrator.mjs:572-582"
+    ],
+    "claim_conflict": "Hub rejection 2e9653c8 required any optional receipt path to be absent before preflight mutation. The repaired source validates only that receiptPath is owned during normalization and attempts exclusive creation after preflight, capture, supervisor and cleanup have completed.",
+    "independent_browser_free_reproduction": {
+      "setup": "Create an owner-only sentinel at an optional receiptPath, configure no controls or runner, and use fake Node supervisor/shutdown commands.",
+      "result": {
+        "status": "failed",
+        "failure_phase": "receipt",
+        "preflight_mutated": true,
+        "capture_created": true,
+        "runner_stdout_created": true,
+        "runner_stderr_created": true,
+        "sentinel_preserved": true,
+        "cleanup_configured": 1,
+        "cleanup_attempted": 1,
+        "supervisor_closed": true
+      }
+    },
+    "impact": "A stale receipt correctly survives exclusive write, but rejection happens only after orchestration mutations and child lifecycle. The package therefore still does not satisfy its full fail-before-mutation freshness contract."
+  },
+  "required_correction": [
+    "When receiptPath is configured, assert it is absent before prepareBrowserControlFiles is called. The check must preserve a stale receipt sentinel and leave preflight runner outputs, capture directory, supervisor and cleanup uncreated/unattempted.",
+    "Add a seventh browser-free regression for a stale optional receipt path, including sentinel preservation and zero preflight/capture/child/cleanup mutation assertions.",
+    "Publish new exact source-receipt, orchestrator and regression hashes for independent Hub re-review. Preserve all six currently passing cases.",
+    "Do not reopen r7 or treat this source-only review as browser/runtime authority."
+  ],
+  "handoff": {
+    "owner": "TypeScript SDK",
+    "state": "one_bounded_source_correction_required",
+    "review_path": "docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r2.json",
+    "runtime_authorized": false
+  },
+  "proof_boundary": "This is source and browser-free fixture evidence only. It rejects the repaired package for a future live lane solely on the remaining optional-receipt freshness boundary. It is not browser, TLS, CA import, CORS, SDK API, Hub runtime, package, service, release, production, vehicle or user acceptance evidence."
+}

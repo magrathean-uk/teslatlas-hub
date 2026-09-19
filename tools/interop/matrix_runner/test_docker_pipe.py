@@ -85,6 +85,26 @@ class DockerPipeTests(unittest.TestCase):
                 self.socket_path.unlink(missing_ok=True)
                 self.stderr_path.unlink(missing_ok=True)
 
+    def test_stderr_is_drained_and_capped_without_blocking_the_client(self):
+        thread, _observed = self._server()
+        code = (
+            "import json,sys; sys.stdin.readline(); "
+            "sys.stderr.write('x'*(8*1024*1024+1)); sys.stderr.flush(); "
+            "print(json.dumps({'schema_version':1,'sequence':1,'op':'verify'}),flush=True); "
+            "sys.stdin.readline()"
+        )
+        with self.assertRaisesRegex(docker_pipe.DockerPipeError, "stderr exceeds bound"):
+            docker_pipe.run(
+                socket_path=self.socket_path,
+                argv=(sys.executable, "-c", code),
+                cwd=self.root,
+                environment={},
+                stderr_path=self.stderr_path,
+                timeout_seconds=5,
+            )
+        thread.join(2)
+        self.assertLessEqual(self.stderr_path.stat().st_size, docker_pipe.MAX_STDERR_BYTES)
+
 
 if __name__ == "__main__":
     unittest.main()

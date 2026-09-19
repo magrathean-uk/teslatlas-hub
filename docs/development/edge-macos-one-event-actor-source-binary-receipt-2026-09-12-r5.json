@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_actor_source_binary_receipt_r5",
+  "date": "2026-09-12",
+  "state": "fresh_darwin_arm64_helper_built_no_runtime_or_event_authorization",
+  "source_review": {
+    "path": "hub/docs/development/edge-macos-one-event-actor-contract-review-2026-09-12-r5.json",
+    "sha256": "5dcbebee590d1e334abe8d2eaa27a5fb78aa6d62233206af2296bb09971202b0"
+  },
+  "fresh_root": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-one-event-actor-r5-20260912",
+    "absent_before_create": true,
+    "mode": "0700",
+    "owner_uid": 501
+  },
+  "source_boundary": {
+    "pinned_fleet_telemetry_revision": "d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+    "source_archive": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2/dist/fleet-telemetry-evidence/fleet-telemetry-upstream-source.tar.gz",
+    "source_archive_sha256": "a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9",
+    "source_file_manifest": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-one-event-actor-r5-20260912/evidence/source-files.sha256",
+    "source_file_manifest_sha256": "20232f1c721c01a5d88a7f9a1528d845fa58076bf877dbbfaab91e4c10fc99b8",
+    "source_file_count": 160,
+    "go_mod_sha256": "5549726e0b4019e5ffcb4ef2e6fd12df74fb442b4bacb5e64807ad285e8b5ca2",
+    "go_sum_sha256": "9128da99915057f407b0bd24c9255ba885dde74d9334334f8000fc38083294ce",
+    "identity_source_sha256": "20ff7be52704420e68a16c994289c310143452273d1e9728fa0919704992e5a5",
+    "producer_source_sha256": "d59c5e38245113bebdfe2635f1f3e42cfa4052f269d45d5fbd0b392a12697df2",
+    "producer_test_sha256": "a60bdba6bb71da8af5e4ede33627affda55efbd813efe2705108211391eca40d",
+    "overlay": "Only the two accepted producer source/test files were copied over the pinned archive before test/build."
+  },
+  "toolchain": {
+    "go": "go1.27.1 darwin/arm64",
+    "executable": "/opt/homebrew/bin/go",
+    "executable_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b",
+    "cgo_enabled": false,
+    "goos": "darwin",
+    "goarch": "arm64",
+    "goarm64": "v8.0",
+    "embedded_module_evidence": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-one-event-actor-r5-20260912/evidence/go-modules.txt",
+    "embedded_module_evidence_sha256": "79e72bb4be06954d6456eb1593e3845a3e3848f5a81fec29b94d4169cd924142"
+  },
+  "commands": {
+    "source_test": "GOPROXY=off GOTOOLCHAIN=local /opt/homebrew/bin/go test -mod=readonly ./cmd/synthetic-vehicle",
+    "source_test_result": "PASS",
+    "build": "CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 GOPROXY=off GOTOOLCHAIN=local /opt/homebrew/bin/go build -trimpath -buildvcs=false -o <fresh-root>/bin/synthetic-vehicle-darwin-arm64 ./cmd/synthetic-vehicle",
+    "build_result": "PASS"
+  },
+  "artifact": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-one-event-actor-r5-20260912/bin/synthetic-vehicle-darwin-arm64",
+    "sha256": "4b7c0170888d9f45fcd145bf3d34eecf7363898036daca6332b67354fc47ea59",
+    "bytes": 13673794,
+    "mode": "0500",
+    "owner_uid": 501,
+    "hard_links": 1,
+    "type": "Mach-O 64-bit executable arm64",
+    "minimum_macos": "13.0",
+    "sdk": "26.2",
+    "codesign": "valid on disk and satisfies its designated requirement",
+    "load_paths": [
+      "/usr/lib/libSystem.B.dylib",
+      "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+      "/System/Library/Frameworks/Security.framework/Versions/A/Security",
+      "/usr/lib/libresolv.9.dylib"
+    ],
+    "identity_marker_present": true,
+    "historical_vin_literal_absent": true,
+    "historical_transaction_literal_absent": true,
+    "fixed_receiver_endpoint_absent": true,
+    "historical_binary_reused": false
+  },
+  "build_lock": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+    "owner_record": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-one-event-actor-r5-20260912/evidence/build-lock-owner.json",
+    "owner_record_mode": "0600",
+    "acquired_before_source_staging_and_build": true,
+    "released_after_build": true,
+    "absent_at_final_check": true
+  },
+  "next_gate": "Edge independently reviews this exact source-to-binary binding. Hub may then prepare one complete fresh inactive actor/guard/profile/runtime proposal with new identities, paths, ports and cleanup, but no PKI, guest, runtime or event action is authorized by this receipt.",
+  "proof_boundary": "This is host source/test/build and Mach-O identity evidence only. It is not guest loader, receiver, Edge, Hub, forwarding, durable commit, ACK/frontier, projection, installed, service, release, production, vehicle or user acceptance evidence."
+}

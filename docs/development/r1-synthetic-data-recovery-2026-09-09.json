@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "kind": "r1_synthetic_data_recovery",
+  "status": "passed_bounded_synthetic_backup_restore_and_cleanup_complete",
+  "verified_at": "2026-09-09",
+  "scope": {
+    "authority": "coordinator-approved bounded synthetic R1 recovery case",
+    "input": "fresh isolated synthetic Hub data root only",
+    "excluded": [
+      "TeslaMate source or backup",
+      "vehicle, production, collector, or passive collection action",
+      "closed Edge, Viewer, Home Assistant, or installed-service cohort",
+      "pairing, TLS keys, and service configuration restoration"
+    ]
+  },
+  "source": {
+    "hub_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "worktree_state": "dirty; only the isolated synthetic root was exercised",
+    "hub_binary_sha256": "101bdb7321bc84239d94a3fa87f74e9087ce0568661adb67923061e3710926ee",
+    "seed_binary_sha256": "bbb7e0090981e49698d40004d3226a4a3a9bd1b9c80a6d08d1ec4cdfe1f623ba",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3"
+  },
+  "synthetic_identity": {
+    "source_id": "f371a3e7-53d7-4724-a7c9-0217f5ca5fac",
+    "vehicle_id": "11111111-1111-4111-8111-111111111111",
+    "primary_car_id": 9,
+    "secondary_car_id": 10,
+    "source_watermark_before_advance": 1,
+    "latest_observation_after_advance": {
+      "id": 2,
+      "observed_at_ms": 1788566460000,
+      "received_at_ms": 1788566460000
+    }
+  },
+  "commands": [
+    {
+      "operation": "advance",
+      "result": "exit 0; created the later synthetic observation"
+    },
+    {
+      "operation": "verify-observation --car-id 9 --watermark 1",
+      "result": "source and restored stores both returned verified=true with latest observation 2"
+    },
+    {
+      "operation": "backup",
+      "result": "exit 0; data-only backup created"
+    },
+    {
+      "operation": "verify-backup",
+      "result": "exit 0; data_backup_verified"
+    },
+    {
+      "operation": "restore-data",
+      "result": "exit 0; restored data root created"
+    },
+    {
+      "operation": "verify-backup and restore-data against one deliberately truncated copy",
+      "result": "both exited 1; the invalid restore destination was absent and the original backup digest remained unchanged"
+    }
+  ],
+  "backup": {
+    "generation": "2e6702d6-288b-4a0c-843b-a679809519dc",
+    "installation_id": "b0f677db-2cf3-4e86-9912-eca5893a34fd",
+    "status": "data_backup_verified",
+    "scope": "hub_data_without_pairing_or_keys",
+    "member_count": 3,
+    "total_bytes": 751039,
+    "clean_host_ready": false,
+    "collector_authority": "absent",
+    "manifest_sha256": "4f285e5d053e6e528694bd26592213d80aeda7920bdee2c4a10184692da9b6e0",
+    "completion_sha256": "834832c730fd845f9c63c1ed049a309867ec7a3bf417a666371205e1729bc850",
+    "backup_database_sha256": "5936cb130e64fcb19286e0f1f54f0143c27ec43751dced089522a1e26abd5246",
+    "restored_database_sha256": "366e5087c140a053aaa5def786c80a8ba57d3f8e1cfebefcf1762c228f7cc810"
+  },
+  "restored_read_only_observation": {
+    "status": "ok",
+    "ready": true,
+    "provider": "legacy",
+    "credentials_present": true,
+    "legacy_credentials_present": true,
+    "vehicle_count": 2,
+    "selected_status_matches_source": true,
+    "primary": {
+      "car_id": 9,
+      "latest_observation_id": 2,
+      "latest_observed_at_ms": 1788566460000,
+      "latest_received_at_ms": 1788566460000
+    },
+    "secondary": {
+      "car_id": 10,
+      "latest_observation_id": 0,
+      "latest_observed_at_ms": null,
+      "latest_received_at_ms": null
+    },
+    "restored_secrets_directory": "absent"
+  },
+  "custody_and_cleanup": {
+    "synthetic_root_and_subdirectories": "owner-only mode 0700 while retained for verification",
+    "fixture_and_restore_ports": {
+      "19495": "closed",
+      "19496": "closed"
+    },
+    "raw_paths": "not retained in this receipt",
+    "cleanup": "the two disposable roots were moved to user Trash after receipt validation; their original locations are absent"
+  },
+  "limits": [
+    "This is one direct debug-binary synthetic data exercise, not an installed-package or clean-host result.",
+    "The backup deliberately excludes pairing, decryption keys, TLS material, configuration, service state, and collector authority.",
+    "The restored status confirms durable synthetic records and watermarks only; it does not prove a working collector, live credentials, passive collection, or a TeslaMate import.",
+    "The different source and restored SQLite file digests are not a content-parity assertion."
+  ]
+}

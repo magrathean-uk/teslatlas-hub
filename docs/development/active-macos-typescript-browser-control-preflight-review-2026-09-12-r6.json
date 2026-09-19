@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_control_preflight_review_r6",
+  "date": "2026-09-12",
+  "state": "rejected_not_fail_closed_no_runtime_authorization",
+  "typescript_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-control-preflight-files-correction-2026-09-12-r6.json",
+    "sha256": "71830a133f111bb5b38f1711f32bd89b9dd31922007b9c7e64b9837010bdf544"
+  },
+  "reviewed_sources": {
+    "prepare_script_sha256": "ff9cd66e5b7614ba69ccc16dc021fb5a8c120a58b457be35733414021be70727",
+    "regression_sha256": "d5dd866127347f038c8557929177584954032f97af2ff4cce0a2b506c433f4e0"
+  },
+  "accepted_elements": [
+    "Owner-only directories require searchable mode 0700 while sensitive regular files require 0600.",
+    "The exact runner stdout and stderr paths must be proven creatable before supervisor or Chrome spawn.",
+    "No browser, Hub, keychain or r7 runtime action occurred during the source-only correction."
+  ],
+  "blocking_findings": [
+    {
+      "id": "R6-PREFLIGHT-TRUNCATES",
+      "evidence": "createRunnerOutput uses writeFile with flag w and does not first require runner.stdout and runner.stderr to be absent.",
+      "impact": "A repeated preflight on a stale or consumed root can silently truncate prior runner evidence instead of failing closed.",
+      "required_correction": "Require both output paths absent and create each with exclusive flag wx."
+    },
+    {
+      "id": "R6-PREFLIGHT-NORMALIZES-STALE-STATE",
+      "evidence": "The preflight checks only control.sock and the three ports, then chmods any existing supervisor-state.json and browser-control-events.jsonl and recursively normalizes existing directories.",
+      "impact": "A stale or consumed runtime tree can be made to look prepared rather than rejected before mutation.",
+      "required_correction": "Before chmod or file creation, require all runtime state, event log, profiles, certificate export, witness, acceptance receipt and runner-output paths absent."
+    },
+    {
+      "id": "R6-PREFLIGHT-TEST-INCOMPLETE",
+      "evidence": "The test proves only one successful invocation and file modes. It does not test a second invocation, sentinel preservation, or stale state/event/profile rejection before mutation.",
+      "impact": "The destructive and stale-root cases are unguarded.",
+      "required_correction": "Add no-network tests proving second invocation fails without changing sentinel bytes and every stale artifact class fails before mutation."
+    }
+  ],
+  "runtime_actions": {
+    "r7_created": false,
+    "browser_started": false,
+    "hub_started": false,
+    "keychain_touched": false,
+    "runtime_authorized": false
+  },
+  "next_gate": "Supply an additive source-only superseding preflight and tests that satisfy all three findings. The consumed r6 tree remains non-reusable and cannot become a fresh preparation by chmod or cleanup.",
+  "proof_boundary": "This review rejects future-runtime readiness. It is not browser, SDK API, TLS, CORS, Hub API, installation, service, release, production, vehicle or user acceptance evidence."
+}

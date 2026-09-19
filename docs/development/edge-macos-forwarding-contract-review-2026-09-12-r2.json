@@ -1,0 +1,49 @@
+{
+  "schema": "teslatlas.hub.contract-review/v1",
+  "state": "accepted_for_fresh_empty_baseline_only",
+  "reviewed_at": "2026-09-12",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "proposal": {
+    "path": "../../../teslatlas-edge/docs/development/edge-macos-forwarding-contract-proposal-2026-09-12-r1.json",
+    "sha256": "9bf4c2f85911f94a35a19353b024f6a59f6eb39635f8a89b8159aa2b64ee4bd8",
+    "supersedes_sha256": "b680f9e8d7c13d337ba78e07942d97cb0af3f81c62eee9231bfc404d22c0f09c",
+    "source_head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "decision": "Accepted for one fresh bounded empty-baseline preparation on the existing macos13-arm64 target. The producer event remains separately unauthorized."
+  },
+  "source_to_binary": {
+    "receipt_path": "../../../teslatlas-edge/docs/development/edge-macos-arm64-source-binary-receipt-2026-09-12-r1.json",
+    "receipt_sha256": "2344d42e1d43199eca57263aae50e7ffa7f68abdd85c7d7fb37d234f26202e5f",
+    "manifest_result": "All 15 declared Cargo/Rust compilation input hashes independently matched the current Edge checkout. No Rust include_str/include_bytes/OUT_DIR/build.rs inputs were found.",
+    "candidate_path": "/Users/bolyki/dev/teslatlas-lab/build/teslatlas-edge/source-binary-20260912-r1/aarch64-apple-darwin/release/teslatlas-edge",
+    "candidate_sha256": "64cec68d8086a308ad5afdc54937836fc486dce098f933d04a096b65c334320a",
+    "candidate_bytes": 5730352,
+    "candidate_identity": "Mach-O 64-bit arm64; macOS minimum 11.0; SDK 27.0; /usr/lib/libiconv.2.dylib and /usr/lib/libSystem.B.dylib only",
+    "runtime_path": "<HUB_FRESH_ROOT>/bin/teslatlas-edge",
+    "build_lock": "Receipt records the shared heavy-build lock acquired before build, released after build and absent at final recheck."
+  },
+  "other_artifacts": {
+    "receiver_sha256": "c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6",
+    "receiver_status": "Independently passed macOS 13 ARM64 loader and receiver-only readiness/cleanup receipts; fresh runtime inputs remain mandatory.",
+    "producer_helper_sha256": "db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7",
+    "producer_status": "Identity and argv shape accepted for inactive binding only. Invocation is forbidden in this preparation."
+  },
+  "contract_corrections": {
+    "staged_entrypoint": "The exact Edge argv now begins at <HUB_FRESH_ROOT>/bin/teslatlas-edge; no installed /usr/local path or package installation remains.",
+    "artifact_receipt": "Required receipts select the fresh source-bound Edge binary and source-to-binary receipt, not the older package candidate.",
+    "authorization": "Hub acceptance plus target preflight authorize fresh empty-baseline preparation. Coordinator authorization is required only before the single producer invocation."
+  },
+  "authorized_actions": [
+    "Start only the existing macos13-arm64 guest and recheck its current OS/build/arm64 identity and private address.",
+    "Create one absent-before-create private versioned root and stage the exact selected Edge, receiver, Hub fixture and inactive producer-helper identities.",
+    "Generate fresh owner-only TLS, receiver bearer, spool key, Edge enrollment credential, synthetic identity and Hub fixture inputs without recording secret values.",
+    "Run Edge init/doctor, Edge and receiver zero-state listeners, one trusted empty Hub control pull and native Hub zero-state checks.",
+    "Return an inactive exact one-event binding, or clean the exact owned processes on any failure or expiry."
+  ],
+  "forbidden_actions": [
+    "Invoke the producer helper, assign an event timestamp for submission, submit, retry or replay an event.",
+    "Install a package, load a LaunchAgent, reuse any prior root/credential/identity, attach Home Assistant, perform Viewer or x86 work, touch production, operate a vehicle, commit or publish."
+  ],
+  "required_cleanup": "On completion, failure or expiry, stop only the fresh Hub fixture, receiver and Edge processes in contract order; record exact PIDs/results, listener closure, guest stop and shared-lock absence. Retain versioned roots as non-reusable evidence.",
+  "prior_review": "docs/development/edge-macos-forwarding-contract-review-2026-09-12-r1.json remains the immutable review of rejected proposal SHA256 b680f9e8 and is not upgraded into a pass."
+}

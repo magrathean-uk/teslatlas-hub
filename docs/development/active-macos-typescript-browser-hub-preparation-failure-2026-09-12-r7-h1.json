@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_hub_preparation_failure_r7_h1",
+  "date": "2026-09-12",
+  "state": "closed_seed_selector_failure_before_hub_runtime_or_credential",
+  "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r7",
+  "fixture_config_sha256": "947a2f598684bf45f51313f94205aee644cc3d507178dd4de0017ac9f63eb749",
+  "diagnostic_sha256": "4c08425d67fe828daabc6382364cb4a8cb553ee61f6d89247bee7af39ccbd687",
+  "failure": "The config explicitly selected b1-five-drives, but the pinned interop_fixture uses that as its default and accepts an explicit --scenario only for viewer-r1-51-drives or empty-edge-binding. Seed exited 1 before output_dir creation.",
+  "staged_binary_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+  "staged_seed_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+  "observed_boundary": {
+    "run_directory_created": false,
+    "hub_process_started": false,
+    "listener_started": false,
+    "certificate_created": false,
+    "invitation_created": false,
+    "credential_created": false,
+    "typescript_supervisor_or_browser_started": false,
+    "keychain_touched": false,
+    "sdk_attempt_consumed": false
+  },
+  "non_reuse": "This failed Hub root is retained as closed diagnostic evidence and will not be repaired or reused. A new h2 root may use the same still-closed 18529 endpoint with the default scenario selected by omitting scenario_id.",
+  "proof_boundary": "This is a pre-runtime fixture-seed failure only; it is not Hub, browser, SDK API, TLS, CORS, service, release, production, vehicle or user acceptance evidence."
+}

@@ -1,0 +1,178 @@
+{
+  "schema": "teslatlas.hub.edge-event-preparation-handoff/v1",
+  "status": "expired_cleaned_no_event_receiver_status_scope_blocks_future_submit",
+  "date": "2026-09-09",
+  "owner": "Hub",
+  "authorization": "Coordinator standing preparation authority: create one fresh Mac Edge/Hub cohort, prove its ordinary empty baseline and return one-shot actor bindings. Producer submission remains separately unauthorized.",
+  "scope": "This is a bounded synthetic development preparation. It may create fresh fixture state, credentials, PKI, Edge and receiver listeners, and a Hub empty control poll. It must not submit a producer record, create an ingress/application/sequence/ACK, attach Home Assistant or Viewer, touch a real vehicle, retain a service, install a package, or reuse a closed identity, credential or state root.",
+  "independent_producer_verification": {
+    "candidate": {
+      "host_path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-producer-darwin-arm64-20260909/synthetic-vehicle-darwin-arm64",
+      "sha256": "db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7",
+      "type": "Mach-O 64-bit arm64",
+      "build_metadata": "Go 1.27.0, github.com/teslamotors/fleet-telemetry/cmd/synthetic-vehicle, CGO_ENABLED=0, GOOS=darwin, GOARCH=arm64, trimpath enabled",
+      "static_binding": "The current candidate hash matches the supplied result; the required runtime-identity contract marker is present and no embedded Tesla-shaped VIN literal was found."
+    },
+    "source_and_behavioral_receipt": {
+      "upstream_revision": "fleet-telemetry v0.9.4 / d64c73ab65e7c5fb5fc12b35fe507e2c6054227b",
+      "main_go_sha256": "b27566c80766f4fa0823c2b797809ade65cf09a0d8dd080dd7d14efada34c698",
+      "behavioral_test_sha256": "cb54ff16b1b2149d74d1851203ce0fd878bb68ca09cb415c1a6a1df27fbda7da",
+      "supplied_result": "Go 1.27.0 `go test -count=1 -v -mod=readonly ./cmd/synthetic-vehicle` passed four top-level tests and six subtests in 1.364 seconds using only generated loopback TLS/WebSocket receivers.",
+      "independent_review": "The test requires TESLATLAS_SYNTHETIC_VEHICLE_BIN and invokes that selected path directly. Its cases cover a valid mTLS VehicleName-only V envelope with matching ACK; wrong server CA/hostname and absent/untrusted client-certificate rejection without a submission; and timeout/mismatched-ACK receipt of exactly one envelope with no retry or replay. The result is behavioral evidence for this exact candidate only because the supplied receipt also records this candidate hash before and after the test."
+    },
+    "limit": "The Go build metadata does not embed a VCS revision, so main.go/test digests plus the candidate digest are the recorded source/binary binding; this is adequate for the bounded preparation and does not represent a full-source reproducibility or installed-product claim."
+  },
+  "target_preflight": {
+    "guest": "macos13-arm64",
+    "os": "macOS 13.7.4",
+    "architecture": "arm64",
+    "user": "admin",
+    "uid": 501,
+    "address": "192.168.64.10",
+    "checked_at": "2026-09-09",
+    "listeners_free": ["127.0.0.1:8080", "127.0.0.1:18490", "192.168.64.10:21643", "127.0.0.1:21644", "127.0.0.1:21645"],
+    "unrelated_port_18487": "free before this cohort and remains outside scope",
+    "fresh_paths_absent": [
+      "/Users/admin/teslatlas-edge-event-prep-20260909-r1",
+      "/Users/admin/teslatlas-hub-edge-event-prep-20260909-r1",
+      "/Users/admin/teslatlas-hub-edge-event-prep-staging-20260909-r1"
+    ]
+  },
+  "fresh_target": {
+    "edge_root": "/Users/admin/teslatlas-edge-event-prep-20260909-r1",
+    "hub_data_root": "/Users/admin/teslatlas-hub-edge-event-prep-20260909-r1",
+    "hub_staging_root": "/Users/admin/teslatlas-hub-edge-event-prep-staging-20260909-r1",
+    "edge_health": "127.0.0.1:8080",
+    "edge_delivery": "192.168.64.10:21643",
+    "receiver": "127.0.0.1:21644",
+    "receiver_status": "*:21645 (observed bridge status listener; raw receiver remains loopback-only at 127.0.0.1:21644)",
+    "hub": "127.0.0.1:18490",
+    "owner_and_mode": "Every created root/input directory is admin-owned mode 0700; every private regular file is mode 0600, non-symlinked and single-link. Candidate executables are mode 0700."
+  },
+  "reused_verified_artifacts": {
+    "edge_binary": {
+      "host_path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-package-review-20260909.xZ3mVw/expanded/teslatlas-edge.core.pkg/Payload/usr/local/libexec/teslatlas-edge/teslatlas-edge",
+      "sha256": "880ee095f6d96f465a73dfc5285851ffadb102494a624d654802f108fda2a882",
+      "architecture": "Mach-O arm64"
+    },
+    "receiver_binary": {
+      "host_path": "/Users/bolyki/dev/teslatlas-lab/candidates/edge-macos-package-review-20260909.xZ3mVw/expanded/teslatlas-edge.receiver.pkg/Payload/usr/local/libexec/teslatlas-edge/teslatlas-fleet-telemetry",
+      "sha256": "8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1",
+      "architecture": "Mach-O arm64"
+    },
+    "hub_binary": {
+      "host_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-edge-doctor-macos-arm64-20260909-r1/target/release/teslatlas-hub",
+      "sha256": "eaf44a2803723b4a9d961c2dfac6057db94e3da36110070f9abdc49ce22abfad",
+      "architecture": "Mach-O arm64"
+    },
+    "empty_fixture_binary": {
+      "host_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-empty-edge-fixture-macos-arm64-20260909-r1/target/release/examples/interop_fixture",
+      "sha256": "f4fcc8e1fda2124ccf19998077a6f80648cf6f897e517e6c1c8e8458437b8fed",
+      "scope": "feature-gated empty-edge-binding only"
+    }
+  },
+  "runtime_preparation": {
+    "state": "expired_cleaned_after_ordinary_empty_baseline; no producer, ingress, application, sequence or ACK was submitted or observed",
+    "identity": {
+      "sealed_identity_sha256": "a76630af6d8e41bee4b7c8aa00604d24e44347f7acd4fc6b68da1ff7b3d3e5aa",
+      "event_authorized": false,
+      "custody": "The fresh source/vehicle/VIN/car/installation/lineage/transaction values remain sealed owner-only; no timestamp has been assigned."
+    },
+    "fresh_private_inputs": {
+      "edge_config_sha256_after_repair": "06bfdac3ccd6efbca98d023749f9a5d97508b27e1596b380c79eda378ed77dc8",
+      "receiver_config_sha256_after_repair": "ae096e03aedf266eb30626dd8bf19c7018fa57bbc1814a3b5d900538403fddb9",
+      "hub_config_sha256": "2b5d5480a9506c978666b6e6e7ad8bc40b14a79cb5f7b3c5bbcf7a99319580a4",
+      "credential": {
+        "id": "ffd9f472-c13e-47b1-aeec-de5669f8b619",
+        "format": "tte1",
+        "bytes": 85,
+        "expires_at_utc": "2026-09-09T21:05:49.595000Z",
+        "raw_issuance_deleted": true,
+        "extension_or_reenrolment_permitted": false
+      },
+      "public_tls_sha256": {
+        "vehicle_server_ca": "b39ff07b4160faebb815ce09260e76653709d7176f2a82f2dbb8a88a104e5c8d",
+        "vehicle_server_leaf": "efaf7bbc78f67bd56a37e9ffaf69586eb013f5d6e1fc4bdf98d12feb2e5b5291",
+        "vehicle_client_ca": "9da78e3f2c679ec1e99a3c81031a266a7f9f9f5c17c436f1a0b61f2b32b0593f",
+        "vehicle_client_leaf": "286c3a43b1eece41bd56c3bda3e7b2b7a0468438cab66c028b82f619e64c413c",
+        "hub_server_ca": "0df73997053b5deb448c0e7d2c8b2c500164893d7143bf74f2d3c456c25b4daa",
+        "hub_server_leaf": "77156ea7dfc38357720b52de6f458781979f8477b6335981154192598f49d396",
+        "hub_client_ca": "63d29206fc52249fbac9df6b97d8e20b13481b6f2fbd4170388d86155fbd3998",
+        "hub_client_leaf": "7377c2751f6167117777efd7b2f172e81c1b8b807a298a0b5f729953adf8fe5d",
+        "hub_control_ca": "f55aa7921ed34a00d4ca8ccf476d4847a733cd9d0efd3a8c720e2caf9bf5f80d",
+        "hub_control_leaf": "507da2c754da5cdf63bead16f5a2d9ced4dede2a9041b7a80402a6dd135a9030"
+      }
+    },
+    "launches": {
+      "uid": 501,
+      "edge": {
+        "pid": 7461,
+        "argv": "<fresh staging>/teslatlas-edge --config <fresh edge root>/config.toml serve",
+        "listeners": ["127.0.0.1:8080", "192.168.64.10:21643"]
+      },
+      "receiver": {
+        "pid": 7503,
+        "argv": "TESLATLAS_FLEET_TELEMETRY_BEARER_FILE=<fresh sealed bearer> <fresh staging>/teslatlas-fleet-telemetry -config=<fresh edge root>/inputs/fleet-telemetry.json",
+        "listeners": ["127.0.0.1:21644", "*:21645"]
+      },
+      "hub": {
+        "pid": 7539,
+        "argv": "<fresh staging>/teslatlas-hub --config <fresh Hub root>/config.toml serve",
+        "listener": "127.0.0.1:18490"
+      }
+    },
+    "ordinary_empty_receipt": {
+      "edge": "After the corrected Edge start, one initial probe and four consecutive healthz/readyz pairs returned HTTP 200. Both JSON bodies report status=ok, queue.records=0, queue.bytes=0, oldest_age_seconds=0, corrupt_records=0, expired_records=0, pending_gap_notices=0 and capacity_exhausted=false.",
+      "receiver": "The independently launched receiver owns 127.0.0.1:21644 and its configured bridge status port *:21645. No WebSocket client was invoked.",
+      "hub": "One initial trusted TLS probe and four consecutive healthz/readyz pairs returned HTTP 200. Native status reports status=ok, ready=true, readinessReason=null, edgeDelivery.state=connected, edgeDelivery.detail=edge delivery poll completed, pendingPublications=0, ackFrontier=null, and one empty configured vehicle with latestObservationId=0 and null observed/received timestamps.",
+      "limit": "Native Mac status does not provide independent application/sequence counts and the external SQLite reader cannot open this protected live store; those values are deliberately not claimed."
+    },
+    "corrected_prelaunch_attempts": [
+      "The first newly created receiver JSON had a literal backslash-n suffix from the writer and failed its own JSON parse before any listener launch. Its exact verified suffix was atomically repaired; the final JSON parsed with 0600 single-link custody.",
+      "The first Edge launch (PID 7315) used receiver_bind=127.0.0.1:21644, which opened the Edge loopback HTTP receiver on the raw receiver port and left 8080 closed. It was verified by exact argv, stopped before receiver/Hub launch, and its listeners were confirmed closed. The single bind field was changed to 127.0.0.1:8080, Edge doctor passed, and the corrected PID 7461 then passed the empty health/readiness gate."
+    ],
+    "future_actor_state": "The independently verified one-shot Darwin helper is an inactive binding only. Its sealed target identity has event_authorized=false; no producer command, transaction timestamp, receiver TLS connection, event, HA attachment, vehicle command, retry or replay is authorized."
+    ,
+    "wildcard_status_listener_stop_receipt": {
+      "reason": "The bridge status_port opened *:21645. Coordinator rejected that listener scope for any future submit decision; no firewall change, source rebuild, credential extension or restart was attempted.",
+      "receiver_stop": "At 2026-09-09T21:05:17Z, Hub verified receiver PID 7503 exact argv/UID, sent SIGTERM, and confirmed 127.0.0.1:21644 and *:21645 closed.",
+      "reconciliation": "After the receiver stop, Edge healthz/readyz and Hub trusted healthz/readyz all returned HTTP 200. Fresh Edge remained queue.records=0 and queue.bytes=0; Hub remained ready with Edge connected, pendingPublications=0, ackFrontier=null and latestObservationId=0/null timestamps.",
+      "future_requirement": "A future cohort must use a pinned receiver that supports an explicit loopback-only status bind or an evidence-preserving disabled optional status listener. Do not alter this expired cohort, add a host-wide firewall rule, rebuild in place, restart, extend or reenrol."
+    },
+    "expiry_cleanup_receipt": {
+      "hard_expiry": "2026-09-09T21:05:49.595000Z",
+      "observed_after_expiry_utc": "2026-09-09T21:06:05Z",
+      "order": "Hub PID 7539 exact argv/UID verified then SIGTERM; its 18490 listener closed and native doctor passed. Receiver PID 7503 had already been stopped for the wildcard listener scope. Edge PID 7461 exact argv/UID verified then SIGTERM.",
+      "final_process_and_listener_check": "All three retained PIDs were absent. 127.0.0.1:8080, 192.168.64.10:21643, 127.0.0.1:21644, 127.0.0.1:21645 and 127.0.0.1:18490 were closed. The three fresh roots remain retained; no credential extension, reenrolment, restart, deletion, event or producer action occurred."
+    }
+  },
+  "staging_actions": [
+    "Create only the three absent fresh roots and their owner-only child directories after rechecking absence and no symlinks.",
+    "Generate a new sealed source/vehicle/VIN/car/installation/lineage identity with event_authorized=false, then run only the feature-gated empty-edge-binding fixture against it. No telemetry-bearing seed, producer or direct database rebind is permitted.",
+    "Generate fresh per-cohort Hub and receiver TLS materials, validate purpose/issuer/SAN/key correspondence without exposing private values, and copy only the verified artifacts into the fresh Hub staging root.",
+    "Run Edge init and doctor. Enrol exactly one fresh 900-second tte1 Hub credential; atomically consume its raw output into a fresh owner-only Hub consumer-input bundle and delete the raw issuance output. Do not rotate, re-enrol or extend it.",
+    "Run Hub init and doctor, launch only this cohort's Edge core, receiver and Hub fixture, then obtain stable Edge health/ready and Hub health/ready plus the native empty control status. No producer helper path is executed in this phase."
+  ],
+  "one_shot_actor_binding": {
+    "status": "expired_cleaned_cohort_binding_inactive; producer execution prohibited",
+    "helper_sha256": "db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7",
+    "source_main_sha256": "b27566c80766f4fa0823c2b797809ade65cf09a0d8dd080dd7d14efada34c698",
+    "endpoint": "wss://127.0.0.1:21644/",
+    "payload_contract": "Exactly one synthetic topic-V envelope with one VehicleName string datum; no numeric telemetry, units, vehicle command, Tesla account credential, retry or replay.",
+    "future_canonical_arguments": ["-endpoint", "wss://127.0.0.1:21644/", "-cert", "<fresh sealed vehicle-client certificate>", "-key", "<fresh sealed vehicle-client key>", "-server-ca", "<fresh sealed receiver server CA>", "-vin", "<fresh sealed VIN from manifest>", "-txid", "<fresh sealed transaction identifier>", "-created-at-ms", "<assigned only by a later explicit submit-once decision>"],
+    "activation_rule": "The later decision must bind the current timestamp and invoke this exact verified helper exactly once. This record neither authorizes nor supplies that timestamp or invocation."
+  },
+  "empty_baseline_gate": {
+    "edge": "Init and doctor succeed before listeners; after launch, health and ready remain OK with records=0, bytes=0, corrupt_records=0, expired_records=0, pending_gap_notices=0 and capacity_exhausted=false.",
+    "hub": "Init and doctor succeed before listener; after launch, trusted health/readiness return HTTP 200 and native status reports Edge connected, one configured vehicle, latest observation 0/null, pending publications 0 and ACK frontier null.",
+    "limit": "Native Mac Hub status does not expose independent application/sequence counts and the prior external SQLite reader limitation remains. Those unobservable counts are not claimed from this empty baseline; any non-zero known field, unknown required field, stale state or process mismatch stops the cohort before any future event decision."
+  },
+  "expiry_and_cleanup": {
+    "credential_lifetime_seconds": 900,
+    "expiry_binding": "Record the exact UTC expiration from the one fresh enrolment before launch; it is a hard stop, not an extension opportunity.",
+    "stop_conditions": ["credential expiry", "any path/mode/hash/TLS/PID/health/readiness/empty-state mismatch", "explicit coordinator cleanup instruction"],
+    "order": ["Hub first after recording its native result", "receiver second", "Edge core third", "verify 18490, 21644, 21645, 21643 and 8080 closed; do not change 18487"],
+    "retention": "Retain fresh owner-only roots and redacted receipts after cleanup. Do not delete them, reuse them, restart a cohort, rotate a credential or submit a producer record."
+  },
+  "result_to_return": "Current PID/UID/argv bindings, fresh identity and input custody metadata without values, credential expiry, certificate public fingerprints, stable zero-state receipt, and the inactive one-shot actor binding for a separate explicit event decision."
+}

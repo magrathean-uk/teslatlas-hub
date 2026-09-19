@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas-hub-durable-goal-checkpoint",
+  "captured_at": "2026-09-08T18:02:04Z",
+  "plan_path": "/Users/bolyki/dev/source/teslatlas-service/hub/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+  "planning_scope": {
+    "mode": "planning_only",
+    "files_owned": [
+      "hub/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "hub/docs/superpowers/plans/2026-09-08-goal-checkpoint.json"
+    ],
+    "product_mutation_performed": false,
+    "host_or_service_operation_performed": false,
+    "publication_performed": false
+  },
+  "source_checkpoint": {
+    "workspace": "/Users/bolyki/dev/source/teslatlas-service",
+    "hub_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "hub_checkout": "dirty main; unrelated changes preserved",
+    "accepted": {
+      "installed_cells": 0,
+      "installed_cells_required": 21,
+      "case_slots": 0,
+      "case_slots_required": 444,
+      "cohorts": 0,
+      "cohorts_required": 10
+    }
+  },
+  "actual_goal": {
+    "status": "blocked",
+    "objective": "Complete the existing Teslatlas Hub working-product plan at hub/docs/superpowers/plans/2026-09-08-working-product-plan.md, preserving prior corrections, unrelated edits and independent main checkouts. Following the orchestrator's handoff, all development runs on gpt-5.6-luna with thinking=max. Hub owns its service, controller/runner, shared integration and workspace coordination; sibling tasks own their product roots, and App is excluded. Close controller/shared I1-I18 reviews; verify API/auth/query/sync, native lifecycle, private Fleet/public TLS separation, collection durability, upgrade/data recovery and companion bootstrap. Obtain reviewed sibling contracts/artifacts and complete the authoritative 21 installed cells, 444 case slots and ten cohort requirements on isolated macOS ARM64 and Debian 13 AMD64/ARM64 hosts, with independent stop/cleanup proof. Report authorized history/passive-live acceptance separately and retain any outstanding condition. Then complete non-App AGENTS guidance, simple source-built Docker acceptance, current docs/README reconciliation, final review and the authorized source-only GitHub/public companion catalog phase. Preserve the quarantined ARM guest and production services; no CI, releases, tags or artifact uploads. Completion requires bound evidence for mandatory gates, accurate limitations and verified final source publication/public bootstrap, not local test or build success alone.",
+    "tokens_used": 10155325,
+    "time_used_seconds": 21668,
+    "created_at": 1788848176,
+    "updated_at": 1788869845,
+    "remaining_tokens": null,
+    "completion_budget_report": null,
+    "mutation_performed": false,
+    "replacement_reason": "The stored goal is blocked and its Luna model policy is stale. The exposed tools cannot resume or replace this unfinished goal; the user must use the supported Resume goal control. This planning pass records the proposed objective and resume contract without changing or claiming to activate goal state.",
+    "activation_required": "user Resume goal control",
+    "activation_blocks_authorized_source_work": false,
+    "model_clause_authority": "Historical snapshot only. Its Luna clause is superseded by the current user instruction and hub/AGENTS.md. Never select a development model from this snapshot or the model clause returned by get_goal."
+  },
+  "model_policy": {
+    "coordinator_and_delegation": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "product_execution": {
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "medium"
+    }
+  },
+  "owner_tasks": {
+    "hub": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+    "typescript_sdk": "01a07f89-4bdf-7890-8a1b-4d88ad49f2a8",
+    "swift_sdk": "01a07f89-4e6b-76d0-ae93-cf958ce1becd",
+    "protocol": "01a07f89-48b6-7143-919f-8b389fbfb1ec",
+    "viewer": "01a07f89-5148-7463-b374-7b00232e082c",
+    "home_assistant": "01a07f89-54c0-75c0-bcd2-5efc87b408bf",
+    "edge": "01a07f89-57a9-7831-9162-c1dede446ee9"
+  },
+  "proposed_objective": "Complete the remaining Teslatlas Hub working product from the 2026-09-08 checkpoint as one durable end-to-end goal. Preserve all prior accepted corrections, unrelated dirty changes and independent main checkouts. First finish the Hub-owned Swift SessionInput, fixed macOS XCTest and Linux docker-exec workers, lifecycle/admission/log/runtime hooks and source-fixed registry row; then bind the current Protocol, Home Assistant, Viewer and Edge owner contracts into equally strict Hub entries. Close the Hub native product, lifecycle, recovery, package and companion-bootstrap gates. On fresh authorized isolated macOS ARM64, Debian 13 AMD64 and non-quarantined Debian 13 ARM64 targets, complete all 21 installed cells, 444 case slots and ten cohorts with runner-owned runtime and final-stop/child-zero proof. Report history import and passive Fleet/Edge evidence separately without waking a vehicle or changing production. Validate the claimed Docker paths, reconcile current documentation and compatibility metadata, independently review the final source and, under the existing final-phase source-write authorization and after its concrete acceptance/review gates, perform and verify the source-only public catalog/GitHub update. Keep Teslatlas App, production services and the quarantined ARM guest untouched; add no CI, release, tag, artifact upload or image publication. Do not mark the goal complete after a local test, build, review, registry row or partial milestone; completion requires every mandatory accepted count and final evidence/publication condition, with any unavailable requested condition retained as incomplete.",
+  "durability": {
+    "token_budget": null,
+    "time_budget": null,
+    "stop_after_one_milestone": false,
+    "resume_from": "hub-swift-and-sibling-registry",
+    "checkpoint_after_each_milestone": true,
+    "continue_independent_ready_work_when_one_lane_waits": true,
+    "completion_rule": "Complete only when mandatory installed counts are 21/21, 444/444 and 10/10; source, native, Docker, documentation and final review gates pass; separate requested data lanes are honestly resolved or retained as incomplete; and any authorized source-only public finish is verified.",
+    "blocked_rule": "A missing owner input or host resource blocks only its dependent lane. Mark the whole goal blocked only when no other listed milestone has meaningful ready work."
+  },
+  "next_ready_milestone": "hub-swift-and-sibling-registry",
+  "next_action": "Write the failing SessionInput staging test in hub/tools/interop/matrix_runner/test_swift_installed.py, then implement the smallest strict build_session_input(...) in swift_installed.py using reviewed TypeScript staging and shared registry-validation patterns. Do not start hosts, Docker or services in this source tranche.",
+  "milestones": [
+    {
+      "id": "hub-shared-runner-typescript-source",
+      "status": "DONE",
+      "owner": "hub",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "owned_files": [
+        "hub/tools/interop/matrix_runner/installed.py",
+        "hub/tools/interop/matrix_runner/installed_registry.py",
+        "hub/tools/interop/matrix_runner/adapter_wire.py",
+        "hub/tools/interop/matrix_runner/docker_pipe.py",
+        "hub/tools/interop/matrix_runner/process_generation.py",
+        "hub/tools/interop/matrix_runner/receipt_validation.py",
+        "hub/tools/interop/matrix_runner/typescript_installed.py",
+        "hub/tools/interop/client_lanes/"
+      ],
+      "produces": [
+        "source-fixed FixedInstalledAdapter dispatch",
+        "runner-owned stopped-runtime admission",
+        "typescript_node and typescript_browser fixed registry rows"
+      ],
+      "exit": "Independent I1-I18 source rereview and current local source suites pass. This milestone does not accept an installed cell."
+    },
+    {
+      "id": "hub-swift-and-sibling-registry",
+      "status": "READY",
+      "owner": "hub",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "owned_files": [
+        "hub/tools/interop/matrix_runner/swift_installed.py",
+        "hub/tools/interop/matrix_runner/test_swift_installed.py",
+        "hub/tools/interop/matrix_runner/installed_registry.py",
+        "hub/tools/interop/matrix_runner/test_installed_registry.py",
+        "hub/tools/interop/run.py",
+        "hub/tools/interop/test_run.py",
+        "focused Hub-owned Protocol, Home Assistant, Viewer and Edge adapter modules and tests"
+      ],
+      "interfaces": [
+        "build_session_input(job, cell, config, matrix, contract, descriptor, running)",
+        "launch_adapter(job, cell, config, contract, session_input_path, session_input, session=None, running=None)",
+        "admit(job, cell, config, matrix, contract, normalized, actors, admission_views=None, runtime_context=None, deadline=None)",
+        "build_supplement(job, cell, config, matrix, contract, result, runtime_context=None)",
+        "execution_logs(job, cell, config, contract, result)",
+        "runtime_inventory(job, cell, config, contract, session_input, deadline=None)"
+      ],
+      "verification": [
+        "PYTHONPATH=/Users/bolyki/dev/source/teslatlas-service python3 -m unittest hub.tools.interop.matrix_runner.test_swift_installed hub.tools.interop.matrix_runner.test_installed_registry hub.tools.interop.matrix_runner.test_shared_correction",
+        "PYTHONPATH=/Users/bolyki/dev/source/teslatlas-service python3 -m unittest hub.tools.interop.test_run",
+        "Run each current sibling contract/coordinator suite from its own checkout",
+        "Independent source review of exact fixed registry, source hashes and launch inventories"
+      ],
+      "exit": "All seven client entries are complete and operational at source level. Installed acceptance remains unchanged until the matrix runs."
+    },
+    {
+      "id": "hub-native-product-closure",
+      "status": "READY",
+      "owner": "hub",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "owned_files": [
+        "hub/src/",
+        "hub/tools/interop/installed_hosts/",
+        "hub/tools/companions/",
+        "hub/packaging/",
+        "hub/scripts/",
+        "hub/docs/compatibility/execution-state.json"
+      ],
+      "interfaces": [
+        "InstalledSession and installed runner deadline/cleanup contracts",
+        "native service start, readiness, stop and recovery commands",
+        "companion install, update, status, offline reuse and rollback commands"
+      ],
+      "verification": [
+        "targeted affected tests first",
+        "cargo check --locked",
+        "cargo test --locked",
+        "cargo clippy --locked --all-targets --all-features -- -D warnings",
+        "cargo fmt --check",
+        "native packaging and companion bootstrap gates",
+        "repository layout, provenance and git diff checks"
+      ],
+      "exit": "Reviewed macOS and Debian package candidates, native lifecycle/recovery source proof and repeatable local-candidate bootstrap are available for fresh-host acceptance."
+    },
+    {
+      "id": "hub-installed-matrix-acceptance",
+      "status": "WAITING FOR OWNER/RESOURCE",
+      "owner": "hub",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "owned_files": [
+        "private matrix configuration and receipts outside Git",
+        "hub/tools/interop/run.py",
+        "hub/docs/compatibility/matrix.json",
+        "hub/docs/compatibility/execution-state.json",
+        "hub/docs/compatibility/acceptance.md"
+      ],
+      "requires": [
+        "fresh authorized macOS ARM64 target",
+        "fresh authorized Debian 13 AMD64 target",
+        "fresh authorized non-quarantined Debian 13 ARM64 target",
+        "reviewed current package candidates",
+        "dedicated browser lane and private configuration",
+        "all seven fixed adapter entries"
+      ],
+      "verification": [
+        "python3 tools/interop/run.py --config \"$HUB_MATRIX_CONFIG\" --require-complete --receipt \"$HUB_MATRIX_RECEIPT\"",
+        "independent final-stop, endpoint-closed, lock-released and child-zero review",
+        "separate history import and passive Fleet/Edge result records"
+      ],
+      "exit": "Installed acceptance is exactly 21/21 cells, 444/444 case slots and 10/10 cohorts."
+    },
+    {
+      "id": "hub-docker-docs-public-finish",
+      "status": "WAITING FOR OWNER/RESOURCE",
+      "owner": "hub",
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "owned_files": [
+        "hub/Dockerfile",
+        "hub/compose.yaml",
+        "hub/packaging/docker/",
+        "hub/.github/README.md",
+        "hub/docs/",
+        "hub/provenance-manifest.json",
+        "Hub aggregate compatibility and companion catalog files",
+        "explicitly approved task-owned Git paths"
+      ],
+      "requires": [
+        "available Docker daemon and claimed architecture runners",
+        "accepted source/native identities",
+        "exact reachable sibling source commits",
+        "the existing reviewed final-phase source-write gates"
+      ],
+      "verification": [
+        "real container build, health/readiness, persistence, upgrade, restore and clean-stop acceptance",
+        "current documentation and link checks against accepted evidence",
+        "repository layout and provenance checks",
+        "independent final diff review",
+        "post-push commit identity and public fixed-origin bootstrap verification when authorized"
+      ],
+      "exit": "Every claimed Docker/documentation/public-catalog behavior is verified and the authorized source-only finish is reachable, or the overall goal remains incomplete."
+    }
+  ],
+  "dependencies": [
+    {
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "No Swift owner input is missing. Hub implementation callables and the registry row are missing.",
+      "work_possible_now": "Complete the Swift Hub seam, then bind the present Protocol, Home Assistant, Viewer and Edge owner bundles.",
+      "unblock_event": "Focused tests and independent Hub source review accept each exact fixed entry."
+    },
+    {
+      "owner_task_id": "01a07f89-48b6-7143-919f-8b389fbfb1ec",
+      "missing_input": "None. Current v2 manifest, validator, raw schema and adapter bytes exist; the earlier v1-only ledger snapshot is historical.",
+      "work_possible_now": "Verify current hashes and source gate; implement the Hub fixed entry.",
+      "unblock_event": "Hub review accepts the exact current owner bundle and callbacks."
+    },
+    {
+      "owner_task_id": "01a07f89-54c0-75c0-bcd2-5efc87b408bf",
+      "missing_input": "None for source admission. The current handoff supplies contract, schemas, component identity and barrier rules.",
+      "work_possible_now": "Implement and review the Hub HA fixed callbacks.",
+      "unblock_event": "Hub source review accepts the exact handoff; installed runtime remains part of the host milestone."
+    },
+    {
+      "owner_task_id": "01a07f89-5148-7463-b374-7b00232e082c",
+      "missing_input": "None for source admission. Current contract, schemas, coordinator and package/SDK inputs exist.",
+      "work_possible_now": "Implement the Hub Viewer fixed callbacks and reject semantic placeholders.",
+      "unblock_event": "Hub source review accepts the exact owner bytes and composed source lane."
+    },
+    {
+      "owner_task_id": "01a07f89-57a9-7831-9162-c1dede446ee9",
+      "missing_input": "None for source admission. Hub root-owned fixture and launch inventory are missing.",
+      "work_possible_now": "Implement the reviewed fixture/controller seam and Edge fixed callbacks.",
+      "unblock_event": "Hub review accepts the fixture and isolated composed local-process lane."
+    },
+    {
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Fresh authorized target access, current package review, dedicated browser target/private config and a clean non-quarantined ARM64 guest.",
+      "work_possible_now": "Finish source adapters, private configuration validation, package review and local gates while retaining pending rows.",
+      "unblock_event": "All three target classes and private runtime inputs are admitted for execution."
+    },
+    {
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Docker runtime, exact reachable sibling commits and the existing reviewed final-phase source-write gates.",
+      "work_possible_now": "Reconcile documentation and static Compose/provenance checks without claiming runtime or publication.",
+      "unblock_event": "Docker acceptance can run, sibling commits are reachable and the the concrete source update passes its existing final-phase authorization and review gates."
+    }
+  ],
+  "current_model_policy": {
+    "authority": "Latest user instruction on 2026-09-08; supersedes earlier model policy and historical goal wording",
+    "coordinator_and_delegation": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "product_coding_goal_and_workers": {
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "medium"
+    },
+    "dispatch_rule": "Every Hub implementation, verification and review worker must run gpt-5.6-sol with medium reasoning. Check actual worker settings; safely checkpoint and replace old-model workers while preserving all edits. Historical goal model clauses are not dispatch authority."
+  },
+  "developer_model": "gpt-5.6-sol",
+  "developer_effort": "medium",
+  "coordination_policy": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high"
+  }
+}

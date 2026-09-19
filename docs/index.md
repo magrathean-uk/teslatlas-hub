@@ -1,6 +1,6 @@
 # Teslatlas Hub documentation
 
-Teslatlas Hub 2026.36.1 targets Apple-silicon macOS 13 or later and
+Teslatlas Hub candidate 2026.36.2 targets Apple-silicon macOS 13 or later and
 Debian 13 on amd64 or ARM64.
 
 Created by György Bolyki. Published and maintained by MAGRATHEAN UK LTD.
@@ -14,7 +14,8 @@ provided; existing source tags and historical notes remain available.
 1. [Choose your setup path](guides/getting-started.md): new collection or an
    existing TeslaMate history import.
 2. Follow [Mac setup and everyday use](guides/install-macos.md) or
-   [Debian installation](guides/install-debian.md).
+   [Debian installation](guides/install-debian.md), or use the
+   [source-built Docker workflow](guides/install-docker.md).
 3. [Pair the separately distributed client](guides/getting-started.md#pair-your-client)
    after configuring a secure connection.
 4. Keep a [recovery copy](operations/backup-and-recovery.md).
@@ -29,6 +30,7 @@ If something fails, start with [Troubleshooting](guides/troubleshooting.md).
 | Choose a host and set up collection | [Getting started](guides/getting-started.md) |
 | Install and use the Mac app | [Mac setup and everyday use](guides/install-macos.md) |
 | Install the Debian package | [Install on Debian](guides/install-debian.md) |
+| Run a source-built Docker service | [Docker installation](guides/install-docker.md) |
 | Configure collection, TLS, geocoding, or terrain | [Configuration](guides/configuration.md) |
 | Configure Fleet API and Fleet Telemetry | [Fleet setup](guides/fleet-setup.md) |
 | Learn the command-line interface | [CLI reference](guides/cli.md) |

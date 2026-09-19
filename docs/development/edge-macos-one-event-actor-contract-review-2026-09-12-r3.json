@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_actor_contract_review_r3",
+  "date": "2026-09-12",
+  "state": "rejected_pending_stable_reviewable_sources_and_guard_implementation",
+  "edge_proposal": {
+    "path": "teslatlas-edge/docs/development/edge-macos-one-event-actor-contract-proposal-2026-09-12-r3.json",
+    "sha256": "5c327fdd47379e865a30c93cb7a269184546118d08c9acdb435cfa77c5d83026"
+  },
+  "accepted_contract_elements": [
+    "No r1/r2 runtime, identity, credential, certificate, transaction, root or port is reusable.",
+    "A future actor is VehicleName-only and performs one WebSocket write followed by one ACK read with no retry or replay.",
+    "Authorization, exact binding/profile checks, one timestamp and an exclusive guard precede the single spawn.",
+    "A timeout, ACK mismatch, helper failure or downstream evidence failure is final and cleanup cannot authorize another call.",
+    "Hub owns any future fresh shared runtime, authorization, wrapper staging, ledger observation and cleanup."
+  ],
+  "blocking_findings": [
+    {
+      "id": "R3-HELPER-SOURCE-ABSENT",
+      "evidence": "The proposal's exact helper and helper-test paths under /private/tmp/edge-fleet-src.current.x9MQxE are absent at review time.",
+      "impact": "Hub cannot independently rehash or inspect the exact source claimed for the future producer actor.",
+      "required_correction": "Provide stable host-side source and test paths with exact hashes and modes; do not rely on an expired temporary source root."
+    },
+    {
+      "id": "R3-GUARD-SOURCE-ABSENT",
+      "evidence": "The proposal cites only a historical wrapper path on a stopped guest and supplies placeholders and behavior requirements for the future wrapper, not a stable fresh wrapper implementation or focused tests.",
+      "impact": "The O_CREAT|O_EXCL, exact authorization, one-timestamp, one-spawn, timeout and atomic-result behavior cannot be independently reviewed before runtime staging.",
+      "required_correction": "Provide a stable source-only wrapper implementation and browser-free/no-network tests with exact hashes and modes."
+    }
+  ],
+  "runtime_actions": {
+    "guest_started": false,
+    "credential_created": false,
+    "pki_created": false,
+    "process_started": false,
+    "producer_invoked": false,
+    "event_submitted": false
+  },
+  "next_gate": "Edge supplies one additive superseding source-only package with stable helper source/test and fresh wrapper source/test identities. Hub then rehashes, inspects and runs only focused no-network guard checks before any fresh runtime decision.",
+  "proof_boundary": "This review accepts the proposed policy shape but rejects execution readiness. It is not producer, forwarding, durable commit, ACK/frontier, projection, installation, service, release, production, vehicle or user acceptance evidence."
+}

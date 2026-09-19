@@ -1,0 +1,81 @@
+{
+  "schema": "teslatlas.hub.edge-macos-preflight/v1",
+  "state": "target_compatible_fresh_root_bounded_empty_edge_hub_control_completed_and_cleaned",
+  "date": "2026-09-09",
+  "owner": "Hub",
+  "authority": {
+    "proposal": "../../../teslatlas-edge/docs/development/edge-macos-forwarding-handoff-proposal-2026-09-09.json",
+    "proposal_sha256": "fae8432e8ddd32c798dcc36c2ee102ca2537c94076ad70f8e57044213005e7ea",
+    "coordinator_direction": "Current authority covers fresh candidate staging, PKI/config, init/doctor, bounded launch and the empty receiver/Hub baseline on the exact target. It never authorizes a producer submission."
+  },
+  "lifecycle": {
+    "original_vm_state": "stopped",
+    "startup_invocation": "scripts/dev/vm.sh mac start",
+    "current_vm_state": "running",
+    "startup_scope": "Only the exact existing local macos13-arm64 guest was started; Debian guests and every Edge/Hub service or fixture remained untouched."
+  },
+  "selected_target": {
+    "guest_alias": "macos13-arm64",
+    "hostname": "teslatlas-macos13-arm64",
+    "os": "macOS 13.7.4",
+    "architecture": "arm64",
+    "guest_uid": 501,
+    "guest_user": "admin",
+    "private_address": "192.168.64.10",
+    "address_rule": "Observed non-loopback private address suitable for a future exact 192.168.64.10:21443 Edge-delivery binding; no wildcard or loopback delivery bind was created.",
+    "free_listener_bindings": [
+      "127.0.0.1:8080",
+      "192.168.64.10:21443",
+      "127.0.0.1:21444",
+      "127.0.0.1:18488"
+    ],
+    "edge_processes": "none observed",
+    "edge_launchagents_loaded": "none observed"
+  },
+  "retained_fixed_paths": {
+    "state_root": {
+      "path": "/Users/Shared/TeslatlasEdge",
+      "owner_uid": 501,
+      "mode": "0700",
+      "symlinks": 0,
+      "summary": "Retained non-empty prior state: six directories and 20 regular files. It includes seven owner-only 0600 private regular files, four public 0644 certificate regular files, and a 0700 spool directory. No file contents, credentials, tokens, keys, certificate bytes, or hashes were read or recorded."
+    },
+    "libexec_root": {
+      "path": "/usr/local/libexec/teslatlas-edge",
+      "owner_uid": 0,
+      "mode": "0755",
+      "summary": "Retained candidate payload files exist, but no Edge process is running."
+    },
+    "launchagent_root": {
+      "path": "/Library/Application Support/Teslatlas Edge/launchagents",
+      "owner_uid": 0,
+      "mode": "0755",
+      "summary": "Two retained plist files exist, but no Teslatlas LaunchAgent is loaded."
+    }
+  },
+  "custody_and_empty_baseline": {
+    "existing_private_file_custody": "Existing retained state is owner-only where private; its public certificate files are non-writable. This is metadata-only evidence and does not approve any retained input for reuse.",
+    "fresh_owner_only_pki_handoff": "Hub-link TLS and separate vehicle-receiver TLS are fresh owner-only 0700 outputs. The Hub server leaf is purpose-verified under a separate issuing CA with exactly one 192.168.64.10 IP SAN; the receiver server leaf is separately purpose-verified with exactly one 127.0.0.1 IP SAN; both client leaves/keys are separately verified. Three private Hub-TLS procedure failures remain non-consumable. Edge issued frozen fae8432e with exact Edge/receiver config shapes; the bounded Edge/receiver/Hub empty control subsequently completed, used a separately corrected tte1 bearer bundle, and was cleaned without a producer event.",
+    "fresh_source_vehicle_transaction_contract": {
+      "private_handoff_path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909/handoff/identity-edge-binding-fae8432e.json",
+      "sha256": "506de22d377e1cde994fb518226eba119112ba2c2dc52199e71a5280c7ee6e88",
+      "metadata": "Regular non-symlink file, current-admin-owned, 0600 and single-link. It embeds final frozen proposal SHA256 fae8432e and preserves the unused synthetic-V contract. Edge final-pair confirmation is pending. All preceding identity records remain untouched, superseded and ineligible; all identity values remain absent from this redacted receipt."
+    },
+    "fresh_disposable_state_root": {
+      "path": "/Users/admin/teslatlas-edge-macos-forwarding-fresh-20260909",
+      "children": ["state", "inputs", "handoff"],
+      "owner_uid": 501,
+      "mode": "0700",
+      "creation_check": "The root was absent before creation; /Users and /Users/admin were non-symlink directories. The root and children are regular directories, current-admin-owned, 0700, and non-symlinked."
+    },
+    "edge_empty_state_receipt": "The fresh direct Edge and receiver pair was healthy with zero-record/gap state before the bounded control and was then stopped receiver-first, Edge-second. The retained fixed state root was not reused.",
+    "hub_empty_control_poll": "A fresh Hub fixture with a feature-gated sealed source/vehicle binding ran one bounded corrected-tte1 Edge pull. Four consecutive post-start HTTP health/readiness pairs were 200; native Hub status reported Edge connected, pending publications 0, ACK frontier null and no observation. Native doctor after Hub stop reported raw/current observations 0.",
+    "admission": "bounded empty control completed; this is not product, vehicle, installed-service or collection acceptance"
+  },
+  "safety_boundary": [
+    "Hub started only the exact authorized existing guest, performed metadata-only preflight, then built only a fresh diagnostics-overlay Hub candidate under the shared lock and ran the authorized fresh bounded empty control.",
+    "Hub did not install Edge, read private identity contents, mutate a LaunchAgent, invoke a producer or submit an event. It preserved the original unusable bearer/config and used an additive corrected Edge-owned tte1 consumer-input bundle. The direct Hub listener was loopback-only and later stopped.",
+    "The closed Viewer-only Hub process on 18487, all closed private inputs, and the retained fixed Edge state were not reused."
+  ],
+  "next": "The authorized empty baseline is complete and cleaned. Preserve its evidence and the retained fixed root as explicitly ineligible. A producer event remains unauthorized; any later live or product acceptance requires new owner direction and a new fixture boundary."
+}

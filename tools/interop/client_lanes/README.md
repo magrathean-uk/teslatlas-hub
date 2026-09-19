@@ -6,15 +6,26 @@ Run the fixed entrypoint with an explicit Node executable and a private descript
 /absolute/pinned/node /absolute/workspace/hub/tools/interop/client_lanes/run.mjs /private/lane.json
 ```
 
-This implementation owns a **fresh native user-process Hub**. It does not install
-packages or control an existing service. `installed_service_runtime` remains
-pending. The final installed three-target matrix requires its separate observed
-service supervisor integration; a caller `service_mode` or `verified` boolean is
-not accepted by this descriptor. Exit 0 means the exercised interim cases passed;
-the receipt still contains the pending installed case. Exit 1 means a failed
-case, prerequisite or teardown. A cleanup failure leaves a private `.failure.json`
-and `.cleanup.json` instead of a successful normalized receipt. The matrix's `--require-complete` must remain nonzero for
+The descriptor shown above selects the **legacy interim lane**, which owns a
+fresh native user-process Hub. It does not install packages or control an
+existing service. `installed_service_runtime` remains pending. Exit 0 means the
+exercised interim cases passed; the receipt still contains the pending installed
+case. Exit 1 means a failed case, prerequisite or teardown. A cleanup failure
+leaves a private `.failure.json` and `.cleanup.json` instead of a successful
+normalized receipt. The matrix's `--require-complete` must remain nonzero for
 this interim receipt.
+
+The final installed lane is selected by a fixed v2 descriptor created by the
+Hub runner. It is not hand-authored and never accepts a service-mode or success
+boolean from job JSON. The runner first opens and verifies the installed Hub,
+stages an owner-only `SessionInput`, then writes the descriptor with its bound
+SessionInput file. The v2 branch verifies the pinned 2026.36.2 SDK archive and
+81-member installed package, runs the Node or Chromium worker through the
+private broker, writes hash-bound raw case evidence, waits for the runner's
+close acknowledgement, and exits only after the runner has proved the final
+service stop and child cleanup. Installed service identity and complete final
+matrix integration remain pending until this lane is exercised on each required
+macOS/Debian host with the admitted runtime/toolchain identities.
 
 The descriptor and fixture config are owner-only regular JSON files outside all
 workspace source. Output paths must be absent under an owner-only private parent.
@@ -41,7 +52,7 @@ The descriptor has exactly these fields (`browser` only for browser mode):
 `profile_path`, `profile_sha256`, and `allowed_origins`. Use current profile
 `hub-http-v1@1.0.0`, a fresh output directory, port 18480, and browser origin
 `http://localhost:18481`. Inputs are exact accepted artifacts; this command
-never builds or repacks the SDK or Hub. It checks all 80 installed SDK members
+never builds or repacks the SDK or Hub. It checks all 81 installed SDK members
 against the accepted tar and imports its installed `dist/node.js` or serves its
 installed `dist/browser.js` to Chromium. It uses the existing SDK artifact
 verification helper as a read-only harness dependency, never the SDK source APIs.

@@ -15,7 +15,10 @@ from unittest import mock
 import tarfile
 from types import SimpleNamespace
 
-import run as matrix_run
+try:
+    from . import run as matrix_run
+except ImportError:
+    import run as matrix_run
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -480,7 +483,7 @@ print(json.dumps(payload,sort_keys=True))
         ]}
         valid = {
             "hub_sha256": "a" * 64, "tarball_sha256": "b" * 64,
-            "package_version": "2026.36.2", "installed_members": 80,
+            "package_version": "2026.36.2", "installed_members": 81,
         }
         matrix_run._validate_actual_assertion("candidate_artifact_identity", valid, valid, job)
         mutations = [
@@ -539,6 +542,20 @@ print(json.dumps(payload,sort_keys=True))
                 {"adapter": "typescript_browser"}, {"adapter": "typescript_node"}
             )
 
+    def test_v2_node_launcher_identity_uses_matrix_pin_for_runner_descriptor(self):
+        executable = self.root / "node"
+        executable.write_bytes(b"reviewed node fixture")
+        job = {"argv": [str(executable)], "command_files": [{"sha256": "a" * 64}]}
+        client = {"actual_node_sha256": "a" * 64, "actual_node_version": "v26.7.0"}
+        with mock.patch.object(matrix_run, "sha256_file", return_value="a" * 64), \
+                mock.patch.object(matrix_run.subprocess, "run", return_value=SimpleNamespace(stdout="v26.7.0\n")) as probe, \
+                mock.patch.object(matrix_run, "_local_host_identity", return_value=("macOS", "arm64")):
+            identity = matrix_run._node_launcher_identity(
+                job, client, {"schema_version": 2, "kind": "installed-client-lane"}
+            )
+        self.assertEqual("a" * 64, identity["sha256"])
+        self.assertEqual([str(executable), "--version"], probe.call_args.args[0])
+
     def test_linux_node_runtime_normalizes_distribution_and_x64(self):
         hub_hash, sdk_hash = "a" * 64, "b" * 64
         proof = {
@@ -548,7 +565,7 @@ print(json.dumps(payload,sort_keys=True))
             "packed": {"packageName": "@teslatlas/sdk", "packageVersion": "2026.36.2",
                        "entry": "dist/node.js", "entrySha256": "e" * 64,
                        "tarballSha256": sdk_hash, "installedContentManifestSha256": "f" * 64,
-                       "installedMemberCount": 80},
+                       "installedMemberCount": 81},
             "client": {"os": "linux", "distribution": "Debian GNU/Linux 13 (trixie)",
                        "architecture": "x64", "node": "v26.7.0", "pid": 11},
         }
@@ -620,7 +637,7 @@ print(json.dumps(payload,sort_keys=True))
             "tool_versions": {"node": "v26.7.0"},
         }
         expected = {"hub_sha256": digest, "tarball_sha256": digest,
-                    "package_version": "2026.36.2", "installed_members": 80}
+                    "package_version": "2026.36.2", "installed_members": 81}
         proof = {
             "hub": {"status": "verified", "hub_pid": 10, "launcher_pid": 9,
                     "hub_started_at": "now", "binary_sha256": digest,
@@ -628,7 +645,7 @@ print(json.dumps(payload,sort_keys=True))
             "packed": {"packageName": "@teslatlas/sdk", "packageVersion": "2026.36.2",
                        "entry": "dist/node.js", "entrySha256": "e" * 64,
                        "tarballSha256": digest, "installedContentManifestSha256": "f" * 64,
-                       "installedMemberCount": 80},
+                       "installedMemberCount": 81},
             "client": {"os": "linux", "distribution": "Debian GNU/Linux 13 (trixie)",
                        "architecture": [], "node": "v26.7.0", "pid": 11},
         }
@@ -665,7 +682,8 @@ print(json.dumps(payload,sort_keys=True))
         with mock.patch.object(matrix_run, "_validate_job"), \
                 mock.patch.object(matrix_run, "_observe_job_identities", return_value=observed), \
                 mock.patch.object(matrix_run, "_node_launcher_identity", return_value=launcher), \
-                mock.patch.object(matrix_run, "_execute", side_effect=execute):
+                mock.patch.object(matrix_run, "_execute", side_effect=execute), \
+                mock.patch.object(matrix_run, "_validate_profile"):
             code = matrix_run.run_matrix(config_path, receipt_path, require_complete=True)
         self.assertEqual(1, code)
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
@@ -690,6 +708,41 @@ print(json.dumps(payload,sort_keys=True))
         with self.assertRaises(matrix_run.MatrixError):
             matrix_run._verify_artifact_version(artifact, "2026.36.2", True)
 
+    def test_swift_product_archive_binds_package_version_and_matrix_sources(self):
+        source = self.root / "swift-product"
+        (source / "tools").mkdir(parents=True)
+        (source / "Package.swift").write_text(
+            "let package = Package(name: \"teslatlas-sdk-swift\")\n", encoding="utf-8"
+        )
+        (source / "VERSION").write_text("2026.36.2\n", encoding="ascii")
+        for name in ("matrix-contract.json", "matrix_contract.py", "matrix_live.py", "matrix_wire.py"):
+            (source / "tools" / name).write_text("{}\n", encoding="utf-8")
+        archive = self.root / "swift.tar.gz"
+        with tarfile.open(archive, "w:gz") as output:
+            output.add(source, arcname="teslatlas-sdk-swift")
+        artifact = {
+            "role": "swift_sdk_product", "name": "swift", "path": str(archive),
+            "embedded_version": "2026.36.2", "sha256": sha256(archive),
+        }
+        matrix_run._verify_artifact_version(artifact, "2026.36.2", True)
+        (source / "Package.swift").write_text("// foreign package\n", encoding="utf-8")
+        wrong_package = self.root / "swift-wrong-package.tar.gz"
+        with tarfile.open(wrong_package, "w:gz") as output:
+            output.add(source, arcname="teslatlas-sdk-swift")
+        artifact.update(path=str(wrong_package), sha256=sha256(wrong_package))
+        with self.assertRaises(matrix_run.MatrixError):
+            matrix_run._verify_artifact_version(artifact, "2026.36.2", True)
+        (source / "Package.swift").write_text(
+            "let package = Package(name: \"teslatlas-sdk-swift\")\n", encoding="utf-8"
+        )
+        (source / "VERSION").write_text("2026.36.1\n", encoding="ascii")
+        wrong = self.root / "swift-wrong.tar.gz"
+        with tarfile.open(wrong, "w:gz") as output:
+            output.add(source, arcname="teslatlas-sdk-swift")
+        artifact.update(path=str(wrong), sha256=sha256(wrong))
+        with self.assertRaises(matrix_run.MatrixError):
+            matrix_run._verify_artifact_version(artifact, "2026.36.2", True)
+
     def test_foreign_hub_runtime_is_pending_before_any_probe(self):
         cell = next(item for item in self.matrix["cells"] if item["hub_target"] == "debian13_amd64")
         job = self._job(cell)
@@ -702,7 +755,7 @@ print(json.dumps(payload,sort_keys=True))
                 matrix_run._validate_job(job, self.matrix, "actual_hub_acceptance")
             run.assert_not_called()
 
-        with self.assertRaises(matrix_run.PendingCapability):
+        with self.assertRaises(matrix_run.MatrixError):
             matrix_run._verify_artifact_version(
                 {"role": "swift_sdk_product", "path": str(Path(matrix_run.__file__))},
                 "2026.36.2", True,
@@ -786,13 +839,18 @@ print(json.dumps(payload,sort_keys=True))
             "sha256": self.matrix["profile"]["manifest_sha256"],
         }
         private_json(self.root / "actual-v1.json", config)
-        loaded_v1 = matrix_run.load_config(
-            self.root / "actual-v1.json", self.matrix, ROOT / "docs/compatibility/matrix.json"
-        )
+        # Exercise schema-version dispatch independently of the reviewed
+        # profile gate. The sibling checkout may contain a local candidate
+        # whose manifest is intentionally not the matrix's accepted digest.
+        with mock.patch.object(matrix_run, "_validate_profile"):
+            loaded_v1 = matrix_run.load_config(
+                self.root / "actual-v1.json", self.matrix, ROOT / "docs/compatibility/matrix.json"
+            )
         self.assertEqual(1, loaded_v1["schema_version"])
         v2 = dict(config, schema_version=2, cohort_inputs={"path": str(self.artifact), "sha256": sha256(self.artifact)})
         private_json(self.root / "actual-v2.json", v2)
-        loaded = matrix_run.load_config(self.root / "actual-v2.json", self.matrix, ROOT / "docs/compatibility/matrix.json")
+        with mock.patch.object(matrix_run, "_validate_profile"):
+            loaded = matrix_run.load_config(self.root / "actual-v2.json", self.matrix, ROOT / "docs/compatibility/matrix.json")
         self.assertEqual(2, loaded["schema_version"])
         receipt = matrix_run._base_receipt(self.matrix, ROOT / "docs/compatibility/matrix.json", "actual_hub_acceptance", v2["cohort_inputs"])
         self.assertEqual(2, receipt["schema_version"])

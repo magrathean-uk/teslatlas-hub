@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import stat
@@ -48,6 +49,90 @@ def _ha_payload(prefix: Path, release_id: str) -> Path:
 
 def _ha_target(config: str) -> Path:
     return Path(config) / "custom_components" / "teslatlas_hub"
+
+
+def _ha_payload_manifest_sha256(payload: Path) -> str:
+    if payload.is_symlink() or not payload.is_dir():
+        raise BootstrapError("selected Home Assistant payload is missing or unsafe")
+    lines: list[str] = []
+    for path in sorted(payload.rglob("*")):
+        if path.is_symlink() or path.is_dir():
+            if path.is_symlink():
+                raise BootstrapError("Home Assistant payload contains an unsafe link")
+            continue
+        if not path.is_file():
+            raise BootstrapError("Home Assistant payload contains an unsupported file")
+        relative = path.relative_to(payload).as_posix()
+        lines.append(f"{relative} {hashlib.sha256(path.read_bytes()).hexdigest()}\n")
+    return hashlib.sha256("".join(lines).encode()).hexdigest()
+
+
+def _validate_ha_payload_binding(
+    prefix: Path, release_id: str, binding: Mapping[str, str]
+) -> None:
+    payload_digest = binding.get("ha_payload_manifest_sha256")
+    receipt_digest = binding.get("ha_selection_receipt_sha256")
+    if not isinstance(payload_digest, str) or len(payload_digest) != 64:
+        raise BootstrapError("HA payload manifest identity is missing or invalid")
+    if not isinstance(receipt_digest, str) or len(receipt_digest) != 64:
+        raise BootstrapError("HA selection receipt identity is missing or invalid")
+    if any(character not in "0123456789abcdef" for character in payload_digest):
+        raise BootstrapError("HA payload manifest identity is missing or invalid")
+    if any(character not in "0123456789abcdef" for character in receipt_digest):
+        raise BootstrapError("HA selection receipt identity is missing or invalid")
+    observed = _ha_payload_manifest_sha256(_ha_payload(prefix, release_id))
+    if observed != payload_digest:
+        raise BootstrapError("HA payload manifest digest mismatch")
+
+
+def _ha_artifacts(
+    components: Iterable[str] | Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    if not isinstance(components, Mapping):
+        return None
+    component = components.get("home-assistant")
+    if isinstance(component, Mapping):
+        artifacts = component.get("artifacts")
+    else:
+        artifacts = getattr(component, "artifacts", None)
+    if not isinstance(artifacts, Mapping):
+        raise BootstrapError("Home Assistant component provenance is invalid")
+    expected = {
+        "payload_manifest_sha256": artifacts.get("payload_manifest_sha256"),
+        "selection_receipt_sha256": artifacts.get("selection_receipt_sha256"),
+    }
+    if any(not isinstance(value, str) for value in expected.values()):
+        raise BootstrapError("Home Assistant component provenance is incomplete")
+    return expected
+
+
+def _validate_ha_release_provenance(
+    prefix: Path, release_id: str, components: Iterable[str] | Mapping[str, Any]
+) -> None:
+    expected = _ha_artifacts(components)
+    if expected is None:
+        return
+    try:
+        receipt = json.loads(
+            (prefix / "releases" / release_id / "receipt.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        actual = receipt["components"]["home-assistant"]["artifacts"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise BootstrapError(
+            "selected release Home Assistant receipt is invalid"
+        ) from error
+    if not isinstance(actual, Mapping):
+        raise BootstrapError("selected release Home Assistant provenance is invalid")
+    if actual.get("payload_manifest_sha256") != expected["payload_manifest_sha256"]:
+        raise BootstrapError(
+            "selected release Home Assistant payload manifest does not match"
+        )
+    if actual.get("selection_receipt_sha256") != expected["selection_receipt_sha256"]:
+        raise BootstrapError(
+            "selected release Home Assistant selection receipt does not match"
+        )
 
 
 def _is_owned_ha_target(prefix: Path, raw: str) -> bool:
@@ -129,13 +214,17 @@ def _snapshot(path: Path, *, marker: bool = False) -> dict[str, Any]:
 def prepare_target_transition(
     prefix: Path,
     release_id: str,
-    components: Iterable[str],
+    components: Iterable[str] | Mapping[str, Any],
     binding: Mapping[str, str],
     previous_receipt: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     """Build a serializable before/after plan for installer-owned target state."""
     prefix = prefix.resolve()
     selected = set(components)
+    if "home-assistant" in selected:
+        _validate_ha_payload_binding(prefix, release_id, binding)
+    if "home-assistant" in selected:
+        _validate_ha_release_provenance(prefix, release_id, components)
     previous_targets = (
         previous_receipt.get("targets", {})
         if isinstance(previous_receipt, dict)
@@ -452,6 +541,20 @@ def activate_targets(
             raise BootstrapError("cannot activate targets without an active release")
         receipt = _verify_release(prefix, current)
         binding = target_binding(components, context)
+        if "home-assistant" in set(components):
+            recorded_targets = receipt.get("targets")
+            if not isinstance(recorded_targets, Mapping):
+                raise BootstrapError("active release Home Assistant target provenance is invalid")
+            for key in (
+                "ha_payload_manifest_sha256",
+                "ha_selection_receipt_sha256",
+            ):
+                value = recorded_targets.get(key)
+                if not isinstance(value, str):
+                    raise BootstrapError(
+                        "active release Home Assistant target provenance is incomplete"
+                    )
+                binding[key] = value
         plan = prepare_target_transition(prefix, current, components, binding, receipt)
         _commit_transition(prefix, current, _history(prefix), plan)
         return plan["actions"]

@@ -30,17 +30,24 @@ class FakeEvidence:
 
 
 class FakeSession:
-    def __init__(self, events, close_error=None):
+    def __init__(self, events, close_error=None, close_delay=0):
         self.events = events
         self.close_error = close_error
+        self.close_delay = close_delay
+        self.request_deadline = None
+        self.close_deadline = None
         self.descriptor = {"schema_version": 1, "kind": "installed-host", "broker_socket": "/private/broker.sock", "session_id": SESSION, "registration_sha256": "e" * 64}
 
-    def request(self, request):
+    def request(self, request, deadline=None):
         self.events.append("verify")
+        self.request_deadline = deadline
         return {"proof": {"status": "verified", "session_id": SESSION, "sequence": 7}}
 
-    def close(self):
+    def close(self, deadline=None):
         self.events.append("close")
+        self.close_deadline = deadline
+        if self.close_delay:
+            time.sleep(self.close_delay)
         if self.close_error:
             raise self.close_error
         return FakeEvidence()
@@ -53,7 +60,8 @@ class FakeFactory:
     current = None
 
     @classmethod
-    def open(cls, config, inventory):
+    def open(cls, config, inventory, deadline=None):
+        cls.current.open_deadline = deadline
         return cls.current
 
 
@@ -105,12 +113,69 @@ class InstalledCompletionTests(unittest.TestCase):
         result = installed.supervise_completion(
             FakeSession(events), process, session_path, value,
             initial_observation={"session_sequence": 7, "proof_sha256": installed.proof_sha256({"status": "verified", "session_id": SESSION, "sequence": 7})},
-            admit=lambda normalized, actors: events.append("admit"),
+            admit=lambda normalized, actors, deadline=None: events.append("admit"),
         )
         events.append("zero")
         self.assertEqual(["admit", "close", "zero"], events)
         self.assertEqual(0, result.exit_code)
         self.assertEqual("closed", result.session_evidence.state)
+
+    def test_home_assistant_runs_initial_advance_barrier_then_final_close(self):
+        path, value, _ = self._session_input()
+        value.update(adapter_id="home_assistant", client_id="home_assistant",
+                     cell_id="home_assistant__macos_arm64")
+        raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+        path.write_bytes(raw)
+        initial_proof = {"status": "verified", "session_id": SESSION, "sequence": 7}
+        advanced_proof = {"status": "verified", "session_id": SESSION, "sequence": 8}
+        initial_observation = {"session_sequence": 7, "proof_sha256": installed.proof_sha256(initial_proof)}
+        advanced_observation = {"session_sequence": 8, "proof_sha256": installed.proof_sha256(advanced_proof)}
+        script = self.root / "child-ha.py"
+        script.write_text(
+            "import hashlib,json,os,pathlib,sys,time\n"
+            "p=pathlib.Path(sys.argv[1]); s=json.loads(p.read_text()); c=pathlib.Path(s['outputs']['coordination_dir'])\n"
+            "def write(path,value):\n raw=json.dumps(value,sort_keys=True,separators=(',',':')).encode()+b'\\n'; fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,raw); os.fsync(fd); os.close(fd); return {'path':str(path),'sha256':hashlib.sha256(raw).hexdigest()}\n"
+            "sh=hashlib.sha256(p.read_bytes()).hexdigest(); initial={'session_id':s['session_id'],'observation':{'session_sequence':7,'proof_sha256':'"
+            + initial_observation["proof_sha256"] + "'}}; witness=write(c/'initial-witness.json',initial); ready={'schema_version':1,'type':'ready','session_id':s['session_id'],'cell_id':s['cell_id'],'session_input_sha256':sh,'instance_nonce':s['instance_nonce'],'sequence':1,'phase':'ha_initial_observation_ready','observation':initial['observation'],'evidence':witness}; write(c/'ready-000001.json',ready)\n"
+            "while not (c/'ack-000001.json').exists(): time.sleep(.01)\n"
+            "n=write(pathlib.Path(s['outputs']['normalized']),{'schema_version':1}); a=write(pathlib.Path(s['outputs']['actor_evidence']),{'schema_version':1}); comp=write(c/'adapter-completion.json',{'schema_version':1,'session_id':s['session_id'],'cell_id':s['cell_id'],'session_input_sha256':sh,'normalized':n,'actor_evidence':a}); ready={'schema_version':1,'type':'ready','session_id':s['session_id'],'cell_id':s['cell_id'],'session_input_sha256':sh,'instance_nonce':s['instance_nonce'],'sequence':2,'phase':'evidence_ready','observation':{'session_sequence':8,'proof_sha256':'"
+            + advanced_observation["proof_sha256"] + "'},'evidence':comp}; write(c/'ready-000002.json',ready)\n"
+            "while not (c/'ack-000002.json').exists(): time.sleep(.01)\n"
+            "sys.exit(0 if json.loads((c/'ack-000002.json').read_text())['action']=='close_completed' else 9)\n",
+            encoding="utf-8",
+        )
+
+        class FakeHA(FakeSession):
+            def __init__(self):
+                super().__init__([])
+                self.advance_calls = 0
+
+            def advance_once_for_ha(self, deadline=None):
+                self.advance_calls += 1
+                return {"proof": advanced_proof, "advance": {
+                    "before_store_sha256": "1" * 64, "after_store_sha256": "2" * 64,
+                    "scenario_sha256": "3" * 64, "seed_sha256": "4" * 64,
+                }}
+
+            def latest_observation(self, _deadline):
+                return advanced_proof
+
+        session = FakeHA()
+        process = subprocess.Popen([sys.executable, str(script), str(path)], start_new_session=True)
+        try:
+            result = installed.supervise_completion(
+                session, process, path, value,
+                initial_observation=initial_observation,
+                admit=lambda *_args, **_kwargs: None,
+            )
+            self.assertEqual(1, session.advance_calls)
+            self.assertEqual(2, result.ack["sequence"])
+            first_ack = Path(value["outputs"]["coordination_dir"]) / "ack-000001.json"
+            self.assertEqual("advance_once", json.loads(first_ack.read_text())["action"])
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=2)
 
     def test_premature_exit_and_failed_close_are_permanent_failures(self):
         path, value, _ = self._session_input()
@@ -120,7 +185,7 @@ class InstalledCompletionTests(unittest.TestCase):
             installed.supervise_completion(
                 FakeSession(events), process, path, value,
                 initial_observation={"session_sequence": 7, "proof_sha256": installed.proof_sha256({"status": "verified", "session_id": SESSION, "sequence": 7})},
-                admit=lambda *_: None,
+                admit=lambda *_args, deadline=None: None,
             )
         self.assertIn("close", events)
         self.root = Path(tempfile.mkdtemp(dir=self.root)).resolve()
@@ -132,7 +197,7 @@ class InstalledCompletionTests(unittest.TestCase):
                 FakeSession([], close_error=RuntimeError("synthetic close failure")),
                 process, path, value,
                 initial_observation={"session_sequence": 7, "proof_sha256": installed.proof_sha256({"status": "verified", "session_id": SESSION, "sequence": 7})},
-                admit=lambda *_: None,
+                admit=lambda *_args, deadline=None: None,
             )
         rejected = json.loads((Path(value["outputs"]["coordination_dir"]) / "ack-000001.json").read_text())
         self.assertEqual(("rejected", "abort", None), (rejected["status"], rejected["action"], rejected["result"]))
@@ -145,22 +210,56 @@ class InstalledCompletionTests(unittest.TestCase):
         events = []
         FakeFactory.current = FakeSession(events)
 
-        def build(descriptor, running):
+        def build(descriptor, running, deadline=None):
             events.append("build")
+            self.assertIsInstance(deadline, Deadline)
             self.assertEqual(value["host_session"], descriptor)
             self.assertEqual(7, running["proof"]["sequence"])
             return path, value
 
-        def launch(session_path, session_input):
+        def launch(session_path, session_input, deadline=None, session=None, running=None):
             events.append("launch")
+            self.assertIsInstance(deadline, Deadline)
+            self.assertIs(session, FakeFactory.current)
+            self.assertEqual(7, running["proof"]["sequence"])
             return self._child(session_path)
 
         result = installed.execute_installed(
             {}, {}, build_session_input=build, launch_adapter=launch,
-            admit=lambda *_: events.append("admit"), session_factory=FakeFactory,
+            admit=lambda *_args, **kwargs: (self.assertIsInstance(kwargs["deadline"], Deadline), events.append("admit")),
+            session_factory=FakeFactory, cell_timeout_ms=5000,
         )
         self.assertEqual(0, result.exit_code)
         self.assertEqual(["verify", "build", "launch", "admit", "close"], events)
+        self.assertIsInstance(FakeFactory.current.open_deadline, Deadline)
+        self.assertIs(FakeFactory.current.request_deadline, FakeFactory.current.open_deadline)
+        self.assertIsInstance(FakeFactory.current.close_deadline, Deadline)
+
+    def test_execute_deadline_starts_before_open_and_prevents_late_launch(self):
+        path, value, _ = self._session_input()
+        value["host_session"] = FakeSession([]).descriptor
+        events = []
+        session = FakeSession(events)
+
+        class SlowFactory:
+            @classmethod
+            def open(cls, config, inventory, deadline=None):
+                self.assertIsInstance(deadline, Deadline)
+                time.sleep(0.08)
+                session.open_deadline = deadline
+                return session
+
+        launched = []
+
+        with self.assertRaisesRegex(installed.InstalledExecutionError, "startup timed out"):
+            installed.execute_installed(
+                {}, {}, build_session_input=lambda *_args, **_kwargs: (path, value),
+                launch_adapter=lambda *_args, **_kwargs: launched.append(True) or self._child(path),
+                admit=lambda *_args, **_kwargs: None, session_factory=SlowFactory,
+                cell_timeout_ms=30,
+            )
+        self.assertEqual([], launched)
+        self.assertIn("close", events)
 
     def test_controller_observation_accessor_is_locked_bounded_and_detached(self):
         session = InstalledSession.__new__(InstalledSession)
@@ -177,6 +276,47 @@ class InstalledCompletionTests(unittest.TestCase):
                 session.observations_snapshot(Deadline(0.01))
         finally:
             session._operation_lock.release()
+
+    def test_runner_builds_immutable_controller_admission_view_from_records(self):
+        proof = {
+            "session_id": SESSION, "sequence": 7,
+            "config": {"scenario_sha256": "a" * 64, "seed_sha256": "b" * 64,
+                       "store_id": "store-1", "store_schema_version": 59},
+            "discovery": {"hub_id": "hub-1"},
+            "service": {"generation": "boot:start"}, "tls": {},
+        }
+        record = {
+            "status": "admitted", "operation": "verify",
+            "processed_binding": {"sequence": 7}, "proof": proof,
+            "started_monotonic_ns": 10, "finished_monotonic_ns": 20,
+            "observed_at_ms": 1000, "result_sha256": "c" * 64,
+            "invitation": {"pairing_id": "pair-1", "expires_at_ms": 2000},
+            "expired_invitation": {"pairing_id": "pair-0", "expires_at_ms": 900},
+        }
+
+        class SnapshotSession:
+            class Journal:
+                path = "/private/controller.journal.jsonl"
+
+                @staticmethod
+                def digest():
+                    return "d" * 64
+
+            journal = Journal()
+
+            def observations_snapshot(self, _deadline):
+                return (proof,)
+
+            def operation_records_snapshot(self, _deadline):
+                return (record,)
+
+        view = installed.build_controller_admission_view(
+            SnapshotSession(), {"session_id": SESSION}, deadline=Deadline(1)
+        )
+        self.assertEqual(7, view["observations"][7]["sequence"])
+        self.assertEqual("c" * 64, view["observations"][7]["result_sha256"])
+        with self.assertRaises(TypeError):
+            view["observations"][7]["operation"] = "pair"
 
     def test_open_revalidates_provider_specific_identity_before_transport_use(self):
         order = []
@@ -199,7 +339,7 @@ class InstalledCompletionTests(unittest.TestCase):
                 raise AssertionError(errors)
 
         class Transport:
-            def open(self, registered):
+            def open(self, registered, deadline=None):
                 order.append("open-transport")
                 return {
                     "schema_version": 1, "type": "challenge",
@@ -237,7 +377,7 @@ class InstalledCompletionTests(unittest.TestCase):
                 mock.patch.object(installed_session_module, "HostLease", return_value=lease), \
                 mock.patch.object(installed_session_module, "_hash_regular_file"), \
                 mock.patch.object(installed_session_module, "validate_package_manifest", return_value=validated_manifest), \
-                mock.patch("hub.tools.interop.installed_hosts.transport._verify_provider_tool", side_effect=lambda registration: order.append("verify-provider") or identity):
+                mock.patch("hub.tools.interop.installed_hosts.transport._verify_provider_tool", side_effect=lambda registration, deadline=None: order.append("verify-provider") or identity):
             session = InstalledSession.open({}, {}, transport=Transport())
         try:
             self.assertIs(identity, session.provider_tool_identity)

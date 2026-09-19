@@ -499,7 +499,8 @@
       ],
       "globs": [
         "tools/interop/client_lanes/*",
-        "tools/interop/matrix_runner/*"
+        "tools/interop/matrix_runner/*",
+        "tools/interop/installed_hosts/*"
       ]
     },
     {

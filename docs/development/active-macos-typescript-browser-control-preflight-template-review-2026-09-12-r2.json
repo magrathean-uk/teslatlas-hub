@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "kind": "active_macos_typescript_browser_control_preflight_template_review_r2",
+  "date": "2026-09-12",
+  "state": "accepted_source_only_no_runtime_authorization",
+  "typescript_receipt": {
+    "path": "teslatlas-sdk-typescript/docs/development/macos-browser-control-preflight-template-correction-v2-2026-09-12.json",
+    "sha256": "d14f0f9a404a9cd83996779f45f0e9eecbcced8dc74c70c6f9e10cf98b475bf1"
+  },
+  "reviewed_sources": {
+    "template": {
+      "path": "teslatlas-sdk-typescript/scripts/browser-control-preflight-template.mjs",
+      "sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+      "mode": "0700"
+    },
+    "regression": {
+      "path": "teslatlas-sdk-typescript/scripts/test-browser-control-preflight-template.mjs",
+      "sha256": "1789949b89b1afe474e305914c9680371aca9706d0f19b6fae15f9fee1785488",
+      "mode": "0700"
+    }
+  },
+  "independent_review": {
+    "pinned_node": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+    "syntax": "PASS for both reviewed source files",
+    "regression": {
+      "status": "PASS",
+      "fresh_creation": true,
+      "second_invocation_rejected_without_truncation": true,
+      "stale_artifacts_rejected_before_mutation": [
+        "control.sock",
+        "supervisor-state.json",
+        "evidence/browser-control-events.jsonl",
+        "untrusted-profile",
+        "trusted-profile",
+        "evidence/imported-hub-ca.pem",
+        "evidence/browser-trust-witness.json",
+        "evidence/browser-acceptance-receipt.json",
+        "evidence/runner.stdout",
+        "evidence/runner.stderr"
+      ],
+      "root_symlink_rejected_before_mutation": true,
+      "symlink_target_mode_and_content_preserved": true,
+      "temporary_roots_removed": true
+    },
+    "targeted_biome": "Checked 2 files; no fixes applied",
+    "git_diff_check": "PASS",
+    "receipt_json": "PASS",
+    "browser_started": false,
+    "hub_contacted": false,
+    "keychain_touched": false,
+    "r7_created": false
+  },
+  "accepted_contract": {
+    "root_boundary": "lstat rejects a symlink controlRoot before any artifact check or mutation; the root must be a real directory",
+    "nested_boundary": "nested symlinks remain rejected before mutation",
+    "stale_boundary": "all listed runtime artifacts, including control.sock, are rejected before chmod or file creation",
+    "output_boundary": "runner.stdout and runner.stderr are created exclusively with wx and mode 0600; a second invocation cannot truncate existing bytes",
+    "directory_boundary": "runtime directories are set and verified at 0700 only after root, stale-artifact and closed-port checks pass"
+  },
+  "superseded_review": {
+    "path": "hub/docs/development/active-macos-typescript-browser-control-preflight-template-review-2026-09-12-r1.json",
+    "sha256": "787bc2d5e52f92d94e27b4d2055abc93e2e578840409b4caa2f82d0073d76805",
+    "status": "retained rejected historical evidence"
+  },
+  "next_gate": "TypeScript may prepare one wholly fresh r7 control/package candidate on new identities, paths and ports bound to these accepted source hashes. Preparation must not start Chrome, Hub, helper, keychain or SDK API runtime. Hub must independently review that candidate before any shared runtime tuple is created or used.",
+  "proof_boundary": "This accepts only the reusable source/template preflight correction. It is not r7 preparation acceptance and is not browser, SDK API, TLS, CORS, Hub API, package installation, service, release, production, vehicle or user acceptance evidence."
+}

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "state": "closed_rejected_not_authorized",
+  "baseline_receipt": {
+    "path": "hub/docs/development/edge-macos-empty-baseline-handoff-2026-09-12-r1.json",
+    "sha256": "4fd3ed7237f7ae15e83176d611d76e0761fb4abcb4170f462cfa562bfb5a52eb"
+  },
+  "identity": {
+    "sealed_binding_sha256": "e2d3b72af358156f689dc383b0eca6ca88eeae402e30832fef8102c93816556e",
+    "vehicle_identity_reference": "The exact source, vehicle, VIN, car, installation and lineage tuple stored in the owner-only binding with the preceding digest; raw values are not copied into this receipt.",
+    "vehicle_name": "synthetic-b2",
+    "transaction_type": "V",
+    "transaction_id": "edge-mac-r1-20260912-v-001"
+  },
+  "producer": {
+    "helper_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r1/bin/synthetic-vehicle-darwin-arm64",
+    "helper_sha256": "db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7",
+    "endpoint": "wss://127.0.0.1:21444/",
+    "argv_shape": [
+      "<HELPER>",
+      "-endpoint", "wss://127.0.0.1:21444/",
+      "-cert", "<SEALED_CLIENT_CERT>",
+      "-key", "<SEALED_CLIENT_KEY>",
+      "-server-ca", "<SEALED_SERVER_CA>",
+      "-vin", "<SEALED_VIN_FROM_BINDING_e2d3b72>",
+      "-txid", "edge-mac-r1-20260912-v-001",
+      "-created-at-ms", "<ASSIGNED_ONCE_AFTER_AUTHORIZATION>"
+    ],
+    "created_at_rule": "After a matching coordinator authorization receipt exists, the immutable wrapper reads CLOCK_REALTIME once immediately before claiming the invocation guard, records that Unix-millisecond value in the guard, and passes the same value unchanged to the helper.",
+    "timeout_seconds": 30,
+    "invocation_count": 1,
+    "retry_or_replay": false
+  },
+  "one_call_guard": {
+    "wrapper_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r1/handoff/invoke_one_event.py",
+    "wrapper_sha256": "65348ba50a47942a976f68e0827cc086a93b0a12bac601b6fe609eb32ae62b3f",
+    "authorization_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r1/handoff/authorize-event-r1.json",
+    "authorization_present": false,
+    "guard_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r1/handoff/producer-invocation-guard-r1.json",
+    "guard_present": false,
+    "result_path": "/Users/admin/teslatlas-lab/candidates/edge-hub-empty-baseline-20260912-r1/handoff/producer-invocation-result-r1.json",
+    "result_present": false,
+    "enforcement": "The wrapper requires an exact authorization object for this binding, transaction and one-call/no-retry policy. It then creates the guard with O_CREAT|O_EXCL before spawning. Any later invocation fails at the existing guard. Timeout or nonzero exit is final and cannot be retried."
+  },
+  "certificate": {
+    "producer_client_leaf_pem_sha256": "fcf01266e005309904d36d67a407303497db4280723f261a024cae165fb0c6ba",
+    "producer_client_leaf_der_sha256": "3f7f6207e7716bca25cd2dafad5ca17df617d2c432a09e1f6f2cf856167d0f58",
+    "superseded_incorrect_recorded_sha256": "fcf012de17db696f2dd5d1fd2af9d542f7b3560c39451db55a53de69de12c905",
+    "required_profile": "The exact receiver CA trust anchor, matching private key, synthetic VIN identity profile and clientAuth EKU must all pass Edge's independent check before invocation.",
+    "edge_independent_verification": "Completed in teslatlas-edge/docs/development/edge-macos-producer-certificate-profile-verification-2026-09-12-r1.json, SHA-256 c6d464a3b086988508c780898e57a51d17ed737b1b85d0820a318d90b739a0df. Issuer/profile, Subject.CommonName identity, clientAuth EKU, key correspondence, receiver CA trust anchor and pinned parser policy pass; VIN SAN is not applicable. This closed cohort remains rejected regardless of that result."
+  },
+  "direct_baseline": {
+    "hub_pending_publications": 0,
+    "hub_ack_frontier": null,
+    "hub_edge_state": "connected",
+    "hub_edge_detail": "edge delivery poll completed",
+    "hub_observations": 0,
+    "hub_current_observations": 0,
+    "edge_records": 0,
+    "edge_gaps": 0,
+    "applications_and_sequence_counts": "Not exposed by the Hub status/doctor interface. A separate read-only sqlite3 process was denied with SQLite error 14, so no zero count is inferred for those private tables."
+  },
+  "post_event_acceptance": {
+    "receiver": "The one helper call exits successfully after one matching receiver ACK.",
+    "edge": "Exactly one admission is observed, no rejection or gap appears, and after Hub ACK the v2 pull is empty and spool records/bytes return to zero.",
+    "hub": "The sealed lineage is durably committed before ACK; every observed sequence is disposition-classified; pending publications return to zero; ACK frontier advances from null; exactly one VehicleName projection appears with no numeric, unit-bearing, lifecycle or passive-source projection.",
+    "ambiguity": "Any timeout, nonzero producer result, unknown sequence, gap, duplicate projection, nonempty pending state or unverifiable durable state fails closed without a producer retry."
+  },
+  "cleanup": {
+    "owner": "Hub",
+    "order": ["Hub", "receiver", "Edge", "guest"],
+    "requirements": "Record exact PID and exit result, close 18523/21444/21445/21843/8080, verify the shared build lock is absent, and retain the versioned roots as non-reusable redacted evidence."
+  },
+  "event_authorized": false,
+  "closure": {
+    "coordinator_decision": "rejected",
+    "producer_invoked": false,
+    "authorization_present": false,
+    "guard_present": false,
+    "result_present": false,
+    "cleanup_receipt_sha256": "ad3a71847a73aab1600cdade58f3141c8e6f922c6e53114672a2f6e49726d428",
+    "guest_stopped": true,
+    "replacement_runtime_authorized": false
+  },
+  "limitations": [
+    "No producer has been invoked.",
+    "Candidate-process evidence only; no installed, package, service, release, production, vehicle or user acceptance is claimed."
+  ]
+}

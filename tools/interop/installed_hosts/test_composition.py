@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from . import macos, guest
+from . import macos, guest, session as session_module, transport as transport_module
 from .bounded import Deadline, run_capped
 from .transport import SSHTransport
 from .test_platform_observation import observation, registered, process
@@ -237,7 +237,7 @@ class FixtureSSH(SSHTransport):
         super().__init__();self.fixture=root;self.exit_status=exit_status;self.guest_closed=False
         self.fail_start_reply=False;self.invalid_start_reply=False;self.fail_stop_reply=False
         self.recover_failures=0;self.verifiers=0;self.disposals=0;self.recovers=0
-    def open(self,r):
+    def open(self,r,deadline=None):
         self.registered=r;remote=self.fixture/'remote';remote.mkdir()
         self.paths={'root':str(remote),'archive':str(remote/'controller.tar'),'session':str(remote/'session.json'),'entrypoint':str(remote/'guest.py')}
         for name in ('controller.tar','session.json','guest.py'):(remote/name).write_text('synthetic')
@@ -306,7 +306,7 @@ class LifecycleCompositionTests(unittest.TestCase):
                     b=json.loads(Path(t.platform.private['ownership_path']).read_text())['service']
                     self.assertEqual(b['acquisition_intent'],s._pending_acquisition)
                     self.assertEqual(b['hub']['start_identity'],'2:1')
-                    with mock.patch('tools.interop.installed_hosts.transport.run_capped',return_value=subprocess.CompletedProcess([],1,b'',b'')):
+                    with mock.patch.object(transport_module, 'run_capped', return_value=subprocess.CompletedProcess([],1,b'',b'')):
                         with self.assertRaises(CleanupError):s.close()
                         self.assertTrue(t.platform.running);self.assertTrue(s._service_outstanding)
                         self.assertFalse(t._root_disposed)
@@ -326,7 +326,7 @@ class LifecycleCompositionTests(unittest.TestCase):
                 s.request({'op':'verify'});t.fail_stop_reply=True
                 with self.assertRaises(OSError):s.request({'op':'stop'})
                 exact=json.loads(Path(t.platform.private['ownership_path']).read_text())['stop_evidence']
-                with mock.patch('tools.interop.installed_hosts.transport.run_capped',return_value=subprocess.CompletedProcess([],1,b'',b'')):
+                with mock.patch.object(transport_module, 'run_capped', return_value=subprocess.CompletedProcess([],1,b'',b'')):
                     with self.assertRaises(CleanupError) as result:s.close()
                 self.assertTrue(s._cleanup_complete)
                 retained=result.exception.evidence.final_stopped['service']['owned_generation']['stop_evidence']
@@ -340,7 +340,7 @@ class LifecycleCompositionTests(unittest.TestCase):
             try:
                 s.request({'op':'verify'})
                 probes=[subprocess.CompletedProcess([],0,b'p999\n',b''),subprocess.CompletedProcess([],1,b'',b'')]
-                with mock.patch('tools.interop.installed_hosts.transport.run_capped',side_effect=lambda *args,**kwargs:probes.pop(0)):
+                with mock.patch.object(transport_module, 'run_capped', side_effect=lambda *args,**kwargs:probes.pop(0)):
                     with self.assertRaises(CleanupError) as first:s.close()
                     self.assertFalse(Path(t.paths['root']).exists());self.assertTrue((s.journal.path.parent/'final-stopped.json').is_file())
                     stages=[x for e in first.exception.evidence.cleanup_errors for x in e.get('stages',[])]
@@ -357,7 +357,7 @@ class LifecycleCompositionTests(unittest.TestCase):
             root=Path(raw);t=FixtureSSH(root,exit_status=1);s=InstalledSession.open(*inputs(root),transport=t,verify_local_inputs=False)
             try:
                 s.request({'op':'verify'})
-                with mock.patch('tools.interop.installed_hosts.transport.run_capped',return_value=subprocess.CompletedProcess([],1,b'',b'')):
+                with mock.patch.object(transport_module, 'run_capped', return_value=subprocess.CompletedProcess([],1,b'',b'')):
                     with self.assertRaises(CleanupError) as first:s.close()
                     counts=(t.verifiers,t.disposals)
                     with self.assertRaises(CleanupError):s.close()
@@ -382,7 +382,7 @@ class LifecycleCompositionTests(unittest.TestCase):
                 def local_only(argv,*args,**kwargs):
                     if argv[0]==sys.executable:return run_capped(argv,*args,**kwargs)
                     return subprocess.CompletedProcess(argv,1,b'',b'')
-                with mock.patch('tools.interop.installed_hosts.transport.run_capped',side_effect=local_only):
+                with mock.patch.object(transport_module, 'run_capped', side_effect=local_only):
                     with self.assertRaises(CleanupError):s.close()
                     with self.assertRaises(CleanupError):s.close()
                 self.assertEqual(t.recovers,1);self.assertEqual(t.verifiers,0);self.assertEqual(t.disposals,0)
@@ -398,10 +398,10 @@ class LifecycleCompositionTests(unittest.TestCase):
                 def fail_checkpoint(path,raw):
                     if Path(path).name=='final-stopped.json':raise OSError('synthetic directory fsync failure')
                     return durable_bytes(path,raw)
-                with mock.patch('tools.interop.installed_hosts.session.durable_bytes',side_effect=fail_checkpoint),mock.patch('tools.interop.installed_hosts.transport.run_capped',return_value=subprocess.CompletedProcess([],1,b'',b'')):
+                with mock.patch.object(session_module, 'durable_bytes', side_effect=fail_checkpoint), mock.patch.object(transport_module, 'run_capped', return_value=subprocess.CompletedProcess([],1,b'',b'')):
                     with self.assertRaises(CleanupError):s.close()
                 self.assertIsNone(s._validated_stopped);self.assertTrue(Path(t.paths['root']).is_dir());self.assertEqual(t.disposals,0)
-                with mock.patch('tools.interop.installed_hosts.transport.run_capped',return_value=subprocess.CompletedProcess([],1,b'',b'')):
+                with mock.patch.object(transport_module, 'run_capped', return_value=subprocess.CompletedProcess([],1,b'',b'')):
                     with self.assertRaises(CleanupError):s.close()
                 self.assertTrue(s._cleanup_complete);self.assertEqual(t.disposals,1)
             finally:s.journal.close();s._host_lease.release();t._reap_process(0.2)
@@ -432,7 +432,7 @@ class LifecycleCompositionTests(unittest.TestCase):
                 s.request({'op':'verify'});t.lose=True
                 with self.assertRaises(OSError):s.request({'op':'verify'})
                 with self.assertRaises(SessionError):s.request({'op':'pair'})
-                with mock.patch('tools.interop.installed_hosts.transport.run_capped',return_value=subprocess.CompletedProcess([],1,b'',b'')):
+                with mock.patch.object(transport_module, 'run_capped', return_value=subprocess.CompletedProcess([],1,b'',b'')):
                     with self.assertRaises(CleanupError) as result:s.close()
                 self.assertTrue(s._cleanup_complete)
                 self.assertEqual(result.exception.evidence.final_stopped['service']['owned_generation']['stop_evidence']['operation_sequence'],2)

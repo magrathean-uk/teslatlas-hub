@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_certificate_profile_preparation_r10",
+  "date": "2026-09-12",
+  "state": "source_only_immutable_fixture_first_reservation",
+  "closed_predecessor": {
+    "path": "hub/docs/development/edge-macos-one-event-preparation-closure-2026-09-12-r9.json",
+    "sha256": "b5dc5195f503da657ff82cb3c6362d98c192b4e479dee8daae7364d25472a3da",
+    "r9_reuse_allowed": false,
+    "rule": "No r9 fixture, identity, binding, sidecar, cursor key, path, port, config, credential or output is an r10 input."
+  },
+  "exact_reservation": {
+    "cohort_id": "edge-macos-one-event-20260912-r10",
+    "host_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r10",
+    "guest_root": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r10",
+    "receiver_endpoint": "wss://127.0.0.1:21456/",
+    "ports": [8086, 21849, 21456, 21457, 18534],
+    "transaction_id": "edge-mac-r10-20260912-v-001",
+    "binding_host_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r10/guest-stage/actor/binding.json",
+    "binding_guest_path": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r10/actor/binding.json",
+    "database_host_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r10/guest-stage/hub/hub.sqlite",
+    "database_guest_path": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r10/hub/hub.sqlite",
+    "future_profile_path": "hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r10.json"
+  },
+  "corrected_actual_store_validation": {
+    "validator_path": "hub/tools/interop/edge_fixture_binding.py",
+    "validator_sha256": "42a6d63585b7341ebe34175a8e55e982bc4839b292b2ff0aa7125cf506b7f819",
+    "test_path": "hub/tools/interop/test_edge_fixture_binding.py",
+    "test_sha256": "c3697062b280c4d119b1da3861a8bf5b8d97473eadbd2d3a49acfc03d996bae0",
+    "exact_test_command": "TESLATLAS_INTEROP_FIXTURE=/Users/bolyki/dev/teslatlas-lab/build/hub/edge-empty-baseline-20260912-r2/release/examples/interop_fixture python3 -m unittest tools.interop.test_edge_fixture_binding tools.interop.test_edge_ledger_observer",
+    "result": "PASS 6/6",
+    "real_fixture_regression": "PASS: the accepted Rust empty-edge-binding fixture created a WAL-header Hub catalogue with absent WAL/SHM sidecars; all seven relationships validated via immutable mode without changing any fixture-tree file or creating a sidecar.",
+    "safety": "Require canonical owner-only single-link database and parent, exact fixture data_dir, all in-memory relationships equal, WAL/SHM absent, catalogue fingerprint before and after equal, SQLite mode=ro&immutable=1, and PRAGMA query_only=ON. A pending WAL fails closed.",
+    "live_observer_boundary": "The existing active-ledger observer remains mode=ro plus query_only without immutable=1; this correction applies only to a stopped, checkpointed pre-runtime fixture."
+  },
+  "preparer": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r10.py",
+    "sha256": "3ded9580a4d62ac5a25ac5ad2e63770b17bc5e6e89e8cf051c4d18e6e7b84035",
+    "mode": "0500",
+    "argv": [
+      "/Users/bolyki/dev/teslatlas-lab/candidates/prepare-edge-macos-one-event-r10.py",
+      "the SHA-256 of the exact accepted r10 proposal"
+    ],
+    "order": "Revalidate source/artifact anchors and reservation; create supported fixture; capture returned hub_id; seal binding; immutable/query-only positive actual-store validation; in-memory mismatch rejection; only then stage accepted binaries, create PKI, initialise Edge, enrol expiring credential and write a first-write-redacted public profile.",
+    "failure_boundary": "Any failure after r10 root creation closes r10 without repair or reuse."
+  },
+  "accepted_immutable_inputs": {
+    "hub_manifest_sha256": "2cbbabc6ede091c9197e8958a27e4a9152a015546f009b8f4c78ec9f7728090b",
+    "hub_source_members": 195,
+    "edge_receipt_sha256": "aead774fcec533eb65f71e48bd0f38d141aa7be63cd9beb195420d304406a309",
+    "edge_source_members": 15,
+    "exact_anchors_and_artifacts": 14,
+    "rebuild_performed_or_planned": false
+  },
+  "non_mutating_preflight": {
+    "python_syntax": "PASS",
+    "host_root_absent": true,
+    "public_profile_absent": true,
+    "shared_heavy_build_lock_absent": true,
+    "guest_started": false,
+    "ports_closed": [8086, 21849, 21456, 21457, 18534]
+  },
+  "authority": "A separate Edge PASS on the exact r10 proposal, this spec, preparer, validator and test is required before one preparation execution. Existing coordinator standing authority then covers only that preparation and, after both-owner concrete profile/store/binding acceptance, one zero-event baseline. No producer event is authorized.",
+  "proof_boundary": "Source, focused regression and non-mutating preflight only. No r10 root, fixture, PKI, credential, guest, listener, runtime, producer or event exists."
+}

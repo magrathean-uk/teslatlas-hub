@@ -35,6 +35,7 @@ INNER_BUDGETS = {"greeting": 8, "verify": 25, "stop": 50, "start": 50, "pair": 1
 CLEANUP_BUDGET = 45
 CLEANUP_STAGE_BUDGETS = {"close_lock": 1, "operation_barrier": 5, "cancel": 2, "cancel_barrier": 3, "service": 9, "verify": 8, "transport": 9}
 MUTATIONS = frozenset(("stop", "start", "pair", "revoke"))
+MAX_OPERATION_RECORDS = 512
 
 
 class SessionError(RuntimeError):
@@ -72,13 +73,21 @@ class _Journal:
         os.chmod(str(self.path), 0o600)
         self._lock = threading.Lock()
 
-    def append(self, value):
+    def append(self, value, deadline=None):
+        if deadline is not None:
+            deadline.remaining()
         raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
         if len(raw) > MAX_JSON_BYTES:
             raise SessionError("journal entry exceeds bounded size")
+        if deadline is not None:
+            deadline.remaining()
         with self._lock:
+            if deadline is not None:
+                deadline.remaining()
             self._file.write(raw)
             os.fsync(self._file.fileno())
+            if deadline is not None:
+                deadline.remaining()
 
     def close(self):
         with self._lock:
@@ -87,12 +96,27 @@ class _Journal:
                 os.fsync(self._file.fileno())
                 self._file.close()
 
-    def digest(self):
+    def digest(self, deadline=None):
+        if deadline is not None:
+            deadline.remaining()
         with self._lock:
             if not self._file.closed:
                 self._file.flush()
                 os.fsync(self._file.fileno())
-        return hashlib.sha256(self.path.read_bytes()).hexdigest()
+                if deadline is not None:
+                    deadline.remaining()
+        digest = hashlib.sha256()
+        with self.path.open("rb") as handle:
+            while True:
+                if deadline is not None:
+                    deadline.remaining()
+                block = handle.read(1024 * 1024)
+                if not block:
+                    break
+                digest.update(block)
+        if deadline is not None:
+            deadline.remaining()
+        return digest.hexdigest()
 
 
 def _exact(value, keys, label):
@@ -195,20 +219,86 @@ def _operation(value):
     return {key: checked[key] for key in ("op", "device_id") if key in checked}
 
 
-def _hash_regular_file(binding, label):
+def _hash_regular_file(binding, label, deadline=None):
     path = Path(binding["path"])
+    if deadline is not None:
+        deadline.remaining()
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode):
         raise ContractError("{} must be a regular non-symlink file".format(label))
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         while True:
+            if deadline is not None:
+                deadline.remaining()
             block = handle.read(1024 * 1024)
             if not block:
                 break
             digest.update(block)
-    if digest.hexdigest() != binding["sha256"]:
+    observed = digest.hexdigest()
+    if deadline is not None:
+        deadline.remaining()
+    if observed != binding["sha256"]:
         raise ContractError("{}.sha256 does not match exact bytes".format(label))
+
+
+def _read_json_file(path, deadline=None):
+    """Read one bounded local JSON file while retaining the enclosing deadline."""
+    target = Path(path)
+    if deadline is not None:
+        deadline.remaining()
+    info = target.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_JSON_BYTES:
+        raise ContractError("bounded local JSON input is not a regular file")
+    value = bytearray()
+    with target.open("rb") as handle:
+        while True:
+            if deadline is not None:
+                deadline.remaining()
+            block = handle.read(min(64 * 1024, MAX_JSON_BYTES + 1 - len(value)))
+            if not block:
+                break
+            value.extend(block)
+            if len(value) > MAX_JSON_BYTES:
+                raise ContractError("bounded local JSON input exceeds its size bound")
+    if deadline is not None:
+        deadline.remaining()
+    try:
+        text = bytes(value).decode("utf-8")
+        result = json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ContractError("bounded local JSON input is invalid") from error
+    if deadline is not None:
+        deadline.remaining()
+    return result
+
+
+def _copy_with_deadline(value, deadline=None):
+    if deadline is not None:
+        deadline.remaining()
+    result = copy.deepcopy(value)
+    if deadline is not None:
+        deadline.remaining()
+    return result
+
+
+def _json_bytes_with_deadline(value, deadline=None):
+    if deadline is not None:
+        deadline.remaining()
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if len(raw) > MAX_JSON_BYTES:
+        raise SessionError("retained JSON exceeds bounded size")
+    if deadline is not None:
+        deadline.remaining()
+    return raw
+
+
+def _durable_bytes_with_deadline(path, raw, deadline=None):
+    if deadline is not None:
+        deadline.remaining()
+    durable_bytes(path, raw)
+    if deadline is not None:
+        deadline.remaining()
 
 
 class InstalledSession:
@@ -223,6 +313,7 @@ class InstalledSession:
         self._guest_challenge = None
         self._operation_lock = threading.Lock()
         self._observations = []
+        self._operation_records = []
         self._events = []
         self._last_running = None
         self._stopped_generation = None
@@ -257,21 +348,29 @@ class InstalledSession:
         self.provider_tool_identity = None
 
     @classmethod
-    def open(cls, config, registration_inventory, transport=None, verify_local_inputs=True):
+    def open(cls, config, registration_inventory, transport=None, verify_local_inputs=True, deadline=None):
+        deadline = deadline or Deadline(OUTER_BUDGETS["greeting"])
+        if not isinstance(deadline, Deadline):
+            raise TypeError("session open requires a bounded Deadline")
+        deadline.remaining()
         registered = read_registered_config(config, registration_inventory)
         host_lease = HostLease(registered).acquire(INNER_BUDGETS["greeting"] + CLEANUP_BUDGET)
         provider_identity = None
         try:
             if verify_local_inputs:
                 from .transport import _verify_provider_tool
-                provider_identity = _verify_provider_tool(registered.registration)
+                provider_identity = _verify_provider_tool(registered.registration, deadline=deadline)
                 for key in ("controller_bundle", "package", "package_manifest", "seed", "profile", "scenario"):
-                    _hash_regular_file(registered.config[key], "session." + key)
-                manifest = validate_package_manifest(json.loads(Path(registered.config["package_manifest"]["path"]).read_text(encoding="utf-8")))
+                    _hash_regular_file(registered.config[key], "session." + key, deadline=deadline)
+                manifest = validate_package_manifest(
+                    _read_json_file(registered.config["package_manifest"]["path"], deadline=deadline)
+                )
+                deadline.remaining()
                 expected_path = "/usr/bin/teslatlas-hub" if registered.config["expected"]["os"] == "Debian 13" else "/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub"
                 expected = registered.config["expected"]
                 if (manifest["package_sha256"], manifest["product_version"], manifest["os"], manifest["architecture"], manifest["hub_executable"]["path"], manifest["hub_executable"]["sha256"]) != (registered.config["package"]["sha256"], expected["product_version"], expected["os"], expected["architecture"], expected_path, expected["hub_executable_sha256"]):
                     raise ContractError("package manifest does not bind selected package and expected target")
+            deadline.remaining()
         except BaseException:
             host_lease.release()
             raise
@@ -287,18 +386,23 @@ class InstalledSession:
             session.package_manifest = manifest if verify_local_inputs else None
             session.provider_tool_identity = provider_identity
             if provider_identity is not None:
-                provider_identity.revalidate(Deadline(INNER_BUDGETS["greeting"]))
-            greeting = transport.open(registered)
+                provider_identity.revalidate(deadline)
+            deadline.remaining()
+            greeting = transport.open(registered, deadline)
             checked = _validate_guest_greeting(greeting, registered.config["session_id"])
             session._guest_challenge = checked["challenge"]
             session.state = "running"
-            journal.append({"kind": "opened", "session_id": registered.config["session_id"], "host_id": registered.config["host_id"]})
+            journal.append(
+                {"kind": "opened", "session_id": registered.config["session_id"], "host_id": registered.config["host_id"]},
+                deadline=deadline,
+            )
             broker_path = root / "broker.sock"
             if len(os.fsencode(str(broker_path))) >= 96:
                 session._broker_temp_dir = Path(tempfile.mkdtemp(prefix="teslatlas-ih-{}-".format(registered.config["session_id"][:8])))
                 os.chmod(str(session._broker_temp_dir), 0o700)
                 broker_path = session._broker_temp_dir / "broker.sock"
             session._open_broker(broker_path)
+            deadline.remaining()
             return session
         except BaseException as open_error:
             if session is None:
@@ -317,11 +421,14 @@ class InstalledSession:
                 session._had_failure = True
                 session.state = "failed"
                 try:
-                    session.close()
+                    session.close(deadline=deadline)
                 except BaseException:
                     pass
                 finally:
-                    session.journal.close()
+                    try:
+                        session.journal.close()
+                    except BaseException:
+                        pass
                     host_lease.release()
             raise open_error
 
@@ -347,7 +454,10 @@ class InstalledSession:
             raise TimeoutError("observation snapshot exceeded its operation barrier")
         try:
             deadline.remaining()
-            return tuple(copy.deepcopy(self._observations))
+            copied = []
+            for observation in self._observations:
+                copied.append(_copy_with_deadline(observation, deadline))
+            return tuple(copied)
         finally:
             self._operation_lock.release()
 
@@ -356,6 +466,178 @@ class InstalledSession:
         if not observations:
             raise SessionError("no admitted installed observation is available")
         return observations[-1]
+
+    def operation_records_snapshot(self, deadline):
+        """Return detached public operation facts under the operation barrier."""
+        if not isinstance(deadline, Deadline):
+            raise TypeError("operation record snapshot requires a bounded Deadline")
+        if not self._operation_lock.acquire(timeout=deadline.remaining()):
+            raise TimeoutError("operation record snapshot exceeded its operation barrier")
+        try:
+            deadline.remaining()
+            copied = []
+            for record in self._operation_records:
+                copied.append(_copy_with_deadline(record, deadline))
+            return tuple(copied)
+        finally:
+            self._operation_lock.release()
+
+    @staticmethod
+    def _public_invitation(value):
+        if not isinstance(value, dict):
+            return None
+        return {
+            "pairing_id": value["pairingId"],
+            "expires_at_ms": value["expiresAtMs"],
+            "endpoint": value["endpoint"],
+            "tls_pin": value["tlsPin"],
+        }
+
+    @staticmethod
+    def _journal_operation_record(record):
+        result_binding = record.get("result_binding")
+        if isinstance(result_binding, dict):
+            result_binding = {
+                "name": Path(result_binding["path"]).name,
+                "sha256": result_binding["sha256"],
+            }
+        return {
+            "kind": "operation-record",
+            "operation": record["operation"],
+            "request": record["request"],
+            "request_binding": record["request_binding"],
+            "processed_binding": record["processed_binding"],
+            "status": record["status"],
+            "failure": record["failure"],
+            "state": record["state"],
+            "started_monotonic_ns": record["started_monotonic_ns"],
+            "finished_monotonic_ns": record["finished_monotonic_ns"],
+            "observed_at_ms": record["observed_at_ms"],
+            "result_binding": result_binding,
+            "result_sha256": record["result_sha256"],
+            "proof": record["proof"],
+            "invitation": record["invitation"],
+            "expired_invitation": record["expired_invitation"],
+            "advance": record["advance"],
+            "events_sha256": record["events_sha256"],
+        }
+
+    def _retain_private_result(self, binding, result, deadline=None):
+        if type(binding.get("sequence")) is not int or binding["sequence"] <= 0:
+            raise SessionError("operation result has an invalid sequence binding")
+        raw = _json_bytes_with_deadline(result, deadline)
+        digest = hashlib.sha256(raw).hexdigest()
+        if deadline is not None:
+            deadline.remaining()
+        path = self.journal.path.parent / "operation-{:06d}-result.json".format(binding["sequence"])
+        _durable_bytes_with_deadline(path, raw, deadline)
+        return {"path": str(path), "sha256": digest}
+
+    def _record_operation(self, operation, binding, result, started_monotonic_ns, deadline=None):
+        """Retain the non-secret facts for an admitted controller operation."""
+        if len(self._operation_records) >= MAX_OPERATION_RECORDS:
+            raise SessionError("operation record capacity exhausted")
+        processed = self._last_processed_request
+        if processed != binding:
+            raise SessionError("operation did not complete its dispatched binding")
+        request = _copy_with_deadline(operation, deadline)
+        request_binding = _copy_with_deadline(binding, deadline)
+        processed_binding = _copy_with_deadline(processed, deadline)
+        proof = result.get("proof") if isinstance(result, dict) else None
+        invitation = result.get("invitation") if isinstance(result, dict) else None
+        expired_invitation = result.get("expired_invitation") if isinstance(result, dict) else None
+        advance = result.get("advance") if isinstance(result, dict) else None
+        events = result.get("events") if isinstance(result, dict) else None
+        result_binding = self._retain_private_result(binding, result, deadline=deadline)
+        events_raw = _json_bytes_with_deadline(events, deadline)
+        events_sha256 = hashlib.sha256(events_raw).hexdigest()
+        if deadline is not None:
+            deadline.remaining()
+        record = {
+            "operation": operation["op"],
+            "request": request,
+            "request_binding": request_binding,
+            "processed_binding": processed_binding,
+            "status": "admitted",
+            "failure": None,
+            "state": self.state,
+            "started_monotonic_ns": started_monotonic_ns,
+            "finished_monotonic_ns": time.monotonic_ns(),
+            "observed_at_ms": int(time.time() * 1000),
+            "result_binding": result_binding,
+            "result_sha256": result_binding["sha256"],
+            "proof": _copy_with_deadline(proof, deadline),
+            "invitation": self._public_invitation(invitation),
+            "expired_invitation": self._public_invitation(expired_invitation),
+            "advance": _copy_with_deadline(advance, deadline),
+            "events_sha256": events_sha256,
+            "final_stopped": None,
+        }
+        if deadline is not None:
+            deadline.remaining()
+        self.journal.append(self._journal_operation_record(record), deadline=deadline)
+        self._operation_records.append(record)
+
+    def _record_failed_operation(self, operation, binding, started_monotonic_ns, error):
+        if len(self._operation_records) >= MAX_OPERATION_RECORDS:
+            raise SessionError("operation record capacity exhausted")
+        processed = self._last_processed_request
+        record = {
+            "operation": operation["op"],
+            "request": copy.deepcopy(operation),
+            "request_binding": copy.deepcopy(binding),
+            "processed_binding": copy.deepcopy(processed) if processed == binding else None,
+            "status": "failed",
+            "failure": type(error).__name__,
+            "state": self.state,
+            "started_monotonic_ns": started_monotonic_ns,
+            "finished_monotonic_ns": time.monotonic_ns(),
+            "observed_at_ms": int(time.time() * 1000),
+            "result_binding": None,
+            "result_sha256": None,
+            "proof": None,
+            "invitation": None,
+            "expired_invitation": None,
+            "advance": None,
+            "events_sha256": None,
+            "final_stopped": None,
+        }
+        try:
+            self.journal.append(self._journal_operation_record(record))
+        except BaseException:
+            # The in-memory row still preserves the redacted causal fact when
+            # a terminal journal append itself fails; cleanup will quarantine.
+            pass
+        self._operation_records.append(record)
+
+    def _record_final_stopped(self, final_stopped, deadline=None):
+        if not isinstance(final_stopped, dict):
+            raise SessionError("stopped proof is not an object")
+        stop = final_stopped.get("service", {}).get("owned_generation", {}).get("stop_evidence", {})
+        sequence, challenge = stop.get("operation_sequence"), stop.get("operation_challenge")
+        if type(sequence) is not int or sequence <= 0 or not isinstance(challenge, str):
+            raise SessionError("stopped proof does not carry a processed operation binding")
+        for record in reversed(self._operation_records):
+            if not isinstance(record, dict) or record.get("status") != "admitted":
+                continue
+            binding = record.get("processed_binding")
+            if not isinstance(binding, dict):
+                continue
+            if type(binding.get("sequence")) is not int or binding["sequence"] <= 0 or not isinstance(binding.get("challenge"), str):
+                continue
+            if binding.get("op") == "stop" and binding.get("sequence") == sequence and binding.get("challenge") == challenge:
+                record["final_stopped"] = _copy_with_deadline(final_stopped, deadline)
+                self.journal.append(
+                    {
+                        "kind": "operation-final-stopped",
+                        "operation": "stop",
+                        "processed_binding": _copy_with_deadline(binding, deadline),
+                        "final_stopped": _copy_with_deadline(final_stopped, deadline),
+                    },
+                    deadline=deadline,
+                )
+                return
+        raise SessionError("stopped proof has no retained stop operation")
 
     def _open_broker(self, path):
         broker = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -455,7 +737,13 @@ class InstalledSession:
 
     def _serve_attachment(self, connection):
         sequence = 0
-        challenge = secrets.token_hex(32)
+        # The private broker is an authenticated view of the already-open
+        # guest session.  Keep one challenge chain across both boundaries so
+        # an installed client can bind each broker proof to the exact guest
+        # request that produced it.
+        challenge = self._guest_challenge
+        if not isinstance(challenge, str) or len(challenge) != 64:
+            raise SessionError("guest challenge is unavailable for broker attachment")
         self._write_frame(connection, {"schema_version": 1, "type": "challenge", "session_id": self.registered.config["session_id"], "sequence": 0, "challenge": challenge}, Deadline(OUTER_BUDGETS["greeting"]))
         stream = IncrementalLineReader(connection.fileno(), MAX_JSON_BYTES)
         try:
@@ -489,7 +777,9 @@ class InstalledSession:
                     self._write_frame(connection, {"schema_version": 1, "type": "error", "session_id": self.registered.config["session_id"], "sequence": sequence, "challenge": challenge, "error": {"code": "operation-failed"}}, operation_deadline)
                     return
                 sequence = checked["sequence"]
-                challenge = secrets.token_hex(32)
+                challenge = self._guest_challenge
+                if not isinstance(challenge, str) or len(challenge) != 64:
+                    raise SessionError("guest challenge disappeared after broker operation")
                 self._write_frame(connection, {"schema_version": 1, "type": "reply", "session_id": checked["session_id"], "sequence": sequence, "challenge": challenge, "result": result}, operation_deadline)
         finally:
             pass
@@ -513,7 +803,7 @@ class InstalledSession:
             self._pending_acquisition = binding
             self._service_outstanding = True
             self._validated_stopped = None
-            self.journal.append({"kind": "acquisition-dispatch", "intent": binding})
+            self.journal.append({"kind": "acquisition-dispatch", "intent": binding}, deadline=deadline)
         if operation["op"] == "stop":
             self._stop_candidates.append(binding)
             if self._pending_acquisition is None:
@@ -546,6 +836,9 @@ class InstalledSession:
             raise TimeoutError("operation queue exceeded its whole-operation budget")
         op = operation["op"]
         mutation = op in MUTATIONS
+        binding = None
+        started_monotonic_ns = None
+        dispatched = False
         try:
             if self.state in ("closed", "failed") or self._closing or self._had_failure or self._exchange_uncertain:
                 raise SessionError("session became unavailable while queued")
@@ -560,12 +853,21 @@ class InstalledSession:
                 raise SessionError("verify requires running state")
             if mutation and not self._verified:
                 raise SessionError("initial current verification is required before mutation")
+            if len(self._operation_records) >= MAX_OPERATION_RECORDS - 1:
+                raise SessionError("operation record capacity is reserved for cleanup")
             if mutation:
-                self.journal.append({"kind": "intent", "operation": op, "sequence": self._guest_sequence + 1})
+                self.journal.append(
+                    {"kind": "intent", "operation": op, "sequence": self._guest_sequence + 1},
+                    deadline=deadline,
+                )
             prior_running = self._last_running
             proof_sequence = self._guest_sequence + 1
             proof_challenge = self._guest_challenge
+            started_monotonic_ns = time.monotonic_ns()
+            binding = {"sequence": proof_sequence, "challenge": proof_challenge, "op": op}
+            dispatched = True
             result = self._exchange(operation, deadline)
+            guest_result = result
             if op == "stop":
                 result = _exact(result, ("stopped", "events"), "stop result")
                 if result["stopped"] is not True or not isinstance(result["events"], list) or len(result["events"]) > 512:
@@ -644,13 +946,30 @@ class InstalledSession:
                 result["proof"] = proof
                 self._events = list(result["events"])
             if mutation:
-                self.journal.append({"kind": "result", "operation": op, "sequence": self._guest_sequence, "state": self.state, "store_id": self._store_id, "proof_sha256": hashlib.sha256(json.dumps(result.get("proof", {}), sort_keys=True, separators=(",", ":")).encode()).hexdigest()})
+                proof_raw = _json_bytes_with_deadline(result.get("proof", {}), deadline)
+                self.journal.append(
+                    {
+                        "kind": "result", "operation": op, "sequence": self._guest_sequence,
+                        "state": self.state, "store_id": self._store_id,
+                        "proof_sha256": hashlib.sha256(proof_raw).hexdigest(),
+                    },
+                    deadline=deadline,
+                )
             deadline.remaining()
+            self._record_operation(operation, binding, guest_result, started_monotonic_ns, deadline=deadline)
             return result
         except BaseException as error:
             self._had_failure = True
+            if dispatched:
+                try:
+                    self._record_failed_operation(operation, binding, started_monotonic_ns, error)
+                except BaseException:
+                    pass
             if mutation:
-                self.journal.append({"kind": "failure", "operation": op, "sequence": self._guest_sequence, "error": type(error).__name__})
+                try:
+                    self.journal.append({"kind": "failure", "operation": op, "sequence": self._guest_sequence, "error": type(error).__name__})
+                except BaseException:
+                    pass
             raise
         finally:
             self._operation_lock.release()
@@ -725,20 +1044,31 @@ class InstalledSession:
             raise SessionError("stopped verifier found a listener owner")
         return value
 
-    def advance_once_for_ha(self):
+    def advance_once_for_ha(self, deadline=None):
         """Private runner hook; it is never reachable through the broker."""
         if self.registered.config["cell_id"] not in {"home_assistant__macos_arm64", "home_assistant__debian13_amd64", "home_assistant__debian13_arm64"} or self.registered.config["adapter_id"] != "home_assistant" or self.registered.config["client_id"] != "home_assistant":
             raise SessionError("advance-once requires a bound Home Assistant cell")
-        deadline = Deadline(INNER_BUDGETS["advance-once"])
+        deadline = deadline or Deadline(INNER_BUDGETS["advance-once"])
+        if not isinstance(deadline, Deadline):
+            raise TypeError("advance-once requires a bounded Deadline")
+        deadline.remaining()
         self._host_lease.assert_valid(deadline.remaining() + CLEANUP_BUDGET)
         before_result = self.request({"op": "verify"}, deadline=deadline)
         before = before_result["proof"]
         if not self._operation_lock.acquire(timeout=deadline.remaining()):
             raise TimeoutError("advance-once queue exceeded its whole-operation budget")
+        binding = None
+        started_monotonic_ns = None
+        dispatched = False
         try:
             if self.state in ("closed", "failed") or self._closing or self._had_failure or self._exchange_uncertain:
                 raise SessionError("session became unavailable while queued")
-            self.journal.append({"kind": "intent", "operation": "advance-once", "sequence": self._guest_sequence + 1})
+            if len(self._operation_records) >= MAX_OPERATION_RECORDS - 1:
+                raise SessionError("operation record capacity is reserved for cleanup")
+            self.journal.append(
+                {"kind": "intent", "operation": "advance-once", "sequence": self._guest_sequence + 1},
+                deadline=deadline,
+            )
             operation = {
                 "op": "advance-once",
                 "scope": {
@@ -750,7 +1080,11 @@ class InstalledSession:
             }
             proof_sequence = self._guest_sequence + 1
             proof_challenge = self._guest_challenge
+            started_monotonic_ns = time.monotonic_ns()
+            binding = {"sequence": proof_sequence, "challenge": proof_challenge, "op": "advance-once"}
+            dispatched = True
             result = self._exchange(operation, deadline)
+            guest_result = result
             if not isinstance(result, dict) or set(result) != {"proof", "advance", "invitation", "expired_invitation", "events"}:
                 raise SessionError("advance-once result has invalid fields")
             proof = validate_installed_observation(result["proof"], self.registered)
@@ -785,17 +1119,36 @@ class InstalledSession:
             if not isinstance(result["events"], list) or len(result["events"]) > 512:
                 raise SessionError("advance-once events are not a bounded array")
             self._events = list(result["events"])
-            self.journal.append({"kind": "result", "operation": "advance-once", "sequence": self._guest_sequence, "state": "running"})
+            self.journal.append(
+                {"kind": "result", "operation": "advance-once", "sequence": self._guest_sequence, "state": "running"},
+                deadline=deadline,
+            )
             deadline.remaining()
+            self._record_operation(
+                operation,
+                binding,
+                guest_result,
+                started_monotonic_ns,
+                deadline=deadline,
+            )
             return result
         except BaseException as error:
             self._had_failure = True
-            self.journal.append({"kind": "failure", "operation": "advance-once", "sequence": self._guest_sequence, "error": type(error).__name__})
+            if dispatched:
+                try:
+                    self._record_failed_operation(operation, binding, started_monotonic_ns, error)
+                except BaseException:
+                    pass
+            try:
+                self.journal.append({"kind": "failure", "operation": "advance-once", "sequence": self._guest_sequence, "error": type(error).__name__})
+            except BaseException:
+                pass
             raise
         finally:
             self._operation_lock.release()
 
-    def _close_broker(self):
+    def _close_broker(self, deadline=None):
+        errors = []
         self._closing = True
         connection = self._broker_connection
         if connection is not None:
@@ -808,22 +1161,37 @@ class InstalledSession:
         if broker is not None:
             try:
                 broker.close()
-            except OSError:
-                pass
+            except BaseException as error:
+                errors.append(error)
             self._broker = None
         if self._broker_thread is not None and self._broker_thread is not threading.current_thread():
-            self._broker_thread.join(timeout=2)
+            try:
+                timeout = 2 if deadline is None else deadline.remaining(2)
+            except BaseException as error:
+                errors.append(error)
+                timeout = 0
+            try:
+                self._broker_thread.join(timeout=max(0, timeout))
+            except BaseException as error:
+                errors.append(error)
+            if self._broker_thread.is_alive():
+                errors.append(TimeoutError("broker thread did not stop within cleanup deadline"))
         if path:
             try:
                 Path(path).unlink()
             except FileNotFoundError:
                 pass
+            except BaseException as error:
+                errors.append(error)
         if self._broker_temp_dir is not None:
             try:
                 self._broker_temp_dir.rmdir()
             except FileNotFoundError:
                 pass
+            except BaseException as error:
+                errors.append(error)
             self._broker_temp_dir = None
+        return errors
 
     def _evidence(self, final_stopped, errors):
         state = "closed" if not errors and not self._had_failure and final_stopped is not None else "failed"
@@ -834,16 +1202,44 @@ class InstalledSession:
             str(self.journal.path), digest, final_stopped, tuple(errors), getattr(self.transport, "local_transport_evidence", None),
         )
 
-    def close(self):
-        if not self._close_lock.acquire(timeout=self._cleanup_stage_budgets["close_lock"]):
+    def _cleanup_timeout(self, deadline, stage, fraction=1, errors=None):
+        try:
+            return max(0.0, deadline.remaining(self._cleanup_stage_budgets[stage] * fraction))
+        except TimeoutError as error:
+            if errors is not None:
+                entry = {"resource": "cleanup-deadline-" + stage, "error": "TimeoutError"}
+                if entry not in errors:
+                    errors.append(entry)
+            return 0.0
+
+    def close(self, deadline=None):
+        deadline = deadline or Deadline(CLEANUP_BUDGET)
+        if not isinstance(deadline, Deadline):
+            raise TypeError("session cleanup requires a bounded Deadline")
+        try:
+            if deadline.remaining() > CLEANUP_BUDGET:
+                raise ValueError("session cleanup deadline exceeds its fixed budget")
+        except TimeoutError as error:
+            self._had_failure = True
+            evidence = self._evidence(None, [{"resource": "cleanup-deadline-close", "error": "TimeoutError"}])
+            self._final_evidence = evidence
+            raise CleanupError(evidence) from error
+        if not self._close_lock.acquire(timeout=self._cleanup_timeout(deadline, "close_lock")):
             evidence = self._evidence(None, [{"resource": "close-serialization", "error": "TimeoutError"}])
+            self._final_evidence = evidence
             raise CleanupError(evidence)
         try:
-            return self._close_locked()
+            return self._close_locked(deadline)
         finally:
             self._close_lock.release()
 
-    def _close_locked(self):
+    @staticmethod
+    def _append_cleanup_error(errors, resource, error):
+        value = cleanup_error(resource, error)
+        if value not in errors:
+            errors.append(value)
+
+    def _close_locked(self, deadline):
         if self._final_evidence is not None and self._cleanup_complete:
             if self._final_evidence.state != "closed":
                 raise CleanupError(self._final_evidence)
@@ -852,96 +1248,186 @@ class InstalledSession:
         final_stopped = self._validated_stopped
         lease_valid = True
         try:
-            self._host_lease.assert_valid(CLEANUP_BUDGET)
+            self._host_lease.assert_valid(deadline.remaining())
+        except TimeoutError as error:
+            lease_valid = False
+            self._append_cleanup_error(errors, "cleanup-lease", error)
         except BaseException as error:
             lease_valid = False
-            errors.append(cleanup_error("cleanup-lease", error))
+            self._append_cleanup_error(errors, "cleanup-lease", error)
         try:
-            self._close_broker()
+            for error in self._close_broker(deadline):
+                self._append_cleanup_error(errors, "broker", error)
         except BaseException as error:
-            errors.append(cleanup_error("broker", error))
-        acquired = self._operation_lock.acquire(timeout=self._cleanup_stage_budgets["operation_barrier"])
+            self._append_cleanup_error(errors, "broker", error)
+
+        acquired = False
+        operation_budget = self._cleanup_timeout(deadline, "operation_barrier", errors=errors)
+        try:
+            acquired = self._operation_lock.acquire(timeout=operation_budget)
+        except BaseException as error:
+            self._append_cleanup_error(errors, "active-operation", error)
         if not acquired:
-            errors.append({"resource": "active-operation", "error": "TimeoutError"})
+            self._append_cleanup_error(errors, "active-operation", TimeoutError("operation barrier timed out"))
             if hasattr(self.transport, "interrupt"):
+                cancel_budget = self._cleanup_timeout(deadline, "cancel", errors=errors)
                 try:
-                    self.transport.interrupt(timeout=self._cleanup_stage_budgets["cancel"])
+                    self.transport.interrupt(timeout=cancel_budget)
                 except BaseException as error:
-                    errors.append(cleanup_error("active-operation-cancel", error))
-            acquired = self._operation_lock.acquire(timeout=self._cleanup_stage_budgets["cancel_barrier"])
+                    self._append_cleanup_error(errors, "active-operation-cancel", error)
+            cancel_barrier = self._cleanup_timeout(deadline, "cancel_barrier", errors=errors)
+            try:
+                acquired = self._operation_lock.acquire(timeout=cancel_barrier)
+            except BaseException as error:
+                self._append_cleanup_error(errors, "active-operation-cancel-barrier", error)
             if not acquired:
-                errors.append({"resource": "active-operation-cancel-barrier", "error": "TimeoutError"})
+                self._append_cleanup_error(errors, "active-operation-cancel-barrier", TimeoutError("cancelled operation barrier timed out"))
+
         writer_barrier = not hasattr(self.transport, "finish_writer")
         if acquired and lease_valid and self._service_outstanding and self.state == "running" and not self._had_failure and not self._exchange_uncertain:
-            stop_deadline = Deadline(max(0.01, self._cleanup_stage_budgets["service"] * 0.45))
-            try:
-                stop_challenge = self._guest_challenge
-                result = self._exchange({"op": "stop"}, stop_deadline)
-                self._stopped_sequence = self._guest_sequence
-                self._stopped_challenge = stop_challenge
-                if result.get("stopped") is not True:
-                    raise SessionError("cleanup stop did not report stopped")
-                self.state = "stopped"
-                self._service_outstanding = False
-            except BaseException as error:
-                errors.append(cleanup_error("guest-service", error))
+            stop_budget = self._cleanup_timeout(deadline, "service", 0.45, errors=errors)
+            if stop_budget <= 0:
+                self._append_cleanup_error(errors, "guest-service", TimeoutError("cleanup deadline expired before stop"))
+            else:
+                try:
+                    stop_deadline = Deadline(stop_budget)
+                    stop_challenge = self._guest_challenge
+                    started_monotonic_ns = time.monotonic_ns()
+                    result = self._exchange({"op": "stop"}, stop_deadline)
+                    self._stopped_sequence = self._guest_sequence
+                    self._stopped_challenge = stop_challenge
+                    if result.get("stopped") is not True:
+                        raise SessionError("cleanup stop did not report stopped")
+                    self.state = "stopped"
+                    self._service_outstanding = False
+                    stop_deadline.remaining()
+                    self._record_operation(
+                        {"op": "stop"},
+                        {"sequence": self._guest_sequence, "challenge": stop_challenge, "op": "stop"},
+                        result,
+                        started_monotonic_ns,
+                        deadline=deadline,
+                    )
+                except BaseException as error:
+                    self._append_cleanup_error(errors, "guest-service", error)
         if acquired:
             self._operation_lock.release()
-        if acquired and hasattr(self.transport, "finish_writer"):
+
+        if hasattr(self.transport, "finish_writer"):
+            writer_budget = self._cleanup_timeout(deadline, "service", 0.2, errors=errors)
             try:
-                writer_barrier = self.transport.finish_writer(max(0.01, self._cleanup_stage_budgets["service"] * 0.2)) is True
+                writer_barrier = self.transport.finish_writer(writer_budget) is True
                 if not writer_barrier:
                     raise RuntimeError("original guest writer completion is unproved")
             except BaseException as error:
-                errors.append(cleanup_error("guest-writer-barrier", error))
+                self._append_cleanup_error(errors, "guest-writer-barrier", error)
                 writer_barrier = False
         if acquired and lease_valid and writer_barrier and self._service_outstanding and hasattr(self.transport, "recover_stop"):
-            try:
-                self.transport.recover_stop(self.registered, timeout=max(0.01, self._cleanup_stage_budgets["service"] * 0.35))
-                self.state = "stopped"
-            except BaseException as recovery_error:
-                errors.append(cleanup_error("fixed-recovery-stop", recovery_error))
+            recovery_budget = self._cleanup_timeout(deadline, "service", 0.35, errors=errors)
+            if recovery_budget <= 0:
+                self._append_cleanup_error(errors, "fixed-recovery-stop", TimeoutError("cleanup deadline expired before recovery stop"))
+            else:
+                try:
+                    self.transport.recover_stop(self.registered, timeout=recovery_budget)
+                    self.state = "stopped"
+                except BaseException as recovery_error:
+                    self._append_cleanup_error(errors, "fixed-recovery-stop", recovery_error)
         # A recovery is itself a writer. Recheck the latest barrier even when
         # its local subprocess was reaped after timeout or SSH failure.
         if hasattr(self.transport, "writer_complete"):
-            writer_barrier = writer_barrier and self.transport.writer_complete()
-        if writer_barrier and final_stopped is None:
             try:
-                observed = self.verify_stopped(timeout=self._cleanup_stage_budgets["verify"])
-                durable_bytes(self.journal.path.parent / "final-stopped.json", json.dumps(observed, sort_keys=True, separators=(",", ":")).encode() + b"\n")
-                self._validated_stopped = observed
-                final_stopped = observed
-                self._service_outstanding = False
+                writer_barrier = writer_barrier and self.transport.writer_complete()
             except BaseException as error:
-                errors.append(cleanup_error("fresh-stopped-verifier", error))
+                self._append_cleanup_error(errors, "guest-writer-barrier", error)
+                writer_barrier = False
+        if writer_barrier and final_stopped is None:
+            verify_budget = self._cleanup_timeout(deadline, "verify", errors=errors)
+            if verify_budget <= 0:
+                self._append_cleanup_error(errors, "fresh-stopped-verifier", TimeoutError("cleanup deadline expired before stopped verification"))
+            else:
+                try:
+                    observed = self.verify_stopped(timeout=verify_budget)
+                    raw = _json_bytes_with_deadline(observed, deadline) + b"\n"
+                    _durable_bytes_with_deadline(self.journal.path.parent / "final-stopped.json", raw, deadline)
+                    self._validated_stopped = observed
+                    final_stopped = observed
+                    self._service_outstanding = False
+                    record_budget = self._cleanup_timeout(deadline, "operation_barrier", errors=errors)
+                    if not self._operation_lock.acquire(timeout=record_budget):
+                        raise TimeoutError("final stopped operation record exceeded its barrier")
+                    try:
+                        self._record_final_stopped(observed, deadline=deadline)
+                    finally:
+                        self._operation_lock.release()
+                except BaseException as error:
+                    self._append_cleanup_error(errors, "fresh-stopped-verifier", error)
         elif not writer_barrier:
-            errors.append({"resource":"fresh-stopped-verifier","error":"WriterBarrierUnavailable"})
+            self._append_cleanup_error(errors, "fresh-stopped-verifier", RuntimeError("writer barrier unavailable"))
+
         transport_clean = False
+        transport_budget = self._cleanup_timeout(deadline, "transport", errors=errors)
         try:
-            self.transport.close(timeout=self._cleanup_stage_budgets["transport"], preserve_recovery=final_stopped is None or self._partial_open or not lease_valid)
+            self.transport.close(
+                timeout=transport_budget,
+                preserve_recovery=final_stopped is None or self._partial_open or not lease_valid,
+            )
             transport_clean = True
         except BaseException as error:
-            errors.append(cleanup_error("transport", error))
+            self._append_cleanup_error(errors, "transport", error)
         guest_failure = getattr(self.transport, "guest_failure", None)
         if guest_failure is not None:
             self._had_failure = True
             errors.append(dict(guest_failure))
-        safe = final_stopped is not None and transport_clean and acquired and writer_barrier and lease_valid and not self._partial_open
+
+        try:
+            deadline.remaining()
+        except TimeoutError as error:
+            self._append_cleanup_error(errors, "cleanup-deadline-finalization", error)
+        # Resource cleanup can be complete while the row remains permanently
+        # failed because an operation/recovery proof was lost.  Keep those
+        # outcomes separate: ``_cleanup_complete`` means the owned resources
+        # are released, while ``errors`` and ``_had_failure`` drive evidence.
+        deadline_failed = any(
+            isinstance(item, dict) and str(item.get("resource", "")).startswith("cleanup-deadline-")
+            for item in errors
+        )
+        safe = final_stopped is not None and transport_clean and acquired and writer_barrier and lease_valid and not self._partial_open and not deadline_failed
         if safe:
-            self._host_lease.release()
-            self._cleanup_complete = True
+            try:
+                self._host_lease.release()
+                self._cleanup_complete = True
+            except BaseException as error:
+                self._append_cleanup_error(errors, "lease-release", error)
+                self._cleanup_complete = False
         if errors:
             self._had_failure = True
         if not safe:
             try:
                 self._host_lease.quarantine(errors)
             except BaseException as error:
-                errors.append(cleanup_error("durable-quarantine", error))
-        self.journal.append({"kind": "closed" if not errors and not self._had_failure else "cleanup-failure", "errors": errors})
-        evidence = self._evidence(final_stopped, errors)
-        self._final_evidence = evidence
+                self._append_cleanup_error(errors, "durable-quarantine", error)
+        try:
+            self.journal.append({"kind": "closed" if not errors and not self._had_failure else "cleanup-failure", "errors": errors})
+        except BaseException as error:
+            self._append_cleanup_error(errors, "journal-terminal", error)
+            self._had_failure = True
         if self._cleanup_complete:
-            self.journal.close()
-        if evidence.state != "closed":
+            try:
+                self.journal.close()
+            except BaseException as error:
+                self._cleanup_complete = False
+                self._had_failure = True
+                self._append_cleanup_error(errors, "journal-close", error)
+        try:
+            evidence = self._evidence(final_stopped, errors)
+        except BaseException as error:
+            self._append_cleanup_error(errors, "journal-evidence", error)
+            self._had_failure = True
+            evidence = SessionEvidence(
+                self.registered.config["session_id"], "failed", tuple(self._observations), tuple(self._events),
+                str(self.journal.path), "", final_stopped, tuple(errors), getattr(self.transport, "local_transport_evidence", None),
+            )
+        self._final_evidence = evidence
+        if evidence.state != "closed" or errors:
             raise CleanupError(evidence)
         return evidence

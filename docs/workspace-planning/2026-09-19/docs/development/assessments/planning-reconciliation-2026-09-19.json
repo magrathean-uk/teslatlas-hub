@@ -1,0 +1,11 @@
+{
+  "json_records": 9,
+  "local_links_checked": 175,
+  "archive_hashes_checked": 16,
+  "errors": [],
+  "runtime_or_build_run": false,
+  "g3_alignment": "PASS",
+  "typescript_protocol_lock": "PASS",
+  "independent_review": "Sol/high: Protocol L3 boundary and sequential Mac floor requirements clarified",
+  "native_goal_created": false
+}

@@ -1,0 +1,70 @@
+{
+  "created_at": "2026-09-19T10:30:47.781684+00:00",
+  "scope": "Root planning before 2026-09-19 reconciliation; historical bytes only",
+  "files": [
+    {
+      "path": "WORKSPACE_AUTHORITY.md",
+      "sha256": "6e6e3b3ad78d8ffdf641e59d58147c84e5b3fd5a9dfe458b1b7b981cf9fd36d6"
+    },
+    {
+      "path": "docs/development/ACTIVE_SCOPE.md",
+      "sha256": "983cf1d12082448f5700704d266e78b89492b8449c4fd822aff105cd1b62993b"
+    },
+    {
+      "path": "docs/development/APP_V7_READINESS.md",
+      "sha256": "9ca6a57eed7829ae8984b8885fe29e92920b00ea8570ff08f50a4778642d206e"
+    },
+    {
+      "path": "docs/development/COORDINATION.md",
+      "sha256": "7943fbfd9b1df7c599e6edaafd62602c7dfe5eed25aed539a0abb6cf8a9c99a0"
+    },
+    {
+      "path": "docs/development/ENVIRONMENT.md",
+      "sha256": "32c06567d2835c1c8a44d73e191c4c6159ab92b9800cf16420ed44ef85b05da1"
+    },
+    {
+      "path": "docs/development/HANDOFF_PROMPT.md",
+      "sha256": "e7f2844c89545243a749a2edd55856075f3d3f9bb9d7948172b6b63b3eda3d93"
+    },
+    {
+      "path": "docs/development/MASTER_PLAN.md",
+      "sha256": "8eabe56da416dd6e62bc961d4d0ea1156f419d2be714096483a05a15672eff51"
+    },
+    {
+      "path": "docs/development/PRODUCT_SPEC.md",
+      "sha256": "814cc567bca9fd49a07498e2cdd9eeb7414933baba240496c0b8da031cc6ea91"
+    },
+    {
+      "path": "docs/development/REASSESSMENT.md",
+      "sha256": "15526dc6373989398c6b8291c69183a3d22b3704af8ab2e980d4c78ebfcf21fa"
+    },
+    {
+      "path": "docs/development/RESEARCH.md",
+      "sha256": "f6f230c74959355511e0e4aee45118fce34013c98a4c137841f890d947116fdd"
+    },
+    {
+      "path": "docs/development/START_AUTHORIZATION.md",
+      "sha256": "7507e312baa4a86ac6926f4e01863db45de8c18c68e9d5d763a49daffed34602"
+    },
+    {
+      "path": "docs/development/SUPERSEDED_PLANS.md",
+      "sha256": "09d2bb4a1f6f6fff37a98fa678e44d50457402e5ebc9f66b9478fef6463e800b"
+    },
+    {
+      "path": "docs/development/VM_ACCESS.md",
+      "sha256": "b50ec743a0ab49f44a5086986805f0b4522e6aee262c096f2abb234821f961a6"
+    },
+    {
+      "path": "docs/development/COORDINATOR_STATUS.json",
+      "sha256": "41aafee82d7328b205761659133fb3acef75e4f1abc42ecac9234b6dfdc3e324"
+    },
+    {
+      "path": "docs/development/TASKS.json",
+      "sha256": "9a19e7ee5aa3f54d23c901751f282818f86f0e5861482ab91fec958f67f0b5f8"
+    },
+    {
+      "path": "docs/development/superseded-plans.json",
+      "sha256": "33308b6074a11ad7934c87badf993b6eee49ad132c50dde7fa3455d1f9692ea4"
+    }
+  ]
+}

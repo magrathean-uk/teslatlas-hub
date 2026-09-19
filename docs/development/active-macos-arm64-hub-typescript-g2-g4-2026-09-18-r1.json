@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.hub.macos_arm64_g2_g4_acceptance_receipt",
+  "date": "2026-09-18",
+  "result": "ACCEPTED",
+  "scope": "Fresh synthetic Hub-alone G2 plus packed TypeScript Node and real-Chrome G4 on one final disposable Apple-silicon Mac cohort",
+  "source_snapshot": {
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "branch": "main",
+    "dirty_entries_at_build_snapshot": 217,
+    "status_porcelain_sha256": "9edc82e78a768460ab23c796a2c83e0f525b85c3614b53eefab22b3ecc660ad4",
+    "tracked_diff_sha256": "8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca",
+    "source_file_count": 638,
+    "source_content_manifest_sha256": "e84233ed9641f525f6e4dba328700153983297932a277ebc544a75cc841cf823",
+    "pre_and_post_build_manifest_match": true
+  },
+  "native_build": {
+    "platform": "macOS 27.0 build 26A428, arm64",
+    "toolchain": "rustc 1.98.0 (88d9e472c 2026-07-23), cargo 1.98.0, aarch64-apple-darwin",
+    "command": "rustup run 1.98.0 cargo build --locked --release --features interop-fixture --bin teslatlas-hub --example interop_fixture --target-dir /Users/bolyki/dev/teslatlas-lab/build/hub/g2-g4-macos-arm64-20260918-r1",
+    "started_at": "2026-09-18T16:15:25Z",
+    "completed_at": "2026-09-18T16:16:58Z",
+    "exit_code": 0,
+    "heavy_build_lock": "atomically held for the sole build and absent after",
+    "hub_binary_sha256": "2c14e50a83f311a2f8ccf0b29ac6b45ba5afa5aca8af317dcc88a1a7e0f42768",
+    "interop_fixture_sha256": "5ea60f0b0a40a5fa5ade0d47014dcf5f0cb73cf666e9e2b3d4c31e754c42459d",
+    "binary_architecture": "Mach-O 64-bit arm64",
+    "hub_version": "2026.36.2"
+  },
+  "protocol_binding": {
+    "profile": "hub-http-v1@1.0.0",
+    "manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+  },
+  "final_cohort": {
+    "cohort": "r7, identity and all credentials redacted and destroyed",
+    "setup_missing_credentials_exit": 2,
+    "claim_status": 200,
+    "invitation_replay_status": 401,
+    "vehicles_status": 200,
+    "current_statuses": [200, 200],
+    "current_presence": [true, false],
+    "drive_page_counts": [2, 2, 1],
+    "drive_page_ids": [["105", "104"], ["103", "102"], ["101"]],
+    "conditional_status": 304,
+    "doctor_status": "ok",
+    "restart_identity_retained": true,
+    "restart_bearer_and_data_retained": true,
+    "final_post_browser_restart": {
+      "identity_retained": true,
+      "node_credential_status": 200,
+      "current_status": 200,
+      "drives_status": 200,
+      "doctor_status": "ok"
+    }
+  },
+  "typescript_consumer": {
+    "package": "@teslatlas/sdk@2026.36.2",
+    "tarball_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "installed_content_manifest_sha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+    "installed_member_count": 81,
+    "node": "v26.7.0 acceptance passed: claim, replay rejection, two vehicles, five drives in 2/2/1 pages, 304, cursor continuation and rotation",
+    "browser": "Chrome 153.0.8010.52 acceptance passed: untrusted TLS rejection, scoped login-Keychain trust, normal TLS, seven CORS preflights, discovery/readiness/current/history/304/cursor/rotation and cleanup",
+    "browser_runner_sha256": "9569f3c206592c1938594415ddd69ac8e64532887dbf6426c59221300c937738",
+    "browser_orchestrator_sha256": "7232768d3a96f49fdf2b831b03ca95929c83ca4d6c35ccc24c7d512cf07034ff",
+    "generated_trust_hook_sha256": "ada64d4ed8a73b2c64d689653f9c8ff83be99d3e55412f0c94c9aaf1e34591b0"
+  },
+  "commands": [
+    {"name": "hub_setup_missing_input", "exit_code": 2},
+    {"name": "hub_serve_first_restart_and_final_restart", "exit_code": 0},
+    {"name": "packed_node_runner", "exit_code": 0},
+    {"name": "browser-control-orchestrator.mjs generated-config", "exit_code": 0, "runner_stdout_bytes": 1725, "runner_stderr_bytes": 0},
+    {"name": "post_removal_fresh_chrome_probe", "exit_code": 0}
+  ],
+  "redacted_evidence_hashes": {
+    "g2_first": "5612a323d7e70324dbe656163acc12a479c21679324aa4a9d3ca8f2c467d3029",
+    "g2_restart": "085858524782ffa1a872f575369c9528b8d408c0b9ca8969781d9df0ac3306bd",
+    "node_acceptance": "f2a2ac438ea34473220f665d35b531e1fbd05c8ed66a9dfad0026010aa4da213",
+    "browser_preflight": "ae7a4fe8b217f1f0598b17641b4a2213a7291e72cd56ce6af5e16d478c6b914e",
+    "browser_acceptance": "f4767900da11672defcf994798df64ddf17df2e8c3ea8002c1375010a5ebfcc4",
+    "browser_orchestration": "3e47b1c68cb3992c69bcb1ea2774c7091fb6ca69bab29c75700ea29999cd9fdc",
+    "post_removal_chrome": "7beb98a7b327524b4de54fabd90c33bf4f987014dbe6cf2800ac30fc24cd573d",
+    "final_restart": "3e7b78918850cc612f5c0b331f1d7c0fbb4aedc43f9f3862dde46143911e6238"
+  },
+  "failure_ledger": [
+    {"cohort": "r1", "boundary": "pre-browser generated supervisor Unix socket EINVAL from an overlong path", "receipt_sha256_prefix": "cceaf218", "cleaned": true},
+    {"cohort": "r2", "boundary": "generated config invoked the runner module as a plain script and produced zero assertions; not a product-source defect", "receipt_sha256_prefix": "5b810dd", "cleaned": true},
+    {"cohort": "r3", "boundary": "Chrome 153 required --enable-automation for Browser.getBrowserCommandLine", "receipt_sha256_prefix": "3d8abc", "cleaned": true},
+    {"cohort": "r4", "boundary": "runner incorrectly used Browser-target CDP for Network.enable", "receipt_sha256_prefix": "283dd758", "cleaned": true},
+    {"cohort": "r5", "boundary": "runner sent expectedTrustedCdpUrl while the reviewed hook requires trustedCdpUrl", "orchestrator_receipt_sha256": "4e218e9e8c18580deb2eb0208ce29e0a7a088942a1d68cef9d93e2ec0e5ca82f", "cleaned": true},
+    {"cohort": "r6", "boundary": "reviewed hook mixed admin-domain -d trust with a login keychain; Chrome rejected trusted route", "orchestrator_receipt_sha256": "fb69f22bf0e1b93f8ea21d2ff77e2484edc58bc19bf2d3fe9755ded38781269f", "cleaned": true},
+    {"probe": "trustAsRoot", "boundary": "macOS 27 rejected trustAsRoot for the self-signed certificate with invalid parameters", "cleaned": true},
+    {"probe": "user-domain trustRoot", "boundary": "accepted: effective SSL verification and Chrome 200 after import, exact removal and fresh-Chrome rejection after removal", "cleaned": true},
+    {"boundary": "final sweep found one separate task-owned throwaway probe certificate and the private cohort root still recoverable in Trash", "correction": "deleted the exact SHA-1 60EEDE98251F487429F695C683913D53BFC372A6 certificate from the user login keychain, permanently deleted only the proven task Trash root, and reran process, listener, certificate, root and lock checks", "cleaned": true}
+  ],
+  "path_discrepancy": "The coordinator prompt named hub/interop/typescript/browser-control-orchestrator.mjs; the accepted reviewed source is teslatlas-sdk-typescript/scripts/browser-control-orchestrator.mjs. This was a coordinator path discrepancy, not a product failure.",
+  "cleanup": {
+    "hub_stopped": true,
+    "task_listeners_closed": true,
+    "scoped_certificates_absent_from_login_and_default_search": true,
+    "chrome_profiles_and_private_runtimes_deleted": true,
+    "one_use_invitations_credentials_keys_and_certs_deleted": true,
+    "heavy_build_lock_absent": true,
+    "single_native_build_root_retained": true
+  },
+  "remaining_gaps": [
+    "Only current macOS 27.0 on Apple silicon was exercised; the documented macOS 13 minimum floor was not independently run.",
+    "Synthetic fixture only: no Tesla account, production service, real vehicle, collection, App integration, Viewer, x86 or Intel acceptance.",
+    "This is source-built runtime evidence, not installer, notarization, package-service or release evidence."
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "schema": "teslatlas.hub.active-target-handoff/v1",
+  "state": "scope_changed_after_pairing_before_current_history_cleaned",
+  "prepared_at": "2026-09-12",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "scope": "One ordinary supported Apple-silicon Mac Viewer route after owner restart, using normal local CA trust and fresh expiring inputs. No TLS bypass, installed app/package change, service action, collection, vehicle action, Edge event, production action, x86 work or formal installed/matrix acceptance.",
+  "goal_control": "The sole Hub native goal remains preserved and reports paused in get_goal; current owner restart authority permits execution and no duplicate goal was created.",
+  "freshness": {
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4",
+    "output_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4/run",
+    "old_runtime_or_private_input_reused": false,
+    "preflight": "The fresh root and output were absent; ports 18493 and 4173 were free; no heavy-build lock existed. Unchanged candidate/profile/scenario bytes were rehashed before new owner-only copies were staged."
+  },
+  "candidate": {
+    "hub_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "hub_binary": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2/target/release/teslatlas-hub",
+    "hub_binary_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+    "hub_binary_identity": "Mach-O arm64; LC_BUILD_VERSION macOS 13.0 minimum, SDK 27.0",
+    "fixture_binary": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-macos-arm64-20260909-r2/target/release/examples/interop_fixture",
+    "fixture_binary_sha256": "b9b489a3b9c99d78a22a430b9b4bae1d0d78382f6aa737b2eae041e4c2229bce",
+    "viewer_source_head": "ba5424dcfeab59ac9fea0106f84fb5281672751a",
+    "product_version": "2026.36.2 candidate; not installed",
+    "boundary": "Disposable candidate-process evidence only, not release, notarization, package installation, service or installed-app evidence."
+  },
+  "fixed_inputs": {
+    "fixture_script": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4/source/hub/tools/interop/fixture.py",
+    "fixture_script_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+    "fixture_config": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4/fixture-config.json",
+    "fixture_config_sha256": "b98b27114186302cb95afac5c39c13a276b3455b0a4540e2b9c4513581b97969",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4/source/teslatlas-protocol/profiles/hub-http-v1/1.0.0",
+    "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "native_evidence_sha256": "09fdd31510470577c1e22da0969c6762f933aa06b087b6959a7d520b29159bd0",
+    "scenario_id": "b1-five-drives",
+    "scenario_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4/run/scenario.json",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3"
+  },
+  "runtime": {
+    "status": "stopped_cleanly",
+    "hub_id": "76b3ef2c-d3e1-4619-adf7-c8d9b2625b64",
+    "endpoint": "https://127.0.0.1:18493",
+    "listener": "127.0.0.1:18493 only",
+    "viewer_origin": "http://127.0.0.1:4173",
+    "health_and_readiness": "HTTPS /healthz and /readyz returned 200 using the fresh local CA.",
+    "cors": "GET /.well-known/teslatlas-hub with Origin http://127.0.0.1:4173 returned HTTP 200 and the exact Access-Control-Allow-Origin value.",
+    "launcher_pid": 75391,
+    "hub_child_pid": 75414,
+    "process_verification": "UID 501 launcher directly owns UID 501 Hub child 75414; only that child listens on 18493. Port 4173 remained free at handoff.",
+    "ready_descriptor": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4/run/ready.json",
+    "ready_descriptor_sha256": "9b94e2c16ca0505cc0b561e0da8224c2e780f3475950781fbd2c642b3f557874",
+    "ready_descriptor_mode": "0600 single-link owner-only regular file",
+    "config_sha256": "b064162f85d77df0d35b0f29dc80211599179d49412d0acd2632ec25a4585deb"
+  },
+  "trust_and_pairing": {
+    "ca_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4/run/server.pem",
+    "ca_sha256": "e35a47bf8dfb0c56ff6c01003c72d6167b8eca167f5bbf61aa67a577d5bbff6f",
+    "ca_mode": "0600 single-link owner-only regular file",
+    "trust_policy": "Use normal temporary macOS trust; do not disable TLS validation or use an insecure browser flag.",
+    "invitation_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4/run/cli-invitation.json",
+    "invitation_sha256": "6de03cc3a95e4cde747a610a6b76ebf5fc8dd9bf9e20aa18f1bae6a091ab038b",
+    "invitation_mode": "0600 single-link owner-only regular file",
+    "invitation_format": "Supported Hub CLI pair --json output. Read locally; never disclose the secret, pairing URI or pin in chat or repository.",
+    "invitation_expires_at_utc": "2026-09-12T09:33:01.012000Z",
+    "single_use": true,
+    "consumed": true
+  },
+  "viewer_action": {
+    "allowed": "No further action. Owner scope change excludes Viewer from all current goals and plans.",
+    "return": "Viewer reported pairing completed, then halted before current/history. It stopped its 4173 process and removed only the temporary R4 user CA trust.",
+    "forbidden": "Do not reuse old CA, invitation, descriptor, credential, browser state or root; do not alter the Hub process, installed app/service, Edge, Home Assistant or a vehicle."
+  },
+  "cleanup": {
+    "owner": "Hub",
+    "trigger": "Viewer result, invitation expiry, fixture lifetime expiry or any mismatch",
+    "action": "Completed after owner scope change: Hub validated launcher 75391 and direct child 75414 against this exact root, terminated only the launcher, verified child exit 0 and port 18493 closure. Viewer stopped only its 4173 process and removed temporary R4 trust.",
+    "stopped_descriptor": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-viewer-20260912-r4/run/stopped.json",
+    "stopped_descriptor_sha256": "898c67df70cbda2358ccaf7aee801cd81ce0aa4b025f677826d03d004379ba8f",
+    "stopped_descriptor_mode": "0600 single-link owner-only regular file",
+    "hub_exit_code": 0,
+    "listeners_closed": [
+      "127.0.0.1:18493",
+      "127.0.0.1:4173"
+    ],
+    "fixture_lifetime_seconds": 1800,
+    "root_retention": "Retain owner-only evidence and never reuse private inputs."
+  },
+  "result": {
+    "pairing": "completed before the scope change",
+    "current_and_history": "not run and not proven",
+    "viewer_process": "stopped by Viewer owner",
+    "temporary_ca_trust": "removed by Viewer owner",
+    "hub_process": "stopped cleanly by Hub owner",
+    "scope": "Historical bounded evidence only; Viewer is excluded from current work and these inputs are non-reusable."
+  },
+  "limits": [
+    "Synthetic current-Hub candidate-process evidence only; not installed/release/platform/matrix acceptance.",
+    "No collection, migration, named-source parity, Home Assistant, Edge event, producer, vehicle command or x86 action."
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "teslatlas.hub.contract-review/v1",
+  "state": "rejected_pending_superseding_source_bound_contract",
+  "reviewed_at": "2026-09-12",
+  "owner": "Hub",
+  "authority": "../../../docs/development/ACTIVE_SCOPE.md",
+  "proposal": {
+    "path": "../../../teslatlas-edge/docs/development/edge-macos-forwarding-contract-proposal-2026-09-12-r1.json",
+    "sha256": "b680f9e8d7c13d337ba78e07942d97cb0af3f81c62eee9231bfc404d22c0f09c",
+    "source_head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+    "decision": "Not executable as written. No fresh Edge runtime, credential, listener, guest mutation or producer event is authorized."
+  },
+  "checks_passed": {
+    "json": "Proposal parsed successfully.",
+    "critical_source_boundary": "All ten listed critical source-file hashes matched the current dirty Edge checkout at review time.",
+    "receiver_overlay": "Pinned receiver lock, dispatcher overlay and receiver template hashes matched the proposal.",
+    "edge_package": "Candidate package SHA256 68b96e8f111f7d21df75279fa75f017a2a1697d18ba09a00961da91c195954e8 and byte count 11414094 matched; package was not installed.",
+    "edge_binary": "Read-only package expansion exposed embedded arm64 Mach-O SHA256 880ee095f6d96f465a73dfc5285851ffadb102494a624d654802f108fda2a882. The temporary review expansion was moved to Trash and is recoverable.",
+    "receiver": "Receiver SHA256 c2ace1b9d7cc60b78581632c5696075a9e0a66755d7ddb5ae0cbb986f97467f6 remained the independently loader/readiness-verified arm64 candidate.",
+    "producer_helper": "Synthetic helper SHA256 db916a52378004cbcacb1eb149feedc3d6369c194044f5c8f7f837e5b8b837e7 remained an arm64 Mach-O exposing the explicit endpoint/certificate/key/server-CA/transaction/VIN/timestamp arguments; it was not invoked.",
+    "config_shape": "Current Edge source supports the proposal's selected config fields and spool limits; init behavior creates fresh receiver-token, spool-key and empty credential-store state."
+  },
+  "blocking_findings": [
+    {
+      "id": "EDGE-MAC-R1-PATH",
+      "finding": "artifact_binding.edge_core.service_entrypoint names /usr/local/libexec/teslatlas-edge/teslatlas-edge even though package installation is forbidden and the proposed runtime stages the binary under the fresh Hub root.",
+      "required_correction": "Name one exact executable under <HUB_FRESH_ROOT> consistently in staging, argv, process ownership and cleanup. Do not depend on an installed package path."
+    },
+    {
+      "id": "EDGE-MAC-R1-SOURCE-BINARY",
+      "finding": "The retained 2026-09-09 package record binds source HEAD, generic dirty-tree wording, artifact hashes and toolchain, but it does not enumerate the exact included dirty-tree manifest/build command required by the proposal's source_to_binary_rule. A matching package or embedded-binary hash cannot fill that evidence gap retrospectively.",
+      "required_correction": "Supply a new exact source-to-binary receipt or a freshly built Edge-owned darwin-arm64 candidate from the reviewed current source boundary under the shared build lock. Record the complete relevant working-tree manifest, build command/toolchain, output hash/type/loader and lock release."
+    }
+  ],
+  "required_follow_up": "Edge must return one superseding proposal digest and exact source-to-binary receipt. Hub will independently review both before it may create fresh private runtime inputs. The coordinator must separately authorize exactly one bounded synthetic VehicleName-only submit-once event after contract review passes.",
+  "runtime_boundary": "Review only. No package install, Edge or receiver process, Hub fixture, guest start, credential, root, listener, producer event, Home Assistant action, vehicle action, commit, publication or x86 work occurred."
+}

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Example only. The checked-in Compose service uses the repository-root
+# config.toml, so operators must copy and review this file before starting it.
+data_dir = "/var/lib/teslatlas-hub"
+bind = "0.0.0.0:8443"
+
+[tls]
+certificate_path = "/etc/teslatlas-hub/tls/server.pem"
+private_key_path = "/etc/teslatlas-hub/tls/server-key.pem"
+public_url = "https://hub.example.invalid/"
+
+[geocoder]
+enabled = false
+
+[terrain]
+enabled = false

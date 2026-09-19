@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-19T10:46:26.635490+00:00",
+  "state": "SNAPSHOT_COMMIT_AND_PUSH_AUTHORIZED",
+  "authorization": "Owner explicitly answered: Commit and push current work, for all six active repositories including refreshed plans.",
+  "repositories": [
+    {
+      "repository": "hub",
+      "branch": "main",
+      "before_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+      "remote_head_before": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+      "result": "REMOTE_ALREADY_MATCHES_EXISTING_HEAD"
+    },
+    {
+      "repository": "teslatlas-sdk-typescript",
+      "branch": "main",
+      "before_head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "remote_head_before": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "result": "REMOTE_ALREADY_MATCHES_EXISTING_HEAD"
+    },
+    {
+      "repository": "teslatlas-edge",
+      "branch": "main",
+      "before_head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+      "remote_head_before": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+      "result": "REMOTE_ALREADY_MATCHES_EXISTING_HEAD"
+    },
+    {
+      "repository": "teslatlas-sdk-swift",
+      "branch": "main",
+      "before_head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+      "remote_head_before": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+      "result": "REMOTE_ALREADY_MATCHES_EXISTING_HEAD"
+    },
+    {
+      "repository": "teslatlas-protocol",
+      "branch": "main",
+      "before_head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+      "remote_head_before": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+      "result": "REMOTE_ALREADY_MATCHES_EXISTING_HEAD"
+    },
+    {
+      "repository": "teslatlas-home-assistant",
+      "branch": "main",
+      "before_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+      "remote_head_before": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+      "result": "REMOTE_ALREADY_MATCHES_EXISTING_HEAD"
+    }
+  ],
+  "root_workspace": {
+    "is_git_repository": false,
+    "reason": "No local repository; git falls through to malformed /Users/bolyki/.git; not repaired",
+    "planning_snapshot": "hub/docs/workspace-planning/2026-09-19/"
+  },
+  "excluded": [
+    "app/",
+    "teslatlas-viewer/",
+    "build symlinks",
+    "caches",
+    "Finder metadata",
+    ".serena local metadata",
+    "private runtime inputs",
+    "chat transcripts"
+  ],
+  "release_tag_ci_deployment": false,
+  "checks": {
+    "g3": "PASS",
+    "typescript_protocol_lock": "PASS",
+    "source_secret_scan": "17 findings, all confirmed SHA-256 metadata false positives; zero unresolved findings in initial candidate snapshot"
+  }
+}

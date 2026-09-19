@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.g6.macos_arm64.hub_acceptance",
+  "state": "accepted_closed",
+  "gate_id": "G6",
+  "recorded_at": "2026-09-19T08:46:37Z",
+  "scope": "One wholly fresh source-built synthetic Hub and external SwiftPM CurrentHubConsumer journey on Apple-silicon macOS, including credential rotation and Hub restart continuity.",
+  "source_binding": {
+    "repository": "hub",
+    "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+    "branch": "main",
+    "working_tree_status_entries_before_receipt": 115,
+    "working_tree_status_sha256_before_receipt": "13ee8dc502fa680d066613043ca4a38e14401008a2c5f980facd33923bee6741",
+    "tracked_diff_sha256": "8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca",
+    "content_manifest_members": 641,
+    "content_manifest_sha256": "42f1787eb94ad81595fad1e5795d547633d0fea848735dfd47ab4e86ed53249d",
+    "pre_and_post_build_manifest_match": true
+  },
+  "peer_source_binding": {
+    "repository": "teslatlas-sdk-swift",
+    "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+    "branch": "main",
+    "working_tree_status_entries_before_receipt": 55,
+    "working_tree_status_sha256_before_receipt": "c56d64f68964560050c37120f6e9fb9a70d48934e9ab0ae205e91953f8e02934",
+    "tracked_diff_sha256": "96c8a1edae4ad7b9509347bee9cdf6303708223a958b1ca8794c20e3ef691f95",
+    "content_manifest_members": 175,
+    "content_manifest_sha256": "2109dc00f26e755cd8bc3d17135ca7d2ff24142092f37d573eec3340a1c0ba55",
+    "pre_and_post_build_manifest_match": true,
+    "staged_basename": "teslatlas-sdk-swift",
+    "staged_members_verified": 175
+  },
+  "platform_and_toolchains": {
+    "platform": "macOS 27.0 build 26A428",
+    "architecture": "arm64",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "rust_target": "aarch64-apple-darwin",
+    "swift": "Apple Swift 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)",
+    "swift_target": "arm64-apple-macosx27.0.0"
+  },
+  "native_build": {
+    "command": "rustup run 1.98.0 cargo build --locked --release --features interop-fixture --bin teslatlas-hub --example interop_fixture --target-dir /Users/bolyki/dev/teslatlas-lab/build/hub/g6-macos-arm64-20260919-r1",
+    "build_count": 1,
+    "hub_binary_sha256": "8577ec7cf4aa3017df4fb90cc0523d46436245031260b6a65418ce1a273abaae",
+    "interop_fixture_sha256": "c9398d5a7fdf218dd2dc072c3920e99dca84d91f14655b00a135af9380ff6ab0",
+    "binary_architecture": "Mach-O 64-bit arm64",
+    "embedded_product_version": "2026.36.2",
+    "heavy_build_lock": "held atomically for the sole Hub build and absent after"
+  },
+  "protocol_binding": {
+    "profile": "hub-http-v1@1.0.0",
+    "manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "independently_matched_copies": [
+      "teslatlas-protocol",
+      "teslatlas-sdk-typescript",
+      "teslatlas-sdk-swift"
+    ]
+  },
+  "swift_consumer": {
+    "release_build_count_for_accepted_cohort": 1,
+    "invocation_count": 1,
+    "binary_sha256": "17f9b72497a231bf47ce39169bbc99379012e2ee18e353badfbbbfad1eadd8b9",
+    "binary_bytes": 869856,
+    "binary_architecture": "Mach-O 64-bit arm64",
+    "focused_example_tests": "11 passed, 0 failed",
+    "consumer_exit_code": 0,
+    "stderr_bytes": 0
+  },
+  "acceptance": {
+    "discovery_identity_profile_product_and_capabilities": "passed",
+    "normal_tls_with_expected_hub_identity": "passed",
+    "claim_status": "passed",
+    "invitation_replay_rejected": true,
+    "health_status": "ok",
+    "readiness_status": "ready",
+    "vehicle_count": 2,
+    "current_observed_count": 1,
+    "current_absent_count": 1,
+    "drive_page_counts": [2, 2, 1],
+    "drive_count": 5,
+    "opaque_cursor_continuity": true,
+    "conditional_not_modified_count": 3,
+    "rotation_status": "passed",
+    "old_credential_rejected": true,
+    "post_rotation_read_status": "passed",
+    "hub_generation_exit_codes": [0, 0],
+    "post_restart_identity_auth_and_data_continuity": true,
+    "doctor_status": "ok",
+    "doctor_checks_passed": 8,
+    "paired_device_count": 1
+  },
+  "redacted_evidence_hashes": {
+    "consumer_stdout": "2586630d7dd328e1340e50588b0049b90614bb8c6fa0d01839965af71f596544",
+    "consumer_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "hub_first_log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "hub_second_log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "doctor": "f03b722072c055810e810d5352dada2fdea670ff24754015946d2e8cde88e411",
+    "private_consumer_config": "6fce13f15982f6e534fe0a7af7fb75c941b6ed02455fa65c6066f65e31c8c39d",
+    "private_ca_der": "72d58f855e4da49a5a1c746a519184c6da5aacd52f9d24324dc7b046f3aa8816",
+    "private_cli_invitation": "a2211626408ce011e92e4907a26f9bb8be14587a1d8a3e8048cc82ef59297c01"
+  },
+  "failure_ledger": [
+    {
+      "cohort": "r1",
+      "result": "closed before claim because the harness supplied the fixture seed's internal invitation shape instead of a Hub CLI public invitation",
+      "paired_device_count": 0,
+      "consumer_invocation_count": 1,
+      "consumer_stderr_sha256": "9abfa3a6514cbcd39b0887433f43378e08881d2aac427b84d1466abb9b25ddd1",
+      "retry_or_replay": false,
+      "private_root_absent": true
+    }
+  ],
+  "cleanup": {
+    "hub_stopped": true,
+    "task_listeners_closed": true,
+    "owned_processes_absent": true,
+    "owned_listeners_absent": true,
+    "heavy_build_lock_absent": true,
+    "r1_private_root_absent": true,
+    "r2_scratch_stage_private_inputs_ca_invitation_credential_and_runtime_root_absent": true,
+    "reproducible_hub_and_swift_build_artifacts_retained": true
+  },
+  "limitations": [
+    "Current macOS 27.0 arm64 source-built synthetic external-consumer evidence only; the declared macOS 14 Swift package floor and macOS 13 Hub floor were not minimum-floor tested.",
+    "No App, installer, package service, notarization, real data, Tesla account, vehicle, production, Viewer, x86, Intel or full-matrix acceptance."
+  ]
+}

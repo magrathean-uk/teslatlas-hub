@@ -17,14 +17,14 @@ from typing import Any, Optional
 from .processes import ProcessFailure, run_process
 
 RECIPE_REVISION = 3
-HUB_PROFILE_SHA256 = "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+HUB_PROFILE_SHA256 = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 EDGE_PROFILE_SHA256 = "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
-SDK_TARBALL_SHA256 = "d1ab6ba0ede3a24ae12ed4151db0c90bf957fa19f5640cc4323bd368e565e8bb"
+SDK_TARBALL_SHA256 = "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
 VIEWER_PACKAGE_SHA256 = (
-    "6f70b4b7a41e69cc6867b205f85d416fa08c70bcb803f5f5a498275f7a8d8538"
+    "f92becdbeb0132b34fa8a674c261a2cd4d4eafc6361b29be5396e854bcf2cdc2"
 )
 VIEWER_ASSET_MANIFEST_SHA256 = (
-    "ee4b741b0dbf06c0123f8a9a995f7541800cafde84e3d0d97f6af88fbca9c8ff"
+    "6d417a87a566d7b450e5556895e12b65af353fe27219dd8859bb0dd69e135e06"
 )
 
 KNOWN_REPOSITORIES = {
@@ -132,11 +132,12 @@ def _recipe_environment(context: RecipeContext) -> dict[str, str]:
     return environment
 
 
-def _version(command: list[str]) -> str:
+def _version(command: list[str], context: RecipeContext) -> str:
     try:
         result = run_process(
             command,
             cwd=Path.cwd(),
+            env=_recipe_environment(context),
             timeout_seconds=15,
             stderr=subprocess.STDOUT,
         )
@@ -149,12 +150,12 @@ def check_recipe_environment(name: str, context: RecipeContext) -> dict[str, str
     """Fail before source execution when the selected target cannot run a recipe."""
     if name == "protocol":
         uv = _tool("uv", context)
-        return {"uv": _version([uv, "--version"])}
+        return {"uv": _version([uv, "--version"], context)}
     if name in {"sdk-typescript", "viewer"}:
         node = _tool("node", context)
         npm = _tool("npm", context)
-        node_version = _version([node, "--version"]).lstrip("v")
-        npm_version = _version([npm, "--version"])
+        node_version = _version([node, "--version"], context).lstrip("v")
+        npm_version = _version([npm, "--version"], context)
         if node_version != "26.7.0" or npm_version != "11.19.0":
             raise _bootstrap_error("Node 26.7.0 and npm 11.19.0 are required")
         return {"node": node_version, "npm": npm_version}
@@ -175,7 +176,7 @@ def check_recipe_environment(name: str, context: RecipeContext) -> dict[str, str
                     raise _bootstrap_error(
                         "Linux Swift requires libcurl and OpenSSL development files"
                     ) from error
-        return {"swift": _version([swift, "--version"]).splitlines()[0]}
+        return {"swift": _version([swift, "--version"], context).splitlines()[0]}
     if name == "home-assistant":
         if context.ha_config is None:
             raise _bootstrap_error("an explicit HA config path is required")
@@ -185,7 +186,7 @@ def check_recipe_environment(name: str, context: RecipeContext) -> dict[str, str
             )
         python = _tool("python3", context)
         version = _version(
-            [python, "-c", "import platform; print(platform.python_version())"]
+            [python, "-c", "import platform; print(platform.python_version())"], context
         )
         if tuple(int(item) for item in version.split(".")) < (3, 14, 2):
             raise _bootstrap_error(
@@ -198,9 +199,9 @@ def check_recipe_environment(name: str, context: RecipeContext) -> dict[str, str
         cargo = _tool("cargo", context)
         rustc = _tool("rustc", context)
         go = _tool("go", context)
-        cargo_version = _version([cargo, "--version"])
-        rust_version = _version([rustc, "--version"])
-        go_version = _version([go, "version"])
+        cargo_version = _version([cargo, "--version"], context)
+        rust_version = _version([rustc, "--version"], context)
+        go_version = _version([go, "version"], context)
         if not rust_version.startswith("rustc 1.98.0 ") or " go1.27.0 " not in (
             f" {go_version} "
         ):

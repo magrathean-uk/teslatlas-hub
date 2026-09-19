@@ -1,0 +1,114 @@
+{
+  "schema": "teslatlas.hub.active-target-handoff/v1",
+  "state": "closed_untrusted_cdp_lifecycle_failure_no_acceptance",
+  "prepared_at": "2026-09-12",
+  "owner": "Hub",
+  "scope": "One wholly fresh generic packed TypeScript browser SDK journey on the local Apple-silicon Mac using the independently reviewed sequential negative-before-import/positive-after-import trust mode. Viewer is excluded.",
+  "source_review": {
+    "path": "hub/docs/development/active-macos-typescript-browser-source-review-2026-09-12-r1.json",
+    "sha256": "8f037ad095146f8d7030229ae18eabfbd97418d16f0a7ebd3da6fc5c784e3096",
+    "sdk_correction_sha256": "98ebe5a6195db9bff8b8310942be5aa18a40492682f423a56dbcc8a01307519a",
+    "mode": "sequential-macos-login-keychain"
+  },
+  "target": {
+    "kind": "existing_local_apple_silicon_mac",
+    "architecture": "arm64",
+    "host_os": "macOS 27.0",
+    "node": "26.7.0",
+    "browser_origin": "http://localhost:4174"
+  },
+  "candidate": {
+    "source_receipt": "hub/docs/development/hub-macos-arm64-source-binary-receipt-2026-09-12-r1.json",
+    "hub_binary_sha256": "fd39f6948f68aeebb6c3f37a30137509cf1c09307bc538b92f82b7902b7b384a",
+    "seed_binary_sha256": "e9a2a8225ff4e65912abf1aa1058ce5e0ed828735e1db5a481bde6549403b4c6",
+    "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3",
+    "profile": "hub-http-v1@1.0.0",
+    "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+  },
+  "runtime": {
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r3",
+    "fixture_config": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r3/fixture-config.json",
+    "fixture_config_sha256": "8437a85b35b04338bc62b7e09a2c7cee620c89419a4c97fc18f03e09fbfde5f0",
+    "ready_descriptor": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r3/run/ready.json",
+    "ready_descriptor_sha256": "6dd9b7c53b40c8b0994793cc4b77244522b613d2f0068be7f5c9e08fef311e4a",
+    "endpoint": "https://127.0.0.1:18525",
+    "browser_endpoint": "https://localhost:18525",
+    "hub_id": "48530fd7-d0a4-4a96-b9a3-faedf9331246",
+    "launcher_pid": 54565,
+    "hub_pid": 54573,
+    "listener": "127.0.0.1:18525 only",
+    "allowed_origins": ["http://localhost:4174"],
+    "health_and_readiness": "Normal TLS through the fresh CA returned HTTP 200 for /healthz status ok and /readyz status ready immediately before handoff.",
+    "certificate": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r3/run/server.pem",
+      "der_sha256": "857dfb1bdaf4b11bf1e264d51f6cdba01e637db34a8ecb9ff01e841b61e86a80",
+      "mode": "0600",
+      "present_in_login_keychain_before_run": false
+    },
+    "credential": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r3/browser-input/credential.json",
+      "mode": "0600",
+      "bytes": 161,
+      "expires_at_ms": 1791805903858,
+      "raw_value_and_device_id_recorded": false
+    },
+    "scenario": "b1-five-drives; drive_limit=2; expected_drive_count=5",
+    "fixture_lifetime_seconds": 1800
+  },
+  "typescript_controls": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1",
+    "root_mode": "0700",
+    "trust_hook": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/trust-hooks.mjs",
+    "trust_hook_sha256": "9c03572afd40e79a410e151e425d8072b72ad4d4da405511f3544e6a95ab5f79",
+    "trust_hook_mode": "0700",
+    "read_only_preflight": "The fresh certificate was confirmed absent from the login keychain. The first dry-run found and corrected use of an unsupported find-certificate -k option; the positional-keychain command then returned present=false.",
+    "trusted_cdp": "http://127.0.0.1:9231",
+    "untrusted_cdp": "http://127.0.0.1:9232",
+    "expected_certificate_export": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/evidence/imported-hub-ca.pem",
+    "witness": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/evidence/browser-trust-witness.json",
+    "receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/evidence/browser-acceptance-receipt.json",
+    "pre_run_state": "4174, 9231 and 9232 were closed; export, witness and receipt paths were absent; no fresh Chrome control had started and no trust had been imported."
+  },
+  "execution_contract": {
+    "package_archive": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/teslatlas-sdk-2026.36.2.tgz",
+    "package_archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "fresh_package_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/consumer/node_modules/@teslatlas/sdk",
+    "trust_hook_command": [
+      "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+      "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/trust-hooks.mjs"
+    ],
+    "untrusted_chrome_command": [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "--user-data-dir=/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/untrusted-profile",
+      "--remote-debugging-address=127.0.0.1",
+      "--remote-debugging-port=9232",
+      "--headless=new",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "about:blank"
+    ],
+    "required_checks": "Pre-import untrusted health request must fail ERR_CERT_AUTHORITY_INVALID and that browser must close. The exact fresh CA is then imported normally, the trusted browser runs the packed SDK journey, and the hook must close its browser and CDP port before exact trust removal is verified. Require CORS preflight, discovery/readiness, nonempty vehicles/current, five drives in 2/2/1 pages, 304 plus cursor continuation, credential rotation and a following default Fetch request.",
+    "attempt_limit": 1
+  },
+  "cleanup": {
+    "typescript_owner": "Completed: the exact cleanup wrapper removed the untrusted control state/profile and verified 4174/9231/9232 closed. No export, witness or acceptance receipt exists; no trusted profile/state exists; the exact fresh certificate is absent from the login keychain. The fresh consumer directory was moved recoverably to the user's Trash. Both prepared control scripts remain owner-only for evidence only and are non-reusable.",
+    "hub_owner": "Completed: Hub stopped only launcher PID 54565 and direct Hub child PID 54573. Both are absent; the child exited 0; stopped.json is owner-only mode 0600 with SHA256 0ed603f57e561687c1698895c1351099b97704a839db2533920668e83ca58cac; 18525 is closed.",
+    "failure_policy": "Any incomplete cleanup, stale path, mismatched identity, bypass argument, unexpected trust result or API assertion fails closed without retry."
+  },
+  "result": {
+    "status": "failed_before_pre_import_untrusted_attach",
+    "typescript_failure_receipt": {
+      "path": "teslatlas-sdk-typescript/docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r2.json",
+      "sha256": "2881de3ddb9e613282ffa97d6ec12a122be265d29f430061fdd05ad5bccd50bc"
+    },
+    "attempt_consumed": true,
+    "error": "browserType.connectOverCDP: connect ECONNREFUSED 127.0.0.1:9232 while retrieving the WebSocket URL from http://127.0.0.1:9232",
+    "observed_before_failure": "The fresh package install completed and the owner verified the exact untrusted Chrome command line and a live CDP endpoint on 9232 before starting the single runner.",
+    "observed_failure_boundary": "The untrusted CDP endpoint was unavailable when browser-hub-runner.mjs attempted its first connectOverCDP call. No CA import, trusted 9231 browser, SDK route, witness or acceptance receipt occurred.",
+    "root_cause": "Unproven. The evidence establishes a browser-control lifecycle/liveness loss between the readiness observation and runner attachment; it does not establish why Chrome/CDP became unavailable.",
+    "sdk_or_hub_api_defect_proved": false,
+    "retry_authorized": false
+  },
+  "forbidden": "No prior 18521 tuple, old CA, old credential, old profile/witness, Viewer, Edge, Home Assistant, installed service, production, vehicle, x86, publication or certificate bypass action.",
+  "proof_boundary": "This failed run proves only that the fresh untrusted Chrome/CDP control was live before the runner but unavailable at its first attachment, followed by exact cleanup. It proves no TLS negative control, trust import, CORS, SDK API journey, installed Hub/service, platform matrix, release, production, vehicle or user acceptance."
+}

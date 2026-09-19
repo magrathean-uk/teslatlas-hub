@@ -140,6 +140,14 @@ hub_is_unconfigured() {
         "$hub_binary" --config "$config_file" doctor >/dev/null 2>&1
 }
 
+hub_is_active_unconfigured() {
+    status=$(
+        "$timeout_binary" "$health_timeout" "$runuser_binary" -u teslatlas -- \
+            "$hub_binary" --config "$config_file" status 2>/dev/null
+    ) || return 1
+    printf '%s' "$status" | grep -Fq '"vehicles":[]'
+}
+
 hub_bootstrap() {
     "$timeout_binary" "$bootstrap_timeout" "$runuser_binary" -u teslatlas -- \
         "$hub_binary" --config "$config_file" bootstrap >/dev/null 2>&1
@@ -401,7 +409,7 @@ if [ -d /run/systemd/system ]; then
                 systemctl is-active --quiet "$service" || {
                     fail_upgrade "New Hub failed to remain active"
                 }
-                if hub_is_ready || hub_is_unconfigured; then
+                if hub_is_ready || hub_is_active_unconfigured; then
                     ready=1
                     break
                 fi

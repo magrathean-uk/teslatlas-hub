@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "kind": "edge_macos_one_event_certificate_profile_preparation_r7",
+  "date": "2026-09-12",
+  "state": "preparation_spec_only_no_pki_credentials_guest_runtime_or_event",
+  "cohort_id": "edge-macos-one-event-20260912-r7",
+  "authority": {
+    "source_and_profile_preparation_authorized": true,
+    "certificate_creation_performed": false,
+    "private_key_creation_performed": false,
+    "credential_creation_performed": false,
+    "guest_started": false,
+    "runtime_started": false,
+    "event_authorized": false,
+    "event_submitted": false
+  },
+  "reserved_roots": {
+    "host": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/edge-macos-one-event-20260912-r7",
+    "guest": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7",
+    "host_absent_at_review": true,
+    "guest_must_be_proven_absent_before_creation": true
+  },
+  "canonical_receiver_binding": {
+    "endpoint": "wss://127.0.0.1:21450/",
+    "route_review_path": "hub/docs/development/edge-macos-receiver-route-source-review-2026-09-12-r1.json",
+    "route_review_sha256": "341054d5e1750fac7189f1ade51242f5219495b95a50e8c7743905871465425b",
+    "receiver_leaf_requirement": "Fresh leaf with serverAuth EKU and IP SAN 127.0.0.1, verified for sslserver against the exact staged fresh receiver CA.",
+    "vehicle_leaf_requirement": "Fresh non-CA leaf with clientAuth EKU whose Subject.CommonName maps to the sealed fresh synthetic VIN under pinned known-issuer parsing, verified for sslclient against the exact staged fresh vehicle CA."
+  },
+  "reserved_private_paths": {
+    "vehicle_certificate": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/vehicle-client.crt",
+    "vehicle_private_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/vehicle-client.key",
+    "vehicle_client_ca": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/vehicle-client-ca.crt",
+    "receiver_server_certificate": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/receiver-server.crt",
+    "receiver_server_private_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/receiver-server.key",
+    "receiver_server_ca": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/receiver-server-ca.crt",
+    "edge_hub_server_certificate": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/edge-hub-server.crt",
+    "edge_hub_server_private_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/edge-hub-server.key",
+    "edge_hub_server_ca": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/edge-hub-server-ca.crt",
+    "hub_edge_client_certificate": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/hub-edge-client.crt",
+    "hub_edge_client_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/hub-edge-client.key",
+    "edge_spool_key": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/edge-spool.key",
+    "hub_bearer": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/private/hub-bearer"
+  },
+  "required_pre_runtime_checks": [
+    "Generate every CA, leaf, private key, bearer and spool key fresh inside the r7 root after proving it absent; do not reuse any closed-lane bytes.",
+    "Resolve the actual guest-host interface before issuing the Edge server leaf; require its exact IP SAN and bind that address to the reserved Hub-facing listener.",
+    "Verify issuer, CA constraints, critical key usage, EKU, validity, key correspondence and intended sslclient or sslserver purpose for every leaf.",
+    "Derive PEM and DER SHA-256 values from the exact staged public certificates and CA files. Do not expose private values or publish private-key hashes.",
+    "Require every private input to be a canonical owner-only single-link non-symlink file under an owner-only root.",
+    "Create the private actor binding before zero-event runtime review with event_authorized=false, the sealed identity, fixed transaction ID, canonical endpoint and canonical payload; hash it in the redacted receipt.",
+    "Keep authorization.json, contract.json, guard.json, result.json, .result.json.tmp and helper-output.log absent until a later explicit submit-once decision."
+  ],
+  "sealed_event_profile": {
+    "transaction_id": "edge-mac-r7-20260912-v-001",
+    "endpoint": "wss://127.0.0.1:21450/",
+    "payload": {
+      "topic": "V",
+      "transaction_type": "V",
+      "field": "VehicleName",
+      "value": "synthetic-b2",
+      "value_type": "string",
+      "timestamp_source": "single-wrapper-created-at-ms"
+    },
+    "binding_path": "/Users/admin/teslatlas-lab/candidates/edge-macos-one-event-20260912-r7/actor/binding.json",
+    "binding_creation_stage": "profile preparation before zero-event runtime review",
+    "binding_event_authorized": false
+  },
+  "future_redacted_certificate_profile_receipt": {
+    "path": "hub/docs/development/edge-macos-one-event-certificate-profile-review-2026-09-12-r7.json",
+    "sha256": null,
+    "reason_hash_is_null": "The receipt and certificate bytes do not exist in this source-only preparation state; a hash must not be predicted or fabricated.",
+    "required_public_bindings": [
+      "cohort and exact roots",
+      "public certificate PEM and DER hashes",
+      "public CA hashes",
+      "certificate semantic verification results",
+      "resolved guest-host interface and listener",
+      "sealed identity hash without raw VIN",
+      "transaction ID, canonical endpoint and canonical payload hash",
+      "private actor binding path, mode and SHA-256",
+      "private-file path metadata without values or private-key hashes",
+      "source/staging receipt hashes and observer receipt hash"
+    ]
+  },
+  "failure_policy": "Any absent, unreadable, mismatched, expired, wrongly owned or wrongly addressed input closes r7 before runtime. No path substitution, certificate repair, identity carry-over or event authorization is permitted.",
+  "proof_boundary": "This is a source-only certificate/profile preparation specification. It proves no certificate, key, credential, guest, listener, TLS session, zero baseline, event, forwarding, service, release, production, vehicle or user acceptance."
+}
