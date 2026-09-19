@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Edge",
-  "updated_at": "2026-09-19T20:35:00Z",
-  "update_scope": "f6_current_source_handoff_prepared_f2_waiting_for_f1",
+  "updated_at": "2026-09-19T20:41:49Z",
+  "update_scope": "f6_current_source_handoff_review_accepted_metadata_delta_pending",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G5_ACCEPTED",
   "source_objective_state": "DURABLE_FORWARDING_AND_BINDING_ACCEPTED",
@@ -24,13 +24,18 @@
     "accepted_runtime_source_head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
     "checked_at": "2026-09-19T20:25:56Z",
     "current_source_handoff": {
-      "state": "PREPARED_SOURCE_ONLY",
+      "state": "INDEPENDENT_REVIEW_ACCEPTED_METADATA_DELTA_PENDING",
       "receipt": "docs/development/f6-current-source-handoff-2026-09-19-r1.json",
       "manifest": "docs/development/f6-current-source-manifest-c9965cd-2026-09-19.json",
       "manifest_sha256": "d1a21e7da8dc556e6c9b4d0a9860568f02d55193ca2dcfb0a714c41f3bbc7a52",
       "source_aggregate_sha256": "78a874f0163d082d997b2729233d5c4d2aec1673741070bcea8b3f0924ad70e1",
       "archive_sha256": "3ec2063d2765c6f8d016f27989bca88b548ff0d62f45c959f65c98ebf2158d62",
       "regular_file_count": 134,
+      "reviewed_unpushed_commit": "3430f706223f8f3eeeddbfba613a1dea4a88c0de",
+      "reviewed_commit_tree": "adbab5f3a8766822448c059f9bbb3c95e93169e3",
+      "reviewed_receipt_sha256": "3a44d7981cb017974a4189393501da051dbe75e8ffcafee9f68e8556bc6dddfb",
+      "independent_review": "ACCEPTED_NO_FINDINGS",
+      "review_timestamp_caveat": "Commit 3430f70 was created and frozen before independent review; review accepted those immutable unpushed bytes. This metadata-only delta is pending same-reviewer confirmation.",
       "f6_accepted": false
     }
   },
@@ -44,6 +49,7 @@
   "evidence_summary": [
     "r11 exact source/preparation was independently accepted as inactive; no guest runtime or event exists for that cohort.",
     "F6 current-source preparation freezes exact reachable commit c9965cd2584ed87ab7fbb7fdb0e66084092e9629 as a reproducible complete 134-file export and manifest; it creates no Edge catalog artifact and proves no runtime or lifecycle gate.",
+    "Independent Sol/high review accepted frozen unpushed commit 3430f706223f8f3eeeddbfba613a1dea4a88c0de with no findings after recomputing all source-handoff identities; the commit-before-review sequence is explicit and the review-metadata delta awaits same-reviewer confirmation.",
     "Prior narrow forwarding/recovery results remain historical; expired r11 credentials and closed cohorts cannot be reused.",
     "G5 accepted on fresh Debian 13 ARM64 cohort r5: exactly one guarded V event produced one encrypted admission, survived Hub outage and Edge restart with stable batch/record identity, committed before occurrence-bound ACK, projected one synthetic-b2 vehicle, advanced frontier 0 to 1, drained pending/gaps to zero, and remained durable through Hub restart.",
     "The r4 helper/receiver mismatch was closed without replay; the exact pinned empty-MessageID ACK contract and lane-only V mapping passed focused Go and live receiver/bridge tests before r5.",
@@ -110,6 +116,7 @@
     "No real-data parity or production acceptance",
     "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
     "The current-source export and complete manifest are source-only preparation; no Edge artifact belongs in the Hub catalog and F6 remains open",
+    "Independent acceptance is bounded to the exact source-only handoff/catalog input; it does not admit an Edge package or satisfy runtime, lifecycle, F2, F6 or F7 acceptance",
     "Viewer excluded; x86/Intel paused"
   ]
 }

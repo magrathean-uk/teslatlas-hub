@@ -22,6 +22,13 @@ export with a per-file manifest. This is source-only preparation: the Hub catalo
 does not admit an Edge artifact, and no build, install, runtime, F2, F6 or F7 claim
 follows from the handoff.
 
+Independent Sol/high review accepted frozen unpushed commit `3430f70` with no
+findings after recomputing the manifest, archive and aggregate identities. The
+commit preceded review; the review applies to those immutable bytes, while the
+metadata-only review record remains pending same-reviewer delta confirmation.
+The accepted boundary is still source-only catalog input, not an Edge artifact
+or runtime/lifecycle gate.
+
 ## Required completion
 
 - **F0:** inventory every Edge/receiver claim: receiver mTLS and bearer isolation,

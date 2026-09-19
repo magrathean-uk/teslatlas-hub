@@ -129,8 +129,26 @@
     "runtime_or_build_started": false,
     "credential_or_private_data_read": false
   },
+  "independent_review": {
+    "state": "ACCEPTED",
+    "reviewer_class": "gpt-5.6-sol/high independent technical review",
+    "review_completion_reported_at": "2026-09-19T20:41:49Z",
+    "findings": [],
+    "blocking_finding_count": 0,
+    "identity_recomputation": "PASS",
+    "reviewed_unpushed_commit": "3430f706223f8f3eeeddbfba613a1dea4a88c0de",
+    "reviewed_commit_tree": "adbab5f3a8766822448c059f9bbb3c95e93169e3",
+    "reviewed_commit_time": "2026-09-19T21:32:53+01:00",
+    "reviewed_receipt_sha256": "3a44d7981cb017974a4189393501da051dbe75e8ffcafee9f68e8556bc6dddfb",
+    "reviewed_manifest_sha256": "d1a21e7da8dc556e6c9b4d0a9860568f02d55193ca2dcfb0a714c41f3bbc7a52",
+    "reviewed_archive_sha256": "3ec2063d2765c6f8d016f27989bca88b548ff0d62f45c959f65c98ebf2158d62",
+    "reviewed_source_aggregate_sha256": "78a874f0163d082d997b2729233d5c4d2aec1673741070bcea8b3f0924ad70e1",
+    "timestamp_caveat": "The receipt recorded_at value describes source-export verification, not review completion. Commit 3430f706223f8f3eeeddbfba613a1dea4a88c0de was created and frozen before independent review. The review then accepted those immutable unpushed bytes. This metadata-only delta is not part of the reviewed commit and remains pending same-reviewer delta confirmation.",
+    "bounded_conclusion": "The exact source handoff is accepted as a source-only catalog input. No Edge package or Hub catalog artifact exists, and no runtime, lifecycle, F2, F6 or F7 acceptance follows."
+  },
   "claims": {
     "current_source_handoff_prepared": true,
+    "independent_source_handoff_review_accepted": true,
     "runtime_accepted": false,
     "f2_accepted": false,
     "f6_accepted": false,
