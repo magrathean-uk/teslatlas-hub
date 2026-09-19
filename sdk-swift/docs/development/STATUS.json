@@ -1,19 +1,22 @@
 {
   "schema_version": 2,
   "product": "Swift SDK",
-  "updated_at": "2026-09-19T10:30:43Z",
-  "update_scope": "post_adoption_next_phase_planning_no_execution",
-  "programme": "2026-09-18-app-v7-readiness",
+  "updated_at": "2026-09-19T11:04:10Z",
+  "update_scope": "full_product_completion_planning_no_execution",
+  "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G6_G7_ACCEPTED",
   "source_objective_state": "EXTERNAL_CONSUMER_AND_BINDING_ACCEPTED",
   "current_gate_ids": [],
+  "completion_gate_ids": ["F0", "F3", "F5", "F6", "F7"],
+  "accepted_receipts_immutable": true,
+  "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": [
     "G3",
     "G6",
     "G7"
   ],
-  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
-  "objective": "Preserve the accepted App-facing Swift boundary and verify the declared macOS 14 minimum floor.",
+  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Complete all three public SwiftPM products on iOS 17, macOS 14 Apple silicon and supported Linux ARM64, including package lifecycle, mandatory real-input semantics and final installed consumers.",
   "source": {
     "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
     "branch": "main",
@@ -42,19 +45,21 @@
     "../docs/development/APP_V7_READINESS.md"
   ],
   "remaining": [
-    "L2: independently verify the declared macOS 14 Apple-silicon package floor in an isolated supported guest.",
-    "The macOS 13 Hub-floor VM remains below the Swift SDK floor and is not a Swift acceptance target.",
-    "iOS 17 floor/host evidence, publication and real-data semantics remain separate lanes."
+    "F0: inventory all three public products and exact iOS 17, macOS 14, Linux ARM64 and Swift 6 claims.",
+    "F3: prove full public behavior in clean external consumers on every active declared platform floor.",
+    "F5: consume mandatory fresh named-source and passive semantic evidence.",
+    "F6-F7: prove reproducible SwiftPM source lifecycle, Hub-catalog integration and final combined consumers."
   ],
   "next_goal_draft": {
-    "id": "L2_SWIFT_MACOS14_FLOOR",
+    "id": "FULL_SWIFT_SDK_F0_F7",
     "state": "DRAFT_NOT_STARTED",
-    "objective": "Resolve and build the exact accepted TeslatlasCurrentHub package on macOS 14 arm64 and prove the bounded public auth/read/recovery journey against a fresh exact Hub cohort.",
+    "objective": "Complete all three SwiftPM products on their declared active platforms and prove reproducible distribution and final installed consumers.",
     "acceptance_evidence": [
-      "Exact macOS, Xcode/Swift, source manifest, Package.swift and profile identities",
-      "External release consumer linked through TeslatlasCurrentHub",
-      "TLS, claim/replay rejection, current/history, rotation and Hub restart recovery",
-      "Private-root, credential, process and listener cleanup"
+      "F0 public-surface and platform-floor ledger",
+      "F3 macOS 14, SDK-owned iOS 17 and supported Linux ARM64 external-consumer receipts",
+      "F5 real-input decoding and history semantic receipt",
+      "F6 deterministic SwiftPM source, docs, update/removal and catalog receipt",
+      "F7 combined installed consumer and cleanup receipt"
     ],
     "execution_authorized": false
   },
