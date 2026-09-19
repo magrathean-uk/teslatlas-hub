@@ -1,15 +1,18 @@
 {
   "schema_version": 2,
   "product": "TypeScript SDK",
-  "updated_at": "2026-09-19T10:30:43Z",
-  "update_scope": "post_adoption_next_phase_planning_no_execution",
-  "programme": "2026-09-18-app-v7-readiness",
+  "updated_at": "2026-09-19T11:04:10Z",
+  "update_scope": "full_product_completion_planning_no_execution",
+  "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G4_ACCEPTED",
   "source_objective_state": "PACKED_NODE_BROWSER_AND_BINDING_ACCEPTED",
   "current_gate_ids": [],
+  "completion_gate_ids": ["F0", "F3", "F5", "F6", "F7"],
+  "accepted_receipts_immutable": true,
+  "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": ["G3", "G4"],
-  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
-  "objective": "Preserve the accepted Node/browser binding and prepare a reproducible unpublished npm distribution candidate.",
+  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Complete every documented TypeScript SDK Node/browser contract, support claim, reproducible package lifecycle, mandatory real-input semantics and final installed consumer journey.",
   "source": {
     "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
     "branch": "main",
@@ -37,19 +40,21 @@
     "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json"
   ],
   "remaining": [
-    "No TypeScript G3/G4 acceptance work remains for the current programme.",
-    "L3: deterministic unpublished npm candidate, truthful runtime support policy and clean caller-owned install/import/removal proof.",
-    "Rerun consumer setup/recovery only for a source, archive, protocol or target delta."
+    "F0: inventory and close every root, Node, browser, current-Hub and rich-profile support claim.",
+    "F3: prove full public behavior from a clean packed consumer on all declared active runtime/browser floors.",
+    "F5: consume mandatory fresh real-input semantic evidence.",
+    "F6-F7: deliver reproducible package/catalog lifecycle and pass final installed Node/browser journeys."
   ],
   "next_goal_draft": {
-    "id": "L3_TYPESCRIPT_REPRODUCIBLE_DISTRIBUTION",
+    "id": "FULL_TYPESCRIPT_SDK_F0_F7",
     "state": "DRAFT_NOT_STARTED",
-    "objective": "Create a deterministic publish-ready but unpublished npm candidate and prove clean offline install/import/removal without a Hub runtime.",
+    "objective": "Complete all documented SDK contracts and support claims, then prove reproducible package lifecycle and final installed Node/browser consumers.",
     "acceptance_evidence": [
-      "Exact source, lockfile, generated output and ordered archive manifest",
-      "Archive SHA-256, exports, licence, docs and accepted Protocol lock",
-      "Fresh root, Node and browser entry imports with no service, listener or credential",
-      "Caller-owned cleanup and explicit not-published status"
+      "F0 claim ledger and exact Protocol/generated binding",
+      "F3 clean external Node and real-browser full-surface receipts",
+      "F5 real-input field/unit/null/history semantic receipt",
+      "F6 deterministic archive, docs, update/removal and Hub-catalog receipt",
+      "F7 combined installed consumer and cleanup receipt"
     ],
     "execution_authorized": false
   },
