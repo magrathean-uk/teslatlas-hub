@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import type { HubCredential, HubCredentialStore } from "../../src/hub/models.js";
-import { createHubClient } from "../../src/hub/client.js";
+import { createHubClient as createBrowserHubClient } from "../../src/browser.js";
+import { createHubClient as createCoreHubClient } from "../../src/hub/client.js";
+import type {
+  CreateHubClientOptions,
+  HubCredential,
+  HubCredentialStore,
+} from "../../src/hub/models.js";
 import { asStrongEntityTag } from "../../src/http/strong-etag.js";
 
 const hubId = "11111111-1111-4111-8111-111111111111";
@@ -45,6 +50,27 @@ function queuedFetch(responses: Response[]) {
   return { fetch, requests };
 }
 
+function createHubClient(options: CreateHubClientOptions) {
+  const fetch = options.fetch;
+  return createCoreHubClient({
+    ...options,
+    ...(options.claimTransport !== undefined
+      ? { claimTransport: options.claimTransport }
+      : fetch === undefined
+        ? {}
+        : {
+            claimTransport: ({ url, body, signal }) =>
+              fetch(url, {
+                method: "POST",
+                redirect: "error",
+                signal,
+                body,
+                headers: { "Content-Type": "application/json" },
+              }),
+          }),
+  });
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -79,6 +105,28 @@ async function discoveryResponse(capabilities?: readonly string[]): Promise<Resp
 }
 
 describe("current Hub client", () => {
+  it("refuses pairing before network when no pin-capable claim transport is available", async () => {
+    const requests: Request[] = [];
+    const client = createBrowserHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials: new MemoryCredentials(),
+      fetch: async (input, init) => {
+        requests.push(new Request(input, init));
+        return discoveryResponse();
+      },
+    });
+    const invitation = JSON.parse(await example("invitation"));
+    invitation.endpoint = endpoint;
+    invitation.expiresAtMs = Date.now() + 60_000;
+    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${invitation.pairingId}&secret=${invitation.secret}&tls_pin=${invitation.tlsPin}`;
+
+    await expect(client.claimPairing(invitation, "Browser device")).rejects.toMatchObject({
+      code: "hub_tls_pin_unavailable",
+    });
+    expect(requests).toEqual([]);
+  });
+
   it("discovers without credentials and accepts discovery without an ETag", async () => {
     const credentials = new MemoryCredentials();
     credentials.credential = {

@@ -41,11 +41,18 @@ caller-owned credential store. This dedicated adapter preserves the richer
 `createClient` API and exposes discovery, health/readiness, pairing, credential
 rotation, vehicles, current state, and drives.
 
-The current-Hub adapter uses ordinary Fetch certificate and hostname trust. It
-does not verify the invitation `tlsPin` during a request. Pairing expects the
-operator to obtain an invitation from Hub's `pair --json` command and to learn
-the expected Hub UUID through trusted setup context; the invitation itself does
-not contain that UUID.
+The Node current-Hub adapter keeps ordinary CA and hostname verification and,
+on the same new TLS connection, verifies the invitation `tlsPin` against the
+SHA-256 of the connected leaf certificate's DER bytes before claim bytes are
+sent. Pairing expects the operator to obtain an invitation from Hub's
+`pair --json` command and to learn the expected Hub UUID through trusted setup
+context; the invitation itself does not contain that UUID.
+
+Browser Fetch does not expose the peer certificate, so the browser adapter
+fails `claimPairing` with `HubTlsPinUnavailableError` before discovery or claim
+network I/O unless the caller supplies a pin-capable `claimTransport` (for
+example, a trusted native bridge). Browser reads and rotation continue to use
+normal Web PKI and caller-owned credentials; the SDK never disables TLS checks.
 
 ## Current-Hub consumer
 
@@ -71,7 +78,9 @@ node /tmp/teslatlas-hub-consumer/node.mjs \
   --invitation-file "$INVITATION_FILE"
 ```
 
-The browser consumer is a static example served from loopback:
+The browser consumer is a static example served from loopback. Provision its
+endpoint- and Hub-bound credential envelope with the pin-capable Node path or a
+trusted native bridge; do not paste an invitation into browser JavaScript:
 
 ```bash
 npm --prefix /tmp/teslatlas-hub-consumer run browser
@@ -79,10 +88,12 @@ npm --prefix /tmp/teslatlas-hub-consumer run browser
 
 Hub must allow the exact page origin, and the browser must trust the endpoint
 certificate. Browser Fetch can expose a generic CORS or TLS error when either
-condition fails. The example keeps credentials in memory, awaits logout before
-disposal, and requires a new invitation after a 401. It does not poll or scan
-for Hub instances. See `examples/hub/` for the five source files and the
-compatibility guide for the complete API contract.
+condition fails. The example verifies the credential envelope against the
+entered endpoint and Hub UUID, clears the input after ingestion, keeps the
+credential in memory, awaits logout before disposal, and requires a newly
+provisioned credential after a 401. It does not poll or scan for Hub instances. See `examples/hub/`
+for the five source files and the compatibility guide for the complete API
+contract.
 
 ## Local verification
 
@@ -92,7 +103,9 @@ npx playwright install chromium
 npm run verify
 ```
 
-The locked toolchain uses Node.js `26.7.0` and npm `11.19.0`.
+The reproducibility toolchain is exactly Node.js `26.7.0` and npm `11.19.0`.
+Current runtime evidence covers that Node version and Chrome 153 on macOS 27;
+this package does not yet claim a broader accepted runtime or browser floor.
 
 ## Examples
 

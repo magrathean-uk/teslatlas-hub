@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,7 @@ function run(executable, args, cwd) {
 
 try {
   const tarballs = [];
+  const tarballPaths = [];
   for (const variant of ["clean", "stale"]) {
     const source = join(temporaryRoot, variant);
     await mkdir(source);
@@ -58,6 +59,7 @@ try {
     run(process.execPath, ["scripts/build.mjs"], source);
     const [report] = JSON.parse(run(npmExecutable, ["pack", "--json"], source));
     const tarball = join(source, report.filename);
+    tarballPaths.push(tarball);
     tarballs.push(await readFile(tarball));
 
     const consumer = join(temporaryRoot, `consumer-${variant}`);
@@ -135,8 +137,52 @@ console.log(JSON.stringify(Object.keys(validators).sort()));`,
     assert(!report.files.some((file) => file.path === "dist/obsolete.js"));
   }
   assert.deepEqual(tarballs[0], tarballs[1], "Stale dist must not change package bytes");
+  const lifecycleConsumer = join(temporaryRoot, "consumer-lifecycle");
+  await mkdir(lifecycleConsumer);
+  await writeFile(
+    join(lifecycleConsumer, "package.json"),
+    '{"name":"teslatlas-clean-consumer","private":true,"type":"module"}\n',
+  );
+  const installArguments = [
+    "install",
+    "--no-save",
+    "--package-lock=false",
+    "--ignore-scripts",
+    "--no-audit",
+    "--no-fund",
+    tarballPaths[0],
+  ];
+  run(npmExecutable, installArguments, lifecycleConsumer);
+  const importCheck = `
+    const root = await import("@teslatlas/sdk");
+    const node = await import("@teslatlas/sdk/node");
+    const browser = await import("@teslatlas/sdk/browser");
+    if (typeof root.TeslatlasError !== "function" || typeof root.createHubClient !== "undefined") throw new Error("invalid root exports");
+    if (typeof node.createClient !== "function" || typeof node.createHubClient !== "function") throw new Error("invalid Node exports");
+    if (typeof browser.createClient !== "function" || typeof browser.createHubClient !== "function") throw new Error("invalid browser exports");
+  `;
+  run(process.execPath, ["--input-type=module", "--eval", importCheck], lifecycleConsumer);
+  run(npmExecutable, installArguments, lifecycleConsumer);
+  run(process.execPath, ["--input-type=module", "--eval", importCheck], lifecycleConsumer);
+  run(
+    npmExecutable,
+    [
+      "uninstall",
+      "--no-save",
+      "--package-lock=false",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "@teslatlas/sdk",
+    ],
+    lifecycleConsumer,
+  );
+  await assert.rejects(access(join(lifecycleConsumer, "node_modules/@teslatlas/sdk")));
+  assert.throws(() =>
+    run(process.execPath, ["--input-type=module", "--eval", importCheck], lifecycleConsumer),
+  );
   console.log(
-    `Clean and stale builds produced identical packs; packed declaration consumers passed. SHA-256: ${createHash("sha256").update(tarballs[0]).digest("hex")}`,
+    `Clean and stale builds produced identical packs; packed declaration and native install/reinstall/removal consumers passed. SHA-256: ${createHash("sha256").update(tarballs[0]).digest("hex")}`,
   );
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

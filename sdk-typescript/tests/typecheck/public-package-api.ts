@@ -6,6 +6,7 @@ import type {
   TeslatlasClient,
 } from "@teslatlas/sdk";
 import { createHubClient } from "@teslatlas/sdk/browser";
+import { createHubClient as createNodeHubClient } from "@teslatlas/sdk/node";
 
 declare const client: TeslatlasClient;
 
@@ -27,4 +28,14 @@ const hubClient: HubClient = createHubClient({
   },
 });
 const discovery: Promise<HubDiscovery> = hubClient.discover().then((result) => result.value);
-void discovery;
+const nodeHubClient: HubClient = createNodeHubClient({
+  endpoint: "https://hub.example.invalid",
+  expectedHubId: "11111111-1111-4111-8111-111111111111",
+  credentials: {
+    load: () => credential,
+    save: () => undefined,
+    clear: () => undefined,
+  },
+  nodeTls: { ca: "test CA bytes" },
+});
+void [discovery, nodeHubClient];

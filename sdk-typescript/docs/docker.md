@@ -48,4 +48,7 @@ not need a published container port or a database volume.
 
 The browser example remains a separately served origin. Hub must allow its
 exact scheme, host, and port and the browser must trust the endpoint
-certificate. Docker does not remove those CORS and TLS requirements.
+certificate. Provision its endpoint- and Hub-bound credential envelope through
+the pin-capable Node path or a trusted native bridge; ordinary browser Fetch
+cannot enforce the invitation's raw leaf pin and therefore does not claim directly. Docker does
+not remove those CORS and TLS requirements.

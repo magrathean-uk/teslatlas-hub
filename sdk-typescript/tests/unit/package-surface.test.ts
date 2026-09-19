@@ -84,6 +84,8 @@ describe("package surface", () => {
     expect(files.has("dist/generated/hub-validators.js")).toBe(true);
     expect(files.has("dist/generated/hub-validators.d.ts")).toBe(true);
     expect(files.has("dist/hub/client.js")).toBe(true);
+    expect(files.has("dist/hub/node-claim-transport.js")).toBe(true);
+    expect(files.has("dist/hub/node-claim-transport.d.ts")).toBe(true);
     expect([...files].filter((path) => path.endsWith(".map"))).toEqual([]);
     expect(
       [...files].filter((path) =>

@@ -48,10 +48,22 @@ save was already dispatched, disposal cannot cancel that caller I/O, so callers
 that need deletion must await `logout()` before disposal.
 Neither operation claims to revoke credentials at the Hub.
 
-Invitation TLS pins are validated as invitation data, but browser Fetch cannot
-apply a certificate fingerprint. Browser callers must use their normal trusted
-PKI and the invitation's exact endpoint; the SDK never disables certificate
-validation or derives a replacement pin from discovery.
+The Node entry point verifies normal CA/hostname trust and the invitation's
+lowercase DER leaf SHA-256 on the same new TLS connection before it sends the
+claim body. `nodeTls.ca` configures CA bytes for that claim connection; callers
+using a private CA must also configure their caller-owned Fetch transport (or
+Node process trust) for discovery and later reads. A caller-supplied
+`claimTransport` replaces the built-in Node claim transport and must enforce
+the same CA, hostname, connected-leaf pin, and pre-request ordering contract.
+
+Browser Fetch does not expose the connected certificate. The browser entry
+point therefore throws `HubTlsPinUnavailableError` before discovery or claim
+network I/O unless the caller supplies a pin-capable `claimTransport`, such as
+a trusted native bridge. Normal Web PKI remains enabled for browser reads and
+rotation; the SDK never disables certificate validation or pretends a discovery
+value proves the connected certificate. `HubTlsPinMismatchError` is the typed
+Node failure for a valid TLS peer whose connected leaf does not match the
+invitation.
 
 ## Results and errors
 

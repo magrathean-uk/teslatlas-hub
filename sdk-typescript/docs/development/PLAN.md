@@ -15,7 +15,7 @@ closed synthetic Mac Hub cohort. Preserve those receipts unchanged. They do not 
 the full public SDK surface, all documented profiles, a durable distribution workflow,
 support floors, named-source semantics or a combined installed ecosystem.
 
-`full_solution_state` is `NOT_ACCEPTED`; this goal is drafted and not started.
+`full_solution_state` is `NOT_ACCEPTED`. F0 passed independent review; F3 and F6 are active.
 
 ## Required completion
 
@@ -55,7 +55,8 @@ already accepted Chrome/Node tuple.
 
 ## Start and boundaries
 
-This plan does not authorize source changes, generation, package creation, tests,
-runtime, commit, push or publication. Preserve the dirty `main` tree and accepted G3/G4
-artifacts. Exclude App, Viewer, x86/amd64/Intel and Azure. Never embed or retain Hub,
-Tesla or pairing credentials in the package, examples or receipts.
+The sent goal authorizes bounded source changes, generation, tests, unpublished
+packages/runtimes and validated source commits/pushes. It does not authorize npm
+publication, releases, tags, CI, production or private-input reuse. Preserve the dirty
+`main` tree and accepted G3/G4 artifacts. Exclude App, Viewer, x86/amd64/Intel and
+Azure. Never embed or retain Hub, Tesla or pairing credentials.

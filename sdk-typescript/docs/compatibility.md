@@ -42,11 +42,23 @@ certificate-error bypass flags are outside the acceptance contract.
 
 For a real current-Hub run, pair with an invitation produced by Hub's
 `pair --json` command and supply the expected Hub UUID from trusted setup
-context. The invitation's `tlsPin` is validated as data but is not a browser or
-Node certificate verification mechanism. Browser callers need an exact
-allowlisted origin and a real `OPTIONS` preflight; denied-origin and untrusted
-certificate failures may surface as generic Fetch errors. The SDK does not
-perform mDNS discovery, background polling, or automatic reconnect/rotation.
+context. The Node entry point validates CA trust and hostname, then compares
+the invitation `tlsPin` with the connected leaf DER SHA-256 before request
+bytes. `nodeTls.ca` affects only that native claim connection; private-CA users
+must separately configure the caller-owned Fetch path used by discovery and
+authenticated reads. A custom `claimTransport` must provide the same guarantee.
+
+Browser Fetch cannot inspect the connected certificate. Browser
+`claimPairing` therefore fails with `hub_tls_pin_unavailable` before network I/O
+unless an embedding supplies a pin-capable claim transport. Browser reads and
+rotation use normal Web PKI, require an exact allowlisted origin and real
+`OPTIONS` preflights, and can surface denied-origin or untrusted-certificate
+failures as generic Fetch errors. The SDK does not perform mDNS discovery,
+background polling, or automatic reconnect/rotation.
+
+The exact reproducibility tuple is Node 26.7.0 and npm 11.19.0. Current accepted
+runtime evidence is Node 26.7.0 and Chrome 153 on macOS 27; no broader Node,
+browser, or operating-system floor is claimed by that evidence.
 
 `logout()` is the local credential-store operation and is distinct from server
 revocation. Consumers await it before `dispose()` and must pair again after a

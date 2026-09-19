@@ -30,8 +30,10 @@ package export map does not expose them as consumer subpaths.
 
 `@teslatlas/sdk/browser` and `@teslatlas/sdk/node` call the same session and
 client implementation. Both accept an injected Fetch implementation for
-deterministic tests and embedding-specific network policy. The examples and
-cross-runtime suites use fixture responses only.
+deterministic tests and embedding-specific network policy. Current-Hub claim
+transport is intentionally separate: Node supplies a native same-connection
+DER leaf-pin check, while browser pairing fails closed unless an embedding
+provides a pin-capable claim transport. Browser reads retain normal Web PKI.
 
 The current-Hub adapter is a separate, static-endpoint client so the richer
 `createClient` negotiation and public API remain intact. It shares safe Fetch
@@ -41,6 +43,12 @@ logout or disposal provides the required abort and identity reset boundary
 without inventing a mutable endpoint API. Logout serializes SDK-owned credential
 mutations and clears caller state after those writes; disposal is synchronous,
 preserves existing credentials, and rejects stale operation success.
+
+The Node claim transport opens a non-pooled TLS connection, retains Node's CA
+and hostname validation, checks the connected leaf DER SHA-256, and only then
+sends the secret-bearing request. It never changes global TLS settings. An
+injected claim transport is caller-owned and carries the same security
+obligation; ordinary injected Fetch remains responsible for non-claim routes.
 
 ## Event and command boundaries
 

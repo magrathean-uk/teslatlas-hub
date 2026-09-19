@@ -31,6 +31,8 @@ const required = [
   "dist/generated/hub-protocol.d.ts",
   "dist/generated/hub-validators.d.ts",
   "dist/generated/hub-validators.js",
+  "dist/hub/node-claim-transport.d.ts",
+  "dist/hub/node-claim-transport.js",
   "package.json",
 ];
 const forbiddenPrefixes = [

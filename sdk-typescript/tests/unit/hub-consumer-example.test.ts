@@ -153,7 +153,7 @@ describe("current Hub consumer example", () => {
     }
   });
 
-  it("runs the browser consumer against local Hub fixtures, scopes credentials, recovers after outage, and re-pairs after 401", async () => {
+  it("runs the browser consumer with caller-provisioned credentials, scopes them, and recovers after outage", async () => {
     const firstHub = await startHubFixture({ hubId: hubA });
     const secondHub = await startHubFixture({ hubId: hubB, rejectAuthorization: true });
     const browserServer = await startBrowserServer();
@@ -162,8 +162,8 @@ describe("current Hub consumer example", () => {
 
     try {
       await page.goto(browserServer.url, { waitUntil: "domcontentloaded" });
-      await fillConnection(page, firstHub, await invitationFor(firstHub));
-      await page.getByRole("button", { name: "Connect / pair" }).click();
+      await fillConnection(page, firstHub, credentialFor(firstHub));
+      await page.getByRole("button", { name: "Connect", exact: true }).click();
       await expectStatus(page, {
         connected: true,
         hubId: hubA,
@@ -171,10 +171,19 @@ describe("current Hub consumer example", () => {
         current: vehicleId,
         drives: "page",
       });
+      await expectInputValue(page, "#credential", "");
 
-      await fillConnection(page, secondHub, "");
-      await page.getByRole("button", { name: "Connect / pair" }).click();
-      await expectText(page, "Authentication expired; pair again with a new invitation.");
+      await fillConnection(page, secondHub, credentialFor(firstHub));
+      await page.getByRole("button", { name: "Connect", exact: true }).click();
+      await expectText(page, "credential_binding_mismatch");
+      expect(secondHub.requests).toEqual([]);
+
+      await page.locator("#credential").fill("");
+      await page.getByRole("button", { name: "Connect", exact: true }).click();
+      await expectText(
+        page,
+        "Authentication expired; provision a new credential through a pin-capable client.",
+      );
       await expect
         .poll(() => page.getByRole("button", { name: "Refresh" }).isDisabled())
         .toBe(true);
@@ -189,8 +198,8 @@ describe("current Hub consumer example", () => {
           .every((request) => request.authorization !== `Bearer ${accessToken}`),
       ).toBe(true);
 
-      await page.locator("#invitation").fill(await invitationFor(secondHub));
-      await page.getByRole("button", { name: "Connect / pair" }).click();
+      await page.locator("#credential").fill(credentialFor(secondHub));
+      await page.getByRole("button", { name: "Connect", exact: true }).click();
       await expectStatus(page, {
         connected: true,
         hubId: hubB,
@@ -201,15 +210,18 @@ describe("current Hub consumer example", () => {
 
       secondHub.mode = "unauthorized";
       await page.getByRole("button", { name: "Refresh" }).click();
-      await expectText(page, "Authentication expired; pair again with a new invitation.");
-      await expectInputValue(page, "#invitation", "");
+      await expectText(
+        page,
+        "Authentication expired; provision a new credential through a pin-capable client.",
+      );
+      await expectInputValue(page, "#credential", "");
       await expect
         .poll(() => page.getByRole("button", { name: "Refresh" }).isDisabled())
         .toBe(true);
 
       secondHub.mode = "normal";
-      await page.locator("#invitation").fill(await invitationFor(secondHub));
-      await page.getByRole("button", { name: "Connect / pair" }).click();
+      await page.locator("#credential").fill(credentialFor(secondHub));
+      await page.getByRole("button", { name: "Connect", exact: true }).click();
       await expectStatus(page, {
         connected: true,
         hubId: hubB,
@@ -405,30 +417,26 @@ async function writeCredential(path: string, endpoint: string, hubId: string): P
   );
 }
 
-async function invitationFor(hub: HubFixture): Promise<string> {
-  const pairingId = hub.hubId;
-  const secret = "1".repeat(64);
-  const tlsPin = "2".repeat(64);
-  const endpoint = hub.url;
-  const pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${pairingId}&secret=${secret}&tls_pin=${tlsPin}`;
+function credentialFor(hub: HubFixture): string {
   return JSON.stringify({
-    endpoint,
-    expiresAtMs: Date.now() + 3_600_000,
-    pairingId,
-    pairingUri,
-    secret,
-    tlsPin,
+    endpoint: hub.url,
+    hubId: hub.hubId,
+    credential: {
+      accessToken: hub.hubId === hubB ? secondAccessToken : accessToken,
+      deviceId,
+      expiresAtMs: Date.now() + 3_600_000,
+    },
   });
 }
 
 async function fillConnection(
   page: Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>["newPage"]>>,
   hub: HubFixture,
-  invitation: string,
+  credential: string,
 ): Promise<void> {
   await page.locator("#endpoint").fill(hub.url);
   await page.locator("#hub-id").fill(hub.hubId);
-  await page.locator("#invitation").fill(invitation);
+  await page.locator("#credential").fill(credential);
 }
 
 async function expectStatus(

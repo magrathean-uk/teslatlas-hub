@@ -10,15 +10,15 @@
       <h1>Teslatlas Hub browser consumer</h1>
       <label>Hub endpoint <input id="endpoint" type="url" autocomplete="url" /></label>
       <label>Expected Hub UUID <input id="hub-id" autocomplete="off" /></label>
-      <label>Invitation JSON (optional for an existing in-memory credential)
-        <textarea id="invitation" rows="8" autocomplete="off"></textarea>
+      <label>Endpoint- and Hub-bound credential envelope JSON (provision with the pin-capable Node client or a trusted native bridge)
+        <textarea id="credential" rows="8" autocomplete="off"></textarea>
       </label>
       <p>
-        <button id="connect" type="button">Connect / pair</button>
+        <button id="connect" type="button">Connect</button>
         <button id="refresh" type="button" disabled>Refresh</button>
         <button id="disconnect" type="button" disabled>Disconnect</button>
       </p>
-      <pre id="status" role="status">Enter a trusted HTTPS endpoint and expected UUID.</pre>
+      <pre id="status" role="status">Enter a Web-PKI-trusted HTTPS endpoint, expected UUID, and caller-owned credential.</pre>
     </main>
     <script type="module" src="/app.js"></script>
   </body>

@@ -70,6 +70,8 @@ export {
   HubClientDisposedError,
   HubHttpError,
   HubIdentityMismatchError,
+  HubTlsPinMismatchError,
+  HubTlsPinUnavailableError,
   UnsupportedHubMethodError,
   VehicleIdentityMismatchError,
 } from "./hub/client.js";
@@ -77,6 +79,8 @@ export type {
   CreateHubClientOptions,
   HubCapability,
   HubClaim,
+  HubClaimTransport,
+  HubClaimTransportRequest,
   HubClient,
   HubCredential,
   HubCredentialStore,

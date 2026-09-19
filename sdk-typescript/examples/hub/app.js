@@ -2,7 +2,7 @@ import { createHubClient } from "/sdk.js";
 
 const endpointInput = document.querySelector("#endpoint");
 const hubIdInput = document.querySelector("#hub-id");
-const invitationInput = document.querySelector("#invitation");
+const credentialInput = document.querySelector("#credential");
 const status = document.querySelector("#status");
 const connectButton = document.querySelector("#connect");
 const refreshButton = document.querySelector("#refresh");
@@ -19,12 +19,14 @@ disconnectButton.addEventListener("click", () => run(disconnect));
 async function connect() {
   const endpoint = required(endpointInput.value, "endpoint");
   const hubId = required(hubIdInput.value, "Hub UUID");
-  const invitationText = invitationInput.value.trim();
-  const invitation = invitationText.length > 0 ? parseInvitation(invitationText) : undefined;
+  const credentialText = credentialInput.value.trim();
+  const credential =
+    credentialText.length > 0 ? readCredentialEnvelope(credentialText, endpoint, hubId) : undefined;
+  credentialInput.value = "";
   const previousClient = client;
   previousClient?.dispose();
   client = undefined;
-  activeCredentials = createCredentialStore();
+  activeCredentials = createCredentialStore(credential);
   const nextClient = createHubClient({
     endpoint,
     expectedHubId: hubId,
@@ -36,10 +38,6 @@ async function connect() {
     const discovery = await nextClient.discover(requestOptions());
     await nextClient.health(requestOptions());
     await nextClient.readiness(requestOptions());
-    if (invitation !== undefined) {
-      await nextClient.claimPairing(invitation, "Teslatlas browser example", requestOptions());
-      invitationInput.value = "";
-    }
     await readHub(nextClient, discovery.value);
   } catch (error) {
     nextClient.dispose();
@@ -97,8 +95,8 @@ async function disconnect() {
       client = undefined;
       activeCredentials = undefined;
     }
-    invitationInput.value = "";
-    status.textContent = "Disconnected; pair again with a new invitation.";
+    credentialInput.value = "";
+    status.textContent = "Disconnected; provision a new credential through a pin-capable client.";
   }
 }
 
@@ -114,7 +112,8 @@ async function run(operation) {
   } catch (error) {
     if (isUnauthorized(error)) {
       await expireAuthentication();
-      status.textContent = "Authentication expired; pair again with a new invitation.";
+      status.textContent =
+        "Authentication expired; provision a new credential through a pin-capable client.";
     } else {
       status.textContent = formatError(error);
     }
@@ -126,8 +125,8 @@ async function run(operation) {
   }
 }
 
-function createCredentialStore() {
-  let credential;
+function createCredentialStore(initialCredential) {
+  let credential = initialCredential;
   return {
     load: () => credential,
     save: (value) => {
@@ -139,12 +138,24 @@ function createCredentialStore() {
   };
 }
 
-function parseInvitation(value) {
+function readCredentialEnvelope(value, expectedEndpoint, expectedHubId) {
+  let envelope;
   try {
-    return JSON.parse(value);
+    envelope = JSON.parse(value);
   } catch {
-    throw { code: "invalid_invitation_json" };
+    throw { code: "invalid_credential_json" };
   }
+  if (
+    envelope === null ||
+    typeof envelope !== "object" ||
+    envelope.endpoint !== expectedEndpoint ||
+    envelope.hubId !== expectedHubId ||
+    envelope.credential === null ||
+    typeof envelope.credential !== "object"
+  ) {
+    throw { code: "credential_binding_mismatch" };
+  }
+  return envelope.credential;
 }
 
 function requestOptions() {
@@ -157,7 +168,7 @@ async function expireAuthentication() {
   activeCredentials = undefined;
   await previousClient?.logout().catch(() => undefined);
   previousClient?.dispose();
-  invitationInput.value = "";
+  credentialInput.value = "";
 }
 
 function isUnauthorized(error) {

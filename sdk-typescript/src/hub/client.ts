@@ -1,10 +1,16 @@
-import { asSafeRequestId, ProtocolValidationError, TeslatlasError } from "../core/errors.js";
+import {
+  asSafeRequestId,
+  ProtocolValidationError,
+  TeslatlasError,
+  TransportError,
+} from "../core/errors.js";
 import { FetchTransport, type FetchImplementation } from "../http/fetch-transport.js";
 import { requireEmptyResponseBody } from "../http/empty-body.js";
 import { asStrongEntityTag, isStrongEntityTag } from "../http/strong-etag.js";
 import type {
   CreateHubClientOptions,
   HubCapability,
+  HubClaimTransport,
   HubClaim,
   HubClient,
   HubCredential,
@@ -82,6 +88,22 @@ export class HubClientDisposedError extends TeslatlasError<"client_disposed"> {
   }
 }
 
+export class HubTlsPinUnavailableError extends TeslatlasError<"hub_tls_pin_unavailable"> {
+  constructor() {
+    super("No transport capable of enforcing the invitation TLS leaf pin is available", {
+      code: "hub_tls_pin_unavailable",
+    });
+  }
+}
+
+export class HubTlsPinMismatchError extends TeslatlasError<"hub_tls_pin_mismatch"> {
+  constructor() {
+    super("Hub TLS leaf certificate does not match the invitation pin", {
+      code: "hub_tls_pin_mismatch",
+    });
+  }
+}
+
 export function createHubClient(options: CreateHubClientOptions): HubClient {
   return new StaticHubClient(options);
 }
@@ -90,6 +112,7 @@ class StaticHubClient implements HubClient {
   readonly #endpoint: URL;
   readonly #expectedHubId: string;
   readonly #credentials: CreateHubClientOptions["credentials"];
+  readonly #claimTransport: HubClaimTransport | undefined;
   readonly #transportOptions: {
     readonly baseUrl: URL;
     readonly fetch?: FetchImplementation;
@@ -110,6 +133,7 @@ class StaticHubClient implements HubClient {
       throw new ProtocolValidationError("expectedHubId");
     this.#expectedHubId = options.expectedHubId;
     this.#credentials = options.credentials;
+    this.#claimTransport = options.claimTransport;
     this.#ownerSignal = options.signal;
     this.#transportOptions = {
       baseUrl: this.#endpoint,
@@ -191,15 +215,28 @@ class StaticHubClient implements HubClient {
     if (new TextEncoder().encode(body).byteLength > maximumClaimRequestBytes) {
       throw new ProtocolValidationError("HubClaimRequest.size");
     }
+    const claimTransport = this.#claimTransport;
+    if (claimTransport === undefined) throw new HubTlsPinUnavailableError();
     await this.#ensureDiscovery(operation);
     this.#assertOperation(operation);
-    const result = await this.#writeClaim(
-      this.#unauthenticatedTransport,
-      `/v1/pairings/${encodeURIComponent(invitation.pairingId)}/claim`,
-      body,
-      operation,
-      "claim",
-    );
+    let response: Response;
+    try {
+      response = await claimTransport({
+        url: new URL(
+          `/v1/pairings/${encodeURIComponent(invitation.pairingId)}/claim`,
+          this.#endpoint,
+        ),
+        body,
+        tlsPin: invitation.tlsPin,
+        signal: operation.signal,
+      });
+    } catch (error) {
+      if (error instanceof TeslatlasError) throw error;
+      if (operation.signal.aborted) throw operation.signal.reason ?? error;
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      throw new TransportError();
+    }
+    const result = await this.#decodeClaimResponse(response, operation, "claim");
     this.#assertOperation(operation);
     requireUnexpiredClaim(result.value);
     const credential = asCredential(result.value);
@@ -432,6 +469,14 @@ class StaticHubClient implements HubClient {
       signal: operation.signal,
       ...(body === undefined ? {} : { body, headers: { "Content-Type": "application/json" } }),
     });
+    return this.#decodeClaimResponse(response, operation, route);
+  }
+
+  async #decodeClaimResponse(
+    response: Response,
+    operation: HubOperation,
+    route: "claim" | "rotate",
+  ): Promise<HubResponse<HubClaim>> {
     this.#assertOperation(operation);
     if (response.status !== 200) {
       if (route === "claim" && isClaimExtractorStatus(response.status)) {

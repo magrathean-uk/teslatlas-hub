@@ -1,25 +1,27 @@
 {
   "schema_version": 2,
   "product": "TypeScript SDK",
-  "updated_at": "2026-09-19T11:04:10Z",
-  "update_scope": "full_product_completion_planning_no_execution",
+  "updated_at": "2026-09-19T12:17:05Z",
+  "update_scope": "f3_ts02_node_tls_pin_and_f6_package_foundation_ready_for_review",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G4_ACCEPTED",
   "source_objective_state": "PACKED_NODE_BROWSER_AND_BINDING_ACCEPTED",
-  "current_gate_ids": [],
+  "current_gate_ids": ["F3", "F6"],
   "completion_gate_ids": ["F0", "F3", "F5", "F6", "F7"],
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": ["G3", "G4"],
-  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "planning_state": "FULL_PRODUCT_ACTIVE_F3_F6_TS02_SOURCE_READY",
   "objective": "Complete every documented TypeScript SDK Node/browser contract, support claim, reproducible package lifecycle, mandatory real-input semantics and final installed consumer journey.",
   "source": {
-    "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+    "head": "8c225547d29c123cc6136779187395643b8c6f0a",
     "branch": "main",
-    "dirty_entries": 57,
-    "checked_at": "2026-09-19T10:30:43Z"
+    "dirty_entries_at_goal_activation": 2,
+    "tracked_dirty_entries_at_goal_activation": 0,
+    "accepted_runtime_source_head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+    "checked_at": "2026-09-19T11:30:21Z"
   },
-  "current_worker": null,
+  "current_worker": "/root/f3_ts_tls_package",
   "model_policy": {
     "implementation": "gpt-5.6-sol/high",
     "exploration": "gpt-5.6-luna/max",
@@ -31,23 +33,27 @@
     "Chrome 153.0.8010.52 passed the real reviewed orchestration route with untrusted rejection, user-domain scoped trust and effective SSL verification, normal TLS, seven CORS preflights, discovery/readiness/current/drives/304/cursor/rotation and exact cleanup.",
     "The runner CDP-target and trust-hook payload defects were repaired with focused tests; the corrections are outside the packed archive, whose hash remains unchanged.",
     "Final Hub and task-owned Chrome processes, listeners, profiles, credentials, certificates and private runtimes are absent.",
-    "G3 final admission binds the G4 evidence to product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926 using the accepted content-bound G2/G4 Hub fingerprint; the scoped checker and focused Protocol lock/readback pass under r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865."
+    "G3 final admission binds the G4 evidence to product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926 using the accepted content-bound G2/G4 Hub fingerprint; the scoped checker and focused Protocol lock/readback pass under r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865.",
+    "TS-02 source correction is ready for review: Node validates normal TLS plus the invitation DER leaf SHA-256 before claim bytes, browser claim fails closed without a pin-capable caller transport, and synthetic success/mismatch/no-secret-leak tests pass.",
+    "The exact Node 26.7.0/npm 11.19.0 package gate produced a deterministic 83-member unpublished archive SHA-256 42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7; clean install/import/reinstall/removal passed.",
+    "Independent review found and the source now closes a process-wide TLS-disable bypass, binds browser example credentials to endpoint plus Hub UUID, and safely rejects null-body or out-of-range native claim statuses. The updated Chrome cross-Hub regression is added but not run while the shared heavy lane is occupied."
   ],
   "evidence_paths": [
     "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
     "docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json",
     "../hub/docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r3.json",
-    "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+    "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+    "docs/development/f3-f6-node-tls-package-foundation-2026-09-19-r1.json"
   ],
   "remaining": [
-    "F0: inventory and close every root, Node, browser, current-Hub and rich-profile support claim.",
-    "F3: prove full public behavior from a clean packed consumer on all declared active runtime/browser floors.",
+    "F0 accepted: the independently reviewed workspace ledger maps every root, Node, browser, current-Hub and rich-profile claim.",
+    "F3: review the TS-02 source correction, then prove the packed Node pin path and browser Web PKI/read path against the exact final F1 Hub on every declared active floor.",
     "F5: consume mandatory fresh real-input semantic evidence.",
-    "F6-F7: deliver reproducible package/catalog lifecycle and pass final installed Node/browser journeys."
+    "F6-F7: run ARM64 Docker and predecessor-update evidence, integrate the exact package into the Hub catalog, and pass final installed Node/browser journeys."
   ],
   "next_goal_draft": {
     "id": "FULL_TYPESCRIPT_SDK_F0_F7",
-    "state": "DRAFT_NOT_STARTED",
+    "state": "ACTIVE_F3_F6",
     "objective": "Complete all documented SDK contracts and support claims, then prove reproducible package lifecycle and final installed Node/browser consumers.",
     "acceptance_evidence": [
       "F0 claim ledger and exact Protocol/generated binding",
@@ -56,7 +62,7 @@
       "F6 deterministic archive, docs, update/removal and Hub-catalog receipt",
       "F7 combined installed consumer and cleanup receipt"
     ],
-    "execution_authorized": false
+    "execution_authorized": true
   },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json",
@@ -69,11 +75,13 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G4 runtime accepted and closed; G3 metadata admitted; no private handoff or browser runtime remains",
+  "runtime_state": "G4 runtime accepted and closed; G3 metadata admitted; TS-02 source/package foundation is locally verified with synthetic TLS only; no final Hub handoff or task-owned runtime remains",
   "acceptance_limits": [
     "No App integration acceptance",
     "No real-data parity or production acceptance",
     "Current macOS 27.0 Apple silicon was exercised; the documented macOS 13 minimum floor was not independently run",
+    "Ordinary browser Fetch cannot enforce the invitation raw leaf pin; browser claim fails closed unless a caller supplies a pin-capable transport",
+    "The new 83-member archive is unpublished source/package evidence and has not run against the final F1 Hub or ARM64 Docker path",
     "Viewer excluded; x86/Intel paused"
   ]
 }

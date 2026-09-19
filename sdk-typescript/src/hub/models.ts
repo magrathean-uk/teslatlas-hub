@@ -97,11 +97,29 @@ export interface HubRequestOptions {
   readonly signal?: AbortSignal;
 }
 
+/**
+ * A claim request whose transport must validate normal TLS trust and the expected connected-leaf
+ * DER SHA-256 before it sends any request bytes.
+ */
+export interface HubClaimTransportRequest {
+  readonly url: URL;
+  readonly body: string;
+  readonly tlsPin: string;
+  readonly signal: AbortSignal;
+}
+
+/**
+ * A caller-owned claim transport. Implementations must validate CA trust, hostname, and `tlsPin`
+ * on the same TLS connection before transmitting `body`.
+ */
+export type HubClaimTransport = (request: HubClaimTransportRequest) => Promise<Response>;
+
 export interface CreateHubClientOptions {
   readonly endpoint: string | URL;
   readonly expectedHubId: string;
   readonly credentials: HubCredentialStore;
   readonly fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  readonly claimTransport?: HubClaimTransport;
   readonly signal?: AbortSignal;
 }
 
