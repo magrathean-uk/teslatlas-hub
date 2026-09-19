@@ -2,14 +2,16 @@
 # syntax=docker/dockerfile:1.7
 
 FROM rust:1.98-bookworm AS builder
+ARG TESLATLAS_HUB_SOURCE_COMMIT
 WORKDIR /build
 
 # Keep dependency resolution bound to Cargo.lock and outside the runtime layer.
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock build.rs source_identity.rs ./
 COPY src ./src
 COPY examples ./examples
 COPY tests ./tests
-RUN cargo build --locked --release --bin teslatlas-hub
+RUN TESLATLAS_HUB_SOURCE_COMMIT="${TESLATLAS_HUB_SOURCE_COMMIT}" \
+    cargo build --locked --release --bin teslatlas-hub
 
 FROM debian:13-slim AS runtime
 ARG HUB_UID=10001

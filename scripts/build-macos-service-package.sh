@@ -13,7 +13,7 @@ export COPYFILE_DISABLE
 
 usage() {
     cat <<'EOF'
-Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --fleet-telemetry-binary PATH --version VERSION --legal-bundle PATH --go-proxy-evidence PATH --fleet-telemetry-evidence PATH [--output PATH]
+Usage: scripts/build-macos-service-package.sh --binary PATH --proxy-binary PATH --fleet-telemetry-binary PATH --version VERSION --source-commit 40_HEX --legal-bundle PATH --go-proxy-evidence PATH --fleet-telemetry-evidence PATH [--output PATH]
 
 Builds an unsigned local macOS 13+ arm64 installer package. The package never
 installs or starts the Hub during its build.
@@ -40,6 +40,22 @@ require_hub_version() {
 }
 # END TESTABLE HUB VERSION HELPER
 
+# BEGIN TESTABLE HUB SOURCE HELPER
+require_hub_source_commit() {
+    source_binary=$1
+    expected_commit=$2
+    source_output=$(
+        source_status=0
+        "$source_binary" source 2>&1 || source_status=$?
+        printf '%s' "__TESLATLAS_HUB_SOURCE_STATUS_${source_status}__"
+    )
+    expected_output=$(printf '%s/tree/%s\n%s' \
+        'https://github.com/magrathean-uk/teslatlas-hub' "$expected_commit" \
+        '__TESLATLAS_HUB_SOURCE_STATUS_0__')
+    [ "$source_output" = "$expected_output" ]
+}
+# END TESTABLE HUB SOURCE HELPER
+
 # BEGIN TESTABLE MACH-O HELPER
 is_executable_macho() {
     /usr/bin/otool -hv "$1" 2>/dev/null | /usr/bin/awk '
@@ -61,6 +77,7 @@ binary=
 proxy_binary=
 fleet_telemetry_binary=
 version=
+source_commit=
 output=
 legal_bundle=
 go_proxy_evidence=
@@ -85,6 +102,11 @@ while [ "$#" -gt 0 ]; do
         --version)
             [ "$#" -ge 2 ] || die "--version requires a value"
             version=$2
+            shift 2
+            ;;
+        --source-commit)
+            [ "$#" -ge 2 ] || die "--source-commit requires a value"
+            source_commit=$2
             shift 2
             ;;
         --output)
@@ -122,11 +144,14 @@ done
 [ -n "$proxy_binary" ] || die "--proxy-binary is required"
 [ -n "$fleet_telemetry_binary" ] || die "--fleet-telemetry-binary is required"
 [ -n "$version" ] || die "--version is required"
+[ -n "$source_commit" ] || die "--source-commit is required"
 [ -n "$legal_bundle" ] || die "--legal-bundle is required"
 [ -n "$go_proxy_evidence" ] || die "--go-proxy-evidence is required"
 [ -n "$fleet_telemetry_evidence" ] || die "--fleet-telemetry-evidence is required"
 /usr/bin/printf '%s\n' "$version" | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
     || die "version must be semver with an optional prerelease: $version"
+/usr/bin/printf '%s\n' "$source_commit" | /usr/bin/grep -Eq '^[0-9a-f]{40}$' \
+    || die "source commit must be exactly 40 lowercase hexadecimal characters"
 package_base_version=${version%%-*}
 case "$version" in
     *-alpha.[0-9]*) package_version="${package_base_version}a${version##*-alpha.}" ;;
@@ -139,6 +164,8 @@ esac
     || die "binary must be an executable regular file"
 require_hub_version "$binary" "$version" \
     || die "Hub binary version does not match package version"
+require_hub_source_commit "$binary" "$source_commit" \
+    || die "Hub binary source identity does not match package source commit"
 [ -f "$proxy_binary" ] && [ ! -L "$proxy_binary" ] && [ -x "$proxy_binary" ] \
     || die "proxy binary must be an executable regular file"
 [ -f "$fleet_telemetry_binary" ] && [ ! -L "$fleet_telemetry_binary" ] && [ -x "$fleet_telemetry_binary" ] \

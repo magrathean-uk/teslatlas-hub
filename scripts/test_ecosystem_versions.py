@@ -22,7 +22,6 @@ COMPATIBILITY_COMPONENTS = (
     "teslatlas-protocol",
     "teslatlas-sdk-typescript",
     "teslatlas-sdk-swift",
-    "teslatlas-viewer",
     "teslatlas-home-assistant",
     "teslatlas-edge",
 )
@@ -55,7 +54,11 @@ def product_record(version: str) -> str:
 
 
 def ecosystem_release_record(
-    version: str, *, tag_status: str = "not_created", artifact_version: str | None = None
+    version: str,
+    *,
+    source_status: str = "unbound-candidate",
+    source_commit: str | None = None,
+    artifact_version: str | None = None,
 ) -> str:
     artifacts = []
     if artifact_version is not None:
@@ -74,7 +77,11 @@ def ecosystem_release_record(
             "schema_version": 1,
             "status": "candidate",
             "product_version": version,
-            "source_tag": {"name": f"v{version}", "status": tag_status},
+            "source_identity": {
+                "kind": "git-commit",
+                "commit": source_commit,
+                "status": source_status,
+            },
             "profile": {
                 "id": "hub-http-v1",
                 "revision": "1.0.0",
@@ -156,29 +163,6 @@ def make_workspace(root: Path, version: str = PRODUCT_VERSION) -> dict[Path, byt
     )
 
     write(
-        root / "teslatlas-viewer/package.json",
-        json.dumps({"name": "teslatlas-viewer", "version": version, "private": True}, indent=2)
-        + "\n",
-    )
-    write(
-        root / "teslatlas-viewer/package-lock.json",
-        json.dumps(
-            {
-                "name": "teslatlas-viewer",
-                "version": version,
-                "lockfileVersion": 3,
-                "packages": {"": {"name": "teslatlas-viewer", "version": version}},
-            },
-            indent=2,
-        )
-        + "\n",
-    )
-    write(
-        root / "teslatlas-viewer/public/version.json",
-        json.dumps({"product_version": version}, indent=2) + "\n",
-    )
-
-    write(
         root / "teslatlas-home-assistant/pyproject.toml",
         f'[project]\nname = "teslatlas-home-assistant"\nversion = "{version}"\n',
     )
@@ -205,7 +189,6 @@ def make_workspace(root: Path, version: str = PRODUCT_VERSION) -> dict[Path, byt
         "teslatlas-protocol",
         "teslatlas-sdk-typescript",
         "teslatlas-sdk-swift",
-        "teslatlas-viewer",
         "teslatlas-home-assistant",
         "teslatlas-edge",
     ):
@@ -261,7 +244,7 @@ class EcosystemVersionCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory).resolve()
             make_workspace(workspace)
-            package = workspace / "teslatlas-viewer/package.json"
+            package = workspace / "teslatlas-sdk-typescript/package.json"
             contents = json.loads(package.read_text(encoding="utf-8"))
             contents["version"] = "2026.36.1"
             write(package, json.dumps(contents, indent=2) + "\n")
@@ -269,14 +252,14 @@ class EcosystemVersionCliTests(unittest.TestCase):
             result = run_script(workspace, "--check")
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("teslatlas-viewer/package.json:version", result.stderr)
+            self.assertIn("teslatlas-sdk-typescript/package.json:version", result.stderr)
             self.assertIn("expected 2026.36.2, found 2026.36.1", result.stderr)
 
     def test_candidate_record_cannot_claim_tested_compatibility(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory).resolve()
             make_workspace(workspace)
-            record_path = workspace / "teslatlas-viewer/compatibility/hub.json"
+            record_path = workspace / "teslatlas-home-assistant/compatibility/hub.json"
             record = json.loads(record_path.read_text(encoding="utf-8"))
             record["tested_hub_versions"] = [PRODUCT_VERSION]
             write(record_path, json.dumps(record, indent=2) + "\n")
@@ -332,22 +315,25 @@ class EcosystemVersionCliTests(unittest.TestCase):
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn("requires unique content-bound identities", rejected.stderr)
 
-    def test_check_rejects_stale_candidate_artifact_and_source_tag_bindings(self) -> None:
+    def test_check_rejects_invalid_source_commit_and_stale_candidate_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory).resolve()
             make_workspace(workspace)
             release_path = workspace / "hub/docs/compatibility/ecosystem-release.json"
             write(
                 release_path,
-                ecosystem_release_record(PRODUCT_VERSION, artifact_version="2026.36.1").replace(
-                    f'"name": "v{PRODUCT_VERSION}"', '"name": "v2026.36.1"'
+                ecosystem_release_record(
+                    PRODUCT_VERSION,
+                    source_status="bound",
+                    source_commit="main",
+                    artifact_version="2026.36.1",
                 ),
             )
 
             result = run_script(workspace, "--check")
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("source_tag.name", result.stderr)
+            self.assertIn("source_identity.commit", result.stderr)
             self.assertIn("artifacts[0].embedded_version", result.stderr)
 
     def test_apply_transition_invalidates_artifact_without_relabelling_it(self) -> None:
@@ -370,16 +356,22 @@ class EcosystemVersionCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             release = json.loads(release_path.read_text(encoding="utf-8"))
             self.assertEqual(release["product_version"], PRODUCT_VERSION)
-            self.assertEqual(release["source_tag"], {"name": f"v{PRODUCT_VERSION}", "status": "not_created"})
+            self.assertEqual(
+                release["source_identity"],
+                {"kind": "git-commit", "commit": None, "status": "unbound-candidate"},
+            )
             self.assertEqual(release["artifacts"], [])
 
-    def test_apply_refuses_to_move_a_created_source_tag(self) -> None:
+    def test_apply_refuses_to_move_a_bound_source_commit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory).resolve()
             make_workspace(workspace, "2026.36.1")
             release_path = workspace / "hub/docs/compatibility/ecosystem-release.json"
             original_release = ecosystem_release_record(
-                "2026.36.1", tag_status="created", artifact_version="2026.36.1"
+                "2026.36.1",
+                source_status="bound",
+                source_commit="a" * 40,
+                artifact_version="2026.36.1",
             )
             write(release_path, original_release)
             hub_manifest = workspace / "hub/Cargo.toml"
@@ -391,7 +383,7 @@ class EcosystemVersionCliTests(unittest.TestCase):
             result = run_script(workspace, "--apply")
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("refusing to move created source tag", result.stderr)
+            self.assertIn("refusing to carry bound source commit", result.stderr)
             self.assertEqual(release_path.read_text(encoding="utf-8"), original_release)
 
     def test_apply_updates_only_allowlisted_product_fields(self) -> None:

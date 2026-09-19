@@ -43,7 +43,7 @@ At a year boundary, use the ISO week-year, not the calendar year: 1 January
 
 Use one product version across the Rust CLI, locally built macOS app and
 installer, locally built Debian amd64 and ARM64 packages, protocol tooling,
-SDKs, Viewer, Home Assistant integration, Edge, release notes, and any later
+SDKs, Home Assistant integration, Edge, release notes, and any later
 authorized source tag. A source tag adds only a `v` prefix. The current
 source-only policy does not publish the locally verified packages.
 
@@ -55,10 +55,10 @@ current documentation together. Hub's Cargo package version is the cohort
 authority; use `scripts/sync-ecosystem-versions.py` to check or apply the
 allowlisted fields from the workspace root.
 
-When `--apply` moves an untagged candidate to a new product version, it derives
-the new planned source-tag name and clears artifact and test-receipt bindings
-from the older candidate. It never changes an artifact's recorded version or
-hash to make old bytes appear rebuilt. A source tag recorded as created is
+When `--apply` moves an unbound candidate to a new product version, it clears
+the exact source commit, artifact and test-receipt bindings from the older
+candidate. It never changes an artifact's recorded version or hash to make old
+bytes appear rebuilt. A candidate already bound to an exact source commit is
 immutable and blocks a cohort transition.
 
 Do not rewrite historical release notes or historical fixtures merely because

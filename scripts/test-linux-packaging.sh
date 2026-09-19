@@ -771,7 +771,11 @@ printf '%s\n' \
 chmod 0755 "$elf_bin/dpkg-deb"
 printf '%s\n' \
     '#!/bin/sh' \
-    'printf "%s\n" "teslatlas-hub ${FAKE_HUB_VERSION:-1.0.0}"' \
+    'case "${1:-}" in' \
+    '  --version) printf "%s\n" "teslatlas-hub ${FAKE_HUB_VERSION:-1.0.0}" ;;' \
+    '  source) printf "%s/tree/%s\n" "https://github.com/magrathean-uk/teslatlas-hub" "${FAKE_HUB_SOURCE_COMMIT}" ;;' \
+    '  *) exit 99 ;;' \
+    'esac' \
     '[ "${FAKE_HUB_EXTRA_NEWLINE:-0}" != 1 ] || printf "\n"' \
     '[ "${FAKE_HUB_STDERR:-0}" != 1 ] || printf "%s\n" warning >&2' \
     > "$test_root/fake-binary"
@@ -829,6 +833,7 @@ printf '%s\n' \
     "arm64 $package_proxy_sha $package_fleet_sha" \
     > "$package_fixture/packaging/linux/sidecar-sha256.lock"
 package_builder="$package_fixture/scripts/build-deb.sh"
+source_commit=0123456789abcdef0123456789abcdef01234567
 legal_bundle_base="$test_root/legal-bundle-base"
 legal_bundle_sidecar="$test_root/legal-bundle-sidecar"
 mkdir "$legal_bundle_base" "$legal_bundle_sidecar" \
@@ -857,6 +862,7 @@ run_package() {
         package_proxy_mode=${6:-$package_elf_mode}
         package_fleet_mode=${7:-$package_elf_mode}
         set -- --binary fake-binary --version "$package_version" \
+            --source-commit "$source_commit" \
             --architecture "$package_architecture" --output "$test_root/output.deb" \
             --legal-bundle "$legal_bundle_base"
         if [ "$package_sidecars" = 1 ]; then
@@ -866,7 +872,7 @@ run_package() {
                 --go-proxy-evidence "$test_root/go-evidence" \
                 --fleet-telemetry-evidence "$test_root/fleet-evidence"
         fi
-        FAKE_HUB_VERSION=$package_version \
+        FAKE_HUB_VERSION=$package_version FAKE_HUB_SOURCE_COMMIT=$source_commit \
             FAKE_ELF_MODE=$package_elf_mode FAKE_SHLIBDEPS_MODE=$package_shlibdeps_mode \
             FAKE_PROXY_ELF_MODE=$package_proxy_mode FAKE_FLEET_ELF_MODE=$package_fleet_mode \
             EXPECT_SIDECARS=$package_sidecars \
@@ -894,7 +900,8 @@ if (
     cd "$test_root"
     PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
         sh "$package_builder" --binary fake-binary-link \
-        --version 1.0.0 --architecture amd64 --output "$test_root/symlink.deb"
+        --version 1.0.0 --source-commit "$source_commit" \
+        --architecture amd64 --output "$test_root/symlink.deb"
 ) >"$test_root/symlink-output" 2>&1; then
     fail 'symlinked binary accepted'
 fi
@@ -904,7 +911,8 @@ for lone_option in --command-proxy-binary --fleet-telemetry-binary; do
         cd "$test_root"
         PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
             sh "$package_builder" --binary fake-binary \
-            --version 1.0.0 --architecture amd64 --output "$test_root/lone.deb" \
+            --version 1.0.0 --source-commit "$source_commit" \
+            --architecture amd64 --output "$test_root/lone.deb" \
             "$lone_option" fake-command-proxy
     ) >"$test_root/lone-output" 2>&1; then
         fail "accepted unpaired sidecar option: $lone_option"
@@ -916,7 +924,8 @@ if (
     cd "$test_root"
     PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
         sh "$package_builder" --binary fake-binary \
-        --version 1.0.0 --architecture amd64 --output "$test_root/bad-digest.deb" \
+        --version 1.0.0 --source-commit "$source_commit" \
+        --architecture amd64 --output "$test_root/bad-digest.deb" \
         --command-proxy-binary fake-command-proxy \
         --fleet-telemetry-binary fake-fleet-telemetry
 ) >"$test_root/bad-digest-output" 2>&1; then
@@ -942,8 +951,10 @@ grep -Fqx 'Version: 1.0.0~beta.1-1' "$captured_control" \
     || fail 'prerelease does not sort before the stable Debian package'
 if (
     cd "$test_root"
-    FAKE_HUB_VERSION=1.0.0-alpha.2 PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
+    FAKE_HUB_VERSION=1.0.0-alpha.2 FAKE_HUB_SOURCE_COMMIT=$source_commit \
+        PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
         sh "$package_builder" --binary fake-binary --version 1.0.0-beta.1 \
+        --source-commit "$source_commit" \
         --architecture amd64 --output "$test_root/version-mismatch.deb" \
         --legal-bundle "$legal_bundle_base"
 ) >"$test_root/version-mismatch-output" 2>&1; then
@@ -952,12 +963,27 @@ fi
 grep -Fq 'binary version does not match package version' \
     "$test_root/version-mismatch-output" \
     || fail 'mismatched Hub binary version has no stable diagnostic'
+if (
+    cd "$test_root"
+    FAKE_HUB_VERSION=1.0.0 FAKE_HUB_SOURCE_COMMIT=ffffffffffffffffffffffffffffffffffffffff \
+        PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
+        sh "$package_builder" --binary fake-binary --version 1.0.0 \
+        --source-commit "$source_commit" --architecture amd64 \
+        --output "$test_root/source-mismatch.deb" --legal-bundle "$legal_bundle_base"
+) >"$test_root/source-mismatch-output" 2>&1; then
+    fail 'mismatched Hub source identity accepted'
+fi
+grep -Fq 'binary source identity does not match package source commit' \
+    "$test_root/source-mismatch-output" \
+    || fail 'mismatched Hub source identity has no stable diagnostic'
 for noisy_version_variable in FAKE_HUB_EXTRA_NEWLINE FAKE_HUB_STDERR; do
     if (
         cd "$test_root"
         env "$noisy_version_variable=1" FAKE_HUB_VERSION=1.0.0 \
+            FAKE_HUB_SOURCE_COMMIT=$source_commit \
             PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
             sh "$package_builder" --binary fake-binary --version 1.0.0 \
+            --source-commit "$source_commit" \
             --architecture amd64 --output "$test_root/noisy-version.deb" \
             --legal-bundle "$legal_bundle_base"
     ) >"$test_root/noisy-version-output" 2>&1; then

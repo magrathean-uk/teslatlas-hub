@@ -41,8 +41,8 @@ SDK_ROOT = WORKSPACE / "teslatlas-sdk-typescript"
 LANE_ROOT = WORKSPACE / "hub" / "tools" / "interop" / "client_lanes"
 NODE = "typescript_node"
 BROWSER = "typescript_browser"
-SDK_TARBALL_SHA256 = "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
-SDK_MEMBER_COUNT = 81
+SDK_TARBALL_SHA256 = "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7"
+SDK_MEMBER_COUNT = 83
 SDK_PACKAGE_VERSION = "2026.36.2"
 
 CONTRACTS = MappingProxyType({
@@ -64,7 +64,7 @@ CONTRACTS = MappingProxyType({
 # review binds its bytes; a sibling contract digest alone cannot authorize it.
 LANE_FILES = MappingProxyType({
     "run.mjs": "7faa39b56310c0a2cec1de36327743cae9700bb19cd1118993aed8cffb20afe3",
-    "installed_contract.mjs": "cc8f124090655d9c86ff9861ccb826fcc88a7bb2839db435ffbc3882a13f8fb5",
+    "installed_contract.mjs": "9035e5141ac7581b0c3810e3ac4e3d752ff82034350c93e1080a58291da43d0b",
     "typescript_lane.mjs": "55833f7d8dc16434009d13c7398ddd40404fc836082e1bbe39083a9ac0addcf2",
     "scenarios.mjs": "f04aa42956d1476dc3fbd21eab60200bf12cf3e823fdddfcc472aaf0f85b2dcd",
     "node-worker.mjs": "f1dfea5570dd93906028b5a3214dc0aecf241f98a7ccc41b2a52e1f395f161bf",

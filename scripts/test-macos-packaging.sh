@@ -224,6 +224,10 @@ assert_before_fixed '/usr/sbin/chown "$CONSOLE_UID:$CONSOLE_GID" "$temporary_pli
     || fail "service package does not use mapped prerelease identity"
 /usr/bin/grep -Fq 'require_hub_version "$binary" "$version"' "$SERVICE_BUILD" \
     || fail "service package does not bind package version to Hub binary"
+/usr/bin/grep -Fq 'require_hub_source_commit "$binary" "$source_commit"' "$SERVICE_BUILD" \
+    || fail "service package does not bind exact source commit to Hub binary"
+/usr/bin/grep -Fq 'TESLATLAS_HUB_SOURCE_COMMIT' "$APP_BUILD" \
+    || fail "app build does not require an exact source commit"
 for release_legal_file in docs/legal/additional-terms.md docs/legal/source-availability.md \
     docs/releases/verification.md; do
     /usr/bin/grep -Fq "$release_legal_file" "$APP_BUILD" \
@@ -267,8 +271,33 @@ fi
 if require_hub_version "$stderr_binary" 1.0.0-beta.1; then
     fail "Hub version stderr was accepted"
 fi
+source_helper="$TEST_ROOT/source-helper.sh"
+/usr/bin/sed -n \
+    '/^# BEGIN TESTABLE HUB SOURCE HELPER$/,/^# END TESTABLE HUB SOURCE HELPER$/p' \
+    "$SERVICE_BUILD" > "$source_helper"
+# shellcheck source=/dev/null
+. "$source_helper"
+source_commit=0123456789abcdef0123456789abcdef01234567
+matching_source_binary="$TEST_ROOT/matching-source-hub"
+mismatched_source_binary="$TEST_ROOT/mismatched-source-hub"
+/usr/bin/printf '%s\n' '#!/bin/sh' \
+    'printf "%s/tree/%s\n" https://github.com/magrathean-uk/teslatlas-hub 0123456789abcdef0123456789abcdef01234567' \
+    > "$matching_source_binary"
+/usr/bin/printf '%s\n' '#!/bin/sh' \
+    'printf "%s/tree/%s\n" https://github.com/magrathean-uk/teslatlas-hub ffffffffffffffffffffffffffffffffffffffff' \
+    > "$mismatched_source_binary"
+/bin/chmod 0700 "$matching_source_binary" "$mismatched_source_binary"
+require_hub_source_commit "$matching_source_binary" "$source_commit" \
+    || fail "matching Hub source identity was rejected"
+if require_hub_source_commit "$mismatched_source_binary" "$source_commit"; then
+    fail "mismatched Hub source identity was accepted"
+fi
 /usr/bin/grep -Fq '<key>TeslatlasHubVersion</key>' "$APP_INFO" \
     || fail "app bundle does not carry exact Hub version"
+/usr/bin/grep -Fq '<key>TeslatlasHubSourceCommit</key>' "$APP_INFO" \
+    || fail "app bundle does not carry exact Hub source commit"
+/usr/bin/grep -Fq 'TeslatlasHubSourceCommit: "$(TESLATLAS_HUB_SOURCE_COMMIT)"' "$APP_PROJECT" \
+    || fail "app project does not bind exact Hub source commit"
 /usr/bin/grep -Fq 'AppIcon.icns' "$APP_BUILD" \
     || fail "app build does not require the app icon resource"
 /usr/bin/grep -Fq 'CFBundleIconFile' "$APP_BUILD" \

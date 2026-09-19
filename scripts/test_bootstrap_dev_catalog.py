@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Exercise the B1 local-candidate catalog generator."""
+"""Exercise the exact five-companion local-candidate catalog generator."""
 
 from __future__ import annotations
 
@@ -15,29 +15,32 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT / "scripts" / "bootstrap-dev-catalog.py"
 sys.path.insert(0, str(ROOT / "tools"))
-from companions.core import parse_catalog, select_cohort  # noqa: E402
+from companions.core import (  # noqa: E402
+    CatalogError,
+    parse_catalog,
+    select_cohort,
+    source_manifest_for,
+)
+from companions.recipes import EXPECTED_PROFILES, KNOWN_REPOSITORIES  # noqa: E402
 
-PROFILE = {
-    "id": "hub-http-v1",
-    "revision": "1.0.0",
-    "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
-}
+VERSION = "2026.36.2"
+SDK_SHA256 = "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7"
+COMPONENTS = tuple(KNOWN_REPOSITORIES)
 
 
 class BootstrapDevCatalogTests(unittest.TestCase):
-    def test_generates_a_parser_accepted_viewer_cohort_from_bound_sources(self) -> None:
+    def test_generates_and_reads_back_exact_five_companion_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            sdk = self._source(root, "sdk-typescript")
-            viewer = self._source(root, "viewer")
+            sources = {name: self._source(root, name) for name in COMPONENTS}
             manifest = root / "local-sources.json"
             manifest.write_text(
                 json.dumps(
                     {
                         "schema_version": 1,
                         "components": {
-                            "sdk-typescript": self._record("sdk-typescript", "a"),
-                            "viewer": self._record("viewer", "b"),
+                            name: self._record(name, source, marker)
+                            for (name, source), marker in zip(sources.items(), "abcde")
                         },
                     }
                 ),
@@ -45,83 +48,188 @@ class BootstrapDevCatalogTests(unittest.TestCase):
             )
             output = root / "catalog.json"
 
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(GENERATOR),
-                    "--local-sources",
-                    str(manifest),
-                    "--source",
-                    f"sdk-typescript={sdk}",
-                    "--source",
-                    f"viewer={viewer}",
-                    "--hub-version",
-                    "2026.36.2",
-                    "--output",
-                    str(output),
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
+            result = self._run_generator(manifest, sources, output)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            catalog = json.loads(output.read_text(encoding="utf-8"))
+            value = json.loads(output.read_text(encoding="utf-8"))
+            catalog = parse_catalog(value)
+            cohort = value["cohorts"][0]
+            self.assertEqual(set(COMPONENTS), set(cohort["components"]))
+            self.assertEqual(cohort["publication_status"], "local-unpublished")
+            self.assertEqual(cohort["admitted_hub_versions"], [VERSION])
             selected = select_cohort(
-                parse_catalog(catalog),
-                ("sdk-typescript", "viewer"),
-                "2026.36.2",
+                catalog,
+                ("protocol", "sdk-typescript"),
+                VERSION,
                 allow_candidates=True,
                 update=False,
             )
-            self.assertEqual(selected.product_version, "2026.36.2")
-            cohort = catalog["cohorts"][0]
-            self.assertEqual(cohort["publication_status"], "local-unpublished")
-            self.assertEqual(cohort["admitted_hub_versions"], ["2026.36.2"])
-            self.assertEqual(
-                cohort["components"]["sdk-typescript"]["source_sha256"], "a" * 64
-            )
-            self.assertEqual(
-                cohort["components"]["viewer"]["source_sha256"], "b" * 64
-            )
+            self.assertEqual(set(selected.components), {"protocol", "sdk-typescript"})
             self.assertEqual(
                 cohort["components"]["sdk-typescript"]["artifacts"],
                 {
-                    "package_filename": "teslatlas-sdk-2026.36.2.tgz",
-                    "package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+                    "package_filename": f"teslatlas-sdk-{VERSION}.tgz",
+                    "package_sha256": SDK_SHA256,
                 },
             )
             self.assertEqual(
-                cohort["components"]["viewer"]["artifacts"],
+                cohort["components"]["home-assistant"]["artifacts"],
                 {
-                    "package_filename": "teslatlas-viewer-2026.36.2.tgz",
-                    "package_sha256": "f92becdbeb0132b34fa8a674c261a2cd4d4eafc6361b29be5396e854bcf2cdc2",
-                    "asset_manifest_sha256": "6d417a87a566d7b450e5556895e12b65af353fe27219dd8859bb0dd69e135e06",
-                    "sdk_package_filename": "teslatlas-sdk-2026.36.2.tgz",
-                    "sdk_package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+                    "payload_manifest_sha256": "f" * 64,
+                    "selection_receipt_sha256": "0" * 64,
                 },
             )
+
+    def test_missing_active_component_fails_without_writing_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sources = {name: self._source(root, name) for name in COMPONENTS}
+            records = {
+                name: self._record(name, source, marker)
+                for (name, source), marker in zip(sources.items(), "abcde")
+            }
+            records.pop("edge")
+            manifest = root / "local-sources.json"
+            manifest.write_text(
+                json.dumps({"schema_version": 1, "components": records}),
+                encoding="utf-8",
+            )
+            output = root / "catalog.json"
+
+            result = self._run_generator(manifest, sources, output)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("component set mismatch", result.stderr)
+            self.assertFalse(output.exists())
+
+    def test_parser_rejects_deferred_product(self) -> None:
+        catalog = parse_catalog({"schema_version": 1, "cohorts": []})
+        with self.assertRaisesRegex(CatalogError, "unknown components"):
+            select_cohort(
+                catalog,
+                ("deferred-product",),
+                VERSION,
+                allow_candidates=True,
+                update=False,
+            )
+
+    def test_metadata_compatible_but_byte_mismatched_binding_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sources = {name: self._source(root, name) for name in COMPONENTS}
+            records = {
+                name: self._record(name, source, marker)
+                for (name, source), marker in zip(sources.items(), "abcde")
+            }
+            replacement = self._source(root / "replacement", "protocol")
+            (replacement / "README.md").write_text("different bytes\n", encoding="utf-8")
+            records["protocol"]["path"] = str(replacement.resolve())
+            sources["protocol"] = replacement.resolve()
+            manifest = root / "local-sources.json"
+            manifest.write_text(
+                json.dumps({"schema_version": 1, "components": records}),
+                encoding="utf-8",
+            )
+            output = root / "catalog.json"
+
+            result = self._run_generator(manifest, sources, output)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("does not bind the supplied protocol source bytes", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse(output.exists())
+
+    def test_malformed_version_metadata_fails_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sources = {name: self._source(root, name) for name in COMPONENTS}
+            (sources["sdk-typescript"] / "package.json").write_text(
+                "[]\n", encoding="utf-8"
+            )
+            records = {
+                name: self._record(name, source, marker)
+                for (name, source), marker in zip(sources.items(), "abcde")
+            }
+            manifest = root / "local-sources.json"
+            manifest.write_text(
+                json.dumps({"schema_version": 1, "components": records}),
+                encoding="utf-8",
+            )
+            output = root / "catalog.json"
+
+            result = self._run_generator(manifest, sources, output)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("sdk-typescript source metadata could not be read", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse(output.exists())
+
+    def _run_generator(
+        self, manifest: Path, sources: dict[str, Path], output: Path
+    ) -> subprocess.CompletedProcess[str]:
+        command = [
+            sys.executable,
+            str(GENERATOR),
+            "--local-sources",
+            str(manifest),
+        ]
+        for name, source in sources.items():
+            command.extend(("--source", f"{name}={source}"))
+        command.extend(
+            (
+                "--hub-version",
+                VERSION,
+                "--sdk-package-sha256",
+                SDK_SHA256,
+                "--ha-payload-manifest-sha256",
+                "f" * 64,
+                "--ha-selection-receipt-sha256",
+                "0" * 64,
+                "--output",
+                str(output),
+            )
+        )
+        return subprocess.run(command, check=False, capture_output=True, text=True)
 
     @staticmethod
     def _source(root: Path, name: str) -> Path:
         source = root / name
         (source / "compatibility").mkdir(parents=True)
-        (source / "package.json").write_text(
-            json.dumps({"name": name, "version": "2026.36.2"}), encoding="utf-8"
-        )
+        if name == "sdk-typescript":
+            (source / "package.json").write_text(
+                json.dumps({"name": "@teslatlas/sdk", "version": VERSION}),
+                encoding="utf-8",
+            )
+        elif name in {"protocol", "home-assistant"}:
+            (source / "pyproject.toml").write_text(
+                f'[project]\nversion = "{VERSION}"\n', encoding="utf-8"
+            )
+        elif name == "sdk-swift":
+            (source / "VERSION").write_text(f"{VERSION}\n", encoding="utf-8")
+        else:
+            (source / "Cargo.toml").write_text(
+                f'[package]\nversion = "{VERSION}"\n', encoding="utf-8"
+            )
         (source / "compatibility" / "hub.json").write_text(
-            json.dumps({"status": "candidate", "product_version": "2026.36.2", "profile": PROFILE}),
+            json.dumps(
+                {
+                    "status": "candidate",
+                    "product_version": VERSION,
+                    "profile": EXPECTED_PROFILES[name],
+                }
+            ),
             encoding="utf-8",
         )
-        return source
+        return source.resolve()
 
     @staticmethod
-    def _record(name: str, marker: str) -> dict[str, str]:
-        return {
-            "repository": f"https://github.com/magrathean-uk/teslatlas-{name}.git",
-            "commit": marker * 40,
-            "source_sha256": marker * 64,
-        }
+    def _record(name: str, source: Path, marker: str) -> dict:
+        return source_manifest_for(
+            name,
+            source,
+            KNOWN_REPOSITORIES[name],
+            marker * 40,
+        )
 
 
 if __name__ == "__main__":

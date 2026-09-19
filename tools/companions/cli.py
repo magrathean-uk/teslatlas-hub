@@ -18,7 +18,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Optional
 
 from .core import (
     BootstrapError,
@@ -42,7 +42,6 @@ from .recipes import (
     EXPECTED_PROFILES,
     KNOWN_REPOSITORIES,
     RecipeContext,
-    bind_viewer_sdk_artifact,
     build_component,
     check_recipe_environment,
     validate_component_set,
@@ -503,7 +502,7 @@ def _manifest(arguments: argparse.Namespace) -> dict[str, Any]:
 
 
 def _d1_plan(arguments: argparse.Namespace) -> dict[str, Any]:
-    """Bind the single reviewed D1 selector without authorizing installation."""
+    """Read the historical D1 selector without admitting it to the active catalog."""
     requested = tuple(
         item.strip() for item in (arguments.components or "").split(",") if item.strip()
     )
@@ -582,7 +581,8 @@ def _d1_plan(arguments: argparse.Namespace) -> dict[str, Any]:
         raise BootstrapError("D1 Home Assistant selector is not admitted")
     return {
         "schema": "teslatlas.companion-d1-plan/v1",
-        "status": "planned_source_only",
+        "status": "historical_source_only",
+        "scope": "historical-d1-selection-not-an-active-catalog-identity",
         "product_version": document["product_version"],
         "component_ids": [D1_HOME_ASSISTANT_COMPONENT],
         "selector_id": D1_HOME_ASSISTANT_SELECTOR,
@@ -596,76 +596,17 @@ def _d1_plan(arguments: argparse.Namespace) -> dict[str, Any]:
         },
         "runtime_receipt_required": True,
         "activation_authorized": False,
-    }
-
-
-def _d1_catalog(plan: Mapping[str, Any], record: Mapping[str, Any]) -> dict[str, Any]:
-    """Translate one admitted D1 record into the established local cohort schema."""
-    identities = plan["candidate_source_and_artifact_identities"]
-    if (
-        not isinstance(record, Mapping)
-        or record.get("component") != D1_HOME_ASSISTANT_COMPONENT
-        or identities.get("source_repository")
-        != KNOWN_REPOSITORIES[D1_HOME_ASSISTANT_COMPONENT]
-        or record.get("repository") != identities["source_repository"]
-        or record.get("commit") != identities["source_head"]
-        or not isinstance(record.get("source_sha256"), str)
-    ):
-        raise BootstrapError("D1 Home Assistant local source identity does not match")
-    return {
-        "schema_version": 1,
-        "cohorts": [
-            {
-                "product_version": plan["product_version"],
-                "publication_status": "local-unpublished",
-                "admitted_hub_versions": [plan["product_version"]],
-                "components": {
-                    D1_HOME_ASSISTANT_COMPONENT: {
-                        "repository": record["repository"],
-                        "commit": record["commit"],
-                        "source_sha256": record["source_sha256"],
-                        "product_version": plan["product_version"],
-                        "profile": EXPECTED_PROFILES[D1_HOME_ASSISTANT_COMPONENT],
-                        "artifacts": {
-                            "payload_manifest_sha256": identities[
-                                "payload_manifest_sha256"
-                            ],
-                            "selection_receipt_sha256": identities[
-                                "selection_receipt_sha256"
-                            ],
-                        },
-                    }
-                },
-            }
-        ],
+        "active_catalog_identity": False,
     }
 
 
 def _d1_install(arguments: argparse.Namespace) -> dict[str, Any]:
-    """Run one explicitly supplied D1 source through the normal local transaction."""
-    if arguments.mode != "local-candidate":
-        raise BootstrapError("D1 Home Assistant installation requires local-candidate mode")
-    plan = _d1_plan(arguments)
-    local_sources = _require_path(
-        arguments.local_sources, "--local-sources", existing=True
+    """Fail closed: D1 is a historical one-component record, not an active cohort."""
+    _d1_plan(arguments)
+    raise BootstrapError(
+        "historical D1 selection cannot be installed as an active catalog cohort; "
+        "use an exact five-companion candidate catalog"
     )
-    records = _load_local_sources(local_sources, (D1_HOME_ASSISTANT_COMPONENT,))
-    catalog = _d1_catalog(plan, records[D1_HOME_ASSISTANT_COMPONENT])
-    with tempfile.TemporaryDirectory(prefix="teslatlas-d1-catalog-") as temporary:
-        catalog_path = Path(temporary) / "catalog.json"
-        _write_private_json(catalog_path, catalog)
-        forwarded = argparse.Namespace(**vars(arguments))
-        forwarded.action = "install"
-        forwarded.catalog = catalog_path
-        result = _operate(forwarded)
-    result["d1_selector"] = {
-        "component_id": D1_HOME_ASSISTANT_COMPONENT,
-        "selector_id": D1_HOME_ASSISTANT_SELECTOR,
-        "activation_authorized": True,
-        "installation_mode": "local-unpublished",
-        "runtime_acceptance": False,
-    }
-    return result
 
 
 def _load_local_sources(path: Path, components: tuple[str, ...]) -> dict[str, Any]:
@@ -825,29 +766,7 @@ def _operate(arguments: argparse.Namespace) -> dict[str, Any]:
         for name in cohort.components:
             check_recipe_environment(name, context)
 
-    sdk_output: Optional[Path] = None
-
     def build(name: str, source: Path, output: Path) -> dict[str, Any]:
-        nonlocal sdk_output
-        if name == "viewer":
-            if sdk_output is None:
-                raise BootstrapError(
-                    "Viewer SDK dependency was not built in this operation"
-                )
-            validate_source_metadata(
-                name,
-                source,
-                cohort.components[name],
-                cohort.publication_status,
-            )
-            sdk_binding = bind_viewer_sdk_artifact(
-                source,
-                sdk_output,
-                cohort.components[name],
-                cohort.components["sdk-typescript"],
-            )
-        else:
-            sdk_binding = None
         built = build_component(
             name,
             source,
@@ -856,10 +775,6 @@ def _operate(arguments: argparse.Namespace) -> dict[str, Any]:
             context,
             cohort.publication_status,
         )
-        if sdk_binding is not None:
-            built["verification"]["cohort_sdk"] = sdk_binding
-        if name == "sdk-typescript":
-            sdk_output = output
         return built
 
     return install_cohort_from_provider(

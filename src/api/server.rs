@@ -45,8 +45,8 @@ use crate::config::HubConfig;
 use crate::{
     BUILD_VERSION,
     config::TlsListenerConfig,
-    corresponding_source_url,
     db::{HubStore, PairedDeviceRecord, PublishedVehicle, ReadinessReasonCode, StoredPack},
+    discovery_source_url,
     fleet_telemetry::{FleetTelemetryAccumulator, MAX_FLEET_TELEMETRY_INPUT_BYTES, vin_from_json},
     http_range::{parse_single_range, unsatisfied_content_range},
     manifest_signing::ManifestSigning,
@@ -1099,7 +1099,7 @@ async fn capabilities(State(state): State<AppState>) -> Response {
             api_versions: &PUBLIC_API_VERSIONS,
             capabilities,
             version: BUILD_VERSION,
-            source_url: corresponding_source_url(),
+            source_url: discovery_source_url(),
             pack_format: "sqlite-zstd",
             manifest_public_key: state
                 .manifest_signing

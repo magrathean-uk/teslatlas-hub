@@ -3,7 +3,7 @@
 set -eu
 
 usage() {
-    echo "usage: $0 --binary PATH --version VERSION --output PATH --legal-bundle PATH [--architecture amd64|arm64] [--command-proxy-binary PATH --fleet-telemetry-binary PATH --go-proxy-evidence PATH --fleet-telemetry-evidence PATH]" >&2
+    echo "usage: $0 --binary PATH --version VERSION --source-commit 40_HEX --output PATH --legal-bundle PATH [--architecture amd64|arm64] [--command-proxy-binary PATH --fleet-telemetry-binary PATH --go-proxy-evidence PATH --fleet-telemetry-evidence PATH]" >&2
     exit 64
 }
 
@@ -11,6 +11,7 @@ binary=
 command_proxy_binary=
 fleet_telemetry_binary=
 version=
+source_commit=
 output=
 architecture=
 legal_bundle=
@@ -22,6 +23,7 @@ while [ "$#" -gt 0 ]; do
         --command-proxy-binary) [ "$#" -ge 2 ] || usage; command_proxy_binary=$2; shift 2 ;;
         --fleet-telemetry-binary) [ "$#" -ge 2 ] || usage; fleet_telemetry_binary=$2; shift 2 ;;
         --version) [ "$#" -ge 2 ] || usage; version=$2; shift 2 ;;
+        --source-commit) [ "$#" -ge 2 ] || usage; source_commit=$2; shift 2 ;;
         --output) [ "$#" -ge 2 ] || usage; output=$2; shift 2 ;;
         --architecture) [ "$#" -ge 2 ] || usage; architecture=$2; shift 2 ;;
         --legal-bundle) [ "$#" -ge 2 ] || usage; legal_bundle=$2; shift 2 ;;
@@ -31,7 +33,8 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-[ -n "$binary" ] && [ -n "$version" ] && [ -n "$output" ] && [ -n "$legal_bundle" ] || usage
+[ -n "$binary" ] && [ -n "$version" ] && [ -n "$source_commit" ] \
+    && [ -n "$output" ] && [ -n "$legal_bundle" ] || usage
 case "${command_proxy_binary:+set}:${fleet_telemetry_binary:+set}" in
     :) include_fleet_sidecars=false
        [ -z "$go_proxy_evidence" ] && [ -z "$fleet_telemetry_evidence" ] \
@@ -60,6 +63,19 @@ require_hub_version() {
     expected_output=$(printf 'teslatlas-hub %s\n%s' \
         "$expected_version" '__TESLATLAS_HUB_VERSION_STATUS_0__')
     [ "$version_output" = "$expected_output" ]
+}
+require_hub_source_commit() {
+    source_binary=$1
+    expected_commit=$2
+    source_output=$(
+        source_status=0
+        "$source_binary" source 2>&1 || source_status=$?
+        printf '%s' "__TESLATLAS_HUB_SOURCE_STATUS_${source_status}__"
+    )
+    expected_output=$(printf '%s/tree/%s\n%s' \
+        'https://github.com/magrathean-uk/teslatlas-hub' "$expected_commit" \
+        '__TESLATLAS_HUB_SOURCE_STATUS_0__')
+    [ "$source_output" = "$expected_output" ]
 }
 binary=$(regular_binary_path "$binary" 'binary')
 if [ "$include_fleet_sidecars" = true ]; then
@@ -147,12 +163,18 @@ if [ "$include_fleet_sidecars" = true ]; then
 fi
 printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
     || { echo "version must be semver with an optional prerelease" >&2; exit 65; }
+printf '%s\n' "$source_commit" | grep -Eq '^[0-9a-f]{40}$' \
+    || { echo "source commit must be exactly 40 lowercase hexadecimal characters" >&2; exit 65; }
 [ -x "$binary" ] || {
     echo "binary must be executable" >&2
     exit 65
 }
 require_hub_version "$binary" "$version" || {
     echo "binary version does not match package version" >&2
+    exit 65
+}
+require_hub_source_commit "$binary" "$source_commit" || {
+    echo "binary source identity does not match package source commit" >&2
     exit 65
 }
 case "$version" in

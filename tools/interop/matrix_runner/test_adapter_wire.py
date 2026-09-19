@@ -35,53 +35,6 @@ class AdapterWireTests(unittest.TestCase):
                 with self.assertRaises(adapter_wire.WireError):
                     adapter_wire.strict_json(raw)
 
-    def test_viewer_wire_accepts_only_closed_https_cross_origin_contract(self):
-        certificate = self._write("viewer-ca.pem", {"certificate": "fixture"})
-        executable = self._write("chromium", {"binary": "fixture"})
-        viewer = {
-            "page": {
-                "origin": "https://127.0.0.1:18481",
-                "server_authority": "runner-owned-installed-viewer",
-                "artifact_role": "viewer_package_tarball",
-            },
-            "hub": {
-                "public_origin": "https://127.0.0.1:18480",
-                "cors_allowed_origin": "https://127.0.0.1:18481",
-                "cross_origin": True,
-            },
-            "trusted_ca": {
-                "certificate": {
-                    "id": "viewer_trusted_ca",
-                    "root": certificate,
-                    "local": certificate,
-                },
-                "certificate_der_sha256": DIGEST,
-            },
-            "browser": {
-                "authority": "runner-bound-executable",
-                "engine": "chromium",
-                "version": "151.0.7922.34",
-                "executable": executable,
-            },
-            "reservations": {
-                name: str(self.root / name)
-                for name in ("raw_evidence_dir", "browser_log", "close_record", "supplement")
-            },
-        }
-
-        adapter_wire.validate_viewer_session_contract(viewer)
-
-        invalid = [
-            dict(viewer, page=dict(viewer["page"], origin="http://127.0.0.1:18481")),
-            dict(viewer, hub=dict(viewer["hub"], cors_allowed_origin="https://localhost:18481")),
-            dict(viewer, hub=dict(viewer["hub"], public_origin="https://127.0.0.1:18481")),
-            dict(viewer, browser=dict(viewer["browser"], engine="webkit")),
-            dict(viewer, extra=True),
-        ]
-        for value in invalid:
-            with self.subTest(value=value), self.assertRaises(adapter_wire.WireError):
-                adapter_wire.validate_viewer_session_contract(value)
-
     def test_ready_is_bound_to_fresh_file_bytes_and_exact_identity(self):
         evidence = self._write("completion.json", {"schema_version": 1})
         ready = {

@@ -123,7 +123,7 @@ class EdgeFixtureTests(unittest.TestCase):
             value,
         )
         with self.assertRaisesRegex(ContractError, "Edge-only"):
-            validate_edge_session_config(value, adapter_id="viewer", client_id="viewer", cell_id="viewer__debian13_amd64")
+            validate_edge_session_config(value, adapter_id="swift", client_id="swift", cell_id="swift__debian13_amd64")
         with self.assertRaisesRegex(ContractError, "unexpected fields"):
             validate_edge_session_config({**value, "argv": ["/bin/sh"]}, adapter_id="edge_v2", client_id="edge_v2", cell_id=CELL_ID)
 

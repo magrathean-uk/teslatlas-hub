@@ -365,7 +365,7 @@ def validate_session_config(value):
         _fail("session.kind", "must equal installed-host")
     _token(obj["run_id"], "session.run_id")
     cell_id = _token(obj["cell_id"], "session.cell_id")
-    adapters = ("protocol_actual_hub", "typescript_node", "typescript_browser", "viewer", "swift", "home_assistant", "edge_v2")
+    adapters = ("protocol_actual_hub", "typescript_node", "typescript_browser", "swift", "home_assistant", "edge_v2")
     adapter_id = _literal(obj["adapter_id"], adapters, "session.adapter_id")
     client_id = _literal(obj["client_id"], adapters, "session.client_id")
     if adapter_id != client_id:

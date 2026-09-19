@@ -9,10 +9,12 @@ versions. Legal-bundle generation is offline and requires the complete locked
 cache, so fetch it before building:
 
 ```sh
-git rev-parse HEAD
+HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 cargo fetch --locked
 HUB_SOURCE_ROOT=$(pwd -P)
-RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/teslatlas-hub" \
+TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
+  RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/teslatlas-hub" \
   cargo build --locked --release --bin teslatlas-hub
 python3 scripts/legal-bundle.py --repo . --output-dir dist/dependency-legal
 scripts/build-deb.sh \
@@ -20,6 +22,7 @@ scripts/build-deb.sh \
   --legal-bundle dist/dependency-legal \
   --version 2026.36.2 \
   --architecture "$(dpkg --print-architecture)" \
+  --source-commit "$HUB_SOURCE_COMMIT" \
   --output "dist/teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
 sha256sum "dist/teslatlas-hub_2026.36.2_$(dpkg --print-architecture).deb"
 dpkg-deb --field \
@@ -114,7 +117,7 @@ the project identity documented in `CITATION.cff`.
 Build from the detached tag, then inspect the combined installer:
 
 ```sh
-./scripts/build-macos-app.sh
+TESLATLAS_HUB_SOURCE_COMMIT=$(git rev-parse HEAD) ./scripts/build-macos-app.sh
 test -d "dist/Teslatlas Hub.app"
 test -f dist/TeslatlasHub.pkg
 test "$("dist/Teslatlas Hub.app/Contents/Resources/teslatlas-hub" --version)" = \

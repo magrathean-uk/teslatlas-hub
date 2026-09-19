@@ -953,7 +953,12 @@ async fn exposes_health_and_capabilities() {
         .to_bytes();
     let payload: serde_json::Value = serde_json::from_slice(&bytes).expect("capabilities JSON");
     assert_eq!(payload["pack_format"], "sqlite-zstd");
-    assert_eq!(payload["sourceUrl"], crate::corresponding_source_url());
+    assert_eq!(payload["sourceUrl"], crate::discovery_source_url());
+    assert!(
+        payload["sourceUrl"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+    );
     assert_eq!(payload["hub_id"], installation_id.to_string());
     assert_eq!(payload["api_versions"], serde_json::json!(["1.0"]));
     assert_eq!(

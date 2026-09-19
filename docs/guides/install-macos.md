@@ -137,7 +137,9 @@ requirements in the [release process](../releases/releasing.md). From a source
 checkout of `main` (or a historical tag when reproducing it), the combined installer entry point is:
 
 ```sh
-./scripts/build-macos-app.sh
+HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
+TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ./scripts/build-macos-app.sh
 ```
 
 See the [source build guide](build-from-source.md). Source builds do not

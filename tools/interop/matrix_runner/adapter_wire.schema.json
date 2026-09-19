@@ -3,19 +3,12 @@
   "$id": "https://teslatlas.dev/schemas/matrix-adapter-session-v1.json",
   "type": "object",
   "additionalProperties": false,
-  "allOf": [
-    {
-      "if": {"properties": {"adapter_id": {"const": "viewer"}}, "required": ["adapter_id"]},
-      "then": {"required": ["viewer"]},
-      "else": {"not": {"required": ["viewer"]}}
-    }
-  ],
   "required": ["schema_version", "kind", "run_id", "cell_id", "adapter_id", "client_id", "session_id", "instance_nonce", "header", "case_contract", "host_session", "broker", "inputs", "actors", "outputs", "bounds"],
   "properties": {
     "schema_version": {"const": 1},
     "kind": {"const": "matrix-adapter-session"},
     "run_id": {"$ref": "#/$defs/token"},
-    "cell_id": {"type": "string", "pattern": "^(protocol_actual_hub|typescript_node|typescript_browser|viewer|swift|home_assistant|edge_v2)__(macos_arm64|debian13_amd64|debian13_arm64)$"},
+    "cell_id": {"type": "string", "pattern": "^(protocol_actual_hub|typescript_node|typescript_browser|swift|home_assistant|edge_v2)__(macos_arm64|debian13_amd64|debian13_arm64)$"},
     "adapter_id": {"$ref": "#/$defs/client"},
     "client_id": {"$ref": "#/$defs/client"},
     "session_id": {"type": "string", "format": "uuid"},
@@ -55,11 +48,10 @@
         "cleanup_timeout_ms": {"const": 45000}, "frame_bytes": {"const": 1048576},
         "evidence_bytes": {"const": 8388608}, "framework_log_bytes": {"const": 8388608}
       }
-    },
-    "viewer": {"$ref": "#/$defs/viewer"}
+    }
   },
   "$defs": {
-    "client": {"enum": ["protocol_actual_hub", "typescript_node", "typescript_browser", "viewer", "swift", "home_assistant", "edge_v2"]},
+    "client": {"enum": ["protocol_actual_hub", "typescript_node", "typescript_browser", "swift", "home_assistant", "edge_v2"]},
     "token": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "path": {"type": "string", "pattern": "^/[^\\u0000\\r\\n]*$", "maxLength": 2048},
@@ -69,18 +61,6 @@
     "installedManifest": {"type": "object", "additionalProperties": false, "required": ["schema_version", "artifact_sha256", "files"], "properties": {"schema_version": {"const": 1}, "artifact_sha256": {"$ref": "#/$defs/sha256"}, "files": {"type": "array", "items": {"$ref": "#/$defs/fileRecord"}}}},
     "fileRecord": {"type": "object", "additionalProperties": false, "required": ["path", "bytes", "mode", "sha256"], "properties": {"path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000\\r\\n]+$"}, "bytes": {"type": "integer", "minimum": 0}, "mode": {"type": "integer", "minimum": 0, "maximum": 4095}, "sha256": {"$ref": "#/$defs/sha256"}}},
     "productInput": {"type": "object", "additionalProperties": false, "required": ["artifact_role", "staged", "installed_manifest", "local_root"], "properties": {"artifact_role": {"type": "string", "minLength": 1}, "staged": {"$ref": "#/$defs/staged"}, "installed_manifest": {"oneOf": [{"$ref": "#/$defs/staged"}, {"type": "null"}]}, "local_root": {"oneOf": [{"$ref": "#/$defs/path"}, {"type": "null"}]}}},
-    "actor": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "execution", "runtime_ref", "artifact_roles", "source_roles", "entrypoint_ref", "input_manifest", "phase_contract"], "properties": {"id": {"$ref": "#/$defs/token"}, "kind": {"enum": ["installed_controller", "built_viewer_ui", "packed_sdk_dependency", "installed_ha_flow", "installed_ha_client", "current_swift_transport", "edge_normal", "edge_fault", "protocol_http", "packed_sdk_node", "packed_sdk_browser"]}, "execution": {"enum": ["coordinator", "local_worker", "docker_worker", "browser_worker"]}, "runtime_ref": {"$ref": "#/$defs/token"}, "artifact_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "source_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "entrypoint_ref": {"$ref": "#/$defs/token"}, "input_manifest": {"$ref": "#/$defs/staged"}, "phase_contract": {"oneOf": [{"$ref": "#/$defs/staged"}, {"type": "null"}]}}},
-    "origin": {"type": "string", "pattern": "^https://(127\\.0\\.0\\.1|localhost):[1-9][0-9]{0,4}$", "maxLength": 256},
-    "viewer": {
-      "type": "object", "additionalProperties": false,
-      "required": ["page", "hub", "trusted_ca", "browser", "reservations"],
-      "properties": {
-        "page": {"type": "object", "additionalProperties": false, "required": ["origin", "server_authority", "artifact_role"], "properties": {"origin": {"$ref": "#/$defs/origin"}, "server_authority": {"const": "runner-owned-installed-viewer"}, "artifact_role": {"const": "viewer_package_tarball"}}},
-        "hub": {"type": "object", "additionalProperties": false, "required": ["public_origin", "cors_allowed_origin", "cross_origin"], "properties": {"public_origin": {"$ref": "#/$defs/origin"}, "cors_allowed_origin": {"$ref": "#/$defs/origin"}, "cross_origin": {"const": true}}},
-        "trusted_ca": {"type": "object", "additionalProperties": false, "required": ["certificate", "certificate_der_sha256"], "properties": {"certificate": {"allOf": [{"$ref": "#/$defs/staged"}, {"properties": {"id": {"const": "viewer_trusted_ca"}}}]}, "certificate_der_sha256": {"$ref": "#/$defs/sha256"}}},
-        "browser": {"type": "object", "additionalProperties": false, "required": ["authority", "engine", "version", "executable"], "properties": {"authority": {"const": "runner-bound-executable"}, "engine": {"const": "chromium"}, "version": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+){1,3}$", "maxLength": 64}, "executable": {"$ref": "#/$defs/binding"}}},
-        "reservations": {"type": "object", "additionalProperties": false, "required": ["raw_evidence_dir", "browser_log", "close_record", "supplement"], "properties": {"raw_evidence_dir": {"$ref": "#/$defs/path"}, "browser_log": {"$ref": "#/$defs/path"}, "close_record": {"$ref": "#/$defs/path"}, "supplement": {"$ref": "#/$defs/path"}}}
-      }
-    }
+    "actor": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "execution", "runtime_ref", "artifact_roles", "source_roles", "entrypoint_ref", "input_manifest", "phase_contract"], "properties": {"id": {"$ref": "#/$defs/token"}, "kind": {"enum": ["installed_controller", "installed_ha_flow", "installed_ha_client", "current_swift_transport", "edge_normal", "edge_fault", "protocol_http", "packed_sdk_node", "packed_sdk_browser"]}, "execution": {"enum": ["coordinator", "local_worker", "docker_worker", "browser_worker"]}, "runtime_ref": {"$ref": "#/$defs/token"}, "artifact_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "source_roles": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "entrypoint_ref": {"$ref": "#/$defs/token"}, "input_manifest": {"$ref": "#/$defs/staged"}, "phase_contract": {"oneOf": [{"$ref": "#/$defs/staged"}, {"type": "null"}]}}}
   }
 }

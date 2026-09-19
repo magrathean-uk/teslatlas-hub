@@ -7,9 +7,10 @@
     "path": "hub/Cargo.toml",
     "field": "package.version"
   },
-  "source_tag": {
-    "name": "v2026.36.2",
-    "status": "not_created"
+  "source_identity": {
+    "kind": "git-commit",
+    "commit": null,
+    "status": "unbound-candidate"
   },
   "profile": {
     "id": "hub-http-v1",
@@ -22,7 +23,6 @@
     {"id": "teslatlas-protocol", "path": "teslatlas-protocol"},
     {"id": "teslatlas-sdk-typescript", "path": "teslatlas-sdk-typescript"},
     {"id": "teslatlas-sdk-swift", "path": "teslatlas-sdk-swift"},
-    {"id": "teslatlas-viewer", "path": "teslatlas-viewer"},
     {"id": "teslatlas-home-assistant", "path": "teslatlas-home-assistant"},
     {"id": "teslatlas-edge", "path": "teslatlas-edge"}
   ],
@@ -31,7 +31,7 @@
       "component": "teslatlas-sdk-typescript",
       "name": "teslatlas-sdk-2026.36.2.tgz",
       "embedded_version": "2026.36.2",
-      "sha256": "6b55ea1d9ea67badc8df8d71aec3b38ee5fb521689869b9d0709afdc6f256965",
+      "sha256": "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7",
       "status": "local_candidate",
       "distribution": "not_published"
     }

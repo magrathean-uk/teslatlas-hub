@@ -35,10 +35,16 @@ PROFILE_SHA = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 COMMITS = {
     "protocol": "1" * 40,
     "sdk-typescript": "2" * 40,
+    "sdk-swift": "3" * 40,
+    "home-assistant": "4" * 40,
+    "edge": "5" * 40,
 }
 REPOSITORIES = {
     "protocol": "https://github.com/magrathean-uk/teslatlas-protocol.git",
     "sdk-typescript": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+    "sdk-swift": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+    "home-assistant": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+    "edge": "https://github.com/magrathean-uk/teslatlas-edge.git",
 }
 
 
@@ -46,22 +52,31 @@ def component(name: str, version: str, *, digest: str | None = None) -> dict:
     value = {
         "repository": REPOSITORIES[name],
         "commit": COMMITS[name],
-        "source_sha256": digest or ("a" if name == "protocol" else "b") * 64,
+        "source_sha256": digest or (str(tuple(REPOSITORIES).index(name) + 1) * 64),
         "product_version": version,
-        "profile": {
-            "id": "hub-http-v1",
-            "revision": "1.0.0",
-            "sha256": PROFILE_SHA,
-        },
+        "profile": (
+            {
+                "id": "edge-delivery-v2",
+                "revision": "2.0.0",
+                "sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224",
+            }
+            if name == "edge"
+            else {"id": "hub-http-v1", "revision": "1.0.0", "sha256": PROFILE_SHA}
+        ),
     }
     if name == "sdk-typescript":
         value["artifacts"] = {
             "package_filename": f"teslatlas-sdk-{version}.tgz",
             "package_sha256": (
-                "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
+                "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7"
                 if version == "2026.36.2"
                 else "d" * 64
             ),
+        }
+    if name == "home-assistant":
+        value["artifacts"] = {
+            "payload_manifest_sha256": "e" * 64,
+            "selection_receipt_sha256": "f" * 64,
         }
     return value
 
@@ -95,60 +110,66 @@ class CatalogTests(unittest.TestCase):
         schema = json.loads(
             (Path(__file__).resolve().parents[1] / "catalog.schema.json").read_text()
         )
-        catalog = {
-            "schema_version": 1,
-            "cohorts": [
-                {
-                    "product_version": "2026.36.2",
-                    "publication_status": "local-unpublished",
-                    "admitted_hub_versions": [],
-                    "components": {
-                        "home-assistant": {
-                            "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
-                            "commit": "a" * 40,
-                            "source_sha256": "b" * 64,
-                            "product_version": "2026.36.2",
-                            "profile": {
-                                "id": "hub-http-v1",
-                                "revision": "1.0.0",
-                                "sha256": PROFILE_SHA,
-                            },
-                            "artifacts": {
-                                "payload_manifest_sha256": "c" * 64,
-                                "selection_receipt_sha256": "d" * 64,
-                            },
-                        }
-                    },
-                }
-            ],
-        }
+        catalog = catalog_data()
 
         self.assertEqual([], list(Draft202012Validator(schema).iter_errors(catalog)))
 
-    def test_home_assistant_catalog_requires_target_provenance(self) -> None:
-        data = {
-            "schema_version": 1,
-            "cohorts": [
-                {
-                    "product_version": "2026.36.2",
-                    "publication_status": "local-unpublished",
-                    "admitted_hub_versions": [],
-                    "components": {
-                        "home-assistant": {
-                            "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
-                            "commit": "1" * 40,
-                            "source_sha256": "a" * 64,
-                            "product_version": "2026.36.2",
-                            "profile": {
-                                "id": "hub-http-v1",
-                                "revision": "1.0.0",
-                                "sha256": PROFILE_SHA,
-                            },
-                        }
-                    },
+    def test_catalog_schema_binds_keys_repositories_and_artifact_shapes(self) -> None:
+        schema = json.loads(
+            (Path(__file__).resolve().parents[1] / "catalog.schema.json").read_text()
+        )
+        validator = Draft202012Validator(schema)
+
+        mismatched_repository = catalog_data()
+        mismatched_repository["cohorts"][0]["components"]["protocol"][
+            "repository"
+        ] = REPOSITORIES["sdk-typescript"]
+        self.assertNotEqual(
+            [], list(validator.iter_errors(mismatched_repository)),
+            "a component key must bind its own repository",
+        )
+
+        for name in ("protocol", "sdk-swift", "edge"):
+            with self.subTest(component=name):
+                unexpected_artifact = catalog_data()
+                unexpected_artifact["cohorts"][0]["components"][name]["artifacts"] = {
+                    "package_filename": "teslatlas-sdk-2026.36.2.tgz",
+                    "package_sha256": "a" * 64,
                 }
-            ],
-        }
+                self.assertNotEqual(
+                    [], list(validator.iter_errors(unexpected_artifact)),
+                    f"{name} must forbid artifacts",
+                )
+
+        for name, wrong_artifacts in (
+            (
+                "sdk-typescript",
+                {
+                    "payload_manifest_sha256": "a" * 64,
+                    "selection_receipt_sha256": "b" * 64,
+                },
+            ),
+            (
+                "home-assistant",
+                {
+                    "package_filename": "teslatlas-sdk-2026.36.2.tgz",
+                    "package_sha256": "a" * 64,
+                },
+            ),
+        ):
+            with self.subTest(component=name):
+                wrong_shape = catalog_data()
+                wrong_shape["cohorts"][0]["components"][name][
+                    "artifacts"
+                ] = wrong_artifacts
+                self.assertNotEqual(
+                    [], list(validator.iter_errors(wrong_shape)),
+                    f"{name} must use its repository-specific artifact shape",
+                )
+
+    def test_home_assistant_catalog_requires_target_provenance(self) -> None:
+        data = catalog_data()
+        del data["cohorts"][0]["components"]["home-assistant"]["artifacts"]
 
         with self.assertRaisesRegex(CatalogError, "provenance"):
             parse_catalog(data)
@@ -242,8 +263,7 @@ class CatalogTests(unittest.TestCase):
     def test_home_assistant_catalog_retains_both_provenance_hashes(self) -> None:
         data = catalog_data()
         cohort = data["cohorts"][0]
-        cohort["components"] = {
-            "home-assistant": {
+        cohort["components"]["home-assistant"] = {
                 "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
                 "commit": "a" * 40,
                 "source_sha256": "b" * 64,
@@ -258,7 +278,6 @@ class CatalogTests(unittest.TestCase):
                     "selection_receipt_sha256": "d" * 64,
                 },
             }
-        }
 
         catalog = parse_catalog(data)
 
@@ -376,15 +395,9 @@ class PrefixTests(unittest.TestCase):
             (source / "payload.txt").write_text("source\n")
             repository = "https://github.com/magrathean-uk/teslatlas-home-assistant.git"
             record = source_manifest_for("home-assistant", source, repository, "1" * 40)
-            data = {
-                "schema_version": 1,
-                "cohorts": [
-                    {
-                        "product_version": "2026.36.2",
-                        "publication_status": "local-unpublished",
-                        "admitted_hub_versions": [],
-                        "components": {
-                            "home-assistant": {
+            data = catalog_data()
+            data["cohorts"] = [data["cohorts"][0]]
+            data["cohorts"][0]["components"]["home-assistant"] = {
                                 "repository": repository,
                                 "commit": "1" * 40,
                                 "source_sha256": record["source_sha256"],
@@ -398,10 +411,6 @@ class PrefixTests(unittest.TestCase):
                                     "payload_manifest_sha256": "b720c922e53edd47a62de17d99ff1d32c638706886d32a5e2fd7339b11d78347",
                                     "selection_receipt_sha256": "d" * 64,
                                 },
-                            }
-                        },
-                    }
-                ],
             }
             selected = select_cohort(
                 parse_catalog(data),
@@ -556,11 +565,9 @@ class PrefixTests(unittest.TestCase):
             )
             data = catalog_data()
             data["cohorts"] = [data["cohorts"][0]]
-            data["cohorts"][0]["components"] = {
-                "protocol": component(
-                    "protocol", "2026.36.2", digest=record["source_sha256"]
-                )
-            }
+            data["cohorts"][0]["components"]["protocol"] = component(
+                "protocol", "2026.36.2", digest=record["source_sha256"]
+            )
             selected = select_cohort(
                 parse_catalog(data),
                 ("protocol",),
@@ -664,10 +671,11 @@ class PrefixTests(unittest.TestCase):
             published["product_version"] = "2026.36.2"
             published["admitted_hub_versions"] = []
             published["components"] = {
-                "protocol": component(
-                    "protocol", "2026.36.2", digest=record["source_sha256"]
-                )
+                name: component(name, "2026.36.2") for name in REPOSITORIES
             }
+            published["components"]["protocol"] = component(
+                "protocol", "2026.36.2", digest=record["source_sha256"]
+            )
             selected = select_cohort(
                 parse_catalog({"schema_version": 1, "cohorts": [published]}),
                 ("protocol",),
@@ -713,11 +721,9 @@ class PrefixTests(unittest.TestCase):
             )
             data = catalog_data()
             data["cohorts"] = [data["cohorts"][0]]
-            data["cohorts"][0]["components"] = {
-                "protocol": component(
-                    "protocol", "2026.36.2", digest=record["source_sha256"]
-                )
-            }
+            data["cohorts"][0]["components"]["protocol"] = component(
+                "protocol", "2026.36.2", digest=record["source_sha256"]
+            )
             selected = select_cohort(
                 parse_catalog(data),
                 ("protocol",),

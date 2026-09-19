@@ -50,12 +50,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             keyEquivalent: ""
         )
         legal.target = actionTarget
-        let source = applicationMenu.addItem(
-            withTitle: "Corresponding Source for v\(HubRelease.bundledVersion)…",
-            action: #selector(openCorrespondingSource(_:)),
-            keyEquivalent: ""
-        )
-        source.target = actionTarget
+        if HubRelease.bundledSourceCommit != nil {
+            let source = applicationMenu.addItem(
+                withTitle: "Corresponding Source…",
+                action: #selector(openCorrespondingSource(_:)),
+                keyEquivalent: ""
+            )
+            source.target = actionTarget
+        }
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Hide Teslatlas Hub",
                                 action: #selector(NSApplication.hide(_:)),
@@ -204,7 +206,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         alert.informativeText = Self.legalNoticeText
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "View Licence")
-        alert.addButton(withTitle: "Corresponding Source")
+        if HubRelease.bundledSourceCommit != nil {
+            alert.addButton(withTitle: "Corresponding Source")
+        }
         switch HubUIPresentation.response(to: alert) {
         case .alertSecondButtonReturn:
             if let bundled = Bundle.main.url(forResource: "LICENSE", withExtension: nil) {
@@ -219,12 +223,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
-    static let legalNoticeText = """
-    Licence: AGPL-3.0-only
-    Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own.
-    Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
-    Unofficial; not affiliated with Tesla or TeslaMate; no warranty.
-    """
+    static var legalNoticeText: String {
+        let source: String
+        if let url = HubRelease.correspondingSourceURL() {
+            source = "Corresponding Source: \(url.absoluteString)"
+        } else {
+            source = "UNBOUND DEVELOPMENT BUILD; non-distributable until rebuilt with an exact pushed source commit."
+        }
+        return """
+        Licence: AGPL-3.0-only
+        Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own.
+        Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
+        \(source)
+        Unofficial; not affiliated with Tesla or TeslaMate; no warranty.
+        """
+    }
 
     private func showDashboard(onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
         if mainWindowController == nil {

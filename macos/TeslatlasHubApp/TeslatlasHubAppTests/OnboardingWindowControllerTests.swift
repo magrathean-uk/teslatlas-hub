@@ -269,30 +269,25 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(AppDelegate.legalNoticeText.contains(
             "Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub"
         ))
-        let source = try XCTUnwrap(application.items.first {
-            $0.title == "Corresponding Source for v\(HubRelease.bundledVersion)…"
-        })
-        XCTAssertTrue(source.target === delegate)
-        XCTAssertEqual(source.action, #selector(AppDelegate.openCorrespondingSource(_:)))
+        let source = application.item(withTitle: "Corresponding Source…")
+        if HubRelease.bundledSourceCommit == nil {
+            XCTAssertNil(source)
+            XCTAssertTrue(AppDelegate.legalNoticeText.contains("UNBOUND DEVELOPMENT BUILD"))
+        } else {
+            XCTAssertTrue(source?.target === delegate)
+            XCTAssertEqual(source?.action, #selector(AppDelegate.openCorrespondingSource(_:)))
+        }
     }
 
-    func testCorrespondingSourceURLPreservesPublishedTagsAndPinsStableSource() throws {
+    func testCorrespondingSourceURLRequiresExactCommitWhileLicenceUsesHistoricalTags() throws {
+        let commit = "0123456789abcdef0123456789abcdef01234567"
         XCTAssertEqual(
-            HubRelease.correspondingSourceURL(for: HubRelease.fallbackVersion)?.absoluteString,
-            "https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v2026.36.1"
+            HubRelease.correspondingSourceURL(for: commit)?.absoluteString,
+            "https://github.com/magrathean-uk/teslatlas-hub/tree/\(commit)"
         )
-        XCTAssertEqual(
-            HubRelease.correspondingSourceURL(for: "2026.36.1")?.absoluteString,
-            "https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v2026.36.1"
-        )
-        XCTAssertEqual(
-            HubRelease.correspondingSourceURL(for: "1.0.0-beta.1")?.absoluteString,
-            "https://github.com/magrathean-uk/teslatlas-hub/releases/tag/v1.0.0-beta.1"
-        )
-        XCTAssertEqual(
-            HubRelease.correspondingSourceURL(for: "1.0.0")?.absoluteString,
-            "https://github.com/magrathean-uk/teslatlas-hub/tree/v1.0.0"
-        )
+        XCTAssertNil(HubRelease.correspondingSourceURL(for: nil))
+        XCTAssertNil(HubRelease.correspondingSourceURL(for: commit.uppercased()))
+        XCTAssertNil(HubRelease.correspondingSourceURL(for: "2026.36.1"))
         XCTAssertNil(HubRelease.correspondingSourceURL(for: "1.0.0/../../main"))
         XCTAssertNil(HubRelease.correspondingSourceURL(for: "$(TESLATLAS_HUB_VERSION)"))
         XCTAssertEqual(

@@ -5,8 +5,8 @@ Compose service. This is a source-build workflow; the project does not publish
 an image registry or prebuilt image. Native macOS and Debian service installs
 remain separate workflows.
 
-The current Compose file is a core Hub candidate. The optional Fleet, Viewer,
-Home Assistant and Edge services require their own reviewed source cohort and
+The current Compose file is a core Hub candidate. Optional Fleet, Home
+Assistant, and Edge services require their own reviewed source cohort and
 acceptance evidence. An empty public companion catalog does not make those
 services available automatically.
 
@@ -43,6 +43,9 @@ Build from the locked Rust source, initialise the store while the service is
 stopped, then start the foreground Hub process:
 
 ```sh
+export TESLATLAS_HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+test -z "$(git status --short)"
+git ls-remote origin | awk -v commit="$TESLATLAS_HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 docker compose build hub
 docker compose run --rm hub --config /etc/teslatlas-hub/config.toml bootstrap
 # Keep the token JSON on a private pipe; `--tokens-stdin` is the bounded setup input.
@@ -52,6 +55,10 @@ docker compose up -d hub
 docker compose exec hub teslatlas-hub --config /etc/teslatlas-hub/config.toml status
 docker compose logs --tail 100 hub
 ```
+
+Compose requires that explicit exact pushed commit. The Docker build fails
+closed when it is absent or not 40 lowercase hexadecimal characters; it never
+infers source identity from the build directory.
 
 Replace the placeholders from a protected local secret source. Do not put the
 tokens in Compose environment values, build arguments, command history, the

@@ -15,12 +15,9 @@ from companions.core import BootstrapError  # noqa: E402
 from companions.recipes import (  # noqa: E402
     KNOWN_REPOSITORIES,
     SDK_TARBALL_SHA256,
-    VIEWER_ASSET_MANIFEST_SHA256,
-    VIEWER_PACKAGE_SHA256,
     RecipeContext,
     _recipe_environment,
     _run,
-    bind_viewer_sdk_artifact,
     check_recipe_environment,
     fixed_commands,
     validate_component_set,
@@ -39,28 +36,14 @@ def sdk_component(version: str = "2026.36.2", sha256: str = SDK_TARBALL_SHA256):
     )
 
 
-def viewer_component(version: str = "2026.36.2"):
-    return SimpleNamespace(
-        product_version=version,
-        artifacts={
-            "package_filename": f"teslatlas-viewer-{version}.tgz",
-            "package_sha256": VIEWER_PACKAGE_SHA256,
-            "asset_manifest_sha256": VIEWER_ASSET_MANIFEST_SHA256,
-            "sdk_package_filename": f"teslatlas-sdk-{version}.tgz",
-            "sdk_package_sha256": SDK_TARBALL_SHA256,
-        },
-    )
-
-
 class RecipeTests(unittest.TestCase):
-    def test_registry_contains_only_the_six_reviewed_repositories(self) -> None:
+    def test_registry_contains_only_the_five_active_companion_repositories(self) -> None:
         self.assertEqual(
             KNOWN_REPOSITORIES,
             {
                 "protocol": "https://github.com/magrathean-uk/teslatlas-protocol.git",
                 "sdk-typescript": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
                 "sdk-swift": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
-                "viewer": "https://github.com/magrathean-uk/teslatlas-viewer.git",
                 "home-assistant": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
                 "edge": "https://github.com/magrathean-uk/teslatlas-edge.git",
             },
@@ -157,10 +140,10 @@ class RecipeTests(unittest.TestCase):
                         RecipeContext(timeout_seconds=1),
                     )
 
-    def test_viewer_selection_requires_sdk_in_the_same_build_set(self) -> None:
-        with self.assertRaisesRegex(BootstrapError, "sdk-typescript"):
-            validate_component_set(("viewer",))
-        validate_component_set(("sdk-typescript", "viewer"))
+    def test_deferred_or_unknown_components_are_rejected(self) -> None:
+        with self.assertRaisesRegex(BootstrapError, "unknown components"):
+            validate_component_set(("deferred-product",))
+        validate_component_set(KNOWN_REPOSITORIES)
 
     def test_source_publication_status_must_match_the_selected_mode(self) -> None:
         with self.assertRaisesRegex(BootstrapError, "candidate"):
@@ -169,53 +152,6 @@ class RecipeTests(unittest.TestCase):
             validate_publication_status("published", "local-unpublished")
         validate_publication_status("candidate", "local-unpublished")
         validate_publication_status("published", "published")
-
-    def test_viewer_is_bound_to_the_sdk_output_from_the_same_run(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            sdk_output = root / "sdk-output"
-            viewer_source = root / "viewer"
-            sdk_output.mkdir()
-            (viewer_source / "artifacts").mkdir(parents=True)
-            built = sdk_output / "teslatlas-sdk-2026.36.2.tgz"
-            checked_in = viewer_source / "artifacts" / built.name
-            built.write_bytes(b"same accepted SDK")
-            checked_in.write_bytes(b"same accepted SDK")
-            with patch("companions.recipes._sha256", return_value=SDK_TARBALL_SHA256):
-                result = bind_viewer_sdk_artifact(
-                    viewer_source,
-                    sdk_output,
-                    viewer_component(),
-                    sdk_component(),
-                )
-            self.assertEqual(result["sha256"], SDK_TARBALL_SHA256)
-            self.assertEqual(checked_in.read_bytes(), built.read_bytes())
-
-    def test_package_and_viewer_asset_hashes_are_fail_closed(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            output = Path(temporary)
-            package = output / "teslatlas-viewer-2026.36.2.tgz"
-            package.write_bytes(b"package")
-            with patch("companions.recipes._sha256", return_value="0" * 64):
-                with self.assertRaisesRegex(BootstrapError, "accepted package"):
-                    verify_built_output("viewer", output, output, viewer_component())
-            with (
-                patch("companions.recipes._sha256", return_value=VIEWER_PACKAGE_SHA256),
-                patch(
-                    "companions.recipes._viewer_asset_manifest",
-                    return_value=VIEWER_ASSET_MANIFEST_SHA256,
-                ),
-            ):
-                verification = verify_built_output(
-                    "viewer", output, output, viewer_component()
-                )
-            self.assertEqual(
-                verification,
-                {
-                    "package_sha256": VIEWER_PACKAGE_SHA256,
-                    "viewer_asset_manifest_sha256": VIEWER_ASSET_MANIFEST_SHA256,
-                },
-            )
 
     @patch("companions.recipes._tool", side_effect=lambda name, _context: name)
     def test_sdk_recipe_imports_the_newly_packed_artifact(self, _tool) -> None:
@@ -255,49 +191,6 @@ class RecipeTests(unittest.TestCase):
                         "-e",
                         f"import({entrypoint!r})",
                     ],
-                ],
-            )
-
-    @patch("companions.recipes._tool", side_effect=lambda name, _context: name)
-    def test_viewer_recipe_runs_the_cli_from_the_newly_packed_artifact(
-        self, _tool
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary).resolve()
-            output = root / "output"
-            commands = fixed_commands(
-                "viewer",
-                root / "source",
-                output,
-                RecipeContext(),
-                viewer_component(),
-            )
-            package = output / "teslatlas-viewer-2026.36.2.tgz"
-            smoke = output / "runtime"
-            self.assertEqual(
-                commands[2], ["npm", "pack", "--pack-destination", str(output)]
-            )
-            self.assertEqual(
-                commands[3],
-                [
-                    "npm",
-                    "install",
-                    "--prefix",
-                    str(smoke),
-                    "--ignore-scripts",
-                    "--package-lock=false",
-                    "--no-save",
-                    str(package),
-                ],
-            )
-            self.assertEqual(
-                commands[4],
-                [
-                    "node",
-                    str(
-                        smoke / "node_modules/teslatlas-viewer/bin/teslatlas-viewer.mjs"
-                    ),
-                    "--help",
                 ],
             )
 

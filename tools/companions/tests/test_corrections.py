@@ -59,7 +59,29 @@ def _component(name: str, record: dict) -> dict:
             "payload_manifest_sha256": "9d857e0ee62076cdda1238ca7fc14ad2afa3695b2cf5cdaefc8c4edbc64e870a",
             "selection_receipt_sha256": "e" * 64,
         }
+    if name == "sdk-typescript":
+        component["artifacts"] = {
+            "package_filename": "teslatlas-sdk-2026.36.2.tgz",
+            "package_sha256": recipes.SDK_TARBALL_SHA256,
+        }
     return component
+
+
+def _catalog_components(records: dict[str, dict]) -> dict[str, dict]:
+    catalog_records = dict(records)
+    for index, (name, repository) in enumerate(recipes.KNOWN_REPOSITORIES.items(), 1):
+        catalog_records.setdefault(
+            name,
+            {
+                "repository": repository,
+                "commit": str(index) * 40,
+                "source_sha256": str(index) * 64,
+            },
+        )
+    return {
+        name: _component(name, catalog_records[name])
+        for name in recipes.KNOWN_REPOSITORIES
+    }
 
 
 def _cohort(records: dict[str, dict], names: tuple[str, ...]) -> core.Cohort:
@@ -70,7 +92,7 @@ def _cohort(records: dict[str, dict], names: tuple[str, ...]) -> core.Cohort:
                 "product_version": "2026.36.2",
                 "publication_status": "local-unpublished",
                 "admitted_hub_versions": [],
-                "components": {name: _component(name, records[name]) for name in names},
+                "components": _catalog_components(records),
             }
         ],
     }
@@ -252,18 +274,18 @@ class IdentityAndDryRunTests(unittest.TestCase):
     def test_output_manifest_includes_runtime_node_modules_and_detects_changes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            runtime = root / "runtime/node_modules/teslatlas-viewer/bin"
-            assets = root / "runtime/node_modules/teslatlas-viewer/dist/assets"
+            runtime = root / "runtime/node_modules/@teslatlas/sdk/bin"
+            assets = root / "runtime/node_modules/@teslatlas/sdk/dist/assets"
             runtime.mkdir(parents=True)
             assets.mkdir(parents=True)
-            cli_path = runtime / "teslatlas-viewer.mjs"
+            cli_path = runtime / "teslatlas-sdk.mjs"
             asset = assets / "index.js"
             cli_path.write_text("one\n")
             asset.write_text("asset-one\n")
             before = core._directory_manifest(root)
             paths = {item["path"] for item in before["files"]}
             self.assertIn(
-                "runtime/node_modules/teslatlas-viewer/bin/teslatlas-viewer.mjs",
+                "runtime/node_modules/@teslatlas/sdk/bin/teslatlas-sdk.mjs",
                 paths,
             )
             cli_path.write_text("two\n")
@@ -359,11 +381,7 @@ class IdentityAndDryRunTests(unittest.TestCase):
                                 "product_version": cohort.product_version,
                                 "publication_status": cohort.publication_status,
                                 "admitted_hub_versions": [],
-                                "components": {
-                                    "home-assistant": _component(
-                                        "home-assistant", records["home-assistant"]
-                                    )
-                                },
+                                "components": _catalog_components(records),
                             }
                         ],
                     }
@@ -409,8 +427,8 @@ class IdentityAndDryRunTests(unittest.TestCase):
             mismatched = dict(record, source_sha256="0" * 64)
             with self.assertRaisesRegex(core.BootstrapError, "does not match"):
                 core.validate_selected_sources(cohort, {"protocol": mismatched})
-            with self.assertRaisesRegex(core.BootstrapError, "sdk-typescript"):
-                recipes.validate_component_set(("viewer",))
+            with self.assertRaisesRegex(core.BootstrapError, "unknown components"):
+                recipes.validate_component_set(("deferred-product",))
 
     def test_fresh_dry_run_never_creates_installation_parent_on_success_or_failure(
         self,
@@ -429,9 +447,7 @@ class IdentityAndDryRunTests(unittest.TestCase):
                                 "product_version": cohort.product_version,
                                 "publication_status": cohort.publication_status,
                                 "admitted_hub_versions": [],
-                                "components": {
-                                    "protocol": _component("protocol", record)
-                                },
+                                "components": _catalog_components({"protocol": record}),
                             }
                         ],
                     }
@@ -730,7 +746,7 @@ class RecoveryAndCliBoundaryTests(unittest.TestCase):
                         "product_version": "2026.36.2",
                         "publication_status": "published",
                         "admitted_hub_versions": [],
-                        "components": {"protocol": component},
+                        "components": _catalog_components({"protocol": record}),
                     }
                 ],
             }
@@ -936,93 +952,6 @@ class ProcessAndArtifactTests(unittest.TestCase):
                     descendant = int(pidfile.read_text())
                     if _alive(descendant):
                         os.kill(descendant, signal.SIGKILL)
-
-    def test_later_admitted_cohort_selects_matching_package_data_and_same_run_sdk(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            version = "2026.37.1"
-            package_bytes = b"reviewed later fixture package"
-            package_sha = hashlib.sha256(package_bytes).hexdigest()
-            components = {
-                "sdk-typescript": {
-                    "repository": recipes.KNOWN_REPOSITORIES["sdk-typescript"],
-                    "commit": "1" * 40,
-                    "source_sha256": "a" * 64,
-                    "product_version": version,
-                    "profile": PROFILE,
-                    "artifacts": {
-                        "package_filename": f"teslatlas-sdk-{version}.tgz",
-                        "package_sha256": package_sha,
-                    },
-                },
-                "viewer": {
-                    "repository": recipes.KNOWN_REPOSITORIES["viewer"],
-                    "commit": "2" * 40,
-                    "source_sha256": "b" * 64,
-                    "product_version": version,
-                    "profile": PROFILE,
-                    "artifacts": {
-                        "package_filename": f"teslatlas-viewer-{version}.tgz",
-                        "package_sha256": "c" * 64,
-                        "asset_manifest_sha256": "d" * 64,
-                        "sdk_package_filename": f"teslatlas-sdk-{version}.tgz",
-                        "sdk_package_sha256": package_sha,
-                    },
-                },
-            }
-            catalog = core.parse_catalog(
-                {
-                    "schema_version": 1,
-                    "cohorts": [
-                        {
-                            "product_version": version,
-                            "publication_status": "published",
-                            "admitted_hub_versions": ["2026.36.2"],
-                            "components": components,
-                        }
-                    ],
-                }
-            )
-            cohort = core.select_cohort(
-                catalog,
-                ("sdk-typescript", "viewer"),
-                "2026.36.2",
-                allow_candidates=False,
-                update=True,
-            )
-            sdk_output = root / "sdk-output"
-            viewer_source = root / "viewer-source"
-            sdk_output.mkdir()
-            (viewer_source / "artifacts").mkdir(parents=True)
-            sdk_package = sdk_output / f"teslatlas-sdk-{version}.tgz"
-            viewer_copy = viewer_source / "artifacts" / sdk_package.name
-            sdk_package.write_bytes(package_bytes)
-            viewer_copy.write_bytes(package_bytes)
-            binding = recipes.bind_viewer_sdk_artifact(
-                viewer_source,
-                sdk_output,
-                cohort.components["viewer"],
-                cohort.components["sdk-typescript"],
-            )
-            self.assertEqual(binding["sha256"], package_sha)
-            with patch("companions.recipes._tool", side_effect=lambda name, _ctx: name):
-                sdk_commands = recipes.fixed_commands(
-                    "sdk-typescript",
-                    root,
-                    sdk_output,
-                    recipes.RecipeContext(),
-                    cohort.components["sdk-typescript"],
-                )
-                viewer_commands = recipes.fixed_commands(
-                    "viewer",
-                    root,
-                    root / "viewer-output",
-                    recipes.RecipeContext(),
-                    cohort.components["viewer"],
-                )
-            self.assertIn(f"teslatlas-sdk-{version}.tgz", sdk_commands[3][-1])
-            self.assertIn(f"teslatlas-viewer-{version}.tgz", viewer_commands[3][-1])
-
 
 if __name__ == "__main__":
     unittest.main()

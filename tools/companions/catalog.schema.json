@@ -27,11 +27,15 @@
           },
           "components": {
             "type": "object",
-            "minProperties": 1,
-            "propertyNames": {
-              "enum": ["protocol", "sdk-typescript", "sdk-swift", "viewer", "home-assistant", "edge"]
-            },
-            "additionalProperties": {"$ref": "#/$defs/component"}
+            "additionalProperties": false,
+            "required": ["protocol", "sdk-typescript", "sdk-swift", "home-assistant", "edge"],
+            "properties": {
+              "protocol": {"$ref": "#/$defs/protocolComponent"},
+              "sdk-typescript": {"$ref": "#/$defs/typescriptComponent"},
+              "sdk-swift": {"$ref": "#/$defs/swiftComponent"},
+              "home-assistant": {"$ref": "#/$defs/homeAssistantComponent"},
+              "edge": {"$ref": "#/$defs/edgeComponent"}
+            }
           }
         }
       }
@@ -42,58 +46,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["repository", "commit", "source_sha256", "product_version", "profile"],
-      "allOf": [
-        {
-          "if": {"properties": {"repository": {"const": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git"}}},
-          "then": {
-            "required": ["artifacts"],
-            "properties": {
-              "artifacts": {
-                "required": ["package_filename", "package_sha256"],
-                "maxProperties": 2
-              }
-            }
-          }
-        },
-        {
-          "if": {"properties": {"repository": {"const": "https://github.com/magrathean-uk/teslatlas-viewer.git"}}},
-          "then": {
-            "required": ["artifacts"],
-            "properties": {
-              "artifacts": {
-                "required": [
-                  "package_filename",
-                  "package_sha256",
-                  "asset_manifest_sha256",
-                  "sdk_package_filename",
-                  "sdk_package_sha256"
-                ],
-                "minProperties": 5
-              }
-            }
-          }
-        },
-        {
-          "if": {"properties": {"repository": {"const": "https://github.com/magrathean-uk/teslatlas-home-assistant.git"}}},
-          "then": {
-            "required": ["artifacts"],
-            "properties": {
-              "artifacts": {
-                "required": ["payload_manifest_sha256", "selection_receipt_sha256"],
-                "minProperties": 2,
-                "maxProperties": 2
-              }
-            }
-          }
-        }
-      ],
       "properties": {
         "repository": {
           "enum": [
             "https://github.com/magrathean-uk/teslatlas-protocol.git",
             "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
             "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
-            "https://github.com/magrathean-uk/teslatlas-viewer.git",
             "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
             "https://github.com/magrathean-uk/teslatlas-edge.git"
           ]
@@ -107,9 +65,6 @@
           "properties": {
             "package_filename": {"type": "string", "pattern": "^[A-Za-z0-9._-]+\\.tgz$"},
             "package_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-            "asset_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-            "sdk_package_filename": {"type": "string", "pattern": "^teslatlas-sdk-[0-9]{4}\\.[0-9]{1,2}\\.[0-9]+\\.tgz$"},
-            "sdk_package_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "payload_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "selection_receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
           }
@@ -124,6 +79,75 @@
             "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
           }
         }
+      }
+    },
+    "protocolComponent": {
+      "allOf": [
+        {"$ref": "#/$defs/component"},
+        {
+          "properties": {"repository": {"const": "https://github.com/magrathean-uk/teslatlas-protocol.git"}},
+          "not": {"required": ["artifacts"]}
+        }
+      ]
+    },
+    "typescriptComponent": {
+      "allOf": [
+        {"$ref": "#/$defs/component"},
+        {
+          "required": ["artifacts"],
+          "properties": {
+            "repository": {"const": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git"},
+            "artifacts": {"$ref": "#/$defs/typescriptArtifacts"}
+          }
+        }
+      ]
+    },
+    "swiftComponent": {
+      "allOf": [
+        {"$ref": "#/$defs/component"},
+        {
+          "properties": {"repository": {"const": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git"}},
+          "not": {"required": ["artifacts"]}
+        }
+      ]
+    },
+    "homeAssistantComponent": {
+      "allOf": [
+        {"$ref": "#/$defs/component"},
+        {
+          "required": ["artifacts"],
+          "properties": {
+            "repository": {"const": "https://github.com/magrathean-uk/teslatlas-home-assistant.git"},
+            "artifacts": {"$ref": "#/$defs/homeAssistantArtifacts"}
+          }
+        }
+      ]
+    },
+    "edgeComponent": {
+      "allOf": [
+        {"$ref": "#/$defs/component"},
+        {
+          "properties": {"repository": {"const": "https://github.com/magrathean-uk/teslatlas-edge.git"}},
+          "not": {"required": ["artifacts"]}
+        }
+      ]
+    },
+    "typescriptArtifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package_filename", "package_sha256"],
+      "properties": {
+        "package_filename": {"type": "string", "pattern": "^[A-Za-z0-9._-]+\\.tgz$"},
+        "package_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "homeAssistantArtifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payload_manifest_sha256", "selection_receipt_sha256"],
+      "properties": {
+        "payload_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "selection_receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       }
     }
   }

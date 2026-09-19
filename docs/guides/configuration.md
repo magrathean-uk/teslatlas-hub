@@ -38,12 +38,12 @@ claim is the only unauthenticated mutation. Never reuse pairing invitations.
 
 ## Browser clients
 
-Cross-origin browser access is disabled by default. List each permitted Viewer
-origin explicitly when the Viewer is hosted separately from Hub:
+Cross-origin browser access is disabled by default. List each permitted browser
+client origin explicitly when it is hosted separately from Hub:
 
 ```toml
 [http]
-allowed_origins = ["https://viewer.example.net", "http://localhost:5173"]
+allowed_origins = ["https://client.example.net", "http://localhost:5173"]
 ```
 
 Origins must use canonical `http://host[:port]` or `https://host[:port]` syntax,

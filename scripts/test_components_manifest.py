@@ -127,12 +127,8 @@ class ComponentsManifestTests(unittest.TestCase):
             for component in document["components"]
             if component["id"] == "viewer"
         )
-        self.assertEqual(
-            viewer["status"], "prepared_for_aggregate_review"
-        )
-        self.assertEqual(
-            viewer["source"]["handoff_file_count"], 106
-        )
+        self.assertEqual(viewer["status"], "prepared_for_aggregate_review")
+        self.assertEqual(viewer["source"]["handoff_file_count"], 106)
         self.assertEqual(
             viewer["source"]["handoff_manifest_sha256"],
             "b57d3e5b7c015bf397b55ab5823afe33d20c0b2296d0892f39c6bd683d6bae7a",
@@ -147,142 +143,23 @@ class ComponentsManifestTests(unittest.TestCase):
         )
         self.assertTrue(viewer["package_archive_present"])
 
-    def test_verifies_the_frozen_ha_payload_manifest_against_current_bytes(self) -> None:
+    def test_keeps_ha_arm64_selection_explicitly_historical_and_narrow(self) -> None:
         document = json.loads(MANIFEST.read_text(encoding="utf-8"))
         home_assistant = next(
             component
             for component in document["components"]
             if component["id"] == "home-assistant"
         )
-        root = ROOT.parent / "teslatlas-home-assistant" / "custom_components" / "teslatlas_hub"
-        manifest = ROOT.parent / "teslatlas-home-assistant" / "docs" / "development" / "d1-aggregate-manifest-payload-2026-09-09.txt"
-        raw = manifest.read_bytes()
-        lines = raw.decode("utf-8").splitlines()
-        self.assertEqual(len(lines), 31)
-        self.assertEqual(lines, sorted(lines))
         self.assertEqual(
-            hashlib.sha256(raw).hexdigest(),
-            home_assistant["payload"]["handoff_manifest_sha256"],
+            home_assistant["selection_receipt"]["selector_id"],
+            "debian13-arm64-container",
         )
-        for line in lines:
-            relative, digest = line.split(" ", 1)
-            self.assertEqual(
-                hashlib.sha256((root / relative).read_bytes()).hexdigest(), digest
-            )
-        self.assertEqual(
-            home_assistant["status"],
-            "accepted_primary_runtime_lane_only",
-        )
-
-    def test_binds_the_ha_arm64_container_selection_receipt_without_widening_it(self) -> None:
-        document = json.loads(MANIFEST.read_text(encoding="utf-8"))
-        home_assistant = next(
-            component
-            for component in document["components"]
-            if component["id"] == "home-assistant"
-        )
-        receipt = ROOT.parent / "teslatlas-home-assistant" / "docs" / "development" / "d1-debian13-arm64-container-selection-receipt-2026-09-09.json"
-        value = json.loads(receipt.read_text(encoding="utf-8"))
-
-        self.assertEqual(value["kind"], "teslatlas.d1-component-selection-receipt/v1")
-        self.assertEqual(value["selector_id"], "debian13-arm64-container")
-        self.assertEqual(value["status"], "accepted_primary_runtime_lane_only")
-        self.assertEqual(
-            value["component_manifest_sha256"],
-            home_assistant["payload"]["handoff_manifest_sha256"],
-        )
-        self.assertFalse(value["candidate_source_and_artifact_identities"]["standalone_package"])
-        self.assertEqual(
-            home_assistant["selection_receipt"]["sha256"],
-            hashlib.sha256(receipt.read_bytes()).hexdigest(),
-        )
+        self.assertIn("not a standalone package", home_assistant["selection_receipt"]["scope"])
+        self.assertFalse(home_assistant["payload"]["standalone_package"])
         self.assertEqual(
             home_assistant["selectors"][0]["selection_receipt"],
             home_assistant["selection_receipt"]["path"],
         )
-
-    def test_verifies_the_external_frozen_viewer_snapshot_and_retained_package(self) -> None:
-        document = json.loads(MANIFEST.read_text(encoding="utf-8"))
-        viewer = next(
-            component
-            for component in document["components"]
-            if component["id"] == "viewer"
-        )
-        import subprocess
-        import sys
-
-        sys.path.insert(0, str(ROOT / "tools"))
-        from companions.core import KNOWN_REPOSITORIES, source_manifest_for
-
-        source = Path(viewer["source"]["frozen_snapshot"]["path"])
-        record_path = Path(viewer["source"]["frozen_snapshot"]["manifest_path"])
-        record = json.loads(record_path.read_text(encoding="utf-8"))["components"]["viewer"]
-        commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
-        observed = source_manifest_for(
-            "viewer", source, KNOWN_REPOSITORIES["viewer"], commit
-        )
-        self.assertEqual(record, observed)
-        self.assertEqual(
-            viewer["source"]["handoff_manifest_sha256"], observed["source_sha256"]
-        )
-        self.assertEqual(
-            viewer["status"], "prepared_for_aggregate_review"
-        )
-        archive = Path(viewer["package_archive"]["path"])
-        self.assertEqual(
-            viewer["package_archive"]["sha256"],
-            hashlib.sha256(archive.read_bytes()).hexdigest(),
-        )
-
-    def test_binds_the_viewer_arm64_docker_receipt_without_widening_it(self) -> None:
-        document = json.loads(MANIFEST.read_text(encoding="utf-8"))
-        viewer = next(
-            component
-            for component in document["components"]
-            if component["id"] == "viewer"
-        )
-        selector = next(
-            selector
-            for selector in viewer["selectors"]
-            if selector["id"] == "debian13-arm64-docker"
-        )
-        receipt = ROOT.parent / "teslatlas-viewer" / "docs" / "development" / "receipts" / "2026-09-09-d1-container-source.json"
-        value = json.loads(receipt.read_text(encoding="utf-8"))
-
-        self.assertIn("docker_runtime_receipt", viewer)
-        self.assertEqual(value["kind"], "d1_viewer_container_runtime")
-        self.assertEqual(value["status"], "passed_debian_arm64_runtime")
-        self.assertEqual(
-            hashlib.sha256(receipt.read_bytes()).hexdigest(),
-            viewer["docker_runtime_receipt"]["sha256"],
-        )
-        self.assertEqual(
-            viewer["docker_runtime_receipt"]["path"],
-            "teslatlas-viewer/docs/development/receipts/2026-09-09-d1-container-source.json",
-        )
-        self.assertEqual(
-            value["source_manifest_sha256"], viewer["source"]["handoff_manifest_sha256"]
-        )
-        self.assertEqual(
-            value["source_files"]["Dockerfile_sha256"],
-            viewer["verified_supporting_identities"]["dockerfile_sha256"],
-        )
-        self.assertEqual(
-            value["source_files"]["compose_yaml_sha256"],
-            viewer["verified_supporting_identities"]["compose_sha256"],
-        )
-        self.assertEqual(
-            selector["status"], "runtime_passed_limited_cleaned"
-        )
-        self.assertEqual(
-            selector["selection_receipt"], viewer["docker_runtime_receipt"]["path"]
-        )
-        self.assertEqual(
-            selector["artifact"]["image_sha256"], value["artifact"]["image_id"]
-        )
-        self.assertTrue(selector["runtime_receipt_required"])
-        self.assertIn("not final", selector["selection_limit"].lower())
-        self.assertIn("removed", value["checks"]["clean_stop"])
 
     def test_verifies_the_external_frozen_typescript_snapshot_and_retained_package(self) -> None:
         document = json.loads(MANIFEST.read_text(encoding="utf-8"))

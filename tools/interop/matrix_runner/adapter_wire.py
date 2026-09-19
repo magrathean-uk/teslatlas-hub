@@ -20,9 +20,6 @@ from typing import Any, Mapping
 
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
-HTTPS_LOOPBACK_ORIGIN = re.compile(
-    r"^https://(127\.0\.0\.1|localhost):([1-9][0-9]{0,4})$"
-)
 MAX_FRAME_BYTES = 1_048_576
 MAX_EVIDENCE_BYTES = 8_388_608
 READY_FIELDS = frozenset({
@@ -217,80 +214,6 @@ def _typed_equal(left: Any, right: Any) -> bool:
     if isinstance(left, list):
         return len(left) == len(right) and all(_typed_equal(a, b) for a, b in zip(left, right))
     return left == right
-
-
-def _https_loopback_origin(value: Any, label: str) -> str:
-    if not isinstance(value, str):
-        raise WireError(f"{label} is invalid")
-    match = HTTPS_LOOPBACK_ORIGIN.fullmatch(value)
-    if match is None or int(match.group(2)) > 65_535:
-        raise WireError(f"{label} is not a canonical loopback HTTPS origin")
-    return value
-
-
-def validate_viewer_session_contract(value: Any) -> None:
-    """Validate the optional, adapter-specific installed Viewer wire.
-
-    Other adapters omit this top-level extension. Viewer uses it to bind the
-    already-staged UI origin, Hub CORS expectation, trust root, browser binary,
-    and fresh evidence reservations without granting job argv or ambient
-    environment any execution authority.
-    """
-    _exact(value, {"page", "hub", "trusted_ca", "browser", "reservations"}, "Viewer wire")
-    page = value["page"]
-    _exact(page, {"origin", "server_authority", "artifact_role"}, "Viewer page")
-    page_origin = _https_loopback_origin(page["origin"], "Viewer page origin")
-    if (
-        page["server_authority"] != "runner-owned-installed-viewer"
-        or page["artifact_role"] != "viewer_package_tarball"
-    ):
-        raise WireError("Viewer page authority is invalid")
-
-    hub = value["hub"]
-    _exact(hub, {"public_origin", "cors_allowed_origin", "cross_origin"}, "Viewer Hub")
-    hub_origin = _https_loopback_origin(hub["public_origin"], "Viewer Hub public origin")
-    if (
-        hub["cors_allowed_origin"] != page_origin
-        or hub["cross_origin"] is not True
-        or hub_origin == page_origin
-    ):
-        raise WireError("Viewer Hub CORS relation is invalid")
-
-    trusted_ca = value["trusted_ca"]
-    _exact(trusted_ca, {"certificate", "certificate_der_sha256"}, "Viewer trusted CA")
-    root, local = _staged(trusted_ca["certificate"], "Viewer trusted CA certificate")
-    if (
-        trusted_ca["certificate"].get("id") != "viewer_trusted_ca"
-        or root.get("sha256") != local.get("sha256")
-        or not isinstance(trusted_ca["certificate_der_sha256"], str)
-        or HEX64.fullmatch(trusted_ca["certificate_der_sha256"]) is None
-    ):
-        raise WireError("Viewer trusted CA binding is invalid")
-
-    browser = value["browser"]
-    _exact(browser, {"authority", "engine", "version", "executable"}, "Viewer browser")
-    if (
-        browser["authority"] != "runner-bound-executable"
-        or browser["engine"] != "chromium"
-        or not isinstance(browser["version"], str)
-        or re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", browser["version"]) is None
-    ):
-        raise WireError("Viewer browser identity is invalid")
-    executable = browser["executable"]
-    _exact(executable, {"path", "sha256"}, "Viewer browser executable")
-    _canonical_absolute(executable["path"], "Viewer browser executable")
-    if not isinstance(executable["sha256"], str) or HEX64.fullmatch(executable["sha256"]) is None:
-        raise WireError("Viewer browser executable digest is invalid")
-
-    reservations = value["reservations"]
-    _exact(
-        reservations,
-        {"raw_evidence_dir", "browser_log", "close_record", "supplement"},
-        "Viewer reservations",
-    )
-    paths = [_canonical_absolute(item, "Viewer reservation") for item in reservations.values()]
-    if len(set(paths)) != len(paths) or len({path.parent for path in paths}) != 1:
-        raise WireError("Viewer reservations are not distinct siblings")
 
 
 def _identity(value: Mapping[str, Any], *, session_id: str, cell_id: str,

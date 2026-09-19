@@ -89,6 +89,11 @@ case "$check_go_toolchain" in
         ;;
 esac
 
+SOURCE_COMMIT=${TESLATLAS_HUB_SOURCE_COMMIT-}
+/usr/bin/printf '%s\n' "$SOURCE_COMMIT" | /usr/bin/grep -Eq '^[0-9a-f]{40}$' \
+    || die "TESLATLAS_HUB_SOURCE_COMMIT must be exactly 40 lowercase hexadecimal characters"
+export TESLATLAS_HUB_SOURCE_COMMIT
+
 ICON_BUILD="$ROOT/scripts/build-app-icon.sh"
 APP_SOURCE="$ROOT/macos/TeslatlasHubApp"
 DERIVED="$ROOT/target/macos-app"
@@ -263,6 +268,7 @@ done
     --proxy-binary "$PROXY_BINARY" \
     --fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY" \
     --version "$version" \
+    --source-commit "$SOURCE_COMMIT" \
     --legal-bundle "$LEGAL_BUNDLE" \
     --go-proxy-evidence "$GO_EVIDENCE" \
     --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" \
@@ -288,6 +294,7 @@ xcodebuild \
     MARKETING_VERSION="$marketing_version" \
     CURRENT_PROJECT_VERSION="$bundle_version" \
     TESLATLAS_HUB_VERSION="$version" \
+    TESLATLAS_HUB_SOURCE_COMMIT="$SOURCE_COMMIT" \
     CODE_SIGNING_ALLOWED=NO \
     build >/dev/null
 

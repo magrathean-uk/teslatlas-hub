@@ -63,7 +63,10 @@ class FinalizationTests(unittest.TestCase):
         }
         self.release_before = {
             "schema_version": 1, "status": "candidate", "product_version": "2026.36.2",
-            "source_tag": {"status": "not_created"}, "test_receipt_paths": [],
+            "source_identity": {
+                "kind": "git-commit", "commit": None, "status": "unbound-candidate",
+            },
+            "test_receipt_paths": [],
         }
         write_json(docs / "execution-state.json", self.execution_before)
         write_json(docs / "ecosystem-release.json", self.release_before)
@@ -83,9 +86,9 @@ class FinalizationTests(unittest.TestCase):
         self.receipts = []
         self.validation = {}
         for kind, scope, schema, status, gates in (
-            ("matrix", "local-tested-cohort-not-published", "hub-compatibility-receipt-v2", "passed", ["21-cells", "cleanup"]),
+            ("matrix", "local-tested-cohort-not-published", "hub-compatibility-receipt-v2", "passed", ["18-cells", "cleanup"]),
             ("package", "local-built-not-published", "hub-package-receipt-v1", "passed", ["macos", "debian-amd64", "debian-arm64"]),
-            ("bootstrap", "local-source-candidate", "hub-bootstrap-receipt-v2", "passed", ["six-companions"]),
+            ("bootstrap", "local-source-candidate", "hub-bootstrap-receipt-v2", "passed", ["five-companions"]),
             ("upgrade", "isolated-upgrade", "hub-upgrade-receipt-v1", "passed", ["hub", "mixed-version"]),
             ("private-lane", "authorized-private-lane", "hub-private-lane-receipt-v1", "pending", ["task11-explicit-pending"]),
         ):
@@ -139,9 +142,9 @@ class FinalizationTests(unittest.TestCase):
                 result["tested_cohort_inputs"] = dict(self.cohort)
                 result["historical_tested_inputs"] = None
         self.required_gates = {
-            "matrix": ["21-cells", "cleanup"],
+            "matrix": ["18-cells", "cleanup"],
             "package": ["macos", "debian-amd64", "debian-arm64"],
-            "bootstrap": ["six-companions"],
+            "bootstrap": ["five-companions"],
             "upgrade": ["hub", "mixed-version"],
             "private-lane": ["task11-explicit-pending"],
             "review": ["final-contracts"],
@@ -357,6 +360,58 @@ class FinalizationTests(unittest.TestCase):
 
     def test_module_contract_exists(self):
         self.assertTrue(FINAL_MODULE.is_file(), "finalize_evidence.py is not implemented")
+
+    def test_release_source_identity_matches_the_tested_hub_cohort(self):
+        tested = {"head": "a" * 40}
+        unbound = {
+            "status": "candidate",
+            "source_identity": {
+                "kind": "git-commit",
+                "commit": None,
+                "status": "unbound-candidate",
+            },
+        }
+        self.assertTrue(
+            self.final._candidate_source_identity_matches(
+                unbound, tested, publication_performed=False
+            ),
+            "an explicitly non-distributable unbound candidate remains valid",
+        )
+        self.assertFalse(
+            self.final._candidate_source_identity_matches(
+                unbound, tested, publication_performed=True
+            ),
+            "an unbound candidate cannot be finalized as published",
+        )
+
+        matching = {
+            "status": "candidate",
+            "source_identity": {
+                "kind": "git-commit",
+                "commit": "a" * 40,
+                "status": "bound",
+            },
+        }
+        self.assertTrue(
+            self.final._candidate_source_identity_matches(
+                matching, tested, publication_performed=False
+            )
+        )
+        mismatched = json.loads(json.dumps(matching))
+        mismatched["source_identity"]["commit"] = "b" * 40
+        self.assertFalse(
+            self.final._candidate_source_identity_matches(
+                mismatched, tested, publication_performed=False
+            ),
+            "a syntactically valid but untested commit must fail",
+        )
+        mismatched["source_identity"]["extra"] = "ambiguous"
+        self.assertFalse(
+            self.final._candidate_source_identity_matches(
+                mismatched, tested, publication_performed=False
+            ),
+            "source identity fields must be closed",
+        )
 
     def test_validates_exact_delta_receipts_and_deterministic_rendering(self):
         path, _ = self._document()

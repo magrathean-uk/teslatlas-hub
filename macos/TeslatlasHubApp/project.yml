@@ -16,6 +16,7 @@ settings:
     CODE_SIGN_IDENTITY: ""
     MARKETING_VERSION: "2026.36.2"
     TESLATLAS_HUB_VERSION: "$(MARKETING_VERSION)"
+    TESLATLAS_HUB_SOURCE_COMMIT: "UNBOUND"
     CURRENT_PROJECT_VERSION: "20260905.1"
 
 targets:
@@ -33,6 +34,7 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSHumanReadableCopyright: "Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own. AGPL-3.0-only."
         TeslatlasHubVersion: "$(TESLATLAS_HUB_VERSION)"
+        TeslatlasHubSourceCommit: "$(TESLATLAS_HUB_SOURCE_COMMIT)"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.hub.app

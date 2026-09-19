@@ -15,6 +15,9 @@ pub mod runtime;
 pub mod storage;
 pub mod sync;
 
+#[path = "../source_identity.rs"]
+mod source_identity;
+
 #[cfg(feature = "edge-test-faults")]
 #[path = "runtime/edge_test_fault.rs"]
 mod edge_test_fault;
@@ -54,14 +57,32 @@ pub(crate) use sync::manifest_signing;
 
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SOURCE_URL: &str = "https://github.com/magrathean-uk/teslatlas-hub";
-pub const CORRESPONDING_SOURCE_URL: &str = concat!(
-    "https://github.com/magrathean-uk/teslatlas-hub/tree/v",
-    env!("CARGO_PKG_VERSION")
-);
+pub const UNBOUND_SOURCE_ERROR: &str = "this non-distributable developer build has no exact \
+source identity; rebuild with TESLATLAS_HUB_SOURCE_COMMIT set to a pushed 40-hex commit";
+const SOURCE_COMMIT_RAW: &str = env!("TESLATLAS_HUB_SOURCE_COMMIT");
 
-/// Version-derived source-tag URL; it resolves only after that source tag exists.
-pub fn corresponding_source_url() -> String {
-    CORRESPONDING_SOURCE_URL.to_owned()
+/// Exact source commit embedded by an explicit build input.
+pub fn source_commit() -> Option<&'static str> {
+    source_identity::is_exact_commit(SOURCE_COMMIT_RAW).then_some(SOURCE_COMMIT_RAW)
+}
+
+fn corresponding_source_url_for(source_commit: &str) -> Option<String> {
+    source_identity::is_exact_commit(source_commit)
+        .then(|| format!("{SOURCE_URL}/tree/{source_commit}"))
+}
+
+/// Immutable Corresponding Source URL, absent for an unbound developer build.
+pub fn corresponding_source_url() -> Option<String> {
+    corresponding_source_url_for(SOURCE_COMMIT_RAW)
+}
+
+fn discovery_source_url_for(source_commit: &str) -> String {
+    corresponding_source_url_for(source_commit).unwrap_or_else(|| SOURCE_URL.to_owned())
+}
+
+/// Discovery remains profile-compatible while distinguishing an unbound build.
+pub fn discovery_source_url() -> String {
+    discovery_source_url_for(SOURCE_COMMIT_RAW)
 }
 
 #[cfg(test)]
@@ -75,7 +96,10 @@ pub(crate) fn private_tempdir() -> std::io::Result<tempfile::TempDir> {
 
 /// Interactive legal notice printed by `teslatlas-hub legal`.
 pub fn legal_notice() -> String {
-    let corresponding_source = corresponding_source_url();
+    let corresponding_source = corresponding_source_url().unwrap_or_else(|| {
+        "UNBOUND DEVELOPMENT BUILD; rebuild with TESLATLAS_HUB_SOURCE_COMMIT before distribution"
+            .to_owned()
+    });
     format!(
         "Teslatlas Hub {BUILD_VERSION}\n\
          Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own\n\
@@ -89,17 +113,56 @@ pub fn legal_notice() -> String {
 #[cfg(test)]
 mod legal_notice_tests {
     use super::{
-        BUILD_VERSION, CORRESPONDING_SOURCE_URL, SOURCE_URL, corresponding_source_url, legal_notice,
+        BUILD_VERSION, SOURCE_COMMIT_RAW, SOURCE_URL, UNBOUND_SOURCE_ERROR,
+        corresponding_source_url, corresponding_source_url_for, discovery_source_url_for,
+        legal_notice, source_commit, source_identity,
     };
 
     #[test]
-    fn versioned_source_url_tracks_the_product_version() {
+    fn source_identity_is_an_exact_commit_or_explicitly_unbound() {
         assert_eq!(BUILD_VERSION, "2026.36.2");
+        if let Some(commit) = source_commit() {
+            assert!(source_identity::is_exact_commit(commit));
+            assert_eq!(
+                corresponding_source_url(),
+                Some(format!("{SOURCE_URL}/tree/{commit}"))
+            );
+        } else {
+            assert_eq!(SOURCE_COMMIT_RAW, source_identity::UNBOUND_SOURCE_COMMIT);
+            assert_eq!(corresponding_source_url(), None);
+        }
+    }
+
+    #[test]
+    fn commit_validation_rejects_ambiguous_or_noncanonical_inputs() {
+        assert!(source_identity::is_exact_commit(&"a".repeat(40)));
+        for invalid in [
+            "",
+            "a",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "gggggggggggggggggggggggggggggggggggggggg",
+            "../../aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ] {
+            assert!(!source_identity::is_exact_commit(invalid), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn canonical_discovery_source_covers_bound_and_unbound_builds() {
+        let commit = "0123456789abcdef0123456789abcdef01234567";
         assert_eq!(
-            corresponding_source_url(),
-            "https://github.com/magrathean-uk/teslatlas-hub/tree/v2026.36.2"
+            corresponding_source_url_for(commit),
+            Some(format!("{SOURCE_URL}/tree/{commit}"))
         );
-        assert_eq!(corresponding_source_url(), CORRESPONDING_SOURCE_URL);
+        assert_eq!(
+            discovery_source_url_for(commit),
+            format!("{SOURCE_URL}/tree/{commit}")
+        );
+        assert_eq!(corresponding_source_url_for("UNBOUND"), None);
+        assert_eq!(discovery_source_url_for("UNBOUND"), SOURCE_URL);
+        assert!(UNBOUND_SOURCE_ERROR.contains("non-distributable"));
     }
 
     #[test]
@@ -130,10 +193,16 @@ mod legal_notice_tests {
             notice.contains(SOURCE_URL),
             "notice must offer the source URL: {notice}"
         );
-        assert!(
-            notice.contains(&corresponding_source_url()),
-            "notice must offer exact Corresponding Source: {notice}"
-        );
+        match corresponding_source_url() {
+            Some(url) => assert!(
+                notice.contains(&url),
+                "notice must offer exact Corresponding Source: {notice}"
+            ),
+            None => assert!(
+                notice.contains("UNBOUND DEVELOPMENT BUILD"),
+                "unbound notice must fail closed: {notice}"
+            ),
+        }
         assert!(
             notice.contains("no warranty")
                 && notice.contains("not affiliated with Tesla or TeslaMate"),

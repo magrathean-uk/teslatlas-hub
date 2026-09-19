@@ -22,8 +22,6 @@ from .recipes import (
     KNOWN_REPOSITORIES,
     RECIPE_REVISION,
     SDK_TARBALL_SHA256,
-    VIEWER_ASSET_MANIFEST_SHA256,
-    VIEWER_PACKAGE_SHA256,
 )
 
 HEX_40 = re.compile(r"[0-9a-f]{40}\Z")
@@ -203,8 +201,12 @@ def parse_catalog(value: Any) -> Catalog:
         for admitted in admissions:
             _version_key(admitted)
         raw_components = raw_cohort["components"]
-        if not isinstance(raw_components, dict) or not raw_components:
-            raise CatalogError("cohort components must be a nonempty object")
+        if not isinstance(raw_components, dict) or set(raw_components) != set(
+            KNOWN_REPOSITORIES
+        ):
+            raise CatalogError(
+                "cohort must contain exactly the five active companion components"
+            )
         components: dict[str, Component] = {}
         for name, raw_component in raw_components.items():
             if name not in KNOWN_REPOSITORIES:
@@ -261,14 +263,6 @@ def parse_catalog(value: Any) -> Catalog:
                     "payload_manifest_sha256",
                     "selection_receipt_sha256",
                 }
-            elif name == "viewer":
-                expected_artifact_fields = {
-                    "package_filename",
-                    "package_sha256",
-                    "asset_manifest_sha256",
-                    "sdk_package_filename",
-                    "sdk_package_sha256",
-                }
             else:
                 expected_artifact_fields = set()
             if set(artifacts) != expected_artifact_fields:
@@ -292,7 +286,6 @@ def parse_catalog(value: Any) -> Catalog:
                     raise CatalogError(f"component {name} artifact name is invalid")
             expected_package_name = {
                 "sdk-typescript": f"teslatlas-sdk-{version}.tgz",
-                "viewer": f"teslatlas-viewer-{version}.tgz",
             }.get(name)
             if (
                 expected_package_name is not None
@@ -301,21 +294,10 @@ def parse_catalog(value: Any) -> Catalog:
                 raise CatalogError(
                     f"component {name} artifact filename does not match its version"
                 )
-            if name == "viewer" and artifacts["sdk_package_filename"] != (
-                f"teslatlas-sdk-{version}.tgz"
-            ):
-                raise CatalogError("viewer SDK artifact filename mixes cohorts")
             current_artifacts = {
                 "sdk-typescript": {
                     "package_filename": "teslatlas-sdk-2026.36.2.tgz",
                     "package_sha256": SDK_TARBALL_SHA256,
-                },
-                "viewer": {
-                    "package_filename": "teslatlas-viewer-2026.36.2.tgz",
-                    "package_sha256": VIEWER_PACKAGE_SHA256,
-                    "asset_manifest_sha256": VIEWER_ASSET_MANIFEST_SHA256,
-                    "sdk_package_filename": "teslatlas-sdk-2026.36.2.tgz",
-                    "sdk_package_sha256": SDK_TARBALL_SHA256,
                 },
             }
             if (
@@ -335,18 +317,6 @@ def parse_catalog(value: Any) -> Catalog:
                 profile=Profile(**raw_profile),
                 artifacts=dict(sorted(artifacts.items())),
             )
-        if "viewer" in components:
-            sdk = components.get("sdk-typescript")
-            viewer = components["viewer"]
-            if sdk is None:
-                raise CatalogError("viewer requires sdk-typescript in the same cohort")
-            if (
-                viewer.artifacts["sdk_package_filename"]
-                != sdk.artifacts["package_filename"]
-                or viewer.artifacts["sdk_package_sha256"]
-                != sdk.artifacts["package_sha256"]
-            ):
-                raise CatalogError("viewer SDK artifact does not match its cohort SDK")
         cohorts.append(Cohort(version, publication, tuple(admissions), components))
     return Catalog(tuple(cohorts))
 

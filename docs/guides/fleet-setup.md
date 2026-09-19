@@ -204,7 +204,10 @@ ARM64:
 
 ```sh
 mkdir -p dist
-cargo build --locked --release --bin teslatlas-hub
+HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
+TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
+  cargo build --locked --release --bin teslatlas-hub
 python3 scripts/go-proxy-evidence.py --repo . \
   --verify-dir dist/go-proxy-evidence-amd64
 python3 scripts/fleet-telemetry-evidence.py --repo . \
@@ -223,6 +226,7 @@ scripts/build-deb.sh \
   --legal-bundle dist/dependency-legal \
   --version 1.0.0 \
   --architecture amd64 \
+  --source-commit "$HUB_SOURCE_COMMIT" \
   --output dist/teslatlas-hub_1.0.0_amd64.deb
 sudo dpkg -i dist/teslatlas-hub_1.0.0_amd64.deb
 ```

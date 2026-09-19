@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-19T13:02:59Z",
-  "update_scope": "f0_accepted_f1_f6_debian_arm64_package_partial_foundation_independently_accepted",
+  "updated_at": "2026-09-19T14:21:25Z",
+  "update_scope": "f6_source_identity_and_exact_five_companion_catalog_partial_foundation_independently_accepted",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "c0302c1b830cd2fc62dbb032c3fcd391e3d62a73",
+    "head": "dba3e7888d7a152054fc933bd5e8b9410f675f80",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-19T13:02:59Z"
+    "checked_at": "2026-09-19T14:21:25Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -51,7 +51,11 @@
     "The bounded F1/F6 Debian 13 ARM64 package slice passed ordinary core-package install, service identity and permissions, start/status/restart, a genuine 2026.36.1-1 to 2026.36.2-1 migration, backup-based safe rollback, corrupt-candidate rejection, start-limit recovery and data-preserving removal.",
     "Two clean exported-source ARM64 release builds are byte-identical at binary SHA-256 31c6859afc7992ad731a1b4fcb994bda3edb7250bcb6f51cc07ef319484bf732; the exact private package is SHA-256 b8e483abb11b1de3eeabdd805f6a7ba9d3abe0f1468060ec07b97a9ad28d0a93.",
     "Independent Sol/high review accepted the bounded Debian ARM64 package foundation only after two P2 closures for current-directory-controlled source/target fallbacks; its delta recheck found no remaining findings.",
-    "HUB-02, HUB-08, HUB-11 and DIST-01 remain partial: package-byte reproducibility, corruption/retention recovery, credential/config/TLS clean-host restore and the nonexistent v2026.36.2 source route are explicit open assertions."
+    "HUB-02, HUB-08, HUB-11 and DIST-01 remain partial: package-byte reproducibility, corruption/retention recovery, credential/config/TLS clean-host restore and a final clean-export source-bound artifact are explicit open assertions.",
+    "The F6 source/catalog foundation is ready for independent review: bound builds require an explicit exact pushed 40-hex Hub commit, unbound developer builds are non-distributable, and native plus container build paths carry the same source identity without Git or current-directory inference.",
+    "Active companion bootstrap/catalog surfaces now contain exactly Protocol, TypeScript SDK, Swift SDK, Home Assistant and Edge; Hub is the separately identified sixth repository. The shipped current catalog remains empty pending exact final companion identities and artifacts.",
+    "The current TypeScript package foundation records SHA-256 42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7 and 83 members, but its exact archive bytes are not staged here, so runtime admission remains pending. Historical D1 records and Viewer R1 fixture sources remain unchanged.",
+    "Initial independent Sol/high review rejected the partial source/catalog foundation with three P2 findings. The historical D1 manifest was restored exactly, catalog JSON Schema now binds all five keys to repository-specific artifact shapes, and finalization binds a syntactically valid source commit to the tested Hub cohort head while allowing UNBOUND only for an unpublished candidate. Focused closure tests passed 61/61 and 31/31; the delta review returned ACCEPT with no findings for this partial foundation only."
   ],
   "evidence_paths": [
     "docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json",
@@ -62,13 +66,14 @@
     "docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
     "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
     "docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json",
-    "docs/development/f1-f6-debian13-arm64-package-lifecycle-2026-09-19-r1.json"
+    "docs/development/f1-f6-debian13-arm64-package-lifecycle-2026-09-19-r1.json",
+    "docs/development/f6-source-catalog-foundation-2026-09-19-r1.json"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed claim-by-claim ledger is docs/development/F0_ACCEPTANCE_LEDGER.md at workspace root.",
     "F1-F4: complete standalone Hub, Edge, Protocol/SDK and required Home Assistant behavior on every active documented path.",
     "F5: fresh read-only named-source export and fresh authorized passive capture evidence are mandatory input-dependent acceptance gates.",
-    "F6: prove native/container/source distributions, full lifecycle and the exact six-active-repository no-Viewer companion catalog.",
+    "F6: independently review and publish the validated Hub source commit, rebuild exact clean-export native/container artifacts from it, populate the exact five-companion catalog only after all identities are stable, and prove ordinary lifecycle without Viewer.",
     "F7: pass one combined installed end-to-end ecosystem journey from F6 artifacts."
   ],
   "next_goal_draft": {
@@ -122,6 +127,24 @@
     "independent_review": "ACCEPTED by gpt-5.6-sol/high with no findings after two P2 closures",
     "acceptance_limit": "Bounded package evidence only; F1 and F6 are not accepted."
   },
+  "current_f6_source_catalog_slice": {
+    "state": "INDEPENDENTLY_ACCEPTED_PARTIAL_FOUNDATION",
+    "receipt": "docs/development/f6-source-catalog-foundation-2026-09-19-r1.json",
+    "baseline_head": "dba3e7888d7a152054fc933bd5e8b9410f675f80",
+    "source_identity": "exact explicit 40-hex commit for distributable builds; UNBOUND developer builds are non-distributable",
+    "active_companions": [
+      "protocol",
+      "sdk-typescript",
+      "sdk-swift",
+      "home-assistant",
+      "edge"
+    ],
+    "catalog_state": "EMPTY_PENDING_FINAL_REVIEWED_IDENTITIES",
+    "typescript_package_sha256": "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7",
+    "typescript_package_member_count": 83,
+    "independent_review": "ACCEPT by gpt-5.6-sol/high with no findings after three P2 closures",
+    "acceptance_limit": "Static/source foundation only; no final artifact, populated production catalog, container runtime, installed cohort or F6 acceptance."
+  },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/hub/docs/development/STATUS.json",
     "sha256": "3aca24b6bd9560dbd00c0635dbdb948034b9319600dfb3806c3a14dc819bfefe",
@@ -133,14 +156,15 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the F1/F6 Debian package cohort is purged; its fresh account, private config/data/backup roots and listeners are absent; debian13-arm64 is stopped; the heavy-build lock is released; reusable build artifacts remain",
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the F1/F6 Debian package cohort is purged; the F6 source/catalog foundation started no runtime, service or listener; debian13-arm64 is stopped; the heavy-build lock is absent; reusable target cache remains",
   "acceptance_limits": [
     "G2 is source-built synthetic runtime evidence, not macOS installer/notarization/service acceptance",
     "Current macOS 27.0 was exercised; the documented macOS 13 minimum floor was not independently run",
     "No real account, vehicle, collection, named-source or production acceptance",
     "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
     "G6 is current macOS 27 arm64 external-consumer evidence; declared minimum floors were not independently exercised",
-    "The F1/F6 Debian package receipt is a bounded partial pass: no package-byte reproducibility, deliberate corruption/retention recovery, credential/config/TLS clean-host restore, Fleet sidecars or reachable current Corresponding Source",
+    "The F1/F6 Debian package receipt is a bounded partial pass: no package-byte reproducibility, deliberate corruption/retention recovery, credential/config/TLS clean-host restore, Fleet sidecars or final clean-export source-bound artifact",
+    "The F6 source/catalog receipt is a partial source foundation: independent review, pushed-commit builds, ARM64 container runtime source proof, exact five-companion catalog population and installed lifecycle remain pending",
     "No App integration acceptance",
     "Viewer excluded; x86/Intel paused"
   ]

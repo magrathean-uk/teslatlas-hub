@@ -238,7 +238,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         Command::Source => {
-            println!("{}", teslatlas_hub::corresponding_source_url());
+            let source = teslatlas_hub::corresponding_source_url()
+                .ok_or(teslatlas_hub::UNBOUND_SOURCE_ERROR)?;
+            println!("{source}");
             return Ok(());
         }
         Command::Doctor => {

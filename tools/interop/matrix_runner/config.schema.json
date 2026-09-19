@@ -24,7 +24,7 @@
     "matrix_sha256": {"$ref": "#/$defs/sha256"},
     "product_version": {"const": "2026.36.2"},
     "profile": {"$ref": "#/$defs/profile"},
-    "jobs": {"type": "array", "maxItems": 21, "items": {"$ref": "#/$defs/job"}},
+    "jobs": {"type": "array", "maxItems": 18, "items": {"$ref": "#/$defs/job"}},
     "cohort_inputs": {"$ref": "#/$defs/command_file"}
   },
   "$defs": {
@@ -46,7 +46,7 @@
       "additionalProperties": false,
       "required": ["role", "repo", "head", "dirty_patch_sha256", "untracked_source_manifest_sha256"],
       "properties": {
-        "role": {"enum": ["hub_source", "protocol_source", "typescript_sdk_source", "viewer_source", "swift_sdk_source", "home_assistant_source", "edge_source", "app_source", "deterministic_source"]},
+        "role": {"enum": ["hub_source", "protocol_source", "typescript_sdk_source", "swift_sdk_source", "home_assistant_source", "edge_source", "app_source", "deterministic_source"]},
         "repo": {"$ref": "#/$defs/absolute_path"},
         "head": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
         "dirty_patch_sha256": {"$ref": "#/$defs/sha256"},
@@ -58,7 +58,7 @@
       "additionalProperties": false,
       "required": ["role", "name", "path", "embedded_version", "sha256"],
       "properties": {
-        "role": {"enum": ["hub_executable", "typescript_sdk_tarball", "protocol_fixture_seed", "viewer_package_tarball", "swift_sdk_product", "home_assistant_integration_archive", "edge_executable", "deterministic_fixture"]},
+        "role": {"enum": ["hub_executable", "typescript_sdk_tarball", "protocol_fixture_seed", "swift_sdk_product", "home_assistant_integration_archive", "edge_executable", "deterministic_fixture"]},
         "name": {"type": "string", "minLength": 1},
         "path": {"$ref": "#/$defs/absolute_path"},
         "embedded_version": {"type": "string", "minLength": 1},
@@ -107,7 +107,7 @@
       ],
       "properties": {
         "cell_id": {"type": "string", "minLength": 1},
-        "adapter": {"enum": ["protocol_actual_hub", "typescript_node", "typescript_browser", "viewer", "swift", "home_assistant", "edge_v2"]},
+        "adapter": {"enum": ["protocol_actual_hub", "typescript_node", "typescript_browser", "swift", "home_assistant", "edge_v2"]},
         "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
         "cwd": {"$ref": "#/$defs/absolute_path"},
         "environment_file": {"$ref": "#/$defs/absolute_path"},

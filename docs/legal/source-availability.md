@@ -69,8 +69,11 @@ teslatlas-hub licence
 teslatlas-hub source
 ```
 
-The macOS app exposes the same source information through its application menu,
-and `/.well-known/teslatlas-hub` includes the source route for paired clients.
+For a bound build, `source` and the macOS menu identify the exact
+`/tree/<40-hex-commit>` URL embedded by the build. An unbound developer build
+keeps the discovery schema valid by reporting the repository root, but the
+`source` command fails and the legal notice marks the build non-distributable.
+The macOS app omits its Corresponding Source menu item when unbound.
 
 An operator who modifies or hosts Hub must offer the source of the version
 actually running, not an unrelated tag or a newer `main` checkout.

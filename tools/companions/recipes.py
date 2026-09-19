@@ -19,19 +19,12 @@ from .processes import ProcessFailure, run_process
 RECIPE_REVISION = 3
 HUB_PROFILE_SHA256 = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 EDGE_PROFILE_SHA256 = "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
-SDK_TARBALL_SHA256 = "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
-VIEWER_PACKAGE_SHA256 = (
-    "f92becdbeb0132b34fa8a674c261a2cd4d4eafc6361b29be5396e854bcf2cdc2"
-)
-VIEWER_ASSET_MANIFEST_SHA256 = (
-    "6d417a87a566d7b450e5556895e12b65af353fe27219dd8859bb0dd69e135e06"
-)
+SDK_TARBALL_SHA256 = "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7"
 
 KNOWN_REPOSITORIES = {
     "protocol": "https://github.com/magrathean-uk/teslatlas-protocol.git",
     "sdk-typescript": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
     "sdk-swift": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
-    "viewer": "https://github.com/magrathean-uk/teslatlas-viewer.git",
     "home-assistant": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
     "edge": "https://github.com/magrathean-uk/teslatlas-edge.git",
 }
@@ -46,7 +39,6 @@ EXPECTED_PROFILES = {
         "protocol",
         "sdk-typescript",
         "sdk-swift",
-        "viewer",
         "home-assistant",
     )
 }
@@ -151,7 +143,7 @@ def check_recipe_environment(name: str, context: RecipeContext) -> dict[str, str
     if name == "protocol":
         uv = _tool("uv", context)
         return {"uv": _version([uv, "--version"], context)}
-    if name in {"sdk-typescript", "viewer"}:
+    if name == "sdk-typescript":
         node = _tool("node", context)
         npm = _tool("npm", context)
         node_version = _version([node, "--version"], context).lstrip("v")
@@ -225,12 +217,11 @@ def _sha256(path: Path) -> str:
 
 
 def validate_component_set(components: Any) -> None:
-    """Enforce fixed cross-component build dependencies."""
+    """Reject every deferred or unknown component before a recipe runs."""
     selected = set(components)
-    if "viewer" in selected and "sdk-typescript" not in selected:
-        raise _bootstrap_error(
-            "viewer requires sdk-typescript in the same component set"
-        )
+    unknown = selected - set(KNOWN_REPOSITORIES)
+    if unknown:
+        raise _bootstrap_error(f"unknown components: {sorted(unknown)}")
 
 
 def validate_publication_status(source_status: Any, publication_status: str) -> None:
@@ -249,64 +240,11 @@ def _artifacts(component: Any) -> dict[str, str]:
     return value
 
 
-def bind_viewer_sdk_artifact(
-    viewer_source: Path,
-    sdk_output: Path,
-    viewer_component: Any,
-    sdk_component: Any,
-) -> dict[str, str]:
-    """Replace Viewer's verified SDK input with this cohort's SDK build output."""
-    sdk_artifacts = _artifacts(sdk_component)
-    viewer_artifacts = _artifacts(viewer_component)
-    filename = sdk_artifacts["package_filename"]
-    expected_sha256 = sdk_artifacts["package_sha256"]
-    if (
-        viewer_artifacts["sdk_package_filename"] != filename
-        or viewer_artifacts["sdk_package_sha256"] != expected_sha256
-    ):
-        raise _bootstrap_error("Viewer artifact metadata does not match same-run SDK")
-    built = sorted(sdk_output.glob("*.tgz"))
-    if (
-        len(built) != 1
-        or built[0].name != filename
-        or _sha256(built[0]) != expected_sha256
-    ):
-        raise _bootstrap_error("SDK build did not produce the accepted artifact")
-    target = viewer_source / "artifacts" / filename
-    if not target.is_file() or _sha256(target) != expected_sha256:
-        raise _bootstrap_error("Viewer source SDK artifact is not accepted")
-    shutil.copy2(built[0], target)
-    if _sha256(target) != expected_sha256:
-        raise _bootstrap_error("Viewer SDK artifact copy changed unexpectedly")
-    return {"path": str(built[0]), "sha256": expected_sha256}
-
-
-def _viewer_asset_manifest(source: Path) -> str:
-    dist = source / "dist"
-    files = []
-    if not dist.is_dir():
-        raise _bootstrap_error("Viewer build did not produce a dist directory")
-    for path in sorted(dist.rglob("*")):
-        if path.is_symlink() or (path.exists() and not path.is_file()):
-            if path.is_dir() and not path.is_symlink():
-                continue
-            raise _bootstrap_error("Viewer build contains an unsupported file type")
-        if path.is_file():
-            files.append(
-                {
-                    "path": path.relative_to(dist).as_posix(),
-                    "sha256": _sha256(path),
-                }
-            )
-    encoded = (json.dumps(files, separators=(",", ":")) + "\n").encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def verify_built_output(
     name: str, source: Path, output: Path, component: Any
 ) -> dict[str, str]:
-    """Admit only the accepted SDK and Viewer package bytes."""
-    if name not in {"sdk-typescript", "viewer"}:
+    """Admit only the accepted TypeScript SDK package bytes."""
+    if name != "sdk-typescript":
         return {}
     packed = sorted(output.glob("*.tgz"))
     if len(packed) != 1:
@@ -321,22 +259,11 @@ def verify_built_output(
             f"{name} build does not match the accepted package: "
             f"observed sha256 {observed}, expected {expected}"
         )
-    verification = {"package_sha256": observed}
-    if name == "viewer":
-        asset_manifest = _viewer_asset_manifest(source)
-        expected_assets = artifacts["asset_manifest_sha256"]
-        if asset_manifest != expected_assets:
-            raise _bootstrap_error(
-                "Viewer built asset manifest is not accepted: "
-                f"observed sha256 {asset_manifest}, "
-                f"expected {expected_assets}"
-            )
-        verification["viewer_asset_manifest_sha256"] = asset_manifest
-    return verification
+    return {"package_sha256": observed}
 
 
 def _product_version(name: str, source: Path) -> str:
-    if name in {"sdk-typescript", "viewer"}:
+    if name == "sdk-typescript":
         return json.loads((source / "package.json").read_text(encoding="utf-8"))[
             "version"
         ]
@@ -392,7 +319,6 @@ def validate_source_metadata(
         "protocol": ("uv.lock",),
         "sdk-typescript": ("package-lock.json",),
         "sdk-swift": (),
-        "viewer": ("package-lock.json",),
         "home-assistant": ("uv.lock",),
         "edge": (
             "Cargo.lock",
@@ -400,20 +326,12 @@ def validate_source_metadata(
             "packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch",
         ),
     }[name]
-    if name == "viewer":
-        lock_paths += (f"artifacts/{_artifacts(component)['sdk_package_filename']}",)
     dependencies = {}
     for relative in lock_paths:
         path = source / relative
         if not path.is_file():
             raise _bootstrap_error(f"{name} dependency lock is missing: {relative}")
         dependencies[relative] = _sha256(path)
-    if name == "viewer":
-        artifact = source / "artifacts" / _artifacts(component)["sdk_package_filename"]
-        if _sha256(artifact) != _artifacts(component)["sdk_package_sha256"]:
-            raise _bootstrap_error(
-                "Viewer SDK tarball does not match the accepted artifact"
-            )
     return dependencies
 
 
@@ -484,30 +402,6 @@ def fixed_commands(
             ],
             [node, "-e", f"import({entrypoint.as_uri()!r})"],
         ]
-    if name == "viewer":
-        npm = _tool("npm", context)
-        node = _tool("node", context)
-        package = output / _artifacts(component)["package_filename"]
-        smoke = output / "runtime"
-        cli = (
-            smoke / "node_modules" / "teslatlas-viewer" / "bin" / "teslatlas-viewer.mjs"
-        )
-        return [
-            [npm, "ci"],
-            [npm, "run", "build"],
-            [npm, "pack", "--pack-destination", str(output)],
-            [
-                npm,
-                "install",
-                "--prefix",
-                str(smoke),
-                "--ignore-scripts",
-                "--package-lock=false",
-                "--no-save",
-                str(package),
-            ],
-            [node, str(cli), "--help"],
-        ]
     if name == "sdk-swift":
         return [[_tool("swift", context), "build", "-c", "release"]]
     if name == "home-assistant":
@@ -565,8 +459,6 @@ def build_component(
             commands.append(_run(command, source, log, context))
     if name == "sdk-typescript":
         shutil.rmtree(output / ".sdk-package-smoke")
-    if name == "viewer":
-        shutil.rmtree(output / "runtime" / "node_modules" / ".bin")
     if name == "protocol":
         (output / "source-path.txt").write_text("../source\n", encoding="utf-8")
     elif name == "sdk-swift":

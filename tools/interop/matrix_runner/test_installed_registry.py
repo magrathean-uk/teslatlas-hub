@@ -141,10 +141,10 @@ class InstalledRegistryTests(unittest.TestCase):
             private=False,
         )
 
-    def test_unreviewed_matrix_role_remains_pending(self):
+    def test_deferred_matrix_role_is_unavailable(self):
         with self.assertRaisesRegex(installed_registry.InstalledRegistryPending, "reviewed installed"):
             installed_registry.dispatch(
-                {"adapter": "viewer"}, {"client_id": "viewer"}, {}, {},
+                {"adapter": "deferred_client"}, {"client_id": "deferred_client"}, {}, {},
             )
 
     def test_fixed_entry_loads_contract_and_uses_shared_installed_supervisor(self):

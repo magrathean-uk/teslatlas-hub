@@ -19,8 +19,30 @@ real-source parity, reproducible distribution or the final installed ecosystem.
 `full_solution_state` remains `NOT_ACCEPTED`. The owner activated the goal on
 2026-09-19. F0 passed independent review. The first bounded Debian 13 ARM64 package
 foundation is independently accepted only within its explicit partial scope: F1 and
-F6 remain active and unaccepted, and the nonexistent `v2026.36.2` Corresponding Source
-route remains a release-publication blocker.
+F6 remain active and unaccepted. The bounded F6 source/catalog foundation is
+independently accepted only within its partial scope after closing three P2 contract
+findings: a distributable build must be given one exact pushed 40-hex
+Hub commit and exposes its immutable `/tree/<commit>` source URL, while an unbound
+developer build remains useful but explicitly non-distributable. No final artifact has
+yet been rebuilt from a pushed commit.
+
+The active companion bootstrap model now contains exactly Protocol, TypeScript SDK,
+Swift SDK, Home Assistant and Edge. Hub source identity is recorded separately, making
+six repositories in the full cohort. The shipped current catalog remains deliberately
+empty until all five companion source commits, source manifests and artifact identities
+are stable and independently reviewed. Historical D1 records, including their Viewer
+entry, and Viewer R1 fixtures are preserved byte-for-byte as inactive evidence; they
+are not catalog inputs. The current TypeScript
+archive identity is recorded for future admission, but its exact bytes are not staged in
+this checkout, so installed admission remains pending.
+
+The accepting Sol/high delta review found no remaining issues. It verified the
+baseline-identical historical D1 manifest at SHA-256
+`37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa`,
+JSON Schema/runtime parser agreement, and finalizer binding of a bound source commit to
+the tested Hub cohort head. Exact clean-export native/container artifacts, ARM64
+container runtime source proof, final catalog population and installed companion
+lifecycle remain open F6 work.
 
 ## Full-product gates
 
@@ -95,6 +117,14 @@ L1–L3 are execution slices only; none is a completion substitute:
 2. **L2:** prove Apple-silicon floors and native lifecycles for F1–F4.
 3. **L3:** close F3/F4 packaging, the six-source catalog, F6 documentation and
    reproducibility, then run F5 when its fresh inputs exist and finish with F7.
+
+Current L3 foundation checkpoint: source-identity enforcement, exact five-companion
+catalog generation/readback, Viewer-free active selectors, Hub-only `--components none`
+bootstrap, and native/container packaging inputs are implemented and focused-tested.
+Independent review, a pushed Hub commit, exact clean-export native/container rebuilds,
+final five-companion catalog population, installed lifecycle proof and publication
+of the validated Hub source commit are still pending. Release, tag and binary
+publication remain outside this slice. F6 is open.
 
 ## Start and boundaries
 

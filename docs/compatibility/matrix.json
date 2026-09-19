@@ -17,7 +17,7 @@
     "optional_typed_preflight": ["bad_invitation"],
     "identity": [
       "candidate_artifact_identity", "installed_service_runtime", "edge_linux_runtime",
-      "edge_source_owner_exclusivity", "installed_home_assistant_runtime", "built_viewer_packed_sdk"
+      "edge_source_owner_exclusivity", "installed_home_assistant_runtime"
     ],
     "http_common": [
       "candidate_artifact_identity",
@@ -96,22 +96,6 @@
         "real_browser_cors", "browser_normal_tls_validation"
       ]
     },
-    "viewer": {
-      "label": "Built Viewer through packed SDK",
-      "adapter": "viewer",
-      "actual_entrypoint_suffix": "teslatlas-viewer/e2e/live-hub.spec.ts",
-      "allowed_launchers": ["node", "npm", "npx"],
-      "required_cases": [
-        "candidate_artifact_identity", "installed_service_runtime", "discovery_identity_profile",
-        "unauthenticated_discovery", "bad_invitation", "expired_invitation", "replayed_invitation",
-        "real_auth", "credential_lifecycle_reauth", "revocation", "unknown_vehicle",
-        "exact_current_values", "endpoint_restart", "outage_recovery",
-        "unsupported_operation_zero_requests", "credential_rotation_api",
-        "drives_three_page_order", "drives_terminal_cursor", "drives_etag_304",
-        "drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor",
-        "built_viewer_packed_sdk", "real_browser_cors", "browser_normal_tls_validation"
-      ]
-    },
     "swift": {
       "label": "Current Swift product",
       "adapter": "swift",
@@ -174,9 +158,6 @@
     {"id": "typescript_browser__macos_arm64", "client_id": "typescript_browser", "adapter": "typescript_browser", "hub_target": "macos_arm64", "required": true},
     {"id": "typescript_browser__debian13_amd64", "client_id": "typescript_browser", "adapter": "typescript_browser", "hub_target": "debian13_amd64", "required": true},
     {"id": "typescript_browser__debian13_arm64", "client_id": "typescript_browser", "adapter": "typescript_browser", "hub_target": "debian13_arm64", "required": true},
-    {"id": "viewer__macos_arm64", "client_id": "viewer", "adapter": "viewer", "hub_target": "macos_arm64", "required": true},
-    {"id": "viewer__debian13_amd64", "client_id": "viewer", "adapter": "viewer", "hub_target": "debian13_amd64", "required": true},
-    {"id": "viewer__debian13_arm64", "client_id": "viewer", "adapter": "viewer", "hub_target": "debian13_arm64", "required": true},
     {"id": "swift__macos_arm64", "client_id": "swift", "adapter": "swift", "hub_target": "macos_arm64", "required": true},
     {"id": "swift__debian13_amd64", "client_id": "swift", "adapter": "swift", "hub_target": "debian13_amd64", "required": true},
     {"id": "swift__debian13_arm64", "client_id": "swift", "adapter": "swift", "hub_target": "debian13_arm64", "required": true},

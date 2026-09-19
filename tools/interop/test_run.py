@@ -251,16 +251,15 @@ print(json.dumps(payload,sort_keys=True))
         environment = json.loads(Path(job["environment_file"]).read_text(encoding="utf-8"))
         return Path(environment["MATRIX_TEST_SPEC"])
 
-    def test_matrix_declares_exact_twenty_one_required_cells_and_client_cases(self):
+    def test_matrix_declares_exact_eighteen_required_cells_and_client_cases(self):
         self.assertEqual(1, self.matrix["schema_version"])
-        self.assertEqual(21, len(self.matrix["cells"]))
-        self.assertEqual(21, len({cell["id"] for cell in self.matrix["cells"]}))
+        self.assertEqual(18, len(self.matrix["cells"]))
+        self.assertEqual(18, len({cell["id"] for cell in self.matrix["cells"]}))
         self.assertEqual(
             {
                 "protocol_actual_hub",
                 "typescript_node",
                 "typescript_browser",
-                "viewer",
                 "swift",
                 "home_assistant",
                 "edge_v2",

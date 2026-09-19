@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Create the private B1 Viewer local-candidate catalog."""
+"""Create one exact five-companion unpublished local-candidate catalog."""
 
 from __future__ import annotations
 
@@ -16,17 +16,14 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
+from companions.core import BootstrapError, parse_catalog, source_manifest_for  # noqa: E402
 from companions.recipes import (  # noqa: E402
     EXPECTED_PROFILES,
     KNOWN_REPOSITORIES,
-    SDK_TARBALL_SHA256,
-    VIEWER_ASSET_MANIFEST_SHA256,
-    VIEWER_PACKAGE_SHA256,
 )
 
 
-COMPONENTS = ("sdk-typescript", "viewer")
-HEX40 = re.compile(r"^[0-9a-f]{40}$")
+COMPONENTS = tuple(KNOWN_REPOSITORIES)
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 VERSION = re.compile(r"^[0-9]{4}\.[0-9]{1,2}\.[0-9]+$")
 
@@ -40,6 +37,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--local-sources", type=Path, required=True)
     parser.add_argument("--source", action="append", default=[])
     parser.add_argument("--hub-version", required=True)
+    parser.add_argument("--sdk-package-sha256", required=True)
+    parser.add_argument("--ha-payload-manifest-sha256", required=True)
+    parser.add_argument("--ha-selection-receipt-sha256", required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -49,23 +49,30 @@ def source_bindings(values: list[str]) -> dict[str, Path]:
     for value in values:
         name, separator, raw_path = value.partition("=")
         path = Path(raw_path)
+        try:
+            resolved = path.resolve(strict=True)
+        except OSError:
+            resolved = path
         if (
             separator != "="
             or name not in COMPONENTS
             or name in bindings
             or not path.is_absolute()
             or not path.is_dir()
+            or resolved != path
         ):
             raise CatalogInputError(
                 "--source must bind each selected component to an existing absolute directory"
             )
-        bindings[name] = path
+        bindings[name] = resolved
     if set(bindings) != set(COMPONENTS):
-        raise CatalogInputError("--source must bind sdk-typescript and viewer exactly once")
+        raise CatalogInputError("--source must bind all five active companions exactly once")
     return bindings
 
 
-def read_manifest(path: Path) -> dict[str, dict[str, str]]:
+def read_manifest(
+    path: Path, bindings: dict[str, Path]
+) -> dict[str, dict[str, str]]:
     if not path.is_absolute() or not path.is_file():
         raise CatalogInputError("--local-sources must name an existing absolute file")
     try:
@@ -77,25 +84,23 @@ def read_manifest(path: Path) -> dict[str, dict[str, str]]:
         not isinstance(raw, dict)
         or raw.get("schema_version") != 1
         or not isinstance(records, dict)
-        or not set(COMPONENTS).issubset(records)
+        or set(records) != set(COMPONENTS)
     ):
         raise CatalogInputError("local source manifest component set mismatch")
     result: dict[str, dict[str, str]] = {}
     for name in COMPONENTS:
         record = records[name]
-        if not isinstance(record, dict):
-            raise CatalogInputError("local source manifest record is invalid")
-        repository = record.get("repository")
-        commit = record.get("commit")
-        source_sha256 = record.get("source_sha256")
-        if (
-            repository != KNOWN_REPOSITORIES[name]
-            or not isinstance(commit, str)
-            or not HEX40.fullmatch(commit)
-            or not isinstance(source_sha256, str)
-            or not HEX64.fullmatch(source_sha256)
-        ):
-            raise CatalogInputError("local source manifest record is invalid")
+        try:
+            repository = record["repository"]
+            commit = record["commit"]
+            observed = source_manifest_for(name, bindings[name], repository, commit)
+        except (BootstrapError, KeyError, TypeError, OSError) as error:
+            raise CatalogInputError("local source manifest record is invalid") from error
+        if record != observed:
+            raise CatalogInputError(
+                f"local source manifest does not bind the supplied {name} source bytes"
+            )
+        source_sha256 = observed["source_sha256"]
         result[name] = {
             "repository": repository,
             "commit": commit,
@@ -104,17 +109,34 @@ def read_manifest(path: Path) -> dict[str, dict[str, str]]:
     return result
 
 
+def source_product_version(source: Path, name: str) -> str:
+    if name == "sdk-typescript":
+        return json.loads((source / "package.json").read_text(encoding="utf-8"))["version"]
+    if name in {"protocol", "home-assistant"}:
+        contents = (source / "pyproject.toml").read_text(encoding="utf-8")
+        match = re.search(r'^version\s*=\s*"([^"]+)"', contents, re.MULTILINE)
+        if match is None:
+            raise CatalogInputError(f"{name} source product version is missing")
+        return match.group(1)
+    if name == "sdk-swift":
+        return (source / "VERSION").read_text(encoding="utf-8").strip()
+    contents = (source / "Cargo.toml").read_text(encoding="utf-8")
+    match = re.search(r'^version\s*=\s*"([^"]+)"', contents, re.MULTILINE)
+    if match is None:
+        raise CatalogInputError(f"{name} source product version is missing")
+    return match.group(1)
+
+
 def source_metadata(source: Path, hub_version: str, name: str) -> None:
     try:
-        package = json.loads((source / "package.json").read_text(encoding="utf-8"))
         compatibility = json.loads(
             (source / "compatibility" / "hub.json").read_text(encoding="utf-8")
         )
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        product_version = source_product_version(source, name)
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as error:
         raise CatalogInputError(f"{name} source metadata could not be read") from error
     if (
-        not isinstance(package, dict)
-        or package.get("version") != hub_version
+        product_version != hub_version
         or not isinstance(compatibility, dict)
         or compatibility.get("status") != "candidate"
         or compatibility.get("product_version") != hub_version
@@ -123,37 +145,55 @@ def source_metadata(source: Path, hub_version: str, name: str) -> None:
         raise CatalogInputError(f"{name} source metadata is not the current Hub candidate")
 
 
-def artifacts(name: str, hub_version: str) -> dict[str, str]:
-    sdk_package = f"teslatlas-sdk-{hub_version}.tgz"
+def artifacts(
+    name: str,
+    hub_version: str,
+    sdk_package_sha256: str,
+    ha_payload_manifest_sha256: str,
+    ha_selection_receipt_sha256: str,
+) -> dict[str, str]:
     if name == "sdk-typescript":
         return {
-            "package_filename": sdk_package,
-            "package_sha256": SDK_TARBALL_SHA256,
+            "package_filename": f"teslatlas-sdk-{hub_version}.tgz",
+            "package_sha256": sdk_package_sha256,
         }
-    return {
-        "package_filename": f"teslatlas-viewer-{hub_version}.tgz",
-        "package_sha256": VIEWER_PACKAGE_SHA256,
-        "asset_manifest_sha256": VIEWER_ASSET_MANIFEST_SHA256,
-        "sdk_package_filename": sdk_package,
-        "sdk_package_sha256": SDK_TARBALL_SHA256,
-    }
+    if name == "home-assistant":
+        return {
+            "payload_manifest_sha256": ha_payload_manifest_sha256,
+            "selection_receipt_sha256": ha_selection_receipt_sha256,
+        }
+    return {}
 
 
 def catalog(
-    records: dict[str, dict[str, str]], bindings: dict[str, Path], hub_version: str
+    records: dict[str, dict[str, str]],
+    bindings: dict[str, Path],
+    hub_version: str,
+    sdk_package_sha256: str,
+    ha_payload_manifest_sha256: str,
+    ha_selection_receipt_sha256: str,
 ) -> dict[str, Any]:
     if not VERSION.fullmatch(hub_version):
         raise CatalogInputError("--hub-version must use the Hub calendar version format")
     components: dict[str, dict[str, Any]] = {}
     for name in COMPONENTS:
         source_metadata(bindings[name], hub_version, name)
-        components[name] = {
+        component = {
             **records[name],
             "product_version": hub_version,
             "profile": EXPECTED_PROFILES[name],
-            "artifacts": artifacts(name, hub_version),
         }
-    return {
+        component_artifacts = artifacts(
+            name,
+            hub_version,
+            sdk_package_sha256,
+            ha_payload_manifest_sha256,
+            ha_selection_receipt_sha256,
+        )
+        if component_artifacts:
+            component["artifacts"] = component_artifacts
+        components[name] = component
+    value = {
         "schema_version": 1,
         "cohorts": [
             {
@@ -164,6 +204,8 @@ def catalog(
             }
         ],
     }
+    parse_catalog(value)
+    return value
 
 
 def write_catalog(path: Path, value: dict[str, Any]) -> None:
@@ -178,9 +220,26 @@ def write_catalog(path: Path, value: dict[str, Any]) -> None:
 def main() -> int:
     try:
         arguments = parse_arguments()
+        for value in (
+            arguments.sdk_package_sha256,
+            arguments.ha_payload_manifest_sha256,
+            arguments.ha_selection_receipt_sha256,
+        ):
+            if not HEX64.fullmatch(value):
+                raise CatalogInputError("artifact hashes must be lowercase SHA-256 values")
         bindings = source_bindings(arguments.source)
-        records = read_manifest(arguments.local_sources)
-        write_catalog(arguments.output, catalog(records, bindings, arguments.hub_version))
+        records = read_manifest(arguments.local_sources, bindings)
+        write_catalog(
+            arguments.output,
+            catalog(
+                records,
+                bindings,
+                arguments.hub_version,
+                arguments.sdk_package_sha256,
+                arguments.ha_payload_manifest_sha256,
+                arguments.ha_selection_receipt_sha256,
+            ),
+        )
     except CatalogInputError as error:
         print(f"bootstrap-dev-catalog: {error}", file=sys.stderr)
         return 2

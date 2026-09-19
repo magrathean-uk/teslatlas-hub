@@ -37,7 +37,7 @@ HERE = Path(__file__).resolve().parent
 WORKSPACE_ROOT = HERE.parents[3]
 KNOWN_SOURCE_NAMES = (
     "hub", "teslatlas-protocol", "teslatlas-sdk-typescript",
-    "teslatlas-sdk-swift", "teslatlas-viewer",
+    "teslatlas-sdk-swift",
     "teslatlas-home-assistant", "teslatlas-edge", "app",
 )
 

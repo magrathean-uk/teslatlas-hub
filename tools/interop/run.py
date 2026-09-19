@@ -70,7 +70,6 @@ ACTUAL_SOURCE_ROOTS = {
     "hub_source": WORKSPACE_ROOT / "hub",
     "protocol_source": WORKSPACE_ROOT / "teslatlas-protocol",
     "typescript_sdk_source": WORKSPACE_ROOT / "teslatlas-sdk-typescript",
-    "viewer_source": WORKSPACE_ROOT / "teslatlas-viewer",
     "swift_sdk_source": WORKSPACE_ROOT / "teslatlas-sdk-swift",
     "home_assistant_source": WORKSPACE_ROOT / "teslatlas-home-assistant",
     "edge_source": WORKSPACE_ROOT / "teslatlas-edge",
@@ -120,7 +119,6 @@ SOURCE_ROLES = {
     "protocol_actual_hub": {"hub_source", "protocol_source"},
     "typescript_node": {"hub_source", "protocol_source", "typescript_sdk_source"},
     "typescript_browser": {"hub_source", "protocol_source", "typescript_sdk_source"},
-    "viewer": {"hub_source", "protocol_source", "typescript_sdk_source", "viewer_source"},
     "swift": {"hub_source", "protocol_source", "swift_sdk_source"},
     "home_assistant": {"hub_source", "protocol_source", "home_assistant_source"},
     "edge_v2": {"hub_source", "protocol_source", "edge_source"},
@@ -129,7 +127,6 @@ ARTIFACT_ROLES = {
     "protocol_actual_hub": {"hub_executable", "protocol_fixture_seed"},
     "typescript_node": {"hub_executable", "typescript_sdk_tarball"},
     "typescript_browser": {"hub_executable", "typescript_sdk_tarball"},
-    "viewer": {"hub_executable", "typescript_sdk_tarball", "viewer_package_tarball"},
     "swift": {"hub_executable", "swift_sdk_product"},
     "home_assistant": {"hub_executable", "home_assistant_integration_archive"},
     "edge_v2": {"hub_executable", "edge_executable"},
@@ -142,7 +139,7 @@ OPTIONAL_PREFLIGHT_CASES = {"bad_invitation"}
 IDENTITY_CASES = {
     "candidate_artifact_identity", "installed_service_runtime",
     "edge_linux_runtime", "edge_source_owner_exclusivity",
-    "installed_home_assistant_runtime", "built_viewer_packed_sdk",
+    "installed_home_assistant_runtime",
 }
 ASSERTION_KEYS = {
     "candidate_artifact_identity": {"hub_sha256", "tarball_sha256", "package_version", "installed_members"},
@@ -168,7 +165,6 @@ ASSERTION_KEYS = {
     "drives_wrong_filter_cursor": {"outgoing_requests", "typed_error"},
     "real_browser_cors": {"preflight_succeeded", "cross_origin"},
     "browser_normal_tls_validation": {"trusted_succeeded", "untrusted_error"},
-    "built_viewer_packed_sdk": {"bundle_sha256", "packed_sdk_sha256", "rendered_exact_values"},
     "native_macos_transport": {"os", "transport", "trusted_tls"},
     "native_linux_transport": {"os", "transport", "trusted_tls"},
     "transport_cancellation": {"cancelled", "typed_error", "bounded"},
@@ -281,7 +277,6 @@ HTTP_STATUS_RULES = {
     "browser_normal_tls_validation": [("GET", re.compile(r"^/"), {200})],
 }
 REQUIRED_TRUE_FACTS = {
-    "built_viewer_packed_sdk": {"rendered_exact_values"},
     "native_macos_transport": {"trusted_tls"}, "native_linux_transport": {"trusted_tls"},
     "transport_cancellation": {"cancelled", "bounded"},
     "transport_body_limit": {"oversize_rejected"},
@@ -638,7 +633,7 @@ def _verify_artifact_version(artifact, product_version, actual, *, probe_executa
             raise MatrixError("Hub artifact version probe failed") from error
         if observed != executable_labels[role] + " " + product_version or artifact["embedded_version"] != product_version:
             raise MatrixError("executable artifact embedded version mismatch")
-    elif role in {"typescript_sdk_tarball", "viewer_package_tarball"}:
+    elif role == "typescript_sdk_tarball":
         try:
             with tarfile.open(path, "r:gz") as archive:
                 member = archive.getmember("package/package.json")
@@ -648,8 +643,7 @@ def _verify_artifact_version(artifact, product_version, actual, *, probe_executa
                 package = strict_json(stream.read(MAX_CONFIG_BYTES + 1))
         except (OSError, tarfile.TarError, KeyError) as error:
             raise MatrixError("SDK artifact manifest is invalid") from error
-        expected_name = "@teslatlas/sdk" if role == "typescript_sdk_tarball" else "@teslatlas/viewer"
-        if (not isinstance(package, dict) or package.get("name") != expected_name
+        if (not isinstance(package, dict) or package.get("name") != "@teslatlas/sdk"
                 or package.get("version") != product_version
                 or artifact["embedded_version"] != product_version):
             raise MatrixError("package artifact embedded version mismatch")
@@ -774,10 +768,10 @@ def load_matrix():
     _require_exact_fields(matrix, required, "matrix")
     if matrix["schema_version"] != 1 or matrix["product_version"] != "2026.36.2":
         raise MatrixError("unsupported matrix identity")
-    if not isinstance(matrix["cells"], list) or len(matrix["cells"]) != 21:
-        raise MatrixError("matrix must contain exactly 21 cells")
+    if not isinstance(matrix["cells"], list) or len(matrix["cells"]) != 18:
+        raise MatrixError("matrix must contain exactly 18 cells")
     ids = [cell.get("id") for cell in matrix["cells"] if isinstance(cell, dict)]
-    if len(ids) != 21 or len(set(ids)) != 21:
+    if len(ids) != 18 or len(set(ids)) != 18:
         raise MatrixError("matrix cell identity is invalid")
     for cell in matrix["cells"]:
         if set(cell) != {"id", "client_id", "adapter", "hub_target", "required"}:
@@ -1403,13 +1397,6 @@ def _validate_legacy_evidence(raw, job, config):
             and type(raw.get("vehicleCount")) is int and raw["vehicleCount"] > 0
             and type(raw.get("driveCount")) is int and raw["driveCount"] > 0
         )
-    elif role == "viewer":
-        valid = (
-            raw.get("schemaVersion") == 1 and isinstance(raw.get("cases"), dict)
-            and bool(raw["cases"]) and isinstance(raw.get("requests"), list)
-            and bool(raw["requests"]) and isinstance(raw.get("responses"), list)
-            and bool(raw["responses"]) and raw.get("normalCertificateValidation") is True
-        )
     elif role == "swift":
         valid = (
             raw.get("status") == "passed" and raw.get("profile_id") == "hub-http-v1@1.0.0"
@@ -1713,7 +1700,7 @@ def _normalize_evidence(raw, job, config, required_cases, evidence_hash):
             _validate_public_json(case["process_evidence"])
         reason = case.get("not_applicable_reason")
         if status == "not_applicable":
-            # Every case listed for these 21 rows is required. N/A is legal
+            # Every case listed for these 18 rows is required. N/A is legal
             # only for an undeclared operation outside this matrix, so it can
             # never discharge one of these required case IDs.
             status = "failed"
@@ -1935,7 +1922,7 @@ def _base_receipt(matrix, matrix_path, execution_kind="invalid", cohort_inputs=N
         "ended_at": utc_now(),
         "status": "failed",
         "complete": False,
-        "summary": {"required_cells": 21, "passed": 0, "failed": 0, "pending": 21},
+        "summary": {"required_cells": 18, "passed": 0, "failed": 0, "pending": 18},
         "cells": [],
         "cohort_requirements": matrix.get("cohort_requirements", []),
         "errors": [],
@@ -2120,9 +2107,9 @@ def run_matrix(config_path, receipt_path, require_complete=False):
         passed = sum(item["status"] == "passed" for item in cells)
         failed = sum(item["status"] == "failed" for item in cells)
         pending = len(cells) - passed - failed
-        receipt["summary"] = {"required_cells": 21, "passed": passed, "failed": failed, "pending": pending}
+        receipt["summary"] = {"required_cells": 18, "passed": passed, "failed": failed, "pending": pending}
         receipt["complete"] = (
-            passed == 21
+            passed == 18
             and not receipt["errors"]
             and config["execution_kind"] != "interim_actual_protocol_smoke"
             and (

@@ -402,7 +402,7 @@ fn companion_setup_alias_parses_typed_source_bootstrap_arguments() {
         "--mode",
         "local-candidate",
         "--components",
-        "protocol,sdk-typescript,viewer",
+        "protocol,sdk-typescript,sdk-swift,home-assistant,edge",
         "--prefix",
         "/tmp/teslatlas-companions",
         "--catalog",
@@ -425,7 +425,13 @@ fn companion_setup_alias_parses_typed_source_bootstrap_arguments() {
     assert_eq!(arguments.mode, CompanionMode::LocalCandidate);
     assert_eq!(
         arguments.components,
-        ["protocol", "sdk-typescript", "viewer"]
+        [
+            "protocol",
+            "sdk-typescript",
+            "sdk-swift",
+            "home-assistant",
+            "edge"
+        ]
     );
     assert_eq!(arguments.prefix, PathBuf::from("/tmp/teslatlas-companions"));
     assert_eq!(arguments.timeout_seconds, 120);

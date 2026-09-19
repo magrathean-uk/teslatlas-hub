@@ -24,5 +24,7 @@
 	<string>Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own. AGPL-3.0-only.</string>
 	<key>TeslatlasHubVersion</key>
 	<string>$(TESLATLAS_HUB_VERSION)</string>
+	<key>TeslatlasHubSourceCommit</key>
+	<string>$(TESLATLAS_HUB_SOURCE_COMMIT)</string>
 </dict>
 </plist>

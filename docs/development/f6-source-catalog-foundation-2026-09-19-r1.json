@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "receipt_id": "f6-source-catalog-foundation-2026-09-19-r1",
+  "generated_at": "2026-09-19T14:21:25Z",
+  "status": "independently_accepted_partial_foundation",
+  "scope": "Hub-only F6 source identity and exact five-companion catalog foundation; no final distributable artifact, populated production catalog, installed cohort, publication, release, tag, signing, CI, Docker runtime or VM runtime",
+  "baseline": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-hub.git",
+    "branch": "main",
+    "head": "dba3e7888d7a152054fc933bd5e8b9410f675f80",
+    "origin_main": "dba3e7888d7a152054fc933bd5e8b9410f675f80",
+    "tracked_dirty_entries_before_slice": 0,
+    "preserved_untracked_paths": [
+      ".serena/",
+      "target/"
+    ]
+  },
+  "hub_source_identity": {
+    "build_input": "TESLATLAS_HUB_SOURCE_COMMIT",
+    "bound_format": "exact 40 lowercase hexadecimal characters",
+    "bound_source_url_template": "https://github.com/magrathean-uk/teslatlas-hub/tree/<40-hex-commit>",
+    "unbound_build_marker": "UNBOUND",
+    "unbound_discovery_source_url": "https://github.com/magrathean-uk/teslatlas-hub",
+    "unbound_cli_source_result": "fails with an explicit non-distributable developer-build diagnostic",
+    "identity_derivation": "explicit build input only; no Git, tag or current-directory inference",
+    "native_package_gate": "Debian and macOS packaging require an exact source commit and verify the built binary reports the matching immutable tree URL",
+    "container_gate": "Docker copies build.rs and source_identity.rs; Compose requires the exact source commit build argument",
+    "final_artifact_state": "pending a clean exported-source build from the later reviewed and pushed commit"
+  },
+  "active_repository_set": {
+    "hub_recorded_separately": "https://github.com/magrathean-uk/teslatlas-hub.git",
+    "companions": {
+      "protocol": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+      "sdk-typescript": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+      "sdk-swift": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+      "home-assistant": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+      "edge": "https://github.com/magrathean-uk/teslatlas-edge.git"
+    },
+    "companion_count": 5,
+    "ecosystem_repository_count": 6,
+    "viewer_state": "deferred and absent from active selectors, schemas, recipes, CLI, examples and compatibility tooling"
+  },
+  "catalog_foundation": {
+    "shipped_catalog": "tools/companions/catalog-current.json",
+    "shipped_catalog_sha256": "e236e5ebc4cdb1c9cdbe4117bdf2ed65355378553df248969a6dc3f9ad3e2b05",
+    "shipped_catalog_cohort_count": 0,
+    "generator": "scripts/bootstrap-dev-catalog.py",
+    "candidate_publication_status": "local-unpublished",
+    "admission_rule": "exactly five allowlisted companions with complete source manifests recomputed from canonical absolute source directories",
+    "output_rule": "new owner-only file only; malformed metadata, incomplete components, byte mismatch, unknown fields or noncanonical paths fail before output",
+    "final_population_state": "deferred until exact reviewed companion commits, source bytes, profiles and artifacts are stable",
+    "floating_branch_or_synthetic_identity_used": false
+  },
+  "typescript_foundation": {
+    "accepted_source_commit_prefix_from_companion_receipt": "d94a80a",
+    "package_filename": "teslatlas-sdk-2026.36.2.tgz",
+    "package_sha256": "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7",
+    "package_member_count": 83,
+    "installed_contract_sha256": "9035e5141ac7581b0c3810e3ac4e3d752ff82034350c93e1080a58291da43d0b",
+    "installed_contract_review": "content checked after removing the deferred Viewer enum member; the Node contract test passed 9 of 9",
+    "artifact_bytes_staged_in_hub_checkout": false,
+    "runtime_admission_state": "pending exact archive staging and later installed evidence",
+    "historical_d1_archive_preserved": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c with 81 members, explicitly historical only"
+  },
+  "historical_preservation": {
+    "packaging_components_scope": "historical_d1_source_selection_not_an_active_f6_catalog",
+    "packaging_components_sha256": "37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa",
+    "packaging_components_matches_baseline": true,
+    "execution_state_unchanged": true,
+    "viewer_r1_fixture_sources_unchanged": [
+      "examples/interop_fixture.rs",
+      "tests/interop/seed.rs",
+      "tests/interop/scenario-viewer-r1-51-drives.json",
+      "tests/interop_fixture.rs",
+      "tools/interop/fixture.py",
+      "tools/interop/test_fixture.py"
+    ],
+    "historical_receipts_rewritten": false
+  },
+  "focused_validation": [
+    {
+      "command": "python3 -m unittest scripts.test_components_manifest scripts.test_ecosystem_versions tools.companions.tests.test_cli scripts.test_bootstrap_dev_catalog tools.companions.tests.test_core tools.companions.tests.test_recipes tools.companions.tests.test_corrections tools.interop.matrix_runner.test_typescript_installed tools.interop.test_run",
+      "result": "passed 133 tests"
+    },
+    {
+      "command": "python3 -m unittest tools.interop.matrix_runner.test_finalize_evidence scripts.test_ecosystem_versions",
+      "result": "passed 28 tests"
+    },
+    {
+      "command": "node tools/interop/client_lanes/test_installed_contract.mjs",
+      "result": "passed 9 tests"
+    },
+    {
+      "command": "cargo test --lib legal_notice_tests",
+      "result": "passed 4 tests; the final canonical bound/unbound source diagnostic test was rerun and passed after wording calibration"
+    },
+    {
+      "command": "cargo test --lib exposes_health_and_capabilities",
+      "result": "passed 1 test; canonical discovery sourceUrl covered"
+    },
+    {
+      "command": "TESLATLAS_HUB_SOURCE_COMMIT=NOT-A-COMMIT cargo check --lib",
+      "result": "failed closed with the exact 40-lowercase-hex diagnostic"
+    },
+    {
+      "command": "TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 cargo test --lib legal_notice_tests::source_identity_is_an_exact_commit_or_explicitly_unbound",
+      "result": "passed 1 bound-build test"
+    },
+    {
+      "command": "scripts/test-linux-packaging.sh",
+      "result": "passed mocked package and maintainer-script regression suite"
+    },
+    {
+      "command": "scripts/test-macos-packaging.sh",
+      "result": "passed macOS packaging source checks"
+    },
+    {
+      "command": "sh scripts/test-bootstrap-dev.sh",
+      "result": "passed Hub-only dry-run/runtime and deferred-component rejection"
+    },
+    {
+      "command": "sh scripts/test-docker-packaging.sh",
+      "result": "passed Docker and Compose static checks; no image or container was created"
+    },
+    {
+      "command": "cargo fmt --check; sh -n focused scripts; python3 -m py_compile focused modules; jq empty changed JSON; git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "python3 -m unittest scripts.test_components_manifest tools.companions.tests.test_core tools.companions.tests.test_cli tools.interop.matrix_runner.test_finalize_evidence",
+      "result": "passed 61 focused P2-closure tests"
+    }
+  ],
+  "runtime_and_cleanup": {
+    "heavy_build_lock": "absent after validation",
+    "debian13_arm64_guest": "Stopped",
+    "docker_or_vm_runtime_started": false,
+    "service_or_listener_started": false,
+    "fresh_private_runtime_created": false,
+    "cleanup_required": false,
+    "preserved_build_cache": "target/"
+  },
+  "open_assertions": [
+    "No final Hub artifact is source-bound until the reviewed change is committed, pushed and rebuilt from that exact clean exported commit.",
+    "The ARM64 Compose image has only static source-identity coverage; exact-export build and runtime source-command proof are pending.",
+    "The exact five-companion current catalog is intentionally empty pending final companion identities and artifacts.",
+    "The current TypeScript archive identity is recorded but its exact bytes are not staged here, so package verification and installed admission remain pending.",
+    "Native and container reproducibility, ordinary companion install/update/status/rollback/removal, combined installed acceptance and publication remain open F6/F7 work."
+  ],
+  "excluded": [
+    "App",
+    "Viewer repository inspection or modification",
+    "x86, x86_64, amd64 and Intel targets",
+    "Azure",
+    "production, public ingress, Tesla accounts and vehicle actions",
+    "CI, release, tag, signing and binary publication"
+  ],
+  "secrets_or_private_runtime_data_present": false,
+  "independent_review": {
+    "reviewer": "gpt-5.6-sol/high",
+    "initial_verdict": "REJECT",
+    "initial_findings": [
+      {
+        "severity": "P2",
+        "finding": "The historical D1 manifest had lost its Viewer record while status claimed historical records were unchanged.",
+        "closure": "Restored packaging/components.json exactly to its baseline bytes and documented that it is inactive historical evidence."
+      },
+      {
+        "severity": "P2",
+        "finding": "catalog.schema.json accepted component-key, repository and artifact combinations rejected by parse_catalog.",
+        "closure": "Bound each of the five keys to its exact repository and artifact shape; Protocol, Swift and Edge forbid artifacts; negative schema tests cover repository and artifact mismatches."
+      },
+      {
+        "severity": "P2",
+        "finding": "finalize_evidence.py accepted a syntactically bound commit without tying it to the tested Hub cohort.",
+        "closure": "Bound a finalization commit to the tested hub_source head and limited UNBOUND to an explicit unpublished candidate; matching, mismatched and UNBOUND tests cover the rule."
+      }
+    ],
+    "closure_tests": "61 focused tests passed; the final catalog/finalization subset rerun passed 31 tests after closing source-identity fields",
+    "delta_verdict": "ACCEPT",
+    "delta_findings": [],
+    "verified": [
+      "packaging/components.json matches baseline byte-for-byte at SHA-256 37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa",
+      "catalog JSON Schema and runtime parser agree on exact five-component repository and artifact rules",
+      "bound finalization commits match tested hub_source.head and UNBOUND is limited to an unpublished candidate",
+      "focused closure suites passed 61/61 and 31/31",
+      "guest stopped and heavy-build lock absent"
+    ],
+    "acceptance_limit": "No findings for this bounded source/catalog foundation only; full F6 and F7 remain open."
+  },
+  "gate_disposition": "F6 remains open; this receipt supports only a partial source/catalog foundation review"
+}

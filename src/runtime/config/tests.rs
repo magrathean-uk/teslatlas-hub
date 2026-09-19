@@ -15,7 +15,7 @@ fn valid_config(data_dir: &Path) -> String {
 fn cors_configuration_accepts_only_canonical_explicit_origins() {
     let base = valid_config(Path::new("/var/lib/teslatlas"));
     let allowed = format!(
-        "{base}[http]\nallowed_origins = ['https://viewer.example', 'http://localhost:5173']\n"
+        "{base}[http]\nallowed_origins = ['https://client.example', 'http://localhost:5173']\n"
     );
     let result = HubConfig::from_exact_bytes(allowed.as_bytes());
     assert!(
@@ -25,14 +25,14 @@ fn cors_configuration_accepts_only_canonical_explicit_origins() {
     for origin in [
         "*",
         "null",
-        "https://viewer.example/",
-        "https://viewer.example/path",
-        "https://user@viewer.example",
-        "https://viewer.example?token=value",
-        "https://viewer.example#fragment",
-        "file://viewer",
-        "https://viewer.example:443",
-        "HTTPS://VIEWER.EXAMPLE",
+        "https://client.example/",
+        "https://client.example/path",
+        "https://user@client.example",
+        "https://client.example?token=value",
+        "https://client.example#fragment",
+        "file://client",
+        "https://client.example:443",
+        "HTTPS://CLIENT.EXAMPLE",
     ] {
         let config = format!("{base}[http]\nallowed_origins = ['{origin}']\n");
         assert!(
@@ -41,7 +41,7 @@ fn cors_configuration_accepts_only_canonical_explicit_origins() {
         );
     }
     let duplicate = format!(
-        "{base}[http]\nallowed_origins = ['https://viewer.example', 'https://viewer.example']\n"
+        "{base}[http]\nallowed_origins = ['https://client.example', 'https://client.example']\n"
     );
     assert!(HubConfig::from_exact_bytes(duplicate.as_bytes()).is_err());
 }

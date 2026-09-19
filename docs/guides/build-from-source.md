@@ -1,18 +1,22 @@
 # Build from source
 
 Hub packages include only the audited companion bootstrap modules and their
-small schemas/catalog. The six companion repositories, dependency trees, and
+small schemas/catalog. The five active companion repositories, dependency trees, and
 built outputs remain outside the Hub payload and are created only by the
 unprivileged command described in [Companion source setup](companion-setup.md).
 
 Hub is source-only: no prebuilt GitHub releases or installer downloads are
-provided. Existing tags remain historical source snapshots. Use `main` for the
-latest fixes and record the exact commit used for your build.
+provided. Existing tags remain historical source snapshots. Distributable
+builds must receive the exact pushed Hub commit explicitly; the build never
+infers identity from Git metadata or the current directory.
 
 ```sh
 git clone https://github.com/magrathean-uk/teslatlas-hub.git
 cd teslatlas-hub
-git rev-parse HEAD
+HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+test -z "$(git status --short)"
+git cat-file -e "${HUB_SOURCE_COMMIT}^{commit}"
+git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 ```
 
 ## Apple-silicon Mac
@@ -23,7 +27,7 @@ toolchain requirements. The previously verified toolchains were Rust 1.98,
 Go 1.27.0 and Xcode 27. Building downloads locked dependency source material.
 
 ```sh
-./scripts/build-macos-app.sh
+TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ./scripts/build-macos-app.sh
 codesign --verify --deep --strict "dist/Teslatlas Hub.app"
 pkgutil --payload-files dist/TeslatlasHub.pkg
 ```
@@ -38,7 +42,8 @@ to match one complete reviewed host identity in `scripts/tesla-proxy-lock.json`;
 an arbitrary Go 1.27.0 installation is not sufficient.
 
 ```sh
-TESLATLAS_GO="/absolute/path/to/go" ./scripts/build-macos-app.sh
+TESLATLAS_GO="/absolute/path/to/go" \
+  TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ./scripts/build-macos-app.sh
 ```
 
 Install `dist/TeslatlasHub.pkg`, then follow [Mac setup](install-macos.md).
@@ -58,7 +63,8 @@ Use a fresh output directory; legal-bundle generation refuses to overwrite one.
 ```sh
 cargo fetch --locked
 HUB_SOURCE_ROOT=$(pwd -P)
-RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/teslatlas-hub" \
+TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
+  RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/teslatlas-hub" \
   cargo build --locked --release --bin teslatlas-hub
 mkdir -p dist
 python3 scripts/legal-bundle.py --repo . --output-dir dist/dependency-legal
@@ -68,6 +74,7 @@ scripts/build-deb.sh \
   --binary target/release/teslatlas-hub \
   --legal-bundle dist/dependency-legal \
   --version "$HUB_VERSION" --architecture "$HUB_ARCH" \
+  --source-commit "$HUB_SOURCE_COMMIT" \
   --output "dist/teslatlas-hub_${HUB_VERSION}_${HUB_ARCH}.deb"
 ```
 
@@ -86,7 +93,10 @@ an existing Fleet deployment with a core-only package.
 
 ## Keep your build identifiable
 
-Retain the source commit, toolchain versions and local package checksum.
+An ordinary `cargo build` without `TESLATLAS_HUB_SOURCE_COMMIT` remains useful
+for development: discovery reports the repository root, while `teslatlas-hub
+source` fails and the legal notice identifies the build as unbound and
+non-distributable. Retain the source commit, toolchain versions and local package checksum.
 Back up before replacing an installed version. Source builds are not proof of
 successful live collection or backup recovery. If you redistribute binaries,
 include the corresponding source and required legal material described in

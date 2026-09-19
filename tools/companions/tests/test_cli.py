@@ -89,6 +89,59 @@ def _local_http_connection(port: int):
 
 def _catalog_for_source(source: Path, commit: str) -> tuple[dict, dict]:
     record = source_manifest_for("protocol", source, PROTOCOL_REPOSITORY, commit)
+    components = {
+        "protocol": {
+            "repository": PROTOCOL_REPOSITORY,
+            "commit": commit,
+            "source_sha256": record["source_sha256"],
+            "product_version": "2026.36.2",
+            "profile": {
+                "id": "hub-http-v1",
+                "revision": "1.0.0",
+                "sha256": PROFILE_SHA,
+            },
+        },
+        "sdk-typescript": {
+            "repository": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+            "commit": "2" * 40,
+            "source_sha256": "2" * 64,
+            "product_version": "2026.36.2",
+            "profile": {"id": "hub-http-v1", "revision": "1.0.0", "sha256": PROFILE_SHA},
+            "artifacts": {
+                "package_filename": "teslatlas-sdk-2026.36.2.tgz",
+                "package_sha256": "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7",
+            },
+        },
+        "sdk-swift": {
+            "repository": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+            "commit": "3" * 40,
+            "source_sha256": "3" * 64,
+            "product_version": "2026.36.2",
+            "profile": {"id": "hub-http-v1", "revision": "1.0.0", "sha256": PROFILE_SHA},
+        },
+        "home-assistant": {
+            "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+            "commit": "4" * 40,
+            "source_sha256": "4" * 64,
+            "product_version": "2026.36.2",
+            "profile": {"id": "hub-http-v1", "revision": "1.0.0", "sha256": PROFILE_SHA},
+            "artifacts": {
+                "payload_manifest_sha256": "4" * 64,
+                "selection_receipt_sha256": "5" * 64,
+            },
+        },
+        "edge": {
+            "repository": "https://github.com/magrathean-uk/teslatlas-edge.git",
+            "commit": "5" * 40,
+            "source_sha256": "5" * 64,
+            "product_version": "2026.36.2",
+            "profile": {
+                "id": "edge-delivery-v2",
+                "revision": "2.0.0",
+                "sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224",
+            },
+        },
+    }
     catalog = {
         "schema_version": 1,
         "cohorts": [
@@ -96,19 +149,7 @@ def _catalog_for_source(source: Path, commit: str) -> tuple[dict, dict]:
                 "product_version": "2026.36.2",
                 "publication_status": "local-unpublished",
                 "admitted_hub_versions": [],
-                "components": {
-                    "protocol": {
-                        "repository": PROTOCOL_REPOSITORY,
-                        "commit": commit,
-                        "source_sha256": record["source_sha256"],
-                        "product_version": "2026.36.2",
-                        "profile": {
-                            "id": "hub-http-v1",
-                            "revision": "1.0.0",
-                            "sha256": PROFILE_SHA,
-                        },
-                    }
-                },
+                "components": components,
             }
         ],
     }
@@ -181,7 +222,12 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout)
         plan = json.loads(result.stdout)
-        self.assertEqual(plan["status"], "planned_source_only")
+        self.assertEqual(plan["status"], "historical_source_only")
+        self.assertEqual(
+            plan["scope"],
+            "historical-d1-selection-not-an-active-catalog-identity",
+        )
+        self.assertFalse(plan["active_catalog_identity"])
         self.assertEqual(plan["component_ids"], ["home-assistant"])
         self.assertEqual(plan["selector_id"], "debian13-arm64-container")
         self.assertEqual(
@@ -237,39 +283,12 @@ class CliTests(unittest.TestCase):
             },
         )
 
-    def test_d1_install_materializes_only_the_admitted_ha_payload_in_a_disposable_config(self) -> None:
-        python314 = Path("/opt/homebrew/bin/python3.14")
-        if not python314.is_file():
-            self.skipTest("Home Assistant recipe proof requires Python 3.14")
-        source = SCRIPT.parents[2] / "teslatlas-home-assistant"
+    def test_d1_install_fails_closed_as_historical_not_active_catalog(self) -> None:
         manifest_path = SCRIPT.parents[1] / "packaging" / "components.json"
-        self.assertTrue(source.is_dir())
-
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            tool_bin = root / "bin"
-            tool_bin.mkdir()
-            (tool_bin / "python3").symlink_to(python314)
-            environment = dict(os.environ, PATH=f"{tool_bin}{os.pathsep}{os.environ['PATH']}")
             config = root / "ha-config"
-            marker = config / ".storage" / "core.config_entries"
-            marker.parent.mkdir(parents=True)
-            marker.write_text("preserve\n", encoding="utf-8")
-            local_sources = root / "local-sources.json"
             prefix = root / "companion-prefix"
-
-            manifest_result = self.run_cli(
-                "manifest",
-                "--components",
-                "home-assistant",
-                "--source",
-                f"home-assistant={source}",
-                "--output",
-                str(local_sources),
-                environment=environment,
-            )
-            self.assertEqual(manifest_result.returncode, 0, manifest_result.stderr)
-
             result = self.run_cli(
                 "d1-install",
                 "--components",
@@ -287,96 +306,17 @@ class CliTests(unittest.TestCase):
                 "--mode",
                 "local-candidate",
                 "--local-sources",
-                str(local_sources),
-                environment=environment,
+                str(root / "not-needed.json"),
             )
-
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            installed = json.loads(result.stdout)
-            self.assertEqual(installed["status"], "installed")
-            self.assertEqual(
-                installed["d1_selector"],
-                {
-                    "component_id": "home-assistant",
-                    "selector_id": "debian13-arm64-container",
-                    "activation_authorized": True,
-                    "installation_mode": "local-unpublished",
-                    "runtime_acceptance": False,
-                },
-            )
-            self.assertEqual(installed["external_actions"], {
-                "home-assistant": {
-                    "status": "linked",
-                    "path": str(
-                        config.resolve() / "custom_components" / "teslatlas_hub"
-                    ),
-                    "restart_required": True,
-                }
-            })
-            target = config / "custom_components" / "teslatlas_hub"
-            self.assertTrue(target.is_symlink())
-            self.assertEqual(marker.read_text(encoding="utf-8"), "preserve\n")
-            self.assertTrue(str(prefix / "releases") in str(target.resolve()))
-
-    def test_d1_install_rejects_a_local_source_head_mismatch_before_prefix_use(self) -> None:
-        source = SCRIPT.parents[2] / "teslatlas-home-assistant"
-        manifest_path = SCRIPT.parents[1] / "packaging" / "components.json"
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            config = root / "ha-config"
-            marker = config / ".storage" / "core.config_entries"
-            marker.parent.mkdir(parents=True)
-            marker.write_text("preserve\n", encoding="utf-8")
-            local_sources = root / "local-sources.json"
-            prefix = root / "companion-prefix"
-            manifest_result = self.run_cli(
-                "manifest",
-                "--components",
-                "home-assistant",
-                "--source",
-                f"home-assistant={source}",
-                "--output",
-                str(local_sources),
-            )
-            self.assertEqual(manifest_result.returncode, 0, manifest_result.stderr)
-            value = json.loads(local_sources.read_text(encoding="utf-8"))
-            value["components"]["home-assistant"]["commit"] = "0" * 40
-            local_sources.write_text(json.dumps(value), encoding="utf-8")
-
-            result = self.run_cli(
-                "d1-install",
-                "--components",
-                "home-assistant",
-                "--selector",
-                "debian13-arm64-container",
-                "--component-manifest",
-                str(manifest_path),
-                "--prefix",
-                str(prefix),
-                "--ha-config",
-                str(config),
-                "--hub-version",
-                "2026.36.2",
-                "--mode",
-                "local-candidate",
-                "--local-sources",
-                str(local_sources),
-            )
-
             self.assertEqual(result.returncode, 2)
-            self.assertEqual(
-                json.loads(result.stdout),
-                {
-                    "status": "error",
-                    "error": "D1 Home Assistant local source identity does not match",
-                },
+            self.assertIn(
+                "historical D1 selection cannot be installed",
+                json.loads(result.stdout)["error"],
             )
             self.assertFalse(prefix.exists())
             self.assertFalse((config / "custom_components" / "teslatlas_hub").exists())
-            self.assertEqual(marker.read_text(encoding="utf-8"), "preserve\n")
 
     def test_d1_install_rejects_an_unadmitted_payload_digest_before_source_use(self) -> None:
-        source = SCRIPT.parents[2] / "teslatlas-home-assistant"
         source_manifest = SCRIPT.parents[1] / "packaging" / "components.json"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -384,7 +324,6 @@ class CliTests(unittest.TestCase):
             marker = config / ".storage" / "core.config_entries"
             marker.parent.mkdir(parents=True)
             marker.write_text("preserve\n", encoding="utf-8")
-            local_sources = root / "local-sources.json"
             manifest = root / "components.json"
             prefix = root / "companion-prefix"
             document = json.loads(source_manifest.read_text(encoding="utf-8"))
@@ -393,17 +332,6 @@ class CliTests(unittest.TestCase):
             )
             component["payload"]["handoff_manifest_sha256"] = "0" * 64
             manifest.write_text(json.dumps(document), encoding="utf-8")
-            manifest_result = self.run_cli(
-                "manifest",
-                "--components",
-                "home-assistant",
-                "--source",
-                f"home-assistant={source}",
-                "--output",
-                str(local_sources),
-            )
-            self.assertEqual(manifest_result.returncode, 0, manifest_result.stderr)
-
             result = self.run_cli(
                 "d1-install",
                 "--components",
@@ -421,7 +349,7 @@ class CliTests(unittest.TestCase):
                 "--mode",
                 "local-candidate",
                 "--local-sources",
-                str(local_sources),
+                str(root / "not-needed.json"),
             )
 
             self.assertEqual(result.returncode, 2)

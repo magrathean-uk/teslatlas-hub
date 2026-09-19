@@ -20,7 +20,7 @@ immutable installed-host registration and package/target identity, so a
 foreign Linux executable is never invoked on macOS. A `typescript_sdk_tarball` is
 inspected at `package/package.json`. Digest equality without the matching
 embedded product identity is rejected.
-Viewer packages use the same fixed archive metadata check. The current Swift
+Companion packages use the same fixed archive metadata check. The current Swift
 product is an SDK plus `TeslatlasHubSDKExample`; it has no supported standalone
 client executable/version-probe contract in this runner. Foreign-host Hub and
 Edge executable observations are also unsupported until a host-bound verifier
@@ -52,7 +52,7 @@ verified observation, one adapter attachment, immutable evidence readiness,
 runner close with independent stopped proof, exact acknowledgement, then child
 exit zero. Source snapshots, retained build inputs, exports, and outputs are
 revalidated before and after the installed matrix. Unsupported reviewed
-adapter registries remain pending and cannot make a 21-cell receipt complete.
+adapter registries remain pending and cannot make an 18-cell receipt complete.
 
 `actual_hub_acceptance` enforces fixed adapter and target identities. A bounded
 owned-user-process Hub may execute actual client cases, but there is no fixed

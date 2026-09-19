@@ -516,7 +516,6 @@ COMPATIBILITY_COMPONENTS = (
     "teslatlas-protocol",
     "teslatlas-sdk-typescript",
     "teslatlas-sdk-swift",
-    "teslatlas-viewer",
     "teslatlas-home-assistant",
     "teslatlas-edge",
 )
@@ -537,11 +536,6 @@ FIELDS: tuple[VersionField, ...] = (
     ),
     TextField("teslatlas-sdk-swift/VERSION"),
     SwiftGeneratedField("teslatlas-sdk-swift/Sources/TeslatlasHubSDK/ProductVersion.swift"),
-    JsonField("teslatlas-viewer/package.json", (("version",),)),
-    JsonField(
-        "teslatlas-viewer/package-lock.json", (("version",), ("packages", "", "version"))
-    ),
-    JsonField("teslatlas-viewer/public/version.json", (("product_version",),)),
     TomlSectionField("teslatlas-home-assistant/pyproject.toml", "project"),
     TomlPackageField("teslatlas-home-assistant/uv.lock", "teslatlas-home-assistant"),
     JsonField(
@@ -864,19 +858,27 @@ def _check_ecosystem_release(workspace: Path, version: str) -> list[str]:
     except (OSError, ValueError, json.JSONDecodeError) as error:
         return [f"{relative}: {error}"]
 
-    source_tag = document.get("source_tag")
-    if not isinstance(source_tag, dict):
-        errors.append(f"{relative}:source_tag: expected an object")
+    source_identity = document.get("source_identity")
+    if not isinstance(source_identity, dict):
+        errors.append(f"{relative}:source_identity: expected an object")
     else:
-        status = source_tag.get("status")
-        if status not in ("not_created", "created"):
+        status = source_identity.get("status")
+        commit = source_identity.get("commit")
+        if source_identity.get("kind") != "git-commit":
             errors.append(
-                f"{relative}:source_tag.status: expected not_created or created, found {status!r}"
+                f"{relative}:source_identity.kind: expected git-commit"
             )
-        expected_tag = f"v{version}"
-        if source_tag.get("name") != expected_tag:
+        if status == "unbound-candidate":
+            if commit is not None:
+                errors.append(f"{relative}:source_identity.commit: unbound candidate must be null")
+        elif status == "bound":
+            if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+                errors.append(
+                    f"{relative}:source_identity.commit: expected 40 lowercase hexadecimal characters"
+                )
+        else:
             errors.append(
-                f"{relative}:source_tag.name: expected {expected_tag}, found {source_tag.get('name')!r}"
+                f"{relative}:source_identity.status: expected unbound-candidate or bound, found {status!r}"
             )
 
     artifacts = document.get("artifacts")
@@ -916,30 +918,28 @@ def _prepare_ecosystem_release_transition(workspace: Path, version: str) -> None
     if not isinstance(old_version, str):
         raise ValueError("ecosystem release product_version must be a string")
     parse_product_version(old_version)
-    source_tag = document.get("source_tag")
-    if not isinstance(source_tag, dict):
-        raise ValueError("ecosystem release source_tag must be an object")
-    tag_status = source_tag.get("status")
-    tag_name = source_tag.get("name")
-    expected_tag = f"v{version}"
-    if tag_status == "created":
-        if old_version != version or tag_name != expected_tag:
-            raise ValueError(
-                f"refusing to move created source tag {tag_name!r} to {expected_tag}"
-            )
-        return
-    if tag_status != "not_created":
+    source_identity = document.get("source_identity")
+    if not isinstance(source_identity, dict):
+        raise ValueError("ecosystem release source_identity must be an object")
+    source_status = source_identity.get("status")
+    source_commit = source_identity.get("commit")
+    if source_status == "bound" and old_version != version:
         raise ValueError(
-            f"ecosystem release source_tag.status must be not_created or created, found {tag_status!r}"
+            f"refusing to carry bound source commit {source_commit!r} to another product version"
+        )
+    if source_status not in {"unbound-candidate", "bound"}:
+        raise ValueError(
+            "ecosystem release source_identity.status must be unbound-candidate or bound"
         )
     if old_version != version and document.get("status") != "candidate":
         raise ValueError("refusing to change a noncandidate ecosystem release cohort")
 
     replacements: dict[tuple[str | int, ...], Any] = {
         ("product_version",): version,
-        ("source_tag", "name"): expected_tag,
     }
     if old_version != version:
+        replacements[("source_identity", "status")] = "unbound-candidate"
+        replacements[("source_identity", "commit")] = None
         replacements[("artifacts",)] = []
         replacements[("test_receipt_paths",)] = []
     updated = _replace_json_values(text, replacements)

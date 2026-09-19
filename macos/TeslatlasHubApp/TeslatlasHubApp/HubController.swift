@@ -14,16 +14,22 @@ enum HubRelease {
               !value.contains("$(") else { return fallbackVersion }
         return value
     }
+    static var bundledSourceCommit: String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "TeslatlasHubSourceCommit") as? String,
+              isExactSourceCommit(value) else { return nil }
+        return value
+    }
 
-    static func correspondingSourceURL(for version: String = bundledVersion) -> URL? {
-        guard version.range(
-            of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
+    static func isExactSourceCommit(_ value: String) -> Bool {
+        value.range(
+            of: #"^[0-9a-f]{40}$"#,
             options: .regularExpression
-        ) != nil else { return nil }
-        if version == "1.0.0" {
-            return URL(string: "\(sourceRepository)/tree/v\(version)")
-        }
-        return URL(string: "\(sourceRepository)/releases/tag/v\(version)")
+        ) != nil
+    }
+
+    static func correspondingSourceURL(for commit: String? = bundledSourceCommit) -> URL? {
+        guard let commit, isExactSourceCommit(commit) else { return nil }
+        return URL(string: "\(sourceRepository)/tree/\(commit)")
     }
 
     static func licenceURL(for version: String = bundledVersion) -> URL? {

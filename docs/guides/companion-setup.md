@@ -1,9 +1,9 @@
 # Companion source setup
 
-Teslatlas Hub can install the six independent companion projects from verified
+Teslatlas Hub can install the five active companion projects from verified
 source. The Hub package contains the audited bootstrap code, schemas, and an
 initial catalog. It does not contain companion source trees, dependencies,
-Viewer assets, Home Assistant code, Edge binaries, or SDK build products.
+Home Assistant code, Edge binaries, or SDK build products.
 
 The bootstrap requires Python 3.10 or newer. Each selected recipe also checks
 its own locked toolchain before changing the active installation. Run companion
@@ -18,7 +18,7 @@ network to refresh catalog selection:
 
 ```sh
 teslatlas-hub companions install \
-  --components protocol,sdk-typescript,viewer \
+  --components protocol,sdk-typescript,sdk-swift,home-assistant,edge \
   --prefix "$HOME/.local/share/teslatlas/companions" \
   --node-bin /absolute/path/to/pinned-node/bin
 ```
@@ -30,7 +30,7 @@ catalog digest, and then resolves full allowlisted companion commits:
 
 ```sh
 teslatlas-hub companions update \
-  --components protocol,sdk-typescript,viewer \
+  --components protocol,sdk-typescript,sdk-swift,home-assistant,edge \
   --prefix "$HOME/.local/share/teslatlas/companions" \
   --node-bin /absolute/path/to/pinned-node/bin
 ```
@@ -64,7 +64,7 @@ Hub route:
 ```sh
 teslatlas-hub setup-companions dry-run \
   --mode local-candidate \
-  --components protocol,sdk-typescript,viewer \
+  --components protocol,sdk-typescript,sdk-swift,home-assistant,edge \
   --prefix /absolute/private/companions \
   --catalog /absolute/private/catalog.json \
   --local-sources /absolute/private/local-sources.json \
@@ -80,8 +80,6 @@ An identical verified install is an offline no-op.
 
 - `protocol` installs source-neutral schema and conformance tooling.
 - `sdk-typescript` retains the verified npm package for consumer projects.
-- `viewer` requires `sdk-typescript` in the same selection and retains its CLI
-  runtime under the activated release.
 - `sdk-swift` retains the verified Swift package source and release products.
 - `home-assistant` requires `--ha-config /absolute/config`; the installer links
   only the integration directory and preserves HA configuration and registry

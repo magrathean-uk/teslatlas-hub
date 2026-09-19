@@ -9,7 +9,7 @@
     "components": {
       "type": "object",
       "propertyNames": {
-        "enum": ["protocol", "sdk-typescript", "sdk-swift", "viewer", "home-assistant", "edge"]
+        "enum": ["protocol", "sdk-typescript", "sdk-swift", "home-assistant", "edge"]
       },
       "additionalProperties": {"$ref": "#/$defs/source"}
     }
@@ -21,7 +21,7 @@
       "required": ["component", "path", "repository", "commit", "source_sha256", "files"],
       "properties": {
         "component": {
-          "enum": ["protocol", "sdk-typescript", "sdk-swift", "viewer", "home-assistant", "edge"]
+          "enum": ["protocol", "sdk-typescript", "sdk-swift", "home-assistant", "edge"]
         },
         "path": {"type": "string", "pattern": "^/"},
         "repository": {
@@ -29,7 +29,6 @@
             "https://github.com/magrathean-uk/teslatlas-protocol.git",
             "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
             "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
-            "https://github.com/magrathean-uk/teslatlas-viewer.git",
             "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
             "https://github.com/magrathean-uk/teslatlas-edge.git"
           ]

@@ -19,7 +19,7 @@ fn app() -> (tempfile::TempDir, Router) {
         None,
         CorsPolicy {
             http: crate::config::HttpConfig {
-                allowed_origins: vec!["https://viewer.example".into()],
+                allowed_origins: vec!["https://client.example".into()],
             },
             same_origin: None,
         },
@@ -36,7 +36,7 @@ async fn cors_public_preflight_is_explicit_and_auth_failures_remain_readable() {
             Request::builder()
                 .method("OPTIONS")
                 .uri("/v1/vehicles")
-                .header("Origin", "https://viewer.example")
+                .header("Origin", "https://client.example")
                 .header("Access-Control-Request-Method", "GET")
                 .header(
                     "Access-Control-Request-Headers",
@@ -50,7 +50,7 @@ async fn cors_public_preflight_is_explicit_and_auth_failures_remain_readable() {
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(
         response.headers()["access-control-allow-origin"],
-        "https://viewer.example"
+        "https://client.example"
     );
     assert_eq!(response.headers()["access-control-allow-methods"], "GET");
     assert!(
@@ -69,7 +69,7 @@ async fn cors_public_preflight_is_explicit_and_auth_failures_remain_readable() {
         .oneshot(
             Request::builder()
                 .uri("/v1/vehicles")
-                .header("Origin", "https://viewer.example")
+                .header("Origin", "https://client.example")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -78,7 +78,7 @@ async fn cors_public_preflight_is_explicit_and_auth_failures_remain_readable() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
         response.headers()["access-control-allow-origin"],
-        "https://viewer.example"
+        "https://client.example"
     );
     assert!(
         response.headers()["access-control-expose-headers"]
@@ -94,11 +94,11 @@ async fn cors_rejects_unlisted_origins_methods_and_headers_before_handlers() {
     for (origin, method, headers) in [
         ("https://evil.example", "GET", "authorization"),
         ("null", "GET", "authorization"),
-        ("https://viewer.example", "DELETE", "authorization"),
-        ("https://viewer.example", "POST", "authorization"),
-        ("https://viewer.example", "GET", "cookie"),
+        ("https://client.example", "DELETE", "authorization"),
+        ("https://client.example", "POST", "authorization"),
+        ("https://client.example", "GET", "cookie"),
         (
-            "https://viewer.example",
+            "https://client.example",
             "GET",
             "authorization,,content-type",
         ),
@@ -153,7 +153,7 @@ async fn cors_internal_ingress_is_never_exposed_and_native_requests_still_work()
             Request::builder()
                 .method("OPTIONS")
                 .uri("/v1/internal/fleet-telemetry")
-                .header("Origin", "https://viewer.example")
+                .header("Origin", "https://client.example")
                 .header("Access-Control-Request-Method", "POST")
                 .body(Body::empty())
                 .unwrap(),
@@ -199,7 +199,7 @@ async fn cors_default_denies_cross_origin_and_duplicate_origin_headers() {
         .oneshot(
             Request::builder()
                 .uri("/healthz")
-                .header("Origin", "https://viewer.example")
+                .header("Origin", "https://client.example")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -211,7 +211,7 @@ async fn cors_default_denies_cross_origin_and_duplicate_origin_headers() {
         .oneshot(
             Request::builder()
                 .uri("/healthz")
-                .header("Origin", "https://viewer.example")
+                .header("Origin", "https://client.example")
                 .header("Origin", "https://evil.example")
                 .body(Body::empty())
                 .unwrap(),
@@ -287,7 +287,7 @@ async fn cors_pairing_and_sync_headers_are_scoped_to_their_routes() {
                 Request::builder()
                     .method("OPTIONS")
                     .uri(route)
-                    .header("Origin", "https://viewer.example")
+                    .header("Origin", "https://client.example")
                     .header("Access-Control-Request-Method", method)
                     .header("Access-Control-Request-Headers", headers)
                     .body(Body::empty())
@@ -308,7 +308,7 @@ async fn cors_decorates_public_timeouts_without_exposing_internal_timeouts() {
 
     let cors = CorsPolicy {
         http: crate::config::HttpConfig {
-            allowed_origins: vec!["https://viewer.example".into()],
+            allowed_origins: vec!["https://client.example".into()],
         },
         same_origin: None,
     };
@@ -332,7 +332,7 @@ async fn cors_decorates_public_timeouts_without_exposing_internal_timeouts() {
         .oneshot(
             Request::builder()
                 .uri("/healthz")
-                .header("Origin", "https://viewer.example")
+                .header("Origin", "https://client.example")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -341,7 +341,7 @@ async fn cors_decorates_public_timeouts_without_exposing_internal_timeouts() {
     assert_eq!(public_timeout.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
         public_timeout.headers()["access-control-allow-origin"],
-        "https://viewer.example"
+        "https://client.example"
     );
     assert!(
         public_timeout.headers()["vary"]
@@ -356,7 +356,7 @@ async fn cors_decorates_public_timeouts_without_exposing_internal_timeouts() {
             Request::builder()
                 .method("POST")
                 .uri("/v1/internal/fleet-telemetry")
-                .header("Origin", "https://viewer.example")
+                .header("Origin", "https://client.example")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -387,7 +387,7 @@ async fn cors_native_tls_listener_uses_configuration_and_accepts_its_own_origin(
     std::fs::write(&key, identity.signing_key.serialize_pem()).unwrap();
     std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
     let text = format!(
-        "data_dir = '{}'\nbind = '{bind}'\n[tls]\ncertificate_path = '{}'\nprivate_key_path = '{}'\npublic_url = 'https://{bind}/'\n[collector]\ninterval_seconds = 0\n[http]\nallowed_origins = ['https://viewer.example']\n",
+        "data_dir = '{}'\nbind = '{bind}'\n[tls]\ncertificate_path = '{}'\nprivate_key_path = '{}'\npublic_url = 'https://{bind}/'\n[collector]\ninterval_seconds = 0\n[http]\nallowed_origins = ['https://client.example']\n",
         root.path().join("data").display(),
         cert.display(),
         key.display()
@@ -429,7 +429,7 @@ async fn cors_native_tls_listener_uses_configuration_and_accepts_its_own_origin(
     .unwrap();
     let response = client
         .request(reqwest::Method::OPTIONS, &url)
-        .header("Origin", "https://viewer.example")
+        .header("Origin", "https://client.example")
         .header("Access-Control-Request-Method", "GET")
         .send()
         .await
@@ -437,7 +437,7 @@ async fn cors_native_tls_listener_uses_configuration_and_accepts_its_own_origin(
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(
         response.headers()["access-control-allow-origin"],
-        "https://viewer.example"
+        "https://client.example"
     );
     let response = client
         .get(&url)

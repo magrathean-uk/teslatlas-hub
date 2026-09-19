@@ -16,6 +16,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any, Callable, Mapping, Sequence
 
 
@@ -57,6 +58,35 @@ REQUIRED_EVIDENCE_KINDS = MANDATORY_KINDS | {"historical"}
 
 class FinalizationError(RuntimeError):
     """The candidate finalization cannot support its requested disposition."""
+
+
+def _candidate_source_identity_matches(
+    release: Mapping[str, Any],
+    tested_hub_identity: Mapping[str, Any],
+    *,
+    publication_performed: bool,
+) -> bool:
+    source_identity = release.get("source_identity")
+    if (
+        not isinstance(source_identity, dict)
+        or set(source_identity) != {"kind", "commit", "status"}
+        or source_identity.get("kind") != "git-commit"
+    ):
+        return False
+    source_status = source_identity.get("status")
+    source_commit = source_identity.get("commit")
+    if source_status == "unbound-candidate":
+        return (
+            source_commit is None
+            and release.get("status") == "candidate"
+            and publication_performed is False
+        )
+    return (
+        source_status == "bound"
+        and isinstance(source_commit, str)
+        and re.fullmatch(r"[0-9a-f]{40}", source_commit) is not None
+        and source_commit == tested_hub_identity.get("head")
+    )
 
 
 _SOURCE = None
@@ -455,8 +485,17 @@ def validate_finalization(
     }
     if final_cohort != expected_final_cohort:
         raise FinalizationError("execution-state final cohort binding is invalid")
-    if release_after.get("status") != "candidate" or release_after.get("source_tag", {}).get("status") != "not_created":
-        raise FinalizationError("candidate/unpublished release distinction changed")
+    tested_hub_identity = cohort_identities.get("hub_source")
+    if not isinstance(tested_hub_identity, dict):
+        raise FinalizationError("tested cohort has no Hub source identity")
+    if release_after.get("status") != "candidate" or not _candidate_source_identity_matches(
+        release_after,
+        tested_hub_identity,
+        publication_performed=value["publication_performed"],
+    ):
+        raise FinalizationError(
+            "candidate source identity is invalid or does not match the tested Hub cohort"
+        )
     before_paths = release_before.get("test_receipt_paths")
     if not isinstance(before_paths, list) or before_paths != sorted(set(before_paths)) or not set(before_paths).issubset(expected_paths) or release_after.get("test_receipt_paths") != expected_paths:
         raise FinalizationError("ecosystem receipt paths are not an exact sorted append")
