@@ -1,0 +1,9 @@
+12504 bash -c set -eu; if pgrep -af "teslatlas-hub|teslatlas-edge|bootstrap-companions"; then exit 1; fi; if ss -lntp | grep -E ":(8443|60022)[[:space:]]"; then exit 1; fi; echo guest_teslatlas_processes=none; echo guest_teslatlas_listeners=none; df -h /
+time="2026-09-19T23:50:40+01:00" level=info msg="Sending SIGINT to hostagent process 21298"
+time="2026-09-19T23:50:40+01:00" level=info msg="Waiting for the host agent and the driver processes to shut down"
+time="2026-09-19T23:50:40+01:00" level=info msg="[hostagent] Received SIGINT, shutting down the host agent"
+time="2026-09-19T23:50:40+01:00" level=info msg="[hostagent] Shutting down the host agent"
+time="2026-09-19T23:50:40+01:00" level=info msg="[hostagent] Shutting down VZ"
+time="2026-09-19T23:50:42+01:00" level=info msg="[hostagent] [VZ] - vm state change: stopped"
+time="2026-09-19T23:50:42+01:00" level=info msg="Waiting for the instance to shut down"
+time="2026-09-19T23:50:43+01:00" level=info msg="The instance debian13-arm64 has shut down"

@@ -1,0 +1,233 @@
+{
+  "aggregate_format": "sha256 of UTF-8 lines '<file_sha256>  <path>\\n' in files order",
+  "aggregate_sha256": "9101da714e19fb85f8efdbf713d72718a8835d4993df51c77e1faebf24fd7d39",
+  "contains_secrets": false,
+  "file_count": 44,
+  "files": [
+    {
+      "bytes": 36,
+      "path": "files/active-before-remove.txt",
+      "sha256": "b689bdc9d890be2827e3488d46b967cf7847d17d0c399ef4afe18ce234c2a0aa"
+    },
+    {
+      "bytes": 13673,
+      "path": "files/apt-install.log",
+      "sha256": "e1200462b60a0bc2d5dd020a7db8becf19e0b61c77a7ac4db36483114eb46021"
+    },
+    {
+      "bytes": 2975,
+      "path": "files/apt-remove.log",
+      "sha256": "45507469ff61431f44ba5e64cd3b9c8e7c0d0206ab9aeac4673388acbaa698bb"
+    },
+    {
+      "bytes": 1326,
+      "path": "files/apt-update.log",
+      "sha256": "cdd97879e96019b545494c7ffde4f360590c376752ab56bd6ac6647ce473439b"
+    },
+    {
+      "bytes": 3244,
+      "path": "files/catalog.json",
+      "sha256": "96ada184b7098c4ab109bc1444271d30354dceaaafd2a8e72ffe7204480be670"
+    },
+    {
+      "bytes": 878,
+      "path": "files/cleanup.json",
+      "sha256": "f66be68bc06d9244ae47153fbc2389c9852412a37440b08857a80e3310d3339b"
+    },
+    {
+      "bytes": 849,
+      "path": "files/dry-run-linux-five.json",
+      "sha256": "b64bda37ed35bde1aa3f1008079b0a4f2bc6cdc255a65e04f2159929e9c01e84"
+    },
+    {
+      "bytes": 470,
+      "path": "files/guest-cleanup.txt",
+      "sha256": "bff384d9e723e80cf1b85dac51ae7fb15016bb7f9ccb8fec5449a80ad1e54c59"
+    },
+    {
+      "bytes": 3,
+      "path": "files/history-before-remove.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "bytes": 695,
+      "path": "files/install-linux-five.json",
+      "sha256": "78a412eb165210c866739a74e4fd526be2329b36803f2baca45faa12b0122929"
+    },
+    {
+      "bytes": 546,
+      "path": "files/install-no-op.json",
+      "sha256": "e75411ba7ddacc94c19f52ac8cbe33267ccf09087d41c30f2527acb274dc461a"
+    },
+    {
+      "bytes": 639,
+      "path": "files/installed-release/build-log-paths.txt",
+      "sha256": "27c2ae4cfdaad95d43a8da1db71ac5061f7b9fd5722f3dac411b5c2bb76a5698"
+    },
+    {
+      "bytes": 5966,
+      "path": "files/installed-release/build-logs/edge.log",
+      "sha256": "484187591cc30326f5ecce19ed3d3697193668278375bbfcd7ba19225b8c4a46"
+    },
+    {
+      "bytes": 0,
+      "path": "files/installed-release/build-logs/home-assistant.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1181,
+      "path": "files/installed-release/build-logs/protocol.log",
+      "sha256": "d7c2c7e48d9fc61861e76a312ed4789618199d361f1185fa085dd818411a9a97"
+    },
+    {
+      "bytes": 2982,
+      "path": "files/installed-release/build-logs/sdk-swift.log",
+      "sha256": "e7cec07abbeefee0281cc60dd4b7301b0349677d7955ec2656e3e7884492c11f"
+    },
+    {
+      "bytes": 4355,
+      "path": "files/installed-release/build-logs/sdk-typescript.log",
+      "sha256": "1b4245da2153260547a1ba4151693282db12a0e761c064b690c7638dc9f78322"
+    },
+    {
+      "bytes": 50855,
+      "path": "files/installed-release/receipt.json",
+      "sha256": "5492ca736f83512ea9d43a8922f32b26601755e2708324b2f69ad57a7f92ffaf"
+    },
+    {
+      "bytes": 2197246,
+      "path": "files/installed-release/tree.json",
+      "sha256": "6a7f4fc86006e9ab4d5e5572b2c6fc9e7d6eb756f857d82a5a1da740471e1239"
+    },
+    {
+      "bytes": 202027,
+      "path": "files/local-sources.host.json",
+      "sha256": "779157d7b453bf0ff2b8ef2eec9c63e29fc3e42f53b5a0fb6d90493cf0c0bc40"
+    },
+    {
+      "bytes": 201867,
+      "path": "files/local-sources.json",
+      "sha256": "618fcb3fd1f031265762fcb93c46c66d8b55fcfc8eb3313b661d9e7b000655a8"
+    },
+    {
+      "bytes": 135,
+      "path": "files/native-packages.txt",
+      "sha256": "8e379fd726c26e33682116d679eba18273142f5aa613f028a12e572e88ce977f"
+    },
+    {
+      "bytes": 304,
+      "path": "files/preservation-before.sha256",
+      "sha256": "dd27bdada3e101ea13c42042ab1f28fb3b596e65467311d5888592885b53dd92"
+    },
+    {
+      "bytes": 463,
+      "path": "files/preservation-post-remove.sha256",
+      "sha256": "a376b4be191ad89a4855c31c749b92ae84bfafd637316c8b02dde9364ddf623d"
+    },
+    {
+      "bytes": 463,
+      "path": "files/preservation-pre-remove.sha256",
+      "sha256": "a376b4be191ad89a4855c31c749b92ae84bfafd637316c8b02dde9364ddf623d"
+    },
+    {
+      "bytes": 191,
+      "path": "files/python-install.log",
+      "sha256": "6e3f8007ce00e29acc241a0253c3f85ae78d5778c91fcbcca55a9092312b255a"
+    },
+    {
+      "bytes": 223,
+      "path": "files/remove-no-op.json",
+      "sha256": "060ed5b78264e7a916aad9dcaa2a5eed49453a286b7204997153662e1c617547"
+    },
+    {
+      "bytes": 241,
+      "path": "files/remove.json",
+      "sha256": "6783f7f97253bb529a001a32409b9a3799f99dc34f1d69aa49f3d28583b88874"
+    },
+    {
+      "bytes": 41,
+      "path": "files/rollback-failure-check.txt",
+      "sha256": "ee9ed80d76bab4aa7ca29f5685547061a323141320f4523c13ffe0b182196bf7"
+    },
+    {
+      "bytes": 76,
+      "path": "files/rollback-no-predecessor.json",
+      "sha256": "472fabd908fa139b1271178ee397f00ec6489760a10f10ddca8284c6193e90e5"
+    },
+    {
+      "bytes": 2877894,
+      "path": "files/rollback-tree-after.txt",
+      "sha256": "588b195370a41a6522788e941a7f2170a6a341efd1824929bcab097b64127024"
+    },
+    {
+      "bytes": 2877894,
+      "path": "files/rollback-tree-before.txt",
+      "sha256": "588b195370a41a6522788e941a7f2170a6a341efd1824929bcab097b64127024"
+    },
+    {
+      "bytes": 566,
+      "path": "files/secret-scan.json",
+      "sha256": "63c7ca475d52c6d75ace64b3e4082e9a2a226e745486a88afad7a166414c276b"
+    },
+    {
+      "bytes": 447,
+      "path": "files/status-installed.json",
+      "sha256": "fc964c49dfa267ff7216f23ca9434f6ec97f648ed7810749bb8c930e23eeba61"
+    },
+    {
+      "bytes": 49,
+      "path": "files/status-removed.json",
+      "sha256": "196cb9dd0b6038b8c743d1eb9e763af79a0fd5c9f27ea38fef884e4a312e85cf"
+    },
+    {
+      "bytes": 1676,
+      "path": "files/summary.json",
+      "sha256": "23759c865bb0e5b8c3485bab7cbe75b19be31172cf6452bd0bfdb380459d572a"
+    },
+    {
+      "bytes": 217,
+      "path": "files/toolchain-go-official.txt",
+      "sha256": "f6215fa4e994aa1408ab680cbf5a2cb9d9d56c25d7a5bb6fb2d835a38c4be272"
+    },
+    {
+      "bytes": 702,
+      "path": "files/toolchain-go-rust.txt",
+      "sha256": "f8204b7a4ed15ebe852f0daac4071bbbbcb413258f6bc7c5d4a5c67ac48bf93b"
+    },
+    {
+      "bytes": 311,
+      "path": "files/toolchain-python.txt",
+      "sha256": "2ec24be2ceb9cc8d0a04001ca3c419481582cdbc7200be1095e06f9826b5f9e1"
+    },
+    {
+      "bytes": 550,
+      "path": "files/toolchain-swift.txt",
+      "sha256": "46b39a1329041366128c735806d082fd5ba346b954d7eed9b5ef247363b36148"
+    },
+    {
+      "bytes": 417,
+      "path": "files/toolchain-uv-node.txt",
+      "sha256": "8edd04a2fb22a70591af78160757fa65546c873b2c3dffd62364639a728859c0"
+    },
+    {
+      "bytes": 40,
+      "path": "files/transfer-normalization.txt",
+      "sha256": "3570d729b0c2b18cfc7fe12f1499cee61dd2d29098cbad969a4975ad02ceb573"
+    },
+    {
+      "bytes": 546,
+      "path": "files/update-no-op.json",
+      "sha256": "e75411ba7ddacc94c19f52ac8cbe33267ccf09087d41c30f2527acb274dc461a"
+    },
+    {
+      "bytes": 1014,
+      "path": "files/vm-stop.log",
+      "sha256": "f1de333a8c6e47404653b33731884d54eb9b2b1fd43cf07b720016c7611cf17f"
+    }
+  ],
+  "generated_at": "2026-09-19T22:52:01Z",
+  "kind": "teslatlas.hub.redacted-evidence/v1",
+  "schema_version": 1,
+  "source_head": "3a43155e64368b6f36cfa4d50f644870fdc5f182",
+  "state": "COMPLETE"
+}

@@ -1,0 +1,19 @@
+{
+  "apt_packages_removed": 30,
+  "debian13_arm64_status": "Stopped",
+  "guest_reproducible_staging_removed": true,
+  "guest_staging_bytes_human": "3.7G",
+  "guest_teslatlas_process_probe_limit": "The pre-stop pgrep pattern matched its own probe command, so it is not used as affirmative process evidence. The guest subsequently stopped and both forwarded and Hub listener ports are closed.",
+  "heavy_build_lock_absent": true,
+  "host_available_after_cleanup": "51 GiB",
+  "host_port_60022_closed": true,
+  "host_port_8443_closed": true,
+  "kind": "teslatlas.hub.f6-five-companion-linux-runtime-cleanup/v1",
+  "preserved_existing_go_1_27_0": true,
+  "preserved_existing_rust_1_98_0": true,
+  "retained_tart_process": "clean-development-macos26",
+  "retained_tart_untouched": true,
+  "schema_version": 1,
+  "shared_lock_released": true,
+  "stopped_at": "2026-09-19T22:50:43Z"
+}

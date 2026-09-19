@@ -39,9 +39,8 @@ The accepting Sol/high delta review found no remaining issues. It verified the
 baseline-identical historical D1 manifest at SHA-256
 `37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa`,
 JSON Schema/runtime parser agreement, and finalizer binding of a bound source commit to
-the tested Hub cohort head. Exact clean-export native/container artifacts, ARM64
-container runtime source proof, the complete five-component Linux lifecycle and
-genuine predecessor update/rollback remain open F6 work.
+the tested Hub cohort head. Exact clean-export native/container artifacts and genuine
+predecessor update/rollback remain open F6 work.
 
 The bounded five-companion catalog/lifecycle slice recomputed byte-complete Hub source
 manifests from immutable exports for Protocol `53b5c648`, TypeScript `56a07dd7`, Swift
@@ -53,9 +52,10 @@ data-preserving companion removal command. On macOS arm64 the exact catalog pass
 four-component dry run and install, verified status, locked no-op install/update,
 explicit no-predecessor rollback failure, removal with data/config preservation,
 post-removal status and idempotent removal. The exact five-component macOS dry run
-correctly rejects Edge's Linux-only recipe before mutation. The retained Debian ARM64
-guest lacks the remaining exact fixed-recipe toolchains, so no five-component runtime
-or update/rollback claim is made. Exact outputs and limitations are recorded in
+correctly rejects Edge's Linux-only recipe before mutation. That accepted slice stopped
+after confirming that the retained Debian ARM64 guest lacked the remaining exact
+fixed-recipe toolchains, so its receipt makes no five-component runtime or
+update/rollback claim. Exact outputs and limitations are recorded in
 [`f6-five-companion-catalog-lifecycle-2026-09-19-r1.json`](f6-five-companion-catalog-lifecycle-2026-09-19-r1.json).
 Initial independent review rejected one P2 removal-safety defect: a present regular
 `PREFIX/active` path was misclassified as absent, allowing replaceable releases to be
@@ -78,6 +78,23 @@ prior active-path closure, and the recorded 88 Python plus 13 Rust checks. This 
 independently accepted bounded partial catalog/lifecycle slice only: the exact-five
 runtime, genuine predecessor update/rollback, ordinary production admission and
 retained detailed installed-output receipt remain absent, so F6 remains open.
+
+A subsequent fresh Debian 13.7 ARM64 slice provisioned the exact fixed-recipe
+toolchains and passed the local-unpublished exact-five dry-run, install, installed
+status, identical reinstall and same-cohort update no-ops. It retained the complete
+installed receipt and tree, then proved the honest no-predecessor rollback error made
+zero tree changes and that removal preserved exact data/config plus unrelated Home
+Assistant state; post-removal status and idempotent removal also passed. The 44-file
+redacted bundle is `COMPLETE` at aggregate SHA-256
+`9101da714e19fb85f8efdbf713d72718a8835d4993df51c77e1faebf24fd7d39` and manifest
+SHA-256 `5c0250f97503ce51ab8818b5c34671f0e54f23e733a573fb38f9c077d57b0d56`.
+Independent Sol/high review returned `ACCEPT` with no P1/P2 findings after recomputing
+all 44 payload identities, the aggregate and manifest, exact source and output
+manifests, the 9,238-entry installed tree, lifecycle transitions, package symmetry,
+secret scan and cleanup. This is independently accepted bounded partial evidence only.
+The slice installed or started no companion service, had no immutable predecessor,
+performed no publication, and does not accept F3, F4, F6 or F7; see
+[`f6-five-companion-linux-runtime-2026-09-19-r1.json`](f6-five-companion-linux-runtime-2026-09-19-r1.json).
 
 The next bounded container-preparation slice binds the official Rust and Debian
 base tags to exact multi-platform index digests whose Linux ARM64 children were
@@ -175,10 +192,11 @@ Current L3 checkpoint: source-identity enforcement, exact five-companion catalog
 generation/readback, the populated local-unpublished cohort, Viewer-free active
 selectors, Hub-only `--components none` bootstrap, data-preserving companion removal,
 and native/container packaging inputs are implemented and focused-tested. The bounded
-four-component macOS lifecycle passes, but exact five-component Linux installation,
-genuine predecessor update/rollback, complete native/container rebuilds and ordinary
-public production admission remain pending. Release, tag and binary publication remain
-outside this slice. F6 is open.
+four-component macOS lifecycle and the local-unpublished exact-five Debian ARM64
+lifecycle are independently accepted bounded partial evidence. Genuine predecessor
+update/rollback, complete native/container rebuilds and ordinary public production
+admission remain pending. Release, tag and
+binary publication remain outside this slice. F6 is open.
 
 Container foundation checkpoint: immutable official base index identities, the
 verified Linux ARM64 child/config identities, complete builder inputs,

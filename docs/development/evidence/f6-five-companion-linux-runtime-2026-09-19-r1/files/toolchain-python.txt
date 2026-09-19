@@ -1,0 +1,4 @@
+installer=uv 0.12.17 (aarch64-unknown-linux-gnu)
+python_path=/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/python/cpython-3.14.2-linux-aarch64-gnu/bin/python3.14
+python_sha256=c876782960327600529b62308c149444b96539764538a3f6375f979ebe66f2a0
+Python 3.14.2 (main, Jan 27 2026, 23:59:19) [Clang 21.1.4 ]

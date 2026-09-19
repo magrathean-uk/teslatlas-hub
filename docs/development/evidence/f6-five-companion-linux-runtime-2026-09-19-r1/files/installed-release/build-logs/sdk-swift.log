@@ -1,0 +1,39 @@
+Building for production...
+[0/11] Write sources
+[5/11] Copying Binding
+/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/.staging/25785236696d4b048c51beda9dca5bbd/components/sdk-swift/source/Sources/CurrentHubCurlShim/CurrentHubCurlShim.c:329:26: warning: 'CURLOPT_PROTOCOLS' is deprecated: since 7.85.0. Use CURLOPT_PROTOCOLS_STR [-Wdeprecated-declarations]
+  329 |   curl_easy_setopt(curl, CURLOPT_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+      |                          ^
+/usr/include/aarch64-linux-gnu/curl/curl.h:1789:3: note: 'CURLOPT_PROTOCOLS' has been explicitly marked deprecated here
+ 1789 |   CURLOPTDEPRECATED(CURLOPT_PROTOCOLS, CURLOPTTYPE_LONG, 181,
+      |   ^
+/usr/include/aarch64-linux-gnu/curl/curl.h:1124:43: note: expanded from macro 'CURLOPTDEPRECATED'
+ 1124 | #define CURLOPTDEPRECATED(na,t,nu,v,m) na CURL_DEPRECATED(v,m) = t + nu
+      |                                           ^
+/usr/include/aarch64-linux-gnu/curl/curl.h:44:18: note: expanded from macro 'CURL_DEPRECATED'
+   44 |   __attribute__((deprecated("since " # version ". " message)))
+      |                  ^
+/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/.staging/25785236696d4b048c51beda9dca5bbd/components/sdk-swift/source/Sources/CurrentHubCurlShim/CurrentHubCurlShim.c:330:26: warning: 'CURLOPT_REDIR_PROTOCOLS' is deprecated: since 7.85.0. Use CURLOPT_REDIR_PROTOCOLS_STR [-Wdeprecated-declarations]
+  330 |   curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+      |                          ^
+/usr/include/aarch64-linux-gnu/curl/curl.h:1795:3: note: 'CURLOPT_REDIR_PROTOCOLS' has been explicitly marked deprecated here
+ 1795 |   CURLOPTDEPRECATED(CURLOPT_REDIR_PROTOCOLS, CURLOPTTYPE_LONG, 182,
+      |   ^
+/usr/include/aarch64-linux-gnu/curl/curl.h:1124:43: note: expanded from macro 'CURLOPTDEPRECATED'
+ 1124 | #define CURLOPTDEPRECATED(na,t,nu,v,m) na CURL_DEPRECATED(v,m) = t + nu
+      |                                           ^
+/usr/include/aarch64-linux-gnu/curl/curl.h:44:18: note: expanded from macro 'CURL_DEPRECATED'
+   44 |   __attribute__((deprecated("since " # version ". " message)))
+      |                  ^
+2 warnings generated.
+[7/11] Compiling CurrentHubCurlShim CurrentHubCurlShim.c
+[8/11] Write swift-version-223F9C0CFAE3D163.txt
+[10/14] Compiling TeslatlasCurrentHub CurrentHubBinding.swift
+[11/14] Compiling TeslatlasHubV1Compatibility HubV1Binding.swift
+[12/14] Compiling TeslatlasHubSDK AtomicJSONStateStore.swift
+[13/16] Compiling TeslatlasHubSDKExample main.swift
+[13/16] Write Objects.LinkFileList
+/usr/bin/ld: warning: /home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/.staging/25785236696d4b048c51beda9dca5bbd/components/sdk-swift/source/.build/aarch64-unknown-linux-gnu/release/TeslatlasHubSDKExample has a LOAD segment with RWX permissions
+[14/16] Linking TeslatlasHubSDKExample
+[16/16] Compiling TeslatlasCommands CommandModels.swift
+Build complete! (5.43s)

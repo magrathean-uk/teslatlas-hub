@@ -1,0 +1,1211 @@
+{
+  "admitted_hub_versions": [
+    "2026.36.2"
+  ],
+  "components": {
+    "edge": {
+      "artifacts": {},
+      "commands": [
+        {
+          "argv": [
+            "/usr/bin/cargo",
+            "build",
+            "--locked",
+            "--release"
+          ],
+          "sha256": "2e25e84a872f5c918110962398de0fe743e18e729ebfc90eab753547efe501f5"
+        },
+        {
+          "argv": [
+            "./target/release/teslatlas-edge",
+            "--help"
+          ],
+          "sha256": "975e26888dfb7b1a08adac430b9cd3313cf1ca6ba247ee73f5fb650913876932"
+        },
+        {
+          "argv": [
+            "./scripts/build-fleet-telemetry-bridge.sh",
+            "--target",
+            "linux-arm64",
+            "--output",
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/.staging/25785236696d4b048c51beda9dca5bbd/components/edge/output/fleet-telemetry-bridge"
+          ],
+          "sha256": "d5a8e2c9c470655d86c7f15e2de09416b317f4a76939c0b3804baac67bb93d5e"
+        }
+      ],
+      "dependencies": {
+        "Cargo.lock": "aca4cc8acd30b366299ed732e7ba86af77d41adda8a2865c1804e1c1255bdd09",
+        "packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch": "828a98fe3b36bf07c3d2d32041be45efad7594c6c580a982b588875a10898b98",
+        "packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json": "b6ab33bff684bb597fff75c714c1bcb77579d166701a3bc89f26c58293bc01ec"
+      },
+      "outputs": {
+        "algorithm": "sha256-path-size-mode-v1",
+        "files": [
+          {
+            "executable": true,
+            "path": "fleet-telemetry-bridge",
+            "sha256": "22577092beac3622403328f3d0c6f13c4b7656e4ccfd80a75aa9bdedfada6b3b",
+            "size": 28377248
+          },
+          {
+            "executable": true,
+            "path": "teslatlas-edge",
+            "sha256": "1ef857221eb83d67f96fd58d6f25a4b20d8f8b25ff9189cca1a6df4436997910",
+            "size": 5713912
+          },
+          {
+            "executable": false,
+            "path": "support/packaging/config.toml.example",
+            "sha256": "c740cc20fa1f8650873cd23898d52fe26f5b1a4aa8274db805d2be1a1d61faad",
+            "size": 627
+          },
+          {
+            "executable": false,
+            "path": "support/packaging/fleet-telemetry.json.example",
+            "sha256": "3876e7cb31faf07e7b135c3d7375f9b52a58091f86336c3577dabe45738fad8f",
+            "size": 621
+          },
+          {
+            "executable": false,
+            "path": "support/packaging/linux/teslatlas-edge.service",
+            "sha256": "684a5b9da934e606984949b8549ce6173f0d577ca0333029761618f6bfaf4bad",
+            "size": 992
+          },
+          {
+            "executable": false,
+            "path": "support/packaging/linux/teslatlas-fleet-telemetry.service",
+            "sha256": "b8f4472a34bd4ad329a91399de2cf10fa80e191669c72650744b868446464a8e",
+            "size": 1346
+          },
+          {
+            "executable": true,
+            "path": "support/scripts/run-with-spool-format-guard.sh",
+            "sha256": "74acbcf9523e5c32eaab3c626d96916ab42ee859f9c888e5e1f09bd13d6f2d36",
+            "size": 1358
+          }
+        ],
+        "schema_version": 2,
+        "sha256": "2a80e4c86cc5f9175d7d973329f338fdeddd0e7aa5a68a8e84edb7b33d460e5b"
+      },
+      "product_version": "2026.36.2",
+      "profile": {
+        "id": "edge-delivery-v2",
+        "revision": "2.0.0",
+        "sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+      },
+      "source": {
+        "commit": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
+        "manifest_sha256": "9b1e88ca0efd7771209b57a61c212fd15105a8b1862bfae6a5eb3783587ccae6",
+        "public_availability": "pending",
+        "repository": "https://github.com/magrathean-uk/teslatlas-edge.git",
+        "sha256": "40877d3e0feebce348588ea3c61dc152d7eb0ea9d39da269d8f3b9bff082fe62",
+        "transport": "local-content-bound"
+      },
+      "tools": {
+        "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+        "go": "go version go1.27.0 linux/arm64",
+        "go_binary": "/home/bolyki.guest/teslatlas-g5-debian-arm64-20260918-r1/build/go1.27.0/bin/go",
+        "go_binary_sha256": "b51e8499a917e56a0b290e2ab3ba96f11715dc47ad9739d307e03708e630343a",
+        "go_tool_root": "/home/bolyki.guest/teslatlas-g5-debian-arm64-20260918-r1/build/go1.27.0",
+        "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
+      },
+      "verification": {}
+    },
+    "home-assistant": {
+      "artifacts": {
+        "payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
+        "selection_receipt_sha256": "99fdac66526bdec84d2429100f419eebedec588b0d32060c8f0f0a19bf43f2b3"
+      },
+      "commands": [
+        {
+          "argv": [
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/python/cpython-3.14.2-linux-aarch64-gnu/bin/python3",
+            "-m",
+            "compileall",
+            "-q",
+            "custom_components/teslatlas_hub"
+          ],
+          "sha256": "47600d747bb0978ddbb85c54726c2ae65706216e5e905bf320bda0eaedfdedd1"
+        }
+      ],
+      "dependencies": {
+        "uv.lock": "a1fade2404de833105aba2a0d0f2f9392ceb51069646f50407020253f857dcce"
+      },
+      "outputs": {
+        "algorithm": "sha256-path-size-mode-v1",
+        "files": [
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/__init__.py",
+            "sha256": "326c8243acb150e5eb557670527be2054348596e659bd1cb81b0e4604c5db5ad",
+            "size": 3101
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/client.py",
+            "sha256": "bcc65d205124b65ba22ca51b1ea3c0e8009648af6aa1f66dbf01034d53058b82",
+            "size": 3557
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/config_flow.py",
+            "sha256": "96a78e8563dd49ca914ebd67d77089b7aca52b5f5db2798b9c33e38e6fd80208",
+            "size": 12540
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/const.py",
+            "sha256": "05ed51cd8081eb53062e5156bfbcaa419a138625b342f4b14bb1aab5e635229c",
+            "size": 702
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/coordinator.py",
+            "sha256": "64aa33b34c23437fa0efdaf3d1355e368a4cf88e6ca349b11ec40cd8628b0858",
+            "size": 2780
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/current_hub_client.py",
+            "sha256": "aab9a607835fe947588b8b3efef22da70cad81862169ca508602ceb8a8325c98",
+            "size": 19717
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/diagnostics.py",
+            "sha256": "ef779a20632b3a04abaf5d088f41601f1bc47062ff6a09bf2a320331d7716657",
+            "size": 1955
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/entity.py",
+            "sha256": "0567abb72c9d4c41a31f8336d475288eaadcbca41094bd2cbcffcdc905e837ff",
+            "size": 385
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/manifest.json",
+            "sha256": "61e4a3143a392fe681908d1edff9db52a25ce5ac4bbd12e327ab36bcd9140449",
+            "size": 391
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/models.py",
+            "sha256": "7772c2751eb74d4a012d9e523d77c75248ef99f2d282544ac41682125e3c2fe6",
+            "size": 3439
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/sensor.py",
+            "sha256": "7459e21bee5811307648f7fc1fcc4d516218e971e3f2cbe3e71a4d94e1e21724",
+            "size": 9029
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/strings.json",
+            "sha256": "e29e2c01759348c66c9f91cd5ad1d97080f6508fdc11fd714a48ef8c9da29bfe",
+            "size": 3356
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
+            "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+            "size": 1457
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/auth.schema.json",
+            "sha256": "27891c9cd96b57b5fa47db36b0d7caf22600b172a9150dcdaf735c64a8297b19",
+            "size": 2183
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/cases.json",
+            "sha256": "7743aa276b4c027abbd357304bfa065db79edec20cafac59b4311364e0d28201",
+            "size": 3380
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/discovery.schema.json",
+            "sha256": "3d45864e4296fdc14b0a3ef0ef5acdbfcca94cacda1ec60fccca396271851e18",
+            "size": 1332
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/errors.schema.json",
+            "sha256": "835fe4a83f3c894bc706e5f575e4abd5d473c4b8406fc0d9b0cbf0e95172a5b4",
+            "size": 737
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/field-semantics.json",
+            "sha256": "bd9b7162c94efbd3e570ffd785fe543dfb98299379ea81cf8b2e028496bd3ee7",
+            "size": 18972
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/openapi.json",
+            "sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+            "size": 11524
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/profile.json",
+            "sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+            "size": 4543
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/resources.schema.json",
+            "sha256": "6b2523de42f5860ddaaf83b0db78b6f172e3f15e1dab8048e221c1fa6337a4be",
+            "size": 44373
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/sync-regression.json",
+            "sha256": "6aebb1a5d5e250447435876d4cb64934b916e8cd61c2c8b148d2111c7f5fc691",
+            "size": 1427
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples/claim.json",
+            "sha256": "8eb1ac46f72762321575d457d6bbd1ed7b1def904de9c07448b67d0659b15e1d",
+            "size": 178
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples/current.json",
+            "sha256": "2246f7a4b98e559c4040877ecf9474d081df5f7ab8fdfb9bcde2a3fbceacf911",
+            "size": 2407
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples/discovery.json",
+            "sha256": "e673ea82496110f6cbbe1c108b40eb098418bb95d781723753bdff4792c84136",
+            "size": 357
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples/drives.json",
+            "sha256": "fd326bd9476115bba05bbbeb61d40361e16d164984de7817e5cba58b7d29954f",
+            "size": 890
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples/health.json",
+            "sha256": "27cd5e17b843fd061cdec83140a87f30365f09f1d27704aa5ae98c58d303347b",
+            "size": 47
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples/invitation.json",
+            "sha256": "9ecf1cf49edac1fed91a0e92729d8d77c4ff13634f212555973a7003f1d4e926",
+            "size": 563
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples/ready.json",
+            "sha256": "9994e13386b29bde4071dd062d8c4ab8dbb6b4b877f968b4a34fb2c7b0ead65e",
+            "size": 24
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples/vehicles.json",
+            "sha256": "36b77389bac75fb247c6e0da2baf284511f40a808227b38d7543b2d199437150",
+            "size": 123
+          },
+          {
+            "executable": false,
+            "path": "custom_components/teslatlas_hub/translations/en.json",
+            "sha256": "e29e2c01759348c66c9f91cd5ad1d97080f6508fdc11fd714a48ef8c9da29bfe",
+            "size": 3356
+          }
+        ],
+        "schema_version": 2,
+        "sha256": "9db94f29466837e82db272db4ba5af00988c345532309d3a84a5702240283fc2"
+      },
+      "product_version": "2026.36.2",
+      "profile": {
+        "id": "hub-http-v1",
+        "revision": "1.0.0",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+      },
+      "source": {
+        "commit": "dfb2b05067a88ba02e6dbfbd6db614f8a99b12f4",
+        "manifest_sha256": "33f05d4dfb034e47b87f2befa7b1b5e919dc492fe491f12807b89021ae20c246",
+        "public_availability": "pending",
+        "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+        "sha256": "4af006321a29e0e9039458ef41c9421afe2537a72c7ec41dc89890b01dd41ec0",
+        "transport": "local-content-bound"
+      },
+      "tools": {
+        "python": "3.14.2"
+      },
+      "verification": {}
+    },
+    "protocol": {
+      "artifacts": {},
+      "commands": [
+        {
+          "argv": [
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/uv-0.12.17/uv",
+            "sync",
+            "--locked"
+          ],
+          "sha256": "5ca08f35745809c267874b8701cf676b3a44b6fb24c9f47373254637a14a6397"
+        },
+        {
+          "argv": [
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/uv-0.12.17/uv",
+            "run",
+            "--locked",
+            "python",
+            "tools/build_hub_http_profile.py",
+            "--check"
+          ],
+          "sha256": "972e275fe67f912a54ab1769b3da12f76128ede0b000055cffb68d1da9697247"
+        }
+      ],
+      "dependencies": {
+        "uv.lock": "1c9c22f18a85c1ae18c0f2166caba69f41fbac9f5001b9ce04b947540e2c2157"
+      },
+      "outputs": {
+        "algorithm": "sha256-path-size-mode-v1",
+        "files": [
+          {
+            "executable": false,
+            "path": "source-path.txt",
+            "sha256": "6fdc166bd7f5d2ddd54631f953440bb026320ba81b2b74002f2cf64c199b744a",
+            "size": 10
+          }
+        ],
+        "schema_version": 2,
+        "sha256": "e7ea60de6a81b5f55329e44685e49c7d521f0867809e9d5acfe26c110fa0e986"
+      },
+      "product_version": "2026.36.2",
+      "profile": {
+        "id": "hub-http-v1",
+        "revision": "1.0.0",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+      },
+      "source": {
+        "commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+        "manifest_sha256": "0d698a29e68fb4c7bdd8211a5be634135f74516375fb537a979c8fea32a1ecea",
+        "public_availability": "pending",
+        "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+        "sha256": "a4b68800e7164c229915fced33223a7c9954bb67019306348e3e99671d28046c",
+        "transport": "local-content-bound"
+      },
+      "tools": {
+        "uv": "uv 0.12.17 (aarch64-unknown-linux-gnu)"
+      },
+      "verification": {}
+    },
+    "sdk-swift": {
+      "artifacts": {},
+      "commands": [
+        {
+          "argv": [
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/swift-6.0.3/usr/bin/swift",
+            "build",
+            "-c",
+            "release"
+          ],
+          "sha256": "c2aa4a11aec9aba605860983b654acdabf7db1ff65fa8dba33eadf0e84469fa0"
+        }
+      ],
+      "dependencies": {},
+      "outputs": {
+        "algorithm": "sha256-path-size-mode-v1",
+        "files": [
+          {
+            "executable": false,
+            "path": "source-path.txt",
+            "sha256": "6fdc166bd7f5d2ddd54631f953440bb026320ba81b2b74002f2cf64c199b744a",
+            "size": 10
+          },
+          {
+            "executable": true,
+            "path": "release/TeslatlasHubSDKExample",
+            "sha256": "58a022191e0b2a90a13f7d372e743ca564a828880271778b12cc6d173027dc38",
+            "size": 1764392
+          },
+          {
+            "executable": false,
+            "path": "release/description.json",
+            "sha256": "c231507a18be71677f51b7064cf2324983718ce6ab4ebe06d75f5966b60040e4",
+            "size": 187021
+          },
+          {
+            "executable": false,
+            "path": "release/swift-version-223F9C0CFAE3D163.txt",
+            "sha256": "60ad7049719a48b6f59b1c17b28ba8794622d466814a302150854fba710b5ff1",
+            "size": 76
+          },
+          {
+            "executable": false,
+            "path": "release/CurrentHubCurlShim.build/CurrentHubCurlShim.c.d",
+            "sha256": "d5fae1f6d802081b76499c3bf6d954aae89ae3cc3c6bc08889f8cd34ad5e5a6d",
+            "size": 10061
+          },
+          {
+            "executable": false,
+            "path": "release/CurrentHubCurlShim.build/CurrentHubCurlShim.c.o",
+            "sha256": "d054114e0310ec9a51f34fd8dead4d8e149633ee8d421d69100155a972eff0fc",
+            "size": 63376
+          },
+          {
+            "executable": false,
+            "path": "release/CurrentHubCurlShim.build/module.modulemap",
+            "sha256": "8980941b4c375b9f000465704f1d167fa82ebf19ca9146b2a205429295b32e90",
+            "size": 251
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/modules.timestamp",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "size": 0
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/CDispatch-1YSY5F75A9V50.pcm",
+            "sha256": "255bf94d6b3455da163e5649aed266a4d9ee2a1d2bb317eb13b525c8d4963378",
+            "size": 692984
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/CurrentHubCurlShim-19LAZBGTBJR7M.pcm",
+            "sha256": "7795ad4030f4bea15cc1a890a1ba87ce03cc42cb9c4503388a797152a18985be",
+            "size": 116384
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/Dispatch-1YSY5F75A9V50.pcm",
+            "sha256": "8baf6cdb6a6b5767601012a84dcfe498bf1a013c9ffc87edc3cea21d42fb23c1",
+            "size": 29624
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/SwiftGlibc-T0JJR34Y877U.pcm",
+            "sha256": "cbc8299c4b5e87be694f6f92991aaacefa1b75d1a6a94ac736f1a038f0b8ae55",
+            "size": 2588912
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/SwiftOverlayShims-11RMLUKZR5332.pcm",
+            "sha256": "92b4f59a9d73af82c6f328b5c4ed92691832b48f873caefb03d9058f15c496d8",
+            "size": 228928
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/SwiftShims-11RMLUKZR5332.pcm",
+            "sha256": "52e22f6b1efb6287225163ca0115fa5e71bcbc1befb8860f4c1a06c047e23cc9",
+            "size": 135496
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/_Builtin_stddef-DZJ4DVYT0ZSG.pcm",
+            "sha256": "7a6cdf62c3df0c47e1d8df18fc656d75ed9ff4ffee25036dedc16beb80c08811",
+            "size": 31816
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/_FoundationCShims-HKHXUPZZR5OO.pcm",
+            "sha256": "b11e25fd95a7c8ec09abcdaaeb51f3e77e86fbdc0bdf41a6405c1063eb7c6c7c",
+            "size": 10831872
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/_FoundationICU-3V54PL9JPGWQT.pcm",
+            "sha256": "12c66e353e8203e4b267c03635e4f79fdfbbde71d2ac2f79495b32a43e5d2c5f",
+            "size": 1805984
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/_SwiftConcurrencyShims-11RMLUKZR5332.pcm",
+            "sha256": "8f1f3c757a59d348ed6185812730c7c9d0b22b4bb6759fd758caa79480035107",
+            "size": 31016
+          },
+          {
+            "executable": false,
+            "path": "release/ModuleCache/1OIIAOFB54KOD/_SynchronizationShims-11RMLUKZR5332.pcm",
+            "sha256": "2a2823997f2f3c13eddd4b9b76883ef28102d5dac81a507389cab69656efdaaf",
+            "size": 360320
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasCommands.swiftdoc",
+            "sha256": "a76ec5414599260c903c7a20f2e13077c334b8a207ce7e8a70aff94bff66a9a5",
+            "size": 388
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasCommands.swiftmodule",
+            "sha256": "5afa01ec69842b4180fb467b2aadaff795baebfedeba8b8fc450d4b650e40d3c",
+            "size": 110300
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasCommands.swiftsourceinfo",
+            "sha256": "63cb0b7b2b8873cc1580298dd271c324f6aec375b373dad59895e318c5f0a2cc",
+            "size": 13140
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasCurrentHub.swiftdoc",
+            "sha256": "50aeb43bacdf20740c89726a566e6db40767d0df8ffd77e0c695285edb733ca8",
+            "size": 776
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasCurrentHub.swiftmodule",
+            "sha256": "2788aefa2ab7b7c7bba43da624315c75bccc997ebeac2626ec5fc974632aeb6d",
+            "size": 260108
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasCurrentHub.swiftsourceinfo",
+            "sha256": "eefa9746ddb6bfa3d35c9ef90aa9355c09a5b5b06dc61b851c647a6195c4d07b",
+            "size": 51884
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasHubSDK.swiftdoc",
+            "sha256": "755d94b4d6b41284c4c3aa37284fba3486513e10a34e6ef6360ab7dbb300c5ac",
+            "size": 384
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasHubSDK.swiftmodule",
+            "sha256": "8bf25a7d421ab11714ec9709329fbe741a3fd6ca21434a176aa5107e827e8f49",
+            "size": 391304
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasHubSDK.swiftsourceinfo",
+            "sha256": "3d144bb810044c4134baede2f6b99519f44475219cc5d9625e921294dc29962c",
+            "size": 64764
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasHubSDKExample.swiftdoc",
+            "sha256": "be0d540260899edbb3d7f4d1075447e1b3e0361b09f0c3db79e81dade4757e3a",
+            "size": 392
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasHubSDKExample.swiftmodule",
+            "sha256": "49fc6498fcd9b98d311cd7adcceb491af62404ceeb650691820a102f6e7a592b",
+            "size": 18012
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasHubSDKExample.swiftsourceinfo",
+            "sha256": "e2c887d797bcc021529507fb83b5da13981dcdd34a5616d22bfad6415022986d",
+            "size": 744
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasHubV1Compatibility.swiftdoc",
+            "sha256": "3db1ca919a2390ba2bc332e696c86914b5428f73e8af50dc50769466968bd327",
+            "size": 396
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasHubV1Compatibility.swiftmodule",
+            "sha256": "d803af47f67b9ae9754e0d87376aad408edeea4289aee414b6c941975342719a",
+            "size": 255348
+          },
+          {
+            "executable": false,
+            "path": "release/Modules/TeslatlasHubV1Compatibility.swiftsourceinfo",
+            "sha256": "de85f2d71f57b3fe39a8fdd4ad0e1a1cafcb621b0016f57d0d97010932a7d122",
+            "size": 43376
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCommands.build/CommandModels.swift.o",
+            "sha256": "e6b44b8343ff1b16bf8d1057195f77d6027513eb3540d4c5a8a6e802901528a1",
+            "size": 403568
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCommands.build/TeslatlasCommandClient.swift.o",
+            "sha256": "fdfebf792d7378b11370924b45c03deb190112f4c4a8278af156456fceef00be",
+            "size": 92504
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCommands.build/TeslatlasCommands.d",
+            "sha256": "2725add5c9a7c6dadd560d342bce0d174c07be4ecd9787804f19755c081850c3",
+            "size": 12146
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCommands.build/master.swiftdeps",
+            "sha256": "8c4d9af619870bc0e3a24b7042402eb16f060791efa1abe12b5903dc91a12e00",
+            "size": 632
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCommands.build/output-file-map.json",
+            "sha256": "cfdd518d10884dc84d045381876f1ceadcc7ad23f31fab87971eeca5e8857a54",
+            "size": 2602
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCommands.build/sources",
+            "sha256": "2cba3ca1ddef6aefbda3d1034997f9680f43599f817a5a010a3f0d72b0755a0a",
+            "size": 361
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/CurrentHubBinding.swift.o",
+            "sha256": "719456919119937a6650e702c5865a0508545751917d8cb7a77a4b57cd6ba437",
+            "size": 173304
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/CurrentHubClient.swift.o",
+            "sha256": "d96b4dc5e13c7b5ac4611b61cd14484480b7b7764f203baf0f865d902430fba5",
+            "size": 581384
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/CurrentHubModels.swift.o",
+            "sha256": "f0012ef90d68bb5490ea253196f09f455c7566b8c53f6fe1884011c10df237c8",
+            "size": 884552
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/CurrentHubSHA256.swift.o",
+            "sha256": "b32da9f203c2fc7771055db0cf7f085413f2fba5e73ec97a64545cbada37558e",
+            "size": 65400
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/CurrentHubTransport.swift.o",
+            "sha256": "eea36b322f814e4b4960b85b0f1c9689e34898e5b4a13a3bb5fc896456cb8f2b",
+            "size": 437248
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/TeslatlasCurrentHub.d",
+            "sha256": "bbca99253f37c1518d660b0d478601be20c3259ac8b4df8a6cbf4234165cd05a",
+            "size": 30760
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/master.swiftdeps",
+            "sha256": "12c984a4f18288501c62513ff9a9a1e51c227cecb8f03d38ec464a294f4cb697",
+            "size": 1527
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/output-file-map.json",
+            "sha256": "f209b0fe9bad7fc983211d3d62d8d2b4bafdc83328cff6270aa44d17c14d41ca",
+            "size": 6478
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/resource_bundle_accessor.swift.o",
+            "sha256": "1d210702cb7cdd3ed82a6070f441285ba6b39278837b7a4b2ba181c8da36d3b7",
+            "size": 14640
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/sources",
+            "sha256": "1af1ee63ce81ec46abac8ce93e9fc353a139ad55df7347f73c41b929eba4df9e",
+            "size": 1152
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHub.build/DerivedSources/resource_bundle_accessor.swift",
+            "sha256": "d51b596f9c0d6415cd3c1b1e3ded88563fd4dbed10476420c16e21640980312c",
+            "size": 836
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHubTests.build/output-file-map.json",
+            "sha256": "34458f6f19f86dec6167bd6e704f17fb551e3069d22c1a623b64b332ad4d83bf",
+            "size": 10721
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasCurrentHubTests.build/DerivedSources/resource_bundle_accessor.swift",
+            "sha256": "397e3bb6db2e204247aa9e4222570b598f3bd79916e5e7d9379749c3fbed08b5",
+            "size": 846
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/AtomicJSONStateStore.swift.o",
+            "sha256": "ede09a337a9cfa555d4cf00b1e2d7762c96e01f28ff19f66c2500f873021f461",
+            "size": 31480
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/Discovery.swift.o",
+            "sha256": "4878ae181d9a3cab4ca1df5d213ff19c3a4691f5f09f08099fc1a3a3c77b1c8c",
+            "size": 623792
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/EventStream.swift.o",
+            "sha256": "3983b0486c6bb761deacd40ece8cdc73f0f28e1126d43f246bf58a899643478c",
+            "size": 191680
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/ProductVersion.swift.o",
+            "sha256": "52bef3a0fbc2dfb54e6aff3e6eec1ffc6772dbb54331858a3d6f57b2684328a7",
+            "size": 6368
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/ProtocolPrimitives.swift.o",
+            "sha256": "be1cfc48e19bb850ad1f4b4f6ea1bdd03c76aa28713f72818de5a4b2ffc21c0f",
+            "size": 395360
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/QueryModels.swift.o",
+            "sha256": "6375a170830cd1c72a482a64b061b1a7ee8e427e3ad28c384692830a160288c3",
+            "size": 773880
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/RangeResumeValidator.swift.o",
+            "sha256": "0500bafe1e8f1aecfd7023e9634d2b465e383df3b68de21ae827f264cfed7aab",
+            "size": 4712
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/ServerSentEventDecoder.swift.o",
+            "sha256": "d0599cd3f695533a920df05e8529c17f13a45e613ef84d8394af7036375e3685",
+            "size": 139016
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/TeslatlasClient.swift.o",
+            "sha256": "ca55b4425e3e4000e10534b0faa68b5bb0c3903539d926aa0564af94e6b71f6e",
+            "size": 562632
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/TeslatlasHubSDK.d",
+            "sha256": "65cc138ccaecaa03ed1fee8661c2aab1ca4a2b1cd06ba5d0da2a30de27a7b28f",
+            "size": 47069
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/TeslatlasHubSDKExample.autolink",
+            "sha256": "0486b076b26b98fe60c817feeefd6d168fc97b0c716d76a6f4a55ac19acc27d5",
+            "size": 251
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/Transport.swift.o",
+            "sha256": "a4f44efb71a2f5d089c084cb896ae5cb2355df5f5f12f39325db20d02b2c5b94",
+            "size": 215040
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/master.swiftdeps",
+            "sha256": "a068ece2bde8140b44ade55eb929ad77f63e81b52fea8a2b63c40dca3c38f39b",
+            "size": 2238
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/output-file-map.json",
+            "sha256": "63272a1025a92ad2130fd5a14da5e95dec53c21624ce01e8cbbe3d500ee710af",
+            "size": 9912
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDK.build/sources",
+            "sha256": "723a945f258a79b53f5bf74fe01fdc583522a7b067c0c36b61d666b58ac798a3",
+            "size": 1759
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDKExample.build/TeslatlasHubSDKExample.d",
+            "sha256": "b89f3ce29058ab1432f89a683b1f9a329eaa43aa0de1ee85e9112963840d6215",
+            "size": 8964
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDKExample.build/main.swift.o",
+            "sha256": "dd00401d24d8cb8afeca68173f705d95e13d9102cc4fbc08fd77c6ddf8e30ddd",
+            "size": 17904
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDKExample.build/master.swiftdeps",
+            "sha256": "db4ca4e36f1129553410cf5b21d079550d05decc46cd79b9afbf1d5b46b87c2d",
+            "size": 418
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDKExample.build/output-file-map.json",
+            "sha256": "497b4088431e2209b9008cb2eb31e0d480e931dfb3b099b7be424b53304ce875",
+            "size": 1656
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDKExample.build/sources",
+            "sha256": "f0dc7e93d5d120fe3facd912a8101e20de46f818f5412c6ea18f4ded3638e4c9",
+            "size": 173
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDKExample.product/Objects.LinkFileList",
+            "sha256": "37f15437b56ce76fb19243378d4244829a9ce47ac47d49104ea18ec9412afe1f",
+            "size": 2382
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDKTests.build/output-file-map.json",
+            "sha256": "248e7014bed503bc207310bce6b0a630d05917351a5823fee5519678c9ac54fb",
+            "size": 12369
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubSDKTests.build/DerivedSources/resource_bundle_accessor.swift",
+            "sha256": "09a0950a8820b60eeab6a23c8ef97ba239b1aec31ad157bb02546a342bb40361",
+            "size": 838
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/HubV1Binding.swift.o",
+            "sha256": "017a004ce5f9250bc9ba6480f0b0ee77764318a9ca451a4759c16e82639fdc30",
+            "size": 618664
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/HubV1Client.swift.o",
+            "sha256": "7469ba0eeb217d0823e2b3fff93b51697d3407943afee6f4b4514f8d97bfba98",
+            "size": 529920
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/HubV1Models.swift.o",
+            "sha256": "269356bbf4179e9f66a404a2a4f96372605be983fb2b7a9364a1f2fb344c947a",
+            "size": 727328
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/HubV1Transport.swift.o",
+            "sha256": "e4bb24f43edf5882854e57874c997d07876eada765df79642b2322e363223bf0",
+            "size": 168720
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/SHA256.swift.o",
+            "sha256": "e04e1996fce8d261abc6f65154387e600af8b5f6af7f2027af8da2ce743ba039",
+            "size": 63064
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/TeslatlasHubV1Compatibility.d",
+            "sha256": "f9933125f04059493afcf35434b92e1df1d4792bc3a23eeadcead81e1b1d4e08",
+            "size": 27373
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/master.swiftdeps",
+            "sha256": "50ee6724bd480aba68e1442f2180c3f5d485d9257ff4c9f6f8d94ca3191b1162",
+            "size": 1545
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/output-file-map.json",
+            "sha256": "7ae3b6e796c6ab14bf5d101000bfefff423fdea3cc90b2e5558abc69b2807664",
+            "size": 6590
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/resource_bundle_accessor.swift.o",
+            "sha256": "8649228ebd98f7d3b0f913cf6e9b5b2955500b78a64a67055f51fa9a40157a22",
+            "size": 13984
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/sources",
+            "sha256": "e51c1b198dad13c6e838b02d5c028ceb1b0895f89bb342312846a0a06cc9283c",
+            "size": 1170
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1Compatibility.build/DerivedSources/resource_bundle_accessor.swift",
+            "sha256": "3c5dae1647e92fa53e92e1cfb6136705aac577db02128bdd30bf088de824d290",
+            "size": 852
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1CompatibilityTests.build/output-file-map.json",
+            "sha256": "c4b572687601413015cb9623e5e992ae618b50831de2529b0ab32a032f60033e",
+            "size": 7867
+          },
+          {
+            "executable": false,
+            "path": "release/TeslatlasHubV1CompatibilityTests.build/DerivedSources/resource_bundle_accessor.swift",
+            "sha256": "e6d2a0acbc46678d5e10d1daa8df82cf1672645c321d53597a52b72b33774c33",
+            "size": 862
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/SHA256SUMS",
+            "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+            "size": 1457
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/auth.schema.json",
+            "sha256": "27891c9cd96b57b5fa47db36b0d7caf22600b172a9150dcdaf735c64a8297b19",
+            "size": 2183
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/cases.json",
+            "sha256": "7743aa276b4c027abbd357304bfa065db79edec20cafac59b4311364e0d28201",
+            "size": 3380
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/discovery.schema.json",
+            "sha256": "3d45864e4296fdc14b0a3ef0ef5acdbfcca94cacda1ec60fccca396271851e18",
+            "size": 1332
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/errors.schema.json",
+            "sha256": "835fe4a83f3c894bc706e5f575e4abd5d473c4b8406fc0d9b0cbf0e95172a5b4",
+            "size": 737
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/field-semantics.json",
+            "sha256": "bd9b7162c94efbd3e570ffd785fe543dfb98299379ea81cf8b2e028496bd3ee7",
+            "size": 18972
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/openapi.json",
+            "sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+            "size": 11524
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/profile.json",
+            "sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+            "size": 4543
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/resources.schema.json",
+            "sha256": "6b2523de42f5860ddaaf83b0db78b6f172e3f15e1dab8048e221c1fa6337a4be",
+            "size": 44373
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/sync-regression.json",
+            "sha256": "6aebb1a5d5e250447435876d4cb64934b916e8cd61c2c8b148d2111c7f5fc691",
+            "size": 1427
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/examples/claim.json",
+            "sha256": "8eb1ac46f72762321575d457d6bbd1ed7b1def904de9c07448b67d0659b15e1d",
+            "size": 178
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/examples/current.json",
+            "sha256": "2246f7a4b98e559c4040877ecf9474d081df5f7ab8fdfb9bcde2a3fbceacf911",
+            "size": 2407
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/examples/discovery.json",
+            "sha256": "e673ea82496110f6cbbe1c108b40eb098418bb95d781723753bdff4792c84136",
+            "size": 357
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/examples/drives.json",
+            "sha256": "fd326bd9476115bba05bbbeb61d40361e16d164984de7817e5cba58b7d29954f",
+            "size": 890
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/examples/health.json",
+            "sha256": "27cd5e17b843fd061cdec83140a87f30365f09f1d27704aa5ae98c58d303347b",
+            "size": 47
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/examples/invitation.json",
+            "sha256": "9ecf1cf49edac1fed91a0e92729d8d77c4ff13634f212555973a7003f1d4e926",
+            "size": 563
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/examples/ready.json",
+            "sha256": "9994e13386b29bde4071dd062d8c4ab8dbb6b4b877f968b4a34fb2c7b0ead65e",
+            "size": 24
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasCurrentHub.resources/Binding/examples/vehicles.json",
+            "sha256": "36b77389bac75fb247c6e0da2baf284511f40a808227b38d7543b2d199437150",
+            "size": 123
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas-sdk-swift_TeslatlasHubV1Compatibility.resources/Binding/deployed-hub-v1.0.0.json",
+            "sha256": "78aca4b6014625420efb66fbe35f6ea10d72a7f596210dac80964c33e0f04f65",
+            "size": 9824
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas_sdk_swiftPackageDiscoveredTests.build/output-file-map.json",
+            "sha256": "fa0ab7199ac208c9be9a02f217881fb50b9aeabc743809db5fc7cfba8ff88852",
+            "size": 5250
+          },
+          {
+            "executable": false,
+            "path": "release/teslatlas_sdk_swiftPackageTests.build/output-file-map.json",
+            "sha256": "f9559d3a0262c871d1873b49b906383b602f9d376ceebbcf64a638a04e197938",
+            "size": 1785
+          }
+        ],
+        "schema_version": 2,
+        "sha256": "47949e0f0e76fbff0beeee766cbee1320056a5196d6d5e1089fa334f89f33851"
+      },
+      "product_version": "2026.36.2",
+      "profile": {
+        "id": "hub-http-v1",
+        "revision": "1.0.0",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+      },
+      "source": {
+        "commit": "f98dde980c8fecf994917e3470950a3d853b4cc7",
+        "manifest_sha256": "e51987928841e909fda0d771560d1cdd4a3839d8a83b6ea9366aec6d27d22130",
+        "public_availability": "pending",
+        "repository": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+        "sha256": "1e776960a13aaa76a47f7a8faad2736be2b1f442ea58afe4832253349e987ad6",
+        "transport": "local-content-bound"
+      },
+      "tools": {
+        "swift": "Swift version 6.0.3 (swift-6.0.3-RELEASE)"
+      },
+      "verification": {}
+    },
+    "sdk-typescript": {
+      "artifacts": {
+        "package_filename": "teslatlas-sdk-2026.36.2.tgz",
+        "package_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7"
+      },
+      "commands": [
+        {
+          "argv": [
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/node-v26.7.0-linux-arm64/bin/npm",
+            "ci"
+          ],
+          "sha256": "a061e7208b8a1524dc4f3ec37a3aabf5c643bcda1c40c97fb7f37e582c3866fc"
+        },
+        {
+          "argv": [
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/node-v26.7.0-linux-arm64/bin/npm",
+            "run",
+            "build"
+          ],
+          "sha256": "e31065af635d897f4365ca249934a78e126e2f1e39c3311481f2a67e6812f8dd"
+        },
+        {
+          "argv": [
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/node-v26.7.0-linux-arm64/bin/npm",
+            "pack",
+            "--pack-destination",
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/.staging/25785236696d4b048c51beda9dca5bbd/components/sdk-typescript/output"
+          ],
+          "sha256": "81c823e1aef3b1467ee1a3fe4db05362ae4fb3b5ec0f99e71aa3e6088ddb473d"
+        },
+        {
+          "argv": [
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/node-v26.7.0-linux-arm64/bin/npm",
+            "install",
+            "--prefix",
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/.staging/25785236696d4b048c51beda9dca5bbd/components/sdk-typescript/output/.sdk-package-smoke",
+            "--ignore-scripts",
+            "--package-lock=false",
+            "--no-save",
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/.staging/25785236696d4b048c51beda9dca5bbd/components/sdk-typescript/output/teslatlas-sdk-2026.36.2.tgz"
+          ],
+          "sha256": "0e3498b11f404e9154bdb295f7ace54fdffc5508aabd31a92b5421df2898818d"
+        },
+        {
+          "argv": [
+            "/home/bolyki.guest/f6-five-linux-20260919-r1/toolchains/node-v26.7.0-linux-arm64/bin/node",
+            "-e",
+            "import('file:///home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/.staging/25785236696d4b048c51beda9dca5bbd/components/sdk-typescript/output/.sdk-package-smoke/node_modules/%40teslatlas/sdk/dist/index.js')"
+          ],
+          "sha256": "5f69d69655342e9b32cae76ab9a263fd52bf67df8af7382f7ec5944eaf5bdd16"
+        }
+      ],
+      "dependencies": {
+        "package-lock.json": "f4ac66830a15b986d3e8168662f753e0725be5f355f2e83d9890f03e84772035"
+      },
+      "outputs": {
+        "algorithm": "sha256-path-size-mode-v1",
+        "files": [
+          {
+            "executable": false,
+            "path": "teslatlas-sdk-2026.36.2.tgz",
+            "sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
+            "size": 283749
+          }
+        ],
+        "schema_version": 2,
+        "sha256": "6b4e39ee6aec07408fe55ec0dfd0e4ea565002713855d7854fdc2584274971a3"
+      },
+      "product_version": "2026.36.2",
+      "profile": {
+        "id": "hub-http-v1",
+        "revision": "1.0.0",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+      },
+      "source": {
+        "commit": "56a07dd7c1a55e5f783ab71640a01f4b56d908c4",
+        "manifest_sha256": "643e2c52e7b08399249b177c15eceb1ad56579a5143c949ce350030a7070ea9a",
+        "public_availability": "pending",
+        "repository": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+        "sha256": "b6c12d42a8decd8c5f9054b2f8cbc04e0a9a36d619497d60fde3e9b658a7052b",
+        "transport": "local-content-bound"
+      },
+      "tools": {
+        "node": "26.7.0",
+        "npm": "11.19.0"
+      },
+      "verification": {
+        "package_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7"
+      }
+    }
+  },
+  "hub_version": "2026.36.2",
+  "input_sha256": "347c47e110f97434cf77666bc43268e0dcf735fb7845d43601e62102eec2d323",
+  "installation_mode": "local-unpublished",
+  "product_version": "2026.36.2",
+  "recipe_revision": 3,
+  "schema_version": 2,
+  "status": "installed",
+  "targets": {
+    "edge_go_binary": "/home/bolyki.guest/teslatlas-g5-debian-arm64-20260918-r1/build/go1.27.0/bin/go",
+    "edge_go_binary_sha256": "b51e8499a917e56a0b290e2ab3ba96f11715dc47ad9739d307e03708e630343a",
+    "edge_target": "local-linux",
+    "edge_tool_root": "/home/bolyki.guest/teslatlas-g5-debian-arm64-20260918-r1/build/go1.27.0",
+    "ha_config": "/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/ha-config",
+    "ha_payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
+    "ha_selection_receipt_sha256": "99fdac66526bdec84d2429100f419eebedec588b0d32060c8f0f0a19bf43f2b3"
+  }
+}

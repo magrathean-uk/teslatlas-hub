@@ -1,0 +1,110 @@
+
+added 94 packages in 1s
+
+> @teslatlas/sdk@2026.36.2 build
+> node scripts/build.mjs
+
+npm notice
+npm notice 📦  @teslatlas/sdk@2026.36.2
+npm notice Tarball Contents
+npm notice 11.4kB LICENSE
+npm notice 5.9kB README.md
+npm notice 434B dist/auth/credential-store.d.ts
+npm notice 11B dist/auth/credential-store.js
+npm notice 399B dist/browser.d.ts
+npm notice 1.1MB dist/browser.js
+npm notice 3.1kB dist/client/client.d.ts
+npm notice 15.3kB dist/client/client.js
+npm notice 2.1kB dist/client/operations.d.ts
+npm notice 896B dist/client/operations.js
+npm notice 239B dist/client/session.d.ts
+npm notice 3.5kB dist/client/session.js
+npm notice 836B dist/client/types.d.ts
+npm notice 11B dist/client/types.js
+npm notice 185B dist/commands/advertised-command.d.ts
+npm notice 1.5kB dist/commands/advertised-command.js
+npm notice 392B dist/commands/idempotency.d.ts
+npm notice 594B dist/commands/idempotency.js
+npm notice 679B dist/commands/safety.d.ts
+npm notice 770B dist/commands/safety.js
+npm notice 936B dist/core/capabilities.d.ts
+npm notice 1.7kB dist/core/capabilities.js
+npm notice 2.5kB dist/core/errors.d.ts
+npm notice 4.0kB dist/core/errors.js
+npm notice 666B dist/core/opaque-values.d.ts
+npm notice 1.0kB dist/core/opaque-values.js
+npm notice 1.0kB dist/core/version.d.ts
+npm notice 2.8kB dist/core/version.js
+npm notice 896B dist/events/protocol-subscription.d.ts
+npm notice 9.6kB dist/events/protocol-subscription.js
+npm notice 559B dist/events/sse-parser.d.ts
+npm notice 4.4kB dist/events/sse-parser.js
+npm notice 2.4kB dist/events/sse-subscription.d.ts
+npm notice 9.6kB dist/events/sse-subscription.js
+npm notice 22.5kB dist/generated/hub-protocol.d.ts
+npm notice 146B dist/generated/hub-protocol.js
+npm notice 617B dist/generated/hub-validators.d.ts
+npm notice 296.1kB dist/generated/hub-validators.js
+npm notice 195B dist/generated/protocol-cases.d.ts
+npm notice 134.8kB dist/generated/protocol-cases.js
+npm notice 95.1kB dist/generated/protocol.d.ts
+npm notice 146B dist/generated/protocol.js
+npm notice 9.2kB dist/generated/validators.d.ts
+npm notice 850.5kB dist/generated/validators.js
+npm notice 606B dist/http/conditional.d.ts
+npm notice 1.1kB dist/http/conditional.js
+npm notice 141B dist/http/empty-body.d.ts
+npm notice 1.6kB dist/http/empty-body.js
+npm notice 1.4kB dist/http/fetch-transport.d.ts
+npm notice 4.2kB dist/http/fetch-transport.js
+npm notice 3.4kB dist/http/request-builder.d.ts
+npm notice 7.8kB dist/http/request-builder.js
+npm notice 958B dist/http/response-decoder.d.ts
+npm notice 7.6kB dist/http/response-decoder.js
+npm notice 476B dist/http/strong-etag.d.ts
+npm notice 869B dist/http/strong-etag.js
+npm notice 1.2kB dist/hub/client.d.ts
+npm notice 25.6kB dist/hub/client.js
+npm notice 4.9kB dist/hub/models.d.ts
+npm notice 11B dist/hub/models.js
+npm notice 364B dist/hub/node-claim-transport.d.ts
+npm notice 4.6kB dist/hub/node-claim-transport.js
+npm notice 1.0kB dist/hub/validate.d.ts
+npm notice 3.1kB dist/hub/validate.js
+npm notice 2.6kB dist/index.d.ts
+npm notice 1.1kB dist/index.js
+npm notice 668B dist/node.d.ts
+npm notice 614B dist/node.js
+npm notice 216B dist/protocol/capabilities.d.ts
+npm notice 438B dist/protocol/capabilities.js
+npm notice 1.9kB dist/protocol/models.d.ts
+npm notice 11B dist/protocol/models.js
+npm notice 247B dist/protocol/negotiation.d.ts
+npm notice 1.3kB dist/protocol/negotiation.js
+npm notice 181B dist/protocol/validate.d.ts
+npm notice 245B dist/protocol/validate.js
+npm notice 5.4kB docs/api.md
+npm notice 3.7kB docs/architecture.md
+npm notice 7.4kB docs/compatibility.md
+npm notice 3.1kB docs/docker.md
+npm notice 5.5kB docs/package-lifecycle.md
+npm notice 1.7kB docs/product-versioning.md
+npm notice 2.7kB docs/protocol-dependency-gate.md
+npm notice 3.9kB package.json
+npm notice 5.3kB tools/f3-f6-catalog.schema.json
+npm notice 587B tools/node-image-lock.json
+npm notice 2.3kB tools/package-admission.schema.json
+npm notice 787B tools/platform-support.json
+npm notice Tarball Details
+npm notice name: @teslatlas/sdk
+npm notice version: 2026.36.2
+npm notice filename: teslatlas-sdk-2026.36.2.tgz
+npm notice package size: 283.7 kB
+npm notice unpacked size: 2.7 MB
+npm notice shasum: 36115bfc1e88b4ee8d4d5a111df5194c256455db
+npm notice integrity: sha512-xzt2olkgE1VFU[...]98PIAtl9o3QVg==
+npm notice total files: 88
+npm notice
+teslatlas-sdk-2026.36.2.tgz
+
+added 7 packages in 447ms

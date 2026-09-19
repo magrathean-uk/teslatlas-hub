@@ -1,0 +1,6 @@
+swift_url=https://download.swift.org/swift-6.0.3-release/ubuntu2404-aarch64/swift-6.0.3-RELEASE/swift-6.0.3-RELEASE-ubuntu24.04-aarch64.tar.gz
+swift_archive_sha256=5ccaa855597070b2b7d8b7e9ba37be9fa64f70f1261060cfea32ced04318a148
+swift_signature_url=https://download.swift.org/swift-6.0.3-release/ubuntu2404-aarch64/swift-6.0.3-RELEASE/swift-6.0.3-RELEASE-ubuntu24.04-aarch64.tar.gz.sig
+swift_signature_sha256=b80abe59b6533c65c13ff3067f96474cf451adbdfa5d72ff167a1a7c84c7d480
+Swift version 6.0.3 (swift-6.0.3-RELEASE)
+Target: aarch64-unknown-linux-gnu

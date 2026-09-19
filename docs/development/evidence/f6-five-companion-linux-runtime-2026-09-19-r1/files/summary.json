@@ -1,0 +1,38 @@
+{
+  "catalog_sha256": "96ada184b7098c4ab109bc1444271d30354dceaaafd2a8e72ffe7204480be670",
+  "components": [
+    "protocol",
+    "sdk-typescript",
+    "sdk-swift",
+    "home-assistant",
+    "edge"
+  ],
+  "dry_run_sha256": "b64bda37ed35bde1aa3f1008079b0a4f2bc6cdc255a65e04f2159929e9c01e84",
+  "guest": "Debian GNU/Linux 13.7 aarch64",
+  "hub_source_head": "3a43155e64368b6f36cfa4d50f644870fdc5f182",
+  "input_sha256": "347c47e110f97434cf77666bc43268e0dcf735fb7845d43601e62102eec2d323",
+  "install_sha256": "78a412eb165210c866739a74e4fd526be2329b36803f2baca45faa12b0122929",
+  "installed_release": "2026.36.2-347c47e110f97434",
+  "installed_receipt_sha256": "5492ca736f83512ea9d43a8922f32b26601755e2708324b2f69ad57a7f92ffaf",
+  "installed_tree_sha256": "6a7f4fc86006e9ab4d5e5572b2c6fc9e7d6eb756f857d82a5a1da740471e1239",
+  "installation_mode": "local-unpublished",
+  "kind": "teslatlas.hub.f6-five-companion-linux-runtime-summary/v1",
+  "lifecycle": {
+    "dry_run": "PASS",
+    "identical_install": "PASS_NO_OP",
+    "install": "PASS",
+    "remove": "PASS_DATA_CONFIG_AND_UNRELATED_HA_STATE_PRESERVED",
+    "rollback": "EXPLICIT_NO_PREDECESSOR_ZERO_CHANGE",
+    "second_remove": "PASS_IDEMPOTENT_NOT_INSTALLED",
+    "status_after_install": "PASS_INSTALLED",
+    "status_after_remove": "PASS_NOT_INSTALLED",
+    "update": "PASS_NO_OP_SAME_COHORT"
+  },
+  "local_source_manifest_sha256": "618fcb3fd1f031265762fcb93c46c66d8b55fcfc8eb3313b661d9e7b000655a8",
+  "product_version": "2026.36.2",
+  "publication_status": "local-unpublished",
+  "recorded_at": "2026-09-19T22:52:01Z",
+  "result": "PASS_BOUNDED_EXACT_FIVE_LINUX_RUNTIME",
+  "schema_version": 1,
+  "viewer_included": false
+}

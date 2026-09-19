@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "cohorts": [
+    {
+      "product_version": "2026.36.2",
+      "publication_status": "local-unpublished",
+      "admitted_hub_versions": [
+        "2026.36.2"
+      ],
+      "components": {
+        "protocol": {
+          "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+          "commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+          "source_sha256": "a4b68800e7164c229915fced33223a7c9954bb67019306348e3e99671d28046c",
+          "product_version": "2026.36.2",
+          "profile": {
+            "id": "hub-http-v1",
+            "revision": "1.0.0",
+            "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+          }
+        },
+        "sdk-typescript": {
+          "repository": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+          "commit": "56a07dd7c1a55e5f783ab71640a01f4b56d908c4",
+          "source_sha256": "b6c12d42a8decd8c5f9054b2f8cbc04e0a9a36d619497d60fde3e9b658a7052b",
+          "product_version": "2026.36.2",
+          "artifacts": {
+            "package_filename": "teslatlas-sdk-2026.36.2.tgz",
+            "package_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7"
+          },
+          "profile": {
+            "id": "hub-http-v1",
+            "revision": "1.0.0",
+            "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+          }
+        },
+        "sdk-swift": {
+          "repository": "https://github.com/magrathean-uk/teslatlas-sdk-swift.git",
+          "commit": "f98dde980c8fecf994917e3470950a3d853b4cc7",
+          "source_sha256": "1e776960a13aaa76a47f7a8faad2736be2b1f442ea58afe4832253349e987ad6",
+          "product_version": "2026.36.2",
+          "profile": {
+            "id": "hub-http-v1",
+            "revision": "1.0.0",
+            "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+          }
+        },
+        "home-assistant": {
+          "repository": "https://github.com/magrathean-uk/teslatlas-home-assistant.git",
+          "commit": "dfb2b05067a88ba02e6dbfbd6db614f8a99b12f4",
+          "source_sha256": "4af006321a29e0e9039458ef41c9421afe2537a72c7ec41dc89890b01dd41ec0",
+          "product_version": "2026.36.2",
+          "artifacts": {
+            "payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
+            "selection_receipt_sha256": "99fdac66526bdec84d2429100f419eebedec588b0d32060c8f0f0a19bf43f2b3"
+          },
+          "profile": {
+            "id": "hub-http-v1",
+            "revision": "1.0.0",
+            "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+          }
+        },
+        "edge": {
+          "repository": "https://github.com/magrathean-uk/teslatlas-edge.git",
+          "commit": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
+          "source_sha256": "40877d3e0feebce348588ea3c61dc152d7eb0ea9d39da269d8f3b9bff082fe62",
+          "product_version": "2026.36.2",
+          "profile": {
+            "id": "edge-delivery-v2",
+            "revision": "2.0.0",
+            "sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+          }
+        }
+      }
+    }
+  ]
+}

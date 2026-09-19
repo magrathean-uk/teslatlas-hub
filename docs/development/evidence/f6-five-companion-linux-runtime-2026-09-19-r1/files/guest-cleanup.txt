@@ -1,0 +1,13 @@
+target=/home/bolyki.guest/f6-five-linux-20260919-r1
+3.7G	/home/bolyki.guest/f6-five-linux-20260919-r1
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda1        32G   16G   15G  53% /
+staging_removed=true
+libcurl4-openssl-dev=absent
+libssl-dev=absent
+libncurses6=absent
+rustc 1.98.0 (88d9e12ae 2026-08-18)
+cargo 1.98.0 (797e8a9bc 2026-08-05)
+go version go1.27.0 linux/arm64
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda1        32G   13G   18G  41% /

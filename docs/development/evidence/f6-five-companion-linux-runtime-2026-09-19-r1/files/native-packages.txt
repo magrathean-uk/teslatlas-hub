@@ -1,0 +1,4 @@
+libcurl4-openssl-dev:arm64	8.14.1-2+deb13u5
+libncurses6:arm64	6.5+20250216-2
+libssl-dev:arm64	3.5.7-1~deb13u2
+pkg-config:arm64	1.8.1-4

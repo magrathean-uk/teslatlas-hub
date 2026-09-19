@@ -1,0 +1,5 @@
+/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/releases/2026.36.2-347c47e110f97434/components/edge/build.log
+/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/releases/2026.36.2-347c47e110f97434/components/home-assistant/build.log
+/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/releases/2026.36.2-347c47e110f97434/components/protocol/build.log
+/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/releases/2026.36.2-347c47e110f97434/components/sdk-swift/build.log
+/home/bolyki.guest/f6-five-linux-20260919-r1/runtime/prefix/releases/2026.36.2-347c47e110f97434/components/sdk-typescript/build.log
