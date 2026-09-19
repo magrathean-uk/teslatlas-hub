@@ -7,6 +7,9 @@ import subprocess
 import sys
 import unittest
 
+from jsonschema import Draft202012Validator
+from openapi_spec_validator import validate as validate_openapi
+
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ROOT / 'profiles/hub-http-v1/1.0.0'
 
@@ -30,6 +33,37 @@ class HubHttpTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(ROOT / 'tools/build_hub_http_profile.py'), '--check'], capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(self.module.load_profile(PROFILE)['profile_id'], 'hub-http-v1@1.0.0')
+
+    def test_current_hub_openapi_describes_claim_extractor_errors_and_body_limit(self):
+        profile = self.module.load_profile(PROFILE)
+        self.assertEqual(profile['max_claim_request_bytes'], 4096)
+        document = json.loads((PROFILE / 'openapi.json').read_text())
+        operation = document['paths']['/v1/pairings/{pairing_id}/claim']['post']
+        self.assertEqual(operation['requestBody']['x-max-request-bytes'], 4096)
+        for status in ('400', '415', '422'):
+            response = operation['responses'][status]
+            self.assertIn('text/plain', response['content'])
+            self.assertEqual(response['content']['text/plain']['schema'], {'type': 'string'})
+
+    def test_current_hub_openapi_validates_independently_from_rich_openapi(self):
+        document = json.loads((PROFILE / 'openapi.json').read_text())
+        self.assertEqual(document['openapi'], '3.1.0')
+        validate_openapi(document, base_uri=PROFILE.as_uri() + '/')
+
+    def test_current_hub_schemas_are_meta_valid_and_references_are_local(self):
+        for name in ('discovery.schema.json', 'resources.schema.json', 'auth.schema.json', 'errors.schema.json'):
+            with self.subTest(name=name):
+                document = json.loads((PROFILE / name).read_text())
+                Draft202012Validator.check_schema(document)
+        document = json.loads((PROFILE / 'openapi.json').read_text())
+        for path_item in document['paths'].values():
+            for operation in path_item.values():
+                if not isinstance(operation, dict):
+                    continue
+                serialized = json.dumps(operation)
+                for reference in ('discovery.schema.json', 'resources.schema.json', 'auth.schema.json', 'errors.schema.json'):
+                    if reference in serialized:
+                        self.assertTrue((PROFILE / reference).is_file(), reference)
 
     def test_every_positive_example_validates_without_invented_version_headers(self):
         for kind in ('discovery','vehicles','current','health','ready','claim','invitation'):

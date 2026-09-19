@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "kind": "d1_protocol_component_manifest_handoff",
+  "status": "prepared_for_hub_aggregate_manifest_review",
+  "verified_at": "2026-09-09",
+  "owner": "teslatlas-protocol",
+  "scope": "source-only D1 developer-resource identity; no package publication, service start, installed selector, runtime acceptance, or profile admission",
+  "source": {
+    "repository": "teslatlas-protocol",
+    "repository_origin": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+    "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+    "working_tree": "dirty; unrelated edits are preserved; the frozen source snapshot is external and excludes this handoff and post-freeze status metadata",
+    "product_version": "2026.36.2",
+    "profile": {
+      "id": "hub-http-v1@1.0.0",
+      "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "status": "candidate"
+    },
+    "source_file_count": 177,
+    "source_manifest_sha256": "efda1c9d31556871fe5be9965889083a7037b0c311945280631ce9dd21ce994f",
+    "source_manifest_algorithm": "sha256 of compact sorted-key JSON records produced by the Hub source snapshot walker; each record contains normalized path, file sha256, byte size, and executable bit; excludes .git, .build, dist, node_modules, target, caches, AGENTS.md, and other fixed excluded names",
+    "frozen_snapshot": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-protocol-d1-20260909-ro/frozen-source",
+      "manifest_format": "bootstrap-companions.py manifest schema_version=1",
+      "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-protocol-d1-20260909-ro/local-sources.json",
+      "manifest_sha256": "e89ff7ecf4b9e0ddeebc6801ca4bf7a865b8c0561e12bb69e1c5d14f55b7ec24",
+      "component": "protocol",
+      "file_count": 177,
+      "source_sha256": "efda1c9d31556871fe5be9965889083a7037b0c311945280631ce9dd21ce994f",
+      "excluded_from_snapshot": [
+        "docs/development/d1-component-manifest-handoff-2026-09-09.json",
+        "docs/development/PLAN.md post-freeze D1 evidence update",
+        "docs/development/STATUS.json post-freeze D1 evidence update"
+      ],
+      "owner_only": true,
+      "read_only": true,
+      "read_only_path_count": 221,
+      "permission_contract": "frozen-source and every descendant have no write bits; directories are 0500, non-executable files are 0400, and executable files are 0500",
+      "verified_independently": "Protocol generated the record with the Hub source walker, rechecked the source digest and file count after making the external copy read-only, and found zero writable snapshot paths; Hub must repeat the exact check twice before binding"
+    }
+  },
+  "developer_resource": {
+    "kind": "versioned_protocol_contract_bundle",
+    "package_identity": "teslatlas-protocol",
+    "version_file": {
+      "path": "VERSION",
+      "value": "2026.36.2",
+      "sha256": "051810d8d921954428efde3a273b987ac4bb5c5b7acab03aa45dee97eaa93ec0"
+    },
+    "current_hub_profile": {
+      "id": "hub-http-v1@1.0.0",
+      "manifest_path": "profiles/hub-http-v1/1.0.0/SHA256SUMS",
+      "manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "profile_json_sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+      "openapi_json_sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7"
+    },
+    "contract_artifacts": [
+      {
+        "path": "compatibility/hub.json",
+        "sha256": "db8ac0037f8b4929897c1b06718b70e0d5c0384d70d0f24ce8c57f2009f8ed21"
+      },
+      {
+        "path": "compatibility/manifest.json",
+        "sha256": "e10da4584f3d9a4e2622792daea6e06f18d3c486ab7ae61f5e744f4e7a99805b"
+      },
+      {
+        "path": "compatibility/1.2.0/profile.json",
+        "sha256": "bca30f036e4a426562dadd3b0a2bb7ba85b7fe7eebaa6917641f68a2aad961c5"
+      },
+      {
+        "path": "tools/matrix-contract.json",
+        "sha256": "75bdb6380f70dc30b0f91abf92edbe7024fe0617402c67025bd5ec5dca609ca8"
+      },
+      {
+        "path": "tools/matrix_contract.py",
+        "sha256": "eef926e5d732a4c7ad46a9fe02a6089ea28d5c36b4e2523607212603b4994b24"
+      },
+      {
+        "path": "tools/protocol-http-v1.schema.json",
+        "sha256": "97241f70538c98e0b851581c4d13f983b0b5f57bf543883abb8a6ede1ac23cd9"
+      },
+      {
+        "path": "fixtures/manifest.json",
+        "sha256": "b21f2ef9fcbec966458b1cbc13b8d1f80e923354f57ef00c954fb1472f576e59"
+      }
+    ],
+    "package_archive": {
+      "status": "not_retained_for_source_handoff",
+      "sha256": null,
+      "reason": "Protocol is a schema, profile, fixture, conformance and adapter developer resource; no installable service package or published archive is produced by this handoff and no stale archive is bound"
+    },
+    "offline_checker": {
+      "kind": "source_only_package_test_environment",
+      "Dockerfile_sha256": "ce1567a285fde80fed2995da60c3420b64be380feb184b5f80b840fd463874b1",
+      "dockerignore_sha256": "bd9294754f7785ff24e305dfd772294e7bde843202ffb96493a3559fa0a5192d",
+      "checker_path": "tools/check",
+      "checker_sha256": "22cff4d2e7f58b7e394869c8498a73ab7b925b9f821b2d7ea4a6ea5d444266af",
+      "service_or_installed_runtime": false,
+      "image_digest": null
+    }
+  },
+  "contract_identities": {
+    "current_hub": {
+      "profile_id": "hub-http-v1@1.0.0",
+      "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "product_version": "2026.36.2"
+    },
+    "strict_protocol": {
+      "profile_id": "teslatlas-protocol@1.2.0",
+      "profile_paths": [
+        "compatibility/1.0.0/profile.json",
+        "compatibility/1.1.0/profile.json",
+        "compatibility/1.2.0/profile.json"
+      ],
+      "profile_sha256": {
+        "1.0.0": "bb3a33bac9af880590026fbfdba7ee23e9b77f7506cb9adea40370e249e28dfc",
+        "1.1.0": "4952e7614b1658f9d685ad5e731d6ff4d440328266cf9ad5ae2774741701f05b",
+        "1.2.0": "bca30f036e4a426562dadd3b0a2bb7ba85b7fe7eebaa6917641f68a2aad961c5"
+      }
+    },
+    "matrix_contract": {
+      "path": "tools/matrix-contract.json",
+      "sha256": "75bdb6380f70dc30b0f91abf92edbe7024fe0617402c67025bd5ec5dca609ca8",
+      "validator_path": "tools/matrix_contract.py",
+      "validator_sha256": "eef926e5d732a4c7ad46a9fe02a6089ea28d5c36b4e2523607212603b4994b24"
+    },
+    "verification": {
+      "profile_manifest": "profiles/hub-http-v1/1.0.0/SHA256SUMS",
+      "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "openapi_path": "openapi/teslatlas-v1.openapi.json",
+      "openapi_sha256": "393b5b2c2d46b6509773bc5c5b634b419c37a2d88fd1d79fab89d315d2ce01aa"
+    }
+  },
+  "selectors": [
+    {
+      "id": "protocol-source",
+      "status": "supported_source_candidate_not_installed",
+      "artifact": "external frozen Protocol contract source snapshot bound by source_manifest_sha256 and the Hub-compatible local-sources manifest",
+      "selection": "optional developer resource only; Hub aggregate selection must be explicit",
+      "service_ownership": "Protocol owns schemas, profiles, OpenAPI, fixtures, conformance cases, and adapters; it never owns a Hub service",
+      "receipt_required": "source manifest, profile identity and selected resource paths must be reverified before any downstream build or runtime row"
+    },
+    {
+      "id": "protocol-offline-checker",
+      "status": "source_candidate_test_environment_not_runtime",
+      "artifact": "Dockerfile and tools/check source identities; no current image digest or installed package identity is retained",
+      "selection": "optional offline package/test environment only; it must not be selected as a Hub or collector service",
+      "service_ownership": "Protocol owns the checker contract and test process; the selected test host owns Docker/container lifecycle",
+      "blocked_reason": "No image, package, service, listener, or installed runtime is bound by this handoff",
+      "receipt_required": "source-bound offline test receipt only; any installed target requires a separate owner-authorized target receipt"
+    },
+    {
+      "id": "native-protocol-service",
+      "status": "unsupported_by_protocol_contract",
+      "artifact": "none",
+      "selection": "never selectable as a service",
+      "blocked_reason": "Protocol is a developer contract/resource and does not implement Hub storage, collection, bootstrap, service lifecycle, installer daemon, or listener",
+      "receipt_required": "no service receipt is permitted"
+    }
+  ],
+  "ownership": {
+    "source": "Protocol owns its source bundle, schemas, current-Hub and rich profiles, OpenAPI, fixtures, conformance cases and adapters within the selected snapshot",
+    "selection": "Hub aggregate owns explicit component selection, activation, target choice and any retained downstream receipt",
+    "service": "No Protocol service, daemon, listener, database, collector, installer daemon, Hub socket or vehicle command is owned or started by this component",
+    "runtime": "A future downstream runner owns any test process/container lifecycle; Protocol adapters may validate observed facts but may not choose a Hub, credential, vehicle, socket, broker or service",
+    "data": "Hub and applications own endpoints, pairing state, credentials, vehicle data, databases and retention; Protocol fixtures are synthetic and contain no production data",
+    "removal": "Remove only the selected Protocol source/output and its selection record; preserve Hub, Home Assistant, Edge, Viewer, SDK, credentials, databases and unrelated component state"
+  },
+  "lifecycle": {
+    "stage": "Verify the external owner-only source manifest twice, copy only the exact listed bytes, and bind VERSION, current-Hub profile, compatibility and matrix identities before any downstream build",
+    "build": "Run the fixed offline checker and generator checks in the selected environment; retain an output manifest only when a later receipt binds it to this source snapshot",
+    "activate": "D1 source selection does not authorize a service, listener, Hub socket, database, credential, installer, or installed-matrix run",
+    "installed_run": "Only a fresh owner-authorized downstream target and fixed runner may execute installed conformance rows; Protocol does not construct SessionInputs or provision hosts",
+    "restart": "Restart only a selected downstream test process/container under its owner; no native Protocol service restart exists",
+    "upgrade": "Retain the prior selected source/output until the new source/profile manifest is independently verified; rollback changes only the Protocol developer resource",
+    "remove": "Stop and clean any downstream runner before removing only the Protocol source/output selection; preserve unrelated component and application data",
+    "cleanup": "Any downstream receipt must show child/container exit and absence of an SDK-owned or Protocol-owned listener; this handoff performs no runtime cleanup"
+  },
+  "receipt_schema": {
+    "required_fields": [
+      "selector_id",
+      "status",
+      "source_head",
+      "source_manifest_sha256",
+      "developer_resource_and_artifact_identity",
+      "current_hub_profile_and_contract_identities",
+      "runtime_os_architecture_and_version",
+      "selected_test_or_consumer_and_case_counts",
+      "install_remove_restart_upgrade_actions",
+      "before_after_unrelated_state_check",
+      "redaction_and_secret_presence_check",
+      "cleanup_child_process_container_and_listener_state"
+    ],
+    "source_provenance_rule": "Every source/profile/contract identity is read from the fixed snapshot or independently verified output; job metadata cannot select code, target, command, credential, socket, broker, executable or service",
+    "secret_policy": "Never record invitation, pairing URI, claim secret, bearer, TLS pin material, certificate or private-key bytes, private SessionInput, Docker socket, Hub database, vehicle UUID/VIN, raw response, opaque cursor or credential path",
+    "accepted_public_fields": "Hashes, product/version identifiers, relative public paths, target OS/architecture, bounded counts, redacted statuses and cleanup observations",
+    "acceptance_rule": "This source handoff and offline checker/package-shape result do not promote a selector to installed lifecycle acceptance; each downstream target requires a fresh target-specific receipt"
+  },
+  "hub_action_requested": "Verify the external owner-only Protocol snapshot and bootstrap-companions manifest twice, bind only the exact source/profile/compatibility/matrix identities into the aggregate D1 record, keep Protocol optional and no-service, and leave the offline checker and all installed/runtime selectors source-only until separate receipts exist. Do not publish, install, start a service, construct a SessionInput or promote profile admission from this handoff."
+}

@@ -1,11 +1,28 @@
 {
   "schema_version": 1,
-  "status": "candidate",
+  "status": "accepted",
   "product_version": "2026.36.2",
-  "profile": {"id": "hub-http-v1", "revision": "1.0.0", "sha256": null},
-  "tested_hub_versions": [],
-  "tested_hub_source_fingerprints": [],
+  "profile": {
+    "id": "hub-http-v1",
+    "revision": "1.0.0",
+    "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+  },
+  "tested_hub_versions": [
+    "2026.36.2"
+  ],
+  "tested_hub_source_fingerprints": [
+    "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;content-manifest-sha256:e84233ed9641f525f6e4dba328700153983297932a277ebc544a75cc841cf823",
+    "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;snapshot-manifest-sha256:f3e9f240930c72909d982ad2f6429c4f6ab390eb34818505e92236f6027d443b",
+    "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;content-manifest-sha256:42f1787eb94ad81595fad1e5795d547633d0fea848735dfd47ab4e86ed53249d"
+  ],
   "required_capabilities": [],
   "optional_capabilities": [],
-  "test_receipt_paths": []
+  "test_receipt_paths": [
+    "hub/docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json",
+    "teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json",
+    "hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+    "teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+    "hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+    "teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json"
+  ]
 }

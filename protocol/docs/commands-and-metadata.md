@@ -1,5 +1,8 @@
 # Commands and metadata
 
+These are rich-profile write surfaces. The candidate current-Hub HTTP profile
+has no public command or metadata routes; see [`current-hub.md`](current-hub.md).
+
 Commands and metadata are the two write surfaces. Both are capability-gated,
 audited, bounded, and independent of provider-specific implementation details.
 

@@ -33,6 +33,71 @@ The current gate executes 31 profile/case runs: nine for `1.0.0`, ten for
 `1.1.0`, and twelve for `1.2.0`. A profile contains every case whose
 `introduced_in` version is not newer than that profile.
 
+## Current-Hub acceptance
+
+`hub-http-v1@1.0.0` is a separate current-Hub profile. Run it by itself with
+the actual-Hub adapter and a private descriptor supplied by the Hub owner:
+
+```sh
+TESLATLAS_HUB_HTTP_CONFIG=/absolute/private/ready-or-matrix.json
+./conformance/run \
+  --profile hub-http-v1@1.0.0 \
+  --adapter "$PWD/conformance/adapters/actual-hub" \
+  --config "$TESLATLAS_HUB_HTTP_CONFIG" \
+  --json
+```
+
+The descriptor is either a native fixture `ready.json` or a matrix descriptor
+with `kind: "protocol-actual-hub-matrix"`. Both bind the profile manifest and
+owned fixture artifacts. Matrix descriptors additionally bind selected Hub and
+Protocol source identities, runtime details, and an owner-controlled
+`host_session`; native descriptors bind the launcher's retained `ready.json`
+and live process identity. The runner rejects arbitrary endpoints, missing
+prerequisites, mixed rich/current profile runs, and a different adapter.
+
+Native mode uses the existing bounded `urllib` transport. It loads the owner's
+CA file, checks the invitation's configured certificate DER digest before the
+first request, and lets the normal TLS context perform CA and hostname
+validation. The fixture launcher owns the process and cleanup; native mode does
+not provide matrix broker receipts or host-session admission.
+
+Matrix mode uses the stricter raw `http.client` transport. It validates CA and
+hostname, checks the connected socket's leaf DER digest before request bytes,
+and applies one deadline across connect, TLS, sends, response parsing, and
+validation. The installed controller supplies the host-session proof and owns
+service lifecycle. These are distinct evidence paths; passing one does not
+substitute for the other.
+
+The installed Protocol branch accepts the reviewed v2 wrapper around the
+existing matrix config. Hub supplies a closed `SessionInput` file with the
+18-member profile staging, certificate DER binding, actor input manifest,
+output reservations, bounds, and the unchanged Unix broker descriptor. The
+adapter preserves the v1 normalized header and 21 case records, writes
+hash-bound raw case files and `actor_evidence`, then writes
+`adapter-completion.json` and `ready-000001.json`. It keeps the broker attached
+until the Hub runner writes an identity-matched `accepted/close_completed`
+acknowledgement; only then may it close and exit zero. Missing or stale files,
+changed hashes, a wrong session/nonce, a rejected acknowledgement, or an
+unavailable contract fails closed. The inert case manifest and pure semantic
+predicate are [`tools/matrix-contract.json`](../tools/matrix-contract.json) and
+[`tools/matrix_contract.py`](../tools/matrix_contract.py); they describe the
+adapter-owned contract and do not themselves establish an installed row.
+
+Native mode exercises discovery, readiness, claim/replay, vehicle/current
+reads, bounded drive pages and conditional `304`, cursor binding, fixture
+advancement, and credential rotation. Matrix mode adds the installed lifecycle
+cases: wrong or expired invitations, revoke and re-pair, restart, outage
+recovery, and unsupported-operation zero-request refusal. The matrix's expired
+invitation case intentionally proves local refusal without sending an HTTP
+request; a server-side expiry response requires a separate disposable
+invitation and raw request.
+
+The current-Hub run is live or synthetic network evidence only when the
+descriptor names an owned running Hub. `./conformance/run` with the reference
+adapter, generated-artifact checks, or a unit-test stub is local contract
+evidence and cannot establish installed-product acceptance. Installed support
+requires the Hub-owned runner receipts and cleanup for each declared target.
+
 ## Adapter protocol
 
 For each profile/case pair, the runner starts a fresh adapter process with the

@@ -75,7 +75,7 @@ def bundle():
         ('claim','POST','/v1/pairings/{pairing_id}/claim',False,[200,400,401,404,415,422,503]),
         ('rotate','POST','/v1/device/rotate',True,[200,401,404,503])]
     profile={'profile_id':ID,'status':'candidate','contract_version':'1.0.0','product_version_binding':'independent; see ecosystem compatibility manifests',
-        'license':'Apache-2.0','schema_dialect':DRAFT,'max_response_bytes':1048576,
+        'license':'Apache-2.0','schema_dialect':DRAFT,'max_response_bytes':1048576,'max_claim_request_bytes':4096,
         'capabilities':['query.vehicles','query.current','query.drives','sync.packs'],
         'unsupported':{'rich_protocol_versions':'1.0/1.1/1.2 rich profiles are separate contracts','commands':'no public vehicle command route','sse':'no public event stream or epoch','metadata':'no public metadata CRUD','revisions':'no public current or drive snapshot revision','charges':'no public charge query; retained in sync packs','protocol_version_header':'not emitted or required'},
         'additive_policy':'This version is a frozen bounded shape. Unknown fields fail acceptance; a new profile may explicitly allow optional additions. Clients may ignore unknown fields without assuming new capabilities.',
@@ -92,13 +92,16 @@ def bundle():
             parameters += [{'name':name,'in':'query','schema':val} for name,val in {'from_ms':{'type':'integer','minimum':0,'maximum':2**63-1},'to_ms':{'type':'integer','minimum':0,'maximum':2**63-1},'limit':{'type':'integer','minimum':1,'maximum':500,'default':100},'cursor':{'type':'string','maxLength':4096}}.items()]
             parameters.append({'name':'If-None-Match','in':'header','schema':STR})
         operation={'operationId':kind,'responses':{},'parameters':parameters,'security':[{'pairedBearer':[]}] if authenticated else []}
-        if kind=='claim':operation['requestBody']={'required':True,'content':{'application/json':{'schema':{'$ref':'auth.schema.json#/$defs/claim_request'}}}}
+        if kind=='claim':operation['requestBody']={'required':True,'x-max-request-bytes':4096,'content':{'application/json':{'schema':{'$ref':'auth.schema.json#/$defs/claim_request'}}}}
         for status in statuses:
             response={'description': 'Successful response' if status==200 else 'Route-specific error or conditional response; see profile cases'}
             if status==200:response['content']={'application/json':{'schema':{'$ref':ref(kind)}}}
             elif kind=='drives' and status in (400,404,503) or kind=='discovery' and status==503:
                 response['content']={'application/json':{'schema':{'$ref':'errors.schema.json'}}}
             elif kind=='ready' and status==503:response['content']={'application/json':{'schema':{'$ref':ref(kind)}}}
+            elif kind=='claim' and status in (400,415,422):
+                response['description']='Request extraction or validation failed; body is bounded text/plain.'
+                response['content']={'text/plain':{'schema':{'type':'string'}}}
             if kind=='drives' and status==503:
                 response['description']='Authentication-store outage: empty response body; query-originated outage: application/json service_unavailable envelope. Nonempty bodies must match the JSON error schema.'
                 response['x-empty-body-allowed']=True

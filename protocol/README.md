@@ -4,8 +4,19 @@ Public, source-neutral protocol contracts for Teslatlas Hub clients and integrat
 
 ## Status
 
-The current contract profile is `1.2.0`. The local conformance gate covers
-`1.0.0`, `1.1.0`, and `1.2.0`: the current minor and its two predecessors.
+This repository carries three related contracts with different identities:
+
+- Candidate current-Hub HTTP: `hub-http-v1@1.0.0`, documented in
+  [`docs/current-hub.md`](docs/current-hub.md). It describes discovery,
+  pairing, authenticated vehicle/current/drives reads, and credential
+  rotation.
+- Rich semantic HTTP and event profiles: `1.0.0`, `1.1.0`, and `1.2.0`.
+  The local conformance gate covers the current minor and its two predecessors.
+  Their walkthrough is [`docs/client-quickstart.md`](docs/client-quickstart.md)
+  and includes version negotiation, SSE, commands, and metadata.
+- Edge delivery: `profiles/edge-delivery-v2/2.0.0/`, with its own pull and
+  acknowledgement contract.
+
 These are protocol profiles, not claims about a deployed Hub or SDK release.
 
 This repository contains no Hub implementation, generated SDK, or proprietary
@@ -55,13 +66,16 @@ profiles. It uses no hosted CI.
 
 ## Artifacts
 
-- `openapi/teslatlas-v1.openapi.json` — self-contained OpenAPI 3.1.1 query API.
+- `openapi/teslatlas-v1.openapi.json` — self-contained OpenAPI 3.1.1 rich query API.
 - `schemas/` — canonical JSON Schema 2020-12 contracts.
 - `events/teslatlas-v1.sse.json` — SSE framing, replay, and event catalogue.
 - `examples/` — redacted valid and deliberately invalid wire examples.
 - `fixtures/v1/` — deterministic normal, duplicate, delayed, missing, and
   reordered observation scenarios.
 - `compatibility/` — the current and previous two minor profiles.
+- `profiles/hub-http-v1/1.0.0/` — current-Hub HTTP schemas, OpenAPI 3.1.0,
+  examples, cases, and content hash. Distribute the complete directory because
+  its OpenAPI references adjacent schema files.
 - `profiles/edge-delivery-v2/2.0.0/` — Edge pull, stable identity,
   sequence/gap, acknowledgement, and durable-consumer disposition contract.
 - `conformance/` — JSONL adapter protocol, executable cases, and runner.
@@ -70,8 +84,12 @@ profiles. It uses no hosted CI.
 
 - [Product versioning](docs/product-versioning.md)
 - [Architecture](docs/architecture.md)
-- [Client walkthrough](docs/client-quickstart.md)
-- [HTTP contract](docs/http.md)
+- [Current-Hub walkthrough](docs/current-hub.md)
+- [Docker checker and read-only smoke](docs/docker.md)
+- [Compatibility record](docs/compatibility.md)
+- [Verification status](docs/verification.md)
+- [Rich-profile client walkthrough](docs/client-quickstart.md)
+- [Rich-profile HTTP contract](docs/http.md)
 - [Canonical data model](docs/data-model.md)
 - [Event stream](docs/events.md)
 - [Commands and metadata](docs/commands-and-metadata.md)

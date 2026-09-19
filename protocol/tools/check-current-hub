@@ -1,0 +1,347 @@
+#!/usr/bin/env python3
+"""Bounded, read-only remote wire smoke for the current-Hub profile."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.parse
+import uuid
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from conformance import hub_http
+
+
+PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.0.0"
+HEADER_LIMIT = 16 * 1024
+CONFIG_FIELDS = {
+    "endpoint",
+    "expected_hub_id",
+    "ca_path",
+    "authorization_header_path",
+    "vehicle_id",
+    "from_ms",
+    "to_ms",
+    "limit",
+    "max_pages",
+    "timeout_seconds",
+}
+
+
+class ProbeError(Exception):
+    """Public messages are fixed labels and never contain private input."""
+
+
+def _private_dir(config_path):
+    directory = config_path.resolve().parent
+    metadata = directory.stat()
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
+        raise ProbeError("probe configuration invalid")
+    return directory
+
+
+def _private_file(value, directory):
+    if not isinstance(value, str) or not value.startswith("/"):
+        raise ProbeError("probe configuration invalid")
+    path = Path(value)
+    if path.parent.resolve() != directory or path.is_symlink():
+        raise ProbeError("probe configuration invalid")
+    metadata = path.stat()
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
+        raise ProbeError("probe configuration invalid")
+    return path
+
+
+def _read_header(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as stream:
+        raw = stream.read(8193)
+    if len(raw) > 8192:
+        raise ProbeError("probe configuration invalid")
+    try:
+        text = raw.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise ProbeError("probe configuration invalid") from error
+    if re.fullmatch(r"Authorization: Bearer [^\s\r\n]+\n?", text) is None:
+        raise ProbeError("probe configuration invalid")
+
+
+def _uuid(value):
+    if not isinstance(value, str):
+        raise ProbeError("probe configuration invalid")
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError as error:
+        raise ProbeError("probe configuration invalid") from error
+    if str(parsed) != value:
+        raise ProbeError("probe configuration invalid")
+    return value
+
+
+def _integer(value, minimum, maximum):
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise ProbeError("probe configuration invalid")
+    return value
+
+
+def load_config(path):
+    config_path = Path(path)
+    directory = _private_dir(config_path)
+    try:
+        config = hub_http.read_private(config_path)
+    except (OSError, ValueError, hub_http.AcceptanceError) as error:
+        raise ProbeError("probe configuration invalid") from error
+    if not isinstance(config, dict) or set(config) != CONFIG_FIELDS:
+        raise ProbeError("probe configuration invalid")
+    endpoint = config.get("endpoint")
+    if not isinstance(endpoint, str):
+        raise ProbeError("probe configuration invalid")
+    parsed = urllib.parse.urlsplit(endpoint)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in ("", "/")
+    ):
+        raise ProbeError("probe configuration invalid")
+    if endpoint.endswith("/"):
+        endpoint = endpoint[:-1]
+    expected_hub_id = _uuid(config.get("expected_hub_id"))
+    vehicle_id = _uuid(config.get("vehicle_id"))
+    from_ms = _integer(config.get("from_ms"), 0, 9223372036854775807)
+    to_ms = _integer(config.get("to_ms"), 0, 9223372036854775807)
+    if from_ms >= to_ms:
+        raise ProbeError("probe configuration invalid")
+    limit = _integer(config.get("limit"), 1, 500)
+    max_pages = _integer(config.get("max_pages"), 1, 10)
+    timeout_seconds = _integer(config.get("timeout_seconds"), 1, 120)
+    ca_path = _private_file(config.get("ca_path"), directory)
+    header_path = _private_file(config.get("authorization_header_path"), directory)
+    _read_header(header_path)
+    return {
+        "endpoint": endpoint,
+        "expected_hub_id": expected_hub_id,
+        "vehicle_id": vehicle_id,
+        "from_ms": from_ms,
+        "to_ms": to_ms,
+        "limit": limit,
+        "max_pages": max_pages,
+        "timeout_seconds": timeout_seconds,
+        "ca_path": ca_path,
+        "header_path": header_path,
+    }
+
+
+def _bounded_bytes(path, limit):
+    with path.open("rb") as stream:
+        result = stream.read(limit + 1)
+    if len(result) > limit:
+        raise ProbeError("probe failed")
+    return result
+
+
+def _headers(raw):
+    if len(raw) > HEADER_LIMIT:
+        raise ProbeError("probe failed")
+    blocks = [item for item in raw.split(b"\r\n\r\n") if item]
+    if not blocks:
+        raise ProbeError("probe failed")
+    try:
+        lines = blocks[-1].decode("iso-8859-1").split("\r\n")
+    except UnicodeDecodeError as error:
+        raise ProbeError("probe failed") from error
+    match = re.fullmatch(r"HTTP/(?:1\.[01]|2(?:\.0)?) ([0-9]{3})(?: .*)?", lines[0])
+    if match is None:
+        raise ProbeError("probe failed")
+    result = {}
+    for line in lines[1:]:
+        if not line or ":" not in line:
+            raise ProbeError("probe failed")
+        key, value = line.split(":", 1)
+        if not key or key.lower() in result:
+            raise ProbeError("probe failed")
+        result[key.lower()] = value.strip()
+    return int(match.group(1)), result
+
+
+def _response_value(raw):
+    try:
+        return hub_http.strict_json(raw)
+    except (ValueError, UnicodeDecodeError, TypeError) as error:
+        raise ProbeError("probe failed") from error
+
+
+def _remaining(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ProbeError("probe failed")
+    return remaining
+
+
+def _curl(config, deadline, url, *, authenticated, if_none_match=None):
+    with tempfile.TemporaryDirectory(prefix="teslatlas-probe-") as directory:
+        temporary = Path(directory)
+        body_path = temporary / "body"
+        headers_path = temporary / "headers"
+        status_path = temporary / "status"
+        remaining = _remaining(deadline)
+        command = [
+            "curl",
+            "--disable",
+            "--globoff",
+            "--silent",
+            "--show-error",
+            "--request",
+            "GET",
+            "--retry",
+            "0",
+            "--proxy",
+            "",
+            "--noproxy",
+            "*",
+            "--connect-timeout",
+            f"{min(10, remaining):.3f}",
+            "--max-time",
+            f"{remaining:.3f}",
+            "--max-filesize",
+            str(hub_http.MAX_BYTES),
+            "--cacert",
+            str(config["ca_path"]),
+            "--dump-header",
+            str(headers_path),
+            "--output",
+            str(body_path),
+            "--write-out",
+            "%{http_code}",
+        ]
+        if if_none_match is not None:
+            command.extend(["--header", "If-None-Match: " + if_none_match])
+        if authenticated:
+            command.extend(["--header", "@" + str(config["header_path"])])
+        command.append(url)
+        with status_path.open("wb") as status_stream:
+            try:
+                process = subprocess.Popen(
+                    command,
+                    stdin=subprocess.DEVNULL,
+                    stdout=status_stream,
+                    stderr=subprocess.DEVNULL,
+                )
+                process.wait(timeout=_remaining(deadline))
+            except (OSError, subprocess.TimeoutExpired) as error:
+                if "process" in locals() and process.poll() is None:
+                    process.kill()
+                    process.wait()
+                raise ProbeError("probe failed") from error
+        if process.returncode != 0:
+            raise ProbeError("probe failed")
+        status_raw = _bounded_bytes(status_path, 3)
+        if re.fullmatch(b"[0-9]{3}", status_raw) is None:
+            raise ProbeError("probe failed")
+        status, headers = _headers(_bounded_bytes(headers_path, HEADER_LIMIT))
+        if status != int(status_raw):
+            raise ProbeError("probe failed")
+        return status, headers, _bounded_bytes(body_path, hub_http.MAX_BYTES)
+
+
+def _checked_get(config, deadline, kind, path, *, authenticated, if_none_match=None):
+    status, headers, raw = _curl(
+        config,
+        deadline,
+        config["endpoint"] + path,
+        authenticated=authenticated,
+        if_none_match=if_none_match,
+    )
+    if status not in (200, 304) or hub_http.validate_raw(PROFILE, kind, status, headers, raw):
+        raise ProbeError("probe failed")
+    return status, headers, raw
+
+
+def run(config):
+    profile = hub_http.load_profile(PROFILE)
+    deadline = time.monotonic() + config["timeout_seconds"]
+    operations = []
+    _, _, raw = _checked_get(config, deadline, "discovery", "/.well-known/teslatlas-hub", authenticated=False)
+    discovery = _response_value(raw)
+    capabilities = set(discovery.get("capabilities", []))
+    if (
+        discovery.get("hub_id") != config["expected_hub_id"]
+        or not {"query.vehicles", "query.current"} <= capabilities
+        or not capabilities <= set(profile["capabilities"])
+    ):
+        raise ProbeError("probe failed")
+    operations.append("discovery")
+    _, _, raw = _checked_get(config, deadline, "vehicles", "/v1/vehicles", authenticated=True)
+    vehicles = _response_value(raw)
+    if config["vehicle_id"] not in {item.get("vehicle_id") for item in vehicles["vehicles"]}:
+        raise ProbeError("probe failed")
+    operations.append("vehicles")
+    current_path = "/v1/vehicles/" + config["vehicle_id"] + "/current"
+    _, _, raw = _checked_get(config, deadline, "current", current_path, authenticated=True)
+    if _response_value(raw).get("vehicle_id") != config["vehicle_id"]:
+        raise ProbeError("probe failed")
+    operations.append("current")
+    if "query.drives" not in capabilities:
+        return {"status": "passed", "evidence_kind": "remote-wire-smoke", "operations": operations}
+    query = urllib.parse.urlencode(
+        {"from_ms": config["from_ms"], "to_ms": config["to_ms"], "limit": config["limit"]}
+    )
+    drive_path = "/v1/vehicles/" + config["vehicle_id"] + "/drives?" + query
+    cursor = None
+    seen_cursors = set()
+    for page_number in range(config["max_pages"]):
+        path = drive_path if cursor is None else drive_path + "&cursor=" + urllib.parse.quote(cursor, safe="")
+        _, headers, raw = _checked_get(config, deadline, "drives", path, authenticated=True)
+        page = _response_value(raw)
+        if any(item.get("vehicle_id") != config["vehicle_id"] for item in page["items"]):
+            raise ProbeError("probe failed")
+        operations.append("drives" if page_number == 0 else "drives-next-page")
+        if page_number == 0:
+            status, _, conditional_raw = _checked_get(
+                config,
+                deadline,
+                "drives",
+                path,
+                authenticated=True,
+                if_none_match=headers["etag"],
+            )
+            if status != 304 or conditional_raw:
+                raise ProbeError("probe failed")
+            operations.append("drives-if-none-match")
+        cursor = page["next_cursor"]
+        if cursor is None:
+            return {"status": "passed", "evidence_kind": "remote-wire-smoke", "operations": operations}
+        if cursor in seen_cursors:
+            raise ProbeError("probe failed")
+        seen_cursors.add(cursor)
+    return {"status": "partial", "evidence_kind": "remote-wire-smoke", "operations": operations}
+
+
+def main():
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--config", required=True)
+    arguments = parser.parse_args()
+    try:
+        result = run(load_config(arguments.config))
+    except ProbeError as error:
+        print(json.dumps({"status": "failed", "error": str(error)}, separators=(",", ":")))
+        return 1
+    except Exception:
+        print(json.dumps({"status": "failed", "error": "probe failed"}, separators=(",", ":")))
+        return 1
+    print(json.dumps(result, separators=(",", ":")))
+    return 0 if result["status"] == "passed" else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

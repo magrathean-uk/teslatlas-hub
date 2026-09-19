@@ -4,6 +4,11 @@ Teslatlas requirements use the following primary specifications. If this
 repository narrows a permitted standards behaviour, the narrower public
 contract applies to Teslatlas implementations.
 
+The table describes the rich semantic profiles unless it says otherwise. The
+candidate current-Hub HTTP profile is a separate OpenAPI 3.1.0 bundle with
+adjacent JSON Schema files; use its own profile documents and
+[`current-hub.md`](current-hub.md) for its available routes and errors.
+
 | Area | Specification | Teslatlas use |
 | --- | --- | --- |
 | Requirement words | [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html) and [RFC 8174](https://www.rfc-editor.org/rfc/rfc8174.html) | uppercase normative terms in prose contracts |

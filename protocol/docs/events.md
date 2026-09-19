@@ -1,5 +1,8 @@
 # Event stream
 
+This is a rich-profile surface. The candidate current-Hub HTTP profile has no
+public SSE or events endpoint; see [`current-hub.md`](current-hub.md).
+
 `GET /v1/events` is the ordered live-notification surface. OpenAPI defines the
 HTTP operation. `events/teslatlas-v1.sse.json` defines SSE framing, replay, and
 the event catalogue. JSON formed from SSE `data` lines validates against

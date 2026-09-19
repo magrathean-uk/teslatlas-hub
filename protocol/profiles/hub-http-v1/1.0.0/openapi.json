@@ -145,7 +145,8 @@
               }
             }
           },
-          "required": true
+          "required": true,
+          "x-max-request-bytes": 4096
         },
         "responses": {
           "200": {
@@ -159,7 +160,14 @@
             "description": "Successful response"
           },
           "400": {
-            "description": "Route-specific error or conditional response; see profile cases"
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Request extraction or validation failed; body is bounded text/plain."
           },
           "401": {
             "description": "Route-specific error or conditional response; see profile cases"
@@ -168,10 +176,24 @@
             "description": "Route-specific error or conditional response; see profile cases"
           },
           "415": {
-            "description": "Route-specific error or conditional response; see profile cases"
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Request extraction or validation failed; body is bounded text/plain."
           },
           "422": {
-            "description": "Route-specific error or conditional response; see profile cases"
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Request extraction or validation failed; body is bounded text/plain."
           },
           "503": {
             "description": "Route-specific error or conditional response; see profile cases"

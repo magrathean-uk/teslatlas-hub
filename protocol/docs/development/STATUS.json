@@ -1,0 +1,72 @@
+{
+  "schema_version": 2,
+  "product": "Protocol",
+  "updated_at": "2026-09-19T10:30:43Z",
+  "update_scope": "post_adoption_next_phase_planning_no_execution",
+  "programme": "2026-09-18-app-v7-readiness",
+  "state": "G3_ACCEPTED",
+  "source_objective_state": "EXACT_BINDING_ACCEPTED",
+  "current_gate_ids": [],
+  "accepted_gate_ids": [
+    "G3"
+  ],
+  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Preserve accepted exact bindings and prepare a deterministic unpublished Protocol developer bundle.",
+  "source": {
+    "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+    "branch": "main",
+    "dirty_entries": 39,
+    "checked_at": "2026-09-19T10:30:43Z"
+  },
+  "current_worker": null,
+  "model_policy": {
+    "implementation": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/max",
+    "coordinator": "gpt-5.6-sol/max",
+    "fast_mode": false
+  },
+  "evidence_summary": [
+    "Prior local contract gate recorded 134 Protocol tests plus 31 rich-profile cases; ARM64 current-profile fixture recorded 24/24.",
+    "Current scoped developer-resource objective complete; no new Protocol correction is ready.",
+    "G3 accepted the exact product 2026.36.2 bindings from final G2/G4, G5 and G6 evidence: hub-http-v1@1.0.0 remains b80d940e...d926 across Protocol, TypeScript and Swift while Edge retains edge-delivery-v2@2.0.0 e304fb6e...d224.",
+    "All five compatibility records passed the scoped G3 admission/readback checker; its 6 focused cases prove active-only operation, idempotence and fail-closed identity/divergence handling without reading Viewer. The TypeScript vendored Protocol copy is byte-identical and its focused lock/readback check passes.",
+    "The repaired checker is bound by r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865."
+  ],
+  "evidence_paths": [
+    "docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+  ],
+  "remaining": [
+    "Preserve the accepted exact bindings; rerun admission only for a source, profile, product-version or accepted-evidence delta.",
+    "L3: deterministic unpublished developer bundle with ordered manifest, archive hash and clean offline extraction/check.",
+    "Named-source semantic evidence requires fresh owner input; on a concrete contract gap, update all affected machine-readable artifacts and conformance."
+  ],
+  "next_goal_draft": {
+    "id": "L3_PROTOCOL_REPRODUCIBLE_BUNDLE",
+    "state": "DRAFT_NOT_STARTED",
+    "objective": "Create an unpublished source-neutral contract archive for the accepted profile without changing runtime bindings.",
+    "acceptance_evidence": [
+      "Ordered archive manifest and SHA-256 tied to exact source and G3",
+      "Reproducible generated artifacts and checksum maps",
+      "Clean offline extraction/check with no service, listener or credential",
+      "Required byte agreement with the TypeScript vendored profile"
+    ],
+    "execution_authorized": false
+  },
+  "historical_status": {
+    "path": "docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json",
+    "sha256": "03892ffb0700dfafb7d65303dd23c6c9cec2a39c6326742b8bf34800cfc17e1e",
+    "note": "Exact pre-reset STATUS with detailed receipt keys, historical goals and assertions; not live execution authority."
+  },
+  "legacy_task": {
+    "thread_id": "01a082b7-86b3-72d2-b173-dbad9073ec2c",
+    "state": "ARCHIVED",
+    "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+    "native_goal_state": "historical_not_mutated_by_archival"
+  },
+  "runtime_state": "G3 metadata admission complete; no new runtime or private handoff was created",
+  "acceptance_limits": [
+    "No App integration acceptance",
+    "No real-data parity or production acceptance",
+    "Viewer excluded; x86/Intel paused"
+  ]
+}

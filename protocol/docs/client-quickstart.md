@@ -1,7 +1,13 @@
-# Client quickstart
+# Rich-profile client quickstart
 
-This flow is sufficient to build an unaffiliated v1 client from public
-artifacts.
+This flow is sufficient to build an unaffiliated client for the rich semantic
+profile `1.2.0` from public artifacts. It intentionally demonstrates version
+negotiation, SSE, commands, and metadata. It is not the current-Hub HTTP flow;
+choose [`docs/current-hub.md`](current-hub.md) for
+`hub-http-v1@1.0.0`, which has no version header or those routes.
+
+The rich OpenAPI document is self-contained. The current-Hub OpenAPI document
+is a separate 3.1.0 artifact whose adjacent schema files must travel with it.
 
 ## 1. Discover
 
@@ -100,6 +106,6 @@ Implement the JSONL adapter in `docs/conformance.md`, then run:
 ./conformance/run --adapter /absolute/path/to/your-adapter
 ```
 
-The OpenAPI document is self-contained. JSON Schemas, examples, fixtures, and
-all compatibility profiles remain authoritative even if no generated SDK is
-used.
+JSON Schemas, examples, fixtures, and all compatibility profiles remain
+authoritative even if no generated SDK is used. Keep this rich-profile
+walkthrough separate from the current-Hub pairing and rotation flow.

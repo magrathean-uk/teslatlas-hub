@@ -1,7 +1,17 @@
-# HTTP contract
+# Rich semantic HTTP contract
 
-OpenAPI is the operation authority. This document defines cross-operation
-semantics that clients and servers must apply consistently.
+This document covers the rich semantic profiles (`1.0.0`, `1.1.0`, and
+`1.2.0`) and their OpenAPI 3.1.1 query API. OpenAPI is the operation authority;
+this document defines cross-operation semantics that clients and servers must
+apply consistently.
+
+For the current Hub HTTP surface, use
+[`docs/current-hub.md`](current-hub.md) and the complete
+[`hub-http-v1@1.0.0` bundle](../profiles/hub-http-v1/1.0.0/). That profile's
+OpenAPI is 3.1.0 and resolves adjacent schema files. It has different
+discovery, authentication, error, cache, and limit rules: it does not use
+`Teslatlas-Protocol-Version`, `application/problem+json`, SSE, commands, or
+metadata routes.
 
 ## Transport and representation
 

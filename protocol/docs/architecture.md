@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Own versioned, implementation-neutral public contracts. Hub is the authoritative server implementation; this repository is the public compatibility authority.
+Own versioned, implementation-neutral public contracts. Hub is the authoritative server implementation; this repository is the public compatibility authority. The rich semantic profiles, the current-Hub HTTP profile, and Edge delivery are separate contracts; select one before applying a document's rules.
 
 ## Goals and non-goals
 
@@ -37,7 +37,8 @@ conflict is resolved and the local validation gate passes.
 | Query | `openapi/teslatlas-v1.openapi.json` | Bounded REST resources, cursors, ETags, errors |
 | Events | `events/teslatlas-v1.sse.json` | SSE event names, payloads, framing, replay rules |
 | Data | `schemas/*.schema.json` | Observation, projection, quality, resource, command, metadata payloads |
-| Compatibility | `fixtures/`, `compatibility/`, `conformance/` | Deterministic cross-client behaviour and two-minor-version support |
+| Compatibility | `fixtures/`, `compatibility/`, `conformance/` | Rich-profile deterministic cross-client behaviour and two-minor-version support |
+| Current-Hub HTTP | `profiles/hub-http-v1/1.0.0/` | Candidate discovery, pairing, authenticated read, rotation, and bounded conformance contract |
 
 ## Public rules
 
@@ -55,7 +56,7 @@ The protocol is permissively licensed. It contains schemas, fixtures, specificat
 
 ## v1 surface
 
-`/.well-known/teslatlas-hub`, vehicle/current-state, drives/positions,
+The rich `v1` surface includes `/.well-known/teslatlas-hub`, vehicle/current-state, drives/positions,
 charges/samples, state/update history, events, data-quality, asynchronous
 command jobs, and mutable metadata are specified by OpenAPI and the canonical
 schemas. This prose explains boundaries; machine-readable artifacts are the
@@ -69,6 +70,9 @@ wire authority.
 4. Compatibility profiles and conformance cases define executable behaviour.
 5. Prose documents explain intent without overriding machine-readable rules.
 
-OpenAPI embeds generated copies of all standalone schemas so generic OpenAPI
-3.1 tooling does not need a custom URN resolver. `tools/build_openapi.py --check`
-proves those copies match the canonical schema files.
+The rich OpenAPI embeds generated copies of all standalone schemas so generic
+OpenAPI 3.1 tooling does not need a custom URN resolver.
+`tools/build_openapi.py --check` proves those copies match the canonical schema
+files. The current-Hub OpenAPI 3.1.0 document instead references adjacent
+files; distribute and bind the complete profile bundle as described in
+[`current-hub.md`](current-hub.md).

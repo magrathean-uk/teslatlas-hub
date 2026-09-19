@@ -1,5 +1,10 @@
 # Versioning, discovery, and capabilities
 
+This document defines the rich semantic profiles (`1.0.0` through `1.2.0`).
+The candidate current-Hub HTTP profile is independently identified as
+`hub-http-v1@1.0.0` and does not use these version-negotiation headers; see
+[`current-hub.md`](current-hub.md).
+
 ## Discovery
 
 A Hub publishes `GET /.well-known/teslatlas-hub` over HTTPS and returns the

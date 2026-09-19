@@ -1,4 +1,9 @@
-# Canonical data model
+# Rich-profile canonical data model
+
+This document applies to the rich semantic profiles. The candidate current-Hub
+HTTP profile has its own bounded resource schemas in
+`profiles/hub-http-v1/1.0.0/`; it does not expose this observation, command, or
+metadata model.
 
 The public model separates provider facts, deterministic projections, visible
 quality, mutable user metadata, and command jobs. A client can consume each

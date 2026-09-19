@@ -158,6 +158,8 @@ def run_network(config):
         payload=None
         if body is not None:
             payload=json.dumps(body).encode();request_headers['Content-Type']='application/json'
+            if kind=='claim' and len(payload)>profile['max_claim_request_bytes']:
+                raise AcceptanceError('claim request exceeds profile byte limit')
         request=urllib.request.Request(config['endpoint']+path,data=payload,headers=request_headers)
         try:
             response=opener.open(request,timeout=5)

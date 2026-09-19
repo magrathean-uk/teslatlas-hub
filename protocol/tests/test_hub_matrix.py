@@ -774,6 +774,14 @@ class HubMatrixTests(unittest.TestCase):
                 "claim",
                 "/v1/pairings/{pairing_id}/claim",
                 method="POST",
+                body={"secret": "x" * 4080, "device_name": "synthetic"},
+            )
+        self.assertEqual(len(self.hub.requests), before)
+        with self.assertRaises(hub_matrix.MatrixAcceptanceError):
+            client.exchange(
+                "claim",
+                "/v1/pairings/{pairing_id}/claim",
+                method="POST",
                 body={"secret": "x" * (hub_matrix.hub_http.MAX_BYTES + 1), "device_name": "synthetic"},
             )
         self.assertEqual(len(self.hub.requests), before)
