@@ -32,7 +32,7 @@
       "member_count": 1036
     },
     "candidate_patch": {
-      "state": "independently accepted for publication",
+      "state": "independently accepted and published in source commit 1e6132aa826aaff83a7c4899604ee4c59e2f852e",
       "sha256": "7b2f81313a3521c5bbccb9cb201fd9e129ea91c5c03a19674d4759ce1b746ceb",
       "built_package_patch_sha256": "8ae19ef622d5f155042a28fd34ac741bcd6327dd6216a62dfa3a3d3464c5c3eb",
       "built_source_manifest_sha256": "d2532c44587d2639f676f1564c0b67efdaaa3962321cb4c1f555b0d46b16321c",
@@ -136,8 +136,12 @@
     "verification": "Recomputed built/current/delta patch identities and transformation, all 43 payload hashes and hash-manifest, fixed source-manifest bindings, JSON, shell syntax and diff integrity."
   },
   "publication": {
-    "implementation_commit": null,
-    "state": "PENDING_SOURCE_COMMIT_AND_PUSH"
+    "implementation_commit": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
+    "local_head_after_push": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
+    "origin_main_after_push": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
+    "live_remote_main_after_push": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
+    "verified_at": "2026-09-19T23:56:18Z",
+    "state": "SOURCE_COMMIT_PUSHED_AND_READ_BACK"
   },
   "cleanup": {
     "guest_work_root_absent": true,
@@ -154,7 +158,7 @@
     "f6": "OPEN",
     "limits": [
       "This closes only the observed core Debian ARM64 package-byte nondeterminism in the independently accepted candidate patch and proves the exact embedded public source commit identity.",
-      "No distributable-final acceptance is claimed. Retained packages bind to built-determinism.patch; the current candidate adds an output-neutral malformed-input validation delta and was not rebuilt after that delta. Exact publication readback is pending the source commit carrying this receipt.",
+      "No distributable-final acceptance is claimed. Retained packages bind to built-determinism.patch; the published candidate adds an output-neutral malformed-input validation delta and was not rebuilt after that delta. Source commit 1e6132aa was pushed and read back exactly; no tag, release or binary publication is claimed.",
       "No package install, systemd lifecycle, storage, upgrade, rollback or removal assertion was rerun; prior independently accepted bounded cohorts remain separate.",
       "No Fleet sidecar, predecessor, container, macOS, real-data, App, Viewer, x86, Intel, Azure, CI, release, tag, publication, signing or production assertion is added.",
       "HUB-03, F1, F6 and the full solution remain unaccepted."

@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-19T23:54:52Z",
-  "update_scope": "f1_f6_debian_arm64_package_reproducibility_independent_acceptance",
+  "updated_at": "2026-09-19T23:56:18Z",
+  "update_scope": "f1_f6_debian_arm64_package_reproducibility_publication_readback",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "1b6dc00379819869f4cd8ed8897c2f1f915023a2",
+    "head": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-19T23:31:20Z"
+    "checked_at": "2026-09-19T23:56:18Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -314,8 +314,8 @@
     "validation_delta_patch_sha256": "b7b4774c071909b0eb9a771968de35f690b4f85e8d85f844bc08ae140d5d87e4",
     "packages_rebuilt_after_validation_delta": false,
     "independent_review": "ACCEPT; no remaining P1/P2 after whole-value epoch validation and built/current/delta evidence identity closures",
-    "implementation_commit": null,
-    "publication_state": "PENDING_SOURCE_COMMIT_AND_PUSH",
+    "implementation_commit": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
+    "publication_state": "SOURCE_COMMIT_PUSHED_AND_READ_BACK",
     "package_sha256": "73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a",
     "binary_sha256": "2b7c071614c9cb31e2fb3ac4b666b636ff8aae33035d661c09c4b935d5a0fd3c",
     "source_readback": "https://github.com/magrathean-uk/teslatlas-hub/tree/1b6dc00379819869f4cd8ed8897c2f1f915023a2",
@@ -325,7 +325,7 @@
     "evidence_payload_file_count": 43,
     "evidence_payload_hash_manifest_sha256": "f0fd4bd546e67172eae8846b211231dabc3bb505be654d2173e03144367d7a81",
     "cleanup_complete": true,
-    "acceptance_limit": "This independently accepted bounded slice does not accept complete HUB-03, F1 or F6 and does not repeat package lifecycle, Fleet, predecessor or runtime assertions. Exact publication readback is pending."
+    "acceptance_limit": "This independently accepted bounded slice is published at exact source commit 1e6132aa but does not accept complete HUB-03, F1 or F6 and does not repeat package lifecycle, Fleet, predecessor or runtime assertions."
   },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/hub/docs/development/STATUS.json",

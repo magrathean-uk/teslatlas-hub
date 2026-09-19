@@ -347,8 +347,9 @@ the current candidate adds only stricter malformed-epoch rejection and its focus
 tests, so package bytes were not rebuilt after that valid-input-output-neutral delta.
 Independent Sol/high review accepted the bounded slice after closing both the
 whole-value validation gap and the built/current/delta evidence identity gap, with
-no remaining P1/P2 findings. Exact publication readback follows the source commit
-carrying this receipt. This is a bounded package-byte/source-identity result, not
+no remaining P1/P2 findings. Source commit
+`1e6132aa826aaff83a7c4899604ee4c59e2f852e` was pushed and read back exactly from
+`origin/main` and the live remote. This is a bounded package-byte/source-identity result, not
 complete HUB-03, F1 or F6 acceptance; no package lifecycle cohort was repeated.
 
 ## Start and boundaries
