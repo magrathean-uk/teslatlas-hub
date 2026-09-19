@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "TypeScript SDK",
-  "updated_at": "2026-09-19T20:10:11Z",
-  "update_scope": "f3_f6_exact_source_candidate_package_independently_accepted",
+  "updated_at": "2026-09-19T21:25:08Z",
+  "update_scope": "f0_ts_02_tls_pin_correction_review_ready",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G4_ACCEPTED",
   "source_objective_state": "PACKED_NODE_BROWSER_AND_BINDING_ACCEPTED",
@@ -11,17 +11,18 @@
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": ["G3", "G4"],
-  "planning_state": "FULL_PRODUCT_ACTIVE_F3_F6_CANDIDATE_PACKAGE_ACCEPTED_LIFECYCLE_AND_RUNTIME_GAPS_OPEN",
+  "planning_state": "FULL_PRODUCT_ACTIVE_F3_F6_TS_02_REVIEW_READY_LIFECYCLE_AND_RUNTIME_GAPS_OPEN",
   "objective": "Complete every documented TypeScript SDK Node/browser contract, support claim, reproducible package lifecycle, mandatory real-input semantics and final installed consumer journey.",
   "source": {
-    "head": "56a07dd7c1a55e5f783ab71640a01f4b56d908c4",
+    "head": "8bcb83b66f7fd60df096b24d51b0a78f5eafdc64",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
+    "tracked_dirty_entries_at_check": 4,
     "accepted_runtime_source_head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
-    "checked_at": "2026-09-19T20:10:11Z"
+    "checked_at": "2026-09-19T21:25:08Z"
   },
-  "current_worker": "/root/ts_candidate_package",
+  "current_worker": null,
   "model_policy": {
     "implementation": "gpt-5.6-sol/high",
     "exploration": "gpt-5.6-luna/max",
@@ -34,7 +35,8 @@
     "The runner CDP-target and trust-hook payload defects were repaired with focused tests; the corrections are outside the packed archive, whose hash remains unchanged.",
     "Final Hub and task-owned Chrome processes, listeners, profiles, credentials, certificates and private runtimes are absent.",
     "G3 final admission binds the G4 evidence to product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926 using the accepted content-bound G2/G4 Hub fingerprint; the scoped checker and focused Protocol lock/readback pass under r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865.",
-    "TS-02 source correction is ready for review: Node validates normal TLS plus the invitation DER leaf SHA-256 before claim bytes, browser claim fails closed without a pin-capable caller transport, and synthetic success/mismatch/no-secret-leak tests pass.",
+    "TS-02 source correction is ready for review: Node validates normal TLS plus the invitation DER leaf SHA-256 before claim bytes, missing or malformed pins fail before network I/O, ordinary TLS failures remain bounded transport_error values, browser claim fails closed without a pin-capable caller transport, and focused match/mismatch/absence/error-semantics tests pass.",
+    "At the review-ready four-file dirty tree based on 8bcb83b, exact Node 26.7.0/npm 11.19.0 build, typecheck and Protocol lock passed; three focused unit files passed 55 tests and pack:check verified 88 files. An initial ambient Node 26.8.2 Protocol check was correctly rejected by devEngines and is not acceptance evidence.",
     "The exact Node 26.7.0/npm 11.19.0 package gate produced a deterministic 83-member unpublished archive SHA-256 42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7; clean install/import/reinstall/removal passed.",
     "Independent review found and the source now closes a process-wide TLS-disable bypass, binds browser example credentials to endpoint plus Hub UUID, and safely rejects null-body or out-of-range native claim statuses. The updated Chrome cross-Hub regression is added but not run while the shared heavy lane is occupied.",
     "The independently accepted platform foundation pins the official Node OCI index sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32 and records Linux ARM64/v8 child sha256:2b028cd57303b2761d24173789c85a013558d6cf20e78f51723385f368b6e34d from a fresh registry readback.",
@@ -59,7 +61,7 @@
     "docs/development/f3-f6-candidate-package-admission-2026-09-19-r1.json"
   ],
   "remaining": [
-    "F0 accepted: the independently reviewed workspace ledger maps every root, Node, browser, current-Hub and rich-profile claim.",
+    "F0 ledger accepted as a requirements map; its coordinator-owned TS-02 row remains OPEN until this review-ready SDK source/test correction is independently accepted and the root ledger is updated.",
     "F3 runtime: prove the newly admitted packed Node pin path and real-browser Web PKI/CORS/read/rotation path against the exact final F1 Hub.",
     "F3 floors: establish evidence-backed Node, npm, browser and active operating-system floors; current machine-readable floors remain null rather than invented or silently reduced.",
     "F5: consume mandatory fresh real-input semantic evidence.",
@@ -98,6 +100,7 @@
     "No real-data parity or production acceptance",
     "Current macOS 27.0 Apple silicon was exercised; the documented macOS 13 minimum floor was not independently run",
     "Ordinary browser Fetch cannot enforce the invitation raw leaf pin; browser claim fails closed unless a caller supplies a pin-capable transport",
+    "TS-02 focused coverage is synthetic and package-local; it does not prove the unpublished archive against the final F1 Hub or a real browser pairing bridge",
     "The historical 83-member archive remains immutable prior evidence. The exact 56a07dd follow-on is now independently admitted as unpublished 88-member candidate 070906b5...e23d7, but it has not run against the final F1 Hub, a real browser floor, or ARM64 Docker path",
     "No exact predecessor package or non-empty final catalog was supplied, so no update, rollback or catalog lifecycle claim is made",
     "Viewer excluded; x86/Intel paused"

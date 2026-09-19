@@ -59,6 +59,25 @@ already accepted Chrome/Node tuple.
 3. **L3:** finish deterministic distribution/docs and catalog integration for F6,
    consume F5 real-input semantics, then pass F7.
 
+## TS-02 review-ready correction
+
+At live source head `8bcb83b66f7fd60df096b24d51b0a78f5eafdc64`, the public Node
+factory supplies a fresh, non-pooled HTTPS claim transport that retains CA and
+hostname verification, compares the invitation pin with the connected leaf's
+DER SHA-256 during TLS identity verification, and sends the claim body only
+after that handshake succeeds. A missing or malformed pin fails local
+invitation validation before discovery; a pin mismatch is the typed
+`hub_tls_pin_mismatch`; ordinary trust failures remain a body- and cause-free
+`transport_error`. The browser factory retains normal Web PKI for reads and
+rotation and rejects pairing before network I/O unless the caller supplies a
+pin-capable claim transport.
+
+Focused synthetic tests cover pin match, mismatch, absence, ordinary TLS trust
+failure, unavailable browser transport, null-body statuses and invalid native
+status handling. This closes the SDK-owned TS-02 source/test defect for review;
+it does not by itself update the coordinator-owned F0 ledger, certify an
+unpublished archive, or satisfy F3 runtime acceptance against the final F1 Hub.
+
 ## Accepted platform/package foundation
 
 The first independent Sol/high review returned `REJECT` with two P1 and three

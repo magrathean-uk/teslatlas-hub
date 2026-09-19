@@ -80,6 +80,58 @@ describe("Node current-Hub invitation pinning", () => {
     }
   });
 
+  it("rejects a missing invitation pin before discovery or claim network I/O", async () => {
+    const fixture = await startClaimServer();
+    let discoveryRequests = 0;
+    try {
+      const invitation = { ...fixture.invitation } as Record<string, unknown>;
+      delete invitation.tlsPin;
+      const client = createHubClient({
+        endpoint: fixture.endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: async () => {
+          discoveryRequests += 1;
+          return discoveryFetch();
+        },
+        nodeTls: { ca: fixture.certificate },
+      });
+
+      await expect(
+        client.claimPairing(invitation as unknown as HubInvitation, "Missing pin"),
+      ).rejects.toMatchObject({
+        code: "protocol_validation",
+        validator: "HubInvitation",
+      });
+      expect(discoveryRequests).toBe(0);
+      expect(fixture.claimBodies).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("maps ordinary TLS trust failure to a bounded transport error without sending the secret", async () => {
+    const fixture = await startClaimServer();
+    try {
+      const client = createHubClient({
+        endpoint: fixture.endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: discoveryFetch,
+      });
+
+      const error = await captureError(client.claimPairing(fixture.invitation, "Untrusted CA"));
+
+      expect(error).toMatchObject({ code: "transport_error" });
+      expect(error).not.toHaveProperty("cause");
+      expect(JSON.stringify(error)).not.toContain(secret);
+      expect(String(error)).not.toContain(secret);
+      expect(fixture.claimBodies).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it.each([204, 205, 304])(
     "rejects a null-body claim status without an uncaught exception: %i",
     async (status) => {
