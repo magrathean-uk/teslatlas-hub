@@ -14,8 +14,10 @@ G3/G6/G7 remain accepted within their exact recorded scope. The maintained
 iOS 17, supported Linux ARM64, the other public Swift products, reproducible package
 handoff, real-source semantics or final combined installation. Preserve all accepted
 receipts. `full_solution_state` is `NOT_ACCEPTED`; F0 passed independent review, the
-bounded F3/F6 source foundation is published, and the next F3 platform harnesses are
-prepared but pending independent review and exact-floor execution.
+bounded F3/F6 source foundation and F3 platform harness preparation are published,
+and exact-floor execution remains open. Current public main also has an exact
+source-only F6 catalog handoff ready for independent Hub admission; no catalog or
+lifecycle action has occurred.
 
 ## Accepted bounded F3/F6 foundation
 
@@ -45,7 +47,7 @@ P2 findings. This is source/package preparation on macOS 27 arm64, not macOS
 14, iOS 17, Linux ARM64, live Hub, catalog lifecycle, F5, or final F3/F6/F7
 acceptance; see [receipt r1](f3-f6-source-handoff-foundation-2026-09-19-r1.json).
 
-## Review-pending F3 platform-gate preparation
+## Accepted bounded F3 platform-gate preparation
 
 From the clean published foundation HEAD, the review candidate adds only the
 missing platform-harness prerequisites. The SDK-owned iOS host now has a shared
@@ -87,9 +89,30 @@ multi-architecture, old-digest and two-example instructions in `README.md` and
 actual handoff inputs and explicit no-emulation rule. The P2 validation finding
 is closed by exact-value checks for the official catalog URL and Dockerfile
 source commit plus mutation regressions. The same reviewer accepted the frozen
-three-closure delta with no findings; no platform runtime ran. This accepts only the bounded
-platform-gate preparation, not macOS 14, iOS 17, Linux ARM64 runtime behavior,
-live Hub, catalog lifecycle, F5, F3, F6 or F7.
+three-closure delta with no findings; no platform runtime ran. This accepts only
+the bounded platform-gate preparation, not macOS 14, iOS 17, Linux ARM64 runtime
+behavior, live Hub, catalog lifecycle, F5, F3, F6 or F7.
+
+## Prepared current-source catalog handoff
+
+Source commit `f98dde980c8fecf994917e3470950a3d853b4cc7`, the exact anonymous
+public main at review start, is frozen as a byte-reproducible 174-file clean Git
+export. Its complete manifest matches the
+Git tree exactly; the Hub source walker intentionally excludes only `AGENTS.md`
+and independently produces 173 files with source SHA-256
+`1e776960a13aaa76a47f7a8faad2736be2b1f442ea58afe4832253349e987ad6`.
+The resulting local-unpublished `sdk-swift` component candidate retains product
+2026.36.2 and the exact `hub-http-v1@1.0.0` profile digest.
+
+The receipt binds the accepted four-product foundation identity `733071fc...`
+and Protocol runtime-source commit `53b5c648...` without pretending that current
+documentation bytes are identical. Commit `f98dde98` is the direct descendant of
+the accepted foundation and changes only `README.md` and `docs/development.md`
+inside the handoff selection; replay is deterministic under umask `022` and `077`
+but truthfully has successor identity `fbb4fb8f...`. Package manifest, sources,
+tests, examples, protocol binding and public products are unchanged. This is only
+a source/catalog input; Hub admission, clean package lifecycle, platform runtime,
+F5 and final F3/F6/F7 remain open. See the [current-source handoff receipt](f6-current-source-handoff-2026-09-19-r1.json).
 
 ## Required completion
 
