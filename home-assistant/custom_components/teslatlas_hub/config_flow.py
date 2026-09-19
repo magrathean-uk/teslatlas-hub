@@ -8,7 +8,6 @@ from typing import Any, override
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST
-from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers.selector import (
     BooleanSelector,
     NumberSelector,
@@ -115,6 +114,7 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
             client = create_client(endpoint, bearer_token=bearer_token, hass=self.hass)
         except HubContractError:
             return None, None, "invalid_contract"
+        keep_client = False
         try:
             info = await client.async_probe()
         except HubConnectionError:
@@ -126,9 +126,11 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         except HubContractError:
             error = "invalid_contract"
         else:
+            keep_client = True
             return client, info, None
-
-        await client.async_close()
+        finally:
+            if not keep_client:
+                await client.async_close()
         return None, None, error
 
     async def _async_accept_endpoint(
@@ -289,12 +291,7 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_contract"
             else:
                 await self.async_set_unique_id(result.info.hub_id)
-                try:
-                    self._abort_if_unique_id_mismatch(reason="wrong_hub")
-                except AbortFlow:
-                    await client.async_close()
-                    raise
-                await client.async_close()
+                self._abort_if_unique_id_mismatch(reason="wrong_hub")
                 return self.async_update_reload_and_abort(
                     entry,
                     data_updates={
@@ -303,7 +300,8 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_TOKEN_EXPIRES_AT_MS: result.expires_at_ms,
                     },
                 )
-            await client.async_close()
+            finally:
+                await client.async_close()
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -339,22 +337,20 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 assert client is not None
                 assert info is not None
-                await self.async_set_unique_id(info.hub_id)
                 try:
+                    await self.async_set_unique_id(info.hub_id)
                     self._abort_if_unique_id_mismatch(reason="wrong_hub")
-                except AbortFlow:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data_updates={
+                            CONF_HOST: endpoint.host,
+                            CONF_PORT: endpoint.port,
+                            CONF_USE_TLS: endpoint.use_tls,
+                            CONF_TLS_PIN: endpoint.tls_pin,
+                        },
+                    )
+                finally:
                     await client.async_close()
-                    raise
-                await client.async_close()
-                return self.async_update_reload_and_abort(
-                    entry,
-                    data_updates={
-                        CONF_HOST: endpoint.host,
-                        CONF_PORT: endpoint.port,
-                        CONF_USE_TLS: endpoint.use_tls,
-                        CONF_TLS_PIN: endpoint.tls_pin,
-                    },
-                )
 
         return self.async_show_form(
             step_id="reconfigure_confirm",

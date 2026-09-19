@@ -1,5 +1,18 @@
 # HACS local-push foundation design
 
+Status: Superseded
+
+Current authority: [Concurrent Home Assistant foundation merge
+design](2026-08-31-concurrent-foundation-merge-design.md).
+
+This proposal predates the checked `hub-http-v1@1.0.0` read-only polling
+profile. Its local-push, Zeroconf, and event-stream sections describe an
+earlier design and are not current support claims. Use the [current
+README](../../../README.md) and [working-product
+plan](../plans/2026-09-08-working-product-plan.md) for the active
+implementation and evidence boundary. The remaining body is historical
+provenance and must not be executed as current guidance.
+
 ## Status and scope
 
 This design implements the Home Assistant side of the approved foundation while the public Teslatlas protocol remains unfrozen. It must not invent HTTP paths, request bodies, response schemas, Zeroconf TXT keys, QR formats, or event names.

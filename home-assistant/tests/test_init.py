@@ -11,9 +11,11 @@ from aiohttp import web
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.teslatlas_hub import async_setup_entry
 from custom_components.teslatlas_hub.client import (
     HubAuthenticationError,
     HubConnectionError,
@@ -26,6 +28,7 @@ from custom_components.teslatlas_hub.const import (
     CONF_USE_TLS,
     DOMAIN,
 )
+from custom_components.teslatlas_hub.coordinator import TeslatlasDataCoordinator
 from custom_components.teslatlas_hub.current_hub_client import CurrentHubClient
 from custom_components.teslatlas_hub.models import HubEndpoint
 from tests.helpers import FixtureHubClient
@@ -260,3 +263,46 @@ async def test_setup_authentication_failure_starts_reauth(
         flow["context"]["source"] == SOURCE_REAUTH
         for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
     )
+
+
+async def test_cancelled_setup_closes_client(
+    hass: HomeAssistant,
+) -> None:
+    """Canceling initial refresh must release the new client."""
+    entry = _entry(hass)
+    client = FixtureHubClient()
+    with (
+        patch(
+            "custom_components.teslatlas_hub.create_client",
+            return_value=client,
+        ),
+        patch.object(
+            TeslatlasDataCoordinator,
+            "async_config_entry_first_refresh",
+            new=AsyncMock(side_effect=asyncio.CancelledError),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await async_setup_entry(hass, entry)
+
+    assert client.closed is True
+
+
+async def test_incomplete_stored_entry_fails_with_controlled_setup_error(
+    hass: HomeAssistant,
+) -> None:
+    """Reject an incomplete legacy entry before constructing a client."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Incomplete Hub",
+        unique_id="hub-fixture",
+        data={"hub_id": "hub-fixture", "opaque": "preserved"},
+    )
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.teslatlas_hub.create_client") as factory,
+        pytest.raises(ConfigEntryError, match="missing required"),
+    ):
+        await async_setup_entry(hass, entry)
+
+    factory.assert_not_called()

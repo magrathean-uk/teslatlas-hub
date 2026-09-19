@@ -15,6 +15,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -170,5 +171,148 @@ async def test_poll_adds_new_vehicle_entities_once(
     ]
     assert len(gamma_entries) == len(VEHICLE_SENSOR_DESCRIPTIONS)
     assert len(HUB_SENSOR_DESCRIPTIONS) == 0
+
+    assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+
+async def test_removed_vehicle_keeps_registry_ids_and_recovers(
+    hass: HomeAssistant,
+) -> None:
+    """Keep matching IDs while a missing vehicle is unavailable."""
+    client = FixtureHubClient()
+    entry = await _setup(hass, client)
+    beta_charge_id = _entity_id(
+        hass,
+        "hub-fixture_vehicle-beta_state_of_charge",
+    )
+    registry = er.async_get(hass)
+    original_ids = {
+        item.unique_id
+        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    }
+
+    snapshot = entry.runtime_data.data
+    without_beta = HubSnapshot.create(
+        info=snapshot.info,
+        status=snapshot.status,
+        vehicles=[snapshot.vehicles["vehicle-alpha"]],
+        received_at=snapshot.received_at,
+    )
+    entry.runtime_data.async_set_updated_data(without_beta)
+    await hass.async_block_till_done()
+
+    beta_state = hass.states.get(beta_charge_id)
+    assert beta_state is not None
+    assert beta_state.state == STATE_UNAVAILABLE
+    assert {
+        item.unique_id
+        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    } == original_ids
+
+    entry.runtime_data.async_set_updated_data(snapshot)
+    await hass.async_block_till_done()
+    beta_state = hass.states.get(beta_charge_id)
+    assert beta_state is not None
+    assert beta_state.state == "44.0"
+    assert {
+        item.unique_id
+        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    } == original_ids
+
+    assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+
+async def test_retired_registry_entries_are_scoped_to_their_config_entry(
+    hass: HomeAssistant,
+) -> None:
+    """Remove only historical sensor meanings owned by this entry."""
+    entry = _entry(hass)
+    other_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Other Hub",
+        unique_id="other-hub",
+        data={
+            CONF_HOST: "other-hub.local",
+            CONF_PORT: 7443,
+            CONF_USE_TLS: True,
+            CONF_HUB_ID: "other-hub",
+            CONF_ACCESS_TOKEN: "other-bearer",
+        },
+    )
+    other_entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    for unique_id in (
+        "hub-fixture_hub_collector_health",
+        "hub-fixture_hub_fleet_cost",
+        "hub-fixture_hub_backup_age",
+        "hub-fixture_vehicle-alpha_data_quality",
+        "hub-fixture_vehicle-alpha_state_of_charge",
+    ):
+        registry.async_get_or_create(
+            "sensor",
+            DOMAIN,
+            unique_id,
+            config_entry=entry,
+        )
+    other_retired = registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "other-hub_hub_collector_health",
+        config_entry=other_entry,
+    )
+
+    with patch(
+        "custom_components.teslatlas_hub.create_client",
+        return_value=FixtureHubClient(),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id) is True
+
+    current_ids = {
+        item.unique_id
+        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    }
+    assert current_ids == {
+        "hub-fixture_vehicle-alpha_state_of_charge",
+        *{
+            f"hub-fixture_{vehicle_id}_{description.key}"
+            for vehicle_id in ("vehicle-alpha", "vehicle-beta")
+            for description in VEHICLE_SENSOR_DESCRIPTIONS
+        },
+    }
+    assert registry.async_get(other_retired.entity_id) is not None
+
+    assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+
+async def test_existing_registry_customizations_survive_component_reload(
+    hass: HomeAssistant,
+) -> None:
+    """Keep a user's entity ID, name, and disabled state across replacement."""
+    entry = _entry(hass)
+    registry = er.async_get(hass)
+    existing = registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "hub-fixture_vehicle-alpha_state_of_charge",
+        config_entry=entry,
+    )
+    customized = registry.async_update_entity(
+        existing.entity_id,
+        new_entity_id="sensor.garage_alpha_battery",
+        name="Garage Alpha battery",
+        disabled_by=RegistryEntryDisabler.USER,
+    )
+
+    with patch(
+        "custom_components.teslatlas_hub.create_client",
+        return_value=FixtureHubClient(),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id) is True
+
+    retained = registry.async_get(customized.entity_id)
+    assert retained is not None
+    assert retained.unique_id == existing.unique_id
+    assert retained.name == "Garage Alpha battery"
+    assert retained.disabled_by is RegistryEntryDisabler.USER
 
     assert await hass.config_entries.async_unload(entry.entry_id) is True

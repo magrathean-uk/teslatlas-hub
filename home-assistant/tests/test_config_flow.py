@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from unittest.mock import patch
 
@@ -13,7 +14,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.teslatlas_hub.client import HubConnectionError, HubPairingError
+from custom_components.teslatlas_hub.client import (
+    HubConnectionError,
+    HubIdentityError,
+    HubPairingError,
+)
 from custom_components.teslatlas_hub.const import (
     CONF_ACCESS_TOKEN,
     CONF_DEVICE_ID,
@@ -180,6 +185,7 @@ async def test_reauth_replaces_only_device_credential_metadata(
     assert entry.data[CONF_DEVICE_ID] == "device-fixture"
     assert entry.data[CONF_HOST] == "old-hub.local"
     assert client_factory.call_args.kwargs["expected_hub_id"] == "hub-fixture"
+    assert fixture_client.closed is True
 
 
 async def test_reauth_rejects_a_different_hub(
@@ -189,6 +195,7 @@ async def test_reauth_rejects_a_different_hub(
 ) -> None:
     entry = _entry(hass)
     fixture_client.info = replace(fixture_client.info, hub_id="other-hub")
+    fixture_client.pair_error = HubIdentityError("wrong hub")
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": SOURCE_REAUTH, "entry_id": entry.entry_id},
@@ -199,6 +206,117 @@ async def test_reauth_rejects_a_different_hub(
     )
     assert result["reason"] == "wrong_hub"
     assert entry.data[CONF_ACCESS_TOKEN] == "old-device-bearer"
+    assert fixture_client.closed is True
+
+
+async def test_cancelled_reauth_closes_owned_client(
+    hass: HomeAssistant,
+    fixture_client: FixtureHubClient,
+    client_factory,
+) -> None:
+    """Canceling a credential claim must release its transient client."""
+    del client_factory
+    entry = _entry(hass)
+    started = asyncio.Event()
+
+    async def blocked_pair(
+        _pairing_id: str,
+        _pairing_secret: str,
+        _device_name: str,
+    ) -> object:
+        started.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    fixture_client.async_pair = blocked_pair  # type: ignore[method-assign]
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_REAUTH, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    configure = asyncio.create_task(
+        hass.config_entries.flow.async_configure(result["flow_id"], PAIRING_INPUT)
+    )
+    await asyncio.wait_for(started.wait(), timeout=1)
+    configure.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await configure
+    assert fixture_client.closed is True
+
+
+async def test_cancelled_probe_closes_owned_client(
+    hass: HomeAssistant,
+    fixture_client: FixtureHubClient,
+    client_factory,
+) -> None:
+    """Canceling discovery must release the client it created."""
+    del client_factory
+    started = asyncio.Event()
+
+    async def blocked_probe() -> object:
+        started.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    fixture_client.async_probe = blocked_probe  # type: ignore[method-assign]
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    configure = asyncio.create_task(
+        hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_HOST: "hub-fixture.local",
+                CONF_PORT: 7443,
+                CONF_USE_TLS: True,
+            },
+        )
+    )
+    await asyncio.wait_for(started.wait(), timeout=1)
+    configure.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await configure
+    assert fixture_client.closed is True
+
+
+async def test_cancelled_reconfigure_closes_probed_client(
+    hass: HomeAssistant,
+    fixture_client: FixtureHubClient,
+    client_factory,
+) -> None:
+    """Canceling endpoint identity binding must release the probed client."""
+    del client_factory
+    entry = _entry(hass)
+    started = asyncio.Event()
+
+    async def blocked_unique_id(_flow, _hub_id: str) -> None:
+        started.set()
+        await asyncio.Event().wait()
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    with patch(
+        "custom_components.teslatlas_hub.config_flow.TeslatlasHubConfigFlow.async_set_unique_id",
+        new=blocked_unique_id,
+    ):
+        configure = asyncio.create_task(
+            hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {
+                    CONF_HOST: "new-hub.local",
+                    CONF_PORT: 8443,
+                    CONF_USE_TLS: True,
+                },
+            )
+        )
+        await asyncio.wait_for(started.wait(), timeout=1)
+        configure.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await configure
+    assert fixture_client.closed is True
 
 
 async def test_reconfigure_probes_without_saved_bearer_before_endpoint_update(

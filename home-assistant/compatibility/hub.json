@@ -1,11 +1,16 @@
 {
   "schema_version": 1,
-  "status": "candidate",
+  "status": "accepted",
   "product_version": "2026.36.2",
-  "profile": {"id": "hub-http-v1", "revision": "1.0.0", "sha256": "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"},
-  "tested_hub_versions": [],
-  "tested_hub_source_fingerprints": [],
+  "profile": {"id": "hub-http-v1", "revision": "1.0.0", "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"},
+  "tested_hub_versions": ["2026.36.2"],
+  "tested_hub_source_fingerprints": [
+    "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;snapshot-manifest-sha256:f3e9f240930c72909d982ad2f6429c4f6ab390eb34818505e92236f6027d443b"
+  ],
   "required_capabilities": ["query.vehicles", "query.current"],
   "optional_capabilities": ["query.drives"],
-  "test_receipt_paths": []
+  "test_receipt_paths": [
+    "hub/docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json",
+    "teslatlas-home-assistant/docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json"
+  ]
 }

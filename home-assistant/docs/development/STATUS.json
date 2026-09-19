@@ -1,0 +1,94 @@
+{
+  "schema_version": 2,
+  "product": "Home Assistant",
+  "updated_at": "2026-09-19T10:30:43Z",
+  "update_scope": "post_adoption_next_phase_planning_no_execution",
+  "programme": "2026-09-18-app-v7-readiness",
+  "state": "DEBIAN_ARM64_CONTAINER_ACCEPTED",
+  "source_objective_state": "SECONDARY_RUNTIME_ACCEPTED_SCOPED",
+  "current_gate_ids": [],
+  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Preserve the accepted Debian ARM64 Container integration and close the first replacement upgrade/rollback gap.",
+  "source": {
+    "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+    "branch": "main",
+    "dirty_entries": 50,
+    "component_payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
+    "checked_at": "2026-09-19T10:30:43Z"
+  },
+  "current_worker": null,
+  "model_policy": {
+    "implementation": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/max",
+    "coordinator": "gpt-5.6-sol/max",
+    "fast_mode": false
+  },
+  "evidence_summary": [
+    "A fresh source-built synthetic Hub and official Home Assistant 2026.8.3 Container completed the selected Debian 13.6 ARM64 minimum lifecycle lane.",
+    "The authenticated user config-flow API, one-use pairing/replay rejection, exact discovery/profile/product/capabilities, system-trust rejection and private-CA trust all passed.",
+    "One entry exposed two devices and 26 current-source entities; numeric zero, sparse unknown/unavailable semantics, automatic scheduled refresh, Hub outage/restart recovery and non-overlapping source behavior passed.",
+    "Bearer revocation opened reauthentication; one fresh invitation restored reads on the same entry. Reload, same-identity reconfigure, disable/re-enable and Container stop/start retained the 1/2/26 surface without duplication.",
+    "Live diagnostics contained none of the known endpoint, Hub, bearer/device, pairing or vehicle values and no location, coordinate, cursor or raw-record structure.",
+    "The component compatibility record now binds product 2026.36.2, exact profile hash, exact Hub source fingerprint and the two accepted receipts.",
+    "Container, Hub, private guest root and large HA image were removed; the guest is stopped and all owned ports/processes plus the heavy-build lock are absent."
+  ],
+  "evidence_paths": [
+    "docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json",
+    "docs/development/ha-component-payload-manifest-2026-09-19-r1.txt",
+    "compatibility/hub.json",
+    "../hub/docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json"
+  ],
+  "last_acceptance": {
+    "state": "ACCEPTED",
+    "receipt": "docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json",
+    "receipt_sha256": "fc04ddbb5ece3932f7f1be96d986ad0d44efaf57ab333d89f38748948200029a",
+    "platform": "Debian GNU/Linux 13.6 aarch64",
+    "runtime": "official Home Assistant Container 2026.8.3, image ID sha256:e53b24b1bde9e471f5167a032d29d8de5956c374cba44205da0a017b71cc4362",
+    "hub_binary_sha256": "4b965423364160d597bd9e4f1a1d5b73be49c13edb0df3f8c4896fe6a973c433",
+    "component_payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
+    "cleanup_complete": true
+  },
+  "remaining": [
+    "Preserve the accepted exact compatibility binding; repeat runtime acceptance only for a component, profile, Hub fingerprint, HA image or lifecycle-behavior change.",
+    "L3: component replacement, invalid-candidate rollback and preservation of config entry, device/entity registry and unrelated HA state.",
+    "HACS/publication, Home Assistant OS/Supervisor, headed visual acceptance and polished distribution remain later obligations.",
+    "Real account, vehicle, telemetry, named-source and production acceptance require fresh owner input and remain outside this synthetic lane."
+  ],
+  "next_goal_draft": {
+    "id": "L3_HA_COMPONENT_REPLACEMENT_ROLLBACK",
+    "state": "DRAFT_NOT_STARTED",
+    "objective": "Replace the accepted component in a selected Debian ARM64 HA Container, reject one invalid candidate, and roll back without losing config-entry, device/entity or unrelated HA state.",
+    "prerequisites": [
+      "Freeze baseline and candidate payload manifests, HA image, Hub fingerprint and profile.",
+      "Use a fresh Hub-owned handoff and persistent HA config identity.",
+      "Do not submit to HACS or reuse closed private inputs."
+    ],
+    "acceptance_evidence": [
+      "Pre/post config-entry, device and entity identity/count comparison",
+      "Successful replacement with scheduler, reauth and reload working",
+      "Invalid candidate never active and prior component restored",
+      "Unrelated HA storage preserved and complete runtime cleanup"
+    ],
+    "execution_authorized": false
+  },
+  "historical_status": {
+    "path": "docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json",
+    "sha256": "bf05e2f773d22d5c9c68bdecc68e5ddffb6b1502ccc0938def10b8c5c7c92013",
+    "note": "Exact pre-reset STATUS with detailed receipt keys and historical assertions; not live execution authority."
+  },
+  "legacy_task": {
+    "thread_id": "01a082b7-9372-7da2-b84b-dc47b626ad83",
+    "state": "ARCHIVED",
+    "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+    "native_goal_state": "historical_not_mutated_by_archival"
+  },
+  "runtime_state": "accepted r1 cohort closed; no current Hub or Home Assistant runtime, private inputs, container, image, process, listener or heavy-build lock; debian13-arm64 stopped",
+  "acceptance_limits": [
+    "Source-built synthetic Hub and official Home Assistant Container evidence only",
+    "Authenticated config-flow API acceptance; no headed browser or visual UI acceptance",
+    "The isolated fixture-only CA environment did not accept unrelated Home Assistant outbound HTTPS integration connectivity",
+    "No HA OS, Supervisor, add-on, HACS, installer, publication or replacement-upgrade acceptance",
+    "No real-data, production, complete parity or full platform matrix acceptance",
+    "No App or Viewer acceptance; x86/Intel/Azure paused"
+  ]
+}

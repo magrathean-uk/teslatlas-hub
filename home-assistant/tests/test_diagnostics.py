@@ -18,6 +18,7 @@ from custom_components.teslatlas_hub.const import (
     CONF_USE_TLS,
     DOMAIN,
 )
+from custom_components.teslatlas_hub.coordinator import TeslatlasDataCoordinator
 from custom_components.teslatlas_hub.diagnostics import (
     async_get_config_entry_diagnostics,
 )
@@ -78,3 +79,97 @@ async def test_diagnostics_redact_secrets_endpoints_identity_and_location(
         assert private_value not in serialized
 
     assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+
+async def test_diagnostics_before_first_refresh_returns_safe_empty_runtime(
+    hass: HomeAssistant,
+) -> None:
+    """A failed initial refresh must still expose useful redacted diagnostics."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Fixture Hub",
+        unique_id="hub-fixture",
+        data={
+            CONF_HOST: "sensitive-hub.example",
+            CONF_PORT: 7443,
+            CONF_USE_TLS: True,
+            CONF_HUB_ID: "hub-fixture",
+            CONF_ACCESS_TOKEN: "fixture-device-bearer",
+        },
+    )
+    entry.add_to_hass(hass)
+    coordinator = TeslatlasDataCoordinator(hass, entry, FixtureHubClient())
+    entry.runtime_data = coordinator
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diagnostics["runtime"] == {
+        "available": False,
+        "transport": "local_poll",
+        "protocol_version": None,
+        "capabilities": [],
+        "vehicle_count": 0,
+        "received_at": None,
+    }
+    await coordinator.async_shutdown()
+
+
+async def test_diagnostics_without_runtime_data_returns_safe_empty_runtime(
+    hass: HomeAssistant,
+) -> None:
+    """A setup-error entry still exposes redacted, unavailable diagnostics."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Fixture Hub",
+        unique_id="hub-fixture",
+        data={
+            CONF_HOST: "sensitive-hub.example",
+            CONF_PORT: 7443,
+            CONF_USE_TLS: True,
+            CONF_HUB_ID: "hub-fixture",
+            CONF_ACCESS_TOKEN: "fixture-device-bearer",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diagnostics["runtime"] == {
+        "available": False,
+        "transport": "local_poll",
+        "protocol_version": None,
+        "capabilities": [],
+        "vehicle_count": 0,
+        "received_at": None,
+    }
+
+
+async def test_diagnostics_after_outage_keeps_last_snapshot_but_marks_unavailable(
+    hass: HomeAssistant,
+) -> None:
+    """An outage keeps aggregate context while reporting unavailable state."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Fixture Hub",
+        unique_id="hub-fixture",
+        data={
+            CONF_HOST: "sensitive-hub.example",
+            CONF_PORT: 7443,
+            CONF_USE_TLS: True,
+            CONF_HUB_ID: "hub-fixture",
+            CONF_ACCESS_TOKEN: "fixture-device-bearer",
+        },
+    )
+    entry.add_to_hass(hass)
+    client = FixtureHubClient()
+    coordinator = TeslatlasDataCoordinator(hass, entry, client)
+    coordinator.data = client.snapshot
+    coordinator.last_update_success = False
+    entry.runtime_data = coordinator
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diagnostics["runtime"]["available"] is False
+    assert diagnostics["runtime"]["protocol_version"] == "0.0-fixture"
+    assert diagnostics["runtime"]["vehicle_count"] == 2
+    await coordinator.async_shutdown()

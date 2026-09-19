@@ -1,5 +1,12 @@
 # Concurrent Home Assistant foundation merge design
 
+> **Historical design record (2026-09-08).** This proposal predates the checked
+> `hub-http-v1@1.0.0` read-only polling profile. Its protocol `1.2.0`, SSE, and
+> Zeroconf references are retained as history and are not current support
+> claims. Use the [current README](../../../README.md) and
+> [working-product plan](../plans/2026-09-08-working-product-plan.md) for the
+> active implementation and evidence boundary.
+
 ## Status
 
 Draft for user review. The core merge direction was approved in chat on

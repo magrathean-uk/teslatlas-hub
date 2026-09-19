@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from aiohttp import ClientSession, TCPConnector, web
+from aiohttp import ClientSession, ClientTimeout, TCPConnector, web
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -20,6 +20,7 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+import custom_components.teslatlas_hub.current_hub_client as current_hub_client_module
 from custom_components.teslatlas_hub.client import (
     HubAuthenticationError,
     HubConnectionError,
@@ -294,6 +295,109 @@ async def test_snapshot_maps_current_fields_preserving_zero_null_and_no_sse(
     assert all("event" not in path for path in paths)
 
 
+async def test_snapshot_rejects_non_finite_numeric_telemetry(
+    hass: HomeAssistant,
+    aiohttp_server,
+) -> None:
+    """Do not publish JSON exponent overflow as live numeric telemetry."""
+
+    async def handler(request: web.Request) -> web.Response:
+        if request.path == "/.well-known/teslatlas-hub":
+            return web.json_response(_discovery())
+        if request.path == "/v1/vehicles":
+            return web.json_response(
+                {"vehicles": [{"vehicle_id": VEHICLE_ID, "display_name": "Atlas"}]}
+            )
+        payload = _current(observed_at_ms=None)
+        raw = json.dumps(payload, separators=(",", ":")).replace(
+            '"charger_power":0.0', '"charger_power":1e999'
+        )
+        return web.Response(
+            body=raw.encode(),
+            headers={"Content-Type": "application/json"},
+        )
+
+    app = web.Application()
+    app.router.add_get("/{tail:.*}", handler)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+
+    with pytest.raises(HubContractError, match="charger_power"):
+        await client.async_snapshot()
+
+
+async def test_probe_rejects_non_json_content_type(
+    hass: HomeAssistant,
+    aiohttp_server,
+) -> None:
+    """Reject a response body that is JSON-shaped but not typed as JSON."""
+
+    async def discovery(_request: web.Request) -> web.Response:
+        return web.Response(
+            text=json.dumps(_discovery()),
+            content_type="text/plain",
+        )
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(async_get_clientsession(hass), _endpoint(server))
+
+    with pytest.raises(HubContractError, match="not JSON"):
+        await client.async_probe()
+
+
+async def test_probe_rejects_non_object_json(
+    hass: HomeAssistant,
+    aiohttp_server,
+) -> None:
+    """Reject a valid JSON value that cannot satisfy a profile object schema."""
+
+    async def discovery(_request: web.Request) -> web.Response:
+        return web.Response(
+            body=b"[]",
+            headers={"Content-Type": "application/json"},
+        )
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(async_get_clientsession(hass), _endpoint(server))
+
+    with pytest.raises(HubContractError, match="JSON object"):
+        await client.async_probe()
+
+
+async def test_request_timeout_becomes_connection_failure(
+    hass: HomeAssistant,
+    aiohttp_server,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep a slow public request on the retryable connection-failure path."""
+    monkeypatch.setattr(
+        current_hub_client_module,
+        "REQUEST_TIMEOUT",
+        ClientTimeout(total=0.01, connect=0.01, sock_read=0.01),
+    )
+
+    async def slow_discovery(_request: web.Request) -> web.Response:
+        await asyncio.sleep(0.05)
+        return web.json_response(_discovery())
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", slow_discovery)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(async_get_clientsession(hass), _endpoint(server))
+
+    with pytest.raises(HubConnectionError, match="request failed"):
+        await client.async_probe()
+
+
 async def test_current_reads_are_capped_at_four(
     hass: HomeAssistant,
     aiohttp_server,
@@ -342,6 +446,113 @@ async def test_current_reads_are_capped_at_four(
 
     assert len(snapshot.vehicles) == 8
     assert maximum_in_flight == 4
+
+
+async def test_snapshot_rejects_duplicate_vehicle_identity(
+    hass: HomeAssistant,
+    aiohttp_server,
+) -> None:
+    """Reject duplicate vehicle IDs before publishing a collapsed snapshot."""
+    current_requests = 0
+
+    async def handler(request: web.Request) -> web.Response:
+        nonlocal current_requests
+        if request.path == "/.well-known/teslatlas-hub":
+            return web.json_response(_discovery())
+        if request.path == "/v1/vehicles":
+            return web.json_response(
+                {
+                    "vehicles": [
+                        {"vehicle_id": VEHICLE_ID, "display_name": "Atlas"},
+                        {
+                            "vehicle_id": VEHICLE_ID,
+                            "display_name": "Atlas duplicate",
+                        },
+                    ]
+                }
+            )
+        current_requests += 1
+        return web.json_response(_current(observed_at_ms=None))
+
+    app = web.Application()
+    app.router.add_get("/{tail:.*}", handler)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+
+    with pytest.raises(HubContractError, match="duplicate vehicle_id"):
+        await client.async_snapshot()
+    assert current_requests == 0
+
+
+async def test_overlapping_snapshots_are_serialized(
+    hass: HomeAssistant,
+    aiohttp_server,
+) -> None:
+    """Prevent a second refresh from dispatching while the first is active."""
+    discovery_requests = 0
+    current_requests = 0
+    in_flight = 0
+    maximum_in_flight = 0
+    first_current_started = asyncio.Event()
+    release_first_current = asyncio.Event()
+
+    async def discovery(_request: web.Request) -> web.Response:
+        nonlocal discovery_requests
+        discovery_requests += 1
+        return web.json_response(_discovery())
+
+    async def vehicles(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {"vehicles": [{"vehicle_id": VEHICLE_ID, "display_name": "Roadster"}]}
+        )
+
+    async def current(_request: web.Request) -> web.Response:
+        nonlocal current_requests, in_flight, maximum_in_flight
+        current_requests += 1
+        in_flight += 1
+        maximum_in_flight = max(maximum_in_flight, in_flight)
+        try:
+            if current_requests == 1:
+                first_current_started.set()
+                await release_first_current.wait()
+            return web.json_response(
+                _current(observed_at_ms=None, battery_level=current_requests)
+            )
+        finally:
+            in_flight -= 1
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    app.router.add_get("/v1/vehicles", vehicles)
+    app.router.add_get("/v1/vehicles/{vehicle_id}/current", current)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+
+    first_snapshot = asyncio.create_task(client.async_snapshot())
+    await asyncio.wait_for(first_current_started.wait(), timeout=1)
+    second_snapshot = asyncio.create_task(client.async_snapshot())
+    await asyncio.sleep(0.05)
+    assert discovery_requests == 1
+    assert current_requests == 1
+    assert maximum_in_flight == 1
+
+    release_first_current.set()
+    first = await first_snapshot
+    second = await second_snapshot
+    assert discovery_requests == 2
+    assert current_requests == 2
+    assert first.vehicles[VEHICLE_ID].state_of_charge == 1
+    assert second.vehicles[VEHICLE_ID].state_of_charge == 2
 
 
 async def test_unauthorized_vehicle_list_is_typed_authentication_failure(
@@ -461,6 +672,54 @@ async def test_missing_current_observation_keeps_vehicle_with_unknown_values(
     snapshot = await client.async_snapshot()
     assert snapshot.vehicles[VEHICLE_ID].state_of_charge is None
     assert snapshot.vehicles[VEHICLE_ID].telemetry_age_seconds is None
+
+
+async def test_one_vehicle_current_failure_keeps_other_observations(
+    hass: HomeAssistant,
+    aiohttp_server,
+) -> None:
+    """Keep healthy vehicles updating when one current read is unavailable."""
+    healthy_vehicle_id = VEHICLE_ID
+    unavailable_vehicle_id = "66666666-6666-4666-8666-666666666666"
+
+    async def handler(request: web.Request) -> web.Response:
+        if request.path == "/.well-known/teslatlas-hub":
+            return web.json_response(_discovery())
+        if request.path == "/v1/vehicles":
+            return web.json_response(
+                {
+                    "vehicles": [
+                        {"vehicle_id": healthy_vehicle_id, "display_name": "Atlas"},
+                        {
+                            "vehicle_id": unavailable_vehicle_id,
+                            "display_name": "Roadster",
+                        },
+                    ]
+                }
+            )
+        if request.match_info.get("vehicle_id") == unavailable_vehicle_id:
+            return web.Response(status=503)
+        payload = _current(observed_at_ms=None, battery_level=42)
+        payload["vehicle_id"] = healthy_vehicle_id
+        return web.json_response(payload)
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", handler)
+    app.router.add_get("/v1/vehicles", handler)
+    app.router.add_get("/v1/vehicles/{vehicle_id}/current", handler)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+
+    snapshot = await client.async_snapshot()
+
+    assert snapshot.vehicles[healthy_vehicle_id].state_of_charge == 42
+    assert snapshot.vehicles[unavailable_vehicle_id].state_of_charge is None
+    assert snapshot.vehicles[unavailable_vehicle_id].name == "Roadster"
 
 
 async def test_fragmented_discovery_body_is_read_through_eof(

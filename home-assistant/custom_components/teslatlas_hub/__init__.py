@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryError
 
 from .client import create_client
 from .const import (
@@ -39,6 +41,12 @@ async def async_setup_entry(
     entry: TeslatlasConfigEntry,
 ) -> bool:
     """Validate one Hub and start its bounded polling coordinator."""
+    required = (CONF_HOST, CONF_PORT, CONF_USE_TLS, CONF_HUB_ID, CONF_ACCESS_TOKEN)
+    missing = [key for key in required if key not in entry.data]
+    if missing:
+        raise ConfigEntryError(
+            "Teslatlas Hub config entry is missing required data: " + ", ".join(missing)
+        )
     endpoint = HubEndpoint(
         host=entry.data[CONF_HOST],
         port=entry.data[CONF_PORT],
@@ -57,6 +65,9 @@ async def async_setup_entry(
     try:
         await coordinator.async_config_entry_first_refresh()
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except asyncio.CancelledError:
+        await coordinator.async_shutdown()
+        raise
     except Exception:
         await coordinator.async_shutdown()
         raise

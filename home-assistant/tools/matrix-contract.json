@@ -314,6 +314,6 @@
   "phases": [],
   "validator": {
     "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_contract.py",
-    "sha256": "0eadb02328913ba91493ff128806a5e62cdbed30efaed7f0392f40c7efe2db6a"
+    "sha256": "aa0c27880a59855e110a8a43c540c1e6127e449b63e1f834140c8c681014185f"
   }
 }

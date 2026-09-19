@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
@@ -37,7 +38,7 @@ from .models import (
 )
 
 PROFILE_ID = "hub-http-v1@1.0.0"
-PROFILE_SHA256 = "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+PROFILE_SHA256 = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 MAX_RESPONSE_BYTES = 1_048_576
 MAX_CURRENT_READS = 4
 CLOCK_SKEW_SECONDS = 300
@@ -110,6 +111,8 @@ def _optional_number(payload: dict[str, Any], key: str) -> float | int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise HubContractError(f"{key} must be numeric or null")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise HubContractError(f"{key} must be finite")
     return value
 
 
@@ -118,6 +121,16 @@ def _optional_string(payload: dict[str, Any], key: str) -> str | None:
     if value is not None and not isinstance(value, str):
         raise HubContractError(f"{key} must be text or null")
     return value
+
+
+def _vehicle_summary(summary: Any) -> tuple[str, str]:
+    if not isinstance(summary, dict):
+        raise HubContractError("vehicle summary must be an object")
+    vehicle_id = _uuid(summary.get("vehicle_id"), "vehicle_id")
+    display_name = summary.get("display_name")
+    if display_name is not None and not isinstance(display_name, str):
+        raise HubContractError("display_name must be text or null")
+    return vehicle_id, display_name or "Tesla vehicle"
 
 
 def _telemetry_age(observed_at_ms: Any, now: datetime) -> int | None:
@@ -316,6 +329,12 @@ class CurrentHubClient:
                 vehicles = payload.get("vehicles")
                 if not isinstance(vehicles, list):
                     raise HubContractError("vehicles must be an array")
+                seen_vehicle_ids: set[str] = set()
+                for summary in vehicles:
+                    vehicle_id, _ = _vehicle_summary(summary)
+                    if vehicle_id in seen_vehicle_ids:
+                        raise HubContractError("vehicles contains duplicate vehicle_id")
+                    seen_vehicle_ids.add(vehicle_id)
                 observations: list[VehicleState] = []
                 for offset in range(0, len(vehicles), MAX_CURRENT_READS):
                     reads = [
@@ -323,12 +342,28 @@ class CurrentHubClient:
                         for item in vehicles[offset : offset + MAX_CURRENT_READS]
                     ]
                     try:
-                        observations.extend(await asyncio.gather(*reads))
+                        results = await asyncio.gather(*reads)
+                    except HubConnectionError:
+                        results = await asyncio.gather(*reads, return_exceptions=True)
                     except BaseException:
                         for read in reads:
                             read.cancel()
                         await asyncio.gather(*reads, return_exceptions=True)
                         raise
+                    for summary, result in zip(
+                        vehicles[offset : offset + MAX_CURRENT_READS],
+                        results,
+                        strict=True,
+                    ):
+                        if isinstance(result, HubConnectionError):
+                            vehicle_id, name = _vehicle_summary(summary)
+                            observations.append(
+                                VehicleState(vehicle_id=vehicle_id, name=name)
+                            )
+                        elif isinstance(result, BaseException):
+                            raise result
+                        else:
+                            observations.append(result)
                 return HubSnapshot.create(
                     info=info,
                     status=HubStatus(),
@@ -393,12 +428,7 @@ class CurrentHubClient:
         )
 
     async def _async_current(self, summary: Any) -> VehicleState:
-        if not isinstance(summary, dict):
-            raise HubContractError("vehicle summary must be an object")
-        vehicle_id = _uuid(summary.get("vehicle_id"), "vehicle_id")
-        display_name = summary.get("display_name")
-        if display_name is not None and not isinstance(display_name, str):
-            raise HubContractError("display_name must be text or null")
+        vehicle_id, name = _vehicle_summary(summary)
         async with self._current_semaphore:
             payload = await self._async_json(
                 "GET",
@@ -409,16 +439,14 @@ class CurrentHubClient:
         if payload is None:
             return VehicleState(
                 vehicle_id=vehicle_id,
-                name=display_name or "Tesla vehicle",
+                name=name,
             )
         if _uuid(payload.get("vehicle_id"), "vehicle_id") != vehicle_id:
             raise HubContractError("Current observation vehicle identity changed")
         locked = payload.get("locked")
         if locked is not None and not isinstance(locked, bool):
             raise HubContractError("locked must be boolean or null")
-        name = (
-            _optional_string(payload, "display_name") or display_name or "Tesla vehicle"
-        )
+        name = _optional_string(payload, "display_name") or name
         return VehicleState(
             vehicle_id=vehicle_id,
             name=name,

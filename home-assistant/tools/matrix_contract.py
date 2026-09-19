@@ -424,7 +424,6 @@ def _same_observed_identity(*observations: Mapping[str, object]) -> bool:
         "store_id",
         "store_schema_version",
         "hub_id",
-        "service_generation",
     )
     return bool(observations) and all(
         all(value.get(key) == observations[0].get(key) for key in keys)
@@ -1112,6 +1111,10 @@ def _expected_operation_facts(
             or not _same_observed_identity(
                 predecessor, pre_advance_verify, observation
             )
+            or predecessor.get("service_generation")
+            != pre_advance_verify.get("service_generation")
+            or observation.get("service_generation")
+            == pre_advance_verify.get("service_generation")
             or transition.get("before_store_sha256")
             == transition.get("after_store_sha256")
             or transition.get("scenario_sha256")

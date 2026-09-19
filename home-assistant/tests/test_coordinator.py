@@ -76,6 +76,22 @@ async def test_outage_backoff_recovers_to_default_interval(
     await coordinator.async_shutdown()
 
 
+async def test_outage_backoff_reaches_and_caps_at_five_minutes(
+    hass: HomeAssistant,
+) -> None:
+    """Keep transient polling backoff bounded at the declared five-minute cap."""
+    client = FixtureHubClient()
+    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    client.snapshot_error = HubConnectionError("offline")
+
+    for expected_seconds in (30, 60, 120, 300, 300):
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+        assert coordinator.update_interval == timedelta(seconds=expected_seconds)
+
+    await coordinator.async_shutdown()
+
+
 async def test_identity_change_is_authentication_failure_before_publish(
     hass: HomeAssistant,
 ) -> None:

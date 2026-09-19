@@ -34,7 +34,7 @@ def test_hacs_metadata_targets_one_integration() -> None:
 
     assert hacs == {
         "name": "Teslatlas Hub",
-        "homeassistant": "2026.8.0",
+        "homeassistant": "2026.8.3",
     }
 
 
@@ -55,7 +55,7 @@ def test_embedded_current_profile_matches_approved_bundle() -> None:
     profile = INTEGRATION / "profile" / "hub-http-v1" / "1.0.0"
     sums = profile / "SHA256SUMS"
     assert hashlib.sha256(sums.read_bytes()).hexdigest() == (
-        "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+        "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
     )
     for line in sums.read_text(encoding="utf-8").splitlines():
         expected, relative = line.split("  ", maxsplit=1)

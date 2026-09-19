@@ -251,7 +251,7 @@ def test_session_input_uses_local_staged_paths_without_opening_root_paths(
 
     assert parsed == value
     assert parsed["inputs"]["profile_manifest"]["local"]["sha256"] == (
-        "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b"
+        "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
     )
 
 
@@ -1006,7 +1006,7 @@ def _controller_observations() -> dict[int, MappingProxyType]:
         3: observation(
             3,
             "advance-once",
-            "generation-1",
+            "generation-2",
             {
                 "kind": "advance-once",
                 "from_sequence": 1,
@@ -1243,6 +1243,134 @@ def _case(case_id: str, context: AdmissionContext) -> dict:
         ),
         "request_transcript": requests,
     }
+
+
+def _advance_admission_context(
+    post_advance_generation: str,
+) -> tuple[AdmissionContext, dict[str, dict]]:
+    context, raw = _context()
+
+    def remap(sequence: int, source_sequence: int) -> MappingProxyType:
+        value = dict(context.controller_observations[source_sequence])
+        value.update(
+            sequence=sequence,
+            started_monotonic_ns=sequence * 10,
+            finished_monotonic_ns=sequence * 10 + 1,
+            proof_sha256=hashlib.sha256(f"proof-{sequence}".encode()).hexdigest(),
+            result_sha256=hashlib.sha256(f"result-{sequence}".encode()).hexdigest(),
+        )
+        return MappingProxyType(value)
+
+    predecessor = remap(41, 1)
+    pre_advance_verify = remap(42, 2)
+    advance = dict(remap(43, 3))
+    advance["service_generation"] = post_advance_generation
+    advance["transition"] = {
+        "kind": "advance-once",
+        "from_sequence": 41,
+        "pre_advance_verify_sequence": 42,
+        "before_store_sha256": "c" * 64,
+        "after_store_sha256": "d" * 64,
+        "scenario_sha256": "a" * 64,
+        "seed_sha256": "b" * 64,
+    }
+    for operation, sequence in (("initial_poll", 41), ("later_poll", 43)):
+        raw[f"raw-{operation}"]["session_sequence_before"] = sequence
+        raw[f"raw-{operation}"]["session_sequence_after"] = sequence
+    raw["raw-later_poll"]["facts"]["advance_from_sequence"] = 41
+    observations = dict(context.controller_observations)
+    observations.update(
+        {
+            41: predecessor,
+            42: pre_advance_verify,
+            43: MappingProxyType(advance),
+        }
+    )
+    invocations = tuple(
+        replace(
+            invocation,
+            session_sequence_before=(
+                41 if invocation.operation == "initial_poll" else 43
+            ),
+            session_sequence_after=(
+                41 if invocation.operation == "initial_poll" else 43
+            ),
+        )
+        if invocation.operation in {"initial_poll", "later_poll"}
+        else invocation
+        for invocation in context.invocations
+    )
+    return (
+        replace(
+            context,
+            invocations=invocations,
+            raw=MappingProxyType(raw),
+            controller_observations=MappingProxyType(observations),
+        ),
+        raw,
+    )
+
+
+def test_real_projection_admits_only_changed_advance_generation() -> None:
+    """An authentic advance must move G1/G1 to G2 while identity stays stable."""
+    context, raw = _advance_admission_context("generation-2")
+    runtime = object.__new__(MatrixRuntime)
+    runtime.raw = raw
+    runtime.case_facts = None
+    runtime.set_case_facts_from_raw()
+    admitted_case = _case("exact_current_values", context)
+    admitted_case["expected"] = runtime.case_facts["exact_current_values"]
+    admitted_case["actual"] = runtime.case_facts["exact_current_values"]
+
+    admitted = admit_case(admitted_case, context)
+
+    unchanged_context, unchanged_raw = _advance_admission_context("generation-1")
+    unchanged_runtime = object.__new__(MatrixRuntime)
+    unchanged_runtime.raw = unchanged_raw
+    unchanged_runtime.case_facts = None
+    unchanged_runtime.set_case_facts_from_raw()
+    unchanged_case = _case("exact_current_values", unchanged_context)
+    unchanged_case["expected"] = unchanged_runtime.case_facts["exact_current_values"]
+    unchanged_case["actual"] = unchanged_runtime.case_facts["exact_current_values"]
+    unchanged = admit_case(unchanged_case, unchanged_context)
+
+    assert admitted.status == "passed"
+    assert admitted.code == "accepted"
+    assert unchanged.status == "failed"
+    assert unchanged.code == "raw_fact_mismatch"
+
+
+def test_advance_admission_is_pending_without_post_advance_observation() -> None:
+    """Missing root post-advance evidence remains a distinct pending context."""
+    context, _raw = _advance_admission_context("generation-2")
+    observations = dict(context.controller_observations)
+    observations.pop(43)
+    pending_context = replace(
+        context, controller_observations=MappingProxyType(observations)
+    )
+
+    decision = admit_case(
+        _case("exact_current_values", pending_context), pending_context
+    )
+
+    assert decision.status == "pending"
+    assert decision.code == "independent_observation_pending"
+
+
+@pytest.mark.parametrize(
+    ("post_advance_generation", "status"),
+    [("generation-2", "passed"), ("generation-1", "failed")],
+)
+def test_polling_transport_admission_requires_changed_advance_generation(
+    post_advance_generation: str,
+    status: str,
+) -> None:
+    """Apply the G1/G1/G2 rule to the later-poll transport case as well."""
+    context, _raw = _advance_admission_context(post_advance_generation)
+
+    decision = admit_case(_case("polling_transport_zero_sse", context), context)
+
+    assert decision.status == status
 
 
 def test_contract_admits_all_18_ha_cases_from_independent_literals() -> None:
@@ -1787,6 +1915,7 @@ def test_contract_rejects_identity_request_sequence_literal_and_cleanup_mutation
         "edited_expiry",
         "wrong_expired_fixture",
         "unchanged_restart_generation",
+        "unchanged_outage_generation",
         "later_poll_before_advance",
     ],
 )
@@ -1813,17 +1942,29 @@ def test_contract_rejects_coherent_child_lifecycle_substitutions(
             wrong = "99999999-9999-4999-8999-999999999999"
             fixture["pairing_id"] = wrong
             expired["pairing_id"] = wrong
-    elif mutation == "unchanged_restart_generation":
-        case_id = "endpoint_restart"
-        observation = dict(context.controller_observations[7])
-        observation["service_generation"] = "generation-3"
+    elif mutation in {"unchanged_restart_generation", "unchanged_outage_generation"}:
+        case_id = (
+            "endpoint_restart"
+            if mutation == "unchanged_restart_generation"
+            else "outage_recovery"
+        )
+        observation_sequence = 7 if case_id == "endpoint_restart" else 9
+        prior_generation = (
+            "generation-3" if case_id == "endpoint_restart" else "generation-4"
+        )
+        observation = dict(context.controller_observations[observation_sequence])
+        observation["service_generation"] = prior_generation
         observations = dict(context.controller_observations)
-        observations[7] = MappingProxyType(observation)
+        observations[observation_sequence] = MappingProxyType(observation)
         context = replace(
             context, controller_observations=MappingProxyType(observations)
         )
-        facts = raw["raw-endpoint_restart_poll"]["facts"]
-        facts["after_service_generation"] = "generation-3"
+        raw_key = (
+            "raw-endpoint_restart_poll"
+            if case_id == "endpoint_restart"
+            else "raw-outage_poll"
+        )
+        raw[raw_key]["facts"]["after_service_generation"] = prior_generation
     else:
         case_id = "exact_current_values"
         raw["raw-later_poll"]["session_sequence_before"] = 1
