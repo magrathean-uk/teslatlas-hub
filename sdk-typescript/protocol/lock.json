@@ -3,7 +3,7 @@
     "compatibility/1.0.0/profile.json": "bb3a33bac9af880590026fbfdba7ee23e9b77f7506cb9adea40370e249e28dfc",
     "compatibility/1.1.0/profile.json": "4952e7614b1658f9d685ad5e731d6ff4d440328266cf9ad5ae2774741701f05b",
     "compatibility/1.2.0/profile.json": "bca30f036e4a426562dadd3b0a2bb7ba85b7fe7eebaa6917641f68a2aad961c5",
-    "compatibility/hub.json": "db8ac0037f8b4929897c1b06718b70e0d5c0384d70d0f24ce8c57f2009f8ed21",
+    "compatibility/hub.json": "b7f6564abae676ba22133aa3fb8846795733a48f6a6ebd26bf6b1822125187cd",
     "compatibility/manifest.json": "e10da4584f3d9a4e2622792daea6e06f18d3c486ab7ae61f5e744f4e7a99805b",
     "conformance/cases/command-idempotency.json": "0766db7f17f1094ac4d62f5b9bc8c09201a584604ebbf44de4f639537b443f84",
     "conformance/cases/cursor-pagination.json": "abb60eb92cf105548a3cffa9f0c9f6676df90cd38f9323d128579282f31a6125",
@@ -67,10 +67,10 @@
     "profiles/hub-http-v1/1.0.0/examples/ready.json": "9994e13386b29bde4071dd062d8c4ab8dbb6b4b877f968b4a34fb2c7b0ead65e",
     "profiles/hub-http-v1/1.0.0/examples/vehicles.json": "36b77389bac75fb247c6e0da2baf284511f40a808227b38d7543b2d199437150",
     "profiles/hub-http-v1/1.0.0/field-semantics.json": "bd9b7162c94efbd3e570ffd785fe543dfb98299379ea81cf8b2e028496bd3ee7",
-    "profiles/hub-http-v1/1.0.0/openapi.json": "951a326d0ad9c0d16a9a0fe860cb84a7ecf0c0b88eb3dbb0fe92f763a4382440",
-    "profiles/hub-http-v1/1.0.0/profile.json": "a352aeb5e0818317ed8798107caf9b45ee47c30438c54b0d531a6cf936724a7b",
+    "profiles/hub-http-v1/1.0.0/openapi.json": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+    "profiles/hub-http-v1/1.0.0/profile.json": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
     "profiles/hub-http-v1/1.0.0/resources.schema.json": "6b2523de42f5860ddaaf83b0db78b6f172e3f15e1dab8048e221c1fa6337a4be",
-    "profiles/hub-http-v1/1.0.0/SHA256SUMS": "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b",
+    "profiles/hub-http-v1/1.0.0/SHA256SUMS": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
     "profiles/hub-http-v1/1.0.0/sync-regression.json": "6aebb1a5d5e250447435876d4cb64934b916e8cd61c2c8b148d2111c7f5fc691",
     "schemas/command.schema.json": "35829f51d18356bc1c62c0b768f7f26f54ca1e1c865c0d06c7a58568094bfa27",
     "schemas/common.schema.json": "3149c36caeb50b341b943c0434de1a8e025209c0434c12e799d77cc2ba327401",
@@ -87,7 +87,7 @@
     "schemas/sse-contract.schema.json": "16def7c35263fb52339369130b618a2e626f909362f3be8542fd60b4845df4e8"
   },
   "generated": {
-    "src/generated/hub-protocol.ts": "71847c42032d13f3325053ac40bafa2001a010989cfbb34204d2924638bb8d91",
+    "src/generated/hub-protocol.ts": "c5e3ae7a00dbd8107d121de3ab539b27547f1e336bdb87ea57ddd3cbd51e553f",
     "src/generated/hub-validators.d.ts": "bd27b3ad9de02a5a11c58ba78a4e37f74b48030eabf92cdbb48f1e76b78d7936",
     "src/generated/hub-validators.js": "4dc6fe33cd4bad5d6472dfecb4f4361a79e92c439765df26745ab86a1d0ad81a",
     "src/generated/protocol-cases.ts": "5cb96f66f9d441da12cf64f695ef088e0866596c9fcf9f20ac0378fac34eedb0",
@@ -100,17 +100,17 @@
   },
   "profiles": {
     "currentHub": {
-      "bundleSha256": "b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b",
-      "generatedOutputSha256": "2054e1fbd3a59c9619980ea7f5307fa1451c48d520aee3002ce33590aa469722",
+      "bundleSha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "generatedOutputSha256": "3769abc73e927d20cd5842eed3a076b05bf436d1eba3026e324b5d5dfbe7c6b9",
       "id": "hub-http-v1",
-      "inputSha256": "bd7d604be83a465c39e8f94b3d49218755ab7286e8d4695e2f7a625dd08e8f62",
+      "inputSha256": "68dca68355cd1011c31004f7d39eaabfef068706fb89ef0a5823496f26d3727e",
       "revision": "1.0.0",
       "status": "candidate"
     },
     "richer": {
       "generatedOutputSha256": "edcc471c48316f01094fb293578a48f52989a8642f983560d4f0c074b9dd8e58",
       "id": "teslatlas-public",
-      "inputSha256": "91d3153e9578a77ee421aa654ed3c531f6f65381761e3967dc61069a5de58453",
+      "inputSha256": "813a1ee2a15eb3b14793884671f6c8561e56bb72d32b38f0ac99ca0874982c3f",
       "revision": "1.2.0",
       "supportedRevisions": [
         "1.0.0",
@@ -121,8 +121,8 @@
   },
   "schemaVersion": 2,
   "source": {
-    "baseCommit": "79ced4c7fdc79520ad31d72a0280bf5f3f19f407",
-    "contentSha256": "774573debf6e3e2cc4edb50bd162e6ca5acd181b90fd149bc73b6589ed4cd9e0",
+    "baseCommit": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+    "contentSha256": "b999629360394ad2bb82b0d65cb8ea393e8e0d3afeefe5f89f6b7f33eeef9a47",
     "kind": "local-content",
     "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git"
   }

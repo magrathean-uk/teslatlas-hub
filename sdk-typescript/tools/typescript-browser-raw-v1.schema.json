@@ -1,0 +1,612 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "teslatlas://typescript-browser/raw-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "cell_id",
+    "session_input_sha256",
+    "actor_id",
+    "operation",
+    "actor_manifest_sha256",
+    "session_sequence_before",
+    "session_sequence_after",
+    "credential_device_id",
+    "facts",
+    "requests",
+    "cleanup"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "cell_id": {
+      "enum": [
+        "typescript_browser__macos_arm64",
+        "typescript_browser__debian13_amd64",
+        "typescript_browser__debian13_arm64"
+      ]
+    },
+    "session_input_sha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "actor_id": {
+      "const": "sdk_browser"
+    },
+    "operation": {
+      "enum": [
+        "bad_invitation",
+        "browser_cors",
+        "browser_tls",
+        "credential_rotation",
+        "discovery",
+        "drives_etag",
+        "drives_terminal_cursor",
+        "drives_three_pages",
+        "endpoint_restart",
+        "exact_current",
+        "expired_invitation",
+        "observe_identity",
+        "outage_recovery",
+        "real_auth",
+        "reauthentication",
+        "replayed_invitation",
+        "revoked_credential",
+        "unauthenticated_probes",
+        "unknown_vehicle",
+        "unsupported_operations",
+        "wrong_filter_cursor",
+        "wrong_vehicle_cursor"
+      ]
+    },
+    "actor_manifest_sha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "session_sequence_before": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "session_sequence_after": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "credential_device_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "facts": {
+      "anyOf": [
+        {
+          "title": "candidate_artifact_identity",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hub_sha256", "tarball_sha256", "package_version", "installed_members"],
+          "properties": {
+            "hub_sha256": {
+              "$ref": "#/$defs/sha"
+            },
+            "tarball_sha256": {
+              "$ref": "#/$defs/sha"
+            },
+            "package_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "installed_members": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "title": "installed_service_runtime",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["service_mode"],
+          "properties": {
+            "service_mode": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "title": "discovery_identity_profile",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hub_id",
+            "api_versions",
+            "protocol",
+            "protocol_major",
+            "pack_format",
+            "version"
+          ],
+          "properties": {
+            "hub_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "api_versions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "protocol": {
+              "type": "string",
+              "minLength": 1
+            },
+            "protocol_major": {
+              "const": 1
+            },
+            "pack_format": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "title": "unauthenticated_discovery",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["discovery", "health", "readiness", "credential_absent"],
+          "properties": {
+            "discovery": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 599
+            },
+            "health": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 599
+            },
+            "readiness": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 599
+            },
+            "credential_absent": {
+              "const": true
+            }
+          }
+        },
+        {
+          "title": "bad_invitation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["typed_error", "http_status"],
+          "properties": {
+            "typed_error": {
+              "type": "string",
+              "minLength": 1
+            },
+            "http_status": {
+              "const": 401
+            }
+          }
+        },
+        {
+          "title": "expired_invitation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outgoing_requests", "typed_error"],
+          "properties": {
+            "outgoing_requests": {
+              "const": 0
+            },
+            "typed_error": {
+              "const": "protocol_validation"
+            }
+          }
+        },
+        {
+          "title": "replayed_invitation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["typed_error", "http_status"],
+          "properties": {
+            "typed_error": {
+              "type": "string",
+              "minLength": 1
+            },
+            "http_status": {
+              "const": 401
+            }
+          }
+        },
+        {
+          "title": "real_auth",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["claimed", "vehicles"],
+          "properties": {
+            "claimed": {
+              "const": 200
+            },
+            "vehicles": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "title": "vehicle",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["vehicle_id", "display_name"],
+                "properties": {
+                  "vehicle_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "display_name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "credential_lifecycle_reauth",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["new_device", "vehicles"],
+          "properties": {
+            "new_device": {
+              "const": true
+            },
+            "vehicles": {
+              "const": 200
+            }
+          }
+        },
+        {
+          "title": "revocation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["typed_error", "http_status"],
+          "properties": {
+            "typed_error": {
+              "type": "string",
+              "minLength": 1
+            },
+            "http_status": {
+              "const": 401
+            }
+          }
+        },
+        {
+          "title": "unknown_vehicle",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["typed_error", "http_status"],
+          "properties": {
+            "typed_error": {
+              "type": "string",
+              "minLength": 1
+            },
+            "http_status": {
+              "const": 404
+            }
+          }
+        },
+        {
+          "title": "exact_current_values",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "battery_level",
+            "inside_temp",
+            "outside_temp",
+            "observed_at_ms",
+            "est_battery_range_km",
+            "odometer",
+            "speed",
+            "scheduled_charging_start_time",
+            "active_route_miles_to_arrival",
+            "empty_vehicle_observed_at_ms"
+          ],
+          "properties": {
+            "battery_level": {
+              "type": "integer"
+            },
+            "inside_temp": {
+              "type": "number"
+            },
+            "outside_temp": {
+              "type": ["number", "null"]
+            },
+            "observed_at_ms": {
+              "type": "integer"
+            },
+            "est_battery_range_km": {
+              "type": "number"
+            },
+            "odometer": {
+              "type": "number"
+            },
+            "speed": {
+              "type": "integer"
+            },
+            "scheduled_charging_start_time": {
+              "type": "integer"
+            },
+            "active_route_miles_to_arrival": {
+              "type": "number"
+            },
+            "empty_vehicle_observed_at_ms": {
+              "type": ["integer", "null"]
+            }
+          }
+        },
+        {
+          "title": "endpoint_restart",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["same_hub", "new_process", "vehicles"],
+          "properties": {
+            "same_hub": {
+              "const": true
+            },
+            "new_process": {
+              "const": true
+            },
+            "vehicles": {
+              "const": 200
+            }
+          }
+        },
+        {
+          "title": "outage_recovery",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outage_observed", "vehicles"],
+          "properties": {
+            "outage_observed": {
+              "const": true
+            },
+            "vehicles": {
+              "const": 200
+            }
+          }
+        },
+        {
+          "title": "unsupported_operation_zero_requests",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outgoing_requests"],
+          "properties": {
+            "outgoing_requests": {
+              "const": 0
+            }
+          }
+        },
+        {
+          "title": "credential_rotation_api",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rotated",
+            "same_device",
+            "vehicles",
+            "old_credential_error",
+            "old_credential_status"
+          ],
+          "properties": {
+            "rotated": {
+              "const": true
+            },
+            "same_device": {
+              "const": true
+            },
+            "vehicles": {
+              "const": 200
+            },
+            "old_credential_error": {
+              "type": "string",
+              "minLength": 1
+            },
+            "old_credential_status": {
+              "const": 401
+            }
+          }
+        },
+        {
+          "title": "drives_three_page_order",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pages"],
+          "properties": {
+            "pages": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "drives_terminal_cursor",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["next_cursor", "ids"],
+          "properties": {
+            "next_cursor": {
+              "type": "null"
+            },
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "title": "drives_etag_304",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "post_304_ids"],
+          "properties": {
+            "kind": {
+              "const": "notModified"
+            },
+            "post_304_ids": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "title": "drives_wrong_vehicle_cursor",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outgoing_requests", "typed_error"],
+          "properties": {
+            "outgoing_requests": {
+              "const": 0
+            },
+            "typed_error": {
+              "const": "protocol_validation"
+            }
+          }
+        },
+        {
+          "title": "drives_wrong_filter_cursor",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outgoing_requests", "typed_error"],
+          "properties": {
+            "outgoing_requests": {
+              "const": 0
+            },
+            "typed_error": {
+              "const": "protocol_validation"
+            }
+          }
+        },
+        {
+          "title": "real_browser_cors",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["preflight_succeeded", "cross_origin"],
+          "properties": {
+            "preflight_succeeded": {
+              "const": true
+            },
+            "cross_origin": {
+              "const": true
+            }
+          }
+        },
+        {
+          "title": "browser_normal_tls_validation",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["trusted_succeeded", "untrusted_error"],
+          "properties": {
+            "trusted_succeeded": {
+              "const": true
+            },
+            "untrusted_error": {
+              "const": "ERR_CERT_AUTHORITY_INVALID"
+            }
+          }
+        }
+      ]
+    },
+    "requests": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/request"
+      }
+    },
+    "cleanup": {
+      "$ref": "#/$defs/cleanup"
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "route", "status", "request_id", "scope"],
+      "properties": {
+        "method": {
+          "enum": ["GET", "POST", "OPTIONS"]
+        },
+        "route": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 599
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^/",
+          "maxLength": 2048
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "transport_resources_closed",
+        "auxiliary_fixture_stopped",
+        "process_exited"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "transport_resources_closed": {
+          "const": true
+        },
+        "auxiliary_fixture_stopped": {
+          "const": true
+        },
+        "process_exited": {
+          "const": true
+        }
+      }
+    }
+  }
+}

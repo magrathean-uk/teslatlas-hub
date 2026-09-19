@@ -34,8 +34,18 @@ Its methods are `discover`, `health`, `readiness`, `claimPairing`,
 `discover` is always unauthenticated and verifies the returned Hub identity
 before an authenticated method can dispatch. `drives` returns either a `page`
 or `notModified`; cursors are bound to the vehicle and millisecond filter set.
-`logout()` aborts pending work and clears caller credentials and identity-bound
-state. `dispose()` aborts pending work and permanently closes that client.
+`claimPairing` serializes its compact JSON request as UTF-8 and rejects bodies
+over 4,096 bytes with `ProtocolValidationError` (`HubClaimRequest.size`) before
+dispatching the claim request. Claim extractor failures with status `400`,
+`415`, or `422` must be nonempty `text/plain`; the SDK exposes them as a
+body-free `HubHttpError` with code `hub_http_error` and never retains the
+extractor text. Other error responses use the profile's validated JSON shape.
+`logout()` aborts pending work, invalidates cached identity, waits for SDK-owned
+credential writes already dispatched, and then clears caller credentials. A
+failed clear rejects; it is not retried. `dispose()` aborts pending work and
+permanently closes that client while preserving caller credentials. If a caller
+save was already dispatched, disposal cannot cancel that caller I/O, so callers
+that need deletion must await `logout()` before disposal.
 Neither operation claims to revoke credentials at the Hub.
 
 Invitation TLS pins are validated as invitation data, but browser Fetch cannot

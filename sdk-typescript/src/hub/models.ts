@@ -118,6 +118,14 @@ export interface HubClient {
   vehicles(options?: HubRequestOptions): Promise<HubResponse<HubVehicles>>;
   current(vehicleId: string, options?: HubRequestOptions): Promise<HubResponse<HubCurrent>>;
   drives(vehicleId: string, options?: HubDrivesOptions): Promise<HubDrivesResult>;
+  /**
+   * Abort the current session and clear credentials after SDK-owned mutations already dispatched.
+   * Credential mutations started after logout are ordered after that clear.
+   */
   logout(): Promise<void>;
+  /**
+   * Abort the current session while retaining credentials. Caller persistence already dispatched
+   * may finish, but the interrupted operation cannot report success.
+   */
   dispose(): void;
 }

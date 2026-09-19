@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_arm64_packed_node_browser_g4_acceptance_receipt",
+  "date": "2026-09-18",
+  "result": "ACCEPTED",
+  "source": {
+    "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+    "branch": "main",
+    "pre_receipt_dirty_entries": 56,
+    "pre_receipt_status_porcelain_sha256": "960a68aac10c230ee4ee7857e3f84a0af864e6723feebd1fc6d812845d2f66d6",
+    "pre_receipt_tracked_diff_sha256": "b22d6213f02bd74770f237e1f3f848536b2ab5d2727e20e135ac719b232756cb",
+    "source_file_count": 262,
+    "source_content_manifest_sha256": "538b97ef848959764774129ef8b0c1b79e29a07f254caf490bf73318744583b9"
+  },
+  "binding": {
+    "profile": "hub-http-v1@1.0.0",
+    "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "package": "@teslatlas/sdk@2026.36.2",
+    "tarball_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "installed_content_manifest_sha256": "4b1a44f7d2cd0ab6c772642125358703aa25c1efe32d164a119a6fc9d858ded6",
+    "installed_member_count": 81,
+    "package_json_sha256": "1f0c127f3896dadcb77deccf4526ce14277f65ee85abd4536fb4cd4fbf084cf0",
+    "repacked": false,
+    "reason_not_repacked": "The corrected browser orchestration scripts and focused tests are not package members; archive identity stayed unchanged."
+  },
+  "corrected_sources": {
+    "orchestrator_path": "scripts/browser-control-orchestrator.mjs",
+    "orchestrator_sha256": "7232768d3a96f49fdf2b831b03ca95929c83ca4d6c35ccc24c7d512cf07034ff",
+    "runner_path": "scripts/browser-hub-runner.mjs",
+    "runner_sha256": "9569f3c206592c1938594415ddd69ac8e64532887dbf6426c59221300c937738",
+    "cdp_target_test_sha256": "20c3b4d4b3499e90aa7918d89099addefa9b85b34037086f22457a10092c00c4",
+    "trust_hook_contract_test_sha256": "9fe046b098111542cf31415f0e1d8b0715fce7df5d5cf736bd227367636d10bd",
+    "preparation_plan_sha256": "93bf5a4105e29b503d351f91c7e3959b9940bf09802b65f4bb735ce17d0c7fbf",
+    "generated_final_hook_sha256": "ada64d4ed8a73b2c64d689653f9c8ff83be99d3e55412f0c94c9aaf1e34591b0",
+    "generated_supervisor_sha256": "aff59eeb27a3e4e757032ea18ce70dc6930d5db5f012efc80d6aa6fe0e55e929",
+    "generated_config_sha256": "a7e3747a40c4410a2bd8c7592fa961e7e44a88b4c89a5ee8558a3dbee9477bcd"
+  },
+  "focused_validation": {
+    "runtime": "Node v26.7.0, npm 11.19.0",
+    "node_check": "passed",
+    "biome": "passed for runner and two focused tests",
+    "vitest": "2 files, 2 tests passed",
+    "payload_contract": "import uses trustedCdpUrl; cleanup, remove and verify-removal payload shapes checked",
+    "tls_bypass_scan": "passed: no ignore-certificate-errors, allow-insecure-localhost, disable-web-security or ignore-ssl-errors"
+  },
+  "node_acceptance": {
+    "runtime": "Node v26.7.0 default Fetch",
+    "vehicle_count": 2,
+    "drive_count": 5,
+    "page_counts": [2, 2, 1],
+    "etag_304": true,
+    "cursor_after_304": true,
+    "invitation_claim": "passed",
+    "invitation_replay_status": 401,
+    "credential_rotation": "passed"
+  },
+  "browser_acceptance": {
+    "runtime": "Google Chrome 153.0.8010.52 through Playwright 1.62.1 CDP",
+    "untrusted_tls": "ERR_CERT_AUTHORITY_INVALID before scoped trust",
+    "trust": "user-domain security add-trusted-cert -r trustRoot -k default-login; no -d; effective SSL verify passed; exact removal passed; fresh Chrome rejected after removal",
+    "normal_certificate_validation": true,
+    "cors_preflight_count": 7,
+    "discovery_and_readiness": "passed",
+    "vehicle_count": 2,
+    "drive_count": 5,
+    "drive_page_counts": [2, 2, 1],
+    "drive_page_ids": [["105", "104"], ["103", "102"], ["101"]],
+    "etag_304": true,
+    "post_304_cursor_ids": ["103", "102"],
+    "rotation_new_token_success": true,
+    "preflight_old_token_status": 401,
+    "preflight_new_token_status": 200,
+    "current_statuses": [200, 200],
+    "current_presence": [true, false],
+    "orchestrator_status": "passed",
+    "runner_stdout_bytes": 1725,
+    "runner_stderr_bytes": 0,
+    "receipt_exists_and_passed": true
+  },
+  "redacted_evidence_hashes": {
+    "node": "f2a2ac438ea34473220f665d35b531e1fbd05c8ed66a9dfad0026010aa4da213",
+    "browser_preflight": "ae7a4fe8b217f1f0598b17641b4a2213a7291e72cd56ce6af5e16d478c6b914e",
+    "browser": "f4767900da11672defcf994798df64ddf17df2e8c3ea8002c1375010a5ebfcc4",
+    "orchestrator": "3e47b1c68cb3992c69bcb1ea2774c7091fb6ca69bab29c75700ea29999cd9fdc",
+    "post_removal_chrome": "7beb98a7b327524b4de54fabd90c33bf4f987014dbe6cf2800ac30fc24cd573d"
+  },
+  "failure_ledger": [
+    "r1: generated long Unix socket path failed EINVAL before browser; cleaned",
+    "r2: generated config plain-script invocation produced zero assertions; guard now rejects this; cleaned",
+    "r3: current Chrome required generated --enable-automation; cleaned",
+    "r4: runner Browser-target Network.enable defect; repaired with page-target CDP and focused test; cleaned",
+    "r5: runner/hook trustedCdpUrl payload mismatch; repaired with exact-shape test; cleaned",
+    "r6: copied hook mixed admin-domain -d with login keychain; generated lifecycle corrected; cleaned",
+    "trustAsRoot probe: rejected by macOS for this self-signed certificate shape; cleaned",
+    "user-domain trustRoot probe: effective SSL and Chrome pass, removal and fresh-Chrome rejection pass; standalone verify-cert may briefly return cached success after deletion, while exact lookup and fresh Chrome prove removal",
+    "final sweep: one separate task-owned throwaway probe certificate and the private cohort root remained recoverable in Trash; the exact certificate and proven task Trash root were deleted, then all cleanup checks passed"
+  ],
+  "path_discrepancy": "The initial coordinator path under hub/interop was incorrect. The accepted reviewed source is scripts/browser-control-orchestrator.mjs in this repository; recorded as a coordinator discrepancy, not a product failure.",
+  "cleanup": {
+    "hub_and_browser_processes_stopped": true,
+    "listeners_closed": true,
+    "exact_scoped_certificate_absent": true,
+    "profiles_exports_witnesses_credentials_and_private_runtime_deleted": true,
+    "heavy_build_lock_absent": true
+  },
+  "remaining_gaps": [
+    "Only current macOS 27.0 Apple silicon was exercised; the documented macOS 13 floor remains unexercised.",
+    "Synthetic local Hub only; no App, Viewer, production, Tesla account, real vehicle, x86 or Intel acceptance."
+  ]
+}

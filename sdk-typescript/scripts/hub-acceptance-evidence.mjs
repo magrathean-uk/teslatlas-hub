@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, readFile, realpath, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { lstat, readFile, realpath } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export async function verifyPackedSdk({
   packageRoot,
@@ -86,34 +86,116 @@ export function assertSafeBrowserArguments(arguments_) {
 }
 
 export async function verifyBrowserTrustWitness({
+  mode,
   witnessPath,
   certificatePath,
+  expectedCertificateExportPath,
   trustedArguments,
   untrustedArguments,
 }) {
-  const metadata = await stat(witnessPath);
-  if (
-    !metadata.isFile() ||
-    (metadata.mode & 0o077) !== 0 ||
-    (process.getuid !== undefined && metadata.uid !== process.getuid())
-  )
-    throw new Error("browser trust witness must be owner-only");
-  const witness = JSON.parse(await readFile(witnessPath, "utf8"));
+  const witnessFile = await ownerOnlyRegularFile(witnessPath, "browser trust witness");
+  const witness = JSON.parse(await readFile(witnessFile.path, "utf8"));
+  const trustMode = mode ?? witness.mode ?? "legacy-simultaneous";
+  const trusted =
+    trustMode === "sequential-macos-login-keychain" ? witness.trustedAfterImport : witness.trusted;
+  const untrusted =
+    trustMode === "sequential-macos-login-keychain"
+      ? witness.untrustedBeforeImport
+      : witness.untrusted;
+  const certificateExportPath =
+    trustMode === "sequential-macos-login-keychain"
+      ? trusted?.certificateExportPath
+      : (trusted?.certificateExportPath ?? trusted?.nssCaExportPath);
+  const trustedTrustStore =
+    trustMode === "sequential-macos-login-keychain"
+      ? trusted?.trustStorePath
+      : (trusted?.trustStorePath ?? trusted?.nssDatabase);
+  const untrustedTrustStore =
+    trustMode === "sequential-macos-login-keychain"
+      ? untrusted?.trustStorePath
+      : (untrusted?.trustStorePath ?? untrusted?.nssDatabase);
+  const sequentialWitnessValid =
+    trustMode !== "sequential-macos-login-keychain" ||
+    (witness.mode === trustMode &&
+      typeof untrusted?.error === "string" &&
+      untrusted.error.includes("ERR_CERT_AUTHORITY_INVALID") &&
+      untrusted.cdpResult !== undefined &&
+      trusted?.cdpResult !== undefined &&
+      JSON.stringify(witness.phaseOrder) ===
+        JSON.stringify([
+          "untrusted_started_without_ca",
+          "untrusted_healthz_rejected_ERR_CERT_AUTHORITY_INVALID",
+          "untrusted_closed",
+          "fresh_ca_imported",
+          "trusted_started_with_ca",
+          "trusted_route_observed",
+        ]));
   assertSafeBrowserArguments(trustedArguments);
   assertSafeBrowserArguments(untrustedArguments);
   if (
-    witness.schemaVersion !== 1 ||
-    JSON.stringify(witness.trusted?.arguments) !== JSON.stringify(trustedArguments) ||
-    JSON.stringify(witness.untrusted?.arguments) !== JSON.stringify(untrustedArguments)
+    (trustMode === "sequential-macos-login-keychain"
+      ? witness.schemaVersion !== 2
+      : witness.schemaVersion !== 1) ||
+    !sequentialWitnessValid ||
+    JSON.stringify(trusted?.arguments) !== JSON.stringify(trustedArguments) ||
+    JSON.stringify(untrusted?.arguments) !== JSON.stringify(untrustedArguments) ||
+    typeof certificateExportPath !== "string" ||
+    typeof trustedTrustStore !== "string" ||
+    typeof untrustedTrustStore !== "string"
   ) {
     throw new Error("browser launch witness does not match live CDP arguments");
   }
-  const certificateSha256 = certificateDigest(await readFile(certificatePath));
-  const exportedCaSha256 = certificateDigest(await readFile(witness.trusted.nssCaExportPath));
-  if (witness.certificateSha256 !== certificateSha256 || exportedCaSha256 !== certificateSha256) {
-    throw new Error("browser NSS trust witness does not match fixture CA");
+  const certificateCanonicalPath = await canonicalPath(certificatePath, "fixture certificate");
+  const exportFile = await ownerOnlyRegularFile(certificateExportPath, "exported certificate");
+  if (exportFile.path === certificateCanonicalPath) {
+    throw new Error("exported certificate must be distinct from the fixture certificate");
   }
-  return { certificateSha256, trustedNssDatabase: witness.trusted.nssDatabase };
+  if (
+    trustMode === "sequential-macos-login-keychain" &&
+    (typeof expectedCertificateExportPath !== "string" ||
+      expectedCertificateExportPath !== exportFile.path)
+  ) {
+    throw new Error("exported certificate does not match the expected fresh export path");
+  }
+  const certificateSha256 = certificateDigest(await readFile(certificateCanonicalPath));
+  const exportedCertificateSha256 = certificateDigest(await readFile(exportFile.path));
+  if (
+    witness.certificateSha256 !== certificateSha256 ||
+    exportedCertificateSha256 !== certificateSha256
+  ) {
+    throw new Error("browser trust witness does not match fixture certificate");
+  }
+  return {
+    certificateSha256,
+    trustedTrustStore,
+    untrustedTrustStore,
+    certificateExportPath,
+    trustMode,
+  };
+}
+
+async function ownerOnlyRegularFile(filePath, label) {
+  const path = await canonicalPath(filePath, label);
+  const metadata = await lstat(path);
+  if (
+    !metadata.isFile() ||
+    metadata.isSymbolicLink() ||
+    metadata.nlink !== 1 ||
+    (metadata.mode & 0o077) !== 0 ||
+    (process.getuid !== undefined && metadata.uid !== process.getuid())
+  ) {
+    throw new Error(`${label} must be an owner-only regular single-link file`);
+  }
+  return { path, metadata };
+}
+
+async function canonicalPath(filePath, label) {
+  if (typeof filePath !== "string" || !isAbsolute(filePath)) {
+    throw new Error(`${label} path must be absolute`);
+  }
+  const canonical = await realpath(filePath);
+  if (canonical !== filePath) throw new Error(`${label} path must be canonical`);
+  return canonical;
 }
 
 function readPacked(tarball, member) {
@@ -143,7 +225,7 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function certificateDigest(bytes) {
+export function certificateDigest(bytes) {
   const text = bytes.toString("ascii");
   const match = text.match(
     /-----BEGIN CERTIFICATE-----([A-Za-z0-9+/=\s]+)-----END CERTIFICATE-----/u,

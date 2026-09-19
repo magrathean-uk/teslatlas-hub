@@ -501,12 +501,14 @@ export interface operations {
                     "application/json": components["schemas"]["claim"];
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Request extraction or validation failed; body is bounded text/plain. */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "text/plain": string;
+                };
             };
             /** @description Route-specific error or conditional response; see profile cases */
             401: {
@@ -522,19 +524,23 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Request extraction or validation failed; body is bounded text/plain. */
             415: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "text/plain": string;
+                };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Request extraction or validation failed; body is bounded text/plain. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "text/plain": string;
+                };
             };
             /** @description Route-specific error or conditional response; see profile cases */
             503: {

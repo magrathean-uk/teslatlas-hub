@@ -1,0 +1,9 @@
+{
+  "name": "@teslatlas/hub-consumer-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "node": "node node.mjs",
+    "browser": "node serve.mjs"
+  }
+}

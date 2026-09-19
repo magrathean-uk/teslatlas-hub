@@ -19,8 +19,8 @@ describe("published documentation", () => {
     expect(readme).toContain("createClient");
     expect(architecture).toContain("TeslatlasClient");
     expect(api).toContain("listVehicles");
-    expect(gate).toContain("79ced4c7fdc79520ad31d72a0280bf5f3f19f407");
-    expect(foundation).toContain("executed");
+    expect(gate).toContain("05225bd5b2f56885025180d68fedf3a42baaa90b");
+    expect(foundation).toContain("Superseded");
     expect(pages.join("\n")).not.toContain("Transport foundation under development");
     expect(pages.join("\n")).not.toContain("Resource-level SDK development is blocked");
   });
@@ -31,7 +31,7 @@ describe("published documentation", () => {
       "utf8",
     );
 
-    expect(compatibility).toContain("79ced4c7fdc79520ad31d72a0280bf5f3f19f407");
+    expect(compatibility).toContain("05225bd5b2f56885025180d68fedf3a42baaa90b");
     expect(compatibility).toContain("1.0.0");
     expect(compatibility).toContain("1.1.0");
     expect(compatibility).toContain("1.2.0");

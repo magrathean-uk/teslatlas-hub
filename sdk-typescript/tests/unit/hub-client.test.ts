@@ -45,12 +45,31 @@ function queuedFetch(responses: Response[]) {
   return { fetch, requests };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function streamedResponseAt304(body: BodyInit, etag = '"drive-page"'): Response {
   const response = new Response(body, {
     headers: { ...jsonHeaders, ETag: etag, "Cache-Control": "no-store" },
   });
   Object.defineProperty(response, "status", { value: 304 });
   return response;
+}
+
+async function captureError(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+    return undefined;
+  } catch (error) {
+    return error;
+  }
 }
 
 async function discoveryResponse(capabilities?: readonly string[]): Promise<Response> {
@@ -336,6 +355,111 @@ describe("current Hub client", () => {
     expect(queue.requests.every((request: Request) => request.redirect === "error")).toBe(true);
   });
 
+  it("rejects an oversized UTF-8 claim body before any network request", async () => {
+    const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+    invitation.endpoint = endpoint;
+    invitation.expiresAtMs = Date.now() + 60_000;
+    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+    const queue = queuedFetch([]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials: new MemoryCredentials(),
+      fetch: queue.fetch,
+    });
+
+    await expect(
+      client.claimPairing(invitation as never, "😀".repeat(1_024)),
+    ).rejects.toMatchObject({
+      code: "protocol_validation",
+      validator: "HubClaimRequest.size",
+    });
+    expect(queue.requests).toHaveLength(0);
+  });
+
+  it.each([400, 415, 422])(
+    "surfaces a nonempty claim extractor response as a body-free HTTP error: %i",
+    async (status) => {
+      const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+      invitation.endpoint = endpoint;
+      invitation.expiresAtMs = Date.now() + 60_000;
+      invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+      const queue = queuedFetch([
+        await discoveryResponse(),
+        new Response("private extractor detail", {
+          status,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        }),
+      ]);
+      const client = createHubClient({
+        endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: queue.fetch,
+      });
+
+      const error = await captureError(client.claimPairing(invitation as never, "Device"));
+
+      expect(error).toMatchObject({ code: "hub_http_error", status });
+      expect(error).not.toHaveProperty("body");
+      expect(String(error)).not.toContain("private extractor detail");
+      expect(queue.requests).toHaveLength(2);
+    },
+  );
+
+  it.each([400, 415, 422])(
+    "rejects an empty claim extractor response as invalid: %i",
+    async (status) => {
+      const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+      invitation.endpoint = endpoint;
+      invitation.expiresAtMs = Date.now() + 60_000;
+      invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+      const queue = queuedFetch([
+        await discoveryResponse(),
+        new Response(null, { status, headers: { "Content-Type": "text/plain" } }),
+      ]);
+      const client = createHubClient({
+        endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: queue.fetch,
+      });
+
+      await expect(client.claimPairing(invitation as never, "Device")).rejects.toMatchObject({
+        code: "protocol_validation",
+        validator: "HubError.body",
+      });
+    },
+  );
+
+  it.each([400, 415, 422])(
+    "rejects a claim extractor response with the wrong media type: %i",
+    async (status) => {
+      const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+      invitation.endpoint = endpoint;
+      invitation.expiresAtMs = Date.now() + 60_000;
+      invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+      const queue = queuedFetch([
+        await discoveryResponse(),
+        new Response("private extractor detail", {
+          status,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ]);
+      const client = createHubClient({
+        endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: queue.fetch,
+      });
+
+      await expect(client.claimPairing(invitation as never, "Device")).rejects.toMatchObject({
+        code: "protocol_validation",
+        validator: "HubError.contentType",
+      });
+    },
+  );
+
   it("does not save malformed or expired claim replies", async () => {
     const credentials = new MemoryCredentials();
     const malformed = (await example("claim")).replace(
@@ -362,6 +486,399 @@ describe("current Hub client", () => {
     });
     expect(credentials.saves).toEqual([]);
   });
+
+  it("does not save a claim that completes after logout", async () => {
+    const credentials = new MemoryCredentials();
+    const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+    invitation.endpoint = endpoint;
+    invitation.expiresAtMs = Date.now() + 60_000;
+    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+    const claimStarted = deferred<void>();
+    let resolveClaim: ((response: Response) => void) | undefined;
+    const requests: Request[] = [];
+    const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      requests.push(new Request(input, init));
+      if (requests.length === 1) return discoveryResponse();
+      claimStarted.resolve(undefined);
+      return new Promise<Response>((resolve) => {
+        resolveClaim = resolve;
+      });
+    };
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials,
+      fetch,
+    });
+
+    const pending = client.claimPairing(invitation as never, "Late device");
+    const pendingError = pending.then(
+      () => new Error("claim unexpectedly resolved"),
+      (error: unknown) => error,
+    );
+    await claimStarted.promise;
+    await client.logout();
+    const claim = (await example("claim")).replace("1788567300000", "1900000000000");
+    resolveClaim?.(new Response(claim, { status: 200, headers: jsonHeaders }));
+
+    await expect(pendingError).resolves.toMatchObject({ name: "AbortError" });
+    expect(credentials.saves).toEqual([]);
+    expect(credentials.credential).toBeUndefined();
+    expect(requests).toHaveLength(2);
+  });
+
+  it.each(["logout", "dispose"] as const)(
+    "does not dispatch an authenticated request after a pending credential load during %s",
+    async (action) => {
+      const loaded = deferred<HubCredential | undefined>();
+      const loadStarted = deferred<void>();
+      const credential: HubCredential = {
+        accessToken: "a".repeat(64),
+        deviceId: hubId,
+        expiresAtMs: 1_900_000_000_000,
+      };
+      const credentials: HubCredentialStore = {
+        load: () => {
+          loadStarted.resolve(undefined);
+          return loaded.promise;
+        },
+        save: async () => undefined,
+        clear: async () => undefined,
+      };
+      const requests: Request[] = [];
+      const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        requests.push(new Request(input, init));
+        if (requests.length === 1) return discoveryResponse(["query.vehicles", "query.current"]);
+        return new Response(await example("vehicles"), { status: 200, headers: jsonHeaders });
+      };
+      const client = createHubClient({ endpoint, expectedHubId: hubId, credentials, fetch });
+      await client.discover();
+
+      const pending = client.vehicles();
+      await loadStarted.promise;
+      if (action === "logout") await client.logout();
+      else client.dispose();
+      loaded.resolve(credential);
+
+      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      expect(requests).toHaveLength(1);
+    },
+  );
+
+  it.each(["logout", "dispose"] as const)(
+    "does not dispatch rotation after a pending credential load during %s",
+    async (action) => {
+      const loaded = deferred<HubCredential | undefined>();
+      const loadStarted = deferred<void>();
+      const credential: HubCredential = {
+        accessToken: "a".repeat(64),
+        deviceId: hubId,
+        expiresAtMs: 1_900_000_000_000,
+      };
+      const credentials: HubCredentialStore = {
+        load: () => {
+          loadStarted.resolve(undefined);
+          return loaded.promise;
+        },
+        save: async () => undefined,
+        clear: async () => undefined,
+      };
+      const claim = (await example("claim")).replace("1788567300000", "1900000000000");
+      const requests: Request[] = [];
+      const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        requests.push(new Request(input, init));
+        if (requests.length === 1) return discoveryResponse();
+        return new Response(claim, { status: 200, headers: jsonHeaders });
+      };
+      const client = createHubClient({ endpoint, expectedHubId: hubId, credentials, fetch });
+      await client.discover();
+
+      const pending = client.rotateDevice();
+      await loadStarted.promise;
+      if (action === "logout") await client.logout();
+      else client.dispose();
+      loaded.resolve(credential);
+
+      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      expect(requests).toHaveLength(1);
+    },
+  );
+
+  it("waits for an in-flight credential save before clearing on logout", async () => {
+    const saveRelease = deferred<void>();
+    const saveStarted = deferred<void>();
+    let clearStarted = false;
+    let credential: HubCredential | undefined;
+    const credentials: HubCredentialStore = {
+      load: () => credential,
+      save: async (next) => {
+        saveStarted.resolve(undefined);
+        await saveRelease.promise;
+        credential = next;
+      },
+      clear: async () => {
+        clearStarted = true;
+        credential = undefined;
+      },
+    };
+    const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+    invitation.endpoint = endpoint;
+    invitation.expiresAtMs = Date.now() + 60_000;
+    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+    const claim = (await example("claim")).replace("1788567300000", "1900000000000");
+    const queue = queuedFetch([
+      await discoveryResponse(),
+      new Response(claim, { status: 200, headers: jsonHeaders }),
+    ]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials,
+      fetch: queue.fetch,
+    });
+
+    const pendingClaim = client.claimPairing(invitation as never, "Queued device");
+    const pendingClaimError = pendingClaim.then(
+      () => new Error("claim unexpectedly resolved"),
+      (error: unknown) => error,
+    );
+    await saveStarted.promise;
+    const pendingLogout = client.logout();
+    expect(clearStarted).toBe(false);
+    saveRelease.resolve(undefined);
+
+    await pendingLogout;
+    await expect(pendingClaimError).resolves.toMatchObject({ name: "AbortError" });
+    expect(clearStarted).toBe(true);
+    expect(credential).toBeUndefined();
+  });
+
+  it("does not report a claim success when dispose interrupts an in-flight save", async () => {
+    const saveRelease = deferred<void>();
+    const saveStarted = deferred<void>();
+    let credential: HubCredential | undefined;
+    let clearCalls = 0;
+    const credentials: HubCredentialStore = {
+      load: () => credential,
+      save: async (next) => {
+        saveStarted.resolve(undefined);
+        await saveRelease.promise;
+        credential = next;
+      },
+      clear: async () => {
+        clearCalls += 1;
+        credential = undefined;
+      },
+    };
+    const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+    invitation.endpoint = endpoint;
+    invitation.expiresAtMs = Date.now() + 60_000;
+    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+    const claim = (await example("claim")).replace("1788567300000", "1900000000000");
+    const queue = queuedFetch([
+      await discoveryResponse(),
+      new Response(claim, { status: 200, headers: jsonHeaders }),
+    ]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials,
+      fetch: queue.fetch,
+    });
+
+    const pendingClaim = client.claimPairing(invitation as never, "Disposed device");
+    const pendingClaimError = pendingClaim.then(
+      () => new Error("claim unexpectedly resolved"),
+      (error: unknown) => error,
+    );
+    await saveStarted.promise;
+    client.dispose();
+    saveRelease.resolve(undefined);
+
+    await expect(pendingClaimError).resolves.toMatchObject({ name: "AbortError" });
+    expect(clearCalls).toBe(0);
+    expect(credential).toBeDefined();
+  });
+
+  it("surfaces a credential save failure without replaying the claim", async () => {
+    const saveError = new Error("save failed");
+    let saveCalls = 0;
+    const credentials: HubCredentialStore = {
+      load: async () => undefined,
+      save: async () => {
+        saveCalls += 1;
+        throw saveError;
+      },
+      clear: async () => undefined,
+    };
+    const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+    invitation.endpoint = endpoint;
+    invitation.expiresAtMs = Date.now() + 60_000;
+    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+    const claim = (await example("claim")).replace("1788567300000", "1900000000000");
+    const queue = queuedFetch([
+      await discoveryResponse(),
+      new Response(claim, { status: 200, headers: jsonHeaders }),
+    ]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials,
+      fetch: queue.fetch,
+    });
+
+    await expect(client.claimPairing(invitation as never, "Failed save device")).rejects.toBe(
+      saveError,
+    );
+    expect(saveCalls).toBe(1);
+    expect(queue.requests).toHaveLength(2);
+  });
+
+  it("surfaces a credential clear failure without replaying the clear", async () => {
+    const clearError = new Error("clear failed");
+    let clearCalls = 0;
+    const credentials: HubCredentialStore = {
+      load: async () => undefined,
+      save: async () => undefined,
+      clear: async () => {
+        clearCalls += 1;
+        throw clearError;
+      },
+    };
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials,
+      fetch: queuedFetch([]).fetch,
+    });
+
+    await expect(client.logout()).rejects.toBe(clearError);
+    expect(clearCalls).toBe(1);
+  });
+
+  it("orders a credential save started during logout after the clear", async () => {
+    const clearRelease = deferred<void>();
+    const clearStarted = deferred<void>();
+    let saveStarted = false;
+    let credential: HubCredential | undefined;
+    const credentials: HubCredentialStore = {
+      load: () => credential,
+      save: async (next) => {
+        saveStarted = true;
+        credential = next;
+      },
+      clear: async () => {
+        clearStarted.resolve(undefined);
+        await clearRelease.promise;
+        credential = undefined;
+      },
+    };
+    const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+    invitation.endpoint = endpoint;
+    invitation.expiresAtMs = Date.now() + 60_000;
+    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+    const claim = (await example("claim")).replace("1788567300000", "1900000000000");
+    const queue = queuedFetch([
+      await discoveryResponse(),
+      new Response(claim, { status: 200, headers: jsonHeaders }),
+    ]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials,
+      fetch: queue.fetch,
+    });
+
+    const pendingLogout = client.logout();
+    await clearStarted.promise;
+    const pendingClaim = client.claimPairing(invitation as never, "Post-logout device");
+    expect(saveStarted).toBe(false);
+    clearRelease.resolve(undefined);
+
+    await pendingLogout;
+    await pendingClaim;
+    expect(saveStarted).toBe(true);
+    expect(credential).toBeDefined();
+  });
+
+  it("does not dispatch a claim when cached discovery becomes stale before its request", async () => {
+    const credentials = new MemoryCredentials();
+    const claim = (await example("claim")).replace("1788567300000", "1900000000000");
+    const queue = queuedFetch([
+      await discoveryResponse(),
+      new Response(claim, { status: 200, headers: jsonHeaders }),
+    ]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials,
+      fetch: queue.fetch,
+    });
+    await client.discover();
+
+    const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+    invitation.endpoint = endpoint;
+    invitation.expiresAtMs = Date.now() + 60_000;
+    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+    const pendingClaim = client.claimPairing(invitation as never, "Stale discovery device");
+    await client.logout();
+
+    await expect(pendingClaim).rejects.toMatchObject({ name: "AbortError" });
+    expect(queue.requests).toHaveLength(1);
+  });
+
+  it.each(["logout", "dispose"] as const)(
+    "cancels a response body that is waiting for another chunk during %s",
+    async (action) => {
+      const secondPullStarted = deferred<void>();
+      const releaseSecondPull = deferred<void>();
+      const cancelled = deferred<void>();
+      let pulls = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) {
+            controller.enqueue(new TextEncoder().encode("{"));
+            return;
+          }
+          if (pulls === 2) {
+            secondPullStarted.resolve(undefined);
+            return releaseSecondPull.promise.then(() => {
+              controller.enqueue(new TextEncoder().encode("}"));
+            });
+          }
+          return undefined;
+        },
+        cancel() {
+          cancelled.resolve(undefined);
+        },
+      });
+      const credentials = new MemoryCredentials();
+      credentials.credential = {
+        accessToken: "a".repeat(64),
+        deviceId: hubId,
+        expiresAtMs: 1_900_000_000_000,
+      };
+      const requests: Request[] = [];
+      const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        requests.push(new Request(input, init));
+        if (requests.length === 1) return discoveryResponse(["query.vehicles", "query.current"]);
+        return new Response(stream, { status: 200, headers: jsonHeaders });
+      };
+      const client = createHubClient({ endpoint, expectedHubId: hubId, credentials, fetch });
+      await client.discover();
+
+      const pending = client.current(hubId);
+      await secondPullStarted.promise;
+      if (action === "logout") await client.logout();
+      else client.dispose();
+      releaseSecondPull.resolve(undefined);
+
+      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      await expect(cancelled.promise).resolves.toBeUndefined();
+      expect(requests).toHaveLength(2);
+    },
+  );
 
   it("logout clears credentials and aborts pending reads; dispose aborts later calls", async () => {
     const credentials = new MemoryCredentials();
@@ -423,5 +940,99 @@ describe("current Hub client", () => {
     ]);
     expect(requests[0]?.signal.aborted).toBe(true);
     expect(requests[1]?.headers.has("Authorization")).toBe(false);
+  });
+
+  it("does not reuse cached identity after explicit discovery failure", async () => {
+    const credentials = new MemoryCredentials();
+    credentials.credential = {
+      accessToken: "a".repeat(64),
+      deviceId: hubId,
+      expiresAtMs: 1_900_000_000_000,
+    };
+    const queue = queuedFetch([
+      await discoveryResponse(),
+      new Response(JSON.stringify({ error: { code: "service_unavailable", message: "down" } }), {
+        status: 503,
+        headers: jsonHeaders,
+      }),
+      await discoveryResponse(),
+      new Response(await example("vehicles"), { status: 200, headers: jsonHeaders }),
+    ]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials,
+      fetch: queue.fetch,
+    });
+
+    await client.discover();
+    await expect(client.discover()).rejects.toMatchObject({
+      code: "service_unavailable",
+      status: 503,
+    });
+    await expect(client.vehicles()).resolves.toMatchObject({
+      value: { vehicles: [{ vehicleId: hubId }] },
+    });
+
+    expect(queue.requests.map((request) => new URL(request.url).pathname)).toEqual([
+      "/.well-known/teslatlas-hub",
+      "/.well-known/teslatlas-hub",
+      "/.well-known/teslatlas-hub",
+      "/v1/vehicles",
+    ]);
+    expect(queue.requests[1]?.headers.has("Authorization")).toBe(false);
+    expect(queue.requests[2]?.headers.has("Authorization")).toBe(false);
+    expect(queue.requests[3]?.headers.get("Authorization")).toBe(`Bearer ${"a".repeat(64)}`);
+  });
+
+  it("cancels a streamed response as soon as it crosses the 1 MiB body limit", async () => {
+    const cancelled = deferred<void>();
+    let pulls = 0;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) {
+            controller.enqueue(new Uint8Array(1_048_576));
+            return;
+          }
+          if (pulls === 2) {
+            controller.enqueue(new Uint8Array(1));
+            return;
+          }
+          controller.close();
+        },
+        cancel() {
+          cancelled.resolve(undefined);
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const credentials = new MemoryCredentials();
+    credentials.credential = {
+      accessToken: "a".repeat(64),
+      deviceId: hubId,
+      expiresAtMs: 1_900_000_000_000,
+    };
+    const queue = queuedFetch([
+      await discoveryResponse(),
+      new Response(stream, {
+        status: 200,
+        headers: { ...jsonHeaders, ETag: '"drive-page"', "Cache-Control": "no-store" },
+      }),
+    ]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials,
+      fetch: queue.fetch,
+    });
+
+    await expect(client.drives(hubId)).rejects.toMatchObject({
+      code: "protocol_validation",
+      validator: "HubDrives.size",
+    });
+    await expect(cancelled.promise).resolves.toBeUndefined();
+    expect(pulls).toBe(2);
   });
 });

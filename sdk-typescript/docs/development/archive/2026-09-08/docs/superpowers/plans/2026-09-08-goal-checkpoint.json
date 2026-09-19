@@ -1,0 +1,153 @@
+{
+  "coordination_policy": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high"
+  },
+  "goal_continuation": "The native goal remains blocked. With the available tools, resumption requires the user's supported Resume goal control. The parent can dispatch ordinary authorized development turns now; this does not activate the native goal. Do not replace an unfinished goal, mark it falsely complete, or edit internal app state. Continue READY owned work without waiting for native resumption; retain the full proposed objective and acceptance gates.",
+  "schema_version": 1,
+  "captured_at": "2026-09-08T20:44:41+01:00",
+  "task_id": "01a07f89-4bdf-7890-8a1b-4d88ad49f2a8",
+  "plan_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+  "planner_model": "gpt-5.6-sol",
+  "planner_effort": "high",
+  "developer_model": "gpt-5.6-terra",
+  "developer_effort": "high",
+  "goal_state": {
+    "status": "blocked",
+    "last_refreshed_at": "2026-09-08T19:10:31+01:00",
+    "original_objective": "Complete the authorized Teslatlas TypeScript SDK working-product plan in teslatlas-sdk-typescript using gpt-5.6-luna with thinking=max after the orchestrator handoff: preserve the existing main checkout and completed working-tree changes; close demonstrated lifecycle, cancellation, bounded-response and minimal Node/browser consumer gaps; verify the packed public package with the pinned toolchain and strict independent consumers; achieve all six packed Node/Chromium acceptance cells against Hub-owned installed macOS and Debian 13 amd64/arm64 targets with artifact-bound TLS/CORS, identity, pairing/rotation/revocation, pagination and recovery evidence; then update SDK-owned AGENTS guidance, validate the simple Docker build/test/consumer setup, reconcile current documentation, and complete the authorized source-only GitHub phase. Hub owns shared integration and installed-host prerequisites; do not edit sibling roots or App AGENTS. Keep local proof distinct from installed/live acceptance, preserve unrelated edits, and do not add CI, releases, publication or artifact uploads.",
+    "created_at": "2026-09-08T07:16:20+01:00",
+    "updated_at": "2026-09-08T07:57:20+01:00",
+    "token_budget": null,
+    "tokens_used": 1007308,
+    "remaining_tokens": null,
+    "time_budget_seconds": null,
+    "time_used_seconds": 2459,
+    "mutation_performed": false,
+    "continuation_note": "Native goal status was refreshed at 2026-09-08T19:10:31+01:00: blocked, with no token or time budget and no reported limit event. With the available tools, resumption requires the user's supported Resume goal control. The parent can dispatch ordinary authorized development turns now; this does not activate the native goal. Do not replace an unfinished goal, mark it falsely complete, or edit internal app state. Continue READY owned work without waiting for native resumption; retain the full proposed objective and acceptance gates."
+  },
+  "proposed_objective": "Complete the remaining Teslatlas TypeScript SDK working-product scope from the current dirty-main checkpoint using gpt-5.6-terra with high reasoning. Preserve unrelated edits and the existing main checkout. First establish an isolated exact Node 26.7.0/npm 11.19.0 toolchain and reproduce the clean public package without --force; verify strict external Node and browser consumers and either confirm final archive 4602b950690baf7b727b839b7c876cb461f8870b7750eb268383a40672fb1233 or rebind every dependent identity before runtime use. Then use Hub-owned fixed typescript_node and typescript_browser installed adapters and runner-owned private SessionInput to pass all 21 Node and 23 Chromium cases on installed macOS arm64, Debian 13 amd64 and Debian 13 arm64 Hub, including artifact identity, normal TLS, CORS, independent pairing, rotation, revocation and reauthentication, pagination and 304 behavior, outage recovery and clean teardown. Validate the Docker test and consumer targets against an accepted installed Hub, reconcile docs, compatibility metadata and final hashes, review and stage only task-owned files, and complete the authorized source-only commit and push. Keep local, installed and live evidence distinct; never use the quarantined ARM preparation, weaken permissions or admission, operate production services, send vehicle commands, add CI, create releases or tags, publish packages, or upload artifacts. Continue through all READY milestones; do not mark the goal complete until every acceptance criterion passes, and mark it blocked only when no SDK-owned work remains and the same external dependency satisfies the goal-block audit.",
+  "acceptance_criteria": [
+    "Exact Node 26.7.0 and npm 11.19.0 clean verification passes without --force, including format, lint, typecheck, protocol lock, 271-or-current unit tests, 25-or-current conformance tests, 52-or-current protocol tests, deterministic pack checks and strict external consumers.",
+    "The final archive identity, 81-member inventory, Node/browser runtime entries and installed-content manifest are recomputed and Hub binds the exact accepted bytes before installed execution.",
+    "Packed Node and real Chromium independently pass every required case against installed Hub on macOS arm64, Debian 13 amd64 and Debian 13 arm64 with no required pending or skipped case and with accepted close/stop receipts.",
+    "TLS hostname and CA validation, allowlisted and denied CORS, exposed headers, pairing, rotation, revocation, reauthentication, cursor binding, pagination, 304 continuation, outage and recovery are proven by real transport evidence bound to the installed runtime and final package.",
+    "Docker test and consumer targets build from a clean context; the test target completes full verification and the consumer target reaches an accepted installed Hub using private mounted inputs and normal trust.",
+    "Final docs, acceptance evidence and compatible unpublished-candidate metadata match the accepted artifact; only task-owned files are committed and pushed to main, with no CI, release, tag, registry publication or artifact upload."
+  ],
+  "next_ready_milestone": {
+    "id": "M2",
+    "name": "Six installed Node and Chromium cells",
+    "status": "WAITING_FOR_OWNER_RESOURCE",
+    "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+    "files": ["src/node.ts", "src/browser.ts", "examples/hub", "docs/acceptance.md"],
+    "action": "Run the existing local, Mac, and VPS gates first. Hub must install/register each target and supply runner-owned private SessionInput bound to the exact source-rebuilt archive before the SDK runs its six installed cells. Fresh Azure Debian arm64 and x86_64 VMs are the final source-only bootstrap and installed gate; their provisioning and actual runs remain Hub/owner work.",
+    "completion_event": "All three targets pass both packed Node and Chromium lanes with accepted cleanup evidence."
+  },
+  "m1_exact_toolchain_result": {
+    "status": "complete_source_rebound",
+    "runtime": {
+      "node": "v26.7.0",
+      "npm": "11.19.0"
+    },
+    "checks": {
+      "npm_ci": "passed without force or engine override",
+      "verify": "passed: 271 unit, 25 conformance, 52 protocol; format/lint/typecheck/protocol/package gates",
+      "external_node_consumer": "passed from fresh npm installation",
+      "external_chromium_consumer": "passed from fresh npm installation"
+    },
+    "archive": {
+      "sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "member_count": 81,
+      "previous_hub_bound_sha256": "4602b950690baf7b727b839b7c876cb461f8870b7750eb268383a40672fb1233",
+      "node_runtime_entry_sha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+      "browser_runtime_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e",
+      "extracted_members_and_order": "identical to previous archive",
+      "hub_source_rebind": "complete; focused Hub archive-pin test accepts this digest and rejects 4602b950…",
+      "hub_expected_owner_staged_0600_manifest_sha256": "480226f91ef676461b171b131a0184aed72d94f1748e28752c4dd0d2164f2618",
+      "hub_actual_staged_manifest": "pending a future installed session"
+    }
+  },
+  "azure_debian_v1_bootstrap": {
+    "status": "final_gate_source_only_recipe_prepared",
+    "scope": "Fresh owner-supplied Azure Debian arm64 and x86_64 VMs after existing Mac and VPS verification; no provisioning, private descriptor construction, Hub lifecycle operation, or acceptance result.",
+    "node": {
+      "version": "v26.7.0",
+      "npm": "11.19.0",
+      "linux_arm64_archive_sha256": "925aa6157dd37542d0d7f2e28b7bf61e7b39284411210b0498bc3788db4aef68",
+      "linux_x64_archive_sha256": "bd6b6c31e377bad9ad579bed72e5bc11f4c879ac9452ad51d30e646ea3d828df"
+    },
+    "sdk_archive": {
+      "sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "member_count": 81,
+      "node_entry_sha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+      "browser_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e"
+    },
+    "consumer_checks": "Run source bootstrap, npm ci, npm run verify, locally pack, verify exact package identity, then use Hub-owned test:hub:node and test:hub:browser session inputs."
+  },
+  "milestones": [
+    {
+      "id": "M0",
+      "name": "Source, package and Hub handoff",
+      "status": "DONE",
+      "evidence": "Canonical profile b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926; final archive 4602b950690baf7b727b839b7c876cb461f8870b7750eb268383a40672fb1233; SDK contract 6/6; Hub focused binding 11/11; local Node 26.8.1 forced verify 271/25/52."
+    },
+    {
+      "id": "M1",
+      "name": "Exact supported-toolchain reproducibility",
+      "status": "DONE_SOURCE_REBOUND"
+    },
+    {
+      "id": "M2",
+      "name": "Six installed Node and Chromium cells",
+      "status": "WAITING FOR OWNER/RESOURCE"
+    },
+    {
+      "id": "M3",
+      "name": "Docker runtime verification",
+      "status": "WAITING FOR OWNER/RESOURCE"
+    },
+    {
+      "id": "M4",
+      "name": "Final evidence and source-only publication",
+      "status": "WAITING FOR OWNER/RESOURCE"
+    }
+  ],
+  "dependencies": [
+    {
+      "owner_task_id": "01a07f89-4bdf-7890-8a1b-4d88ad49f2a8",
+      "missing_input": "None for M1; exact toolchain evidence and Hub source rebind are complete.",
+      "local_work": "Preserve the exact archive identity and wait for Hub-owned installed target/session inputs.",
+      "unblock_event": "M2 receives a runner-owned installed SessionInput for a concrete registered target."
+    },
+    {
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "missing_input": "Hub lifecycle review/install/register/private SessionInput for macOS and Debian amd64; a fresh reviewed Debian arm64 package and quarantine-safe recovery; endpoint, Hub UUID, CA, browser origin, independent invitations, revocation and fixed-runner invocation for every target.",
+      "local_work": "Complete M1 and maintain final SDK diff/evidence; do not fabricate installed rows or edit Hub-owned state.",
+      "unblock_event": "Hub ledger marks a concrete target installed and registered and supplies a runner-owned session bound to the final SDK archive and pinned runtime."
+    },
+    {
+      "owner_task_id": "01a07048-a05c-72a2-9c7a-87dd59f52e9b",
+      "missing_input": "Reachable local Docker server and an accepted Hub endpoint reachable from the container with normal trust.",
+      "local_work": "No additional Docker scaffolding is required; M1 and final evidence review are independent.",
+      "unblock_event": "docker version reports both client and server and the accepted Hub endpoint is routable and certificate-valid inside the container."
+    },
+    {
+      "owner_task_id": "01a07f89-4bdf-7890-8a1b-4d88ad49f2a8",
+      "missing_input": "Accepted M1-M3 receipts, exact final artifact binding and compatible candidate metadata.",
+      "local_work": "Keep publication preparation read-only and preserve explicit task-owned file scope.",
+      "unblock_event": "All acceptance criteria except source publication pass and Hub confirms the exact final digest and metadata."
+    }
+  ],
+  "current_model_policy": {
+    "authority": "Latest user instruction on 2026-09-08; supersedes earlier model policy and historical goal wording",
+    "coordinator_and_delegation": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "product_coding_goal_and_workers": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high"
+    }
+  }
+}

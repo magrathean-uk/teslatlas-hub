@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "adapter_id": "typescript_node",
+  "revision": 1,
+  "required_cases": [
+    "candidate_artifact_identity",
+    "installed_service_runtime",
+    "discovery_identity_profile",
+    "unauthenticated_discovery",
+    "bad_invitation",
+    "expired_invitation",
+    "replayed_invitation",
+    "real_auth",
+    "credential_lifecycle_reauth",
+    "revocation",
+    "unknown_vehicle",
+    "exact_current_values",
+    "endpoint_restart",
+    "outage_recovery",
+    "unsupported_operation_zero_requests",
+    "credential_rotation_api",
+    "drives_three_page_order",
+    "drives_terminal_cursor",
+    "drives_etag_304",
+    "drives_wrong_vehicle_cursor",
+    "drives_wrong_filter_cursor"
+  ],
+  "actors": [
+    {
+      "id": "sdk_node",
+      "kind": "packed_sdk_node",
+      "required": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "candidate_artifact_identity",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "identity",
+      "operations": ["observe_identity"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "installed_service_runtime",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "identity",
+      "operations": ["observe_identity"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "discovery_identity_profile",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["discovery"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "unauthenticated_discovery",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["unauthenticated_probes"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "bad_invitation",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["bad_invitation"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "expired_invitation",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "zero_request",
+      "operations": ["expired_invitation"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "replayed_invitation",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["replayed_invitation"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "real_auth",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["real_auth"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "credential_lifecycle_reauth",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["reauthentication"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "revocation",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["revoked_credential"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "unknown_vehicle",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["unknown_vehicle"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "exact_current_values",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["exact_current"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "endpoint_restart",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["endpoint_restart"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "outage_recovery",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["outage_recovery"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "unsupported_operation_zero_requests",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "zero_request",
+      "operations": ["unsupported_operations"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "credential_rotation_api",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["credential_rotation"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "drives_three_page_order",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["drives_three_pages"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "drives_terminal_cursor",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["drives_terminal_cursor"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "drives_etag_304",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "http",
+      "operations": ["drives_etag"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "drives_wrong_vehicle_cursor",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "zero_request",
+      "operations": ["wrong_vehicle_cursor"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    },
+    {
+      "id": "drives_wrong_filter_cursor",
+      "actor_ids": ["sdk_node"],
+      "evidence_kind": "zero_request",
+      "operations": ["wrong_filter_cursor"],
+      "raw_schema_ids": ["typescript-node-raw-v1"]
+    }
+  ],
+  "raw_schemas": [
+    {
+      "id": "typescript-node-raw-v1",
+      "schema": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/typescript-node-raw-v1.schema.json",
+        "sha256": "5a4ad38caa2dee8432eef0e8dd2f7c00b92db0aa3946eb2dab93c4fc13ad6908"
+      }
+    }
+  ],
+  "phases": [],
+  "validator": {
+    "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-typescript/tools/matrix_contract_node.py",
+    "sha256": "600e1cc363d309e163b87e19498e1daf4ba309c325aeb8402513168ff1c12ef2"
+  }
+}

@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_browser_trust_sequence_correction",
+  "proposal_id": "macos13-arm64-generic-browser-trust-sequence-2026-09-12-v1",
+  "created_at": "2026-09-12",
+  "status": "source_change_reviewed_runtime_pending",
+  "owner": "Teslatlas TypeScript SDK",
+  "reviewers": [
+    "Hub",
+    "coordinator"
+  ],
+  "source_binding": {
+    "repository": "teslatlas-sdk-typescript",
+    "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+    "runner": "scripts/test-hub-browser.mjs",
+    "evidence_helper": "scripts/hub-acceptance-evidence.mjs",
+    "package": "@teslatlas/sdk@2026.36.2",
+    "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "browser_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e",
+    "profile": "hub-http-v1@1.0.0",
+    "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "working_tree_source_files": [
+      "scripts/test-hub-browser.mjs",
+      "scripts/browser-hub-runner.mjs",
+      "scripts/browser-trust-sequence.mjs",
+      "scripts/hub-acceptance-evidence.mjs",
+      "scripts/browser-trust-sequence.d.mts",
+      "scripts/hub-acceptance-evidence.d.mts",
+      "tests/unit/browser-trust-sequence.test.ts",
+      "tests/unit/hub-acceptance-evidence.test.ts"
+    ],
+    "working_tree_source_sha256": {
+      "scripts/test-hub-browser.mjs": "ce6def4e982ea848561c844bfd52e53021bb40fa802895dbbbff72342b757e6d",
+      "scripts/browser-hub-runner.mjs": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+      "scripts/browser-trust-sequence.mjs": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+      "scripts/hub-acceptance-evidence.mjs": "6b6eeb0e93bc08e261b1db02f2cd0de3672f42d4a0cba5c312ce2cf2e2590136",
+      "scripts/browser-trust-sequence.d.mts": "3ba154be221b6392c540979cdbec45c8ab4b2d8d0150bf59d6d60dee536bd475",
+      "scripts/hub-acceptance-evidence.d.mts": "a7428c56d1d505b4a19d3ed380875d15b83028e21dedd4b9f4503681f9a051e4",
+      "tests/unit/browser-trust-sequence.test.ts": "9232544d2298bbcde7d2315a547f67971ad9d602051cb25b7ca0032714dcbd6d",
+      "tests/unit/hub-acceptance-evidence.test.ts": "e91ada4f9eabe76459d114c3d2f91d73966cac396538f61d374d43bd04a31762"
+    }
+  },
+  "observed_mac_boundary": {
+    "evidence_source": "2026-09-12 generic browser attempt against the closed Hub handoff",
+    "temporary_profile_home_result": "Profile-local HOME did not provide a distinct Chrome trust store; trusted Chrome logged Chromium net_error -202 (ERR_CERT_AUTHORITY_INVALID).",
+    "login_keychain_result": "An untrusted Chrome control rejected the fresh certificate before import, then accepted it after the same certificate was added to the macOS login keychain for the trusted control.",
+    "conclusion": "These macOS Chrome controls cannot make simultaneous trusted/untrusted certificate roots distinct by profile alone. The runner must not claim post-import untrusted isolation from this setup."
+  },
+  "selected_correction": {
+    "mode": "sequential-macos-login-keychain",
+    "reason": "Preserve real TLS rejection and real normal-TLS/CORS acceptance without weakening either check or requiring a new OS account in the minimal correction.",
+    "simultaneous_trust_isolation_claim": false,
+    "current_tuple_reusable": false,
+    "requires_fresh_handoff": true,
+    "requires_source_review_before_execution": true
+  },
+  "required_execution_order": [
+    {
+      "phase": 1,
+      "name": "untrusted_negative_before_import",
+      "actions": [
+        "Create a fresh owner-only untrusted Chrome profile and CDP control with default macOS HOME and no supplied CA in the login keychain.",
+        "Capture its live Browser.getBrowserCommandLine arguments and reject any certificate-bypass flag.",
+        "Navigate only to the fresh Hub health URL and require ERR_CERT_AUTHORITY_INVALID.",
+        "Record the negative result and close the untrusted Chrome control before any CA import."
+      ],
+      "forbidden": [
+        "ignore certificate errors",
+        "allow insecure localhost",
+        "continue using the untrusted control after CA import",
+        "claim simultaneous trusted/untrusted isolation"
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "trusted_positive_after_import",
+      "actions": [
+        "Add only the fresh Hub certificate to the macOS login keychain with normal trust and record its exact certificate digest.",
+        "Export the exact imported certificate for witness comparison.",
+        "Create a fresh owner-only trusted Chrome profile and CDP control with default macOS HOME and no bypass flag.",
+        "Capture and bind its live command-line arguments to the owner-only witness.",
+        "Run the existing packed browser route against the fresh Hub endpoint with the exact origin http://localhost:4174."
+      ],
+      "required_checks": [
+        "packed archive/package/member and dist/browser.js identity",
+        "trusted normal TLS and Hub identity/discovery/readiness",
+        "at least one successful Hub CORS preflight from the exact local origin",
+        "fresh credential use, nonempty vehicles, current state and five drives over 2/2/1 pages",
+        "conditional 304 and cursor continuation after 304",
+        "credential rotation and following default Fetch vehicles request",
+        "trusted browser, helper server and Hub cleanup"
+      ]
+    }
+  ],
+  "runner_contract_change": {
+    "file": "scripts/test-hub-browser.mjs",
+    "module": "scripts/browser-hub-runner.mjs",
+    "change": "Add an explicit sequential trust mode. Perform the untrusted health rejection and witness capture before the CA-import hook, close that control, then perform CA import and run the trusted route. Do not run the current post-import untrusted navigation in this mode. Keep the existing simultaneous path for legacy witnesses.",
+    "hook_contract": {
+      "command_encoding": "Each hook environment value is a JSON argv array. The runner appends one JSON payload argument and invokes the executable with shell=false.",
+      "environment": [
+        "TESLATLAS_BROWSER_TRUST_IMPORT_COMMAND",
+        "TESLATLAS_BROWSER_TRUST_BROWSER_CLEANUP_COMMAND",
+        "TESLATLAS_BROWSER_TRUST_REMOVE_COMMAND",
+        "TESLATLAS_BROWSER_TRUST_VERIFY_REMOVAL_COMMAND",
+        "TESLATLAS_BROWSER_UNTRUSTED_TRUST_STORE_PATH",
+        "TESLATLAS_BROWSER_UNTRUSTED_CDP_URL",
+        "TESLATLAS_BROWSER_CDP_URL",
+        "TESLATLAS_BROWSER_EXPECTED_CERTIFICATE_EXPORT_PATH"
+      ],
+      "import_result": "The import hook must return observed=true, the exact fresh certificate fingerprint, certificateExportPath equal to the independent canonical TESLATLAS_BROWSER_EXPECTED_CERTIFICATE_EXPORT_PATH, trustStorePath and trustedCdpUrl matching TESLATLAS_BROWSER_CDP_URL. The expected export path must be absent before import and owner-only regular after import.",
+      "trusted_browser_cleanup_result": "The trusted-browser cleanup hook receives the fresh endpoint, exact certificate fingerprint and expected trusted CDP URL. It must report observed=true, the same endpoint and certificateSha256, closed=true and portClosed=true, even when import output is malformed or CDP attachment fails.",
+      "cleanup_payloads": "Remove and verify-removal hooks receive the exact imported fingerprint and must report observed=true; verify-removal must report present=false."
+    },
+    "witness": {
+      "schema_version": 2,
+      "required_fields": [
+        "certificateSha256",
+        "mode",
+        "untrustedBeforeImport.arguments",
+        "untrustedBeforeImport.error",
+        "trustedAfterImport.arguments",
+        "trustedAfterImport.certificateExportPath",
+        "trustedAfterImport.trustStorePath"
+      ],
+      "requirements": [
+        "Both live argument arrays are captured from CDP and contain no bypass flag.",
+        "The trusted exported CA digest equals the fresh Hub certificate digest.",
+        "The witness records phase order; it must not relabel the pre-import negative control as a post-import negative control."
+      ]
+    },
+    "receipt": {
+      "required_fields": [
+        "trustMode=sequential-macos-login-keychain",
+        "trustOrder",
+        "untrustedControlError=ERR_CERT_AUTHORITY_INVALID",
+        "normalCertificateValidation=true",
+        "corsPreflightCount > 0",
+        "packedSdk",
+        "cleanup.browsers=closed",
+        "cleanup.helperServer=closed",
+        "cleanup.trust=removed-and-verified"
+      ],
+      "required_trust_order": [
+        "untrusted_started_without_ca",
+        "untrusted_healthz_rejected_ERR_CERT_AUTHORITY_INVALID",
+        "untrusted_closed",
+        "fresh_ca_imported",
+        "trusted_started_with_ca",
+        "trusted_route_observed",
+        "trusted_closed",
+        "trusted_browser_cleanup_verified",
+        "fresh_ca_removed",
+        "fresh_ca_removal_verified"
+      ],
+      "limits": "The receipt proves sequential negative-before-trust and positive-after-trust behavior on macOS. It does not prove simultaneous per-profile trust isolation."
+    }
+  },
+  "fresh_handoff_contract": {
+    "origin": "http://localhost:4174",
+    "scenario": "b1-five-drives; drive_limit=2; expected_drive_count=5",
+    "fresh_required": [
+      "new Hub runtime root and loopback endpoint",
+      "new descriptor and descriptor digest",
+      "new CA and certificate digest",
+      "new owner-only pre-paired credential",
+      "new expiry and launcher/child ownership",
+      "independent canonical expected certificate export path, absent before import",
+      "current source/package/profile identities"
+    ],
+    "closed_inputs": [
+      "18521 runtime tuple",
+      "all prior descriptors and CAs",
+      "all prior credentials",
+      "all prior browser profiles and witnesses"
+    ],
+    "handoff_must_state": "The sequential mode is reviewed and the Hub understands that the untrusted control is closed before CA import; no simultaneous trust-isolation claim is admitted."
+  },
+  "cleanup_contract": {
+    "sdk_owner": [
+      "Close the untrusted control immediately after the pre-import rejection.",
+      "Close the trusted control and local helper server after the redacted receipt.",
+      "Invoke the trusted-browser cleanup hook after import starts, including malformed import output or failed CDP attachment; require its exact endpoint/port-closure result.",
+      "Remove the exact fresh certificate and its user trust setting from the login keychain.",
+      "Remove fresh browser profiles, witness/export artifacts and package installation state, retaining only the mode-0600 redacted receipt.",
+      "Verify 4174 and all CDP ports are closed without touching unrelated processes or services."
+    ],
+    "hub_owner": [
+      "Stop only the fresh fixture launcher and direct Hub child after the SDK result or expiry.",
+      "Verify direct-child exit 0, stopped receipt mode 0600 and loopback port closure."
+    ],
+    "secret_policy": "Credential, invitation, keychain password, private key and browser-profile contents remain outside the repository and chat."
+  },
+  "approval_gate": {
+    "before_source_change": "Coordinator authorized this bounded source correction after reviewing the proposal; Hub review of the implemented diff remains required before runtime.",
+    "before_runtime": "Hub has substantively reviewed the source correction and must publish a wholly fresh handoff matching the reviewed sequential mode. The current 18521 tuple is not reusable.",
+    "attempt_limit": "One bounded fresh execution only unless the owner explicitly changes scope.",
+    "viewer_dependency": false,
+    "deferred_targets_block": false
+  }
+}

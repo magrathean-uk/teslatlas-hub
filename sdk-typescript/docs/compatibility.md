@@ -2,8 +2,8 @@
 
 ## Locked input and regeneration
 
-The SDK is generated and tested against protocol commit
-`79ced4c7fdc79520ad31d72a0280bf5f3f19f407`. The current profile is `1.2.0`;
+The SDK is generated and tested against the reviewed Protocol candidate based on
+`05225bd5b2f56885025180d68fedf3a42baaa90b`. The current profile is `1.2.0`;
 the supported profile set is `1.0.0`, `1.1.0`, and `1.2.0`.
 
 `protocol/lock.json` records every vendored input and generated-output SHA-256
@@ -29,7 +29,7 @@ was design input, not an executable branch to merge.
 
 The current-Hub adapter is independently bound to `hub-http-v1@1.0.0` and the
 bundle manifest SHA-256
-`b3914d35d28374f6423af789e9ed6a4a4c82196a068c041946e24d609db0b05b`.
+`b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
 This pin does not replace or weaken the richer profile pin above. Generated
 current-Hub OpenAPI types and standalone validators are covered by the lock's
 separate input and output hashes.
@@ -39,6 +39,27 @@ fixture environment variables described by the task harness. These lanes use
 default Fetch from a freshly packed SDK. The browser lane additionally requires
 a normally trusted CA, a cross-origin allowlisted fixture origin, and a CDP URL;
 certificate-error bypass flags are outside the acceptance contract.
+
+For a real current-Hub run, pair with an invitation produced by Hub's
+`pair --json` command and supply the expected Hub UUID from trusted setup
+context. The invitation's `tlsPin` is validated as data but is not a browser or
+Node certificate verification mechanism. Browser callers need an exact
+allowlisted origin and a real `OPTIONS` preflight; denied-origin and untrusted
+certificate failures may surface as generic Fetch errors. The SDK does not
+perform mDNS discovery, background polling, or automatic reconnect/rotation.
+
+`logout()` is the local credential-store operation and is distinct from server
+revocation. Consumers await it before `dispose()` and must pair again after a
+401 or a confirmed server revocation. An explicit discovery refresh invalidates
+the cached identity on transport failure or UUID mismatch, so an authenticated
+request cannot silently reuse an old discovery result.
+
+The current-Hub `claimPairing` request is compact JSON measured after UTF-8
+serialization. The SDK rejects a body over the profile's 4,096-byte client
+bound as `ProtocolValidationError` (`HubClaimRequest.size`) before dispatching
+the claim request. Hub claim extractor statuses `400`, `415`, and `422` are
+accepted only as nonempty bounded `text/plain` responses and surface as a
+body-free `HubHttpError` (`hub_http_error`); extractor text is never retained.
 
 ## Public methods
 

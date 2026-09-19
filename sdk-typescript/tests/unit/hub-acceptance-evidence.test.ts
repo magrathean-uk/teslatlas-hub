@@ -1,6 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,7 +24,7 @@ afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recur
 
 describe("Hub acceptance evidence admission", () => {
   it("binds an installed entry to the expected tarball bytes and rejects substitution", async () => {
-    const root = await mkdtemp(join(tmpdir(), "hub-packed-proof-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "hub-packed-proof-")));
     roots.push(root);
     const packed = join(root, "package");
     const installed = join(root, "node_modules/@teslatlas/sdk");
@@ -80,14 +89,15 @@ describe("Hub acceptance evidence admission", () => {
     ).not.toThrow();
   });
 
-  it("requires an owner-only witness whose exported NSS CA matches the fixture CA", async () => {
-    const root = await mkdtemp(join(tmpdir(), "hub-trust-proof-"));
+  it("requires an owner-only witness whose exported certificate matches the fixture CA", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "hub-trust-proof-")));
     roots.push(root);
     const certificatePath = join(root, "ca.pem");
     const exportPath = join(root, "nss-export.pem");
     const witnessPath = join(root, "witness.json");
     await writeFile(certificatePath, "fixture-ca");
     await writeFile(exportPath, "fixture-ca");
+    await chmod(exportPath, 0o600);
     const digest = createHash("sha256").update("fixture-ca").digest("hex");
     const trustedArguments = ["chromium", "--headless", "--enable-automation"];
     const untrustedArguments = ["chromium", "--headless", "--enable-automation"];
@@ -113,7 +123,13 @@ describe("Hub acceptance evidence admission", () => {
         trustedArguments,
         untrustedArguments,
       }),
-    ).resolves.toEqual({ certificateSha256: digest, trustedNssDatabase: "/private/nss" });
+    ).resolves.toEqual({
+      certificateSha256: digest,
+      trustedTrustStore: "/private/nss",
+      untrustedTrustStore: "/private/empty-nss",
+      certificateExportPath: exportPath,
+      trustMode: "legacy-simultaneous",
+    });
     await writeFile(exportPath, "different-ca");
     await expect(
       verifyBrowserTrustWitness({
@@ -122,6 +138,182 @@ describe("Hub acceptance evidence admission", () => {
         trustedArguments,
         untrustedArguments,
       }),
-    ).rejects.toThrow("does not match fixture CA");
+    ).rejects.toThrow("does not match fixture certificate");
+  });
+
+  it("validates neutral sequential witness fields for exported certificate and keychain evidence", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "hub-sequential-trust-proof-")));
+    roots.push(root);
+    const certificatePath = join(root, "ca.pem");
+    const exportPath = join(root, "certificate-export.pem");
+    const witnessPath = join(root, "witness.json");
+    await writeFile(certificatePath, "fixture-ca");
+    await writeFile(exportPath, "fixture-ca");
+    await chmod(exportPath, 0o600);
+    const digest = createHash("sha256").update("fixture-ca").digest("hex");
+    const arguments_ = ["chromium", "--headless", "--enable-automation"];
+    await writeFile(
+      witnessPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        mode: "sequential-macos-login-keychain",
+        certificateSha256: digest,
+        phaseOrder: [
+          "untrusted_started_without_ca",
+          "untrusted_healthz_rejected_ERR_CERT_AUTHORITY_INVALID",
+          "untrusted_closed",
+          "fresh_ca_imported",
+          "trusted_started_with_ca",
+          "trusted_route_observed",
+        ],
+        untrustedBeforeImport: {
+          arguments: arguments_,
+          error: "net::ERR_CERT_AUTHORITY_INVALID",
+          cdpResult: { product: "Chromium" },
+          trustStorePath: "/private/untrusted-login-keychain",
+        },
+        trustedAfterImport: {
+          arguments: arguments_,
+          cdpResult: { result: { value: { ok: true } } },
+          certificateExportPath: exportPath,
+          trustStorePath: "/private/trusted-login-keychain",
+        },
+      }),
+    );
+    await chmod(witnessPath, 0o600);
+
+    await expect(
+      verifyBrowserTrustWitness({
+        mode: "sequential-macos-login-keychain",
+        witnessPath,
+        certificatePath,
+        expectedCertificateExportPath: exportPath,
+        trustedArguments: arguments_,
+        untrustedArguments: arguments_,
+      }),
+    ).resolves.toEqual({
+      certificateSha256: digest,
+      trustedTrustStore: "/private/trusted-login-keychain",
+      untrustedTrustStore: "/private/untrusted-login-keychain",
+      certificateExportPath: exportPath,
+      trustMode: "sequential-macos-login-keychain",
+    });
+  });
+
+  it("rejects export substitution, duplicate bytes, symlinks and non-owner-only permissions", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "hub-export-admission-proof-")));
+    roots.push(root);
+    const certificatePath = join(root, "ca.pem");
+    const exportPath = join(root, "certificate-export.pem");
+    const duplicatePath = join(root, "duplicate-export.pem");
+    const witnessPath = join(root, "witness.json");
+    const arguments_ = ["chromium", "--headless", "--enable-automation"];
+    await writeFile(certificatePath, "fixture-ca");
+    await chmod(certificatePath, 0o600);
+    await writeFile(exportPath, "fixture-ca");
+    await chmod(exportPath, 0o600);
+    const digest = createHash("sha256").update("fixture-ca").digest("hex");
+    await writeFile(
+      witnessPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        mode: "sequential-macos-login-keychain",
+        certificateSha256: digest,
+        phaseOrder: [
+          "untrusted_started_without_ca",
+          "untrusted_healthz_rejected_ERR_CERT_AUTHORITY_INVALID",
+          "untrusted_closed",
+          "fresh_ca_imported",
+          "trusted_started_with_ca",
+          "trusted_route_observed",
+        ],
+        untrustedBeforeImport: {
+          arguments: arguments_,
+          error: "net::ERR_CERT_AUTHORITY_INVALID",
+          cdpResult: { product: "Chromium" },
+          trustStorePath: join(root, "untrusted-keychain"),
+        },
+        trustedAfterImport: {
+          arguments: arguments_,
+          cdpResult: { result: { value: { ok: true } } },
+          certificateExportPath: exportPath,
+          trustStorePath: join(root, "login.keychain-db"),
+        },
+      }),
+    );
+    await chmod(witnessPath, 0o600);
+    const options = {
+      mode: "sequential-macos-login-keychain" as const,
+      witnessPath,
+      certificatePath,
+      expectedCertificateExportPath: exportPath,
+      trustedArguments: arguments_,
+      untrustedArguments: arguments_,
+    };
+
+    await expect(verifyBrowserTrustWitness(options)).resolves.toBeDefined();
+
+    const witnessBytes = await readFile(witnessPath);
+    const realWitnessPath = join(root, "witness-real.json");
+    await writeFile(realWitnessPath, witnessBytes);
+    await chmod(realWitnessPath, 0o600);
+    await rm(witnessPath);
+    await symlink(realWitnessPath, witnessPath);
+    await expect(verifyBrowserTrustWitness(options)).rejects.toThrow("canonical");
+    await rm(witnessPath);
+    await writeFile(witnessPath, witnessBytes);
+    await chmod(witnessPath, 0o644);
+    await expect(verifyBrowserTrustWitness(options)).rejects.toThrow("owner-only");
+    await chmod(witnessPath, 0o600);
+
+    await rm(exportPath);
+    await symlink(certificatePath, exportPath);
+    await expect(verifyBrowserTrustWitness(options)).rejects.toThrow("canonical");
+
+    await rm(exportPath);
+    await writeFile(exportPath, "fixture-ca");
+    await chmod(exportPath, 0o644);
+    await expect(verifyBrowserTrustWitness(options)).rejects.toThrow("owner-only");
+
+    await chmod(exportPath, 0o600);
+    await writeFile(duplicatePath, "fixture-ca");
+    await chmod(duplicatePath, 0o600);
+    const witnessWithDuplicate = JSON.parse(await readFile(witnessPath, "utf8"));
+    witnessWithDuplicate.trustedAfterImport.certificateExportPath = duplicatePath;
+    await writeFile(witnessPath, JSON.stringify(witnessWithDuplicate));
+    await expect(verifyBrowserTrustWitness(options)).rejects.toThrow("expected fresh export path");
+
+    await writeFile(
+      witnessPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        mode: "sequential-macos-login-keychain",
+        certificateSha256: digest,
+        phaseOrder: [
+          "untrusted_started_without_ca",
+          "untrusted_healthz_rejected_ERR_CERT_AUTHORITY_INVALID",
+          "untrusted_closed",
+          "fresh_ca_imported",
+          "trusted_started_with_ca",
+          "trusted_route_observed",
+        ],
+        untrustedBeforeImport: {
+          arguments: arguments_,
+          error: "net::ERR_CERT_AUTHORITY_INVALID",
+          cdpResult: { product: "Chromium" },
+          trustStorePath: join(root, "untrusted-keychain"),
+        },
+        trustedAfterImport: {
+          arguments: arguments_,
+          cdpResult: { result: { value: { ok: true } } },
+          certificateExportPath: certificatePath,
+          trustStorePath: join(root, "login.keychain-db"),
+        },
+      }),
+    );
+    await chmod(witnessPath, 0o600);
+    await expect(
+      verifyBrowserTrustWitness({ ...options, expectedCertificateExportPath: certificatePath }),
+    ).rejects.toThrow("distinct");
   });
 });

@@ -1,0 +1,467 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-19T10:48:06.158047+00:00",
+  "purpose": "Owner-authorized source snapshot and planning upload; not a release or new runtime acceptance",
+  "branch": "main",
+  "before_head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+  "authorization": "2026-09-19 owner: Commit and push current work",
+  "acceptance_receipts": "Retained unchanged; original tested source/dirty-tree identities remain historical",
+  "included_changes": [
+    {
+      "path": ".dockerignore",
+      "sha256": "a7e45a920c85f106c9e7bb4c37629ba1b1a33858938b3fe28ec8c3c0e93e0259",
+      "disposition": "included"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "87a4878cb602ad87f4dafbc008b95c8d5140c89b4fd8cdaf8865108f6c956c6c",
+      "disposition": "included"
+    },
+    {
+      "path": "Dockerfile",
+      "sha256": "8c27bc444ca0c36bf090ef5fd793d8160632725281eaab17f309b42e864344dd",
+      "disposition": "included"
+    },
+    {
+      "path": "README.md",
+      "sha256": "f30ef539a96dfc42071d6ba6ac5f8a2b4b285a3edf209f8cc91105375d5ae5d8",
+      "disposition": "included"
+    },
+    {
+      "path": "compatibility/hub.json",
+      "sha256": "a07efb9fa16e128f9a21fdf7aa79b4c2bb6e260f3f24ee05f04b53e0a1074cb8",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/acceptance.md",
+      "sha256": "bc18a47fb76b7de94496c64531a79b0ce1cf1d0fe1b5419ee38ab8b37bf9b58a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/api.md",
+      "sha256": "aa2b73316db90a2792aa3ad570e69469acc01cdfc951794c79e45768138d80ef",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/architecture.md",
+      "sha256": "a5e49381bd5ec717fa6b503839084e58860e45e5fede291c469c7e7b1affe6fd",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/compatibility.md",
+      "sha256": "ac1bee324e237a48f1c716dd5cf44b22a6da74e060581d680a3b0399e916bf70",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/PLAN.md",
+      "sha256": "980c613533f8264ff2048e2ecf9ac157dbe70d77bd1f24d210fab33ef5b5a59a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/STATUS.json",
+      "sha256": "0ac6bc1799a5d75d1f395499d71ac6d05acfaced7d7939d1d0bb83352cc1128d",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+      "sha256": "84554bba27e3dac2936d77cdd3a1d6310f6c8692198d02b2f7cec0fb8c87721f",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-30-sdk-foundation.md",
+      "sha256": "65a80638defa2aa3600edb9378aa2c84cc29a8dba015da182fdc6057a6a3b4ba",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-08-31-protocol-client-reconciliation.md",
+      "sha256": "dea101ef21b992ee0969facf6b70f94524c417e6f7120d024f37e28bca90ea3d",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+      "sha256": "aba682354d07fc711ab03da120a9239c395f4cbe35dc19649530d25da1f7f15e",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "sha256": "e35a270e723919ac2d78ff849fb280a7c40dff9f826f36a2b4a78feb46064d0a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/README.md",
+      "sha256": "6711fe306537c214ccb16bdc43742b079849de9306868a3fad1eb829b23370a1",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/d1-component-manifest-handoff-2026-09-09.json",
+      "sha256": "a9f7c4ebc12f0cfd4b8d0c087abb011f2a5d980d70e61fd9eb20cb6a2252c7e3",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json",
+      "sha256": "35a5881ffceb5ee4db3157bddc2758cbbc4e1ce25b8e96bafd1e34eab6f008e5",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-control-diagnostic-2026-09-12-r1.json",
+      "sha256": "5518674d981c8a4d0542d2b31ccc554afe0218c59c834a1d9920a69005e90f3b",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-control-ipc-correction-2026-09-12-r5.json",
+      "sha256": "d91b5c3c8f0a449fc75c25a99b2aa70b906f142d77a8eb0a377b7fab7d209046",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-control-preflight-files-correction-2026-09-12-r6.json",
+      "sha256": "71830a133f111bb5b38f1711f32bd89b9dd31922007b9c7e64b9837010bdf544",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-control-preflight-template-correction-2026-09-12.json",
+      "sha256": "6d0a04818f9e5d50df8edbdb8564dbedc29c26cad3bedca0ac86b944cc6c0ac2",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-control-preflight-template-correction-v2-2026-09-12.json",
+      "sha256": "d14f0f9a404a9cd83996779f45f0e9eecbcced8dc74c70c6f9e10cf98b475bf1",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-sdk-consumer-proposal-2026-09-12.json",
+      "sha256": "57b959da15dfb8b408882bd40e392b5c9256c28b7811f96fe4808fbbbb45e2e7",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-sequential-control-package-preparation-2026-09-12-r7.json",
+      "sha256": "9b2c29fbdd2bd87fc0eab6abecff77dbee9513e37bd4f48d9e865b7b797b10c0",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-sequential-control-preparation-2026-09-12-r2.json",
+      "sha256": "0791e488ad7143ef74ac61c2fd0576b0a15987bf0bf799a60c942b365a66a551",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-sequential-control-preparation-2026-09-12-r6.json",
+      "sha256": "62b61961c389586495069e68e29910bcf4dd7721f39dcf4b78430f15315cd070",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r2.json",
+      "sha256": "3896f1a77d659a37d77d5ce89b42f96446c355c4b8f5dd7c093c12acae7785a7",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r5.json",
+      "sha256": "653cfd2c656e7bea65aa575f6a5dde5cd373b76405e28efe843dffaa8dab1d45",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r6.json",
+      "sha256": "4d76afb0ccf30ad044a5bc3040df74001508a933cdc1307c87705a3651a70f76",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r7.json",
+      "sha256": "7d6a14cd14bd765c0d56cc31b16a9c4037810e12650244cb46ea9d26dd77e6d9",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-supervisor-lifecycle-diagnosis-2026-09-12-r7.json",
+      "sha256": "2641ae931469e079797f991daccefdb0c52088e2cc45686cf155d203f8f72fad",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+      "sha256": "8c686933275cd3233ca2fbf0dbe29b3e547fe37f7850968faab620f552a1bbdb",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/macos-browser-trust-isolation-correction-2026-09-12.json",
+      "sha256": "98ebe5a6195db9bff8b8310942be5aa18a40492682f423a56dbcc8a01307519a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/docker.md",
+      "sha256": "e1d01f20282a1dd0fb8cf758a6186c44bc0cc261d9a193dc1a9fbcfddeb5b981",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/plans/2026-08-30-foundation.md",
+      "sha256": "5001b5d80d3f313e264419326828415ead28a939a2ff672afc11c73aefe472e4",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/product-versioning.md",
+      "sha256": "796b4c56d96c15e579c80ba65f659981011411e3a4fd23e48928d1a827e452f8",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/protocol-dependency-gate.md",
+      "sha256": "7e84b50194697bbba5c7477b99e7eea83f866b701632e76a8b6fb55a95eda222",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-30-sdk-foundation.md",
+      "sha256": "447d521763c824a3c42f20d16f59ccffd3a098a5e5bdb1f217c161e94d7facce",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-08-31-protocol-client-reconciliation.md",
+      "sha256": "d87bed6b6e4275cfbffdd8a3d4947cd2156342f67b31da00285eed6c92e8ddbd",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+      "sha256": "1384f2e13f95266b2d3bd3b4d5e9c62f4d7e58fba7f1aa30005cac89c1cc4737",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "sha256": "cee05a02b795f224e4e6aa5b7170d6893feb54bda3c23937d4aa9923afb834df",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-12-browser-sequential-control-preparation.md",
+      "sha256": "93bf5a4105e29b503d351f91c7e3959b9940bf09802b65f4bb735ce17d0c7fbf",
+      "disposition": "included"
+    },
+    {
+      "path": "examples/hub/app.js",
+      "sha256": "209afaf2f1f5aaace797ff7ac1602383a6ca08f66203adafe7a78db1e6c91948",
+      "disposition": "included"
+    },
+    {
+      "path": "examples/hub/index.html",
+      "sha256": "ab4fa8d8e322e745094edfce2ed221f42250433b25f07ab5524144ec0cabe75a",
+      "disposition": "included"
+    },
+    {
+      "path": "examples/hub/node.mjs",
+      "sha256": "83c053eb11312c8983920c7be7ed162fa1e1a7ac360970ee8826282c8d1157cf",
+      "disposition": "included"
+    },
+    {
+      "path": "examples/hub/package.json",
+      "sha256": "b83d95924b45d99c939bb93e3fa1e4aac35f11c4099e26cbf1ac2827abfba1ca",
+      "disposition": "included"
+    },
+    {
+      "path": "examples/hub/serve.mjs",
+      "sha256": "35bd741a4b6be4bab0340c525ee262f3f1327ed180255511e546e1a18bab2f85",
+      "disposition": "included"
+    },
+    {
+      "path": "package.json",
+      "sha256": "1f0c127f3896dadcb77deccf4526ce14277f65ee85abd4536fb4cd4fbf084cf0",
+      "disposition": "included"
+    },
+    {
+      "path": "protocol/lock.json",
+      "sha256": "3b1ef30d07acf7ef62f91ab9d2b0993f9ceb25110bf70c29e895ef9da505ffa3",
+      "disposition": "included"
+    },
+    {
+      "path": "protocol/source/compatibility/hub.json",
+      "sha256": "b7f6564abae676ba22133aa3fb8846795733a48f6a6ebd26bf6b1822125187cd",
+      "disposition": "included"
+    },
+    {
+      "path": "protocol/source/profiles/hub-http-v1/1.0.0/SHA256SUMS",
+      "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "disposition": "included"
+    },
+    {
+      "path": "protocol/source/profiles/hub-http-v1/1.0.0/openapi.json",
+      "sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+      "disposition": "included"
+    },
+    {
+      "path": "protocol/source/profiles/hub-http-v1/1.0.0/profile.json",
+      "sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/browser-control-orchestrator.mjs",
+      "sha256": "7232768d3a96f49fdf2b831b03ca95929c83ca4d6c35ccc24c7d512cf07034ff",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/browser-control-preflight-template.mjs",
+      "sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/browser-hub-runner.mjs",
+      "sha256": "9569f3c206592c1938594415ddd69ac8e64532887dbf6426c59221300c937738",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/browser-trust-sequence.d.mts",
+      "sha256": "3ba154be221b6392c540979cdbec45c8ab4b2d8d0150bf59d6d60dee536bd475",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/browser-trust-sequence.mjs",
+      "sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/check-pack.mjs",
+      "sha256": "ff5184686543f6edf1e076df788deb0d35dc207871fe046a8cd890915981cfad",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/drive-pagination.d.mts",
+      "sha256": "c1f160269f997d2370f67b5070001d14e693c67936853fd5399083a32903e2e5",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/drive-pagination.mjs",
+      "sha256": "b7121832dff1e1fb7cdebd50f7b9d6c1e8bd19fd72652d4d7e0892997941bf05",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/hub-acceptance-evidence.d.mts",
+      "sha256": "a7428c56d1d505b4a19d3ed380875d15b83028e21dedd4b9f4503681f9a051e4",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/hub-acceptance-evidence.mjs",
+      "sha256": "6b6eeb0e93bc08e261b1db02f2cd0de3672f42d4a0cba5c312ce2cf2e2590136",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/test-browser-control-orchestrator.mjs",
+      "sha256": "3c2dadf277706e6250440b3cf00ab33d4d80334d4e3c8d0244b21b22b4ed6ac9",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/test-browser-control-preflight-template.mjs",
+      "sha256": "1789949b89b1afe474e305914c9680371aca9706d0f19b6fae15f9fee1785488",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/test-browser-supervisor-lifecycle.mjs",
+      "sha256": "746c944f654f82dcbe42d23b82f638dbdc5276b2e3d0a6c356206a99332d7505",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/test-hub-browser.mjs",
+      "sha256": "ce6def4e982ea848561c844bfd52e53021bb40fa802895dbbbff72342b757e6d",
+      "disposition": "included"
+    },
+    {
+      "path": "scripts/test-hub-node.mjs",
+      "sha256": "8e79e82e8435bb395efb09557f3a49e52e3895b426cd51d77131ee5288c30356",
+      "disposition": "included"
+    },
+    {
+      "path": "src/generated/hub-protocol.ts",
+      "sha256": "c5e3ae7a00dbd8107d121de3ab539b27547f1e336bdb87ea57ddd3cbd51e553f",
+      "disposition": "included"
+    },
+    {
+      "path": "src/hub/client.ts",
+      "sha256": "81175c4df4d7ddf8dd2ba4137cc16af1dcb1bedff52708e567179cd3757c3ec7",
+      "disposition": "included"
+    },
+    {
+      "path": "src/hub/models.ts",
+      "sha256": "3b9b47038c1dd8888c250123bc10f0bb5a180bc022d63d6f01794985ceef3305",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/browser-runner-cdp-targets.test.ts",
+      "sha256": "20c3b4d4b3499e90aa7918d89099addefa9b85b34037086f22457a10092c00c4",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/browser-runner-trust-hook-contract.test.ts",
+      "sha256": "9fe046b098111542cf31415f0e1d8b0715fce7df5d5cf736bd227367636d10bd",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/browser-trust-sequence.test.ts",
+      "sha256": "9232544d2298bbcde7d2315a547f67971ad9d602051cb25b7ca0032714dcbd6d",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/docs-surface.test.ts",
+      "sha256": "f7f638a7c56225783c930ea7c123d94639ecc997bfcb5d46644c8c74f95a26ed",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/drive-pagination.test.ts",
+      "sha256": "b641667670718ece7b4101f5bb50210a1f7592ad88146d304431469378661685",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/hub-acceptance-evidence.test.ts",
+      "sha256": "e91ada4f9eabe76459d114c3d2f91d73966cac396538f61d374d43bd04a31762",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/hub-client.test.ts",
+      "sha256": "84ae4625e11f67fe349470e86fa3f50a404edd967c2187f2d3ef367a3c6ea327",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/hub-consumer-example.test.ts",
+      "sha256": "0dc6a8c1ae74f09bd778226066d8b73fb6babc1b4c08cc1023dc123b11ab5897",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/package-surface.test.ts",
+      "sha256": "34b182e6dca2b65e71190b4fd8377403582e531a6241adbd9eab0be0733752f9",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/unit/protocol-lock.test.ts",
+      "sha256": "d554ee757b478551630042888112a664d23d77f22c289ce33f6f7533fd0f855c",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/matrix-contract-browser.json",
+      "sha256": "3a04e33415330d2d3ce53d489841f0a28b768d982d2af5f255323d2f0cf6acb9",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/matrix-contract-node.json",
+      "sha256": "7800f75b03e046f53e56b7356fac95089aae73ab7719e82ead88f39e45ae3299",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/matrix_contract_browser.py",
+      "sha256": "784d1618efdc6739248426d7ee6538772a3560c1569c903f75fb2af72755bf92",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/matrix_contract_node.py",
+      "sha256": "600e1cc363d309e163b87e19498e1daf4ba309c325aeb8402513168ff1c12ef2",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/test_matrix_contract.py",
+      "sha256": "dce084b47837e51633b66d90d3b236f0d5167083a2b8c123bb721eb977e2cdb6",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/typescript-browser-raw-v1.schema.json",
+      "sha256": "638feee0156286a9103148ed775ee126bbdc198f9a8e21210652c1871704415c",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/typescript-node-raw-v1.schema.json",
+      "sha256": "5a4ad38caa2dee8432eef0e8dd2f7c00b92db0aa3946eb2dab93c4fc13ad6908",
+      "disposition": "included"
+    }
+  ],
+  "excluded_local_paths": [
+    ".DS_Store",
+    ".serena/.gitignore",
+    ".serena/project.yml"
+  ],
+  "no_ci_release_tag_deployment": true
+}

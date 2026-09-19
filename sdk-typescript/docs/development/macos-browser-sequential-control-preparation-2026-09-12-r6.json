@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_browser_sequential_control_package_preparation",
+  "date": "2026-09-12",
+  "state": "prepared_not_run_source_only",
+  "authority": "Hub independently accepted the r5 source-only IPC correction. This receipt prepares one wholly fresh future control/package root only; it authorizes no Chrome launch, Hub contact, keychain action, credential use or browser acceptance run.",
+  "review_binding": {
+    "typescript_correction_receipt": {
+      "path": "docs/development/macos-browser-control-ipc-correction-2026-09-12-r5.json",
+      "sha256": "d91b5c3c8f0a449fc75c25a99b2aa70b906f142d77a8eb0a377b7fab7d209046",
+      "finding": "source correction recorded; no r5 retry"
+    },
+    "hub_source_review": {
+      "path": "hub/docs/development/active-macos-typescript-browser-control-ipc-source-review-2026-09-12-r5.json",
+      "sha256": "c0c47baf20618edc6ea7a1d3291acc9a524e80c8bc82651061cea1d0b6409c0d",
+      "state": "accepted_source_only_no_runtime_authorization"
+    }
+  },
+  "fresh_root": {
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6",
+    "control_preparation_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/preparation.json",
+    "control_preparation_sha256": "786b86e992edadbb8754d93bda03fe91e17cbc73b1d0208d099e7715c1c1e19a",
+    "control_root_mode": "0700",
+    "package_consumer_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/consumer",
+    "package_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/consumer/node_modules/@teslatlas/sdk",
+    "package_root_mode": "0700"
+  },
+  "fresh_tuple": {
+    "app_origin": "http://localhost:4176",
+    "trusted_cdp": "http://127.0.0.1:9236",
+    "untrusted_cdp": "http://127.0.0.1:9237",
+    "hub_endpoint_binding": "https://localhost:18528",
+    "hub_runtime_port": 18528,
+    "old_r5_tuple": {
+      "app_origin": "http://localhost:4175",
+      "trusted_cdp": "http://127.0.0.1:9234",
+      "untrusted_cdp": "http://127.0.0.1:9235",
+      "hub_endpoint": "https://localhost:18527"
+    },
+    "new_ports_closed_at_preparation": [4176, 9236, 9237, 18528]
+  },
+  "source_control": {
+    "supervisor": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/supervisor.mjs",
+      "sha256": "4038d26f8631fc79b01ebb0b402613f79378128697ffb16daeac668f44340e88",
+      "mode": "0700",
+      "binding": "The accepted allowHalfOpen:true JSON-line server correction, with r6 paths and ports only."
+    },
+    "trust_hooks": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/trust-hooks.mjs",
+      "sha256": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+      "mode": "0700"
+    },
+    "untrusted_control": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/untrusted-control.mjs",
+      "sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+      "mode": "0700"
+    },
+    "ipc_regression": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/test-browser-control-ipc.mjs",
+      "sha256": "c6db7081b0f7221b99c24d344681f1ac9b8526643bf85bb8e10f87b7be5e2334",
+      "mode": "0700"
+    }
+  },
+  "package": {
+    "archive": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/teslatlas-sdk-2026.36.2.tgz",
+    "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "name": "@teslatlas/sdk",
+    "version": "2026.36.2",
+    "installed_file_count": 81,
+    "package_json_sha256": "1f0c127f3896dadcb77deccf4526ce14277f65ee85abd4536fb4cd4fbf084cf0",
+    "installation": "fresh distinct consumer root, local archive, offline, --ignore-scripts"
+  },
+  "attempt_policy": {
+    "attempt_limit": 1,
+    "retries_allowed": 0,
+    "retry_or_r5_tuple_reuse": false,
+    "sequence": [
+      "start_untrusted",
+      "attach_untrusted",
+      "observe_negative_before_import",
+      "cleanup_untrusted",
+      "import_fresh_ca",
+      "start_trusted",
+      "attach_trusted",
+      "observe_positive_after_import",
+      "cleanup_trusted",
+      "remove_fresh_ca",
+      "verify_fresh_ca_removed",
+      "shutdown_supervisor"
+    ]
+  },
+  "runtime_absence": {
+    "socket": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/control.sock",
+    "state": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/supervisor-state.json",
+    "event_log": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/evidence/browser-control-events.jsonl",
+    "untrusted_profile": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/untrusted-profile",
+    "trusted_profile": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/trusted-profile",
+    "certificate_export": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/evidence/imported-hub-ca.pem",
+    "witness": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/evidence/browser-trust-witness.json",
+    "acceptance_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/evidence/browser-acceptance-receipt.json",
+    "all_absent_before_run": true
+  },
+  "preflight": {
+    "ports_4176_9236_9237_18528_closed": true,
+    "chrome_started": false,
+    "hub_contacted": false,
+    "keychain_touched": false,
+    "fresh_credential_minted": false,
+    "fresh_certificate_material_created": false,
+    "runtime_state_created": false,
+    "attempt_consumed": false
+  },
+  "non_reuse": {
+    "r5_control_root": "not reused",
+    "r5_hub_tuple": "not reused",
+    "r5_credential": "not copied or read",
+    "r5_profiles": "not reused",
+    "r5_socket_state_event_log": "not reused",
+    "r5_witness_or_acceptance_receipt": "not reused",
+    "r5_package_root": "not reused"
+  },
+  "verification": {
+    "pinned_node_syntax": "passed for four r6 control files",
+    "targeted_biome": "passed for four r6 control files",
+    "ipc_regression": "passed browser-free with immediate, delayed and failure cases, client half-close and socket removal",
+    "package_archive_digest": "passed",
+    "package_root_version_and_file_count": "passed",
+    "json_and_hash_binding": "passed"
+  },
+  "next_gate": "Hub must review this immutable source/preparation receipt and publish a separately authorized fresh Hub tuple and credential. No Chrome, keychain, Hub request, browser process or SDK acceptance run is authorized by this receipt."
+}

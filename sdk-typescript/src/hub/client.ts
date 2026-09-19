@@ -34,8 +34,14 @@ import {
 
 const discoveryPath = "/.well-known/teslatlas-hub";
 const maximumResponseBytes = 1_048_576;
+const maximumClaimRequestBytes = 4_096;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const tokenPattern = /^[0-9a-f]{64}$/u;
+
+interface HubOperation {
+  readonly generation: number;
+  readonly signal: AbortSignal;
+}
 
 export class HubIdentityMismatchError extends TeslatlasError<"hub_identity_mismatch"> {
   constructor() {
@@ -84,14 +90,18 @@ class StaticHubClient implements HubClient {
   readonly #endpoint: URL;
   readonly #expectedHubId: string;
   readonly #credentials: CreateHubClientOptions["credentials"];
+  readonly #transportOptions: {
+    readonly baseUrl: URL;
+    readonly fetch?: FetchImplementation;
+  };
   readonly #unauthenticatedTransport: FetchTransport;
-  readonly #authenticatedTransport: FetchTransport;
   readonly #ownerSignal: AbortSignal | undefined;
   #sessionAbort = new AbortController();
   #discovery: HubDiscovery | undefined;
   #discoveryPending: Promise<HubResponse<HubDiscovery>> | undefined;
   #disposed = false;
   #sessionGeneration = 0;
+  #credentialMutation: Promise<void> = Promise.resolve();
   readonly #cursorBindings = new Map<string, string>();
 
   constructor(options: CreateHubClientOptions) {
@@ -101,37 +111,29 @@ class StaticHubClient implements HubClient {
     this.#expectedHubId = options.expectedHubId;
     this.#credentials = options.credentials;
     this.#ownerSignal = options.signal;
-    const transportOptions = {
+    this.#transportOptions = {
       baseUrl: this.#endpoint,
       ...(options.fetch === undefined ? {} : { fetch: options.fetch as FetchImplementation }),
     };
-    this.#unauthenticatedTransport = new FetchTransport(transportOptions);
-    this.#authenticatedTransport = new FetchTransport({
-      ...transportOptions,
-      authorization: async () => {
-        const credential = await this.#credentials.load();
-        if (credential === undefined) return undefined;
-        validateCredential(credential);
-        return `Bearer ${credential.accessToken}`;
-      },
-    });
+    this.#unauthenticatedTransport = new FetchTransport(this.#transportOptions);
   }
 
   async discover(options: HubRequestOptions = {}): Promise<HubResponse<HubDiscovery>> {
-    this.#requireActive();
+    return this.#discover(this.#beginOperation(options.signal));
+  }
+
+  async #discover(operation: HubOperation): Promise<HubResponse<HubDiscovery>> {
+    this.#assertOperation(operation);
     if (this.#discoveryPending !== undefined) return this.#discoveryPending;
-    const generation = this.#sessionGeneration;
     const pending = this.#read(
       this.#unauthenticatedTransport,
       discoveryPath,
       validateHubDiscovery,
       "HubDiscovery",
-      options.signal,
+      operation,
       [200],
     ).then((result: HubResponse<HubDiscovery>) => {
-      if (generation !== this.#sessionGeneration || this.#disposed) {
-        throw new DOMException("Hub discovery belongs to an expired session", "AbortError");
-      }
+      this.#assertOperation(operation);
       if (result.value.hubId !== this.#expectedHubId) throw new HubIdentityMismatchError();
       this.#discovery = result.value;
       this.#cursorBindings.clear();
@@ -140,31 +142,37 @@ class StaticHubClient implements HubClient {
     this.#discoveryPending = pending;
     try {
       return await pending;
+    } catch (error) {
+      if (operation.generation === this.#sessionGeneration && !this.#disposed) {
+        this.#discovery = undefined;
+        this.#cursorBindings.clear();
+      }
+      throw error;
     } finally {
       if (this.#discoveryPending === pending) this.#discoveryPending = undefined;
     }
   }
 
   async health(options: HubRequestOptions = {}) {
-    this.#requireActive();
+    const operation = this.#beginOperation(options.signal);
     return this.#read(
       this.#unauthenticatedTransport,
       "/healthz",
       validateHubHealth,
       "HubHealth",
-      options.signal,
+      operation,
       [200],
     );
   }
 
   async readiness(options: HubRequestOptions = {}) {
-    this.#requireActive();
+    const operation = this.#beginOperation(options.signal);
     return this.#read(
       this.#unauthenticatedTransport,
       "/readyz",
       validateHubReady,
       "HubReadiness",
-      options.signal,
+      operation,
       [200, 503],
     );
   }
@@ -174,64 +182,80 @@ class StaticHubClient implements HubClient {
     deviceName: string,
     options: HubRequestOptions = {},
   ): Promise<HubResponse<HubClaim>> {
-    this.#requireActive();
-    await this.#ensureDiscovery(options.signal);
+    const operation = this.#beginOperation(options.signal);
     validateInvitation(invitation, this.#endpoint);
     if (deviceName.length === 0 || deviceName.length > 65_536) {
       throw new ProtocolValidationError("HubClaimRequest.deviceName");
     }
+    const body = JSON.stringify({ secret: invitation.secret, device_name: deviceName });
+    if (new TextEncoder().encode(body).byteLength > maximumClaimRequestBytes) {
+      throw new ProtocolValidationError("HubClaimRequest.size");
+    }
+    await this.#ensureDiscovery(operation);
+    this.#assertOperation(operation);
     const result = await this.#writeClaim(
       this.#unauthenticatedTransport,
       `/v1/pairings/${encodeURIComponent(invitation.pairingId)}/claim`,
-      JSON.stringify({ secret: invitation.secret, device_name: deviceName }),
-      options.signal,
+      body,
+      operation,
+      "claim",
     );
+    this.#assertOperation(operation);
     requireUnexpiredClaim(result.value);
-    await this.#credentials.save(asCredential(result.value));
+    const credential = asCredential(result.value);
+    await this.#saveCredential(credential, operation);
+    this.#assertOperation(operation);
     return result;
   }
 
   async rotateDevice(options: HubRequestOptions = {}): Promise<HubResponse<HubClaim>> {
-    this.#requireActive();
-    await this.#ensureDiscovery(options.signal);
-    const previous = await this.#credentials.load();
+    const operation = this.#beginOperation(options.signal);
+    await this.#ensureDiscovery(operation);
+    const previous = await this.#loadCredential(operation);
+    this.#assertOperation(operation);
     if (previous === undefined) throw new HubHttpError(401, "hub_http_error");
     validateCredential(previous);
     const result = await this.#writeClaim(
-      this.#authenticatedTransport,
+      this.#makeAuthenticatedTransport(operation),
       "/v1/device/rotate",
       undefined,
-      options.signal,
+      operation,
+      "rotate",
     );
+    this.#assertOperation(operation);
     requireUnexpiredClaim(result.value);
     if (result.value.deviceId !== previous.deviceId) {
       throw new ProtocolValidationError("HubClaim.deviceId");
     }
-    await this.#credentials.save(asCredential(result.value));
+    const credential = asCredential(result.value);
+    await this.#saveCredential(credential, operation);
+    this.#assertOperation(operation);
     return result;
   }
 
   async vehicles(options: HubRequestOptions = {}) {
-    await this.#requireCapability("query.vehicles", options.signal);
+    const operation = this.#beginOperation(options.signal);
+    await this.#requireCapability("query.vehicles", operation);
     return this.#read(
-      this.#authenticatedTransport,
+      this.#makeAuthenticatedTransport(operation),
       "/v1/vehicles",
       validateHubVehicles,
       "HubVehicles",
-      options.signal,
+      operation,
       [200],
     );
   }
 
   async current(vehicleId: string, options: HubRequestOptions = {}) {
     validateUuid(vehicleId, "vehicleId");
-    await this.#requireCapability("query.current", options.signal);
+    const operation = this.#beginOperation(options.signal);
+    await this.#requireCapability("query.current", operation);
     const result = await this.#read(
-      this.#authenticatedTransport,
+      this.#makeAuthenticatedTransport(operation),
       `/v1/vehicles/${encodeURIComponent(vehicleId)}/current`,
       validateHubCurrent,
       "HubCurrent",
-      options.signal,
+      operation,
       [200],
     );
     if (result.value.vehicleId !== vehicleId) throw new VehicleIdentityMismatchError();
@@ -241,7 +265,9 @@ class StaticHubClient implements HubClient {
   async drives(vehicleId: string, options: HubDrivesOptions = {}): Promise<HubDrivesResult> {
     validateUuid(vehicleId, "vehicleId");
     if (options.ifNoneMatch !== undefined) asStrongEntityTag(options.ifNoneMatch);
-    await this.#requireCapability("query.drives", options.signal);
+    const operation = this.#beginOperation(options.signal);
+    await this.#requireCapability("query.drives", operation);
+    this.#assertOperation(operation);
     const binding = cursorBinding(vehicleId, options.fromMs, options.toMs);
     if (
       options.cursor !== undefined &&
@@ -255,26 +281,29 @@ class StaticHubClient implements HubClient {
     appendInteger(query, "to_ms", options.toMs);
     appendInteger(query, "limit", options.limit);
     if (options.cursor !== undefined) query.set("cursor", options.cursor);
-    const response = await this.#authenticatedTransport.request(
+    const response = await this.#makeAuthenticatedTransport(operation).request(
       `/v1/vehicles/${encodeURIComponent(vehicleId)}/drives${query.size === 0 ? "" : `?${query}`}`,
       {
         redirect: "error",
-        signal: this.#signal(options.signal),
+        signal: operation.signal,
         ...(options.ifNoneMatch === undefined
           ? {}
           : { headers: { "If-None-Match": options.ifNoneMatch } }),
       },
     );
+    this.#assertOperation(operation);
     if (response.status !== 200 && response.status !== 304) {
-      return this.#throwHubError(response, "drives", options.signal);
+      return this.#throwHubError(response, "drives", operation);
     }
     requireNoStore(response);
     const metadata = responseMetadata(response, true);
     if (response.status === 304) {
-      await requireEmptyResponseBody(response, options.signal, "HubDrives.304");
+      await requireEmptyResponseBody(response, operation.signal, "HubDrives.304");
+      this.#assertOperation(operation);
       return { kind: "notModified", metadata };
     }
-    const value = await decodeResponse(response, validateHubDrives, "HubDrives", options.signal);
+    const value = await decodeResponse(response, validateHubDrives, "HubDrives", operation.signal);
+    this.#assertOperation(operation);
     if (value.items.some((drive: HubDrive) => drive.vehicleId !== vehicleId)) {
       throw new VehicleIdentityMismatchError();
     }
@@ -290,7 +319,7 @@ class StaticHubClient implements HubClient {
     this.#cursorBindings.clear();
     this.#discovery = undefined;
     this.#discoveryPending = undefined;
-    await this.#credentials.clear();
+    await this.#enqueueCredentialMutation(() => this.#credentials.clear());
   }
 
   dispose(): void {
@@ -300,24 +329,64 @@ class StaticHubClient implements HubClient {
     this.#sessionAbort.abort(new DOMException("Hub client disposed", "AbortError"));
     this.#cursorBindings.clear();
     this.#discovery = undefined;
+    this.#discoveryPending = undefined;
   }
 
-  async #ensureDiscovery(signal: AbortSignal | undefined): Promise<HubDiscovery> {
-    return (
-      this.#discovery ??
-      (await this.discover({ ...(signal === undefined ? {} : { signal }) })).value
-    );
+  async #ensureDiscovery(operation: HubOperation): Promise<HubDiscovery> {
+    this.#assertOperation(operation);
+    return this.#discovery ?? (await this.#discover(operation)).value;
   }
 
-  async #requireCapability(
-    capability: HubCapability,
-    signal: AbortSignal | undefined,
-  ): Promise<void> {
-    this.#requireActive();
-    const discovery = await this.#ensureDiscovery(signal);
+  async #loadCredential(operation: HubOperation): Promise<HubCredential | undefined> {
+    this.#assertOperation(operation);
+    try {
+      const credential = await this.#credentials.load();
+      this.#assertOperation(operation);
+      return credential;
+    } catch (error) {
+      if (this.#isExpired(operation) || operation.signal.aborted) this.#assertOperation(operation);
+      throw error;
+    }
+  }
+
+  async #saveCredential(credential: HubCredential, operation: HubOperation): Promise<void> {
+    try {
+      await this.#enqueueCredentialMutation(async () => {
+        this.#assertOperation(operation);
+        await this.#credentials.save(credential);
+      });
+      this.#assertOperation(operation);
+    } catch (error) {
+      if (this.#isExpired(operation) || operation.signal.aborted) this.#assertOperation(operation);
+      throw error;
+    }
+  }
+
+  #enqueueCredentialMutation(mutation: () => Promise<void> | void): Promise<void> {
+    const operation = this.#credentialMutation.catch(() => undefined).then(mutation);
+    this.#credentialMutation = operation.catch(() => undefined);
+    return operation;
+  }
+
+  async #requireCapability(capability: HubCapability, operation: HubOperation): Promise<void> {
+    this.#assertOperation(operation);
+    const discovery = await this.#ensureDiscovery(operation);
+    this.#assertOperation(operation);
     if (!(discovery.capabilities as readonly string[]).includes(capability)) {
       throw new UnsupportedHubMethodError(capability);
     }
+  }
+
+  #makeAuthenticatedTransport(operation: HubOperation): FetchTransport {
+    return new FetchTransport({
+      ...this.#transportOptions,
+      authorization: async () => {
+        const credential = await this.#loadCredential(operation);
+        if (credential === undefined) return undefined;
+        validateCredential(credential);
+        return `Bearer ${credential.accessToken}`;
+      },
+    });
   }
 
   async #read<T>(
@@ -325,18 +394,26 @@ class StaticHubClient implements HubClient {
     path: string,
     validator: HubValidator<T>,
     validatorName: string,
-    signal: AbortSignal | undefined,
+    operation: HubOperation,
     successStatuses: readonly number[],
   ): Promise<HubResponse<T>> {
+    this.#assertOperation(operation);
     const response = await transport.request(path, {
       redirect: "error",
-      signal: this.#signal(signal),
+      signal: operation.signal,
     });
+    this.#assertOperation(operation);
     if (!successStatuses.includes(response.status)) {
-      return this.#throwHubError(response, path === discoveryPath ? "discovery" : "other", signal);
+      return this.#throwHubError(
+        response,
+        path === discoveryPath ? "discovery" : "other",
+        operation,
+      );
     }
+    const value = await decodeResponse(response, validator, validatorName, operation.signal);
+    this.#assertOperation(operation);
     return {
-      value: await decodeResponse(response, validator, validatorName, signal),
+      value,
       metadata: responseMetadata(response, false),
     };
   }
@@ -345,27 +422,46 @@ class StaticHubClient implements HubClient {
     transport: FetchTransport,
     path: string,
     body: string | undefined,
-    signal: AbortSignal | undefined,
+    operation: HubOperation,
+    route: "claim" | "rotate",
   ): Promise<HubResponse<HubClaim>> {
+    this.#assertOperation(operation);
     const response = await transport.request(path, {
       method: "POST",
       redirect: "error",
-      signal: this.#signal(signal),
+      signal: operation.signal,
       ...(body === undefined ? {} : { body, headers: { "Content-Type": "application/json" } }),
     });
-    if (response.status !== 200) return this.#throwHubError(response, "other", signal);
+    this.#assertOperation(operation);
+    if (response.status !== 200) {
+      if (route === "claim" && isClaimExtractorStatus(response.status)) {
+        return this.#throwClaimExtractorError(response, operation);
+      }
+      return this.#throwHubError(response, "other", operation);
+    }
+    const value = await decodeResponse(response, validateHubClaim, "HubClaim", operation.signal);
+    this.#assertOperation(operation);
     return {
-      value: await decodeResponse(response, validateHubClaim, "HubClaim", signal),
+      value,
       metadata: responseMetadata(response, false),
     };
+  }
+
+  async #throwClaimExtractorError(response: Response, operation: HubOperation): Promise<never> {
+    const body = await readBody(response, operation.signal, "HubError");
+    this.#assertOperation(operation);
+    requireTextContentType(response, "HubError");
+    if (body.length === 0) throw new ProtocolValidationError("HubError.body");
+    throw new HubHttpError(response.status, "hub_http_error");
   }
 
   async #throwHubError(
     response: Response,
     route: "discovery" | "drives" | "other",
-    signal: AbortSignal | undefined,
+    operation: HubOperation,
   ): Promise<never> {
-    const body = await readBody(response, signal, "HubError");
+    const body = await readBody(response, operation.signal, "HubError");
+    this.#assertOperation(operation);
     if (body.length === 0) throw new HubHttpError(response.status, "hub_http_error");
     requireJsonContentType(response, "HubError");
     const envelope = decodeHubJson(body, validateHubError, "HubError");
@@ -380,6 +476,29 @@ class StaticHubClient implements HubClient {
       throw new ProtocolValidationError("HubError.status");
     }
     throw new HubHttpError(response.status, code, envelope.error.message);
+  }
+
+  #beginOperation(signal: AbortSignal | undefined): HubOperation {
+    this.#requireActive();
+    const operation = {
+      generation: this.#sessionGeneration,
+      signal: this.#signal(signal),
+    };
+    this.#assertOperation(operation);
+    return operation;
+  }
+
+  #assertOperation(operation: HubOperation): void {
+    if (this.#isExpired(operation)) {
+      throw new DOMException("Hub client operation belongs to an expired session", "AbortError");
+    }
+    if (operation.signal.aborted) {
+      throw operation.signal.reason ?? new DOMException("Aborted", "AbortError");
+    }
+  }
+
+  #isExpired(operation: HubOperation): boolean {
+    return operation.generation !== this.#sessionGeneration || this.#disposed;
   }
 
   #signal(signal: AbortSignal | undefined): AbortSignal {
@@ -508,17 +627,51 @@ async function readBody(
   signal: AbortSignal | undefined,
   validatorName: string,
 ): Promise<string> {
-  let body: string;
+  if (response.body === null) {
+    if (signal?.aborted === true) {
+      throw signal.reason ?? new DOMException("Aborted", "AbortError");
+    }
+    return "";
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  let abortListener: (() => void) | undefined;
+  const aborted =
+    signal === undefined
+      ? undefined
+      : new Promise<never>((_resolve, reject) => {
+          abortListener = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+          signal.addEventListener("abort", abortListener, { once: true });
+        });
   try {
-    body = await response.text();
+    if (signal?.aborted === true) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+    while (true) {
+      const result = await (aborted === undefined
+        ? reader.read()
+        : Promise.race([reader.read(), aborted]));
+      if (result.done) break;
+      totalBytes += result.value.byteLength;
+      if (totalBytes > maximumResponseBytes) {
+        throw new ProtocolValidationError(`${validatorName}.size`);
+      }
+      chunks.push(result.value);
+    }
   } catch (error) {
     if (signal?.aborted === true) throw signal.reason ?? error;
+    if (error instanceof ProtocolValidationError) throw error;
     throw new ProtocolValidationError(validatorName);
+  } finally {
+    if (abortListener !== undefined) signal?.removeEventListener("abort", abortListener);
+    void reader.cancel().catch(() => undefined);
   }
-  if (new TextEncoder().encode(body).byteLength > maximumResponseBytes) {
-    throw new ProtocolValidationError(`${validatorName}.size`);
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
   }
-  return body;
+  return new TextDecoder().decode(body);
 }
 
 function requireJsonContentType(response: Response, validatorName: string): void {
@@ -526,6 +679,17 @@ function requireJsonContentType(response: Response, validatorName: string): void
   if (mediaType !== "application/json") {
     throw new ProtocolValidationError(`${validatorName}.contentType`);
   }
+}
+
+function requireTextContentType(response: Response, validatorName: string): void {
+  const mediaType = response.headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (mediaType !== "text/plain") {
+    throw new ProtocolValidationError(`${validatorName}.contentType`);
+  }
+}
+
+function isClaimExtractorStatus(status: number): boolean {
+  return status === 400 || status === 415 || status === 422;
 }
 
 function responseMetadata(

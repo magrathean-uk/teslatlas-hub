@@ -17,6 +17,7 @@ const required = [
   "docs/api.md",
   "docs/architecture.md",
   "docs/compatibility.md",
+  "docs/docker.md",
   "docs/product-versioning.md",
   "docs/protocol-dependency-gate.md",
   "dist/browser.d.ts",

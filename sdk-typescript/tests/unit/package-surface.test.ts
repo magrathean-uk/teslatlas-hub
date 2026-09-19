@@ -23,6 +23,7 @@ describe("package surface", () => {
       "./package.json",
     ]);
     expect(manifest.files).toContain("docs/compatibility.md");
+    expect(manifest.files).toContain("docs/docker.md");
     expect(manifest.files).toContain("docs/product-versioning.md");
   });
 
@@ -76,6 +77,7 @@ describe("package surface", () => {
     const files = new Set(reports[0]?.files?.map((entry) => entry.path).filter(isString));
 
     expect(files.has("docs/compatibility.md")).toBe(true);
+    expect(files.has("docs/docker.md")).toBe(true);
     expect(files.has("docs/product-versioning.md")).toBe(true);
     expect(files.has("dist/generated/validators.js")).toBe(true);
     expect(files.has("dist/generated/validators.d.ts")).toBe(true);

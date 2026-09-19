@@ -41,6 +41,49 @@ caller-owned credential store. This dedicated adapter preserves the richer
 `createClient` API and exposes discovery, health/readiness, pairing, credential
 rotation, vehicles, current state, and drives.
 
+The current-Hub adapter uses ordinary Fetch certificate and hostname trust. It
+does not verify the invitation `tlsPin` during a request. Pairing expects the
+operator to obtain an invitation from Hub's `pair --json` command and to learn
+the expected Hub UUID through trusted setup context; the invitation itself does
+not contain that UUID.
+
+## Current-Hub consumer
+
+Build a candidate tarball, then install that file into the source-distributed
+minimal consumer outside this repository:
+
+```bash
+npm run build
+mkdir -p /tmp/teslatlas-sdk /tmp/teslatlas-hub-consumer
+npm pack --pack-destination /tmp/teslatlas-sdk
+cp examples/hub/{package.json,node.mjs,index.html,app.js,serve.mjs} /tmp/teslatlas-hub-consumer/
+npm --prefix /tmp/teslatlas-hub-consumer install --no-save --package-lock=false --ignore-scripts \
+  /tmp/teslatlas-sdk/teslatlas-sdk-2026.36.2.tgz
+```
+
+Run the Node consumer with an operator-confirmed endpoint and Hub UUID. Keep
+the invitation or credential envelope in a private file; no token is accepted
+on the command line:
+
+```bash
+node /tmp/teslatlas-hub-consumer/node.mjs \
+  --endpoint "$HUB_ENDPOINT" --hub-id "$HUB_ID" \
+  --invitation-file "$INVITATION_FILE"
+```
+
+The browser consumer is a static example served from loopback:
+
+```bash
+npm --prefix /tmp/teslatlas-hub-consumer run browser
+```
+
+Hub must allow the exact page origin, and the browser must trust the endpoint
+certificate. Browser Fetch can expose a generic CORS or TLS error when either
+condition fails. The example keeps credentials in memory, awaits logout before
+disposal, and requires a new invitation after a 401. It does not poll or scan
+for Hub instances. See `examples/hub/` for the five source files and the
+compatibility guide for the complete API contract.
+
 ## Local verification
 
 ```bash
@@ -79,6 +122,7 @@ Teslatlas SDK browser client: 1 vehicle, protocol 1.2.0
 - [Architecture](docs/architecture.md)
 - [API reference](docs/api.md)
 - [Compatibility](docs/compatibility.md)
+- [Docker setup](docs/docker.md)
 - [Protocol dependency gate](docs/protocol-dependency-gate.md)
 
 ## Licence

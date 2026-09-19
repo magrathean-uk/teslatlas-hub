@@ -1,13 +1,7 @@
-# TypeScript SDK foundation plan — historical
+# Superseded: TypeScript SDK foundation plan — historical
 
-This foundation plan is executed and superseded by the protocol-client
-reconciliation plan at
-[`docs/superpowers/plans/2026-08-31-protocol-client-reconciliation.md`](../superpowers/plans/2026-08-31-protocol-client-reconciliation.md).
+This operational plan was replaced on 2026-09-08.
 
-The original work established browser/Node transport primitives. The canonical
-codebase retained those tested invariants and added the pinned protocol-derived
-client. The separate documentation-only clone contributed design analysis; it
-was not merged as executable code.
+Use the [canonical development plan](../development/PLAN.md). The first milestone is a simple working bootstrap; polished installers and cross-platform acceptance follow later. Product coding and native goals are held until the owner says start.
 
-For the current public surface, use [the API reference](../api.md) and
-[compatibility guide](../compatibility.md).
+The [original document](../development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md) is preserved as historical evidence only. Do not execute it or treat its old model, goal, package or permission clauses as current authority.
