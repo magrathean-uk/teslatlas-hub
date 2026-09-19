@@ -1241,12 +1241,6 @@ impl HubStore {
         let _publication_gate = self.try_acquire_publication_gate()?;
         let connection = self.open()?;
         let retired_cleanup_cutoff = now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS);
-        connection
-            .execute(
-                "DELETE FROM sync_retired_lineages WHERE expires_at_ms <= ?1",
-                params![retired_cleanup_cutoff],
-            )
-            .map_err(StoreError::LineageCatalog)?;
         self.verify_referenced_packs_at(now_ms)?;
         let quarantined_sessions_preserved: i64 = connection
             .query_row(
@@ -1289,6 +1283,14 @@ impl HubStore {
                 }
             }
         }
+        // Retention metadata stays retryable if any validation or filesystem
+        // cleanup above fails; make its deletion the final fallible operation.
+        connection
+            .execute(
+                "DELETE FROM sync_retired_lineages WHERE expires_at_ms <= ?1",
+                params![retired_cleanup_cutoff],
+            )
+            .map_err(StoreError::LineageCatalog)?;
 
         Ok(RepairReport {
             status: "ok".to_owned(),

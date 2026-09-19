@@ -873,6 +873,156 @@ fn repair_does_not_report_ok_integrity_for_a_corrupt_catalogue() {
 }
 
 #[test]
+fn failed_repair_preserves_expired_retired_lineage_metadata() {
+    let temp = crate::private_tempdir().expect("tempdir");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (_, vehicle) = test_registered_vehicle(&store);
+    let now_ms = RETIRED_LINEAGE_PACK_DELETE_GRACE_MS + 10;
+    let expired_head = "a".repeat(64);
+    let expired_pack = "d".repeat(64);
+    let corrupt_head = "b".repeat(64);
+    let corrupt_pack = "c".repeat(64);
+    let connection = store.open().expect("open");
+    connection
+        .execute(
+            "INSERT INTO sync_retired_lineages(
+                vehicle_id, head_digest, manifest_json, retired_at_ms, expires_at_ms
+             ) VALUES (?1, ?2, ?3, 1, 2)",
+            params![
+                vehicle.vehicle_id.to_string(),
+                expired_head,
+                b"expired lineage metadata".as_slice()
+            ],
+        )
+        .expect("insert expired lineage");
+    connection
+        .execute(
+            "INSERT INTO sync_retired_lineage_packs(
+                vehicle_id, head_digest, pack_digest, relative_path, compressed_bytes
+             ) VALUES (?1, ?2, ?3, ?4, 1)",
+            params![
+                vehicle.vehicle_id.to_string(),
+                expired_head,
+                expired_pack,
+                format!("/v1/packs/sha256/{expired_pack}.sqlite.zst")
+            ],
+        )
+        .expect("insert expired retained pack binding");
+    connection
+        .execute(
+            "INSERT INTO sync_retired_lineages(
+                vehicle_id, head_digest, manifest_json, retired_at_ms, expires_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                vehicle.vehicle_id.to_string(),
+                corrupt_head,
+                b"not a lineage manifest".as_slice(),
+                now_ms,
+                now_ms + 100
+            ],
+        )
+        .expect("insert corrupt retained lineage");
+    connection
+        .execute(
+            "INSERT INTO sync_retired_lineage_packs(
+                vehicle_id, head_digest, pack_digest, relative_path, compressed_bytes
+             ) VALUES (?1, ?2, ?3, ?4, 1)",
+            params![
+                vehicle.vehicle_id.to_string(),
+                corrupt_head,
+                corrupt_pack,
+                format!("/v1/packs/sha256/{corrupt_pack}.sqlite.zst")
+            ],
+        )
+        .expect("insert corrupt retained pack binding");
+    let snapshot = |connection: &Connection| {
+        let lineages = connection
+            .prepare(
+                "SELECT vehicle_id, head_digest, hex(manifest_json), retired_at_ms, expires_at_ms
+                   FROM sync_retired_lineages ORDER BY vehicle_id, head_digest",
+            )
+            .expect("prepare lineage snapshot")
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })
+            .expect("query lineage snapshot")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect lineage snapshot");
+        let packs = connection
+            .prepare(
+                "SELECT vehicle_id, head_digest, pack_digest, relative_path, compressed_bytes
+                   FROM sync_retired_lineage_packs
+                  ORDER BY vehicle_id, head_digest, pack_digest",
+            )
+            .expect("prepare pack snapshot")
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })
+            .expect("query pack snapshot")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect pack snapshot");
+        (lineages, packs)
+    };
+    let before = snapshot(&connection);
+    drop(connection);
+
+    assert!(matches!(
+        store.repair_at(now_ms),
+        Err(StoreError::DeserializeManifest(_))
+    ));
+
+    let connection = store.open().expect("reopen after failed repair");
+    assert_eq!(
+        snapshot(&connection),
+        before,
+        "failed validation must not delete eligible retention metadata"
+    );
+    connection
+        .execute(
+            "DELETE FROM sync_retired_lineages WHERE head_digest = ?1",
+            params![corrupt_head],
+        )
+        .expect("remove injected corruption");
+    drop(connection);
+
+    store
+        .repair_at(now_ms)
+        .expect("successful repair at the same cutoff");
+    let connection = store.open().expect("reopen after successful repair");
+    let expired_parent_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sync_retired_lineages WHERE head_digest = ?1",
+            params![expired_head],
+            |row| row.get(0),
+        )
+        .expect("count expired parents");
+    let expired_child_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sync_retired_lineage_packs WHERE head_digest = ?1",
+            params![expired_head],
+            |row| row.get(0),
+        )
+        .expect("count expired children");
+    assert_eq!(
+        (expired_parent_count, expired_child_count),
+        (0, 0),
+        "successful repair must delete the expired parent and its child"
+    );
+}
+
+#[test]
 fn car_settings_are_idempotent_and_survive_reopen() {
     let temp = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(temp.path()).expect("store");

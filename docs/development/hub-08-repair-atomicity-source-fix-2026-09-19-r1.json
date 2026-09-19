@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-19T20:20:26Z",
+  "product": "Teslatlas Hub",
+  "scope": "HUB-08 repair retention-metadata failure atomicity source fix",
+  "verdict": "INDEPENDENTLY_ACCEPTED_BOUNDED_SOURCE_FIX",
+  "acceptance_limit": "Source-level repair ordering and focused regression only. This is not installed-path evidence, a real corruption/recovery cohort, complete HUB-08 acceptance, F1 acceptance, or F6 acceptance.",
+  "source": {
+    "branch": "main",
+    "base_commit": "09684337332fdd7eae9ad460a8cc3bf6b1aaafd3",
+    "origin_main_at_start": "09684337332fdd7eae9ad460a8cc3bf6b1aaafd3",
+    "current_identity": "base commit plus the exact uncommitted two-file patch below",
+    "working_tree_patch_sha256": "87fd09c1415c0335d5245c36ef735d56a51fd6b55aea114ab4c3e46d304c8d3f",
+    "patch_encoding": "git diff --binary restricted to the two changed source/test paths",
+    "diff": {
+      "files_changed": 2,
+      "insertions": 158,
+      "deletions": 6,
+      "paths": [
+        {
+          "path": "src/storage/db/geofences_and_terrain.rs",
+          "base_sha256": "58595b37fe31dcbc35bbf5265e91260801934a49a462b980ba33f9fb3318099c",
+          "current_sha256": "6b6b91f47e9cbb7e393f43deb112802d8ea0411f1b03b178828879612746c751",
+          "insertions": 8,
+          "deletions": 6
+        },
+        {
+          "path": "src/storage/db/tests/schema22_and_lifecycle.rs",
+          "base_sha256": "95ef8d14e5e0cd6f2f444faa5978b8db1452c2e29455d714df20e38a417a88fb",
+          "current_sha256": "f48bbac472213c97f94fe36e18043cffa13360d7bd38ce4b37d6eb90f9347a1e",
+          "insertions": 150,
+          "deletions": 0
+        }
+      ]
+    }
+  },
+  "confirmed_defect": {
+    "before": "repair_at autocommitted deletion of expired sync_retired_lineages before referenced-pack validation, quarantine counting, retained binding inventory, SQLite quick-check and stale staging cleanup.",
+    "failure_effect": "A later corrupt unexpired retired-lineage manifest could return an error after an otherwise deletion-eligible retired parent and its cascaded pack bindings had already been removed.",
+    "classification": "repair retention-metadata failure atomicity risk"
+  },
+  "implementation": {
+    "change": "Move the unchanged cutoff DELETE to the end of repair_at, after all validation and filesystem cleanup, so it is the final fallible operation before constructing RepairReport.",
+    "sql_predicate_unchanged": "expires_at_ms <= now_ms - RETIRED_LINEAGE_PACK_DELETE_GRACE_MS using saturating subtraction",
+    "foreign_key_behavior_unchanged": "Deleting an expired parent still cascades to sync_retired_lineage_packs.",
+    "quarantine_behavior_unchanged": "Repair still counts and preserves quarantined lifecycle state.",
+    "orphan_behavior_unchanged": "Expired retired rows remain excluded from catalog_shas at the same cutoff, so stale staging and unreferenced orphan cleanup retain their prior successful-repair behavior."
+  },
+  "ordering_and_semantics": {
+    "filesystem_before_database": "Stale staging and unreferenced orphan cleanup intentionally occur before the final retired-lineage database deletion.",
+    "failure": "Any returned validation, query, quick-check or staging-cleanup failure occurs before retired-lineage deletion; the eligible parent and child retention metadata remain byte-for-byte unchanged for retry. Filesystem cleanup is outside this metadata-only atomicity claim.",
+    "delete_failure": "The final DELETE is one SQLite statement; a statement failure does not create a later repair failure after a successful metadata deletion.",
+    "success": "After all preceding work succeeds, the unchanged cutoff removes expired parents and SQLite cascades their retired pack bindings; the existing report and quarantine/orphan results are returned.",
+    "tradeoff": "A failed repair retains expired metadata until a later successful retry instead of reclaiming it before reporting the failure."
+  },
+  "focused_regression": {
+    "name": "storage::db::tests::failed_repair_preserves_expired_retired_lineage_metadata",
+    "fixture": "One deletion-eligible expired parent with its own child pack binding plus one malformed unexpired parent with its own child binding.",
+    "failure_assertion": "DeserializeManifest is returned and ordered snapshots of both retired tables exactly equal their pre-repair values.",
+    "success_assertion": "After removing only the injected malformed parent, repair_at at the same now_ms/cutoff removes both the expired parent and its child by cascade.",
+    "result": "1 passed, 0 failed, 911 filtered out"
+  },
+  "validation": {
+    "shared_lock": "acquired for focused compile/tests and released; absent at freeze",
+    "commands": [
+      "../scripts/dev/run.sh hub cargo test --lib failed_repair_preserves_expired_retired_lineage_metadata -- --nocapture",
+      "../scripts/dev/run.sh hub cargo test --lib repair_preserves_quarantined_sessions_and_removes_orphaned_packs -- --nocapture",
+      "../scripts/dev/run.sh hub cargo test --lib live_delta_compaction_preserves_the_base_and_rebuilds_from_durable_journal_payloads -- --nocapture",
+      "../scripts/dev/run.sh hub cargo check --lib",
+      "../scripts/dev/run.sh hub cargo fmt --all -- --check",
+      "git diff --check"
+    ],
+    "results": {
+      "new_regression_final": "passed 1/1 after the child-cascade test closure",
+      "existing_repair_quarantine_orphan": "passed 1/1",
+      "existing_retention_grace_and_deletion": "passed 1/1",
+      "cargo_check_lib": "passed with the pre-existing unused UNBOUND_SOURCE_COMMIT warning",
+      "rustfmt": "passed",
+      "diff_check": "passed"
+    },
+    "broad_suite_run": false,
+    "runtime_or_vm_started": false
+  },
+  "independent_review": {
+    "reviewer": "gpt-5.6-sol/high",
+    "current_verdict": "ACCEPT",
+    "reviews": [
+      {
+        "verdict": "REJECT",
+        "finding": "P2 regression gap: the expired parent initially had no child binding, so the pre-fix ON DELETE CASCADE boundary was not exercised."
+      },
+      {
+        "verdict": "ACCEPT",
+        "scope": "narrow HUB-08 implementation and P2 test delta",
+        "findings": [],
+        "verified": "Expired parent owns a child binding; failed repair preserves exact parent and child snapshots; same-cutoff successful repair removes both by cascade; DELETE remains the final fallible operation."
+      },
+      {
+        "verdict": "ACCEPT",
+        "scope": "final receipt, PLAN and STATUS metadata delta",
+        "findings": [],
+        "verified": "Base/current file hashes, restricted two-file patch SHA, 158 insertions and 6 deletions, focused-check claims, filesystem-before-database ordering, retention-metadata-only atomicity boundary and all open acceptance limits are accurate."
+      }
+    ]
+  },
+  "remaining": [
+    "Exercise the repair through an installed supported distribution path.",
+    "Run a retained corruption/recovery cohort covering interrupted and repeated repair behavior.",
+    "Complete the remaining HUB-08 ledger assertions and full F1/F6 lifecycle gates."
+  ],
+  "publication": {
+    "state": "published by the enclosing source commit",
+    "tag_release_or_binary_publication": false
+  }
+}

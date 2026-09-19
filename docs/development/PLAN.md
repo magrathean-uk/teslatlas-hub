@@ -232,6 +232,20 @@ is stopped. Image-byte reproducibility, pristine first-attempt TLS startup,
 clean-host package lifecycle, upgrade/rollback, backup/restore, failed candidate,
 removal, F1, F6 and F7 remain open.
 
+The bounded HUB-08 repair-atomicity source fix is independently accepted. On base commit
+`09684337332fdd7eae9ad460a8cc3bf6b1aaafd3`, `repair_at` previously deleted
+expired retired-lineage metadata before later pack/binding validation, SQLite
+quick-check and stale-staging cleanup could fail. The accepted two-file patch moves
+the unchanged cutoff deletion to the final fallible operation. Filesystem staging
+and orphan cleanup still run first; on success, the same predicate deletes expired
+parents and SQLite cascades their child bindings. On any earlier returned failure,
+eligible parent and child metadata remain unchanged for retry. A focused corrupt
+retained-lineage fixture proves exact failure preservation and same-cutoff successful
+parent/child deletion. Initial review rejected a P2 child-cascade test gap; the
+same-reviewer delta returned `ACCEPT` with no findings. This is source-level repair
+ordering only, not installed-path, retained corruption-cohort, complete HUB-08, F1
+or F6 acceptance.
+
 ## Start and boundaries
 
 The sent full-solution goal authorizes bounded implementation, tests, isolated
