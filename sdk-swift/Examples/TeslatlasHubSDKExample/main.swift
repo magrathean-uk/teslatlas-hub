@@ -1,6 +1,6 @@
 import TeslatlasHubSDK
 
-let protocolCommit = "79ced4c7fdc79520ad31d72a0280bf5f3f19f407"
+let protocolCommit = "53b5c6483990db84e5214176755f398e93d87b1b"
 let profile = TeslatlasProtocolVersion("1.2.0")!
 
 print("TeslatlasHubSDK")

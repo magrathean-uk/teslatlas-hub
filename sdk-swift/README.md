@@ -1,10 +1,10 @@
 # Teslatlas Swift SDK
 
-Public Swift clients for three deliberately separate wire surfaces:
+Four public Swift libraries across three deliberately separate wire surfaces:
 
 - `TeslatlasHubSDK` and `TeslatlasCommands` implement the strict public
   `teslatlas-protocol` profile `1.2.0`, pinned to
-  `79ced4c7fdc79520ad31d72a0280bf5f3f19f407`.
+  runtime-source commit `53b5c6483990db84e5214176755f398e93d87b1b`.
 - `TeslatlasHubV1Compatibility` is a narrow compatibility product for the
   unchanged Teslatlas Hub `v1.0.0` deployment surface. It does not claim that
   Hub v1.0.0 implements public protocol profile 1.2.0.
@@ -48,6 +48,8 @@ When a moving development dependency is acceptable, use the repository's
 For reproducible distribution, use a reviewed content-bound source snapshot.
 The current G3/G6 receipts do not publish or tag one. The CalVer product
 identity, Swift tools version, and wire-contract revisions remain separate.
+The deterministic source-handoff procedure is documented in
+[source distribution](docs/source-distribution.md).
 
 ## Add the package
 
@@ -276,6 +278,7 @@ swift test --filter LiveHubBlackBoxTests
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Source distribution](docs/source-distribution.md)
 - [Hub v1 compatibility](docs/hub-v1-compatibility.md)
 - [Current Hub product](docs/current-hub.md)
 - [Protocol and deployment activation record](docs/protocol-dependency-gate.md)

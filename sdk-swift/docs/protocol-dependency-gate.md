@@ -4,8 +4,12 @@
 
 `TeslatlasHubSDK` and `TeslatlasCommands` continue to consume
 `teslatlas-protocol` commit
-`79ced4c7fdc79520ad31d72a0280bf5f3f19f407`, profile `1.2.0`, with public
+`53b5c6483990db84e5214176755f398e93d87b1b`, profile `1.2.0`, with public
 compatibility profiles `1.0.0`, `1.1.0`, and `1.2.0`.
+
+That commit is the accepted Protocol runtime-source identity. Its
+`e82ed205f728cff3cf1e2ceab0ceb40692c562d6` descendant records Docker evidence
+only and does not replace the runtime-source pin.
 
 Those profiles remain public protocol definitions. They are not evidence that
 Teslatlas Hub v1.0.0 implements any one of them. The strict SDK surface and its
