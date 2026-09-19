@@ -1,0 +1,28 @@
+# Full-solution /goal — prepared, not started
+
+Open `/Users/bolyki/dev/source/teslatlas-service` and select **GPT-5.6 Sol / Max**.
+The following text is for the owner to send. No goal has been created or started.
+
+```text
+/goal Complete Teslatlas as a fully working end-to-end Hub solution with every active dependency: Hub, Protocol, TypeScript SDK, Edge, Swift SDK and Home Assistant. Do not stop at App v7 readiness, one successful synthetic journey or L1–L3.
+
+Read WORKSPACE_AUTHORITY.md and docs/development/{MASTER_PLAN.md,NEXT_PHASE_PLAN.md,PRODUCT_SPEC.md,TASKS.json,COORDINATION.md,ENVIRONMENT.md}, then each selected product PLAN.md and STATUS.json. G0–G7 and bounded HA Container acceptance are intermediate completed evidence, not overall completion. Preserve them and rerun only changed or missing assertions.
+
+Deliver every mandatory F0–F7 gate in NEXT_PHASE_PLAN.md. Complete the documented supported functionality and ordinary install/build/setup/use/update/recovery/backup/restore/rollback/removal paths on active targets. Hub must work alone; optional deployment does not make any of the five companion/dependency products optional for completion. Home Assistant is required, even if sequenced after the primary products.
+
+Bound one acceptance ledger from existing specs, guides, support claims and evidence, then implement. Cover Hub native Mac UI/CLI and Debian/ARM64 container operation, collection adapters and import/storage/migrations, supported API/sync/export, authentication, diagnostics/repair/retention; Edge and pinned receiver/proxy lifecycle, durable forwarding and recovery; Protocol consistency; packed TS Node/real-browser consumers; external SwiftPM and declared SDK platform/compiler floors; HA normal configuration UI, entities, scheduler, reauth, replacement/rollback and state preservation. Do not silently drop supported behavior or invent unrelated features.
+
+Start with one Debian ARM64 installed Hub lifecycle slice, repair observed failures and continue through all remaining gates. Identify an exact predecessor before upgrade/rollback acceptance. Test Hub macOS 13 and Swift macOS 14 floors in separate sequential runs with at most one Mac guest at a time. Use SDK-owned isolated iOS harnesses only where needed for the SDK's existing support claims; never use App source or tooling. Complete supported native/container and ordinary companion source-bootstrap paths with exact reachable compatible commit/catalog identities, usable packages, setup instructions and troubleshooting.
+
+F5 named-source parity and fresh passive-data evidence are mandatory. Use only fresh owner-supplied read-only exports/captures and explicit authorization for any real collection. Synthetic fixtures prepare the harness but do not pass real-data acceptance. Never reuse excluded old private fixtures or send vehicle commands. When a needed input, baseline, target image/hardware or authorization is missing, finish independent work, prepare the exact next action and request only that missing input. Keep the gate and overall goal incomplete; do not reclassify it as optional future work.
+
+F7 must prove a fresh ordinary installed path from import/authorized ingestion through durable Hub storage to TS Node/browser, Swift and HA consumption, plus failure/recovery, upgrade and data-preserving lifecycle. Verify Hub-only operation and supported optional compositions. Independent review must confirm exact artifacts, all mandatory gates and no unresolved blocking functional defects before FULL_SOLUTION_ACCEPTED.
+
+Use GPT-5.6 Sol / Max for coordination, Sol / High for implementation and independent technical review, Luna / Max for bounded read-only exploration. No fast mode or silent substitution. Default to at most two useful subagents, exact deliverables and owned paths, one writer per repository. Do not create persistent product tasks or resume archived queues. Hub owns shared runtimes; only one heavy build/VM installation holds the shared lab lock.
+
+This goal authorizes the focused implementation, tests, isolated package installation and synthetic runtime work, required lean ARM64/Mac VM work and validated source-only commits/pushes and exact catalog updates to existing GitHub repositories needed for an ordinary working source distribution. GitHub is storage only: no CI, binary releases/assets, tags, signing/notarization or production deployment. No force push, reset, clean, stash or discarded dirty work. Reuse the retained Debian guest after ownership/access checks; at most one needed Mac guest and the documented disk budget. Verify cleanup and stop idle guests.
+
+Do not inspect, edit, build, test, clean or delegate anything in app/ or its tasks/tooling. Viewer stays deferred with no active worker, dependency or gate. x86/x86_64/amd64/Intel/Azure remain paused. Preserve repository-roots Git storage, original receipts, private data and shared tools. Old cohorts remain closed; use fresh credentials and handoffs. No Tesla account access, public ingress, real collection or vehicle action without separate explicit owner authority. Keep automation paused.
+
+Persist through every ready implementation and acceptance task until the full objective is achieved. Do not end at the first milestone, rewrite plans instead of implementing, rerun unchanged suites, or claim source/synthetic proof is installed/real-data proof. Maintain accurate plans/status and concise RESULT / EVIDENCE / NEED / NEXT updates. If all remaining work truly requires unavailable external input, report exact blockers without marking the goal complete. Finish with reproducible source/artifacts, installation and operator documentation, full acceptance evidence and exact limitations. Do not start App or Viewer work.
+```

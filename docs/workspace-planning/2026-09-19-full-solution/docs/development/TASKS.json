@@ -1,0 +1,699 @@
+{
+  "schema_version": 2,
+  "programme": "2026-09-18-app-v7-readiness",
+  "updated_at": "2026-09-19T11:04:33.615318+00:00",
+  "phase": "FULL_SOLUTION_PLANNED_NOT_STARTED",
+  "authority": "docs/development/MASTER_PLAN.md",
+  "launch_prompt": "docs/development/HANDOFF_PROMPT.md",
+  "model_policy": {
+    "coordinator": "gpt-5.6-sol/max",
+    "implementation_and_review": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/max",
+    "fast_mode": false
+  },
+  "active_targets": [
+    "debian13-arm64",
+    "macos-apple-silicon"
+  ],
+  "paused_targets": [
+    "x86",
+    "x86_64",
+    "amd64",
+    "intel-macos",
+    "azure"
+  ],
+  "delivery_order": [
+    "hub",
+    "teslatlas-sdk-typescript",
+    "teslatlas-edge",
+    "teslatlas-sdk-swift"
+  ],
+  "parallel_foundation": "teslatlas-protocol",
+  "secondary_product": "teslatlas-home-assistant",
+  "adoption_state": "APP_V7_ADOPTION_READY",
+  "adoption_gates": [
+    {
+      "id": "G0",
+      "outcome": "fresh shared ARM64 test environment",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "docs/development/VM_ACCESS.md",
+        "/Users/bolyki/dev/teslatlas-lab/vms/lima/debian13-arm64/g0-evidence/summary-20260918T153546Z.txt"
+      ]
+    },
+    {
+      "id": "G1",
+      "outcome": "Debian ARM64 Hub standalone",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json"
+      ]
+    },
+    {
+      "id": "G2",
+      "outcome": "Apple-silicon Mac Hub standalone",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json"
+      ]
+    },
+    {
+      "id": "G3",
+      "outcome": "exact shared Protocol bindings",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+      ]
+    },
+    {
+      "id": "G4",
+      "outcome": "packed TypeScript Node/browser journey",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json",
+        "teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json"
+      ]
+    },
+    {
+      "id": "G5",
+      "outcome": "Edge durable final-cohort delivery/recovery",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+        "teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json"
+      ]
+    },
+    {
+      "id": "G6",
+      "outcome": "Swift external final-cohort consumer",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+        "teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json"
+      ]
+    },
+    {
+      "id": "G7",
+      "outcome": "App adoption integration handoff",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "docs/development/APP_V7_READINESS.md"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "repository": "hub",
+      "title": "Hub",
+      "plan": "hub/docs/development/PLAN.md",
+      "status_file": "hub/docs/development/STATUS.json",
+      "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
+      "gate_ids": [
+        "G0",
+        "G1",
+        "G2",
+        "G4",
+        "G5",
+        "G6"
+      ],
+      "priority": "primary",
+      "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
+      "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+        "branch": "main",
+        "dirty_entries": 115,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft full-product goal, not started: Complete all supported Hub and six-product ecosystem behavior, distributions and lifecycle, mandatory real-input parity and final combined installed acceptance.",
+      "legacy_task": {
+        "thread_id": "01a082b7-37ed-7ea3-98fc-849284695b63",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "../docs/development/VM_ACCESS.md",
+        "docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json",
+        "docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json",
+        "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+        "docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+        "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+        "docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r3.json",
+        "docs/development/edge-macos-one-event-r11-concrete-preparation-2026-09-18.json"
+      ],
+      "remaining": [
+        "F0: complete the claim-by-claim feature, support-floor, dependency, distribution and evidence ledger.",
+        "F1-F4: complete standalone Hub, Edge, Protocol/SDK and required Home Assistant behavior on every active documented path.",
+        "F5: fresh read-only named-source export and fresh authorized passive capture evidence are mandatory input-dependent acceptance gates.",
+        "F6: prove native/container/source distributions, full lifecycle and the exact six-active-repository no-Viewer companion catalog.",
+        "F7: pass one combined installed end-to-end ecosystem journey from F6 artifacts."
+      ],
+      "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "FULL_HUB_ECOSYSTEM_F0_F7",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Complete all supported Hub and six-product ecosystem behavior, distributions and lifecycle, mandatory real-input parity and final combined installed acceptance.",
+        "prerequisites": [
+          "Owner sends the full-product goal; planning text alone does not start execution.",
+          "Freeze exact source/product/profile/dependency identities and complete F0 before runtime claims.",
+          "Use fresh Hub-owned cohorts and separately supplied F5 inputs; never reuse closed private material."
+        ],
+        "acceptance_evidence": [
+          "F0 support ledger closed with every claim proven or corrected",
+          "F1-F4 standalone and companion product receipts on documented active targets",
+          "F5 named-source/import and passive-capture parity receipts",
+          "F6 reproducible native/container/source artifacts, lifecycle and six-source catalog receipts",
+          "F7 combined installed end-to-end receipt with recovery and cleanup"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+        "branch": "main",
+        "dirty_entries": 119,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "14c8dc20c6a9550beece90faedf42dbdd4b4f0d9",
+        "remote_verified_at": "2026-09-19T10:51:01.559957+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      },
+      "required_for_full_solution": true,
+      "full_solution_state": "NOT_ACCEPTED",
+      "execution_order": "ready dependency order from full plan"
+    },
+    {
+      "repository": "teslatlas-sdk-typescript",
+      "title": "TypeScript SDK",
+      "plan": "teslatlas-sdk-typescript/docs/development/PLAN.md",
+      "status_file": "teslatlas-sdk-typescript/docs/development/STATUS.json",
+      "objective": "Complete every documented TypeScript SDK Node/browser contract, support claim, reproducible package lifecycle, mandatory real-input semantics and final installed consumer journey.",
+      "gate_ids": [
+        "G3",
+        "G4"
+      ],
+      "priority": "primary",
+      "state": "G3_G4_ACCEPTED",
+      "source_objective_state": "PACKED_NODE_BROWSER_AND_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+        "branch": "main",
+        "dirty_entries": 56,
+        "checked_at": "2026-09-18T17:26:55+00:00"
+      },
+      "next_ready_action": "Draft full-product goal, not started: Complete all documented SDK contracts and support claims, then prove reproducible package lifecycle and final installed Node/browser consumers.",
+      "legacy_task": {
+        "thread_id": "01a082b7-890b-70b3-8a0e-9e964636849f",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+        "docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json",
+        "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+        "../hub/docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r3.json"
+      ],
+      "remaining": [
+        "F0: inventory and close every root, Node, browser, current-Hub and rich-profile support claim.",
+        "F3: prove full public behavior from a clean packed consumer on all declared active runtime/browser floors.",
+        "F5: consume mandatory fresh real-input semantic evidence.",
+        "F6-F7: deliver reproducible package/catalog lifecycle and pass final installed Node/browser journeys."
+      ],
+      "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "FULL_TYPESCRIPT_SDK_F0_F7",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Complete all documented SDK contracts and support claims, then prove reproducible package lifecycle and final installed Node/browser consumers.",
+        "acceptance_evidence": [
+          "F0 claim ledger and exact Protocol/generated binding",
+          "F3 clean external Node and real-browser full-surface receipts",
+          "F5 real-input field/unit/null/history semantic receipt",
+          "F6 deterministic archive, docs, update/removal and Hub-catalog receipt",
+          "F7 combined installed consumer and cleanup receipt"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+        "branch": "main",
+        "dirty_entries": 57,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "50938a03d8245d1c659fac1bd300d69c91f0b93f",
+        "remote_verified_at": "2026-09-19T10:50:47.136415+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      },
+      "required_for_full_solution": true,
+      "full_solution_state": "NOT_ACCEPTED",
+      "execution_order": "ready dependency order from full plan"
+    },
+    {
+      "repository": "teslatlas-edge",
+      "title": "Edge",
+      "plan": "teslatlas-edge/docs/development/PLAN.md",
+      "status_file": "teslatlas-edge/docs/development/STATUS.json",
+      "objective": "Complete the optional Edge and pinned receiver across documented native/container ARM64 and Apple-silicon behavior, recovery, passive evidence, distribution and combined installed acceptance.",
+      "gate_ids": [
+        "G3",
+        "G5"
+      ],
+      "priority": "primary",
+      "state": "G3_G5_ACCEPTED",
+      "source_objective_state": "DURABLE_FORWARDING_AND_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+        "branch": "main",
+        "dirty_entries": 49,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft full-product goal, not started: Complete Edge and the pinned receiver across documented delivery, recovery, native/container distribution, passive evidence and final installed integration.",
+      "legacy_task": {
+        "thread_id": "01a082b7-9723-7211-b9f0-8b505e450b7e",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+        "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+        "docs/development/edge-macos-one-event-r11-concrete-profile-acceptance-2026-09-18.json",
+        "docs/development/edge-macos-one-event-r11-restart-cross-owner-acceptance-2026-09-18.json"
+      ],
+      "remaining": [
+        "F0: close every Edge, receiver, spool, service, container and recovery claim.",
+        "F2: prove complete optional delivery and fault recovery against the exact F1 Hub.",
+        "F5: a fresh authorized passive capture is mandatory external input for real mapping/parity evidence.",
+        "F6-F7: prove Debian ARM64, Apple-silicon and ARM64 container lifecycle, catalog integration and final combined installation."
+      ],
+      "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "FULL_EDGE_RECEIVER_F0_F7",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Complete Edge and the pinned receiver across documented delivery, recovery, native/container distribution, passive evidence and final installed integration.",
+        "prerequisites": [
+          "F0 ledger and exact receiver source/version/toolchain/configuration audit",
+          "Accepted F1 Hub and fresh Hub-owned handoffs",
+          "Fresh one-use synthetic cohorts and separately authorized passive input"
+        ],
+        "acceptance_evidence": [
+          "F0 feature/support ledger",
+          "F2 complete ACK/deduplication/outage/restart/backpressure/recovery receipt",
+          "F5 passive mapping and redaction receipt",
+          "F6 native/container install, upgrade, backup/restore, rollback, removal and catalog receipts",
+          "F7 combined installed ecosystem receipt"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+        "branch": "main",
+        "dirty_entries": 49,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "a6eabfc60a1d9714b84ed99fff02cb732a38b41c",
+        "remote_verified_at": "2026-09-19T10:50:50.519251+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      },
+      "required_for_full_solution": true,
+      "full_solution_state": "NOT_ACCEPTED",
+      "execution_order": "ready dependency order from full plan"
+    },
+    {
+      "repository": "teslatlas-sdk-swift",
+      "title": "Swift SDK",
+      "plan": "teslatlas-sdk-swift/docs/development/PLAN.md",
+      "status_file": "teslatlas-sdk-swift/docs/development/STATUS.json",
+      "objective": "Complete all three public SwiftPM products on iOS 17, macOS 14 Apple silicon and supported Linux ARM64, including package lifecycle, mandatory real-input semantics and final installed consumers.",
+      "gate_ids": [
+        "G3",
+        "G6",
+        "G7"
+      ],
+      "priority": "primary",
+      "state": "G3_G6_G7_ACCEPTED",
+      "source_objective_state": "EXTERNAL_CONSUMER_AND_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+        "branch": "main",
+        "dirty_entries": 55,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft full-product goal, not started: Complete all three SwiftPM products on their declared active platforms and prove reproducible distribution and final installed consumers.",
+      "legacy_task": {
+        "thread_id": "01a082b7-e4c5-7383-bd9f-25a538c31e86",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json",
+        "../hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+        "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+        "../docs/development/APP_V7_READINESS.md"
+      ],
+      "remaining": [
+        "F0: inventory all three public products and exact iOS 17, macOS 14, Linux ARM64 and Swift 6 claims.",
+        "F3: prove full public behavior in clean external consumers on every active declared platform floor.",
+        "F5: consume mandatory fresh named-source and passive semantic evidence.",
+        "F6-F7: prove reproducible SwiftPM source lifecycle, Hub-catalog integration and final combined consumers."
+      ],
+      "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "FULL_SWIFT_SDK_F0_F7",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Complete all three SwiftPM products on their declared active platforms and prove reproducible distribution and final installed consumers.",
+        "acceptance_evidence": [
+          "F0 public-surface and platform-floor ledger",
+          "F3 macOS 14, SDK-owned iOS 17 and supported Linux ARM64 external-consumer receipts",
+          "F5 real-input decoding and history semantic receipt",
+          "F6 deterministic SwiftPM source, docs, update/removal and catalog receipt",
+          "F7 combined installed consumer and cleanup receipt"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+        "branch": "main",
+        "dirty_entries": 55,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "74fca324fa41ad8e0fe581ef25c8af34a04507e3",
+        "remote_verified_at": "2026-09-19T10:50:53.911726+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      },
+      "required_for_full_solution": true,
+      "full_solution_state": "NOT_ACCEPTED",
+      "execution_order": "ready dependency order from full plan"
+    },
+    {
+      "repository": "teslatlas-protocol",
+      "title": "Protocol",
+      "plan": "teslatlas-protocol/docs/development/PLAN.md",
+      "status_file": "teslatlas-protocol/docs/development/STATUS.json",
+      "objective": "Complete every documented Protocol profile and conformance surface, real-input semantic evidence, reproducible developer distribution and final ecosystem admission.",
+      "gate_ids": [
+        "G3"
+      ],
+      "priority": "primary",
+      "state": "G3_ACCEPTED",
+      "source_objective_state": "EXACT_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+        "branch": "main",
+        "dirty_entries": 38,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft full-product goal, not started: Complete all documented source-neutral profiles and conformance surfaces, real-input semantics, reproducible distribution and final ecosystem admission.",
+      "legacy_task": {
+        "thread_id": "01a082b7-86b3-72d2-b173-dbad9073ec2c",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+      ],
+      "remaining": [
+        "F0: reconcile every rich, current-Hub and Edge normative/machine-readable contract claim.",
+        "F3: prove independent adapters and fail-closed compatibility for all active consumers.",
+        "F5: mandatory fresh named-source and passive evidence must validate real semantics and any resulting contract delta.",
+        "F6-F7: deliver the reproducible developer bundle/catalog lifecycle and final product admission."
+      ],
+      "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "FULL_PROTOCOL_F0_F7",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Complete all documented source-neutral profiles and conformance surfaces, real-input semantics, reproducible distribution and final ecosystem admission.",
+        "acceptance_evidence": [
+          "F0 conflict-free normative and machine-readable ledger",
+          "F3 independent adapter and compatibility receipts",
+          "F5 redacted real-source/import/passive semantic evidence",
+          "F6 reproducible native/Docker bundle and catalog lifecycle receipt",
+          "F7 exact final product admission/readback receipt"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+        "branch": "main",
+        "dirty_entries": 39,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "75276aa7b5f13261ca7ca311902234ff5e3dadc2",
+        "remote_verified_at": "2026-09-19T10:50:43.758934+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      },
+      "required_for_full_solution": true,
+      "full_solution_state": "NOT_ACCEPTED",
+      "execution_order": "ready dependency order from full plan"
+    },
+    {
+      "repository": "teslatlas-home-assistant",
+      "title": "Home Assistant",
+      "plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+      "status_file": "teslatlas-home-assistant/docs/development/STATUS.json",
+      "objective": "Complete Home Assistant as a required ecosystem product across documented install, UI, lifecycle, recovery, real-input semantics, distribution and final installed acceptance.",
+      "gate_ids": [],
+      "priority": "secondary",
+      "state": "DEBIAN_ARM64_CONTAINER_ACCEPTED",
+      "source_objective_state": "SECONDARY_RUNTIME_ACCEPTED_SCOPED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+        "branch": "main",
+        "dirty_entries": 50,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft full-product goal, not started: Complete Home Assistant as a required ecosystem product across supported user behavior, runtime lifecycle, real-input semantics, distribution and final installed acceptance.",
+      "legacy_task": {
+        "thread_id": "01a082b7-9372-7da2-b84b-dc47b626ad83",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json",
+        "../hub/docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json"
+      ],
+      "remaining": [
+        "F0: close every config, entity, lifecycle, runtime-floor and distribution claim.",
+        "F4: prove required headed user and API journeys, replacement/image lifecycle, recovery and registry preservation on supported selected runtimes.",
+        "F5: mandatory fresh named-source and passive Hub evidence must validate entity semantics.",
+        "F6-F7: prove deterministic component/manual/Container/catalog lifecycle and the final combined installed ecosystem."
+      ],
+      "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "FULL_HOME_ASSISTANT_F0_F7",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Complete Home Assistant as a required ecosystem product across supported user behavior, runtime lifecycle, real-input semantics, distribution and final installed acceptance.",
+        "prerequisites": [
+          "F0 support ledger and exact component, HA image, Hub and profile identities",
+          "Accepted F1/F3 Hub and a fresh Hub-owned handoff",
+          "Fresh F5 input-derived Hub evidence; no reuse of closed private inputs"
+        ],
+        "acceptance_evidence": [
+          "F0 integration/runtime/distribution ledger",
+          "F4 headed config/reauth/polling/lifecycle/recovery and registry receipt",
+          "F5 real-input entity semantic receipt",
+          "F6 deterministic manual/Container/component/catalog lifecycle receipt",
+          "F7 combined installed ecosystem and cleanup receipt"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+        "branch": "main",
+        "dirty_entries": 50,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "a05f409058878ca9e03cbbb909da4585d1f2e9e0",
+        "remote_verified_at": "2026-09-19T10:50:57.120771+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      },
+      "required_for_full_solution": true,
+      "full_solution_state": "NOT_ACCEPTED",
+      "execution_order": "after primary path; required for completion"
+    }
+  ],
+  "deferred_products": [
+    {
+      "repository": "teslatlas-viewer",
+      "state": "DEFERRED_LAST_NO_ACTIVE_WORK",
+      "legacy_task_id": "01a082b7-8fac-7812-8619-3ce41c8b1961",
+      "legacy_task_state": "ARCHIVED",
+      "start_condition": "Other products working plus later explicit owner start",
+      "active_goal": null
+    }
+  ],
+  "excluded_paths": [
+    "app/",
+    "teslatlas-viewer/"
+  ],
+  "automation": {
+    "id": "teslatlas-hourly-development-coordination",
+    "saved_status": "PAUSED",
+    "target_state": "legacy_coordinator_not_to_be_resumed",
+    "handover": "Keep paused; the unsent next goal does not enable automation.",
+    "current_tool_state": "automation_update is unavailable in this task; schedule remains paused and was not rebound"
+  },
+  "legacy_task_verification": {
+    "checked_at": "2026-09-18T15:31:00+00:00",
+    "method": "read-only current Codex thread registry query after thread-tool search found no callable thread manager",
+    "archived": 7,
+    "surviving_legacy_product_workers": 0
+  },
+  "historical_task_registry": "docs/development/archive/2026-09-18-reset/docs/development/TASKS.json",
+  "next_action": "Owner may send GOAL_PROMPT.md to execute all mandatory F0-F7 across all six active products. Start with installed Debian Hub; do not stop at adoption readiness or L1-L3.",
+  "planning_state": "FULL_SOLUTION_GOAL_DRAFTED_NOT_STARTED",
+  "next_programme": {
+    "plan": "docs/development/NEXT_PHASE_PLAN.md",
+    "prompt": "docs/development/GOAL_PROMPT.md",
+    "state": "DRAFT_NOT_STARTED",
+    "execution_authorized": false,
+    "objective": "Fully working Hub and every active dependency, with all documented supported behavior and ordinary source/native/container install, use and recovery paths",
+    "gate_ids": [
+      "F0",
+      "F1",
+      "F2",
+      "F3",
+      "F4",
+      "F5",
+      "F6",
+      "F7"
+    ],
+    "required_repositories": [
+      "hub",
+      "teslatlas-sdk-typescript",
+      "teslatlas-edge",
+      "teslatlas-sdk-swift",
+      "teslatlas-protocol",
+      "teslatlas-home-assistant"
+    ],
+    "implementation_slices": [
+      "L1 Debian installed lifecycle",
+      "L2 Apple-silicon lifecycle and declared SDK floors",
+      "L3 reproducible packages and integration lifecycle"
+    ],
+    "D1": "Required within F5; never optional after completion",
+    "source_publication_when_sent": "Validated source commits/pushes and exact reachable catalog updates to existing GitHub repositories only; no releases/tags/assets/CI/production"
+  },
+  "history_review": "docs/development/HISTORY_REVIEW.md",
+  "upload_status": "docs/development/UPLOAD_STATUS.json",
+  "planning_reconciliation_state": "COMPLETE",
+  "source_upload_state": "ALL_SIX_MAIN_BRANCHES_PUSHED_AND_VERIFIED",
+  "adoption_phase": "PRIMARY_AND_SECONDARY_OBJECTIVES_ACCEPTED",
+  "full_solution_state": "NOT_ACCEPTED",
+  "completion_condition": "All F0-F7 accepted and every supported active feature/product in the F0 ledger complete; missing inputs remain blockers.",
+  "full_solution_gates": [
+    {
+      "id": "F0",
+      "outcome": "Documented feature, target and dependency acceptance ledger",
+      "state": "NOT_STARTED",
+      "accepted": false,
+      "mandatory": true
+    },
+    {
+      "id": "F1",
+      "outcome": "Complete standalone Hub behavior and lifecycle",
+      "state": "NOT_STARTED",
+      "accepted": false,
+      "mandatory": true
+    },
+    {
+      "id": "F2",
+      "outcome": "Complete Edge and pinned runtime dependencies",
+      "state": "NOT_STARTED",
+      "accepted": false,
+      "mandatory": true
+    },
+    {
+      "id": "F3",
+      "outcome": "Complete Protocol and TypeScript/Swift packages and consumers",
+      "state": "NOT_STARTED",
+      "accepted": false,
+      "mandatory": true
+    },
+    {
+      "id": "F4",
+      "outcome": "Complete Home Assistant integration and lifecycle",
+      "state": "NOT_STARTED",
+      "accepted": false,
+      "mandatory": true
+    },
+    {
+      "id": "F5",
+      "outcome": "Fresh named-source parity and passive-data acceptance",
+      "state": "INPUT_REQUIRED",
+      "accepted": false,
+      "mandatory": true,
+      "requires": "Fresh owner-supplied named read-only export and fresh authorized passive-data evidence; no old private fixtures"
+    },
+    {
+      "id": "F6",
+      "outcome": "Usable reproducible source distribution and exact dependency catalog",
+      "state": "NOT_STARTED",
+      "accepted": false,
+      "mandatory": true
+    },
+    {
+      "id": "F7",
+      "outcome": "Combined installed end-to-end full-solution acceptance",
+      "state": "NOT_STARTED",
+      "accepted": false,
+      "mandatory": true
+    }
+  ],
+  "secondary_product_role": "Home Assistant may execute after the primary path but is required for full-solution completion",
+  "full_solution_scope_revision": "2026-09-19-owner-full-solution",
+  "full_solution_scope_source": "Owner clarification in this task; G0-G7 is an intermediate milestone only"
+}

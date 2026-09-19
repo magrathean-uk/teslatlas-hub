@@ -1,12 +1,15 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-19T10:30:43Z",
-  "update_scope": "post_adoption_next_phase_planning_no_execution",
-  "programme": "2026-09-18-app-v7-readiness",
+  "updated_at": "2026-09-19T11:04:10Z",
+  "update_scope": "full_product_completion_planning_no_execution",
+  "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
   "current_gate_ids": [],
+  "completion_gate_ids": ["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7"],
+  "accepted_receipts_immutable": true,
+  "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": [
     "G0",
     "G1",
@@ -17,8 +20,8 @@
     "G6"
   ],
   "workspace_adoption_state": "APP_V7_ADOPTION_READY_G0_G7_ACCEPTED",
-  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
-  "objective": "Preserve the accepted App v7 baseline and prepare the first installed Hub lifecycle deliverable on Debian ARM64.",
+  "planning_state": "FULL_PRODUCT_GOAL_DRAFTED_NOT_STARTED",
+  "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
     "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
     "branch": "main",
@@ -55,26 +58,27 @@
     "docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json"
   ],
   "remaining": [
-    "L1: Debian ARM64 installed Hub baseline-to-candidate upgrade, fail-closed rollback and data-preserving removal.",
-    "L2: isolated Apple-silicon installed lifecycle, with the Hub macOS 13 floor kept distinct from Swift's macOS 14 floor.",
-    "Named-source and real-data parity require fresh owner input and must never reuse a historical fixture."
+    "F0: complete the claim-by-claim feature, support-floor, dependency, distribution and evidence ledger.",
+    "F1-F4: complete standalone Hub, Edge, Protocol/SDK and required Home Assistant behavior on every active documented path.",
+    "F5: fresh read-only named-source export and fresh authorized passive capture evidence are mandatory input-dependent acceptance gates.",
+    "F6: prove native/container/source distributions, full lifecycle and the exact six-active-repository no-Viewer companion catalog.",
+    "F7: pass one combined installed end-to-end ecosystem journey from F6 artifacts."
   ],
   "next_goal_draft": {
-    "id": "L1_HUB_DEBIAN_ARM64_INSTALLED_LIFECYCLE",
+    "id": "FULL_HUB_ECOSYSTEM_F0_F7",
     "state": "DRAFT_NOT_STARTED",
-    "objective": "Install an exact baseline package, upgrade to the exact candidate, prove ordinary installed-service behavior and retained identity/data, verify backup/restore, exercise fail-closed rollback, then remove code/services while preserving data and configuration by default.",
+    "objective": "Complete all supported Hub and six-product ecosystem behavior, distributions and lifecycle, mandatory real-input parity and final combined installed acceptance.",
     "prerequisites": [
-      "Freeze previous-working and candidate package, payload, profile, unit and target identities.",
-      "Create a fresh Hub-owned cohort; do not reuse closed credentials, roots or receipts.",
-      "Acquire the shared heavy-build lock only when execution is separately started."
+      "Owner sends the full-product goal; planning text alone does not start execution.",
+      "Freeze exact source/product/profile/dependency identities and complete F0 before runtime claims.",
+      "Use fresh Hub-owned cohorts and separately supplied F5 inputs; never reuse closed private material."
     ],
     "acceptance_evidence": [
-      "Package hashes and dpkg-query identity",
-      "Actual systemd unit, executable, argv, user/group, modes and listeners",
-      "Installed setup, pairing, current/history and restart continuity",
-      "Successful upgrade, failed-candidate rollback and unchanged data/identity fingerprints",
-      "Verified backup/restore with recorded identity and data readable afterward",
-      "Removal with services/listeners absent and data/configuration preserved; no purge"
+      "F0 support ledger closed with every claim proven or corrected",
+      "F1-F4 standalone and companion product receipts on documented active targets",
+      "F5 named-source/import and passive-capture parity receipts",
+      "F6 reproducible native/container/source artifacts, lifecycle and six-source catalog receipts",
+      "F7 combined installed end-to-end receipt with recovery and cleanup"
     ],
     "execution_authorized": false
   },

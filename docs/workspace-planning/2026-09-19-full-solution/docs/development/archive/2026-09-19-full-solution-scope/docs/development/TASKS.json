@@ -1,0 +1,603 @@
+{
+  "schema_version": 2,
+  "programme": "2026-09-18-app-v7-readiness",
+  "updated_at": "2026-09-19T10:51:57.291435+00:00",
+  "phase": "PRIMARY_AND_SECONDARY_OBJECTIVES_ACCEPTED",
+  "authority": "docs/development/MASTER_PLAN.md",
+  "launch_prompt": "docs/development/HANDOFF_PROMPT.md",
+  "model_policy": {
+    "coordinator": "gpt-5.6-sol/max",
+    "implementation_and_review": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/max",
+    "fast_mode": false
+  },
+  "active_targets": [
+    "debian13-arm64",
+    "macos-apple-silicon"
+  ],
+  "paused_targets": [
+    "x86",
+    "x86_64",
+    "amd64",
+    "intel-macos",
+    "azure"
+  ],
+  "delivery_order": [
+    "hub",
+    "teslatlas-sdk-typescript",
+    "teslatlas-edge",
+    "teslatlas-sdk-swift"
+  ],
+  "parallel_foundation": "teslatlas-protocol",
+  "secondary_product": "teslatlas-home-assistant",
+  "adoption_state": "APP_V7_ADOPTION_READY",
+  "adoption_gates": [
+    {
+      "id": "G0",
+      "outcome": "fresh shared ARM64 test environment",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "docs/development/VM_ACCESS.md",
+        "/Users/bolyki/dev/teslatlas-lab/vms/lima/debian13-arm64/g0-evidence/summary-20260918T153546Z.txt"
+      ]
+    },
+    {
+      "id": "G1",
+      "outcome": "Debian ARM64 Hub standalone",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json"
+      ]
+    },
+    {
+      "id": "G2",
+      "outcome": "Apple-silicon Mac Hub standalone",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json"
+      ]
+    },
+    {
+      "id": "G3",
+      "outcome": "exact shared Protocol bindings",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+      ]
+    },
+    {
+      "id": "G4",
+      "outcome": "packed TypeScript Node/browser journey",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json",
+        "teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json"
+      ]
+    },
+    {
+      "id": "G5",
+      "outcome": "Edge durable final-cohort delivery/recovery",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+        "teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json"
+      ]
+    },
+    {
+      "id": "G6",
+      "outcome": "Swift external final-cohort consumer",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+        "teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json"
+      ]
+    },
+    {
+      "id": "G7",
+      "outcome": "App adoption integration handoff",
+      "state": "ACCEPTED",
+      "accepted": true,
+      "evidence": [
+        "docs/development/APP_V7_READINESS.md"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "repository": "hub",
+      "title": "Hub",
+      "plan": "hub/docs/development/PLAN.md",
+      "status_file": "hub/docs/development/STATUS.json",
+      "objective": "Deliver standalone Hub on Debian ARM64 and supported Apple-silicon Mac, plus fresh public consumer and durable Edge handoffs.",
+      "gate_ids": [
+        "G0",
+        "G1",
+        "G2",
+        "G4",
+        "G5",
+        "G6"
+      ],
+      "priority": "primary",
+      "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
+      "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+        "branch": "main",
+        "dirty_entries": 115,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft only: Install an exact baseline package, upgrade to the exact candidate, prove ordinary installed-service behavior and retained identity/data, verify backup/restore, exercise fail-closed rollback, then remove code/services while preserving data and configuration by default.",
+      "legacy_task": {
+        "thread_id": "01a082b7-37ed-7ea3-98fc-849284695b63",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "../docs/development/VM_ACCESS.md",
+        "docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json",
+        "docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json",
+        "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+        "docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+        "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+        "docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r3.json",
+        "docs/development/edge-macos-one-event-r11-concrete-preparation-2026-09-18.json"
+      ],
+      "remaining": [
+        "L1: Debian ARM64 installed Hub baseline-to-candidate upgrade, fail-closed rollback and data-preserving removal.",
+        "L2: isolated Apple-silicon installed lifecycle, with the Hub macOS 13 floor kept distinct from Swift's macOS 14 floor.",
+        "Named-source and real-data parity require fresh owner input and must never reuse a historical fixture."
+      ],
+      "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "L1_HUB_DEBIAN_ARM64_INSTALLED_LIFECYCLE",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Install an exact baseline package, upgrade to the exact candidate, prove ordinary installed-service behavior and retained identity/data, verify backup/restore, exercise fail-closed rollback, then remove code/services while preserving data and configuration by default.",
+        "prerequisites": [
+          "Freeze previous-working and candidate package, payload, profile, unit and target identities.",
+          "Create a fresh Hub-owned cohort; do not reuse closed credentials, roots or receipts.",
+          "Acquire the shared heavy-build lock only when execution is separately started."
+        ],
+        "acceptance_evidence": [
+          "Package hashes and dpkg-query identity",
+          "Actual systemd unit, executable, argv, user/group, modes and listeners",
+          "Installed setup, pairing, current/history and restart continuity",
+          "Successful upgrade, failed-candidate rollback and unchanged data/identity fingerprints",
+          "Verified backup/restore with recorded identity and data readable afterward",
+          "Removal with services/listeners absent and data/configuration preserved; no purge"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+        "branch": "main",
+        "dirty_entries": 119,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "14c8dc20c6a9550beece90faedf42dbdd4b4f0d9",
+        "remote_verified_at": "2026-09-19T10:51:01.559957+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      }
+    },
+    {
+      "repository": "teslatlas-sdk-typescript",
+      "title": "TypeScript SDK",
+      "plan": "teslatlas-sdk-typescript/docs/development/PLAN.md",
+      "status_file": "teslatlas-sdk-typescript/docs/development/STATUS.json",
+      "objective": "Deliver packed Node and real browser public consumers against the accepted Hub profile on active ARM64/Mac targets.",
+      "gate_ids": [
+        "G3",
+        "G4"
+      ],
+      "priority": "primary",
+      "state": "G3_G4_ACCEPTED",
+      "source_objective_state": "PACKED_NODE_BROWSER_AND_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+        "branch": "main",
+        "dirty_entries": 56,
+        "checked_at": "2026-09-18T17:26:55+00:00"
+      },
+      "next_ready_action": "Draft only: Create a deterministic publish-ready but unpublished npm candidate and prove clean offline install/import/removal without a Hub runtime.",
+      "legacy_task": {
+        "thread_id": "01a082b7-890b-70b3-8a0e-9e964636849f",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
+        "docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json",
+        "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+        "../hub/docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r3.json"
+      ],
+      "remaining": [
+        "No TypeScript G3/G4 acceptance work remains for the current programme.",
+        "L3: deterministic unpublished npm candidate, truthful runtime support policy and clean caller-owned install/import/removal proof.",
+        "Rerun consumer setup/recovery only for a source, archive, protocol or target delta."
+      ],
+      "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "L3_TYPESCRIPT_REPRODUCIBLE_DISTRIBUTION",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Create a deterministic publish-ready but unpublished npm candidate and prove clean offline install/import/removal without a Hub runtime.",
+        "acceptance_evidence": [
+          "Exact source, lockfile, generated output and ordered archive manifest",
+          "Archive SHA-256, exports, licence, docs and accepted Protocol lock",
+          "Fresh root, Node and browser entry imports with no service, listener or credential",
+          "Caller-owned cleanup and explicit not-published status"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+        "branch": "main",
+        "dirty_entries": 57,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "50938a03d8245d1c659fac1bd300d69c91f0b93f",
+        "remote_verified_at": "2026-09-19T10:50:47.136415+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      }
+    },
+    {
+      "repository": "teslatlas-edge",
+      "title": "Edge",
+      "plan": "teslatlas-edge/docs/development/PLAN.md",
+      "status_file": "teslatlas-edge/docs/development/STATUS.json",
+      "objective": "Deliver optional mTLS reception, bounded encrypted spool and durable Hub forwarding with duplicate/outage/restart recovery.",
+      "gate_ids": [
+        "G3",
+        "G5"
+      ],
+      "priority": "primary",
+      "state": "G3_G5_ACCEPTED",
+      "source_objective_state": "DURABLE_FORWARDING_AND_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+        "branch": "main",
+        "dirty_entries": 49,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft only: Install exact baseline packages, upgrade to the candidate, prove one fresh installed-path synthetic delivery, roll back a failed candidate, then remove services while preserving spool/configuration.",
+      "legacy_task": {
+        "thread_id": "01a082b7-9723-7211-b9f0-8b505e450b7e",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+        "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+        "docs/development/edge-macos-one-event-r11-concrete-profile-acceptance-2026-09-18.json",
+        "docs/development/edge-macos-one-event-r11-restart-cross-owner-acceptance-2026-09-18.json"
+      ],
+      "remaining": [
+        "L1: Debian ARM64 installed Edge/receiver upgrade, rollback and spool-preserving removal after the installed Hub baseline is ready.",
+        "L2: Apple-silicon package and LaunchAgent lifecycle.",
+        "Passive or real telemetry requires fresh owner authorization and inputs; never reuse the synthetic r5 cohort."
+      ],
+      "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "L1_EDGE_DEBIAN_ARM64_INSTALLED_LIFECYCLE",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Install exact baseline packages, upgrade to the candidate, prove one fresh installed-path synthetic delivery, roll back a failed candidate, then remove services while preserving spool/configuration.",
+        "prerequisites": [
+          "Installed Hub L1 baseline and a fresh Hub-owned handoff",
+          "Frozen Edge and receiver packages, units, profile and legal/lock identities",
+          "Fresh receiver, Edge and Hub credentials and roots"
+        ],
+        "acceptance_evidence": [
+          "Package hashes, dpkg-query identity and actual service units",
+          "Correct users, modes, listeners, loopback admission and service order",
+          "Occurrence-bound committed/readable event with stable spool identity and no duplicate",
+          "Failed-candidate rollback and spool/configuration-preserving removal"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+        "branch": "main",
+        "dirty_entries": 49,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "a6eabfc60a1d9714b84ed99fff02cb732a38b41c",
+        "remote_verified_at": "2026-09-19T10:50:50.519251+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      }
+    },
+    {
+      "repository": "teslatlas-sdk-swift",
+      "title": "Swift SDK",
+      "plan": "teslatlas-sdk-swift/docs/development/PLAN.md",
+      "status_file": "teslatlas-sdk-swift/docs/development/STATUS.json",
+      "objective": "Maintain a supported external SwiftPM Hub consumer and prepare an App-facing adoption reference without touching the App.",
+      "gate_ids": [
+        "G3",
+        "G6",
+        "G7"
+      ],
+      "priority": "primary",
+      "state": "G3_G6_G7_ACCEPTED",
+      "source_objective_state": "EXTERNAL_CONSUMER_AND_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+        "branch": "main",
+        "dirty_entries": 55,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft only: Resolve and build the exact accepted TeslatlasCurrentHub package on macOS 14 arm64 and prove the bounded public auth/read/recovery journey against a fresh exact Hub cohort.",
+      "legacy_task": {
+        "thread_id": "01a082b7-e4c5-7383-bd9f-25a538c31e86",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json",
+        "../hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+        "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+        "../docs/development/APP_V7_READINESS.md"
+      ],
+      "remaining": [
+        "L2: independently verify the declared macOS 14 Apple-silicon package floor in an isolated supported guest.",
+        "The macOS 13 Hub-floor VM remains below the Swift SDK floor and is not a Swift acceptance target.",
+        "iOS 17 floor/host evidence, publication and real-data semantics remain separate lanes."
+      ],
+      "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "L2_SWIFT_MACOS14_FLOOR",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Resolve and build the exact accepted TeslatlasCurrentHub package on macOS 14 arm64 and prove the bounded public auth/read/recovery journey against a fresh exact Hub cohort.",
+        "acceptance_evidence": [
+          "Exact macOS, Xcode/Swift, source manifest, Package.swift and profile identities",
+          "External release consumer linked through TeslatlasCurrentHub",
+          "TLS, claim/replay rejection, current/history, rotation and Hub restart recovery",
+          "Private-root, credential, process and listener cleanup"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
+        "branch": "main",
+        "dirty_entries": 55,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "74fca324fa41ad8e0fe581ef25c8af34a04507e3",
+        "remote_verified_at": "2026-09-19T10:50:53.911726+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      }
+    },
+    {
+      "repository": "teslatlas-protocol",
+      "title": "Protocol",
+      "plan": "teslatlas-protocol/docs/development/PLAN.md",
+      "status_file": "teslatlas-protocol/docs/development/STATUS.json",
+      "objective": "Maintain the exact public contract/profile baseline shared by Hub, TS, Edge and Swift, correcting concrete consumer gaps only.",
+      "gate_ids": [
+        "G3"
+      ],
+      "priority": "primary",
+      "state": "G3_ACCEPTED",
+      "source_objective_state": "EXACT_BINDING_ACCEPTED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+        "branch": "main",
+        "dirty_entries": 38,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft only: Create an unpublished source-neutral contract archive for the accepted profile without changing runtime bindings.",
+      "legacy_task": {
+        "thread_id": "01a082b7-86b3-72d2-b173-dbad9073ec2c",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+      ],
+      "remaining": [
+        "Preserve the accepted exact bindings; rerun admission only for a source, profile, product-version or accepted-evidence delta.",
+        "L3: deterministic unpublished developer bundle with ordered manifest, archive hash and clean offline extraction/check.",
+        "Named-source semantic evidence requires fresh owner input; on a concrete contract gap, update all affected machine-readable artifacts and conformance."
+      ],
+      "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "L3_PROTOCOL_REPRODUCIBLE_BUNDLE",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Create an unpublished source-neutral contract archive for the accepted profile without changing runtime bindings.",
+        "acceptance_evidence": [
+          "Ordered archive manifest and SHA-256 tied to exact source and G3",
+          "Reproducible generated artifacts and checksum maps",
+          "Clean offline extraction/check with no service, listener or credential",
+          "Required byte agreement with the TypeScript vendored profile"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+        "branch": "main",
+        "dirty_entries": 39,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "75276aa7b5f13261ca7ca311902234ff5e3dadc2",
+        "remote_verified_at": "2026-09-19T10:50:43.758934+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      }
+    },
+    {
+      "repository": "teslatlas-home-assistant",
+      "title": "Home Assistant",
+      "plan": "teslatlas-home-assistant/docs/development/PLAN.md",
+      "status_file": "teslatlas-home-assistant/docs/development/STATUS.json",
+      "objective": "Finish the optional integration in one shared supported ARM64 Home Assistant runtime after primary adoption work is underway.",
+      "gate_ids": [],
+      "priority": "secondary",
+      "state": "DEBIAN_ARM64_CONTAINER_ACCEPTED",
+      "source_objective_state": "SECONDARY_RUNTIME_ACCEPTED_SCOPED",
+      "assigned_worker": null,
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high",
+      "source": {
+        "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+        "branch": "main",
+        "dirty_entries": 50,
+        "checked_at": "2026-09-18T15:23:35.253745+00:00"
+      },
+      "next_ready_action": "Draft only: Replace the accepted component in a selected Debian ARM64 HA Container, reject one invalid candidate, and roll back without losing config-entry, device/entity or unrelated HA state.",
+      "legacy_task": {
+        "thread_id": "01a082b7-9372-7da2-b84b-dc47b626ad83",
+        "state": "ARCHIVED",
+        "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
+        "native_goal_state": "historical_not_mutated_by_archival"
+      },
+      "evidence": [
+        "docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json",
+        "../hub/docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json"
+      ],
+      "remaining": [
+        "Preserve the accepted exact compatibility binding; repeat runtime acceptance only for a component, profile, Hub fingerprint, HA image or lifecycle-behavior change.",
+        "L3: component replacement, invalid-candidate rollback and preservation of config entry, device/entity registry and unrelated HA state.",
+        "HACS/publication, Home Assistant OS/Supervisor, headed visual acceptance and polished distribution remain later obligations.",
+        "Real account, vehicle, telemetry, named-source and production acceptance require fresh owner input and remain outside this synthetic lane."
+      ],
+      "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+      "next_goal_draft": {
+        "id": "L3_HA_COMPONENT_REPLACEMENT_ROLLBACK",
+        "state": "DRAFT_NOT_STARTED",
+        "objective": "Replace the accepted component in a selected Debian ARM64 HA Container, reject one invalid candidate, and roll back without losing config-entry, device/entity or unrelated HA state.",
+        "prerequisites": [
+          "Freeze baseline and candidate payload manifests, HA image, Hub fingerprint and profile.",
+          "Use a fresh Hub-owned handoff and persistent HA config identity.",
+          "Do not submit to HACS or reuse closed private inputs."
+        ],
+        "acceptance_evidence": [
+          "Pre/post config-entry, device and entity identity/count comparison",
+          "Successful replacement with scheduler, reauth and reload working",
+          "Invalid candidate never active and prior component restored",
+          "Unrelated HA storage preserved and complete runtime cleanup"
+        ],
+        "execution_authorized": false
+      },
+      "source_at_reconciliation": {
+        "head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
+        "branch": "main",
+        "dirty_entries": 50,
+        "checked_at": "2026-09-19T10:39:43.190285+00:00",
+        "scope": "Git metadata only, not new runtime acceptance"
+      },
+      "publication": {
+        "branch": "main",
+        "commit": "a05f409058878ca9e03cbbb909da4585d1f2e9e0",
+        "remote_verified_at": "2026-09-19T10:50:57.120771+00:00",
+        "evidence": "docs/development/UPLOAD_STATUS.json",
+        "runtime_acceptance": "Historical tested identities retained; snapshot does not claim new runtime acceptance"
+      }
+    }
+  ],
+  "deferred_products": [
+    {
+      "repository": "teslatlas-viewer",
+      "state": "DEFERRED_LAST_NO_ACTIVE_WORK",
+      "legacy_task_id": "01a082b7-8fac-7812-8619-3ce41c8b1961",
+      "legacy_task_state": "ARCHIVED",
+      "start_condition": "Other products working plus later explicit owner start",
+      "active_goal": null
+    }
+  ],
+  "excluded_paths": [
+    "app/",
+    "teslatlas-viewer/"
+  ],
+  "automation": {
+    "id": "teslatlas-hourly-development-coordination",
+    "saved_status": "PAUSED",
+    "target_state": "legacy_coordinator_not_to_be_resumed",
+    "handover": "Keep paused; the unsent next goal does not enable automation.",
+    "current_tool_state": "automation_update is unavailable in this task; schedule remains paused and was not rebound"
+  },
+  "legacy_task_verification": {
+    "checked_at": "2026-09-18T15:31:00+00:00",
+    "method": "read-only current Codex thread registry query after thread-tool search found no callable thread manager",
+    "archived": 7,
+    "surviving_legacy_product_workers": 0
+  },
+  "historical_task_registry": "docs/development/archive/2026-09-18-reset/docs/development/TASKS.json",
+  "next_action": "Owner may use the accepted App handoff separately; the new L1-L3 goal is written in GOAL_PROMPT.md but has not been sent or started.",
+  "planning_state": "NEXT_GOAL_DRAFTED_NOT_STARTED",
+  "next_programme": {
+    "plan": "docs/development/NEXT_PHASE_PLAN.md",
+    "prompt": "docs/development/GOAL_PROMPT.md",
+    "state": "DRAFT_NOT_STARTED",
+    "execution_authorized": false,
+    "gates": [
+      {
+        "id": "L1",
+        "name": "Debian ARM64 installed lifecycle",
+        "state": "DRAFT_NOT_STARTED"
+      },
+      {
+        "id": "L2",
+        "name": "Apple-silicon lifecycle and supported floors",
+        "state": "DRAFT_NOT_STARTED"
+      },
+      {
+        "id": "L3",
+        "name": "Reproducible source/package handoff and HA replacement",
+        "state": "DRAFT_NOT_STARTED"
+      },
+      {
+        "id": "D1",
+        "name": "Named-source parity",
+        "state": "INPUT_REQUIRED",
+        "requires": "Fresh owner-supplied read-only named export with provenance"
+      }
+    ]
+  },
+  "history_review": "docs/development/HISTORY_REVIEW.md",
+  "upload_status": "docs/development/UPLOAD_STATUS.json",
+  "planning_reconciliation_state": "COMPLETE",
+  "source_upload_state": "ALL_SIX_MAIN_BRANCHES_PUSHED_AND_VERIFIED"
+}

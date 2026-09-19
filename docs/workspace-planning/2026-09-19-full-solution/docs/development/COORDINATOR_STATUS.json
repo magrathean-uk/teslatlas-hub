@@ -1,0 +1,208 @@
+{
+  "schema_version": 2,
+  "updated_at": "2026-09-19T11:00:10.407525+00:00",
+  "stage": "FULL_SOLUTION_PLANNED_NOT_STARTED",
+  "adoption_ready": true,
+  "current_running_product_workers": [],
+  "automation": {
+    "id": "teslatlas-hourly-development-coordination",
+    "saved_status": "PAUSED",
+    "target_state": "legacy_coordinator_not_to_be_resumed",
+    "handover": "Keep paused; the unsent next goal does not enable automation.",
+    "current_tool_state": "automation_update is unavailable in this task; schedule remains paused and was not rebound"
+  },
+  "model_policy": {
+    "coordinator": "gpt-5.6-sol/max",
+    "implementation_and_review": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/max",
+    "fast_mode": false
+  },
+  "legacy_tasks_archived": 7,
+  "plans_replaced": true,
+  "historical_archive_manifest": "docs/development/archive/2026-09-18-reset/manifest.json",
+  "app_changed": false,
+  "viewer_changed": false,
+  "artifact_deletion_performed": false,
+  "vm_provisioning_performed": true,
+  "completed_this_reset": [
+    "Archived seven legacy product chats via supported CLI",
+    "Saved old ecosystem automation PAUSED",
+    "Preserved 31 original plan/authority/status/automation files with SHA-256 manifest",
+    "Refreshed root authority and six product PLAN/STATUS records",
+    "Recorded accepted TypeScript Hub r3 source-only review",
+    "Prepared measurable gates, lean VM/cleanup policy and new coordinator prompt",
+    "Verified all seven legacy product tasks remain archived and found no surviving legacy product worker",
+    "Accepted G0 on a fresh Debian 13.6 ARM64 Lima guest after two cold-stop checks, strict SSH host-key stability and persistence proof",
+    "Encoded the observed cloud-init host-key fix in the pinned recipe and made the VM status wrapper tolerate absent Tart state",
+    "Accepted G1 after native Debian 13 ARM64 build, fresh synthetic standalone setup/pair/current/history/restart proof and independent Sol/high review",
+    "Accepted G2 and G4 after one native Apple-silicon Mac build, fresh r7 Hub restart journey, exact packed Node and real Chrome 153 acceptance, scoped trust cleanup and independent Sol/high review",
+    "Accepted G5 after strict ACK/V-only repair, one fresh Debian ARM64 synthetic event, Edge and Hub outage/restart persistence, stable deduplication, durable commit-before-ACK, one readable projection, zero post-ACK state, cleanup and independent Sol/high review",
+    "Accepted G6 after a fresh macOS 27 arm64 external SwiftPM consumer proved discovery, trust, claim/replay rejection, current/history, rotation, restart continuity and cleanup under independent Sol/high review",
+    "Accepted G3 after exact five-product compatibility admission, a no-Viewer scoped checker repair, six focused admission tests and independent Sol/high delta review",
+    "Accepted G7 after a self-contained App v7 adoption handoff, twelve maintained product-document corrections, exact link/hash/command checks and independent Sol/high review",
+    "Accepted Home Assistant after a fresh official 2026.8.3 ARM64 Container proved pairing, scheduled polling, outage recovery, same-entry reauthentication, reload, re-enable, restart persistence, diagnostics redaction and cleanup under independent Sol/high review"
+  ],
+  "next_action": "Owner may send GOAL_PROMPT.md to execute all mandatory F0-F7 across all six active products. Start with installed Debian Hub; do not stop at adoption readiness or L1-L3.",
+  "limits": [
+    "Source/preparation evidence does not prove rebuilt runtime acceptance",
+    "No native goals falsely completed or rewritten",
+    "No full product completion percentage inferred",
+    "G1 proves a source-built synthetic Debian standalone journey; package/service deployment remains a later obligation",
+    "G3 binds exact public profiles and accepted consumer receipts but does not broaden their platform or runtime scopes",
+    "G2/G4/G6 prove current macOS 27 Apple-silicon source/synthetic behavior, not minimum-floor, installer, notarization, service or real-data behavior",
+    "APP_V7_ADOPTION_READY authorizes a separate App integration task; it is not App build, runtime or release acceptance",
+    "Home Assistant acceptance is official Container 2026.8.3 on Debian 13.6 ARM64 with a synthetic Hub; it is not HA OS, Supervisor, HACS, production, real-data, replacement-upgrade or full-matrix acceptance"
+  ],
+  "validation": {
+    "checked_at": "2026-09-19T10:23:58+00:00",
+    "archive_sha256_verified": 31,
+    "active_markdown_links_checked": 25,
+    "json_records_parsed": 8,
+    "errors": 0,
+    "prompt_review": "gpt-6-astra/ultra independent bounded review; two wording clarifications applied",
+    "new_vm_or_artifact_cleanup_executed": true,
+    "g0": {
+      "accepted_at": "2026-09-18T15:45:00+00:00",
+      "guest": "debian13-arm64",
+      "platform": "Debian 13.6 arm64/aarch64",
+      "final_state": "stopped_no_60022_listener",
+      "allocated_instance_bytes": 1221242880,
+      "host_key_and_sentinel_restart": "passed",
+      "evidence": [
+        "docs/development/VM_ACCESS.md",
+        "/Users/bolyki/dev/teslatlas-lab/vms/lima/debian13-arm64/g0-evidence/summary-20260918T153546Z.txt"
+      ]
+    },
+    "g1": {
+      "accepted_at": "2026-09-18T16:10:13+00:00",
+      "platform": "Debian 13.6 arm64/aarch64",
+      "scope": "source-built synthetic Hub standalone",
+      "result": "setup, one-use pairing, current, cursor history, ETag 304, clean restart identity/data retention and final diagnostics passed",
+      "review": "independent Sol/high acceptance; final profile cohort binding later accepted under G3",
+      "evidence": [
+        "hub/docs/development/active-debian-arm64-hub-standalone-2026-09-18-r1.json"
+      ]
+    },
+    "g2_g4": {
+      "accepted_at": "2026-09-18T17:26:55+00:00",
+      "platform": "macOS 27.0 arm64; Chrome 153.0.8010.52; Node 26.7.0",
+      "scope": "source-built synthetic Hub plus exact packed TypeScript Node and real-browser consumers",
+      "result": "Hub restart identity/data continuity, packed Node, untrusted TLS, scoped login-Keychain trust, CORS/discovery, one-use pairing, current, 2/2/1 history, ETag/cursor continuation, rotation and post-removal rejection passed",
+      "review": "independent Sol/high ACCEPT with live process/listener/private-root/heavy-lock cleanup checks",
+      "evidence": [
+        "hub/docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json",
+        "teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json"
+      ]
+    },
+    "g5_zero_event": {
+      "authorized_at": "2026-09-18T17:47:28+00:00",
+      "cohort": "g5-debian-arm64-20260918-r4",
+      "platform": "Debian 13.6 aarch64",
+      "result": "receiver, Edge and Hub healthy; receiver event count, encrypted spool, v2 records/gaps and Hub ledger/projection/ACK state all zero",
+      "preparation_sha256": "4601cfd2b62f77a4f805be888fa8fb91972a1367ea435f10251e529ed4182bbc",
+      "readiness_sha256": "b41b1cfed976e5c858972abac7caea3bf06629cc509882856e68f0e224d0f135",
+      "producer_authority": "exactly one guarded synthetic event; no retry or replay",
+      "producer_result": "FAILED_CLOSED_AMBIGUOUS",
+      "observed_failure": "one guard invocation; helper ACK message ID mismatch; three encrypted Edge records admitted; no Hub recovery, ACK or projection attempted",
+      "cohort_disposition": "r4 consumed and removed after receiver-first then Edge safe-stop; guest stopped, ports/processes/private root/lock absent",
+      "failure_receipt_sha256": "b08dd93f6ad103a614f6a50483c28fce86e27f41d03a42698b7119552ff20855",
+      "diagnosis": "pinned receiver ACK carries topic and TXID with empty MessageID; connectivity mapping emitted CONNECTED and DISCONNECTED around the one V record",
+      "authorized_repair": "strict empty-MessageID ACK validation plus a V-only one-shot receiver lane; fresh r5 must stop at zero-event readiness"
+    },
+    "g5_r5_zero_event": {
+      "cohort": "g5-debian-arm64-20260918-r5",
+      "preparation_sha256": "2aa0378480e8e2bec7c86d16a47fb5018c39af816d58c4551d0d79061305e0d6",
+      "readiness_sha256": "373ce5cbd1a1f3edfdf9004c5f8f241cb89fbec89a2aa84903faa7a77978781b",
+      "interruption_audit": "prior authority unused; invocation_count zero; actor outputs absent; spool and Hub state still empty",
+      "fresh_authorized_at": "2026-09-18T18:09:48+00:00",
+      "producer_authority": "exactly one guarded synthetic V event; no retry or replay",
+      "accepted_at": "2026-09-19T08:22:32+00:00",
+      "result": "one encrypted stable record survived Edge restart; one durable Hub projection committed before ACK; frontier advanced to 1; Edge and Hub pending state drained to zero; restart persistence passed",
+      "review": "independent Sol/high ACCEPT; live guest, ports, processes, private root and heavy lock all absent",
+      "evidence": [
+        "hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+        "teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json"
+      ]
+    },
+    "g6": {
+      "accepted_at": "2026-09-19T09:09:30+00:00",
+      "platform": "macOS 27 arm64; Swift 6.4; Xcode 27",
+      "scope": "source-built synthetic Hub plus external SwiftPM consumer",
+      "result": "one fresh r2 invocation proved exact discovery/profile/product/capabilities, TLS identity, claim and replay rejection, health/readiness, two vehicles, current present/absent, 2/2/1 history with cursor and 304 checks, credential rotation, old-token rejection and restart continuity",
+      "review": "independent Sol/high ACCEPT; exact r1/r2 private roots, processes, ports and heavy lock absent",
+      "evidence": [
+        "hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+        "teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json"
+      ]
+    },
+    "g3": {
+      "accepted_at": "2026-09-19T09:20:36+00:00",
+      "scope": "exact Hub, Protocol, TypeScript, Edge and Swift compatibility admission for product 2026.36.2",
+      "result": "five accepted content-bound compatibility records, exact canonical profile digests, byte-identical Protocol and vendored TypeScript record, pinned TypeScript lock, scoped admission and readback",
+      "review": "independent Sol/high ACCEPT after no-Viewer checker remediation; focused admission tests 6/6",
+      "evidence": [
+        "teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+      ]
+    },
+    "g7": {
+      "accepted_at": "2026-09-19T09:46:16+00:00",
+      "state": "APP_V7_ADOPTION_READY",
+      "result": "self-contained App owner handoff with exact bindings, trust/auth/query semantics, maintained examples, reproducible scoped checks, Edge boundary, lifecycle, troubleshooting, evidence and explicit limits",
+      "review": "independent Sol/high ACCEPT after two bounded root-document corrections; all local links resolved and no excluded or deferred artifact was used as evidence",
+      "evidence": [
+        "docs/development/APP_V7_READINESS.md"
+      ]
+    },
+    "home_assistant": {
+      "accepted_at": "2026-09-19T10:23:58+00:00",
+      "platform": "official Home Assistant Container 2026.8.3 linux/arm64 on Debian 13.6 aarch64",
+      "scope": "source-built synthetic Hub plus isolated Home Assistant Container lifecycle and recovery",
+      "result": "one entry, two devices and 26 entities; pairing and replay rejection, scheduled polling, zero and unknown semantics, outage recovery, same-entry reauthentication, reconfigure, reload, disable/re-enable, HA restart persistence and redacted diagnostics passed",
+      "review": "independent Sol/high ACCEPT; guest stopped, ports and processes absent, private runtime removed and heavy lock absent",
+      "evidence": [
+        "teslatlas-home-assistant/docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json",
+        "hub/docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json"
+      ]
+    }
+  },
+  "planning_state": "FULL_SOLUTION_GOAL_DRAFTED_NOT_STARTED",
+  "planning_reconciliation": {
+    "date": "2026-09-19",
+    "scope": "Root plans plus six product PLAN/STATUS records, relevant archived plans and seven non-App/non-Viewer transcripts",
+    "native_goal_created": false,
+    "new_implementation_started": false,
+    "new_build_or_runtime_started": false,
+    "history_review": "docs/development/HISTORY_REVIEW.md",
+    "upload_status": "docs/development/UPLOAD_STATUS.json",
+    "checks": [
+      "Scoped G3 alignment passed",
+      "TypeScript protocol lock verified"
+    ],
+    "original_runtime_receipts_preserved": true,
+    "state": "COMPLETE",
+    "source_upload": "ALL_SIX_MAIN_BRANCHES_PUSHED_AND_VERIFIED"
+  },
+  "adoption_stage": "PRIMARY_AND_SECONDARY_OBJECTIVES_ACCEPTED",
+  "full_solution_state": "NOT_ACCEPTED",
+  "full_solution_scope_clarification": {
+    "owner_request": "Complete fully working solution across all active dependencies, not just v7 readiness",
+    "mandatory_gates": [
+      "F0",
+      "F1",
+      "F2",
+      "F3",
+      "F4",
+      "F5",
+      "F6",
+      "F7"
+    ],
+    "all_six_products_required": true,
+    "real_data_gate_required": true,
+    "native_goal_created": false,
+    "implementation_or_runtime_started": false,
+    "prior_milestone_acceptance_preserved": true,
+    "planning_only": true
+  },
+  "full_solution_scope_revision": "2026-09-19-owner-full-solution",
+  "full_solution_scope_source": "Owner clarification in this task; G0-G7 is an intermediate milestone only"
+}

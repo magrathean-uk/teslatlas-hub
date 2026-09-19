@@ -1,0 +1,200 @@
+{
+  "created_at": "2026-09-19T11:06:16.815772+00:00",
+  "scope": "Owner-expanded full-solution F0-F7 planning; not started",
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "2d735908619d9da1eb87bc0d4952042869b096c47af405ac98f5d3feee9dce1e"
+    },
+    {
+      "path": "WORKSPACE_AUTHORITY.md",
+      "sha256": "e60bbf60ccfecfc65e80614fc56563f0c93a1dcf75d62a4fda72e415a7e556bd"
+    },
+    {
+      "path": "docs/development/ACTIVE_SCOPE.md",
+      "sha256": "4fcfb86b89dbc2919df76f50611a71ef0809620b8880adf5dce5a49b7b8b54d2"
+    },
+    {
+      "path": "docs/development/APP_V7_READINESS.md",
+      "sha256": "1f79da9fd701f84d3b5be2ede8b998ee654aca5496aa7f5a1bf8679d5e3f754a"
+    },
+    {
+      "path": "docs/development/COORDINATION.md",
+      "sha256": "38be201cf4a83b5f1776c510f26a59d5119deed06dd121dd853c5d015d4e2ed9"
+    },
+    {
+      "path": "docs/development/ENVIRONMENT.md",
+      "sha256": "d4b50d36eab381ae40c817b317de5e1555d96badc0b23dca31b53e8ae319f13f"
+    },
+    {
+      "path": "docs/development/GOAL_PROMPT.md",
+      "sha256": "987e342d8e636160b5ef15b825c07ebcc4cb91b3a4a3771e6bd2c5c7c035ac6b"
+    },
+    {
+      "path": "docs/development/HANDOFF_PROMPT.md",
+      "sha256": "ad133099d3dc3ea21a257288fef2419d5dbe3eb2b83f04f8c68b8a1ffb6346af"
+    },
+    {
+      "path": "docs/development/HISTORY_REVIEW.md",
+      "sha256": "85df4529a38053669f71dd79c36ea3aaecf1d0b534410a387ed1d43c4ae4be44"
+    },
+    {
+      "path": "docs/development/MASTER_PLAN.md",
+      "sha256": "6080bae1ec9eaf93d4923aea6198f7bdffc80231078dbf831160143a7901c78d"
+    },
+    {
+      "path": "docs/development/NEXT_PHASE_PLAN.md",
+      "sha256": "c729f748c9b69e04ba2468afee8b94109500d7aa4769a47d61edf28afccdfd53"
+    },
+    {
+      "path": "docs/development/PRODUCT_SPEC.md",
+      "sha256": "bce912724f50e4e924bea47e503ab1301a65cbc5592e3949e550429dddd2ca74"
+    },
+    {
+      "path": "docs/development/REASSESSMENT.md",
+      "sha256": "60faa643bd209bc4ef30cbcc20e26a3ca184b77a865b9aebe9280521f13e2ec1"
+    },
+    {
+      "path": "docs/development/RESEARCH.md",
+      "sha256": "f6f230c74959355511e0e4aee45118fce34013c98a4c137841f890d947116fdd"
+    },
+    {
+      "path": "docs/development/START_AUTHORIZATION.md",
+      "sha256": "b3cdab0bb9e112c7063cc80cab6b13d293e1cdda16692649f67715dfe848fbae"
+    },
+    {
+      "path": "docs/development/SUPERSEDED_PLANS.md",
+      "sha256": "600127f60cd89b34e86b54b9ee1ba4d3ae82ec60706a3b605a87109d496ec25d"
+    },
+    {
+      "path": "docs/development/VM_ACCESS.md",
+      "sha256": "b50ec743a0ab49f44a5086986805f0b4522e6aee262c096f2abb234821f961a6"
+    },
+    {
+      "path": "docs/development/COORDINATOR_STATUS.json",
+      "sha256": "cf80eda7d052d9d424ed38525cabb8051027f41e027bbc834119b2cfc2b0c958"
+    },
+    {
+      "path": "docs/development/TASKS.json",
+      "sha256": "36a640f9e5aed76367353686c68040c744b26b2e014b29d03af2970ada862b56"
+    },
+    {
+      "path": "docs/development/UPLOAD_STATUS.json",
+      "sha256": "96368d49f0a0e2101586079879786102b97502fbaaba853df1ae57df0b82aa0b"
+    },
+    {
+      "path": "docs/development/superseded-plans.json",
+      "sha256": "33308b6074a11ad7934c87badf993b6eee49ad132c50dde7fa3455d1f9692ea4"
+    },
+    {
+      "path": "docs/development/assessments/full-solution-planning-2026-09-19.json",
+      "sha256": "82649abc8d48a1ed2e7546d70f8f31b7103de2ea6adc92cf0f5d76fa0b03b309"
+    },
+    {
+      "path": "scripts/dev/debian13-arm64.yaml",
+      "sha256": "0b9db70da2c1d9611822ef212f88e5bed1678e8db4328364a5da4bedcaf37836"
+    },
+    {
+      "path": "scripts/dev/env.sh",
+      "sha256": "8608db15b442baf463701838047044f39a4c2616b68950b8b658c7cf59f7d10d"
+    },
+    {
+      "path": "scripts/dev/run.sh",
+      "sha256": "2e54e4e6e9ced5ecb6f23ba20e32dc87a643220374fc48d5276a5135de3783c1"
+    },
+    {
+      "path": "scripts/dev/storage.sh",
+      "sha256": "c39a823733d36b26dd70a9352963933737445ae50fb71cc7cee7652ac5d37c74"
+    },
+    {
+      "path": "scripts/dev/vm.sh",
+      "sha256": "eb39af99b7377e37fd07dc5a223427320d24f0ad09d0e65e229792195b3245aa"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/WORKSPACE_AUTHORITY.md",
+      "sha256": "0c031a8c9b477a0e0a71ea9afa144b4ceae48e13141718834c58adfd954768ff"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/ACTIVE_SCOPE.md",
+      "sha256": "c38d3257a3674cdfdec758f7ac87f8ea2e9fa99155cf0a9dbf7c542dbd15a16c"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/APP_V7_READINESS.md",
+      "sha256": "68fe2e4a01624c05ce314df183e863826aad517afdf94e77dc03974a13dffeca"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/COORDINATION.md",
+      "sha256": "fdfa2381afa840496f56400fe84fa53d137a361dee7f40a2778a9feef9c16c93"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/COORDINATOR_STATUS.json",
+      "sha256": "6adac1f6c10378333ec06ca4363b62a78d58befbb524d77050e8968fd6002164"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/ENVIRONMENT.md",
+      "sha256": "d4b50d36eab381ae40c817b317de5e1555d96badc0b23dca31b53e8ae319f13f"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/GOAL_PROMPT.md",
+      "sha256": "7f6d83345c38de621a6fd81ecb7dde2183cb47253d167f112fcae377a2453e04"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/HANDOFF_PROMPT.md",
+      "sha256": "f041a9b40f96de300281564188cbaf462d8afa2ebbd4aec11cb6a0b051f1807f"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/HISTORY_REVIEW.md",
+      "sha256": "54940525ffa7fd63dead2977fa7d079a1c7ec13a44c3e4d1d4aa81d96af3498a"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/MASTER_PLAN.md",
+      "sha256": "680f22d3df50a06f1d4e0c7f33482f096d2ddad94ba3e3be225999236a4d70de"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/NEXT_PHASE_PLAN.md",
+      "sha256": "f285f61e39f1b4e8b34b89994c2389b621b1871988112a86ecebf0eaceee2013"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/PRODUCT_SPEC.md",
+      "sha256": "72751cd5152bfc4c35a0449fb841fc4d089099b19a265ba50ccaf82b5a717e98"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/REASSESSMENT.md",
+      "sha256": "5f548e830fc0633a47dfed1d910d4274b8c31565e89b324281719dc72b776c5a"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/RESEARCH.md",
+      "sha256": "f6f230c74959355511e0e4aee45118fce34013c98a4c137841f890d947116fdd"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/START_AUTHORIZATION.md",
+      "sha256": "3058f924e47eacfe588696cf48e5f1ffe6375a20267e463112d2a3140a1a89ca"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/SUPERSEDED_PLANS.md",
+      "sha256": "13f46d045bb186ffbe92f65cbcc7ad1da57f8429a276f7b04628b0b6b2913f5c"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/TASKS.json",
+      "sha256": "0a4e1961677e406d2a5212265000792b11be1dc01e74cc13e439997d6b9b3ce5"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/UPLOAD_STATUS.json",
+      "sha256": "c0cc132c5e3f385f41a654cbb6142299fd2a9193434424d38d7d57c85de88417"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/VM_ACCESS.md",
+      "sha256": "b50ec743a0ab49f44a5086986805f0b4522e6aee262c096f2abb234821f961a6"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/docs/development/superseded-plans.json",
+      "sha256": "33308b6074a11ad7934c87badf993b6eee49ad132c50dde7fa3455d1f9692ea4"
+    },
+    {
+      "path": "docs/development/archive/2026-09-19-full-solution-scope/manifest.json",
+      "sha256": "bd8bc0e670e693c1d4255b6f33d51e2f17a6e679719cc925b1d94c6fac65d2bf"
+    }
+  ],
+  "publication_state": "Captured before documentation commit; live root UPLOAD_STATUS.json records final remote verification",
+  "prior_history_snapshot": "../2026-09-19/"
+}
