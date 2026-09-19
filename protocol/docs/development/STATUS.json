@@ -1,11 +1,11 @@
 {
   "schema_version": 2,
   "product": "Protocol",
-  "updated_at": "2026-09-19T13:54:30Z",
-  "update_scope": "f3_f6_linux_arm64_docker_exact_source_slice_independently_accepted",
+  "updated_at": "2026-09-19T21:05:25Z",
+  "update_scope": "f6_current_source_catalog_handoff_independently_reviewed",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_ACCEPTED",
-  "source_objective_state": "ARM64_DOCKER_EXACT_SOURCE_SLICE_ACCEPTED_REMAINING_F3_F6_OPEN",
+  "source_objective_state": "HUB_COMPATIBLE_CURRENT_SOURCE_HANDOFF_PREPARED_REMAINING_F3_F6_OPEN",
   "current_gate_ids": ["F3", "F6"],
   "completion_gate_ids": ["F0", "F3", "F5", "F6", "F7"],
   "accepted_receipts_immutable": true,
@@ -13,17 +13,21 @@
   "accepted_gate_ids": [
     "G3"
   ],
-  "planning_state": "F3_F6_NATIVE_FOUNDATION_AND_DOCKER_EXACT_SOURCE_SLICE_ACCEPTED_REMAINING_GATES_OPEN",
+  "planning_state": "F3_F6_NATIVE_AND_DOCKER_SLICES_ACCEPTED_SOURCE_HANDOFF_PREPARED_REMAINING_GATES_OPEN",
   "objective": "Complete every documented Protocol profile and conformance surface, real-input semantic evidence, reproducible developer distribution and final ecosystem admission.",
   "source": {
-    "head": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "review_base_head": "e82ed205f728cff3cf1e2ceab0ceb40692c562d6",
     "branch": "main",
     "dirty_entries_at_goal_activation": 1,
     "tracked_dirty_entries_at_goal_activation": 0,
-    "accepted_runtime_source_head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
-    "checked_at": "2026-09-19T13:44:33Z",
-    "remote_relation": "Local HEAD, origin/main and ls-remote main matched exact runtime-source commit 53b5c6483990db84e5214176755f398e93d87b1b before the clean reproduction",
-    "docker_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b"
+    "g3_accepted_runtime_source_head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+    "checked_at": "2026-09-19T21:05:25Z",
+    "remote_relation": "At independent review start, local HEAD, cached origin/main and unauthenticated public ls-remote main all matched evidence-only review base e82ed205f728cff3cf1e2ceab0ceb40692c562d6; accepted Docker runtime-source commit 53b5c6483990db84e5214176755f398e93d87b1b is its direct ancestor",
+    "docker_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "catalog_cohort_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "catalog_cohort_source_tree": "931507b56c641d330d3a75513f3eb1f88f24e219",
+    "review_base_is_evidence_only": "e82ed205f728cff3cf1e2ceab0ceb40692c562d6 records later PLAN, STATUS and r2 receipt evidence; it and this metadata-only handoff delta do not replace the accepted Docker runtime source",
+    "public_remote_verified_without_credentials": true
   },
   "current_worker": null,
   "model_policy": {
@@ -48,19 +52,24 @@
     "Independent Sol/high review returned ACCEPT with no findings for the bounded dirty-tree ARM64 Docker candidate and its calibrated receipt; this does not make the candidate reachable-source evidence.",
     "The published runtime-source commit 53b5c648...d87b1b was staged only through its clean git archive. Two ARM64 guest builds reproduced bundle 8ac5ccfa...b8be and the digest-pinned native image 721f2ad8...58095 passed 142/142 tests plus 31/31 conformance as UID/GID 10001 with UV_OFFLINE=1 and --network none.",
     "Independent Sol/high review returned ACCEPT with no findings for the exact published runtime-source 53b5c648...d87b1b native ARM64 Docker developer-bundle slice and its corrected r2 evidence chronology; the later evidence commit does not replace that runtime-source identity.",
-    "The guest returned to zero Docker images/containers/volumes/cache, its temporary context was removed, it was stopped, port 60022 closed and the heavy-build lock was released."
+    "The guest returned to zero Docker images/containers/volumes/cache, its temporary context was removed, it was stopped, port 60022 closed and the heavy-build lock was released.",
+    "A deterministic clean export of accepted runtime-source commit 53b5c648...d87b1b binds all 188 regular files in the tracked complete manifest; the Hub algorithm includes 187 files, excludes only AGENTS.md, and reproducibly yields source_sha256 a4b68800...046c for product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926.",
+    "The source handoff intentionally contains no Protocol artifacts because the Hub catalog schema forbids them. It is prepared input only: Hub recomputation/admission and catalog lifecycle remain open, with no runtime or gate acceptance claimed.",
+    "Independent bounded review reproduced the clean archive, complete manifest aggregate, Hub source aggregate and profile digest; confirmed public unauthenticated main reachability and exact ancestry; found no remaining P1/P2 defects."
   ],
   "evidence_paths": [
     "docs/development/g3-compatibility-admission-2026-09-19-r2.json",
     "docs/development/f3-f6-native-developer-bundle-foundation-2026-09-19-r1.json",
     "docs/development/f3-f6-linux-arm64-docker-checker-2026-09-19-r1.json",
-    "docs/development/f3-f6-linux-arm64-docker-checker-2026-09-19-r2.json"
+    "docs/development/f3-f6-linux-arm64-docker-checker-2026-09-19-r2.json",
+    "docs/development/f6-current-source-manifest-53b5c648-2026-09-19.json",
+    "docs/development/f6-current-source-handoff-2026-09-19-r1.json"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed workspace ledger maps every rich, current-Hub and Edge contract claim.",
     "F3: the native bundle foundation is independently accepted; prove independent adapters and fail-closed compatibility for all final active consumers.",
     "F5: mandatory fresh named-source and passive evidence must validate real semantics and any resulting contract delta.",
-    "F6: the exact-source native ARM64 Docker slice is independently accepted; prove remote-wire smoke and Hub catalog install/update/status/rollback/removal against exact admitted commits.",
+    "F6: the exact-source native ARM64 Docker slice is independently accepted and its bounded Hub-compatible source candidate is prepared; Hub must independently recompute and admit it, then prove remote-wire smoke and catalog install/update/status/rollback/removal against exact admitted commits.",
     "F7: admit exact final product artifacts and pass combined readback without validator weakening."
   ],
   "next_goal_draft": {
@@ -91,7 +100,7 @@
   "acceptance_limits": [
     "No App integration acceptance",
     "No real-data parity or production acceptance",
-    "The exact-source native ARM64 Docker slice is independently accepted; remote-wire smoke, Hub catalog lifecycle, cold-cache dependency installation, downstream final-product admission and F5 named/passive inputs remain open",
+    "The exact-source native ARM64 Docker slice is independently accepted and its source handoff is prepared only; Hub catalog admission/lifecycle, remote-wire smoke, cold-cache dependency installation, downstream final-product admission and F5 named/passive inputs remain open",
     "No cold-cache offline dependency install is claimed; offline reinstall used an exact cache seeded from uv.lock",
     "Viewer excluded; x86/Intel paused"
   ]

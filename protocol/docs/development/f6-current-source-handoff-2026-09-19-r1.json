@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.protocol.f6-current-source-handoff/v1",
+  "recorded_at": "2026-09-19T20:53:28Z",
+  "reviewed_at": "2026-09-19T21:05:25Z",
+  "result": "PREPARED_BOUNDED_SOURCE_ONLY",
+  "scope": {
+    "product": "Protocol",
+    "purpose": "Deterministic current-source manifest and Hub-compatible catalog candidate for exact accepted runtime-source commit",
+    "runtime_executed": false,
+    "tests_rerun": false,
+    "hub_catalog_mutated": false,
+    "release_or_publication_performed": false
+  },
+  "identity": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+    "branch": "main",
+    "review_base_head": "e82ed205f728cff3cf1e2ceab0ceb40692c562d6",
+    "cached_origin_main_at_review_start": "e82ed205f728cff3cf1e2ceab0ceb40692c562d6",
+    "live_origin_main_at_review_start": "e82ed205f728cff3cf1e2ceab0ceb40692c562d6",
+    "evidence_head_tree": "e581db9ee4681a9b8750911887deaf3441685d74",
+    "accepted_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "accepted_runtime_source_tree": "931507b56c641d330d3a75513f3eb1f88f24e219",
+    "product_version": "2026.36.2",
+    "ancestry": {
+      "runtime_source_is_ancestor_of_evidence_head": true,
+      "descendant_commit_count_at_review_base": 1
+    },
+    "evidence_head_calibration": "Commit e82ed205f728cff3cf1e2ceab0ceb40692c562d6 is the later evidence-only review base: its delta from 53b5c6483990db84e5214176755f398e93d87b1b contains only PLAN.md, STATUS.json and the r2 ARM64 Docker receipt. It records acceptance evidence but was not the source executed by that accepted Docker lane. This metadata-only handoff delta likewise does not replace 53b5c6483990db84e5214176755f398e93d87b1b as this cohort's source identity."
+  },
+  "public_reachability": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+    "transport": "unauthenticated HTTPS with credential helper disabled and terminal prompting disabled",
+    "main_head_at_review_start": "e82ed205f728cff3cf1e2ceab0ceb40692c562d6",
+    "runtime_source_is_local_ancestor_of_exact_public_main_head": true
+  },
+  "clean_export": {
+    "source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "command": "git -c tar.umask=0022 archive --format=tar --prefix=teslatlas-protocol-53b5c6483990db84e5214176755f398e93d87b1b/ 53b5c6483990db84e5214176755f398e93d87b1b",
+    "archive_sha256": "ecc7bc35ad20e9201f82688eb56c1f4561e927346e594fd5c48fa9e3273b386e",
+    "archive_bytes": 2508800,
+    "archive_member_count": 225,
+    "directory_member_count": 37,
+    "regular_file_count": 188,
+    "regular_file_bytes": 2342312,
+    "two_exports_byte_identical": true,
+    "worktree_used_as_source": false
+  },
+  "complete_source_manifest": {
+    "path": "docs/development/f6-current-source-manifest-53b5c648-2026-09-19.json",
+    "sha256": "1a2a62351ec6daa9836403988d342e00031292aada073f93032c90bc65b32d7f",
+    "aggregate_sha256": "71ba5a6a740dfcc37620d71445c7a742757f721bde19129c4b83a63c93ef3948",
+    "algorithm": "SHA-256 of compact sorted-key JSON over the complete path-sorted files array; every entry binds path, git_mode, archive_mode, size and sha256.",
+    "regular_file_count": 188,
+    "mode_counts": {
+      "100644": 183,
+      "100755": 5
+    }
+  },
+  "profile": {
+    "id": "hub-http-v1",
+    "revision": "1.0.0",
+    "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "checksum_path": "profiles/hub-http-v1/1.0.0/SHA256SUMS"
+  },
+  "hub_catalog": {
+    "algorithm_authority": "Hub tools/companions/core.py source_manifest_for and _source_digest",
+    "algorithm": "Walk the safe source root without following links, sort directories and files, reject every non-regular included path, omit exact excluded names, create ordered entries containing exactly path, sha256, size and executable, then SHA-256 the compact sorted-key JSON array.",
+    "source_sha256": "a4b68800e7164c229915fced33223a7c9954bb67019306348e3e99671d28046c",
+    "included_file_count": 187,
+    "excluded_clean_export_paths": [
+      "AGENTS.md"
+    ],
+    "independent_recomputations_match": true,
+    "protocol_artifacts_forbidden_by_schema": true,
+    "protocol_component_candidate": {
+      "repository": "https://github.com/magrathean-uk/teslatlas-protocol.git",
+      "commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+      "source_sha256": "a4b68800e7164c229915fced33223a7c9954bb67019306348e3e99671d28046c",
+      "product_version": "2026.36.2",
+      "profile": {
+        "id": "hub-http-v1",
+        "revision": "1.0.0",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+      }
+    },
+    "catalog_admission_performed": false,
+    "catalog_lifecycle_performed": false
+  },
+  "safety": {
+    "git_tree_regular_files_only": true,
+    "archive_file_set_matches_git_tree": true,
+    "archive_modes_sizes_hashes_match_git_tree": true,
+    "duplicate_archive_paths": 0,
+    "unsafe_archive_paths": 0,
+    "link_members": 0,
+    "special_members": 0,
+    "regular_file_mode_mapping": {
+      "100644": "0644",
+      "100755": "0755"
+    },
+    "temporary_exports_removed": true,
+    "preserved_untracked_paths": [
+      ".serena/"
+    ]
+  },
+  "checks": {
+    "refs_and_live_remote_match_review_base": true,
+    "public_unauthenticated_remote_main_verified": true,
+    "accepted_source_ancestry_verified": true,
+    "clean_export_reproduced_twice": true,
+    "complete_manifest_recomputed": true,
+    "hub_source_digest_recomputed_with_hub_implementation": true,
+    "profile_digest_verified_from_clean_export": true,
+    "json_parse": "PASS",
+    "diff_check": "PASS",
+    "changed_file_secret_scan": "PASS"
+  },
+  "acceptance": {
+    "independent_review": {
+      "status": "ACCEPT",
+      "recorded_at": "2026-09-19T21:05:25Z",
+      "findings": [],
+      "accepted_scope": "Exact clean-export identity, complete source manifest, Hub-compatible source aggregate, hub-http-v1 profile digest, public main reachability and ancestry for accepted Docker runtime-source commit 53b5c6483990db84e5214176755f398e93d87b1b.",
+      "limits": "Accepts only this prepared source-only handoff. Hub admission and lifecycle, runtime checks, remote-wire smoke, cold-cache dependency installation, downstream final-consumer admission, F5, full F3/F6 and F7 remain open."
+    },
+    "bounded_source_handoff_prepared": true,
+    "runtime_acceptance_claimed": false,
+    "f3_complete": false,
+    "f6_complete": false,
+    "f7_complete": false
+  },
+  "limitations": [
+    "Hub must independently recompute the source aggregate and admit the exact component candidate; this receipt does not mutate or accept a catalog.",
+    "Remote-wire smoke and Hub install/update/status/rollback/removal remain open.",
+    "Cold-cache offline dependency installation remains open.",
+    "Downstream final-consumer admission and combined final-product readback remain open.",
+    "F5 named-source and passive real-input semantics remain open.",
+    "Full F3, F6 and F7 acceptance remains open."
+  ]
+}

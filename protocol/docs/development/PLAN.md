@@ -93,6 +93,30 @@ Cold-cache offline dependency installation, remote-wire smoke, Hub catalog
 install/update/status/rollback/removal, downstream final-product admission and the F5
 real-input assertions remain open.
 
+## F6 current-source catalog handoff
+
+The bounded source-only handoff is pinned to the accepted Docker runtime-source commit
+`53b5c6483990db84e5214176755f398e93d87b1b`, tree
+`931507b56c641d330d3a75513f3eb1f88f24e219`, and product `2026.36.2`. Two clean
+exports were byte-identical. The tracked complete manifest binds all 188 regular-file
+paths, hashes, sizes and modes; its aggregate is
+`71ba5a6a740dfcc37620d71445c7a742757f721bde19129c4b83a63c93ef3948`.
+Applying the Hub source-manifest algorithm includes 187 files, excludes only
+`AGENTS.md`, and yields `source_sha256`
+`a4b68800e7164c229915fced33223a7c9954bb67019306348e3e99671d28046c`.
+The candidate binds `hub-http-v1@1.0.0` at
+`b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
+
+Review-base commit `e82ed205f728cff3cf1e2ceab0ceb40692c562d6` is one evidence-only
+descendant: its delta contains only the plan, status and accepted r2 Docker receipt.
+It was not the source executed by that accepted lane, and this metadata-only handoff
+delta likewise does not replace `53b5c648...d87b1b` as the cohort source. The Hub
+catalog schema forbids Protocol `artifacts`, so the handoff supplies only repository,
+commit, source aggregate, product version and profile identity. This is a prepared
+catalog input, not runtime,
+catalog-lifecycle, F3, F6 or F7 acceptance; Hub recomputation/admission, remote-wire,
+cold-cache, final-consumer and F5 evidence remain open.
+
 ## Start and boundaries
 
 The sent goal authorizes bounded contract work, generation, checks and validated
