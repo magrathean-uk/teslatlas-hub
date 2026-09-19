@@ -10,6 +10,8 @@ cache, so fetch it before building:
 
 ```sh
 HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$HUB_SOURCE_COMMIT")
+export SOURCE_DATE_EPOCH
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 cargo fetch --locked
 HUB_SOURCE_ROOT=$(pwd -P)

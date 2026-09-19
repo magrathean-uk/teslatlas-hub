@@ -1,0 +1,4 @@
+Package: teslatlas-hub
+Version: 2026.36.2-1
+Architecture: arm64
+Depends: adduser, ca-certificates, python3 (>= 3.10), systemd (>= 254), libc6 (>= 2.39), libgcc-s1 (>= 4.2)

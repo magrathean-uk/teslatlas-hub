@@ -1,0 +1,253 @@
+package_cmp
+     30  65  66
+     31  71  60
+     32  71  61
+     33  71  60
+     34  65  71
+     94  65  66
+     95  71  60
+     96  71  61
+     97  71  60
+     98  65  71
+    123  66  65
+    124  60  66
+    147 362 355
+    161   2 230
+    162 237  27
+    163 205 243
+    164 242 222
+    169 352 345
+    196   3  17
+    197  57 135
+ar_member_hashes
+--- /tmp/teslatlas-hub-deb-repro-r1/run-a-ar-member-hashes.txt	2026-09-20 00:22:13.961027999 +0100
++++ /tmp/teslatlas-hub-deb-repro-r1/run-b-ar-member-hashes.txt	2026-09-20 00:22:14.489032390 +0100
+@@ -1,3 +1,3 @@
+ d526eb4e878a23ef26ae190031b4efd2d58ed66789ac049ea3dbaf74c9df7402  debian-binary
+-ed3565e1ea0027f6ab139a527401f196beb9b891b7144a9de94749a70010c383  control.tar.xz
+-683e189ac6745d0cecdb924576ca820a2a169ef1184366ebfdf8d5bb6eb1db23  data.tar.xz
++ad97ba8f9486b8dd979439764bcca9ead7c32cc468d1e6205046557728a28296  control.tar.xz
++fcc33bca5d7b4b91f1461652fb14a005f77250008325bb533d38954a2c1dd0f4  data.tar.xz
+ar_lists
+--- /tmp/teslatlas-hub-deb-repro-r1/run-a-ar-list.txt	2026-09-20 00:22:13.965028033 +0100
++++ /tmp/teslatlas-hub-deb-repro-r1/run-b-ar-list.txt	2026-09-20 00:22:14.489032390 +0100
+@@ -1,3 +1,3 @@
+-rw-r--r-- 0/0      4 Sep 20 00:19 2026 debian-binary
+-rw-r--r-- 0/0   4660 Sep 20 00:19 2026 control.tar.xz
+-rw-r--r-- 0/0 6461292 Sep 20 00:19 2026 data.tar.xz
++rw-r--r-- 0/0      4 Sep 20 00:21 2026 debian-binary
++rw-r--r-- 0/0   4656 Sep 20 00:21 2026 control.tar.xz
++rw-r--r-- 0/0 6459280 Sep 20 00:21 2026 data.tar.xz
+extracted_files
+extracted_metadata
+--- /tmp/teslatlas-hub-deb-repro-r1/run-a-extracted-metadata.txt	2026-09-20 00:22:14.217030131 +0100
++++ /tmp/teslatlas-hub-deb-repro-r1/run-b-extracted-metadata.txt	2026-09-20 00:22:14.745034516 +0100
+@@ -1,50 +1,50 @@
+-d 755 bolyki bolyki 100 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr
+-d 755 bolyki bolyki 120 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/teslatlas-hub/companions
+-d 755 bolyki bolyki 120 1789860134.2130300970 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root
+-d 755 bolyki bolyki 160 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/DEBIAN
+-d 755 bolyki bolyki 160 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib/teslatlas-hub/companions
+-d 755 bolyki bolyki 200 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub
+-d 755 bolyki bolyki 60 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/etc
+-d 755 bolyki bolyki 60 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/etc/teslatlas-hub
+-d 755 bolyki bolyki 60 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/lib
+-d 755 bolyki bolyki 60 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/lib/systemd
+-d 755 bolyki bolyki 60 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/bin
+-d 755 bolyki bolyki 60 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib
+-d 755 bolyki bolyki 60 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc
+-d 755 bolyki bolyki 60 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/teslatlas-hub
+-d 755 bolyki bolyki 80 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/lib/systemd/system
+-d 755 bolyki bolyki 80 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib/teslatlas-hub
+-d 755 bolyki bolyki 80 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share
+-d 775 bolyki bolyki 120 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/dependency-legal
+-f 644 bolyki bolyki 1456 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/NOTICE
+-f 644 bolyki bolyki 19777 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib/teslatlas-hub/companions/recipes.py
+-f 644 bolyki bolyki 1989361 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/dependency-legal/RUST_THIRD_PARTY_NOTICES.generated.md
+-f 644 bolyki bolyki 2016 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/teslatlas-hub/companions/local-sources.schema.json
+-f 644 bolyki bolyki 22637 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib/teslatlas-hub/companions/targets.py
+-f 644 bolyki bolyki 2291 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md
+-f 644 bolyki bolyki 253072 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/dependency-legal/rust-dependency-inventory.json
+-f 644 bolyki bolyki 267 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/lib/systemd/system/teslatlas-hub-terminal-failure.target
+-f 644 bolyki bolyki 31 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/DEBIAN/conffiles
+-f 644 bolyki bolyki 32427 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib/teslatlas-hub/companions/cli.py
+-f 644 bolyki bolyki 3244 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/teslatlas-hub/companions/catalog-current.json
+-f 644 bolyki bolyki 3293 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md
+-f 644 bolyki bolyki 34523 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/copyright
+-f 644 bolyki bolyki 3865 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib/teslatlas-hub/companions/processes.py
+-f 644 bolyki bolyki 428 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/DEBIAN/control
+-f 644 bolyki bolyki 43 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/teslatlas-hub/companions/catalog-template.json
+-f 644 bolyki bolyki 512952 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/dependency-legal/rust-sbom.spdx.json
+-f 644 bolyki bolyki 5563 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/teslatlas-hub/companions/catalog.schema.json
+-f 644 bolyki bolyki 57250 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib/teslatlas-hub/companions/core.py
+-f 644 bolyki bolyki 6690 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md
+-f 644 bolyki bolyki 701 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/dependency-legal/legal-bundle-manifest.json
+-f 644 bolyki bolyki 7236 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md
+-f 644 bolyki bolyki 778 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/etc/teslatlas-hub/config.toml
+-f 644 bolyki bolyki 8381 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/share/doc/teslatlas-hub/PROVENANCE.md
+-f 644 bolyki bolyki 85 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib/teslatlas-hub/companions/__init__.py
+-f 644 bolyki bolyki 866 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/lib/systemd/system/teslatlas-hub.service
+-f 755 bolyki bolyki 15850 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/DEBIAN/postinst
+-f 755 bolyki bolyki 2234 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/DEBIAN/prerm
+-f 755 bolyki bolyki 26000632 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/bin/teslatlas-hub
+-f 755 bolyki bolyki 6166 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/DEBIAN/preinst
+-f 755 bolyki bolyki 618 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/usr/lib/teslatlas-hub/bootstrap-companions.py
+-f 755 bolyki bolyki 8432 1789859995.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-a/root/DEBIAN/postrm
++d 755 bolyki bolyki 100 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr
++d 755 bolyki bolyki 120 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/teslatlas-hub/companions
++d 755 bolyki bolyki 120 1789860134.7410344830 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root
++d 755 bolyki bolyki 160 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib/teslatlas-hub/companions
++d 755 bolyki bolyki 160 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/DEBIAN
++d 755 bolyki bolyki 200 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub
++d 755 bolyki bolyki 60 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/bin
++d 755 bolyki bolyki 60 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib
++d 755 bolyki bolyki 60 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/teslatlas-hub
++d 755 bolyki bolyki 60 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/etc
++d 755 bolyki bolyki 60 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/etc/teslatlas-hub
++d 755 bolyki bolyki 60 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/lib
++d 755 bolyki bolyki 60 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/lib/systemd
++d 755 bolyki bolyki 60 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc
++d 755 bolyki bolyki 80 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib/teslatlas-hub
++d 755 bolyki bolyki 80 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/lib/systemd/system
++d 755 bolyki bolyki 80 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share
++d 775 bolyki bolyki 120 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/dependency-legal
++f 644 bolyki bolyki 1456 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/NOTICE
++f 644 bolyki bolyki 19777 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib/teslatlas-hub/companions/recipes.py
++f 644 bolyki bolyki 1989361 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/dependency-legal/RUST_THIRD_PARTY_NOTICES.generated.md
++f 644 bolyki bolyki 2016 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/teslatlas-hub/companions/local-sources.schema.json
++f 644 bolyki bolyki 22637 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib/teslatlas-hub/companions/targets.py
++f 644 bolyki bolyki 2291 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md
++f 644 bolyki bolyki 253072 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/dependency-legal/rust-dependency-inventory.json
++f 644 bolyki bolyki 267 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/lib/systemd/system/teslatlas-hub-terminal-failure.target
++f 644 bolyki bolyki 31 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/DEBIAN/conffiles
++f 644 bolyki bolyki 32427 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib/teslatlas-hub/companions/cli.py
++f 644 bolyki bolyki 3244 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/teslatlas-hub/companions/catalog-current.json
++f 644 bolyki bolyki 3293 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md
++f 644 bolyki bolyki 34523 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/copyright
++f 644 bolyki bolyki 3865 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib/teslatlas-hub/companions/processes.py
++f 644 bolyki bolyki 428 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/DEBIAN/control
++f 644 bolyki bolyki 43 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/teslatlas-hub/companions/catalog-template.json
++f 644 bolyki bolyki 512952 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/dependency-legal/rust-sbom.spdx.json
++f 644 bolyki bolyki 5563 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/teslatlas-hub/companions/catalog.schema.json
++f 644 bolyki bolyki 57250 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib/teslatlas-hub/companions/core.py
++f 644 bolyki bolyki 6690 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md
++f 644 bolyki bolyki 701 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/dependency-legal/legal-bundle-manifest.json
++f 644 bolyki bolyki 7236 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md
++f 644 bolyki bolyki 778 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/etc/teslatlas-hub/config.toml
++f 644 bolyki bolyki 8381 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/share/doc/teslatlas-hub/PROVENANCE.md
++f 644 bolyki bolyki 85 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib/teslatlas-hub/companions/__init__.py
++f 644 bolyki bolyki 866 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/lib/systemd/system/teslatlas-hub.service
++f 755 bolyki bolyki 15850 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/DEBIAN/postinst
++f 755 bolyki bolyki 2234 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/DEBIAN/prerm
++f 755 bolyki bolyki 26000632 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/bin/teslatlas-hub
++f 755 bolyki bolyki 6166 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/DEBIAN/preinst
++f 755 bolyki bolyki 618 1789860108.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/usr/lib/teslatlas-hub/bootstrap-companions.py
++f 755 bolyki bolyki 8432 1789860109.0000000000 /tmp/teslatlas-hub-deb-repro-r1/inspect-b/root/DEBIAN/postrm
+control_tar_lists
+--- /tmp/teslatlas-hub-deb-repro-r1/run-a-control-tar-list.txt	2026-09-20 00:22:14.473032257 +0100
++++ /tmp/teslatlas-hub-deb-repro-r1/run-b-control-tar-list.txt	2026-09-20 00:22:15.001036643 +0100
+@@ -1,7 +1,7 @@
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./
+--rw-r--r-- 0/0              31 2026-09-20 00:19:55 ./conffiles
+--rw-r--r-- 0/0             428 2026-09-20 00:19:55 ./control
+--rwxr-xr-x 0/0           15850 2026-09-20 00:19:55 ./postinst
+--rwxr-xr-x 0/0            8432 2026-09-20 00:19:55 ./postrm
+--rwxr-xr-x 0/0            6166 2026-09-20 00:19:55 ./preinst
+--rwxr-xr-x 0/0            2234 2026-09-20 00:19:55 ./prerm
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./
++-rw-r--r-- 0/0              31 2026-09-20 00:21:49 ./conffiles
++-rw-r--r-- 0/0             428 2026-09-20 00:21:49 ./control
++-rwxr-xr-x 0/0           15850 2026-09-20 00:21:49 ./postinst
++-rwxr-xr-x 0/0            8432 2026-09-20 00:21:49 ./postrm
++-rwxr-xr-x 0/0            6166 2026-09-20 00:21:49 ./preinst
++-rwxr-xr-x 0/0            2234 2026-09-20 00:21:49 ./prerm
+data_tar_lists
+--- /tmp/teslatlas-hub-deb-repro-r1/run-a-data-tar-list.txt	2026-09-20 00:22:14.473032257 +0100
++++ /tmp/teslatlas-hub-deb-repro-r1/run-b-data-tar-list.txt	2026-09-20 00:22:15.001036643 +0100
+@@ -1,43 +1,43 @@
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./etc/
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./etc/teslatlas-hub/
+--rw-r--r-- 0/0             778 2026-09-20 00:19:55 ./etc/teslatlas-hub/config.toml
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./lib/
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./lib/systemd/
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./lib/systemd/system/
+--rw-r--r-- 0/0             267 2026-09-20 00:19:55 ./lib/systemd/system/teslatlas-hub-terminal-failure.target
+--rw-r--r-- 0/0             866 2026-09-20 00:19:55 ./lib/systemd/system/teslatlas-hub.service
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/bin/
+--rwxr-xr-x 0/0        26000632 2026-09-20 00:19:55 ./usr/bin/teslatlas-hub
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/lib/
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/lib/teslatlas-hub/
+--rwxr-xr-x 0/0             618 2026-09-20 00:19:55 ./usr/lib/teslatlas-hub/bootstrap-companions.py
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/lib/teslatlas-hub/companions/
+--rw-r--r-- 0/0              85 2026-09-20 00:19:55 ./usr/lib/teslatlas-hub/companions/__init__.py
+--rw-r--r-- 0/0           32427 2026-09-20 00:19:55 ./usr/lib/teslatlas-hub/companions/cli.py
+--rw-r--r-- 0/0           57250 2026-09-20 00:19:55 ./usr/lib/teslatlas-hub/companions/core.py
+--rw-r--r-- 0/0            3865 2026-09-20 00:19:55 ./usr/lib/teslatlas-hub/companions/processes.py
+--rw-r--r-- 0/0           19777 2026-09-20 00:19:55 ./usr/lib/teslatlas-hub/companions/recipes.py
+--rw-r--r-- 0/0           22637 2026-09-20 00:19:55 ./usr/lib/teslatlas-hub/companions/targets.py
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/share/
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/share/doc/
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/
+--rw-r--r-- 0/0            2291 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md
+--rw-r--r-- 0/0            1456 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/NOTICE
+--rw-r--r-- 0/0            8381 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/PROVENANCE.md
+--rw-r--r-- 0/0            6690 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md
+--rw-r--r-- 0/0            3293 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md
+--rw-r--r-- 0/0            7236 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md
+--rw-r--r-- 0/0           34523 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/copyright
+-drwxrwxr-x 0/0               0 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/dependency-legal/
+--rw-r--r-- 0/0         1989361 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/dependency-legal/RUST_THIRD_PARTY_NOTICES.generated.md
+--rw-r--r-- 0/0             701 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/dependency-legal/legal-bundle-manifest.json
+--rw-r--r-- 0/0          253072 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/dependency-legal/rust-dependency-inventory.json
+--rw-r--r-- 0/0          512952 2026-09-20 00:19:55 ./usr/share/doc/teslatlas-hub/dependency-legal/rust-sbom.spdx.json
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/share/teslatlas-hub/
+-drwxr-xr-x 0/0               0 2026-09-20 00:19:55 ./usr/share/teslatlas-hub/companions/
+--rw-r--r-- 0/0            3244 2026-09-20 00:19:55 ./usr/share/teslatlas-hub/companions/catalog-current.json
+--rw-r--r-- 0/0              43 2026-09-20 00:19:55 ./usr/share/teslatlas-hub/companions/catalog-template.json
+--rw-r--r-- 0/0            5563 2026-09-20 00:19:55 ./usr/share/teslatlas-hub/companions/catalog.schema.json
+--rw-r--r-- 0/0            2016 2026-09-20 00:19:55 ./usr/share/teslatlas-hub/companions/local-sources.schema.json
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./etc/
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./etc/teslatlas-hub/
++-rw-r--r-- 0/0             778 2026-09-20 00:21:49 ./etc/teslatlas-hub/config.toml
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./lib/
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./lib/systemd/
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./lib/systemd/system/
++-rw-r--r-- 0/0             267 2026-09-20 00:21:49 ./lib/systemd/system/teslatlas-hub-terminal-failure.target
++-rw-r--r-- 0/0             866 2026-09-20 00:21:49 ./lib/systemd/system/teslatlas-hub.service
++drwxr-xr-x 0/0               0 2026-09-20 00:21:48 ./usr/
++drwxr-xr-x 0/0               0 2026-09-20 00:21:48 ./usr/bin/
++-rwxr-xr-x 0/0        26000632 2026-09-20 00:21:48 ./usr/bin/teslatlas-hub
++drwxr-xr-x 0/0               0 2026-09-20 00:21:48 ./usr/lib/
++drwxr-xr-x 0/0               0 2026-09-20 00:21:48 ./usr/lib/teslatlas-hub/
++-rwxr-xr-x 0/0             618 2026-09-20 00:21:48 ./usr/lib/teslatlas-hub/bootstrap-companions.py
++drwxr-xr-x 0/0               0 2026-09-20 00:21:48 ./usr/lib/teslatlas-hub/companions/
++-rw-r--r-- 0/0              85 2026-09-20 00:21:48 ./usr/lib/teslatlas-hub/companions/__init__.py
++-rw-r--r-- 0/0           32427 2026-09-20 00:21:48 ./usr/lib/teslatlas-hub/companions/cli.py
++-rw-r--r-- 0/0           57250 2026-09-20 00:21:48 ./usr/lib/teslatlas-hub/companions/core.py
++-rw-r--r-- 0/0            3865 2026-09-20 00:21:48 ./usr/lib/teslatlas-hub/companions/processes.py
++-rw-r--r-- 0/0           19777 2026-09-20 00:21:48 ./usr/lib/teslatlas-hub/companions/recipes.py
++-rw-r--r-- 0/0           22637 2026-09-20 00:21:48 ./usr/lib/teslatlas-hub/companions/targets.py
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./usr/share/
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./usr/share/doc/
++drwxr-xr-x 0/0               0 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/
++-rw-r--r-- 0/0            2291 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/ADDITIONAL_TERMS.md
++-rw-r--r-- 0/0            1456 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/NOTICE
++-rw-r--r-- 0/0            8381 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/PROVENANCE.md
++-rw-r--r-- 0/0            6690 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/RELEASE_VERIFICATION.md
++-rw-r--r-- 0/0            3293 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/SOURCE_AVAILABILITY.md
++-rw-r--r-- 0/0            7236 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/THIRD_PARTY_NOTICES.md
++-rw-r--r-- 0/0           34523 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/copyright
++drwxrwxr-x 0/0               0 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/dependency-legal/
++-rw-r--r-- 0/0         1989361 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/dependency-legal/RUST_THIRD_PARTY_NOTICES.generated.md
++-rw-r--r-- 0/0             701 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/dependency-legal/legal-bundle-manifest.json
++-rw-r--r-- 0/0          253072 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/dependency-legal/rust-dependency-inventory.json
++-rw-r--r-- 0/0          512952 2026-09-20 00:21:49 ./usr/share/doc/teslatlas-hub/dependency-legal/rust-sbom.spdx.json
++drwxr-xr-x 0/0               0 2026-09-20 00:21:48 ./usr/share/teslatlas-hub/
++drwxr-xr-x 0/0               0 2026-09-20 00:21:48 ./usr/share/teslatlas-hub/companions/
++-rw-r--r-- 0/0            3244 2026-09-20 00:21:48 ./usr/share/teslatlas-hub/companions/catalog-current.json
++-rw-r--r-- 0/0              43 2026-09-20 00:21:48 ./usr/share/teslatlas-hub/companions/catalog-template.json
++-rw-r--r-- 0/0            5563 2026-09-20 00:21:48 ./usr/share/teslatlas-hub/companions/catalog.schema.json
++-rw-r--r-- 0/0            2016 2026-09-20 00:21:48 ./usr/share/teslatlas-hub/companions/local-sources.schema.json

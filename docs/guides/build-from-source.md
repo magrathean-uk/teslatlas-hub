@@ -14,6 +14,8 @@ infers identity from Git metadata or the current directory.
 git clone https://github.com/magrathean-uk/teslatlas-hub.git
 cd teslatlas-hub
 HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$HUB_SOURCE_COMMIT")
+export SOURCE_DATE_EPOCH
 test -z "$(git status --short)"
 git cat-file -e "${HUB_SOURCE_COMMIT}^{commit}"
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
@@ -83,7 +85,9 @@ gate reads all locked target-specific package metadata offline, including
 dependencies that are not compiled for Linux; an ordinary native build alone
 does not populate that complete cache. The source-path remap prevents the
 checkout's absolute path from changing otherwise identical release binaries;
-keep the fixed destination exactly as shown.
+keep the fixed destination exactly as shown. `SOURCE_DATE_EPOCH` is required by
+the Debian packager and must remain the selected pushed commit's timestamp so
+archive member metadata is reproducible across fresh source exports.
 
 Follow [Debian installation](install-debian.md) using that local package.
 This command builds core/Legacy functionality only. Fleet requires both

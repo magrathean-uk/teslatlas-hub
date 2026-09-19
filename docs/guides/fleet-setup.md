@@ -205,6 +205,8 @@ ARM64:
 ```sh
 mkdir -p dist
 HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$HUB_SOURCE_COMMIT")
+export SOURCE_DATE_EPOCH
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
   cargo build --locked --release --bin teslatlas-hub

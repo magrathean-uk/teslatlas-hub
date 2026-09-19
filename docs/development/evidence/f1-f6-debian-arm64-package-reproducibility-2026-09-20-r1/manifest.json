@@ -1,0 +1,55 @@
+{
+  "schema": "teslatlas.hub.evidence-bundle/v1",
+  "generated_at": "2026-09-19T23:31:20Z",
+  "receipt_id": "f1-f6-debian13-arm64-package-reproducibility-2026-09-20-r1",
+  "state": "COMPLETE",
+  "payload_file_count": 43,
+  "payload_hash_manifest": "payload-sha256.txt",
+  "payload_hash_manifest_sha256": "f0fd4bd546e67172eae8846b211231dabc3bb505be654d2173e03144367d7a81",
+  "source": {
+    "public_commit": "1b6dc00379819869f4cd8ed8897c2f1f915023a2",
+    "public_tree_url": "https://github.com/magrathean-uk/teslatlas-hub/tree/1b6dc00379819869f4cd8ed8897c2f1f915023a2",
+    "archive_sha256": "85fbaea4482d9965cd30fed66cc18ada308f068cdf2f6a61ee736382f5cf9037",
+    "archive_member_count": 1036,
+    "built_determinism_patch_sha256": "8ae19ef622d5f155042a28fd34ac741bcd6327dd6216a62dfa3a3d3464c5c3eb",
+    "built_source_manifest_sha256": "d2532c44587d2639f676f1564c0b67efdaaa3962321cb4c1f555b0d46b16321c",
+    "current_candidate_patch_sha256": "7b2f81313a3521c5bbccb9cb201fd9e129ea91c5c03a19674d4759ce1b746ceb",
+    "validation_delta_patch_sha256": "b7b4774c071909b0eb9a771968de35f690b4f85e8d85f844bc08ae140d5d87e4",
+    "packages_rebuilt_after_validation_delta": false,
+    "source_date_epoch": 1789859251
+  },
+  "result": {
+    "package_sha256": "73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a",
+    "package_bytes": 6464256,
+    "binary_sha256": "2b7c071614c9cb31e2fb3ac4b666b636ff8aae33035d661c09c4b935d5a0fd3c",
+    "binary_bytes": 26000632,
+    "control_member_count": 7,
+    "data_member_count": 43,
+    "complete_package_bytes_identical": true,
+    "ar_members_and_metadata_identical": true,
+    "control_members_and_metadata_identical": true,
+    "data_members_and_metadata_identical": true,
+    "extracted_payload_hashes_identical": true,
+    "embedded_version": "teslatlas-hub 2026.36.2",
+    "embedded_source": "https://github.com/magrathean-uk/teslatlas-hub/tree/1b6dc00379819869f4cd8ed8897c2f1f915023a2"
+  },
+  "redaction": {
+    "secret_scan": "PASS",
+    "credentials_or_private_inputs_present": false
+  },
+  "cleanup": {
+    "guest_work_root_removed": true,
+    "guest_staged_inputs_removed": true,
+    "guest_stopped": true,
+    "ssh_port_60022_closed": true,
+    "hub_port_8443_closed": true,
+    "heavy_build_lock_absent": true,
+    "host_free_kib": 52966372
+  },
+  "limits": [
+    "The retained fixed packages were built from exact commit exports plus built-determinism.patch. The current uncommitted candidate additionally includes validation-delta.patch, which changes only malformed-input rejection and focused tests; packages were not rebuilt after that output-neutral delta.",
+    "The public URL is the exact embedded Hub binary source identity. No v2026.36.2 tag was created or claimed.",
+    "This bundle proves core Debian ARM64 package-byte reproducibility and package structure only; it does not install the package or repeat the previously accepted service, storage, upgrade, rollback or removal cohorts.",
+    "Fleet sidecars, a genuine new predecessor, F1, F6 and full-solution acceptance remain outside this slice."
+  ]
+}

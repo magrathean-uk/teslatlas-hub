@@ -1,0 +1,18 @@
+ new Debian package, version 2.0.
+ size 6464256 bytes: control archive=4656 bytes.
+      31 bytes,     1 lines      conffiles
+     428 bytes,    10 lines      control
+   15850 bytes,   436 lines   *  postinst             #!/bin/sh
+    8432 bytes,   226 lines   *  postrm               #!/bin/sh
+    6166 bytes,   163 lines   *  preinst              #!/bin/sh
+    2234 bytes,    72 lines   *  prerm                #!/bin/sh
+ Package: teslatlas-hub
+ Version: 2026.36.2-1
+ Section: utils
+ Priority: optional
+ Architecture: arm64
+ Depends: adduser, ca-certificates, python3 (>= 3.10), systemd (>= 254), libc6 (>= 2.39), libgcc-s1 (>= 4.2)
+ Maintainer: György Bolyki <contact@magrathean.uk>
+ Description: Self-hosted multi-car Tesla telemetry hub
+  Teslatlas Hub is a local multi-car telemetry collector, migration tool,
+  sync server, and command-line controller.

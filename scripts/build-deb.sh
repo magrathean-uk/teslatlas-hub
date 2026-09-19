@@ -3,7 +3,7 @@
 set -eu
 
 usage() {
-    echo "usage: $0 --binary PATH --version VERSION --source-commit 40_HEX --output PATH --legal-bundle PATH [--architecture amd64|arm64] [--command-proxy-binary PATH --fleet-telemetry-binary PATH --go-proxy-evidence PATH --fleet-telemetry-evidence PATH]" >&2
+    echo "usage: SOURCE_DATE_EPOCH=UNIX_SECONDS $0 --binary PATH --version VERSION --source-commit 40_HEX --output PATH --legal-bundle PATH [--architecture amd64|arm64] [--command-proxy-binary PATH --fleet-telemetry-binary PATH --go-proxy-evidence PATH --fleet-telemetry-evidence PATH]" >&2
     exit 64
 }
 
@@ -35,6 +35,16 @@ done
 
 [ -n "$binary" ] && [ -n "$version" ] && [ -n "$source_commit" ] \
     && [ -n "$output" ] && [ -n "$legal_bundle" ] || usage
+source_date_epoch=${SOURCE_DATE_EPOCH-}
+case "$source_date_epoch" in
+    ''|*[!0-9]*)
+        echo "SOURCE_DATE_EPOCH must be an explicit Unix timestamp" >&2
+        exit 65
+        ;;
+esac
+[ "${#source_date_epoch}" -le 10 ] \
+    || { echo "SOURCE_DATE_EPOCH must be an explicit Unix timestamp" >&2; exit 65; }
+export SOURCE_DATE_EPOCH=$source_date_epoch
 case "${command_proxy_binary:+set}:${fleet_telemetry_binary:+set}" in
     :) include_fleet_sidecars=false
        [ -z "$go_proxy_evidence" ] && [ -z "$fleet_telemetry_evidence" ] \

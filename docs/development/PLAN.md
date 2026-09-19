@@ -330,6 +330,27 @@ claims without changing runtime results. Same-reviewer review independently reco
 all 24 payload hashes, aggregate and manifest, verified the receipt, artifacts,
 redaction and cleanup, and returned `ACCEPT` with no P1/P2 findings.
 
+The bounded Debian ARM64 package-byte reproducibility slice starts from two
+independent clean archives of pushed Hub commit
+`1b6dc00379819869f4cd8ed8897c2f1f915023a2`. The original package builder produced
+different `control.tar.xz`, `data.tar.xz` and complete `.deb` bytes even though both
+release binaries and every extracted payload file were identical; fresh staging and
+ar/tar wall-clock mtimes were the only observed delta. The uncommitted correction
+requires the selected commit's explicit `SOURCE_DATE_EPOCH` and exports it to
+`dpkg-deb`. Two fresh corrected builds now match completely at package SHA-256
+`73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a` and binary
+SHA-256 `2b7c071614c9cb31e2fb3ac4b666b636ff8aae33035d661c09c4b935d5a0fd3c`;
+all ar members, control/data metadata and extracted payload hashes match, and the
+embedded source is the exact public `/tree/1b6dc003…` URL. The retained packages
+bind to the original built patch;
+the current candidate adds only stricter malformed-epoch rejection and its focused
+tests, so package bytes were not rebuilt after that valid-input-output-neutral delta.
+Independent Sol/high review accepted the bounded slice after closing both the
+whole-value validation gap and the built/current/delta evidence identity gap, with
+no remaining P1/P2 findings. Exact publication readback follows the source commit
+carrying this receipt. This is a bounded package-byte/source-identity result, not
+complete HUB-03, F1 or F6 acceptance; no package lifecycle cohort was repeated.
+
 ## Start and boundaries
 
 The sent full-solution goal authorizes bounded implementation, tests, isolated

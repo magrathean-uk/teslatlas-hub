@@ -1,0 +1,31 @@
+cleanup_started_at=2026-09-19T23:30:40Z
+guest_work_root_absent=true
+guest_staged_inputs_absent=true
+/dev/vda1        32G   13G   18G  41% /
+time="2026-09-20T00:30:41+01:00" level=info msg="Sending SIGINT to hostagent process 62453"
+time="2026-09-20T00:30:41+01:00" level=info msg="Waiting for the host agent and the driver processes to shut down"
+time="2026-09-20T00:30:41+01:00" level=info msg="[hostagent] Received SIGINT, shutting down the host agent"
+time="2026-09-20T00:30:41+01:00" level=info msg="[hostagent] Shutting down the host agent"
+time="2026-09-20T00:30:41+01:00" level=info msg="[hostagent] Shutting down VZ"
+time="2026-09-20T00:30:44+01:00" level=info msg="[hostagent] [VZ] - vm state change: stopped"
+time="2026-09-20T00:30:45+01:00" level=info msg="Waiting for the instance to shut down"
+time="2026-09-20T00:30:45+01:00" level=info msg="The instance debian13-arm64 has shut down"
+guest_stop_requested=true
+cleanup_guest_phase_finished_at=2026-09-19T23:30:45Z
+lock_absent=false
+ssh_60022_closed=true
+hub_8443_closed=true
+zsh:7: 4: parameter not set
+host_free_kib=
+vm_status_begin
+NAME              STATUS     SSH                VMTYPE    ARCH       CPUS    MEMORY    DISK     DIR
+debian13-arm64    Stopped    127.0.0.1:60022    vz        aarch64    4       4GiB      32GiB    ~/dev/teslatlas-lab/vms/lima/debian13-arm64
+
+vm_status_end
+cleanup_verified_at=2026-09-19T23:30:58Z
+lock_release_calibration=PTY interrupt left this task owned lock file after owner PID exit; exact dead owner was verified and only that file was unlinked
+lock_absent_final=true
+ssh_60022_closed_final=true
+hub_8443_closed_final=true
+host_free_kib_final=52966372
+cleanup_final_verified_at=2026-09-19T23:31:20Z

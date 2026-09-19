@@ -834,6 +834,8 @@ printf '%s\n' \
     > "$package_fixture/packaging/linux/sidecar-sha256.lock"
 package_builder="$package_fixture/scripts/build-deb.sh"
 source_commit=0123456789abcdef0123456789abcdef01234567
+SOURCE_DATE_EPOCH=1789859251
+export SOURCE_DATE_EPOCH
 legal_bundle_base="$test_root/legal-bundle-base"
 legal_bundle_sidecar="$test_root/legal-bundle-sidecar"
 mkdir "$legal_bundle_base" "$legal_bundle_sidecar" \
@@ -849,6 +851,40 @@ for legal_component in FLEET_TELEMETRY_THIRD_PARTY_NOTICES.generated.md \
     fleet-telemetry-license-material.tar.gz fleet-telemetry-sbom.spdx.json \
     go-dependency-inventory.json go-sbom.spdx.json; do
     printf '%s\n' "$legal_component fixture" >"$legal_bundle_sidecar/$legal_component"
+done
+
+for bad_source_date_epoch in unset invalid multiline-before multiline-after too-long; do
+    bad_source_date_epoch_output="$test_root/bad-source-date-epoch-$bad_source_date_epoch-output"
+    bad_source_date_epoch_package="$test_root/bad-source-date-epoch-$bad_source_date_epoch.deb"
+    if (
+        cd "$test_root"
+        case "$bad_source_date_epoch" in
+            unset) unset SOURCE_DATE_EPOCH ;;
+            invalid) SOURCE_DATE_EPOCH=not-an-epoch; export SOURCE_DATE_EPOCH ;;
+            multiline-before) SOURCE_DATE_EPOCH='not-an-epoch
+1789859251'; export SOURCE_DATE_EPOCH ;;
+            multiline-after) SOURCE_DATE_EPOCH='1789859251
+not-an-epoch'; export SOURCE_DATE_EPOCH ;;
+            too-long) SOURCE_DATE_EPOCH=12345678901; export SOURCE_DATE_EPOCH ;;
+        esac
+        FAKE_HUB_VERSION=1.0.0 FAKE_HUB_SOURCE_COMMIT=$source_commit \
+            PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
+            sh "$package_builder" --binary fake-binary --version 1.0.0 \
+            --source-commit "$source_commit" --architecture amd64 \
+            --output "$bad_source_date_epoch_package" \
+            --legal-bundle "$legal_bundle_base"
+    ) >"$bad_source_date_epoch_output" 2>&1; then
+        fail "accepted $bad_source_date_epoch SOURCE_DATE_EPOCH"
+    else
+        bad_source_date_epoch_status=$?
+    fi
+    [ "$bad_source_date_epoch_status" -eq 65 ] \
+        || fail "$bad_source_date_epoch SOURCE_DATE_EPOCH exited $bad_source_date_epoch_status, expected 65"
+    [ ! -e "$bad_source_date_epoch_package" ] \
+        || fail "$bad_source_date_epoch SOURCE_DATE_EPOCH staged an output package"
+    grep -Fq 'SOURCE_DATE_EPOCH must be an explicit Unix timestamp' \
+        "$bad_source_date_epoch_output" \
+        || fail "$bad_source_date_epoch SOURCE_DATE_EPOCH has no stable diagnostic"
 done
 
 run_package() {
