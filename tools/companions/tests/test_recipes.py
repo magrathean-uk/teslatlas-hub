@@ -148,9 +148,11 @@ class RecipeTests(unittest.TestCase):
     def test_source_publication_status_must_match_the_selected_mode(self) -> None:
         with self.assertRaisesRegex(BootstrapError, "candidate"):
             validate_publication_status("candidate", "published")
-        with self.assertRaisesRegex(BootstrapError, "published"):
+        with self.assertRaisesRegex(BootstrapError, "local-unpublished"):
             validate_publication_status("published", "local-unpublished")
         validate_publication_status("candidate", "local-unpublished")
+        validate_publication_status("accepted", "local-unpublished")
+        validate_publication_status("accepted", "published")
         validate_publication_status("published", "published")
 
     @patch("companions.recipes._tool", side_effect=lambda name, _context: name)

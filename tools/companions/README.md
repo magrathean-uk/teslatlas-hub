@@ -69,6 +69,9 @@ recover, and compare the exact input before Git transport or build-tool probes.
 Identical input is a locked no-op only after every retained source and installed
 output byte has been reverified. Receipts from the earlier incomplete
 output-manifest schema are rejected for status, no-op, reuse, and rollback.
+`remove` uses the same recovery and target ownership checks, unlinks only the
+installer-owned Home Assistant target, removes replaceable retained releases,
+and preserves `PREFIX/data` and `PREFIX/config`.
 
 The retained `d1-plan` input is historical source-selection evidence only.
 `d1-install` fails closed because that one-component record is not an exact

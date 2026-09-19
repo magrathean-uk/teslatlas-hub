@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,7 @@ from companions.core import (  # noqa: E402
     fetch_git_source,
     install_cohort,
     parse_catalog,
+    remove,
     rollback,
     select_cohort,
     source_manifest_for,
@@ -68,7 +70,7 @@ def component(name: str, version: str, *, digest: str | None = None) -> dict:
         value["artifacts"] = {
             "package_filename": f"teslatlas-sdk-{version}.tgz",
             "package_sha256": (
-                "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7"
+                "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7"
                 if version == "2026.36.2"
                 else "d" * 64
             ),
@@ -103,6 +105,21 @@ def catalog_data() -> dict:
             },
         ],
     }
+
+
+def tree_snapshot(root: Path) -> dict[str, tuple[int, bytes | str | None]]:
+    paths = [root, *sorted(root.rglob("*"))]
+    result: dict[str, tuple[int, bytes | str | None]] = {}
+    for path in paths:
+        metadata = path.lstat()
+        if stat.S_ISREG(metadata.st_mode):
+            payload: bytes | str | None = path.read_bytes()
+        elif stat.S_ISLNK(metadata.st_mode):
+            payload = os.readlink(path)
+        else:
+            payload = None
+        result[str(path.relative_to(root))] = (stat.S_IFMT(metadata.st_mode), payload)
+    return result
 
 
 class CatalogTests(unittest.TestCase):
@@ -384,6 +401,208 @@ class SourceTests(unittest.TestCase):
 
 
 class PrefixTests(unittest.TestCase):
+    def test_remove_rejects_unsupported_active_paths_without_any_change(self) -> None:
+        for kind in ("regular-file", "directory", "fifo"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                prefix = Path(temporary) / "prefix"
+                release = prefix / "releases" / "foreign"
+                release.mkdir(parents=True)
+                (release / "keep").write_text("foreign release\n")
+                (prefix / "history.json").write_text('["foreign"]\n')
+                active = prefix / "active"
+                if kind == "regular-file":
+                    active.write_text("foreign active\n")
+                elif kind == "directory":
+                    active.mkdir()
+                    (active / "keep").write_text("foreign directory\n")
+                else:
+                    os.mkfifo(active)
+                before = tree_snapshot(prefix)
+
+                with self.assertRaisesRegex(BootstrapError, "active path is unsafe"):
+                    remove(prefix)
+
+                self.assertEqual(tree_snapshot(prefix), before)
+
+    def test_remove_rejects_unsafe_releases_without_any_change(self) -> None:
+        for kind in ("symlink", "regular-file", "fifo"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                prefix = root / "prefix"
+                outside = root / "outside"
+                prefix.mkdir()
+                outside.mkdir()
+                (outside / "keep").write_text("outside release\n")
+                (prefix / "history.json").write_text('["foreign"]\n')
+                (prefix / "active").symlink_to("releases/foreign")
+                (root / "ha-link").symlink_to(prefix / "active/ha")
+                releases = prefix / "releases"
+                if kind == "symlink":
+                    releases.symlink_to(outside, target_is_directory=True)
+                elif kind == "regular-file":
+                    releases.write_text("foreign releases\n")
+                else:
+                    os.mkfifo(releases)
+                before = tree_snapshot(root)
+
+                with self.assertRaisesRegex(
+                    BootstrapError, "releases path is unsafe"
+                ):
+                    remove(prefix)
+
+                self.assertEqual(tree_snapshot(root), before)
+
+    def test_remove_rejects_unsafe_history_without_any_change(self) -> None:
+        for kind in ("symlink", "directory", "fifo"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                prefix = root / "prefix"
+                release = prefix / "releases/foreign"
+                release.mkdir(parents=True)
+                (release / "keep").write_text("foreign release\n")
+                (prefix / "active").symlink_to("releases/foreign")
+                outside = root / "outside-history"
+                outside.write_text('["outside"]\n')
+                history = prefix / "history.json"
+                if kind == "symlink":
+                    history.symlink_to(outside)
+                elif kind == "directory":
+                    history.mkdir()
+                    (history / "keep").write_text("foreign history\n")
+                else:
+                    os.mkfifo(history)
+                before = tree_snapshot(root)
+
+                with self.assertRaisesRegex(
+                    BootstrapError, "history path is unsafe"
+                ):
+                    remove(prefix)
+
+                self.assertEqual(tree_snapshot(root), before)
+
+    def test_remove_rechecks_replaceable_paths_after_recovery_and_before_delete(
+        self,
+    ) -> None:
+        from companions import core as core_module
+
+        for boundary in ("after-recovery", "before-delete"):
+            with (
+                self.subTest(boundary=boundary),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                prefix = root / "prefix"
+                releases = prefix / "releases"
+                releases.mkdir(parents=True)
+                (releases / "keep").write_text("managed release\n")
+                (prefix / "history.json").write_text("[]\n")
+                outside = root / "outside"
+                outside.mkdir()
+                marker = outside / "keep"
+                marker.write_text("outside release\n")
+                saved = root / "saved-releases"
+
+                def replace_releases() -> None:
+                    releases.rename(saved)
+                    releases.symlink_to(outside, target_is_directory=True)
+
+                if boundary == "after-recovery":
+                    def recover_then_replace(_prefix: Path) -> None:
+                        replace_releases()
+                        return None
+
+                    context = patch(
+                        "companions.core._recover_transaction",
+                        side_effect=recover_then_replace,
+                    )
+                else:
+                    real_validate = core_module._validate_removal_paths
+                    validation_calls = 0
+
+                    def replace_before_final_check(target_prefix: Path) -> None:
+                        nonlocal validation_calls
+                        validation_calls += 1
+                        if validation_calls == 4:
+                            replace_releases()
+                        real_validate(target_prefix)
+
+                    context = patch(
+                        "companions.core._validate_removal_paths",
+                        side_effect=replace_before_final_check,
+                    )
+
+                with context, self.assertRaisesRegex(
+                    BootstrapError, "releases path is unsafe"
+                ):
+                    remove(prefix)
+
+                self.assertEqual(marker.read_text(), "outside release\n")
+                self.assertEqual((saved / "keep").read_text(), "managed release\n")
+                self.assertEqual((prefix / "history.json").read_text(), "[]\n")
+                self.assertTrue(releases.is_symlink())
+                self.assertFalse((prefix / "active").exists())
+                self.assertFalse((prefix / "transaction.json").exists())
+
+    def test_remove_preserves_data_and_config_and_unlinks_only_owned_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix = root / "prefix"
+            source = root / "source"
+            source.mkdir()
+            (source / "payload.txt").write_text("source\n")
+            repository = REPOSITORIES["home-assistant"]
+            record = source_manifest_for(
+                "home-assistant", source, repository, "1" * 40
+            )
+            data = catalog_data()
+            data["cohorts"] = [data["cohorts"][0]]
+            component_data = component(
+                "home-assistant", "2026.36.2", digest=record["source_sha256"]
+            )
+            component_data["commit"] = "1" * 40
+            component_data["artifacts"]["payload_manifest_sha256"] = (
+                "b720c922e53edd47a62de17d99ff1d32c638706886d32a5e2fd7339b11d78347"
+            )
+            data["cohorts"][0]["components"]["home-assistant"] = component_data
+            selected = select_cohort(
+                parse_catalog(data),
+                ("home-assistant",),
+                "2026.36.2",
+                allow_candidates=True,
+                update=False,
+            )
+            config = root / "ha-config"
+            config.mkdir()
+
+            def build(_name: str, _source: Path, output: Path) -> dict:
+                payload = output / "custom_components" / "teslatlas_hub"
+                payload.mkdir(parents=True)
+                (payload / "manifest.json").write_text("{}\n")
+                return {"commands": [], "dependencies": {}}
+
+            install_cohort(
+                prefix,
+                selected,
+                {"home-assistant": record},
+                build,
+                target_binding={"ha_config": str(config.resolve())},
+            )
+            (prefix / "data").mkdir()
+            (prefix / "data" / "keep").write_text("data\n")
+            (prefix / "config").mkdir()
+            (prefix / "config" / "keep").write_text("config\n")
+
+            result = remove(prefix)
+
+            self.assertEqual(result["status"], "removed")
+            self.assertFalse((prefix / "active").exists())
+            self.assertFalse((prefix / "releases").exists())
+            self.assertFalse((config / "custom_components/teslatlas_hub").exists())
+            self.assertEqual((prefix / "data" / "keep").read_text(), "data\n")
+            self.assertEqual((prefix / "config" / "keep").read_text(), "config\n")
+            self.assertEqual(status(prefix)["status"], "not-installed")
+            self.assertEqual(remove(prefix)["status"], "not-installed")
+
     def test_home_assistant_install_binds_catalog_provenance_to_target_receipt(
         self,
     ) -> None:

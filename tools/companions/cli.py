@@ -30,6 +30,7 @@ from .core import (
     load_catalog,
     open_directory_nofollow,
     parse_catalog,
+    remove,
     rollback,
     select_cohort,
     source_manifest_for,
@@ -373,6 +374,7 @@ def _parser() -> argparse.ArgumentParser:
             "update",
             "status",
             "rollback",
+            "remove",
             "dry-run",
             "manifest",
             "d1-plan",
@@ -703,6 +705,8 @@ def _operate(arguments: argparse.Namespace) -> dict[str, Any]:
         return status(prefix)
     if arguments.action == "rollback":
         return rollback(prefix)
+    if arguments.action == "remove":
+        return remove(prefix)
     components = _components(arguments.components)
     validate_component_set(components)
     if arguments.hub_version is None:

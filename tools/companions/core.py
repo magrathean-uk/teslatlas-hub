@@ -618,13 +618,42 @@ def _fsync_directory(path: Path) -> None:
 
 def active_release_id(prefix: Path) -> Optional[str]:
     active = prefix / "active"
-    if not active.is_symlink():
+    try:
+        metadata = active.lstat()
+    except FileNotFoundError:
         return None
-    target = os.readlink(active)
+    except OSError as error:
+        raise BootstrapError("active path could not be inspected safely") from error
+    if not stat.S_ISLNK(metadata.st_mode):
+        raise BootstrapError("active path is unsafe")
+    try:
+        target = os.readlink(active)
+    except OSError as error:
+        raise BootstrapError("active path could not be inspected safely") from error
     path = Path(target)
     if path.is_absolute() or len(path.parts) != 2 or path.parts[0] != "releases":
         raise BootstrapError("active release link is invalid")
     return path.parts[1]
+
+
+def _validate_removal_paths(prefix: Path) -> None:
+    """Reject unsafe replaceable paths without following their final component."""
+    for path, expected, message in (
+        (prefix / "releases", stat.S_ISDIR, "installation releases path is unsafe"),
+        (
+            prefix / "history.json",
+            stat.S_ISREG,
+            "installation history path is unsafe",
+        ),
+    ):
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            raise BootstrapError(message) from error
+        if stat.S_ISLNK(metadata.st_mode) or not expected(metadata.st_mode):
+            raise BootstrapError(message)
 
 
 def _activate(prefix: Path, release_id: str) -> None:
@@ -701,7 +730,7 @@ def _recover_transaction(prefix: Path) -> Optional[str]:
 
 def _commit_transition(
     prefix: Path,
-    release_id: str,
+    release_id: Optional[str],
     history: list[str],
     external_plan: Optional[Mapping[str, Any]] = None,
 ) -> None:
@@ -736,7 +765,7 @@ def _commit_transition(
         journal["phase"] = "history"
         _write_json(journal_path, journal)
         _transaction_checkpoint("history")
-        _activate(prefix, release_id)
+        _restore_active(prefix, release_id)
         journal["phase"] = "active"
         _write_json(journal_path, journal)
         _transaction_checkpoint("active")
@@ -1352,6 +1381,54 @@ def rollback(prefix: Path) -> dict[str, Any]:
             "active_release": target,
             "previous_release": current,
             "external_actions": plan["actions"],
+        }
+
+
+def remove(prefix: Path) -> dict[str, Any]:
+    """Deactivate companions, remove replaceable releases, and preserve data/config."""
+    prefix = _prefix_path(prefix)
+    # Reject a present but unsupported active path before lock creation or any
+    # recovery/cleanup mutation. Recheck under the lock to close the normal race.
+    active_release_id(prefix)
+    _validate_removal_paths(prefix)
+    with PrefixLock(prefix):
+        active_release_id(prefix)
+        _validate_removal_paths(prefix)
+        _recover_transaction(prefix)
+        _validate_removal_paths(prefix)
+        current = active_release_id(prefix)
+        external_actions: dict[str, Any] = {}
+        if current is not None:
+            receipt = _verify_release(prefix, current)
+            from .targets import prepare_target_transition
+
+            plan = prepare_target_transition(prefix, current, (), {}, receipt)
+            _validate_removal_paths(prefix)
+            _commit_transition(prefix, None, [], plan)
+            external_actions = plan["actions"]
+
+        _validate_removal_paths(prefix)
+        releases = prefix / "releases"
+        if releases.exists() or releases.is_symlink():
+            metadata = releases.lstat()
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                raise BootstrapError("installation releases path is unsafe")
+            shutil.rmtree(releases)
+            _fsync_directory(prefix)
+
+        history = prefix / "history.json"
+        if history.exists() or history.is_symlink():
+            metadata = history.lstat()
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                raise BootstrapError("installation history path is unsafe")
+            history.unlink()
+            _fsync_directory(prefix)
+
+        return {
+            "status": "removed" if current is not None else "not-installed",
+            "previous_release": current,
+            "preserved": [str(prefix / "config"), str(prefix / "data")],
+            "external_actions": external_actions,
         }
 
 

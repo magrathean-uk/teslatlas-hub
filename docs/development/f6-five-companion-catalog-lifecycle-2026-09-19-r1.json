@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.hub.f6-five-companion-catalog-lifecycle/v1",
+  "recorded_at": "2026-09-19T21:58:41Z",
+  "reviewed_at": "2026-09-19T22:28:42Z",
+  "result": "EXACT_CATALOG_AND_FOUR_COMPONENT_LIFECYCLE_PASS_FIVE_COMPONENT_RUNTIME_BLOCKED",
+  "scope": {
+    "hub_source_head_at_start": "9d30860e20b286229b4d6b159f66f621efce295c",
+    "product_version": "2026.36.2",
+    "publication_status": "local-unpublished",
+    "catalog_component_count": 5,
+    "viewer_included": false,
+    "release_or_publication_performed": false,
+    "commit_or_push_performed": false
+  },
+  "sources": {
+    "protocol": {
+      "commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+      "public_exact_fetch": true,
+      "manifest_file_count": 187,
+      "source_sha256": "a4b68800e7164c229915fced33223a7c9954bb67019306348e3e99671d28046c"
+    },
+    "sdk-typescript": {
+      "commit": "56a07dd7c1a55e5f783ab71640a01f4b56d908c4",
+      "public_exact_fetch": true,
+      "manifest_file_count": 284,
+      "source_sha256": "b6c12d42a8decd8c5f9054b2f8cbc04e0a9a36d619497d60fde3e9b658a7052b"
+    },
+    "sdk-swift": {
+      "commit": "f98dde980c8fecf994917e3470950a3d853b4cc7",
+      "public_exact_fetch": true,
+      "manifest_file_count": 173,
+      "source_sha256": "1e776960a13aaa76a47f7a8faad2736be2b1f442ea58afe4832253349e987ad6"
+    },
+    "home-assistant": {
+      "commit": "dfb2b05067a88ba02e6dbfbd6db614f8a99b12f4",
+      "public_exact_fetch": true,
+      "manifest_file_count": 101,
+      "source_sha256": "4af006321a29e0e9039458ef41c9421afe2537a72c7ec41dc89890b01dd41ec0"
+    },
+    "edge": {
+      "commit": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
+      "public_exact_fetch": true,
+      "manifest_file_count": 133,
+      "source_sha256": "40877d3e0feebce348588ea3c61dc152d7eb0ea9d39da269d8f3b9bff082fe62"
+    }
+  },
+  "accepted_bindings": {
+    "hub_http_v1_profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "edge_delivery_v2_profile_sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224",
+    "typescript_package_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
+    "typescript_package_member_count": 88,
+    "home_assistant_payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
+    "home_assistant_selection_receipt_sha256": "99fdac66526bdec84d2429100f419eebedec588b0d32060c8f0f0a19bf43f2b3"
+  },
+  "catalog": {
+    "path": "tools/companions/catalog-current.json",
+    "sha256": "96ada184b7098c4ab109bc1444271d30354dceaaafd2a8e72ffe7204480be670",
+    "generated_compact_sha256": "61b3bab09e9ddbb73371b01e212aa9394250dbd299179e9672f6831511dd3223",
+    "local_source_manifest_sha256": "779157d7b453bf0ff2b8ef2eec9c63e29fc3e42f53b5a0fb6d90493cf0c0bc40",
+    "schema_validation": "PASS",
+    "runtime_parser": "PASS",
+    "production_admission": "REJECTED_BY_DESIGN_UNTIL_ORDINARY_PUBLIC_ARTIFACT_AND_SOURCE_LIFECYCLE_EXISTS"
+  },
+  "observed_defects_closed": [
+    {
+      "defect": "The Hub pinned historical TypeScript package 42348d36 for the exact current 56a07dd7 source, although that handoff explicitly rejects it.",
+      "closure": "The parser, generator and fixed recipe now bind accepted archive 070906b5 and its 88-member handoff."
+    },
+    {
+      "defect": "The generator and recipe equated accepted compatibility maturity with published distribution status and rejected accepted source in a truthful local-unpublished cohort.",
+      "closure": "Accepted compatibility is now admitted for either distribution state; candidate source remains forbidden in a published cohort."
+    },
+    {
+      "defect": "The bootstrap and Hub CLI had no data-preserving companion removal operation.",
+      "closure": "Removal now uses the existing recovery journal, removes only installer-owned HA linkage and replaceable releases, preserves PREFIX/data and PREFIX/config, and is idempotent."
+    },
+    {
+      "defect": "Initial independent review reproduced that a present regular PREFIX/active path was misclassified as missing, so removal deleted replaceable releases while leaving the unsupported active path.",
+      "closure": "Active-path inspection now returns missing only for lstat ENOENT and rejects every present non-symlink. Removal preflights before lock creation or recovery mutation and rechecks under the lock; regular-file, directory and FIFO fixtures prove exact zero-change failure. Hard exits at intent, targets, history, active and committed checkpoints prove rollback or completion followed by safe cleanup with data/config preservation."
+    },
+    {
+      "defect": "Same-reviewer delta confirmed the active-path closure but reproduced that a symlinked releases path was rejected only after journaled deactivation, mutating active and the owned Home Assistant link before failure and permitting access through the external release path.",
+      "closure": "Removal now validates releases and history.json inode types with lstat before lock creation, under the lock, after recovery, before transition and immediately before deletion. Symlink/file/FIFO releases and symlink/directory/FIFO history fixtures prove exact zero-change rejection; post-recovery and pre-delete symlink-swap fixtures prove external markers are not followed or changed."
+    }
+  ],
+  "lifecycle": {
+    "platform": "macOS 27.0 arm64",
+    "components": [
+      "protocol",
+      "sdk-typescript",
+      "sdk-swift",
+      "home-assistant"
+    ],
+    "dry_run": "PASS",
+    "install": "PASS",
+    "active_release": "2026.36.2-16010efb98812087",
+    "input_sha256": "16010efb98812087d4b4594469aa3203c00a0cce88e7a81d3b044d7af3ca1508",
+    "status": "PASS_INSTALLED",
+    "identical_install": "PASS_NO_OP",
+    "update": "PASS_NO_OP_SAME_COHORT",
+    "rollback": "EXPLICIT_NO_PREDECESSOR",
+    "rollback_error": "no prior verified working release is available",
+    "remove": "PASS_DATA_AND_CONFIG_PRESERVED",
+    "post_remove_status": "PASS_NOT_INSTALLED",
+    "second_remove": "PASS_IDEMPOTENT_NOT_INSTALLED"
+  },
+  "retained_evidence": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-f6-five-companion-20260919-r1/evidence",
+    "files": {
+      "dry-run-macos-four.json": "14c942bfea81ba1733948ec1ab092e2d8876c8bd23b6f6bc7bdb25d48324c199",
+      "dry-run-macos-five.json": "bedeb85780742c219aed7f208b64badbf4095925576b02a52a854ee7492c6d66",
+      "install-macos-four.json": "893d3b821b5dfd66e8a18ee147ab51f79707f8638274755604acf07da3048315",
+      "status-installed.json": "d9c6392bd9174da0c95c8a0bfd1f1bce962d064a472bc938f7b39737c829ba74",
+      "install-no-op.json": "6650aa0d7c95d1a5664ad23779194ec6cca86a700b8b7d1a833b383b1bfe14d4",
+      "update-no-op.json": "6650aa0d7c95d1a5664ad23779194ec6cca86a700b8b7d1a833b383b1bfe14d4",
+      "rollback-no-predecessor.json": "472fabd908fa139b1271178ee397f00ec6489760a10f10ddca8284c6193e90e5",
+      "remove.json": "34a22f464c205b58fb0a9a23f2e5f763296b7ede19bf147aca31b405ebd784ba",
+      "status-removed.json": "196cb9dd0b6038b8c743d1eb9e763af79a0fd5c9f27ea38fef884e4a312e85cf",
+      "remove-no-op.json": "24599ab5ae2a3be7cd9027a6e26186768469ee357ba88d2220b3fdd168cc5190"
+    },
+    "installed_release_receipt_retained": false,
+    "receipt_limit": "Exact command outputs, catalog and complete local source manifest are retained; the replaceable release tree and its detailed installed output receipt were removed by the removal acceptance step."
+  },
+  "checks": {
+    "python_bootstrap_tests": "PASS_88_OF_88",
+    "unsafe_active_remove_regression": "PASS_REGULAR_FILE_DIRECTORY_FIFO_EXACT_ZERO_CHANGE",
+    "unsafe_releases_history_remove_regression": "PASS_SYMLINK_FILE_DIRECTORY_FIFO_EXACT_ZERO_CHANGE",
+    "replaceable_path_race_rechecks": "PASS_POST_RECOVERY_AND_PRE_DELETE_EXTERNAL_MARKER_UNCHANGED",
+    "remove_transaction_checkpoint_recovery": "PASS_INTENT_TARGETS_HISTORY_ACTIVE_COMMITTED",
+    "rust_companion_delegation_tests": "PASS_13_OF_13",
+    "cargo_fmt": "PASS",
+    "heavy_build_lock_released": true,
+    "debian_arm64_guest_stopped": true,
+    "independent_review": "SAME_REVIEWER_ACCEPT_NO_P1_P2_AFTER_TWO_P2_CLOSURES"
+  },
+  "limitations": [
+    "The exact five-component fixed-recipe runtime did not run. Edge correctly rejects the macOS host; the retained Debian ARM64 guest has Rust 1.98.0 but lacks uv, Node/npm 26.7.0/11.19.0, Swift, Go 1.27.0 and Python 3.14.2.",
+    "There is no accepted older complete companion cohort, so genuine update and rollback are not claimable. The same-cohort update was an exact verified no-op and rollback failed explicitly before mutation.",
+    "The catalog remains local-unpublished. Publicly reachable commits do not make the unpublished TypeScript artifact, local source lifecycle or five-component runtime ordinary public production inputs.",
+    "The detailed installed output receipt was not retained before removal; only the exact command-level lifecycle evidence and its hashes remain auditable.",
+    "This is a bounded F6 catalog/lifecycle slice, not F3, F4, F6 or F7 acceptance."
+  ]
+}

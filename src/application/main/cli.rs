@@ -289,6 +289,8 @@ enum CompanionCommand {
     Status(CompanionPrefixArgs),
     /// Activate the most recent retained verified cohort without network access.
     Rollback(CompanionPrefixArgs),
+    /// Remove replaceable companion code while preserving data and configuration.
+    Remove(CompanionPrefixArgs),
     /// Verify sources, prerequisites, recipes, and targets without activation.
     #[command(name = "dry-run")]
     DryRun(CompanionOperationArgs),

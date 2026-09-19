@@ -109,7 +109,7 @@ def _catalog_for_source(source: Path, commit: str) -> tuple[dict, dict]:
             "profile": {"id": "hub-http-v1", "revision": "1.0.0", "sha256": PROFILE_SHA},
             "artifacts": {
                 "package_filename": "teslatlas-sdk-2026.36.2.tgz",
-                "package_sha256": "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7",
+                "package_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
             },
         },
         "sdk-swift": {

@@ -246,6 +246,7 @@ fn command_arguments(
         }
         CompanionCommand::Status(options) => prefix_arguments("status", options),
         CompanionCommand::Rollback(options) => prefix_arguments("rollback", options),
+        CompanionCommand::Remove(options) => prefix_arguments("remove", options),
         CompanionCommand::DryRun(options) => {
             operation_arguments("dry-run", options, shipped_catalog)
         }
@@ -479,6 +480,25 @@ mod companion_delegation_tests {
             actual,
             [
                 "status",
+                "--prefix",
+                "/private/companions",
+                "--hub-version",
+                env!("CARGO_PKG_VERSION"),
+            ]
+        );
+    }
+
+    #[test]
+    fn offline_remove_forwards_only_prefix_and_compiled_version() {
+        let command = CompanionCommand::Remove(CompanionPrefixArgs {
+            prefix: PathBuf::from("/private/companions"),
+        });
+        let actual =
+            command_arguments(&command, Path::new("/shipped.json")).expect("remove arguments");
+        assert_eq!(
+            actual,
+            [
+                "remove",
                 "--prefix",
                 "/private/companions",
                 "--hub-version",

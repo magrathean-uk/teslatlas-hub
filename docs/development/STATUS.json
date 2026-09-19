@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-19T21:40:14Z",
-  "update_scope": "f1_storage_cohort_independently_accepted",
+  "updated_at": "2026-09-19T22:28:42Z",
+  "update_scope": "f6_exact_five_companion_catalog_and_bounded_lifecycle",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -53,8 +53,10 @@
     "Independent Sol/high review accepted the bounded Debian ARM64 package foundation only after two P2 closures for current-directory-controlled source/target fallbacks; its delta recheck found no remaining findings.",
     "HUB-02, HUB-08, HUB-11 and DIST-01 remain partial: package-byte reproducibility, corruption/retention recovery, credential/config/TLS clean-host restore and a final clean-export source-bound artifact are explicit open assertions.",
     "The F6 source/catalog foundation is independently accepted within its partial scope: bound builds require an explicit exact pushed 40-hex Hub commit, unbound developer builds are non-distributable, and native plus container build paths carry the same source identity without Git or current-directory inference.",
-    "Active companion bootstrap/catalog surfaces now contain exactly Protocol, TypeScript SDK, Swift SDK, Home Assistant and Edge; Hub is the separately identified sixth repository. The shipped current catalog remains empty pending exact final companion identities and artifacts.",
-    "The current TypeScript package foundation records SHA-256 42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7 and 83 members, but its exact archive bytes are not staged here, so runtime admission remains pending. Historical D1 records and Viewer R1 fixture sources remain unchanged.",
+    "The shipped companion catalog now contains exactly Protocol 53b5c648, TypeScript SDK 56a07dd7, Swift SDK f98dde98, Home Assistant dfb2b050 and Edge c9965cd2 for 2026.36.2; Viewer is excluded and Hub remains the separately identified sixth repository. The cohort is truthfully local-unpublished despite exact anonymous public commit fetches.",
+    "The exact current TypeScript package archive is retained at accepted SHA-256 070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7 with 88 members. Hub no longer admits the historical 42348d36 archive for current 56a07dd7 source.",
+    "The bounded catalog/lifecycle slice closed compatibility/publication conflation and the missing data-preserving removal operation. A real four-component macOS arm64 lifecycle passed dry-run, install, status, exact no-op install/update, explicit no-predecessor rollback rejection, removal preserving data/config, post-removal status and idempotent removal. Initial review rejected one P2 because a regular active path was misclassified as absent; that closure rejects regular-file, directory and FIFO active paths before mutation and proves recovery across every transaction checkpoint. Same-reviewer delta review confirmed that fix but rejected a second P2 because unsafe releases/history inode types were detected only after deactivation. The second closure preflights and rechecks those paths without following symlinks, with exact zero-change and race-swap regressions. Same-reviewer final review returned ACCEPT with no P1/P2 findings and independently confirmed both removal-safety closures and the focused checks.",
+    "The exact five-component Mac dry run rejected Edge's Linux-only recipe before mutation. The retained Debian ARM64 guest was checked and stopped; it lacks uv, pinned Node/npm, Swift, Go 1.27.0 and Python 3.14.2, so no complete five-component runtime or genuine predecessor update/rollback is claimed.",
     "Initial independent Sol/high review rejected the partial source/catalog foundation with three P2 findings. The historical D1 manifest was restored exactly, catalog JSON Schema now binds all five keys to repository-specific artifact shapes, and finalization binds a syntactically valid source commit to the tested Hub cohort head while allowing UNBOUND only for an unpublished candidate. Focused closure tests passed 61/61 and 31/31; the delta review returned ACCEPT with no findings for this partial foundation only.",
     "The bounded F6 container slice retained its verified official image digests and zero-package-manager runtime after initial Sol/high REJECT. Three P1 and one P2 findings are closed: complete production embedded inputs now compile from the isolated Docker COPY set, the Hub health probe validates the declared DNS certificate name over loopback with real TLS positive/mismatch coverage, a capability-bounded initializer verifies 10001:10001/0700 while normal Hub drops all capabilities, and private key/certificate extensions are excluded. A delta P2 claim mismatch about the ephemeral test listener was corrected; final metadata-only review returned ACCEPT with no findings for this partial source/static foundation.",
     "The exact afae80a exported source produced one native Linux ARM64 image and runner-reported health, doctor, status, restart continuity and security results, but cleanup removed the raw evidence without retaining an independently inspectable redacted bundle. Independent review rejected Scope A as unauditable; no image/runtime acceptance is claimed and afae80a will not be rerun.",
@@ -86,14 +88,15 @@
     "docs/development/evidence/f6-arm64-container-runtime-2026-09-19-r2/manifest.json",
     "docs/development/hub-08-repair-atomicity-source-fix-2026-09-19-r1.json",
     "docs/development/f1-storage-recovery-debian13-arm64-2026-09-19-r1.json",
-    "docs/development/evidence/f1-storage-cohort-2026-09-19-r1/manifest.json"
+    "docs/development/evidence/f1-storage-cohort-2026-09-19-r1/manifest.json",
+    "docs/development/f6-five-companion-catalog-lifecycle-2026-09-19-r1.json"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed claim-by-claim ledger is docs/development/F0_ACCEPTANCE_LEDGER.md at workspace root.",
     "F1-F4: complete standalone Hub, Edge, Protocol/SDK and required Home Assistant behavior on every active documented path.",
     "F5: fresh read-only named-source export and fresh authorized passive capture evidence are mandatory input-dependent acceptance gates.",
     "HUB-08: the installed corruption/repair/retention and recovery cohort is independently accepted within its runner-recorded evidence limits; the wider F1/F6 ledger remains open.",
-    "F6: build on the independently accepted exact-export ARM64 Compose r2 foundation; prove image-byte reproducibility if required, upgrade/rollback, backup/restore, failed candidate and data-preserving removal, populate the exact five-companion catalog only after all identities are stable, and prove the remaining ordinary lifecycle without Viewer.",
+    "F6: build on the populated local-unpublished exact five-companion catalog and accepted ARM64 Compose foundation; provision the exact supported Linux toolchains, prove the complete five-component lifecycle and a genuine predecessor update/rollback, then finish image-byte reproducibility, backup/restore, failed candidate and ordinary public production admission without Viewer.",
     "F7: pass one combined installed end-to-end ecosystem journey from F6 artifacts."
   ],
   "next_goal_draft": {
@@ -159,11 +162,35 @@
       "home-assistant",
       "edge"
     ],
-    "catalog_state": "EMPTY_PENDING_FINAL_REVIEWED_IDENTITIES",
-    "typescript_package_sha256": "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7",
-    "typescript_package_member_count": 83,
+    "catalog_state": "POPULATED_LOCAL_UNPUBLISHED_EXACT_FIVE_COMPANIONS",
+    "typescript_package_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
+    "typescript_package_member_count": 88,
     "independent_review": "ACCEPT by gpt-5.6-sol/high with no findings after three P2 closures",
-    "acceptance_limit": "Static/source foundation only; no final artifact, populated production catalog, container runtime, installed cohort or F6 acceptance."
+    "acceptance_limit": "The foundation remains independently accepted only in its original static/source scope. The populated local-unpublished catalog and bounded lifecycle are separately independently accepted bounded partial evidence; no production catalog, complete five-component runtime or F6 acceptance."
+  },
+  "current_f6_catalog_lifecycle_slice": {
+    "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "receipt": "docs/development/f6-five-companion-catalog-lifecycle-2026-09-19-r1.json",
+    "catalog_sha256": "96ada184b7098c4ab109bc1444271d30354dceaaafd2a8e72ffe7204480be670",
+    "publication_status": "local-unpublished",
+    "catalog_components": [
+      "protocol",
+      "sdk-typescript",
+      "sdk-swift",
+      "home-assistant",
+      "edge"
+    ],
+    "macos_lifecycle_components": [
+      "protocol",
+      "sdk-typescript",
+      "sdk-swift",
+      "home-assistant"
+    ],
+    "lifecycle_input_sha256": "16010efb98812087d4b4594469aa3203c00a0cce88e7a81d3b044d7af3ca1508",
+    "checks": "catalog schema/parser PASS; Python 88/88 including unsafe active/releases/history zero-change, race-recheck and removal checkpoint-recovery regressions; Rust companion delegation 13/13; cargo fmt PASS",
+    "independent_review": "ACCEPT by the same reviewer with no P1/P2 findings after two P2 removal-safety closures; exact zero-change releases/history symlink reproductions, final-validator swap refusal, prior active closure and focused checks were independently confirmed.",
+    "cleanup_complete": true,
+    "acceptance_limit": "No complete exact-five runtime, no predecessor update/rollback, and no ordinary public production admission. The detailed installed output receipt was removed with the release; exact command outputs and source/catalog manifests remain retained."
   },
   "current_f6_container_slice": {
     "state": "INDEPENDENTLY_ACCEPTED_PARTIAL_FOUNDATION",
@@ -259,7 +286,7 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the earlier F1/F6 Debian package cohort is purged. The afae80a attempt remains rejected unauditable. The fresh 4102dce exact-export ARM64 ordinary synthetic Compose runtime and COMPLETE retained bundle are independently accepted only as a bounded foundation. The exact 0d5e63f installed storage/recovery cohort and calibrated COMPLETE evidence are independently accepted within their bounded runner-recorded limits; package removal preserved data before explicit synthetic cleanup. No owned package, service user, config, data, TLS/recovery material, Hub process or 8443 listener remains. debian13-arm64 is stopped, SSH port 60022 is closed and the heavy-build lock is absent. Pinned container bases, the disclosed anonymous builder-stage intermediate and retained Docker cache remain outside this cohort.",
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the earlier F1/F6 Debian package cohort is purged. The afae80a attempt remains rejected unauditable. The fresh 4102dce exact-export ARM64 ordinary synthetic Compose runtime and COMPLETE retained bundle are independently accepted only as a bounded foundation. The exact 0d5e63f installed storage/recovery cohort and calibrated COMPLETE evidence are independently accepted within their bounded runner-recorded limits. The bounded four-component companion lifecycle removed replaceable releases and its HA link while preserving exact data/config markers; no active companion release remains. No owned package, service user, Hub process or 8443 listener remains. debian13-arm64 is stopped, SSH port 60022 is closed and the heavy-build lock is absent. Pinned container bases, the disclosed anonymous builder-stage intermediate and retained Docker cache remain outside this cohort.",
   "acceptance_limits": [
     "G2 is source-built synthetic runtime evidence, not macOS installer/notarization/service acceptance",
     "Current macOS 27.0 was exercised; the documented macOS 13 minimum floor was not independently run",
@@ -267,7 +294,7 @@
     "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
     "G6 is current macOS 27 arm64 external-consumer evidence; declared minimum floors were not independently exercised",
     "The earlier F1/F6 package receipt plus the independently accepted bounded storage cohort cover exact current source-bound packaging, deliberate corruption/retention retry, separate credential/config/TLS/service restore and data-preserving removal. Package-byte reproducibility, Fleet sidecars and the remaining F1/F6 behavior remain open",
-    "The F6 source/catalog receipt is an independently accepted partial source foundation: pushed-commit artifact rebuilds, ARM64 container runtime source proof, exact five-companion catalog population and installed lifecycle remain pending",
+    "The F6 source/catalog foundation and the newer exact five-companion local-unpublished catalog plus bounded four-component macOS lifecycle are independently accepted only within their separate partial scopes; complete five-component Linux runtime, predecessor update/rollback and ordinary public production admission remain pending",
     "The F6 container source/static receipt remains independently accepted and afae80a remains rejected unauditable. The 4102dce exact-export ordinary Compose runtime and retained COMPLETE bundle are independently accepted only as a bounded foundation; pristine first-attempt TLS startup, image-byte reproducibility, upgrade/rollback, backup/restore, failed candidate, removal and full lifecycle remain pending",
     "The HUB-08 source fix and bounded installed retained-corruption/recovery cohort are independently accepted. The retained bundle proves final COMPLETE state and row-count transitions, not prior READY ordering or the exact one-hour cutoff timing; complete F1 and F6 acceptance remain open",
     "No App integration acceptance",

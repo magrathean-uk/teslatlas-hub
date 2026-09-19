@@ -269,6 +269,67 @@ class TransactionAndTargetTests(unittest.TestCase):
                     self.assertFalse(link.exists())
                 self.assertFalse((prefix / "transaction.json").exists())
 
+    def test_remove_process_death_at_each_boundary_recovers_then_cleans(self):
+        for phase in ("intent", "targets", "history", "active", "committed"):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                prefix = root / "prefix"
+                config = root / "ha"
+                config.mkdir()
+                records = {
+                    "home-assistant": _source(
+                        root, "home-assistant", "2" * 40
+                    )
+                }
+                installed = core.install_cohort(
+                    prefix,
+                    _cohort(records, ("home-assistant",)),
+                    records,
+                    _build,
+                    target_binding={"ha_config": str(config)},
+                )
+                (prefix / "data").mkdir()
+                (prefix / "data/keep").write_text("data\n")
+                (prefix / "config").mkdir()
+                (prefix / "config/keep").write_text("config\n")
+                link = config / "custom_components/teslatlas_hub"
+
+                child = os.fork()
+                if child == 0:
+                    with patch(
+                        "companions.core._transaction_checkpoint",
+                        side_effect=lambda observed: os._exit(77)
+                        if observed == phase
+                        else None,
+                    ):
+                        core.remove(prefix)
+                    os._exit(0)
+                _pid, wait_status = os.waitpid(child, 0)
+                self.assertEqual(os.waitstatus_to_exitcode(wait_status), 77)
+                self.assertTrue((prefix / "transaction.json").is_file())
+
+                recovered = core.status(prefix)
+                if phase == "committed":
+                    self.assertEqual(recovered["status"], "not-installed")
+                    self.assertEqual(recovered["recovery"], "completed")
+                    self.assertFalse(link.exists())
+                    self.assertEqual(core.remove(prefix)["status"], "not-installed")
+                else:
+                    self.assertEqual(recovered["status"], "installed")
+                    self.assertEqual(
+                        recovered["active_release"], installed["active_release"]
+                    )
+                    self.assertEqual(recovered["recovery"], "rolled-back")
+                    self.assertTrue(link.is_symlink())
+                    self.assertEqual(core.remove(prefix)["status"], "removed")
+
+                self.assertFalse((prefix / "transaction.json").exists())
+                self.assertFalse((prefix / "active").exists())
+                self.assertFalse((prefix / "releases").exists())
+                self.assertFalse(link.exists())
+                self.assertEqual((prefix / "data/keep").read_text(), "data\n")
+                self.assertEqual((prefix / "config/keep").read_text(), "config\n")
+
 
 class IdentityAndDryRunTests(unittest.TestCase):
     def test_output_manifest_includes_runtime_node_modules_and_detects_changes(self):

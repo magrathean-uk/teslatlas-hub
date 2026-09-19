@@ -19,7 +19,7 @@ from .processes import ProcessFailure, run_process
 RECIPE_REVISION = 3
 HUB_PROFILE_SHA256 = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 EDGE_PROFILE_SHA256 = "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
-SDK_TARBALL_SHA256 = "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7"
+SDK_TARBALL_SHA256 = "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7"
 
 KNOWN_REPOSITORIES = {
     "protocol": "https://github.com/magrathean-uk/teslatlas-protocol.git",
@@ -225,11 +225,16 @@ def validate_component_set(components: Any) -> None:
 
 
 def validate_publication_status(source_status: Any, publication_status: str) -> None:
-    """Prevent a moving catalog from promoting or demoting source metadata."""
-    expected = "published" if publication_status == "published" else "candidate"
-    if source_status != expected:
+    """Keep compatibility maturity separate from distribution publication."""
+    allowed = (
+        {"accepted", "published"}
+        if publication_status == "published"
+        else {"accepted", "candidate"}
+    )
+    if source_status not in allowed:
         raise _bootstrap_error(
-            f"source status {source_status!r} does not match {expected} cohort status"
+            f"source status {source_status!r} does not match "
+            f"{publication_status} cohort status"
         )
 
 

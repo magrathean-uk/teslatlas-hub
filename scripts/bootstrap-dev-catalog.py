@@ -138,7 +138,7 @@ def source_metadata(source: Path, hub_version: str, name: str) -> None:
     if (
         product_version != hub_version
         or not isinstance(compatibility, dict)
-        or compatibility.get("status") != "candidate"
+        or compatibility.get("status") not in {"accepted", "candidate"}
         or compatibility.get("product_version") != hub_version
         or compatibility.get("profile") != EXPECTED_PROFILES[name]
     ):

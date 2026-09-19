@@ -24,7 +24,7 @@ from companions.core import (  # noqa: E402
 from companions.recipes import EXPECTED_PROFILES, KNOWN_REPOSITORIES  # noqa: E402
 
 VERSION = "2026.36.2"
-SDK_SHA256 = "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7"
+SDK_SHA256 = "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7"
 COMPONENTS = tuple(KNOWN_REPOSITORIES)
 
 
@@ -163,6 +163,40 @@ class BootstrapDevCatalogTests(unittest.TestCase):
             self.assertIn("sdk-typescript source metadata could not be read", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
             self.assertFalse(output.exists())
+
+    def test_accepted_compatibility_source_remains_local_unpublished(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sources = {name: self._source(root, name) for name in COMPONENTS}
+            for source in sources.values():
+                metadata = source / "compatibility" / "hub.json"
+                value = json.loads(metadata.read_text(encoding="utf-8"))
+                value["status"] = "accepted"
+                metadata.write_text(json.dumps(value), encoding="utf-8")
+            manifest = root / "local-sources.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "components": {
+                            name: self._record(name, source, marker)
+                            for (name, source), marker in zip(sources.items(), "abcde")
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            output = root / "catalog.json"
+
+            result = self._run_generator(manifest, sources, output)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                json.loads(output.read_text(encoding="utf-8"))["cohorts"][0][
+                    "publication_status"
+                ],
+                "local-unpublished",
+            )
 
     def _run_generator(
         self, manifest: Path, sources: dict[str, Path], output: Path

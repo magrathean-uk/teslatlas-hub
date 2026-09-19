@@ -26,23 +26,58 @@ Hub commit and exposes its immutable `/tree/<commit>` source URL, while an unbou
 developer build remains useful but explicitly non-distributable. No final artifact has
 yet been rebuilt from a pushed commit.
 
-The active companion bootstrap model now contains exactly Protocol, TypeScript SDK,
+The active companion bootstrap model contains exactly Protocol, TypeScript SDK,
 Swift SDK, Home Assistant and Edge. Hub source identity is recorded separately, making
-six repositories in the full cohort. The shipped current catalog remains deliberately
-empty until all five companion source commits, source manifests and artifact identities
-are stable and independently reviewed. Historical D1 records, including their Viewer
-entry, and Viewer R1 fixtures are preserved byte-for-byte as inactive evidence; they
-are not catalog inputs. The current TypeScript
-archive identity is recorded for future admission, but its exact bytes are not staged in
-this checkout, so installed admission remains pending.
+six repositories in the full cohort. The shipped current catalog now contains one exact
+five-companion `2026.36.2` cohort and excludes Viewer. Its status is truthfully
+`local-unpublished`: every commit was fetched anonymously by exact hash, but source
+reachability does not publish the accepted TypeScript archive or make the local-source
+lifecycle an ordinary production input. Historical D1 records, including their Viewer
+entry, and Viewer R1 fixtures remain inactive evidence and are not catalog inputs.
 
 The accepting Sol/high delta review found no remaining issues. It verified the
 baseline-identical historical D1 manifest at SHA-256
 `37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa`,
 JSON Schema/runtime parser agreement, and finalizer binding of a bound source commit to
 the tested Hub cohort head. Exact clean-export native/container artifacts, ARM64
-container runtime source proof, final catalog population and installed companion
-lifecycle remain open F6 work.
+container runtime source proof, the complete five-component Linux lifecycle and
+genuine predecessor update/rollback remain open F6 work.
+
+The bounded five-companion catalog/lifecycle slice recomputed byte-complete Hub source
+manifests from immutable exports for Protocol `53b5c648`, TypeScript `56a07dd7`, Swift
+`f98dde98`, Home Assistant `dfb2b050` and Edge `c9965cd2`. Exact anonymous fetches,
+profile digests, TypeScript package `070906b5…`, HA payload `ebf7d09f…` and selection
+receipt `99fdac66…` all read back. It closed three observed Hub defects: the obsolete
+TypeScript artifact pin, compatibility/publication status conflation, and the missing
+data-preserving companion removal command. On macOS arm64 the exact catalog passed a
+four-component dry run and install, verified status, locked no-op install/update,
+explicit no-predecessor rollback failure, removal with data/config preservation,
+post-removal status and idempotent removal. The exact five-component macOS dry run
+correctly rejects Edge's Linux-only recipe before mutation. The retained Debian ARM64
+guest lacks the remaining exact fixed-recipe toolchains, so no five-component runtime
+or update/rollback claim is made. Exact outputs and limitations are recorded in
+[`f6-five-companion-catalog-lifecycle-2026-09-19-r1.json`](f6-five-companion-catalog-lifecycle-2026-09-19-r1.json).
+Initial independent review rejected one P2 removal-safety defect: a present regular
+`PREFIX/active` path was misclassified as absent, allowing replaceable releases to be
+deleted while the unsupported active path remained. The closure now distinguishes an
+absent path with `lstat`, rejects every present non-symlink before lock creation or
+recovery mutation, and rechecks under the lock. An exact pre/post tree regression covers
+regular-file, directory and FIFO active paths. Removal hard-exit coverage at every
+transaction checkpoint proves rollback before commit, completion after commit, final
+cleanup and data/config preservation. Same-reviewer delta review confirmed that fix but
+rejected a second P2: unsafe `releases` or `history.json` inode types were detected only
+after journaled deactivation. The second closure now validates both paths without
+following symlinks before lock creation, under the lock, after recovery, before the
+transition and immediately before deletion. Exact zero-change fixtures cover a
+symlink/file/FIFO `releases`, symlink/directory/FIFO history, and post-recovery plus
+pre-delete symlink swaps without touching external markers.
+The same reviewer then returned `ACCEPT` with no P1/P2 findings. It independently
+confirmed exact zero-change releases/history symlink reproductions, refusal of the
+final-validator swap without changing outside or saved bytes, preservation of the
+prior active-path closure, and the recorded 88 Python plus 13 Rust checks. This is an
+independently accepted bounded partial catalog/lifecycle slice only: the exact-five
+runtime, genuine predecessor update/rollback, ordinary production admission and
+retained detailed installed-output receipt remain absent, so F6 remains open.
 
 The next bounded container-preparation slice binds the official Rust and Debian
 base tags to exact multi-platform index digests whose Linux ARM64 children were
@@ -136,12 +171,13 @@ L1–L3 are execution slices only; none is a completion substitute:
 3. **L3:** close F3/F4 packaging, the six-source catalog, F6 documentation and
    reproducibility, then run F5 when its fresh inputs exist and finish with F7.
 
-Current L3 foundation checkpoint: source-identity enforcement, exact five-companion
-catalog generation/readback, Viewer-free active selectors, Hub-only `--components none`
-bootstrap, and native/container packaging inputs are implemented and focused-tested.
-The source/catalog foundation is independently accepted and published. Exact
-clean-export native/container rebuilds, final five-companion catalog population and
-installed lifecycle proof remain pending. Release, tag and binary publication remain
+Current L3 checkpoint: source-identity enforcement, exact five-companion catalog
+generation/readback, the populated local-unpublished cohort, Viewer-free active
+selectors, Hub-only `--components none` bootstrap, data-preserving companion removal,
+and native/container packaging inputs are implemented and focused-tested. The bounded
+four-component macOS lifecycle passes, but exact five-component Linux installation,
+genuine predecessor update/rollback, complete native/container rebuilds and ordinary
+public production admission remain pending. Release, tag and binary publication remain
 outside this slice. F6 is open.
 
 Container foundation checkpoint: immutable official base index identities, the
