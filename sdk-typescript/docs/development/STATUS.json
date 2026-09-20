@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "TypeScript SDK",
-  "updated_at": "2026-09-20T00:17:29Z",
-  "update_scope": "f6_catalog_source_input_admission_publication_readback",
+  "updated_at": "2026-09-20T00:41:26Z",
+  "update_scope": "f6_native_linux_arm64_docker_package_acceptance",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G4_ACCEPTED",
   "source_objective_state": "PACKED_NODE_BROWSER_AND_BINDING_ACCEPTED",
@@ -11,7 +11,7 @@
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": ["G3", "G4"],
-  "planning_state": "FULL_PRODUCT_ACTIVE_F3_F6_TS_02_SOURCE_TEST_ACCEPTED_LIFECYCLE_AND_RUNTIME_GAPS_OPEN",
+  "planning_state": "FULL_PRODUCT_ACTIVE_F3_F6_NATIVE_DOCKER_ACCEPTED_PREDECESSOR_AND_FINAL_RUNTIME_GAPS_OPEN",
   "objective": "Complete every documented TypeScript SDK Node/browser contract, support claim, reproducible package lifecycle, mandatory real-input semantics and final installed consumer journey.",
   "source": {
     "head": "21b7d316b62861f3b1f597c8f09aab376bb3d192",
@@ -50,7 +50,8 @@
     "The exact 56a07dd clean export produced the same 88-member unpublished archive twice under Node 26.7.0/npm 11.19.0: SHA-256 070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7, 283749 bytes. Its 285-file source manifest is 546b517f6ce86556252e7fbcde19bee320d7e30017e3bd4d8ad075220b939d2b.",
     "Fresh external Node and browser imports plus removal passed against the exact candidate. The package-cleanliness harness now copies the packaged tools directory and reproduces the exact candidate hash for clean and stale builds.",
     "Independent GPT-5.6 Sol/high review accepted the exact candidate source/toolchain/archive/receipt/cleanup/claim-integrity slice with no P1/P2 findings. This is candidate-only admission and does not satisfy predecessor, catalog, Docker, browser-floor, final-Hub, F3, F5, F6 or F7 acceptance.",
-    "The source-only F6 input candidate preserves the independently accepted 285-file receipt identity 546b517f...39d2b while reproducing Hub's fully bounded 284-file bootstrap identity b6c12d42...7052b from the same stable no-follow file reads. The exact 070906b5 package, e9625cc8 receipt and 96ada184 five-companion catalog admit together without Docker. Independent Sol/high review accepted the source slice after closing three P2 contract/stability/ledger findings; source commit 21b7d316 was pushed and read back exactly."
+    "The source-only F6 input candidate preserves the independently accepted 285-file receipt identity 546b517f...39d2b while reproducing Hub's fully bounded 284-file bootstrap identity b6c12d42...7052b from the same stable no-follow file reads. The exact 070906b5 package, e9625cc8 receipt and 96ada184 five-companion catalog admit together without Docker. Independent Sol/high review accepted the source slice after closing three P2 contract/stability/ledger findings; source commit 21b7d316 was pushed and read back exactly.",
+    "The exact admitted package/source/catalog tuple then passed the native Debian Linux ARM64 Docker lane with Node 26.7.0/npm 11.19.0 in the pinned official image. The runner now forces BuildKit rather than silently accepting the legacy builder; independent Sol/high review accepted the runtime slice with no P1/P2 findings. The task-owned gate tag, contexts, staging root, guest and shared lock were cleaned up."
   ],
   "evidence_paths": [
     "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
@@ -61,16 +62,16 @@
     "docs/development/f3-f6-platform-package-lifecycle-foundation-2026-09-19-r1.json",
     "docs/development/f3-f6-candidate-package-2026-09-19-r1.json",
     "docs/development/f3-f6-candidate-package-admission-2026-09-19-r1.json",
-    "docs/development/f6-catalog-source-admission-2026-09-20-r1.json"
+    "docs/development/f6-catalog-source-admission-2026-09-20-r1.json",
+    "docs/development/f6-native-linux-arm64-docker-package-2026-09-20-r1.json"
   ],
   "remaining": [
     "F0 TS-02 SDK-owned source/test boundary is independently accepted at 3cc72520c6d857b20e10129be039965f4ca1f4ab; coordinator-owned root-ledger closeout remains separate metadata work.",
     "F3 runtime: prove the newly admitted packed Node pin path and real-browser Web PKI/CORS/read/rotation path against the exact final F1 Hub.",
     "F3 floors: establish evidence-backed Node, npm, browser and active operating-system floors; current machine-readable floors remain null rather than invented or silently reduced.",
     "F5: consume mandatory fresh real-input semantic evidence.",
-    "F6 Docker: run the immutable package-only image lane on a native Linux ARM64 engine; no Docker build or run has occurred for this candidate.",
     "F6 predecessor: supply an exact older reachable npm archive, frozen source export and independent accepted predecessor receipt/catalog cohort, then run install/update/rollback/removal; same-candidate reinstall is insufficient.",
-    "F6 catalog/source: the exact accepted 070906b5...e23d7 archive and 546b517f...39d2b receipt source reproduce and match the catalog's 284-file b6c12d42...7052b Hub bootstrap view in independently accepted source-only input admission published at 21b7d316; the native Linux ARM64 Docker runtime remains pending.",
+    "F6 catalog/lifecycle: the exact accepted 070906b5...e23d7 archive, 546b517f...39d2b receipt source and catalog's 284-file b6c12d42...7052b Hub bootstrap view pass source admission and native Linux ARM64 Docker package execution; exact predecessor lifecycle and final Hub retention remain pending.",
     "F7: supply the exact final F1 Hub artifact handoff and run the fresh external Node plus real-browser combined installed journey and cleanup."
   ],
   "next_goal_draft": {
@@ -97,15 +98,15 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G4 runtime accepted and closed; G3 metadata admitted; the bounded platform/package-lifecycle foundation and strictTypes cleanup remain accepted; exact 56a07dd candidate package build/repeatability/fresh external install-removal and independent candidate-only review passed; no Docker, browser runtime, Hub, VM or task-owned runtime was started",
+  "runtime_state": "G4 runtime accepted and closed; G3 metadata admitted; the bounded platform/package-lifecycle foundation and strictTypes cleanup remain accepted; exact 56a07dd candidate package build/repeatability/fresh external install-removal passed; the native Linux ARM64 Docker package slice is independently accepted and cleaned up; no final Hub/browser runtime or predecessor lifecycle ran",
   "acceptance_limits": [
     "No App integration acceptance",
     "No real-data parity or production acceptance",
     "Current macOS 27.0 Apple silicon was exercised; the documented macOS 13 minimum floor was not independently run",
     "Ordinary browser Fetch cannot enforce the invitation raw leaf pin; browser claim fails closed unless a caller supplies a pin-capable transport",
     "TS-02 focused coverage is synthetic and package-local; it does not prove the unpublished archive against the final F1 Hub or a real browser pairing bridge",
-    "The historical 83-member archive remains immutable prior evidence. The exact 56a07dd follow-on is now independently admitted as unpublished 88-member candidate 070906b5...e23d7, but it has not run against the final F1 Hub, a real browser floor, or ARM64 Docker path",
-    "No exact predecessor package or non-empty final catalog was supplied, so no update, rollback or catalog lifecycle claim is made",
+    "The historical 83-member archive remains immutable prior evidence. The exact 56a07dd follow-on is independently admitted as unpublished 88-member candidate 070906b5...e23d7 and passed the native Linux ARM64 package-only Docker lane, but it has not run against the final F1 Hub or a real browser floor",
+    "No exact predecessor package was supplied, so no update or rollback claim is made; final Hub catalog retention remains pending",
     "Viewer excluded; x86/Intel paused"
   ]
 }

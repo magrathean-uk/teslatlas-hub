@@ -124,8 +124,8 @@ regression were then accepted by the same reviewer with no findings:
   Node consumer and reuses the existing strict Node-pin and real-browser gates.
   It requires the future F1 Hub descriptor to bind an exact final artifact and
   does not start Hub.
-- F3 runtime/platform floors, F5 input semantics, F6 native ARM64 Docker,
-  exact predecessor, non-empty final catalog and source bootstrap, and F7
+- F3 runtime/platform floors, F5 input semantics, F6 exact predecessor and
+  complete lifecycle, final catalog retention, and F7
   combined installed Node/browser acceptance all remain open.
 
 ## Independently accepted candidate-only package
@@ -147,7 +147,9 @@ five-companion catalog now pass source-only input admission together. This
 contract correction is independently accepted after closing full-contract parity,
 single-read stability, directory-membership and ledger findings; publication
 commit `21b7d316b62861f3b1f597c8f09aab376bb3d192` was pushed and read back
-exactly. No Docker engine, package lifecycle or final Hub consumer ran.
+exactly. The same exact tuple then passed the independently accepted native
+Linux ARM64 package-only Docker lane; no predecessor lifecycle or final Hub
+consumer ran.
 Fresh external Node and browser imports plus removal passed, and the
 package-cleanliness harness now includes the packaged `tools/` directory and
 reproduces the same archive hash.
@@ -157,7 +159,8 @@ archive, receipt, cleanup and claim-integrity slice with no P1/P2 findings. This
 is candidate-only admission, not F3 or F6 acceptance. There is still no valid
 older predecessor, so update and rollback remain blocked. The populated Hub
 catalog/source tuple passes the independently accepted and published source-only
-input gate; Docker/VM, browser-floor, final-Hub,
+input gate, and the native Linux ARM64 Docker package slice is independently
+accepted. Browser-floor, final-Hub,
 F5 and F7 evidence were not run or claimed. The exact receipt is
 [`f3-f6-candidate-package-2026-09-19-r1.json`](f3-f6-candidate-package-2026-09-19-r1.json).
 

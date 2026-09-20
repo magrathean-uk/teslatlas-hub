@@ -160,6 +160,7 @@ function run(executable, arguments_) {
   return execFileSync(executable, arguments_, {
     cwd: repositoryRoot,
     encoding: "utf8",
+    env: { ...process.env, DOCKER_BUILDKIT: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
 }

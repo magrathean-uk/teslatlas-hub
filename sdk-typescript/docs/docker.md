@@ -33,7 +33,9 @@ strict tar admission rejects duplicate members, links, special entries, unsafe
 paths and unsafe modes before npm or Docker can consume the archive. It refuses
 a Docker engine whose server platform is not `linux/arm64`, and the Dockerfile separately
 requires `BUILDPLATFORM`, `TARGETPLATFORM`, and `uname -m` to be native ARM64.
-Emulation and cross-architecture builds are outside this lane.
+The runner explicitly enables BuildKit, so the Docker CLI must provide its buildx
+component rather than silently falling back to the legacy builder. Emulation and
+cross-architecture builds are outside this lane.
 
 The runner creates a private temporary context containing only:
 
@@ -59,5 +61,7 @@ installs the same archive into a fresh external consumer and reuses the strict
 Node pin and real-browser Web PKI/CORS gates. It does not start Hub.
 
 Current accepted runtime evidence is limited to Node `26.7.0`, npm `11.19.0`
-and Chrome `153.0.8010.52` on macOS 27 ARM64. No broader Node, npm, browser, or
-operating-system floor is claimed. Docker ARM64 execution remains pending.
+and Chrome `153.0.8010.52` on macOS 27 ARM64. The exact admitted `070906b5…`
+archive also passed this package-only lane on a native Debian Linux ARM64 Docker
+engine. No broader Node, npm, browser, or operating-system floor is claimed, and
+the Docker result does not replace the final Hub consumer journey.

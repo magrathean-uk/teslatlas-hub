@@ -1,0 +1,93 @@
+{
+  "schema": "teslatlas.typescript.f6-native-linux-arm64-docker-package/v1",
+  "generated_at": "2026-09-20T00:41:26Z",
+  "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+  "scope": {
+    "gate": "F6",
+    "proved": "The exact admitted unpublished package builds and passes installed-package smoke checks in the pinned official Node image on a native Debian Linux ARM64 Docker engine.",
+    "not_proved": [
+      "predecessor update or rollback lifecycle",
+      "final Hub Node or real-browser journey",
+      "Node, npm, browser or operating-system support floors",
+      "F3, F5, complete F6 or F7 acceptance",
+      "npm publication, release or production operation"
+    ]
+  },
+  "implementation": {
+    "base_head": "eaef2d469c60d0f7a64dd93a8623bc97fcce5dc9",
+    "runner_sha256": "ba7549857d5ccc3a9aafe1cf52735fd83affca374f5d2480bed77eccceeb86df",
+    "documentation_sha256": "1de267f82088beaf362c52104ecc862b2479c1ca87a83803e51b9af35bac2960",
+    "change": "The runner forces DOCKER_BUILDKIT=1 for Docker subprocesses so the required BUILDPLATFORM and TARGETPLATFORM values cannot silently disappear through legacy-builder fallback."
+  },
+  "environment": {
+    "guest": "retained debian13-arm64 Lima guest",
+    "kernel_architecture": "aarch64",
+    "docker_client": "26.1.5+dfsg1",
+    "docker_server": "26.1.5+dfsg1",
+    "docker_server_platform": "linux/arm64",
+    "buildx": "0.13.1+ds1-3",
+    "outer_node": "v26.7.0 copied from the same pinned official image into the disposable staging root",
+    "shared_lock": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build"
+  },
+  "inputs": {
+    "package_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
+    "package_member_count": 88,
+    "candidate_admission_sha256": "e9625cc82bb76a2f27fe9c1fa830d1f8c3d6362838a89bbecb3883daff60d14c",
+    "receipt_source_file_count": 285,
+    "receipt_source_sha256": "546b517f6ce86556252e7fbcde19bee320d7e30017e3bd4d8ad075220b939d2b",
+    "catalog_source_file_count": 284,
+    "catalog_source_sha256": "b6c12d42a8decd8c5f9054b2f8cbc04e0a9a36d619497d60fde3e9b658a7052b",
+    "catalog_sha256": "96ada184b7098c4ab109bc1444271d30354dceaaafd2a8e72ffe7204480be670",
+    "node_index_digest": "sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32",
+    "node_linux_arm64_v8_child_digest": "sha256:2b028cd57303b2761d24173789c85a013558d6cf20e78f51723385f368b6e34d"
+  },
+  "gate_receipt": {
+    "raw_receipt_sha256": "6fa92928545bb7d414c62b77cfe60f20ba0d7d3fd9ca57cf3337cd3b30b45f33",
+    "result": "DOCKER_PACKAGE_BUILD_PASS",
+    "platform": "linux/arm64",
+    "package_name": "@teslatlas/sdk",
+    "package_version": "2026.36.2",
+    "package_manager": "npm@11.19.0",
+    "image_id": "sha256:7c2082e5ec18233d40db18a607678b7b13e62e106092cc132a4e25f88a67fb14",
+    "smoke": "The Dockerfile rehashed the archive, installed with scripts disabled, required Node v26.7.0/npm 11.19.0, validated evidence-only package metadata and imported root, Node and browser public entry points.",
+    "cleanup": "The runner returned the receipt only after its task-owned tagged image and temporary context were absent."
+  },
+  "observed_fail_closed_paths": [
+    "The first staged copy was rejected before Docker because archive extraction retained group-writable modes; removing only group/world write bits from the disposable copy reproduced the accepted 0644/0755 source identity.",
+    "The unpatched runner reached the legacy builder and failed because BUILDPLATFORM and TARGETPLATFORM were absent.",
+    "DOCKER_BUILDKIT=1 then failed closed while buildx was absent. Debian docker-buildx 0.13.1+ds1-3 was installed as the sole new package, after which the patched runner passed without an ambient DOCKER_BUILDKIT value.",
+    "The exact stopped legacy-builder container and dangling intermediate image were identified and removed separately; they are not represented as successful gate cleanup."
+  ],
+  "validation": {
+    "focused_unit": "PASS; package-lifecycle-gate.test.ts 18/18 under exact Node 26.7.0/npm 11.19.0",
+    "build": "PASS under exact Node 26.7.0/npm 11.19.0",
+    "typecheck": "PASS after the required build under exact Node 26.7.0/npm 11.19.0",
+    "biome": "PASS for the changed runner",
+    "receipt_relations": "PASS",
+    "node_syntax": "PASS",
+    "diff_check": "PASS"
+  },
+  "cleanup": {
+    "containers_after": 0,
+    "task_owned_gate_tag_absent": true,
+    "temporary_contexts_after": 0,
+    "disposable_staging_root_removed": true,
+    "guest_stopped": true,
+    "shared_lock_released": true,
+    "retained": "Pinned Node base image, Docker build cache and docker-buildx prerequisite remain in the shared guest for later native Linux gates; no broad cache prune was performed because pre-existing cache ownership was mixed."
+  },
+  "independent_review": {
+    "model": "GPT-5.6 Sol",
+    "reasoning": "high",
+    "result": "ACCEPT",
+    "recorded_at": "2026-09-20T00:41:26Z",
+    "p1_findings": 0,
+    "p2_findings": 0,
+    "boundary": "No predecessor lifecycle, final Hub/browser journey, platform floor, publication, complete F6 or F7 claim was accepted."
+  },
+  "acceptance": {
+    "native_linux_arm64_docker_package_slice": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "f6": "OPEN",
+    "full_solution": "NOT_ACCEPTED"
+  }
+}
