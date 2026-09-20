@@ -36,6 +36,17 @@ Node `26.7.0` and npm `11.19.0`; the historical 83-member archive
 `42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7`
 is explicitly ineligible for the changed candidate.
 
+The admission receipt and Hub catalog intentionally bind two views of the same
+canonical source export. The receipt identity includes repository operator
+instructions such as `AGENTS.md` and preserves their file modes. The Hub
+bootstrap identity uses Hub's complete source-copy contract: the same exclusion
+set and 50,000-file/1 GiB bounds, path/byte SHA-256/size/executable records,
+Unicode code-point ordering, and Python-compatible ASCII JSON encoding. A
+single stable, no-follow file read supplies both identities, so no path is read
+twice under different bytes or modes. The current export differs only by
+excluded `AGENTS.md`, producing the 284-file catalog view. The gate does not
+rewrite or weaken the independently accepted 285-file receipt identity.
+
 The strict Hub-owned schema-1 catalog must contain separate exact cohorts for
 both the candidate and predecessor. Each cohort binds Protocol, TypeScript SDK,
 Swift SDK, Home Assistant and Edge. Empty placeholders, missing components,

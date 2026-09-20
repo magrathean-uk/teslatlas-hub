@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstat, readdir, readFile, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readdir, readFile, realpath } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 
@@ -20,6 +21,22 @@ const REPOSITORIES = {
   edge: "https://github.com/magrathean-uk/teslatlas-edge.git",
 };
 const COMPONENTS = ["edge", "home-assistant", "protocol", "sdk-swift", "sdk-typescript"];
+const HUB_SOURCE_EXCLUDED_NAMES = new Set([
+  ".DS_Store",
+  ".build",
+  ".git",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".venv",
+  "AGENTS.md",
+  "__pycache__",
+  "coverage",
+  "dist",
+  "node_modules",
+  "target",
+]);
+const HUB_MAX_SOURCE_FILES = 50_000;
+const HUB_MAX_SOURCE_BYTES = 1_073_741_824;
 
 export function requireSha256(value, label) {
   if (!HEX_64.test(value ?? "")) throw new Error(`${label} must be a lowercase SHA-256`);
@@ -329,18 +346,47 @@ function safeArchivePath(rawPath, type, label) {
   return path;
 }
 
-export async function sourceExportManifest(sourceExport, label = "source export") {
+export async function sourceExportManifest(sourceExport, label = "source export", testHooks) {
+  if (testHooks !== undefined && process.env.NODE_ENV !== "test") {
+    throw new Error("source export test hooks are unavailable outside tests");
+  }
   const root = await canonicalDirectory(sourceExport, label);
   const entries = [];
-  await walkSource(root, root, entries, label);
+  const catalogState = { fileCount: 0, totalBytes: 0 };
+  const catalogEntries = await walkSource(
+    root,
+    root,
+    entries,
+    label,
+    catalogState,
+    true,
+    testHooks,
+  );
   if (entries.length === 0) throw new Error(`${label} contains no files`);
   const manifestBytes = Buffer.from(`${JSON.stringify(entries)}\n`, "utf8");
-  return { root, fileCount: entries.length, manifestSha256: sha256(manifestBytes) };
+  return {
+    root,
+    fileCount: entries.length,
+    manifestSha256: sha256(manifestBytes),
+    catalogFileCount: catalogEntries.length,
+    catalogManifestSha256: hubSourceDigest(catalogEntries),
+  };
 }
 
-async function walkSource(root, directory, entries, label) {
-  const children = await readdir(directory, { withFileTypes: true });
-  children.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+async function walkSource(
+  root,
+  directory,
+  entries,
+  label,
+  catalogState,
+  catalogEnabled,
+  testHooks,
+) {
+  const directoryBefore = await inspectSourceDirectory(directory, label);
+  const children = directoryBefore.children;
+  await testHooks?.afterDirectoryRead?.(directory);
+  const catalogFiles = [];
+  const catalogDirectories = [];
   for (const child of children) {
     const path = join(directory, child.name);
     const relativePath = relative(root, path).replaceAll("\\", "/");
@@ -367,9 +413,168 @@ async function walkSource(root, directory, entries, label) {
     ) {
       throw new Error(`${label} contains unsafe mode for ${relativePath}`);
     }
-    if (metadata.isDirectory()) await walkSource(root, path, entries, label);
-    else entries.push({ path: relativePath, mode, sha256: sha256(await readFile(path)) });
+    if (metadata.isDirectory()) {
+      const childCatalogEnabled = catalogEnabled && !HUB_SOURCE_EXCLUDED_NAMES.has(child.name);
+      const catalogSubtree = await walkSource(
+        root,
+        path,
+        entries,
+        label,
+        catalogState,
+        childCatalogEnabled,
+        testHooks,
+      );
+      if (childCatalogEnabled) catalogDirectories.push(catalogSubtree);
+    } else {
+      const stable = await readStableSourceFile(path, metadata, label, relativePath);
+      const fileSha256 = sha256(stable.bytes);
+      entries.push({ path: relativePath, mode: stable.mode, sha256: fileSha256 });
+      if (catalogEnabled && !HUB_SOURCE_EXCLUDED_NAMES.has(child.name)) {
+        catalogState.fileCount += 1;
+        catalogState.totalBytes += stable.bytes.length;
+        if (
+          catalogState.fileCount > HUB_MAX_SOURCE_FILES ||
+          catalogState.totalBytes > HUB_MAX_SOURCE_BYTES
+        ) {
+          throw new Error(`${label} exceeds Hub bootstrap bounds`);
+        }
+        catalogFiles.push({
+          executable: (stable.mode & 0o111) !== 0,
+          path: relativePath,
+          sha256: fileSha256,
+          size: stable.bytes.length,
+        });
+      }
+    }
   }
+  await assertSourceDirectoryStable(directory, directoryBefore, label);
+  return catalogFiles.concat(...catalogDirectories);
+}
+
+async function inspectSourceDirectory(directory, label) {
+  const metadata = await lstat(directory);
+  const canonical = await realpath(directory);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink() || canonical !== directory) {
+    throw new Error(`${label} contains a link or special entry`);
+  }
+  const mode = metadata.mode & 0o7777;
+  if ((mode & 0o7022) !== 0 || (mode & 0o500) !== 0o500) {
+    throw new Error(`${label} contains unsafe mode for ${directory}`);
+  }
+  const children = await readdir(directory, { withFileTypes: true });
+  children.sort((left, right) => comparePythonStrings(left.name, right.name));
+  return {
+    canonical,
+    children,
+    childSignatures: children.map(sourceDirectoryEntrySignature),
+    ctimeMs: metadata.ctimeMs,
+    dev: metadata.dev,
+    ino: metadata.ino,
+    mode,
+    mtimeMs: metadata.mtimeMs,
+  };
+}
+
+async function assertSourceDirectoryStable(directory, before, label) {
+  const after = await inspectSourceDirectory(directory, label);
+  if (
+    after.canonical !== before.canonical ||
+    after.dev !== before.dev ||
+    after.ino !== before.ino ||
+    after.mode !== before.mode ||
+    after.mtimeMs !== before.mtimeMs ||
+    after.ctimeMs !== before.ctimeMs ||
+    after.childSignatures.length !== before.childSignatures.length ||
+    after.childSignatures.some((signature, index) => signature !== before.childSignatures[index])
+  ) {
+    throw new Error(`${label} changed while it was inspected`);
+  }
+}
+
+function sourceDirectoryEntrySignature(entry) {
+  return `${entry.name}\0${entry.isFile()}${entry.isDirectory()}${entry.isSymbolicLink()}`;
+}
+
+async function readStableSourceFile(path, initialMetadata, label, relativePath) {
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const before = await handle.stat();
+    if (
+      !before.isFile() ||
+      before.dev !== initialMetadata.dev ||
+      before.ino !== initialMetadata.ino
+    ) {
+      throw new Error(`${label} changed while ${relativePath} was opened`);
+    }
+    const mode = before.mode & 0o7777;
+    if ((mode & 0o7022) !== 0 || (mode & 0o400) === 0) {
+      throw new Error(`${label} contains unsafe mode for ${relativePath}`);
+    }
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    if (
+      !after.isFile() ||
+      after.dev !== before.dev ||
+      after.ino !== before.ino ||
+      after.size !== before.size ||
+      after.mtimeMs !== before.mtimeMs ||
+      after.ctimeMs !== before.ctimeMs ||
+      (after.mode & 0o7777) !== mode
+    ) {
+      throw new Error(`${label} changed while ${relativePath} was read`);
+    }
+    return { bytes, mode };
+  } catch (error) {
+    if (error?.code === "ELOOP") {
+      throw new Error(`${label} contains a link or special entry`);
+    }
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+}
+
+function comparePythonStrings(left, right) {
+  const leftPoints = Array.from(left, (character) => character.codePointAt(0));
+  const rightPoints = Array.from(right, (character) => character.codePointAt(0));
+  const shared = Math.min(leftPoints.length, rightPoints.length);
+  for (let index = 0; index < shared; index += 1) {
+    if (leftPoints[index] !== rightPoints[index]) return leftPoints[index] - rightPoints[index];
+  }
+  return leftPoints.length - rightPoints.length;
+}
+
+function hubSourceDigest(entries) {
+  const encodedEntries = entries.map(
+    (entry) =>
+      `{"executable":${entry.executable},"path":${pythonAsciiJsonString(entry.path)},` +
+      `"sha256":${pythonAsciiJsonString(entry.sha256)},"size":${entry.size}}`,
+  );
+  return sha256(Buffer.from(`[${encodedEntries.join(",")}]`, "utf8"));
+}
+
+function pythonAsciiJsonString(value) {
+  let encoded = '"';
+  for (const character of value) {
+    const point = character.codePointAt(0);
+    if (character === '"') encoded += '\\"';
+    else if (character === "\\") encoded += "\\\\";
+    else if (point === 0x08) encoded += "\\b";
+    else if (point === 0x09) encoded += "\\t";
+    else if (point === 0x0a) encoded += "\\n";
+    else if (point === 0x0c) encoded += "\\f";
+    else if (point === 0x0d) encoded += "\\r";
+    else if (point >= 0x20 && point <= 0x7e) encoded += character;
+    else if (point <= 0xffff) encoded += `\\u${point.toString(16).padStart(4, "0")}`;
+    else {
+      const scalar = point - 0x10000;
+      const high = 0xd800 + (scalar >> 10);
+      const low = 0xdc00 + (scalar & 0x3ff);
+      encoded += `\\u${high.toString(16)}\\u${low.toString(16)}`;
+    }
+  }
+  return `${encoded}"`;
 }
 
 export async function validateReviewedPackageBinding({
@@ -485,7 +690,7 @@ export async function readCatalogBinding({ catalogPath, catalogSha256, reviewedP
   const component = cohort.components["sdk-typescript"];
   if (
     component.commit !== reviewedPackage.receipt.source.commit ||
-    component.source_sha256 !== reviewedPackage.source.manifestSha256 ||
+    component.source_sha256 !== reviewedPackage.source.catalogManifestSha256 ||
     component.artifacts.package_sha256 !== reviewedPackage.receipt.package.archive_sha256
   ) {
     throw new Error("catalog TypeScript source/package admission does not match exact inputs");

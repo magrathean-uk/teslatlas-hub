@@ -1,0 +1,85 @@
+{
+  "schema": "teslatlas.typescript.f6-catalog-source-admission/v1",
+  "generated_at": "2026-09-20T00:02:20Z",
+  "state": "INDEPENDENTLY_ACCEPTED_SOURCE_PARTIAL",
+  "scope": {
+    "gate": "F6",
+    "proved": "Source-only admission of the exact independently accepted candidate archive and receipt against the populated strict five-companion Hub catalog",
+    "not_proved": [
+      "Docker image build or runtime",
+      "package install, update, rollback or removal lifecycle",
+      "final Hub Node or browser consumer",
+      "platform floors, F3, F5, F6 or F7 acceptance"
+    ]
+  },
+  "implementation_source": {
+    "base_head": "df395f1599cb911737919c7b339faea712ee0aa4",
+    "local_head_matches_origin_main": true,
+    "local_head_matches_live_remote_main": true,
+    "state": "independently accepted candidate pending source commit and push",
+    "files": [
+      "scripts/package-provenance.mjs",
+      "scripts/package-provenance.d.mts",
+      "tests/unit/package-lifecycle-gate.test.ts",
+      "docs/package-lifecycle.md",
+      "docs/development/PLAN.md",
+      "docs/development/STATUS.json"
+    ]
+  },
+  "candidate": {
+    "source_commit": "56a07dd7c1a55e5f783ab71640a01f4b56d908c4",
+    "source_export": "/Users/bolyki/dev/teslatlas-lab/candidates/teslatlas-sdk-typescript-f3-f6-20260919-r1/source",
+    "receipt_source_file_count": 285,
+    "receipt_source_sha256": "546b517f6ce86556252e7fbcde19bee320d7e30017e3bd4d8ad075220b939d2b",
+    "catalog_source_file_count": 284,
+    "catalog_source_sha256": "b6c12d42a8decd8c5f9054b2f8cbc04e0a9a36d619497d60fde3e9b658a7052b",
+    "catalog_exclusion": "The complete Hub exclusion set is mirrored; in this exact export only AGENTS.md is present and excluded as repository operator guidance, so all distributable source bytes remain bound.",
+    "package_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
+    "package_member_count": 88,
+    "admission_receipt_sha256": "e9625cc82bb76a2f27fe9c1fa830d1f8c3d6362838a89bbecb3883daff60d14c"
+  },
+  "catalog": {
+    "path": "/Users/bolyki/dev/source/teslatlas-service/hub/tools/companions/catalog-current.json",
+    "sha256": "96ada184b7098c4ab109bc1444271d30354dceaaafd2a8e72ffe7204480be670",
+    "publication_status": "local-unpublished",
+    "exact_five_components": true,
+    "viewer_excluded": true,
+    "typescript_source_sha256": "b6c12d42a8decd8c5f9054b2f8cbc04e0a9a36d619497d60fde3e9b658a7052b",
+    "typescript_package_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7"
+  },
+  "contract": {
+    "receipt_identity": "All canonical export files, path, POSIX mode and byte SHA-256, including repository operator guidance",
+    "catalog_identity": "Exact Hub source-copy exclusions, 50,000-file/1 GiB bounds, Unicode code-point ordering and Python-compatible ASCII JSON schema; path, byte SHA-256, size and executable state retained",
+    "security_boundary": "Both identities are derived in one traversal from the same stable no-follow file read and mode/inode checks before npm or Docker can run; directory identity is rechecked after traversal and receipt admission remains unchanged and strict."
+  },
+  "validation": {
+    "focused_unit": "PASS; package-lifecycle-gate.test.ts 18/18, including a hardcoded cross-language Unicode/exclusion digest, source-file symlink rejection and deterministic concurrent directory-membership rejection",
+    "typecheck": "PASS under exact Node 26.7.0 and npm 11.19.0",
+    "actual_input_admission": "TS_F6_INPUT_ADMISSION_PASS",
+    "node_syntax": "PASS",
+    "diff_check": "PASS",
+    "docker_started": false,
+    "vm_started": false
+  },
+  "independent_review": {
+    "model": "GPT-5.6 Sol / high",
+    "result": "ACCEPT",
+    "reviewed_at": "2026-09-20T00:16:41Z",
+    "p1_findings": 0,
+    "p2_findings_remaining": 0,
+    "closed_findings": [
+      "The catalog identity now mirrors Hub's complete exclusions, bounds, Unicode ordering and Python-compatible JSON encoding rather than only matching the current fixture.",
+      "Both identities now derive from one stable no-follow file read with root and recursive directory membership/identity rechecks; a deterministic concurrent-add regression fails closed.",
+      "STATUS distinguishes six tracked dirty files from the separate untracked receipt."
+    ]
+  },
+  "publication": {
+    "implementation_commit": null,
+    "state": "PENDING_SOURCE_COMMIT_AND_PUSH"
+  },
+  "acceptance": {
+    "source_slice": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "f6": "OPEN",
+    "full_solution": "NOT_ACCEPTED"
+  }
+}

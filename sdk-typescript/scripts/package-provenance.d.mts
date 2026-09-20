@@ -11,6 +11,8 @@ export interface SourceExportBinding {
   root: string;
   fileCount: number;
   manifestSha256: string;
+  catalogFileCount: number;
+  catalogManifestSha256: string;
 }
 
 export interface ReviewedPackageBinding {

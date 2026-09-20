@@ -137,6 +137,16 @@ candidate is SHA-256
 `070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7`.
 Its 285-file deterministic source manifest is SHA-256
 `546b517f6ce86556252e7fbcde19bee320d7e30017e3bd4d8ad075220b939d2b`.
+The current source candidate also derives the Hub bootstrap view from that same
+canonical export: 284 files at
+`b6c12d42a8decd8c5f9054b2f8cbc04e0a9a36d619497d60fde3e9b658a7052b`,
+where the current export differs only by root operator instructions excluded
+under Hub's full bounded source-copy contract. Both identities derive from the
+same stable no-follow file reads. The exact accepted archive, independent admission receipt and strict
+five-companion catalog now pass source-only input admission together. This
+contract correction is independently accepted after closing full-contract parity,
+single-read stability, directory-membership and ledger findings; publication
+readback remains pending. No Docker engine, package lifecycle or final Hub consumer ran.
 Fresh external Node and browser imports plus removal passed, and the
 package-cleanliness harness now includes the packaged `tools/` directory and
 reproduces the same archive hash.
@@ -144,8 +154,9 @@ reproduces the same archive hash.
 Independent GPT-5.6 Sol/high review accepted the exact source, toolchain,
 archive, receipt, cleanup and claim-integrity slice with no P1/P2 findings. This
 is candidate-only admission, not F3 or F6 acceptance. There is still no valid
-older predecessor or non-empty Hub catalog, so update, rollback, catalog and
-source-bootstrap acceptance remain blocked. Docker/VM, browser-floor, final-Hub,
+older predecessor, so update and rollback remain blocked. The populated Hub
+catalog/source tuple passes the independently accepted source-only input gate but
+awaits publication; Docker/VM, browser-floor, final-Hub,
 F5 and F7 evidence were not run or claimed. The exact receipt is
 [`f3-f6-candidate-package-2026-09-19-r1.json`](f3-f6-candidate-package-2026-09-19-r1.json).
 

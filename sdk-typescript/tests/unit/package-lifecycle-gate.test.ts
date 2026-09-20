@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -73,6 +73,59 @@ describe("package lifecycle provenance", () => {
         sourceExport: source.root,
       }),
     ).rejects.toThrow("candidate receipt does not bind accepted source/package/toolchain evidence");
+  });
+
+  it("matches the Hub bootstrap exclusions, ordering and Unicode JSON identity", async () => {
+    const root = await temporaryRoot();
+    const source = await sourceExport(root, "candidate-source", "candidate\n");
+    await writeFile(join(source.root, "AGENTS.md"), "operator instructions\n", { mode: 0o600 });
+    await mkdir(join(source.root, ".build"), { mode: 0o700 });
+    await writeFile(join(source.root, ".build", "ignored.txt"), "ignored\n", { mode: 0o600 });
+    await mkdir(join(source.root, "coverage"), { mode: 0o700 });
+    await writeFile(join(source.root, "coverage", "ignored.txt"), "ignored\n", { mode: 0o600 });
+    await mkdir(join(source.root, "a"), { mode: 0o700 });
+    await writeFile(join(source.root, "a", "β.txt"), "beta\n", { mode: 0o600 });
+    await writeFile(join(source.root, "z.txt"), "zed\n", { mode: 0o600 });
+    await writeFile(join(source.root, "😀.txt"), "smile\n", { mode: 0o600 });
+    const manifests = await sourceExportManifest(source.root);
+
+    expect(manifests.fileCount).toBe(7);
+    expect(manifests.catalogFileCount).toBe(4);
+    expect(manifests.catalogManifestSha256).toBe(
+      "23650d501597e4f0663e1d7c4ecd01771c6af0983c3ba5ce9aff939b3f2540b7",
+    );
+  });
+
+  it("rejects a source-file symlink before either manifest is admitted", async () => {
+    const root = await temporaryRoot();
+    const source = await sourceExport(root, "candidate-source", "candidate\n");
+    await symlink("README.md", join(source.root, "linked-readme"));
+
+    await expect(sourceExportManifest(source.root)).rejects.toThrow(
+      "source export contains a link or special entry",
+    );
+  });
+
+  it("rejects directory membership added after its initial read", async () => {
+    const root = await temporaryRoot();
+    const source = await sourceExport(root, "candidate-source", "candidate\n");
+    const inspectWithHook = sourceExportManifest as unknown as (
+      path: string,
+      label: string,
+      hooks: { afterDirectoryRead(directory: string): Promise<void> },
+    ) => ReturnType<typeof sourceExportManifest>;
+    let injected = false;
+
+    await expect(
+      inspectWithHook(source.root, "source export", {
+        async afterDirectoryRead(directory) {
+          if (!injected && directory === source.root) {
+            injected = true;
+            await writeFile(join(source.root, "late-addition.txt"), "late\n", { mode: 0o600 });
+          }
+        },
+      }),
+    ).rejects.toThrow("source export changed while it was inspected");
   });
 
   it("explicitly rejects the historical d94 archive as the changed candidate", async () => {
@@ -439,7 +492,7 @@ function catalog(reviewedPackage: Awaited<ReturnType<typeof validateReviewedPack
           "sdk-typescript": {
             ...component("sdk-typescript", version, "3"),
             commit: reviewedPackage.receipt.source.commit,
-            source_sha256: reviewedPackage.source.manifestSha256,
+            source_sha256: reviewedPackage.source.catalogManifestSha256,
             artifacts: {
               package_filename: `teslatlas-sdk-${version}.tgz`,
               package_sha256: reviewedPackage.receipt.package.archive_sha256,
