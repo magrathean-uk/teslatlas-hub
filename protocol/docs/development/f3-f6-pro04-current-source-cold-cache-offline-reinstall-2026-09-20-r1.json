@@ -1,0 +1,125 @@
+{
+  "schema": "teslatlas.protocol.f3-f6-pro04-current-source-cold-cache-offline-reinstall/v1",
+  "generated_at": "2026-09-20T06:07:48Z",
+  "receipt_id": "f3-f6-pro04-current-source-cold-cache-offline-reinstall-2026-09-20-r1",
+  "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+  "scope": {
+    "ledger_rows": ["PRO-04"],
+    "target": "exact current-source cold-cache online locked seed followed by cache-seeded locked offline reinstall, checker and developer-bundle reproduction on Apple silicon",
+    "proved": "A fresh physical export of accepted runtime source 53b5c648 used a genuinely empty task-owned uv cache and environment for one locked online seed, then deleted the environment and reproduced the locked installation, full checker and deterministic developer bundle with UV offline and enforced remote-network denial.",
+    "excluded": [
+      "cold-cache offline dependency installation because the developer bundle contains no wheels",
+      "full PRO-04, F3 or F6 closure",
+      "ARM64 Docker rerun",
+      "remote-wire smoke",
+      "Hub catalog lifecycle",
+      "downstream final consumers",
+      "F5 named-source or passive-capture evidence",
+      "F7 combined acceptance",
+      "App, Viewer, x86, Intel and Azure",
+      "CI, tag, release, binary publication and production"
+    ]
+  },
+  "source": {
+    "runtime_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "tree": "931507b56c641d330d3a75513f3eb1f88f24e219",
+    "git_archive_format": "uncompressed tar with source/ prefix",
+    "git_archive_sha256": "61a4a5d237bcd462d8cc454a98322fbc4c8f1eef5ae864532628917c8ec40d6c",
+    "git_archive_bytes": 2508800,
+    "regular_files": 188,
+    "identity_reconciliation": "The raw Git archive identity is distinct from the generated developer-bundle tar.gz identity."
+  },
+  "platform": {
+    "os": "macOS 27.0 (26A428)",
+    "architecture": "arm64",
+    "python": "3.11.16",
+    "uv": "0.12.12"
+  },
+  "dependency_identity": {
+    "uv_lock_sha256": "1c9c22f18a85c1ae18c0f2166caba69f41fbac9f5001b9ce04b947540e2c2157",
+    "installed_distributions": 32,
+    "seeded_cache_entries": 1606,
+    "seeded_cache_regular_files": 1342,
+    "seeded_cache_manifest_sha256": "946223efa9759909e20bbdf5a8e43d9f160418e5ec37d8b32a8198fa3e6d5417",
+    "post_offline_cache_manifest_sha256": "946223efa9759909e20bbdf5a8e43d9f160418e5ec37d8b32a8198fa3e6d5417",
+    "cache_manifest_unchanged": true,
+    "dependency_manifest_unchanged": true
+  },
+  "phase_a": {
+    "cache_initially_empty": true,
+    "environment_initially_absent": true,
+    "command": "uv sync --locked --python 3.11",
+    "package_index_access": "allowed once for the cold-cache seed",
+    "sync": "PASS",
+    "tests_collected": 142,
+    "tests_passed": 142,
+    "conformance_profiles": 3,
+    "conformance_runs": 31,
+    "conformance_passed": 31
+  },
+  "phase_b": {
+    "phase_a_environment_deleted_before_reinstall": true,
+    "command": "UV_OFFLINE=1 uv sync --locked --python 3.11",
+    "reinstall": "PASS",
+    "network_control": "macOS sandbox denied remote IP networking, allowed loopback and task-root Unix sockets for synthetic tests, and exempted only /bin/ps for local process evidence",
+    "external_denial_probe": "1.1.1.1:443 failed with EPERM",
+    "tests_collected": 142,
+    "tests_passed": 142,
+    "conformance_profiles": 3,
+    "conformance_runs": 31,
+    "conformance_passed": 31
+  },
+  "developer_bundle": {
+    "name": "teslatlas-protocol-2026.36.2.tar.gz",
+    "sha256": "8ac5ccfa03d8432284b7045e0ec93b66254897d9ec96a9a7d516fd112eb1b8be",
+    "bytes": 279094,
+    "members": 172,
+    "bundle_manifest_sha256": "43c990e2172ce64045a60e5c3577e1e58800243fa4fcbbe6d103ff731504c512",
+    "checksum_map_sha256": "2c190224e6d84b47911f368f29d074a3c50b394f275a41cdbdc6e985b9eee899",
+    "phase_a_phase_b_byte_identical": true,
+    "verification": "PASS in both phases"
+  },
+  "calibration": {
+    "acceptance_credit": false,
+    "attempts": 3,
+    "result": "Three retained failed checker logs document progressive sandbox-policy calibration: loopback, /bin/ps and task-local Unix sockets were admitted only as needed by the local synthetic checker. The final remote-network-denied policy and checker pass are authoritative.",
+    "product_or_dependency_defect": false
+  },
+  "evidence": {
+    "retained_directory": "/Users/bolyki/dev/teslatlas-lab/evidence/protocol-pro04-20260920T054634Z",
+    "summary_sha256": "337b3cf6678cc096f7ff5bb307a3f28e488c3c79d53c14deee3fd156318f5fad",
+    "evidence_manifest_sha256": "834f2d86a23a84ca3e73203b302b27ca2cf21b67ffde995e821fd6b17998af5c",
+    "manifest_entry_count": 40,
+    "all_manifest_entries_verified": true
+  },
+  "cleanup": {
+    "task_temp_root_removed": true,
+    "cache_removed": true,
+    "environment_removed": true,
+    "source_export_removed": true,
+    "archive_removed": true,
+    "lock_acquired": false,
+    "original_checkout_status_unchanged": true,
+    "pre_existing_serena_preserved": true
+  },
+  "independent_review": {
+    "model": "GPT-5.6 Sol / high",
+    "result": "ACCEPT",
+    "reviewed_at": "2026-09-20T06:07:48Z",
+    "p1_findings_remaining": 0,
+    "p2_findings_remaining": 0,
+    "verification": "The reviewer recomputed the 40-entry evidence manifest and exact source, archive, dependency, cache, checker, bundle, sandbox-calibration and cleanup assertions."
+  },
+  "publication": {
+    "runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "metadata_commit": null,
+    "state": "PENDING_RECEIPT_COMMIT"
+  },
+  "acceptance": {
+    "pro_04_current_source_online_seed_offline_reinstall": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "pro_04": "OPEN",
+    "f3": "OPEN",
+    "f6": "OPEN",
+    "f7": "OPEN"
+  }
+}

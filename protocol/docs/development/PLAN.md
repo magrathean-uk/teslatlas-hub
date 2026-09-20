@@ -93,6 +93,23 @@ Cold-cache offline dependency installation, remote-wire smoke, Hub catalog
 install/update/status/rollback/removal, downstream final-product admission and the F5
 real-input assertions remain open.
 
+The same exact runtime source then passed a separate current-source PRO-04 cache
+provenance slice on macOS 27 ARM64. A fresh physical export and genuinely empty
+task-owned `uv` cache/environment performed one locked Python 3.11 online seed,
+installed 32 distributions and passed 142/142 tests plus 31/31 conformance. After
+deleting the environment, `UV_OFFLINE=1` reinstalled from the exact seeded cache
+under a macOS sandbox that denied remote IP networking while retaining only the
+loopback and task-local Unix sockets required by synthetic checks; the same checker
+passed and the developer bundle reproduced byte-for-byte at SHA-256
+`8ac5ccfa03d8432284b7045e0ec93b66254897d9ec96a9a7d516fd112eb1b8be`.
+The 1,606-entry cache manifest remained identical at SHA-256
+`946223efa9759909e20bbdf5a8e43d9f160418e5ec37d8b32a8198fa3e6d5417`.
+Independent Sol/high review returned `ACCEPT` with no P1/P2. This proves an empty-cache
+online seed followed by exact cache-seeded offline reinstall/check/bundle reproduction;
+it does not prove cold-cache offline installation because the bundle contains no
+wheels, nor full PRO-04/F3/F6. See
+`docs/development/f3-f6-pro04-current-source-cold-cache-offline-reinstall-2026-09-20-r1.json`.
+
 ## F6 current-source catalog handoff
 
 The bounded source-only handoff is pinned to the accepted Docker runtime-source commit

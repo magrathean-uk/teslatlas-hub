@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Protocol",
-  "updated_at": "2026-09-19T21:05:25Z",
-  "update_scope": "f6_current_source_catalog_handoff_independently_reviewed",
+  "updated_at": "2026-09-20T06:07:48Z",
+  "update_scope": "f3_f6_pro04_current_source_cold_cache_offline_reinstall_independent_acceptance",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_ACCEPTED",
   "source_objective_state": "HUB_COMPATIBLE_CURRENT_SOURCE_HANDOFF_PREPARED_REMAINING_F3_F6_OPEN",
@@ -13,16 +13,16 @@
   "accepted_gate_ids": [
     "G3"
   ],
-  "planning_state": "F3_F6_NATIVE_AND_DOCKER_SLICES_ACCEPTED_SOURCE_HANDOFF_PREPARED_REMAINING_GATES_OPEN",
+  "planning_state": "F3_F6_NATIVE_DOCKER_AND_CURRENT_SOURCE_CACHE_PROVENANCE_SLICES_ACCEPTED_SOURCE_HANDOFF_PREPARED_REMAINING_GATES_OPEN",
   "objective": "Complete every documented Protocol profile and conformance surface, real-input semantic evidence, reproducible developer distribution and final ecosystem admission.",
   "source": {
-    "review_base_head": "e82ed205f728cff3cf1e2ceab0ceb40692c562d6",
+    "review_base_head": "08b05cfab0f408997b02ec06fbfdb5319e93c487",
     "branch": "main",
     "dirty_entries_at_goal_activation": 1,
     "tracked_dirty_entries_at_goal_activation": 0,
     "g3_accepted_runtime_source_head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
-    "checked_at": "2026-09-19T21:05:25Z",
-    "remote_relation": "At independent review start, local HEAD, cached origin/main and unauthenticated public ls-remote main all matched evidence-only review base e82ed205f728cff3cf1e2ceab0ceb40692c562d6; accepted Docker runtime-source commit 53b5c6483990db84e5214176755f398e93d87b1b is its direct ancestor",
+    "checked_at": "2026-09-20T06:07:48Z",
+    "remote_relation": "Before the PRO-04 current-source cache cohort, local HEAD and origin/main matched metadata head 08b05cfab0f408997b02ec06fbfdb5319e93c487; accepted runtime-source commit 53b5c6483990db84e5214176755f398e93d87b1b is its ancestor and was the exact exported source exercised.",
     "docker_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
     "catalog_cohort_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
     "catalog_cohort_source_tree": "931507b56c641d330d3a75513f3eb1f88f24e219",
@@ -55,7 +55,9 @@
     "The guest returned to zero Docker images/containers/volumes/cache, its temporary context was removed, it was stopped, port 60022 closed and the heavy-build lock was released.",
     "A deterministic clean export of accepted runtime-source commit 53b5c648...d87b1b binds all 188 regular files in the tracked complete manifest; the Hub algorithm includes 187 files, excludes only AGENTS.md, and reproducibly yields source_sha256 a4b68800...046c for product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926.",
     "The source handoff intentionally contains no Protocol artifacts because the Hub catalog schema forbids them. It is prepared input only: Hub recomputation/admission and catalog lifecycle remain open, with no runtime or gate acceptance claimed.",
-    "Independent bounded review reproduced the clean archive, complete manifest aggregate, Hub source aggregate and profile digest; confirmed public unauthenticated main reachability and exact ancestry; found no remaining P1/P2 defects."
+    "Independent bounded review reproduced the clean archive, complete manifest aggregate, Hub source aggregate and profile digest; confirmed public unauthenticated main reachability and exact ancestry; found no remaining P1/P2 defects.",
+    "Exact runtime source 53b5c648 then passed a separate PRO-04 cache-provenance slice: one locked Python 3.11 seed from a genuinely empty task cache/environment installed 32 distributions and passed 142/142 tests plus 31/31 conformance; after environment deletion, UV_OFFLINE locked reinstall under enforced remote-network denial passed the same checker and reproduced bundle 8ac5ccfa byte-for-byte.",
+    "The 1,606-entry seeded cache manifest, including 1,342 files, remained identical at SHA-256 946223efa9759909e20bbdf5a8e43d9f160418e5ec37d8b32a8198fa3e6d5417. Independent Sol/high review returned ACCEPT with no P1/P2. This is not cold-cache offline installation because the bundle contains no wheels."
   ],
   "evidence_paths": [
     "docs/development/g3-compatibility-admission-2026-09-19-r2.json",
@@ -63,13 +65,14 @@
     "docs/development/f3-f6-linux-arm64-docker-checker-2026-09-19-r1.json",
     "docs/development/f3-f6-linux-arm64-docker-checker-2026-09-19-r2.json",
     "docs/development/f6-current-source-manifest-53b5c648-2026-09-19.json",
-    "docs/development/f6-current-source-handoff-2026-09-19-r1.json"
+    "docs/development/f6-current-source-handoff-2026-09-19-r1.json",
+    "docs/development/f3-f6-pro04-current-source-cold-cache-offline-reinstall-2026-09-20-r1.json"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed workspace ledger maps every rich, current-Hub and Edge contract claim.",
     "F3: the native bundle foundation is independently accepted; prove independent adapters and fail-closed compatibility for all final active consumers.",
     "F5: mandatory fresh named-source and passive evidence must validate real semantics and any resulting contract delta.",
-    "F6: the exact-source native ARM64 Docker slice is independently accepted and its bounded Hub-compatible source candidate is prepared; Hub must independently recompute and admit it, then prove remote-wire smoke and catalog install/update/status/rollback/removal against exact admitted commits.",
+    "F6: the exact-source native ARM64 Docker and current-source cache-provenance slices are independently accepted and the bounded Hub-compatible source candidate is prepared; Hub must independently recompute and admit it, then prove remote-wire smoke and catalog install/update/status/rollback/removal against exact admitted commits. Bundle-contained cold-cache offline installation remains unproved.",
     "F7: admit exact final product artifacts and pass combined readback without validator weakening."
   ],
   "next_goal_draft": {
@@ -85,6 +88,28 @@
     ],
     "execution_authorized": true
   },
+  "current_f3_f6_pro04_cache_provenance_slice": {
+    "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "receipt": "docs/development/f3-f6-pro04-current-source-cold-cache-offline-reinstall-2026-09-20-r1.json",
+    "runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
+    "source_tree": "931507b56c641d330d3a75513f3eb1f88f24e219",
+    "git_archive_sha256": "61a4a5d237bcd462d8cc454a98322fbc4c8f1eef5ae864532628917c8ec40d6c",
+    "developer_bundle_sha256": "8ac5ccfa03d8432284b7045e0ec93b66254897d9ec96a9a7d516fd112eb1b8be",
+    "uv_lock_sha256": "1c9c22f18a85c1ae18c0f2166caba69f41fbac9f5001b9ce04b947540e2c2157",
+    "installed_distributions": 32,
+    "seeded_cache_entries": 1606,
+    "seeded_cache_regular_files": 1342,
+    "seeded_cache_manifest_sha256": "946223efa9759909e20bbdf5a8e43d9f160418e5ec37d8b32a8198fa3e6d5417",
+    "phase_a": "Genuinely empty cache/environment; locked online seed; 142/142 tests and 31/31 conformance; bundle verified.",
+    "phase_b": "Phase-A environment deleted; UV_OFFLINE locked reinstall under verified remote-IP denial; 142/142 tests and 31/31 conformance; byte-identical bundle and unchanged cache/dependency manifests.",
+    "evidence_summary_sha256": "337b3cf6678cc096f7ff5bb307a3f28e488c3c79d53c14deee3fd156318f5fad",
+    "evidence_manifest_sha256": "834f2d86a23a84ca3e73203b302b27ca2cf21b67ffde995e821fd6b17998af5c",
+    "evidence_manifest_entry_count": 40,
+    "cleanup_complete": true,
+    "publication_state": "PENDING_RECEIPT_COMMIT",
+    "independent_review": "ACCEPT by gpt-5.6-sol/high with no P1/P2 after exact evidence/source/archive/cache/dependency/checker/bundle/sandbox/cleanup recomputation.",
+    "acceptance_limit": "Cold-cache online locked seed followed by exact cache-seeded offline reinstall/check/bundle reproduction only. The bundle contains no wheels, so cold-cache offline dependency installation, full PRO-04/F3/F6, remote-wire, catalog lifecycle, downstream consumers, F5 and F7 remain open."
+  },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/teslatlas-protocol/docs/development/STATUS.json",
     "sha256": "03892ffb0700dfafb7d65303dd23c6c9cec2a39c6326742b8bf34800cfc17e1e",
@@ -96,12 +121,12 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "The authorized retained Debian ARM64 guest was used and stopped. Exact-source containers ran only with --rm --network none; no service, published port, Teslatlas listener or private input was created. All lane images, containers, volumes, cache and temporary build context were removed, port 60022 closed and the heavy-build lock was released.",
+  "runtime_state": "The authorized retained Debian ARM64 guest was used and stopped. Exact-source containers ran only with --rm --network none; no service, published port, Teslatlas listener or private input was created. All lane images, containers, volumes, cache and temporary build context were removed, port 60022 closed and the heavy-build lock was released. The later macOS PRO-04 task removed its exact source export, environment, seeded cache, archives and temporary root without acquiring the shared lock; the original checkout remained unchanged except its pre-existing .serena cache.",
   "acceptance_limits": [
     "No App integration acceptance",
     "No real-data parity or production acceptance",
-    "The exact-source native ARM64 Docker slice is independently accepted and its source handoff is prepared only; Hub catalog admission/lifecycle, remote-wire smoke, cold-cache dependency installation, downstream final-product admission and F5 named/passive inputs remain open",
-    "No cold-cache offline dependency install is claimed; offline reinstall used an exact cache seeded from uv.lock",
+    "The exact-source native ARM64 Docker and current-source cache-provenance slices are independently accepted and the source handoff is prepared only; Hub catalog admission/lifecycle, remote-wire smoke, bundle-contained cold-cache offline dependency installation, downstream final-product admission and F5 named/passive inputs remain open",
+    "No cold-cache offline dependency install is claimed; the accepted current-source offline reinstall used an exact cache seeded once online from uv.lock",
     "Viewer excluded; x86/Intel paused"
   ]
 }
