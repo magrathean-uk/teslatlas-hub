@@ -136,8 +136,12 @@
   },
   "publication": {
     "implementation_commit": "e0b290e9d6d086ff75921596dcddfd497a077c7f",
-    "metadata_commit": null,
-    "metadata_state": "PENDING_COMMIT_AND_PUBLIC_READBACK"
+    "metadata_commit": "e3d9074c01ead7dad0a9dc10435d30f21652777f",
+    "metadata_state": "RECEIPT_AND_EVIDENCE_PUSHED_AND_READ_BACK",
+    "local_head_after_push": "e3d9074c01ead7dad0a9dc10435d30f21652777f",
+    "origin_main_after_push": "e3d9074c01ead7dad0a9dc10435d30f21652777f",
+    "live_remote_main_after_push": "e3d9074c01ead7dad0a9dc10435d30f21652777f",
+    "verified_at": "2026-09-20T03:54:14Z"
   },
   "acceptance": {
     "f6_container_image_reproducibility": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
