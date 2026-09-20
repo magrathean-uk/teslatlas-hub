@@ -2,6 +2,7 @@
   "schema_version": 1,
   "kind": "teslatlas-swift-f3-native-linux-arm64-platform-gate",
   "created_at": "2026-09-20T01:23:20Z",
+  "updated_at": "2026-09-20T01:28:00Z",
   "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
   "scope": "Native Linux ARM64 Swift 6.0.3 package build and execution of the accepted four-product external consumer",
   "source": {
@@ -9,7 +10,8 @@
     "branch": "main",
     "review_base_head": "f53738c6676974e241e49c8f7edf6aad69748c23",
     "accepted_handoff_source_commit": "d7ac4488fc5908015e8de55cd57983ea87172266",
-    "publication_state_at_receipt_freeze": "AUTHORIZED_PENDING_COMMIT_AND_PUSH"
+    "implementation_commit": "16efaf5a0093e87bf7a481a2e3ee0caf9cd7d31e",
+    "publication_state_at_receipt_freeze": "PUBLISHED_AT_16EFAF5A0093E87BF7A481A2E3EE0CAF9CD7D31E"
   },
   "accepted_inputs": {
     "protocol_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",

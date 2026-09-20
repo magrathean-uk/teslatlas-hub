@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "product": "Swift SDK",
-  "updated_at": "2026-09-20T01:23:20Z",
+  "updated_at": "2026-09-20T01:28:00Z",
   "update_scope": "f3_native_linux_arm64_platform_gate_independently_accepted",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G6_G7_ACCEPTED",
@@ -18,13 +18,13 @@
   "planning_state": "F3_MACOS14_IOS17_AND_LIVE_BEHAVIOR_PLUS_F6_HUB_ADMISSION_OPEN",
   "objective": "Complete all four public SwiftPM libraries on iOS 17, macOS 14 Apple silicon and supported Linux ARM64, including package lifecycle, mandatory real-input semantics and final installed consumers.",
   "source": {
-    "head": "f98dde980c8fecf994917e3470950a3d853b4cc7",
-    "head_role": "native_linux_arm64_gate_review_base",
+    "head": "16efaf5a0093e87bf7a481a2e3ee0caf9cd7d31e",
+    "head_role": "native_linux_arm64_gate_implementation_commit",
     "branch": "main",
     "dirty_entries_at_goal_activation": 10,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "51494612db6aa3d0b0dafd08001ce432befa7fbf",
-    "checked_at": "2026-09-20T01:23:20Z",
+    "checked_at": "2026-09-20T01:28:00Z",
     "cached_origin_main_at_review_start": "f53738c6676974e241e49c8f7edf6aad69748c23",
     "anonymous_public_main_at_review_start": "f53738c6676974e241e49c8f7edf6aad69748c23"
   },
@@ -148,7 +148,8 @@
     "focused_host_tests": "20/20 passed",
     "cleanup_verified": true,
     "review_state": "ACCEPTED_NO_REMAINING_P1_P2_FINDINGS",
-    "publication_state_at_status_freeze": "AUTHORIZED_PENDING_COMMIT_AND_PUSH",
+    "implementation_commit": "16efaf5a0093e87bf7a481a2e3ee0caf9cd7d31e",
+    "publication_state_at_status_freeze": "PUBLISHED_AT_16EFAF5A0093E87BF7A481A2E3EE0CAF9CD7D31E",
     "live_hub_behavior_accepted": false,
     "f3_accepted": false
   },
