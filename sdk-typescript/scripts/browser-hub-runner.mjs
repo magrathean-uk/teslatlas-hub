@@ -32,6 +32,10 @@ export async function runBrowserHubAcceptance() {
       new URL("./drive-pagination.mjs", import.meta.url),
       "utf8",
     );
+    const browserPairingPreflightModule = await readFile(
+      new URL("./browser-pairing-preflight.mjs", import.meta.url),
+      "utf8",
+    );
     const packedSdk = await verifyPackedSdk({
       packageRoot: required("TESLATLAS_HUB_SDK_PACKAGE_ROOT"),
       tarballPath: required("TESLATLAS_HUB_SDK_TARBALL"),
@@ -52,10 +56,15 @@ export async function runBrowserHubAcceptance() {
       "expected drive count",
     );
     const origin = new URL(required("TESLATLAS_HUB_BROWSER_ORIGIN"));
-    if (origin.hostname !== "localhost" || origin.protocol !== "http:" || origin.pathname !== "/")
-      throw new Error("browser origin must be http://localhost:PORT");
+    if (
+      (origin.hostname !== "localhost" && origin.hostname !== "127.0.0.1") ||
+      origin.protocol !== "http:" ||
+      origin.pathname !== "/"
+    ) {
+      throw new Error("browser origin must be an explicit HTTP loopback origin");
+    }
     const endpoint = new URL(descriptor.endpoint);
-    endpoint.hostname = "localhost";
+    endpoint.hostname = origin.hostname;
     const config = {
       endpoint: endpoint.href.replace(/\/$/u, ""),
       hubId: descriptor.hub_id,
@@ -65,7 +74,13 @@ export async function runBrowserHubAcceptance() {
     };
     const sdk = packedSdk.entry;
     const html = browserRouteHtml();
-    resources.server = createHelperServer({ html, config, sdk, drivePaginationModule });
+    resources.server = createHelperServer({
+      html,
+      config,
+      sdk,
+      drivePaginationModule,
+      browserPairingPreflightModule,
+    });
     const listenPort = Number(process.env.TESLATLAS_HUB_BROWSER_LISTEN_PORT ?? origin.port);
     await listen(resources.server, listenPort);
 
@@ -189,7 +204,13 @@ function attachCleanupErrors(error, cleanupErrors) {
   if (error instanceof Error) error.cleanupError = cleanupError;
 }
 
-function createHelperServer({ html, config, sdk, drivePaginationModule }) {
+function createHelperServer({
+  html,
+  config,
+  sdk,
+  drivePaginationModule,
+  browserPairingPreflightModule,
+}) {
   return http.createServer((request, response) => {
     if (request.url === "/") return response.end(html);
     if (request.url === "/config.json") {
@@ -204,6 +225,10 @@ function createHelperServer({ html, config, sdk, drivePaginationModule }) {
       response.setHeader("content-type", "text/javascript");
       return response.end(drivePaginationModule);
     }
+    if (request.url === "/browser-pairing-preflight.mjs") {
+      response.setHeader("content-type", "text/javascript");
+      return response.end(browserPairingPreflightModule);
+    }
     response.writeHead(404).end();
   });
 }
@@ -212,11 +237,12 @@ function browserRouteHtml() {
   return `<!doctype html><meta charset="utf-8"><script type="module">
 import { createHubClient } from "/sdk.js";
 import { collectDrivePages } from "/drive-pagination.mjs";
+import { createProvisionedBrowserClientAndCheckPairing } from "/browser-pairing-preflight.mjs";
 const config = await (await fetch("/config.json")).json();
 let credential = config.credential;
 const credentials = { load: () => credential, save: value => { credential = value; }, clear: () => { credential = undefined; } };
 try {
- const client = createHubClient({endpoint: config.endpoint, expectedHubId: config.hubId, credentials});
+ const {client, pairing, readsUseDefaultFetch} = await createProvisionedBrowserClientAndCheckPairing({createHubClient, endpoint:config.endpoint, hubId:config.hubId, credentials});
  const discovery = await client.discover(); await client.readiness();
  const vehicles = await client.vehicles();
  if (vehicles.value.vehicles.length === 0) throw new Error("fixture returned no vehicles");
@@ -234,7 +260,7 @@ try {
   if (after304.kind !== "page") throw new Error("cursor continuation after 304 failed");
  }
  await client.rotateDevice(); await client.vehicles(); client.dispose();
- window.__teslatlasResult = {ok:true, hubId:discovery.value.hubId, vehicleCount:vehicles.value.vehicles.length, driveCount, drivePageCount:pages.length, drivePageLimit:config.driveLimit, expectedDriveCount:config.expectedDriveCount, drivePageIds:pages.map(page => page.value.items.map(item => String(item.id))), terminalCursor:pages.at(-1).value.nextCursor === null, notModified:refresh.kind === "notModified", post304CursorIds:after304?.value.items.map(item => String(item.id)) ?? [], defaultFetch:true, pageOrigin:location.origin};
+ window.__teslatlasResult = {ok:true, hubId:discovery.value.hubId, vehicleCount:vehicles.value.vehicles.length, driveCount, drivePageCount:pages.length, drivePageLimit:config.driveLimit, expectedDriveCount:config.expectedDriveCount, drivePageIds:pages.map(page => page.value.items.map(item => String(item.id))), terminalCursor:pages.at(-1).value.nextCursor === null, notModified:refresh.kind === "notModified", post304CursorIds:after304?.value.items.map(item => String(item.id)) ?? [], browserPairing:pairing, defaultFetch:readsUseDefaultFetch, pageOrigin:location.origin};
 } catch (error) { window.__teslatlasResult = {ok:false, error:String(error?.stack ?? error)}; }
 </script>`;
 }

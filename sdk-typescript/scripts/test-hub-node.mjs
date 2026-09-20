@@ -60,6 +60,10 @@ const refresh = await client.drives(vehicleId, {
   ifNoneMatch: firstDrivePage.metadata.etag,
 });
 if (refresh.kind !== "notModified") throw new Error("conditional drives refresh was not 304");
+const invalidLimitError = await captureError(client.drives(vehicleId, { limit: 501 }));
+if (invalidLimitError?.code !== "invalid_limit" || invalidLimitError?.status !== 400) {
+  throw new Error("invalid drive limit did not return the typed invalid_limit Hub error");
+}
 let post304CursorPage;
 if (firstDrivePage.value.nextCursor !== null) {
   post304CursorPage = await client.drives(vehicleId, {
@@ -82,6 +86,10 @@ const receipt = {
   drivePageCount: drivePages.length,
   drivePageLimit: driveLimit,
   driveEtag304: true,
+  typedInvalidLimitError: {
+    code: invalidLimitError.code,
+    status: invalidLimitError.status,
+  },
   cursorContinuationAfter304: post304CursorPage !== undefined,
   invitationClaim: "passed",
   credentialRotation: "passed",
@@ -125,4 +133,13 @@ function optionalInteger(value, label) {
     throw new Error(`${label} must be a non-negative integer`);
   }
   return parsed;
+}
+
+async function captureError(promise) {
+  try {
+    await promise;
+    return undefined;
+  } catch (error) {
+    return error;
+  }
 }
