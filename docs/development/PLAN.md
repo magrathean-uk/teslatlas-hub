@@ -343,22 +343,55 @@ independent clean archives of pushed Hub commit
 `1b6dc00379819869f4cd8ed8897c2f1f915023a2`. The original package builder produced
 different `control.tar.xz`, `data.tar.xz` and complete `.deb` bytes even though both
 release binaries and every extracted payload file were identical; fresh staging and
-ar/tar wall-clock mtimes were the only observed delta. The uncommitted correction
-requires the selected commit's explicit `SOURCE_DATE_EPOCH` and exports it to
+ar/tar wall-clock mtimes were the only observed delta. The then-uncommitted correction,
+now published at `1e6132aa826aaff83a7c4899604ee4c59e2f852e`, requires the selected
+commit's explicit `SOURCE_DATE_EPOCH` and exports it to
 `dpkg-deb`. Two fresh corrected builds now match completely at package SHA-256
 `73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a` and binary
 SHA-256 `2b7c071614c9cb31e2fb3ac4b666b636ff8aae33035d661c09c4b935d5a0fd3c`;
 all ar members, control/data metadata and extracted payload hashes match, and the
 embedded source is the exact public `/tree/1b6dc003…` URL. The retained packages
 bind to the original built patch;
-the current candidate adds only stricter malformed-epoch rejection and its focused
+the published implementation adds only stricter malformed-epoch rejection and its focused
 tests, so package bytes were not rebuilt after that valid-input-output-neutral delta.
 Independent Sol/high review accepted the bounded slice after closing both the
 whole-value validation gap and the built/current/delta evidence identity gap, with
 no remaining P1/P2 findings. Source commit
 `1e6132aa826aaff83a7c4899604ee4c59e2f852e` was pushed and read back exactly from
 `origin/main` and the live remote. This is a bounded package-byte/source-identity result, not
-complete HUB-03, F1 or F6 acceptance; no package lifecycle cohort was repeated.
+complete HUB-03, F1 or F6 acceptance. That receipt itself did not repeat a package
+lifecycle; the separate later cohort below does.
+
+The exact retained reproducible package was then exercised once in a fresh Debian 13
+ARM64 ordinary dpkg/systemd cohort without rebuilding or downloading it. Package
+SHA-256 `73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a`,
+binary SHA-256 `2b7c071614c9cb31e2fb3ac4b666b636ff8aae33035d661c09c4b935d5a0fd3c`,
+version `2026.36.2-1`, architecture `arm64` and embedded public source
+`/tree/1b6dc003…` all matched before installation. The package created the expected
+service identity, permissions and hardened unit, then passed bootstrap, a pristine
+first strict-TLS start with zero retries, positive and wrong-name health checks,
+explicit restart PID/Hub/config continuity, verified scoped data backup and
+separate-root restore with a fresh cursor key, and rejection of a deliberately corrupt
+Debian-envelope copy without changing installed state. Ordinary `dpkg -r` removed the
+binary/unit/listener while preserving the service user, config, TLS and data; normal
+clean-shutdown checkpointing changed database bytes, so byte identity is not claimed,
+but installation identity and SQLite quick-check remained exact.
+
+The deterministic 59-file evidence bundle is SHA-256
+`36251a9213258bcaba232dac89c5d6931fcaa36813231891401f26a6fc9e6ed2`
+with 58-entry manifest
+`2423f97d534be020906bfacec9ad60a74b8b8a6b1bd2e1a8271ab0535b53c910`.
+Independent Sol/high review revalidated the Debian ar/xz envelope, package/binary/source
+identity, every payload and archive byte, secret scan, cleanup and current host state,
+returning `ACCEPT` with no P1/P2. The final purge removed exact package state,
+config/TLS/data, user/group, units, processes, listeners and private roots; the guest is
+stopped, SSH is closed, the lock is released and the retained host package is unchanged.
+This binds exact reproducible package bytes to a bounded synthetic no-credential
+HUB-03/HUB-11 lifecycle. It does not prove genuine update/rollback,
+credential/pairing recovery, real collection, retention/repair/migration, Fleet,
+complete clean-host recovery, public release, complete HUB-03/HUB-11, F1, F6 or F7;
+see
+`docs/development/f1-f6-debian13-arm64-package-systemd-lifecycle-2026-09-20-r1.json`.
 
 The bounded native ARM64 container image-byte reproducibility slice is independently
 accepted at published implementation commit
