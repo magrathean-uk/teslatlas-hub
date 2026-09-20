@@ -24,6 +24,8 @@ enum ConsumerError: Error, Equatable, Sendable {
   case oldCredentialAccepted
   case invalidRestartGate
   case restartTimeout
+  case restartSemanticMismatch
+  case privateOutputFailure
 }
 
 struct ConsumerConfig: Decodable, Sendable {
@@ -34,6 +36,13 @@ struct ConsumerConfig: Decodable, Sendable {
   let invitationPath: String
   let caPath: String?
   let deviceName: String
+  let expectedVehicleCount: Int
+  let expectedObservedCount: Int
+  let expectedAbsentCount: Int
+  let expectedDriveCounts: [Int]?
+  let deriveLatestDriveBoundaryChecks: Bool
+  let semanticSnapshotPath: String
+  let cleanupDeviceIDPath: String
   let vehicleID: UUID?
   let driveFromMilliseconds: Int64?
   let driveToMilliseconds: Int64?
@@ -46,6 +55,9 @@ struct ConsumerConfig: Decodable, Sendable {
     case invitationPath
     case caPath
     case deviceName
+    case expectedVehicleCount, expectedObservedCount, expectedAbsentCount
+    case expectedDriveCounts, deriveLatestDriveBoundaryChecks
+    case semanticSnapshotPath, cleanupDeviceIDPath
     case vehicleID
     case driveFromMilliseconds = "driveFromMs"
     case driveToMilliseconds = "driveToMs"
@@ -66,6 +78,16 @@ struct ConsumerConfig: Decodable, Sendable {
     invitationPath = try container.decode(String.self, forKey: .invitationPath)
     caPath = try container.decodeIfPresent(String.self, forKey: .caPath)
     deviceName = try container.decode(String.self, forKey: .deviceName)
+    expectedVehicleCount = try container.decode(Int.self, forKey: .expectedVehicleCount)
+    expectedObservedCount = try container.decode(Int.self, forKey: .expectedObservedCount)
+    expectedAbsentCount = try container.decode(Int.self, forKey: .expectedAbsentCount)
+    expectedDriveCounts = try container.decodeIfPresent([Int].self, forKey: .expectedDriveCounts)
+    deriveLatestDriveBoundaryChecks = try container.decodeIfPresent(
+      Bool.self,
+      forKey: .deriveLatestDriveBoundaryChecks
+    ) ?? false
+    semanticSnapshotPath = try container.decode(String.self, forKey: .semanticSnapshotPath)
+    cleanupDeviceIDPath = try container.decode(String.self, forKey: .cleanupDeviceIDPath)
     vehicleID = try container.decodeIfPresent(UUID.self, forKey: .vehicleID)
     driveFromMilliseconds = try container.decodeIfPresent(
       Int64.self,
@@ -77,6 +99,9 @@ struct ConsumerConfig: Decodable, Sendable {
     )
     restartReadyPath = try container.decodeIfPresent(String.self, forKey: .restartReadyPath)
     restartContinuePath = try container.decodeIfPresent(String.self, forKey: .restartContinuePath)
+    let (expectedCurrentCount, countOverflow) = expectedObservedCount.addingReportingOverflow(
+      expectedAbsentCount
+    )
 
     guard endpoint.scheme?.lowercased() == "https",
       endpoint.host != nil,
@@ -92,6 +117,19 @@ struct ConsumerConfig: Decodable, Sendable {
       !deviceName.isEmpty,
       deviceName.utf8.count <= 65_536,
       deviceName.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }),
+      expectedVehicleCount > 0,
+      expectedObservedCount >= 0,
+      expectedAbsentCount >= 0,
+      !countOverflow,
+      expectedCurrentCount == expectedVehicleCount,
+      (expectedDriveCounts.map { counts in
+        counts.count == expectedVehicleCount && counts.allSatisfy({ $0 >= 0 })
+      } ?? (expectedVehicleCount == 3)),
+      !semanticSnapshotPath.isEmpty,
+      semanticSnapshotPath.utf8.count <= 4_096,
+      !cleanupDeviceIDPath.isEmpty,
+      cleanupDeviceIDPath.utf8.count <= 4_096,
+      semanticSnapshotPath != cleanupDeviceIDPath,
       vehicleID.map({ !isZeroUUID($0) }) ?? true,
       restartReadyPath.map({ !$0.isEmpty && $0.utf8.count <= 4_096 }) ?? true,
       restartContinuePath.map({ !$0.isEmpty && $0.utf8.count <= 4_096 }) ?? true
@@ -110,6 +148,67 @@ struct ConsumerConfig: Decodable, Sendable {
     guard (restartReadyPath == nil) == (restartContinuePath == nil) else {
       throw ConsumerError.invalidConfiguration
     }
+  }
+}
+
+enum OwnerOnlyExclusiveFileWriter {
+  static func write(_ data: Data, path: String) throws {
+    guard !path.isEmpty, path.utf8.count <= 4_096 else {
+      throw ConsumerError.privateOutputFailure
+    }
+    let descriptor = path.withCString { pathPointer in
+      #if canImport(Darwin)
+      Darwin.open(pathPointer, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0o600)
+      #else
+      Glibc.open(pathPointer, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0o600)
+      #endif
+    }
+    guard descriptor >= 0 else { throw ConsumerError.privateOutputFailure }
+    var succeeded = false
+    defer {
+      #if canImport(Darwin)
+      _ = Darwin.close(descriptor)
+      #else
+      _ = Glibc.close(descriptor)
+      #endif
+      if !succeeded {
+        path.withCString { pointer in
+          #if canImport(Darwin)
+          _ = Darwin.unlink(pointer)
+          #else
+          _ = Glibc.unlink(pointer)
+          #endif
+        }
+      }
+    }
+
+    var metadata = stat()
+    #if canImport(Darwin)
+    let statResult = Darwin.fstat(descriptor, &metadata)
+    #else
+    let statResult = Glibc.fstat(descriptor, &metadata)
+    #endif
+    guard statResult == 0,
+      (metadata.st_mode & S_IFMT) == S_IFREG,
+      metadata.st_uid == currentUserID(),
+      (metadata.st_mode & 0o077) == 0
+    else { throw ConsumerError.privateOutputFailure }
+
+    var written = 0
+    while written < data.count {
+      let count = data.withUnsafeBytes { rawBuffer -> Int in
+        guard let baseAddress = rawBuffer.baseAddress else { return 0 }
+        let address = baseAddress.advanced(by: written)
+        #if canImport(Darwin)
+        return Darwin.write(descriptor, address, data.count - written)
+        #else
+        return Glibc.write(descriptor, address, data.count - written)
+        #endif
+      }
+      guard count > 0 else { throw ConsumerError.privateOutputFailure }
+      written += count
+    }
+    succeeded = true
   }
 }
 
@@ -363,7 +462,7 @@ actor CurrentHubConsumerSession {
         throw ConsumerError.paginationUnexpectedNotModified
       }
       return ConsumerDrivePage(
-        itemCount: page.items.count,
+        items: page.items,
         nextCursor: page.nextCursor,
         conditionalNotModified: true
       )
@@ -401,15 +500,28 @@ actor CurrentHubConsumerSession {
 }
 
 struct ConsumerDrivePage: Equatable, Sendable {
+  let items: [CurrentHubDrive]
   let itemCount: Int
   let nextCursor: CurrentHubDriveCursor?
   let conditionalNotModified: Bool
+
+  init(
+    items: [CurrentHubDrive],
+    nextCursor: CurrentHubDriveCursor?,
+    conditionalNotModified: Bool = false
+  ) {
+    self.items = items
+    itemCount = items.count
+    self.nextCursor = nextCursor
+    self.conditionalNotModified = conditionalNotModified
+  }
 
   init(
     itemCount: Int,
     nextCursor: CurrentHubDriveCursor?,
     conditionalNotModified: Bool = false
   ) {
+    items = []
     self.itemCount = itemCount
     self.nextCursor = nextCursor
     self.conditionalNotModified = conditionalNotModified
@@ -421,6 +533,89 @@ struct ConsumerDrivePageSummary: Equatable, Sendable {
   let driveCount: Int
   let pageItemCounts: [Int]
   let conditionalNotModifiedCount: Int
+  let items: [CurrentHubDrive]
+}
+
+struct ConsumerHistoryBoundaryExpectation: Equatable, Sendable {
+  let window: String
+  let fromMilliseconds: Int64
+  let toMilliseconds: Int64
+  let expectedCount: Int
+}
+
+enum ConsumerHistoryBoundaryPlanner {
+  private static let syntheticFromMilliseconds: Int64 = 1_788_565_900_000
+  private static let syntheticEqualStartMilliseconds: Int64 = 1_788_566_200_000
+  private static let syntheticToMilliseconds: Int64 = 1_788_566_200_001
+
+  static func liveJourneyExpectations(
+    fromMilliseconds: Int64,
+    toMilliseconds: Int64,
+    primaryItems: [CurrentHubDrive],
+    expectedDriveCounts: [Int],
+    deriveLatestDriveBoundaryChecks: Bool
+  ) throws -> [ConsumerHistoryBoundaryExpectation] {
+    if !expectedDriveCounts.isEmpty, expectedDriveCounts.allSatisfy({ $0 == 0 }) {
+      return []
+    }
+    return try expectations(
+      fromMilliseconds: fromMilliseconds,
+      toMilliseconds: toMilliseconds,
+      primaryItems: primaryItems,
+      deriveLatestDriveBoundaryChecks: deriveLatestDriveBoundaryChecks
+    )
+  }
+
+  static func expectations(
+    fromMilliseconds: Int64,
+    toMilliseconds: Int64,
+    primaryItems: [CurrentHubDrive],
+    deriveLatestDriveBoundaryChecks: Bool
+  ) throws -> [ConsumerHistoryBoundaryExpectation] {
+    if !deriveLatestDriveBoundaryChecks {
+      return [
+        ConsumerHistoryBoundaryExpectation(
+          window: "before-equal-start",
+          fromMilliseconds: syntheticFromMilliseconds,
+          toMilliseconds: syntheticEqualStartMilliseconds,
+          expectedCount: 3
+        ),
+        ConsumerHistoryBoundaryExpectation(
+          window: "equal-start-only",
+          fromMilliseconds: syntheticEqualStartMilliseconds,
+          toMilliseconds: syntheticToMilliseconds,
+          expectedCount: 2
+        ),
+      ]
+    }
+
+    guard let latestStart = primaryItems.first?.startDateMilliseconds,
+      latestStart > fromMilliseconds,
+      latestStart < toMilliseconds,
+      latestStart < Int64.max
+    else { throw ConsumerError.unexpectedFixture }
+    let beforeLatestCount = primaryItems.count(where: {
+      $0.startDateMilliseconds < latestStart
+    })
+    let equalLatestCount = primaryItems.count(where: {
+      $0.startDateMilliseconds == latestStart
+    })
+    guard equalLatestCount > 0 else { throw ConsumerError.unexpectedFixture }
+    return [
+      ConsumerHistoryBoundaryExpectation(
+        window: "before-equal-start",
+        fromMilliseconds: fromMilliseconds,
+        toMilliseconds: latestStart,
+        expectedCount: beforeLatestCount
+      ),
+      ConsumerHistoryBoundaryExpectation(
+        window: "equal-start-only",
+        fromMilliseconds: latestStart,
+        toMilliseconds: latestStart + 1,
+        expectedCount: equalLatestCount
+      ),
+    ]
+  }
 }
 
 enum ConsumerDrivePager {
@@ -450,6 +645,7 @@ enum ConsumerDrivePager {
     var driveCount = 0
     var pageItemCounts: [Int] = []
     var conditionalNotModifiedCount = 0
+    var items: [CurrentHubDrive] = []
 
     while true {
       try Task.checkCancellation()
@@ -465,6 +661,7 @@ enum ConsumerDrivePager {
         throw ConsumerError.invalidDrivePage
       }
       driveCount += result.itemCount
+      items.append(contentsOf: result.items)
       pageItemCounts.append(result.itemCount)
       if result.conditionalNotModified { conditionalNotModifiedCount += 1 }
       guard let nextCursor = result.nextCursor else {
@@ -472,7 +669,8 @@ enum ConsumerDrivePager {
           pageCount: pageCount,
           driveCount: driveCount,
           pageItemCounts: pageItemCounts,
-          conditionalNotModifiedCount: conditionalNotModifiedCount
+          conditionalNotModifiedCount: conditionalNotModifiedCount,
+          items: items
         )
       }
       guard !seenCursors.contains(nextCursor) else {
@@ -581,6 +779,8 @@ enum ConsumerStatus {
     case ConsumerError.oldCredentialAccepted: return "old_credential_accepted"
     case ConsumerError.invalidRestartGate: return "invalid_restart_gate"
     case ConsumerError.restartTimeout: return "restart_timeout"
+    case ConsumerError.restartSemanticMismatch: return "restart_semantic_mismatch"
+    case ConsumerError.privateOutputFailure: return "private_output_failure"
     case ConsumerPrivateInputError.invalidPath,
       ConsumerPrivateInputError.notRegular,
       ConsumerPrivateInputError.wrongOwner,

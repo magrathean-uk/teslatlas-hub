@@ -142,6 +142,25 @@ final class CurrentHubClientTests: XCTestCase {
     XCTAssertEqual(object, ["secret": String(repeating: "0", count: 64), "device_name": "Swift Test"])
   }
 
+  func testClaimAcceptsInvitationWhosePublicURLHasATrailingSlash() async throws {
+    let invitation = try JSONDecoder().decode(
+      CurrentHubInvitation.self,
+      from: Data(
+        #"{"endpoint":"https://hub.example.invalid/","expiresAtMs":9223372036854775807,"pairingId":"11111111-1111-4111-8111-111111111111","pairingUri":"teslatlas-hub://pair?endpoint=https%3A%2F%2Fhub.example.invalid%2F&pairing_id=11111111-1111-4111-8111-111111111111&secret=0000000000000000000000000000000000000000000000000000000000000000&tls_pin=0000000000000000000000000000000000000000000000000000000000000000","secret":"0000000000000000000000000000000000000000000000000000000000000000","tlsPin":"0000000000000000000000000000000000000000000000000000000000000000"}"#.utf8
+      )
+    )
+    let (client, transport, _) = try await makeCurrentHubClient(
+      credential: nil,
+      additionalResponses: [
+        CurrentHubStubResponse(body: futureClaimResponse(token: CurrentHubTestData.tokenA))
+      ]
+    )
+
+    _ = try await client.claim(invitation: invitation, deviceName: "Swift Test")
+    let requests = await transport.requests()
+    XCTAssertEqual(requests.last?.url?.path, "/v1/pairings/11111111-1111-4111-8111-111111111111/claim")
+  }
+
   func testClaimRejectsTransportWithoutInvitationPinOwnershipBeforeSecretRequest() async throws {
     let invitation = try currentHubInvitation()
     let transport = UnpinnedCurrentHubTransport([

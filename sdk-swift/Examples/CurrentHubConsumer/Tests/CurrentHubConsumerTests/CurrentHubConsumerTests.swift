@@ -1,5 +1,8 @@
 import XCTest
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -14,12 +17,219 @@ import Glibc
 #endif
 
 final class CurrentHubConsumerTests: XCTestCase {
+  func testSemanticSnapshotMatchesCanonicalThreeVehicleReceipt() throws {
+    let vehicleIDs = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+    ]
+    let currents = try [
+      semanticCurrentJSON(
+        vehicleID: vehicleIDs[0], observedAt: "1788566400000", state: "online",
+        batteryLevel: "0", estimatedRange: "160.93", odometer: "16093.44",
+        speed: "16", insideTemperature: "21.5", outsideTemperature: "null",
+        chargerPower: "null", locked: "true"
+      ),
+      semanticCurrentJSON(vehicleID: vehicleIDs[1]),
+      semanticCurrentJSON(vehicleID: vehicleIDs[2]),
+    ].map { try JSONDecoder().decode(CurrentHubCurrentState.self, from: Data($0.utf8)) }
+    let drives = try [
+      semanticDriveJSON(id: 5, vehicleID: vehicleIDs[0], start: 1_788_566_200_000),
+      semanticDriveJSON(id: 4, vehicleID: vehicleIDs[0], start: 1_788_566_200_000),
+      semanticDriveJSON(id: 3, vehicleID: vehicleIDs[0], start: 1_788_566_100_000),
+      semanticDriveJSON(id: 2, vehicleID: vehicleIDs[0], start: 1_788_566_000_000),
+      semanticDriveJSON(
+        id: 1, vehicleID: vehicleIDs[0], start: 1_788_565_900_000,
+        distance: "null", duration: "null"
+      ),
+    ].map { try JSONDecoder().decode(CurrentHubDrive.self, from: Data($0.utf8)) }
+
+    let data = try ConsumerSemanticSnapshot.encode(
+      vehicles: [
+        ConsumerSemanticVehicle(current: currents[0], drives: drives),
+        ConsumerSemanticVehicle(current: currents[1], drives: []),
+        ConsumerSemanticVehicle(current: currents[2], drives: []),
+      ],
+      fromMilliseconds: 1_788_565_900_000,
+      toMilliseconds: 1_788_566_200_001,
+      boundaryChecks: [
+        ConsumerHistoryBoundaryCheck(
+          window: "before-equal-start", fromMilliseconds: 1_788_565_900_000,
+          toMilliseconds: 1_788_566_200_000, count: 3
+        ),
+        ConsumerHistoryBoundaryCheck(
+          window: "equal-start-only", fromMilliseconds: 1_788_566_200_000,
+          toMilliseconds: 1_788_566_200_001, count: 2
+        ),
+      ]
+    )
+
+    XCTAssertEqual(data.count, 2_959)
+    #if canImport(CryptoKit)
+      XCTAssertEqual(
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
+        "20b164b499673ba207136dcb0107d8c8d74170029721125442914b99f3ae173a"
+      )
+    #endif
+    let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(Set(root.keys), [
+      "schema_version", "profile", "vehicle_order", "vehicles",
+      "history_boundary_checks", "null_rule", "stale_rule",
+    ])
+    let vehicles = try XCTUnwrap(root["vehicles"] as? [[String: Any]])
+    XCTAssertEqual(vehicles.count, 3)
+    let boundaries = try XCTUnwrap(root["history_boundary_checks"] as? [[String: Any]])
+    XCTAssertEqual(boundaries.map { ($0["count"] as? NSNumber)?.intValue }, [3, 2])
+    XCTAssertEqual(boundaries.map { ($0["from_ms"] as? NSNumber)?.int64Value }, [
+      1_788_565_900_000, 1_788_566_200_000,
+    ])
+    XCTAssertEqual(boundaries.map { ($0["to_ms"] as? NSNumber)?.int64Value }, [
+      1_788_566_200_000, 1_788_566_200_001,
+    ])
+    let firstCurrent = try XCTUnwrap(vehicles[0]["current"] as? [String: Any])
+    XCTAssertEqual((firstCurrent["battery_level"] as? [String: Any])?["value"] as? Int, 0)
+    XCTAssertTrue((firstCurrent["outside_temperature"] as? [String: Any])?["value"] is NSNull)
+    let firstHistory = try XCTUnwrap(vehicles[0]["history"] as? [String: Any])
+    let order = try XCTUnwrap(firstHistory["order"] as? [[String: Any]])
+    XCTAssertEqual(order.prefix(2).compactMap { ($0["start_date_ms"] as? NSNumber)?.int64Value }, [
+      1_788_566_200_000, 1_788_566_200_000,
+    ])
+    XCTAssertTrue((order.last?["distance"] as? [String: Any])?["value"] is NSNull)
+    XCTAssertTrue((order.last?["duration"] as? [String: Any])?["value"] is NSNull)
+    XCTAssertFalse(containsPrivateSemanticMaterial(root, vehicleIDs: vehicleIDs))
+  }
+
+  func testRestartContinuityRejectsChangedOrLostDataAtTheSameVehicleCount() throws {
+    let firstVehicleID = "11111111-1111-4111-8111-111111111111"
+    let secondVehicleID = "22222222-2222-4222-8222-222222222222"
+    let initialCurrents = try [
+      semanticCurrentJSON(
+        vehicleID: firstVehicleID, observedAt: "1788566400000", state: "online",
+        batteryLevel: "80"
+      ),
+      semanticCurrentJSON(vehicleID: secondVehicleID),
+    ].map { try JSONDecoder().decode(CurrentHubCurrentState.self, from: Data($0.utf8)) }
+    let changedCurrents = try [
+      semanticCurrentJSON(
+        vehicleID: firstVehicleID, observedAt: "1788566400000", state: "online",
+        batteryLevel: "79"
+      ),
+      semanticCurrentJSON(vehicleID: secondVehicleID),
+    ].map { try JSONDecoder().decode(CurrentHubCurrentState.self, from: Data($0.utf8)) }
+    let drives = try [
+      semanticDriveJSON(id: 2, vehicleID: firstVehicleID, start: 8_000),
+      semanticDriveJSON(id: 1, vehicleID: firstVehicleID, start: 5_000),
+    ].map { try JSONDecoder().decode(CurrentHubDrive.self, from: Data($0.utf8)) }
+    let boundaries = [
+      ConsumerHistoryBoundaryCheck(
+        window: "before-equal-start", fromMilliseconds: 1_000,
+        toMilliseconds: 8_000, count: 1
+      ),
+      ConsumerHistoryBoundaryCheck(
+        window: "equal-start-only", fromMilliseconds: 8_000,
+        toMilliseconds: 8_001, count: 1
+      ),
+    ]
+    func snapshot(currents: [CurrentHubCurrentState], drives: [CurrentHubDrive]) throws -> Data {
+      XCTAssertEqual(currents.count, 2)
+      return try ConsumerSemanticSnapshot.encode(
+        vehicles: [
+          ConsumerSemanticVehicle(current: currents[0], drives: drives),
+          ConsumerSemanticVehicle(current: currents[1], drives: []),
+        ],
+        fromMilliseconds: 1_000,
+        toMilliseconds: 9_001,
+        boundaryChecks: boundaries
+      )
+    }
+
+    let beforeRestart = try snapshot(currents: initialCurrents, drives: drives)
+    let changedAfterRestart = try snapshot(currents: changedCurrents, drives: drives)
+    let lostAfterRestart = try snapshot(currents: initialCurrents, drives: [drives[0]])
+
+    for afterRestart in [changedAfterRestart, lostAfterRestart] {
+      XCTAssertThrowsError(
+        try ConsumerSemanticSnapshot.requireUnchanged(
+          before: beforeRestart,
+          after: afterRestart
+        )
+      ) { error in
+        XCTAssertEqual(error as? ConsumerError, .restartSemanticMismatch)
+      }
+    }
+  }
+
+  func testExclusiveWriterCreatesOwnerOnlyRegularFileAndRejectsExistingOrSymlink() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("current-hub-output-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let output = directory.appendingPathComponent("snapshot.json")
+    try OwnerOnlyExclusiveFileWriter.write(Data("private".utf8), path: output.path)
+
+    var metadata = stat()
+    XCTAssertEqual(lstat(output.path, &metadata), 0)
+    XCTAssertEqual(metadata.st_mode & S_IFMT, S_IFREG)
+    XCTAssertEqual(metadata.st_uid, getuid())
+    XCTAssertEqual(metadata.st_mode & 0o777, 0o600)
+    XCTAssertThrowsError(
+      try OwnerOnlyExclusiveFileWriter.write(Data("replacement".utf8), path: output.path)
+    )
+    XCTAssertEqual(try Data(contentsOf: output), Data("private".utf8))
+
+    let target = directory.appendingPathComponent("target")
+    let link = directory.appendingPathComponent("link")
+    try Data("untouched".utf8).write(to: target)
+    XCTAssertEqual(symlink(target.path, link.path), 0)
+    XCTAssertThrowsError(
+      try OwnerOnlyExclusiveFileWriter.write(Data("replacement".utf8), path: link.path)
+    )
+    XCTAssertEqual(try Data(contentsOf: target), Data("untouched".utf8))
+  }
+
   func testConfigurationRequiresInvitationForInMemorySession() throws {
     let data = Data("""
       {"endpoint":"https://hub.example","expectedHubID":"11111111-1111-4111-8111-111111111111","deviceName":"test"}
       """.utf8)
 
     XCTAssertThrowsError(try ConsumerConfig.decode(from: data))
+  }
+
+  func testConfigurationCarriesCanonicalThreeVehicleExpectationsAndPrivateOutputs() throws {
+    let data = Data("""
+      {"endpoint":"https://hub.example","expectedHubID":"11111111-1111-4111-8111-111111111111","invitationPath":"/private/invitation.json","deviceName":"test","expectedVehicleCount":3,"expectedObservedCount":1,"expectedAbsentCount":2,"semanticSnapshotPath":"/private/semantic.json","cleanupDeviceIDPath":"/private/device-id","driveFromMs":1788565900000,"driveToMs":1788566200001}
+      """.utf8)
+
+    let config = try ConsumerConfig.decode(from: data)
+    XCTAssertEqual(config.expectedVehicleCount, 3)
+    XCTAssertEqual(config.expectedObservedCount, 1)
+    XCTAssertEqual(config.expectedAbsentCount, 2)
+    XCTAssertNil(config.expectedDriveCounts)
+    XCTAssertFalse(config.deriveLatestDriveBoundaryChecks)
+    XCTAssertEqual(config.semanticSnapshotPath, "/private/semantic.json")
+    XCTAssertEqual(config.cleanupDeviceIDPath, "/private/device-id")
+
+    let invalid = Data("""
+      {"endpoint":"https://hub.example","expectedHubID":"11111111-1111-4111-8111-111111111111","invitationPath":"/private/invitation.json","deviceName":"test","expectedVehicleCount":3,"expectedObservedCount":1,"expectedAbsentCount":1,"semanticSnapshotPath":"/private/semantic.json","cleanupDeviceIDPath":"/private/device-id","driveFromMs":1788565900000,"driveToMs":1788566200001}
+      """.utf8)
+    XCTAssertThrowsError(try ConsumerConfig.decode(from: invalid))
+  }
+
+  func testConfigurationAcceptsArbitraryWindowDriveCountsAndDerivedBoundaries() throws {
+    let data = Data("""
+      {"endpoint":"https://hub.example","expectedHubID":"11111111-1111-4111-8111-111111111111","invitationPath":"/private/invitation.json","deviceName":"test","expectedVehicleCount":2,"expectedObservedCount":2,"expectedAbsentCount":0,"expectedDriveCounts":[3,1],"deriveLatestDriveBoundaryChecks":true,"semanticSnapshotPath":"/private/semantic.json","cleanupDeviceIDPath":"/private/device-id","driveFromMs":1000,"driveToMs":9001}
+      """.utf8)
+
+    let config = try ConsumerConfig.decode(from: data)
+    XCTAssertEqual(config.driveFromMilliseconds, 1_000)
+    XCTAssertEqual(config.driveToMilliseconds, 9_001)
+    XCTAssertEqual(config.expectedDriveCounts, [3, 1])
+    XCTAssertTrue(config.deriveLatestDriveBoundaryChecks)
+
+    let wrongCount = Data("""
+      {"endpoint":"https://hub.example","expectedHubID":"11111111-1111-4111-8111-111111111111","invitationPath":"/private/invitation.json","deviceName":"test","expectedVehicleCount":2,"expectedObservedCount":2,"expectedAbsentCount":0,"expectedDriveCounts":[3],"deriveLatestDriveBoundaryChecks":true,"semanticSnapshotPath":"/private/semantic.json","cleanupDeviceIDPath":"/private/device-id","driveFromMs":1000,"driveToMs":9001}
+      """.utf8)
+    XCTAssertThrowsError(try ConsumerConfig.decode(from: wrongCount))
   }
 
   func testConfigurationRequiresPairedRestartMarkers() throws {
@@ -145,6 +355,128 @@ final class CurrentHubConsumerTests: XCTestCase {
     XCTAssertEqual(result.driveCount, 3)
     XCTAssertEqual(result.pageItemCounts, [2, 1])
     XCTAssertEqual(result.conditionalNotModifiedCount, 2)
+  }
+
+  func testDrivePagerRetainsPageItemsInServerOrder() async throws {
+    let vehicleID = "11111111-1111-4111-8111-111111111111"
+    let decoded = try [
+      semanticDriveJSON(id: 9, vehicleID: vehicleID, start: 1_788_566_200_000),
+      semanticDriveJSON(id: 8, vehicleID: vehicleID, start: 1_788_566_200_000),
+      semanticDriveJSON(
+        id: 7, vehicleID: vehicleID, start: 1_788_565_900_000,
+        distance: "null", duration: "null"
+      ),
+    ].map { try JSONDecoder().decode(CurrentHubDrive.self, from: Data($0.utf8)) }
+    let cursor = try CurrentHubDriveCursor(rawValue: "next")
+    let provider = PageProvider(pages: [
+      ConsumerDrivePage(items: Array(decoded.prefix(2)), nextCursor: cursor),
+      ConsumerDrivePage(items: [decoded[2]], nextCursor: nil),
+    ])
+
+    let result = try await ConsumerDrivePager.fetch(
+      vehicleID: try XCTUnwrap(UUID(uuidString: vehicleID)),
+      fromMilliseconds: 1_788_565_900_000,
+      toMilliseconds: 1_788_566_200_001,
+      limit: 2,
+      maximumPages: 3
+    ) { _ in
+      try await provider.next()
+    }
+
+    XCTAssertEqual(result.items.map(\.id), [9, 8, 7])
+    XCTAssertEqual(result.items.prefix(2).map(\.startDateMilliseconds), [
+      1_788_566_200_000, 1_788_566_200_000,
+    ])
+    XCTAssertNil(result.items.last?.distanceKilometres)
+    XCTAssertNil(result.items.last?.durationMinutes)
+  }
+
+  func testDerivedLatestDriveBoundaryChecksUseArbitraryWindow() throws {
+    let vehicleID = "11111111-1111-4111-8111-111111111111"
+    let drives = try [
+      semanticDriveJSON(id: 3, vehicleID: vehicleID, start: 8_000),
+      semanticDriveJSON(id: 2, vehicleID: vehicleID, start: 5_000),
+      semanticDriveJSON(id: 1, vehicleID: vehicleID, start: 2_000),
+    ].map { try JSONDecoder().decode(CurrentHubDrive.self, from: Data($0.utf8)) }
+
+    let expectations = try ConsumerHistoryBoundaryPlanner.expectations(
+      fromMilliseconds: 1_000,
+      toMilliseconds: 9_001,
+      primaryItems: drives,
+      deriveLatestDriveBoundaryChecks: true
+    )
+
+    XCTAssertEqual(expectations, [
+      ConsumerHistoryBoundaryExpectation(
+        window: "before-equal-start", fromMilliseconds: 1_000,
+        toMilliseconds: 8_000, expectedCount: 2
+      ),
+      ConsumerHistoryBoundaryExpectation(
+        window: "equal-start-only", fromMilliseconds: 8_000,
+        toMilliseconds: 8_001, expectedCount: 1
+      ),
+    ])
+  }
+
+  func testDerivedLatestDriveBoundaryChecksCountTiedLatestStarts() throws {
+    let vehicleID = "11111111-1111-4111-8111-111111111111"
+    let drives = try [
+      semanticDriveJSON(id: 4, vehicleID: vehicleID, start: 8_000),
+      semanticDriveJSON(id: 3, vehicleID: vehicleID, start: 8_000),
+      semanticDriveJSON(id: 2, vehicleID: vehicleID, start: 5_000),
+      semanticDriveJSON(id: 1, vehicleID: vehicleID, start: 2_000),
+    ].map { try JSONDecoder().decode(CurrentHubDrive.self, from: Data($0.utf8)) }
+
+    let expectations = try ConsumerHistoryBoundaryPlanner.expectations(
+      fromMilliseconds: 1_000,
+      toMilliseconds: 9_001,
+      primaryItems: drives,
+      deriveLatestDriveBoundaryChecks: true
+    )
+
+    XCTAssertEqual(expectations.map(\.expectedCount), [2, 2])
+  }
+
+  func testDefaultBoundaryChecksPreserveCanonicalSyntheticWindows() throws {
+    let expectations = try ConsumerHistoryBoundaryPlanner.expectations(
+      fromMilliseconds: 10,
+      toMilliseconds: 20,
+      primaryItems: [],
+      deriveLatestDriveBoundaryChecks: false
+    )
+
+    XCTAssertEqual(expectations.map(\.expectedCount), [3, 2])
+    XCTAssertEqual(expectations.map(\.fromMilliseconds), [
+      1_788_565_900_000, 1_788_566_200_000,
+    ])
+    XCTAssertEqual(expectations.map(\.toMilliseconds), [
+      1_788_566_200_000, 1_788_566_200_001,
+    ])
+  }
+
+  func testZeroDriveLiveJourneySkipsHistoryBoundaryChecks() throws {
+    let skipped = try ConsumerHistoryBoundaryPlanner.liveJourneyExpectations(
+      fromMilliseconds: 1_000,
+      toMilliseconds: 9_001,
+      primaryItems: [],
+      expectedDriveCounts: [0],
+      deriveLatestDriveBoundaryChecks: false
+    )
+    XCTAssertEqual(skipped, [])
+
+    let vehicleID = "11111111-1111-4111-8111-111111111111"
+    let drives = try [
+      semanticDriveJSON(id: 2, vehicleID: vehicleID, start: 8_000),
+      semanticDriveJSON(id: 1, vehicleID: vehicleID, start: 5_000),
+    ].map { try JSONDecoder().decode(CurrentHubDrive.self, from: Data($0.utf8)) }
+    let derived = try ConsumerHistoryBoundaryPlanner.liveJourneyExpectations(
+      fromMilliseconds: 1_000,
+      toMilliseconds: 9_001,
+      primaryItems: drives,
+      expectedDriveCounts: [2],
+      deriveLatestDriveBoundaryChecks: true
+    )
+    XCTAssertEqual(derived.map(\.expectedCount), [1, 1])
   }
 
   func testClearingCredentialStoreRejectsLateSave() async throws {
@@ -409,4 +741,62 @@ private func invitation() throws -> CurrentHubInvitation {
     {"endpoint":"https://hub.example.invalid","expiresAtMs":4102444800000,"pairingId":"11111111-1111-4111-8111-111111111111","pairingUri":"teslatlas-hub://pair?endpoint=https%3A%2F%2Fhub.example.invalid&pairing_id=11111111-1111-4111-8111-111111111111&secret=\(secret)&tls_pin=\(pin)","secret":"\(secret)","tlsPin":"\(pin)"}
     """.utf8)
   return try JSONDecoder().decode(CurrentHubInvitation.self, from: data)
+}
+
+private func semanticCurrentJSON(
+  vehicleID: String,
+  observedAt: String = "null",
+  state: String = "null",
+  batteryLevel: String = "null",
+  estimatedRange: String = "null",
+  odometer: String = "null",
+  speed: String = "null",
+  insideTemperature: String = "null",
+  outsideTemperature: String = "null",
+  chargerPower: String = "null",
+  locked: String = "null"
+) -> String {
+  let encodedState = state == "null" ? "null" : "\"\(state)\""
+  return """
+    {"vehicle_id":"\(vehicleID)","observed_at_ms":\(observedAt),"state":\(encodedState),"battery_level":\(batteryLevel),"est_battery_range_km":\(estimatedRange),"odometer":\(odometer),"speed":\(speed),"inside_temp":\(insideTemperature),"outside_temp":\(outsideTemperature),"charger_power":\(chargerPower),"locked":\(locked)}
+    """
+}
+
+private func semanticDriveJSON(
+  id: Int64,
+  vehicleID: String,
+  start: Int64,
+  distance: String = "4.2",
+  duration: String = "1"
+) -> String {
+  """
+  {"id":\(id),"vehicle_id":"\(vehicleID)","start_date_ms":\(start),"end_date_ms":\(start + 60_000),"distance_km":\(distance),"duration_min":\(duration)}
+  """
+}
+
+private func containsPrivateSemanticMaterial(_ value: Any, vehicleIDs: [String]) -> Bool {
+  if let object = value as? [String: Any] {
+    let forbiddenKeyFragments = [
+      "vehicle_id", "display_name", "address", "latitude", "longitude", "geofence",
+      "destination", "token", "cursor", "endpoint",
+    ]
+    if object.keys.contains(where: { key in
+      forbiddenKeyFragments.contains(where: { key.lowercased().contains($0) })
+    }) { return true }
+    return object.values.contains { containsPrivateSemanticMaterial($0, vehicleIDs: vehicleIDs) }
+  }
+  if let array = value as? [Any] {
+    return array.contains { containsPrivateSemanticMaterial($0, vehicleIDs: vehicleIDs) }
+  }
+  if let string = value as? String {
+    return UUID(uuidString: string) != nil
+      || vehicleIDs.contains(string)
+      || string.contains("display-name-secret")
+      || string.contains("address-secret")
+      || string.contains("location-secret")
+      || string.contains("token-secret")
+      || string.contains("cursor-secret")
+      || string.contains("hub.example")
+  }
+  return false
 }

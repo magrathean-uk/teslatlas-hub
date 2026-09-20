@@ -522,8 +522,9 @@ public actor CurrentHubClient {
   }
 
   private func validate(invitation: CurrentHubInvitation) throws {
+    let invitationOrigin = try? CurrentHubEndpoint(invitation.endpoint).originURL
     guard invitation.pairingID != UUID.currentHubZero,
-      invitation.endpoint == endpoint.originURL,
+      invitationOrigin == endpoint.originURL,
       invitation.secret.utf8.count == 64,
       invitation.secret.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
       invitation.tlsPin.utf8.count == 64,
@@ -534,9 +535,15 @@ public actor CurrentHubClient {
     guard invitation.expiresAtMilliseconds > Self.currentTimeMilliseconds else {
       throw CurrentHubError.invitationExpired
     }
+    let pairingEndpoint = URLComponents(url: invitation.pairingURI, resolvingAgainstBaseURL: false)
+      .flatMap { components in
+        components.queryItems?.first(where: { $0.name == "endpoint" })?.value
+      }
+      .flatMap(URL.init(string:))
+      .flatMap { try? CurrentHubEndpoint($0).originURL }
     guard let components = URLComponents(url: invitation.pairingURI, resolvingAgainstBaseURL: false),
       components.scheme == "teslatlas-hub", components.host == "pair",
-      components.queryItems?.first(where: { $0.name == "endpoint" })?.value == endpoint.originURL.absoluteString,
+      pairingEndpoint == endpoint.originURL,
       components.queryItems?.first(where: { $0.name == "pairing_id" })?.value == invitation.pairingID.uuidString.lowercased(),
       components.queryItems?.first(where: { $0.name == "secret" })?.value == invitation.secret,
       components.queryItems?.first(where: { $0.name == "tls_pin" })?.value == invitation.tlsPin

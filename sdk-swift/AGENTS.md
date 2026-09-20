@@ -2,13 +2,10 @@
 
 This repository owns the public Swift client boundary.
 
-## Current execution model policy
-
-The 2026-09-18 reset uses Sol 5.6/max coordination, Sol 5.6/high implementation
-and review, and Luna exploration. No fast mode. Follow the shared
-`../docs/development/COORDINATION.md` and this product's PLAN. Earlier model
-clauses and old native goals are historical; do not resume retired chats.
-No App or Viewer work.
+Follow `../AGENTS.md`, `../WORKSPACE_AUTHORITY.md` and
+`../docs/development/COORDINATION.md`, then this product's `docs/development/PLAN.md`
+and `STATUS.json`. Sol is the default implementation/review model; use the shared
+role-based effort policy. Work only on the assigned scope; App and Viewer are excluded.
 
 - Follow Swift API Design Guidelines. Use the ecosystem calendar product version;
   keep SwiftPM/wire semantic versions separate.
