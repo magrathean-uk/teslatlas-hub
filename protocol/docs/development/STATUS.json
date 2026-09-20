@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Protocol",
-  "updated_at": "2026-09-20T06:07:48Z",
-  "update_scope": "f3_f6_pro04_current_source_cold_cache_offline_reinstall_independent_acceptance",
+  "updated_at": "2026-09-20T06:11:27Z",
+  "update_scope": "f3_f6_pro04_current_source_cold_cache_offline_reinstall_publication_readback",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_ACCEPTED",
   "source_objective_state": "HUB_COMPATIBLE_CURRENT_SOURCE_HANDOFF_PREPARED_REMAINING_F3_F6_OPEN",
@@ -16,12 +16,12 @@
   "planning_state": "F3_F6_NATIVE_DOCKER_AND_CURRENT_SOURCE_CACHE_PROVENANCE_SLICES_ACCEPTED_SOURCE_HANDOFF_PREPARED_REMAINING_GATES_OPEN",
   "objective": "Complete every documented Protocol profile and conformance surface, real-input semantic evidence, reproducible developer distribution and final ecosystem admission.",
   "source": {
-    "review_base_head": "08b05cfab0f408997b02ec06fbfdb5319e93c487",
+    "review_base_head": "6d79d4660f0c8495db7344def4ad274d79bac18d",
     "branch": "main",
     "dirty_entries_at_goal_activation": 1,
     "tracked_dirty_entries_at_goal_activation": 0,
     "g3_accepted_runtime_source_head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
-    "checked_at": "2026-09-20T06:07:48Z",
+    "checked_at": "2026-09-20T06:11:27Z",
     "remote_relation": "Before the PRO-04 current-source cache cohort, local HEAD and origin/main matched metadata head 08b05cfab0f408997b02ec06fbfdb5319e93c487; accepted runtime-source commit 53b5c6483990db84e5214176755f398e93d87b1b is its ancestor and was the exact exported source exercised.",
     "docker_runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
     "catalog_cohort_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
@@ -91,6 +91,7 @@
   "current_f3_f6_pro04_cache_provenance_slice": {
     "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
     "receipt": "docs/development/f3-f6-pro04-current-source-cold-cache-offline-reinstall-2026-09-20-r1.json",
+    "metadata_commit": "6d79d4660f0c8495db7344def4ad274d79bac18d",
     "runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
     "source_tree": "931507b56c641d330d3a75513f3eb1f88f24e219",
     "git_archive_sha256": "61a4a5d237bcd462d8cc454a98322fbc4c8f1eef5ae864532628917c8ec40d6c",
@@ -106,7 +107,7 @@
     "evidence_manifest_sha256": "834f2d86a23a84ca3e73203b302b27ca2cf21b67ffde995e821fd6b17998af5c",
     "evidence_manifest_entry_count": 40,
     "cleanup_complete": true,
-    "publication_state": "PENDING_RECEIPT_COMMIT",
+    "publication_state": "RECEIPT_AND_STATUS_PUSHED_AND_READ_BACK",
     "independent_review": "ACCEPT by gpt-5.6-sol/high with no P1/P2 after exact evidence/source/archive/cache/dependency/checker/bundle/sandbox/cleanup recomputation.",
     "acceptance_limit": "Cold-cache online locked seed followed by exact cache-seeded offline reinstall/check/bundle reproduction only. The bundle contains no wheels, so cold-cache offline dependency installation, full PRO-04/F3/F6, remote-wire, catalog lifecycle, downstream consumers, F5 and F7 remain open."
   },

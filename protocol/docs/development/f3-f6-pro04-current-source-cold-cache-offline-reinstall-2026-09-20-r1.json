@@ -112,8 +112,9 @@
   },
   "publication": {
     "runtime_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
-    "metadata_commit": null,
-    "state": "PENDING_RECEIPT_COMMIT"
+    "metadata_commit": "6d79d4660f0c8495db7344def4ad274d79bac18d",
+    "read_back_from_origin_main_at": "2026-09-20T06:11:27Z",
+    "state": "RECEIPT_AND_STATUS_PUSHED_AND_READ_BACK"
   },
   "acceptance": {
     "pro_04_current_source_online_seed_offline_reinstall": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
