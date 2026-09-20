@@ -19,11 +19,15 @@ Assistant, and Edge services require their own reviewed source cohort and
 acceptance evidence. An empty public companion catalog does not make those
 services available automatically.
 
-The Dockerfile deliberately avoids BuildKit-only `COPY --chmod` flags. File
-ownership and modes are applied in an explicit runtime-stage `RUN`, so the
-retained Docker 26 legacy builder can assemble the pinned multi-stage image
-without installing a separate Buildx component. This source path still needs a
-new exact-export runtime recheck before it receives lifecycle credit.
+The Dockerfile deliberately avoids `COPY --chmod`, but the candidate
+distributable container path requires Docker 26, its Buildx CLI component, and
+the classic image store. Docker 26's optional containerd image store emits a
+different OCI save layout and is intentionally rejected. The wrapper uses
+`docker buildx build --load`; the BuildKit-only validation step prevents a
+legacy-builder fallback, and the selected pushed commit's exact timestamp is
+passed as `SOURCE_DATE_EPOCH`. The ordinary Compose runtime evidence remains
+bounded separately; this build path does not add lifecycle or F6 acceptance by
+itself.
 
 ## Prepare a private configuration
 
@@ -49,9 +53,19 @@ stopped, then start the foreground Hub process:
 
 ```sh
 export TESLATLAS_HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
+export SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$TESLATLAS_HUB_SOURCE_COMMIT")
 export TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid # replace with the DNS name in server.pem and public_url
 test -z "$(git status --short)"
-git ls-remote origin | awk -v commit="$TESLATLAS_HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
+test "$(git config --get remote.origin.url)" = \
+  https://github.com/magrathean-uk/teslatlas-hub.git
+test -z "$(git replace -l)"
+test ! -e "$(git rev-parse --git-path info/grafts)"
+! git config --get-regexp '^url\..*\.insteadof$'
+OFFICIAL_MAIN=$(git ls-remote \
+  https://github.com/magrathean-uk/teslatlas-hub.git refs/heads/main | awk '{print $1}')
+git cat-file -e "${OFFICIAL_MAIN}^{commit}"
+GIT_NO_REPLACE_OBJECTS=1 git merge-base --is-ancestor \
+  "$TESLATLAS_HUB_SOURCE_COMMIT" "$OFFICIAL_MAIN"
 docker compose build hub
 test "$(docker compose run --rm hub source)" = \
   "https://github.com/magrathean-uk/teslatlas-hub/tree/$TESLATLAS_HUB_SOURCE_COMMIT"
@@ -65,14 +79,15 @@ docker compose exec hub teslatlas-hub --config /etc/teslatlas-hub/config.toml st
 docker compose logs --tail 100 hub
 ```
 
-Compose requires that explicit exact pushed commit. The Docker build fails
-closed when it is absent or not 40 lowercase hexadecimal characters; it never
-infers source identity from the build directory. The `source` readback above is
-the required runtime binding check for an exported-source image; do not treat a
-successful build alone as source-provenance evidence. The build context also
-excludes Git metadata, local configuration, TLS material and the Cargo target
-cache; only the Dockerfile's explicit source and legal `COPY` inputs enter the
-build.
+Compose requires that explicit exact pushed commit and its commit timestamp.
+The Docker build fails closed when either is absent or malformed; it never
+infers source identity from the build directory. The official-remote ancestry
+check and `source` readback above are required because the image labels and
+binary source route name that repository. Do not treat a successful build alone
+as source-provenance evidence. The build context also excludes Git metadata,
+local configuration, TLS material and the Cargo target cache; only the
+Dockerfile's explicit source and legal `COPY` inputs enter the build. Use the
+artifact wrapper—not this live Compose context—for distribution evidence.
 
 The one-shot volume initializer runs only after the image exists. It drops all
 capabilities and adds back only `CHOWN`, `FOWNER`, and `DAC_OVERRIDE`, changes
@@ -88,6 +103,70 @@ the privileged one-shot service cannot race normal startup. The normal Hub
 service still drops every capability and never recursively changes ownership.
 Bind-mounted data must already have the private ownership and modes required by
 Hub.
+
+## Create a reproducibility-candidate local image archive
+
+Run the artifact builder from a tracked-clean checkout whose exact `HEAD` is
+contained by the advertised `main` tip of the fixed official GitHub repository.
+Docker 26's Buildx CLI component must already be installed and visible as
+`docker buildx version`; the wrapper does not install it. The wrapper resolves
+its checkout physically and rejects a different origin, URL rewrites, replace
+refs, grafts, replace-object configuration, and Git environment that can select
+another repository, work tree, object store, index, namespace, shallow file, or
+configuration source. It requires the official remote tip locally,
+derives `SOURCE_DATE_EPOCH` from `HEAD`, materializes a fresh `git archive`
+context, and normalizes every regular, directory and symlink context mtime to
+that epoch before Docker sees it. It performs a no-cache Linux ARM64
+`docker buildx build --load` and records the content-addressed image ID. This
+keeps ignored and untracked checkout files outside every `COPY`. Missing Buildx,
+missing BuildKit, or a legacy fallback fails closed.
+
+```sh
+mkdir -p dist
+./scripts/build-container-image.sh \
+  --tag teslatlas-hub:2026.36.2-arm64 \
+  --output dist/teslatlas-hub_2026.36.2_linux-arm64.docker.tar
+```
+
+The final validator requires exactly one tagged Docker image; Linux ARM64; the
+exact source, version and title labels; the pinned Debian base rootfs prefix;
+matching config, image ID, ordered layer diffIDs and legacy parent graph; and
+the selected commit epoch on the image and Hub application-history suffix. It
+also binds the runtime user, environment, entrypoint, command and working
+directory, and requires every regular/directory member in every Hub application
+layer to have the exact commit mtime. Links, special members, PAX metadata,
+duplicates, unsafe paths, unreferenced payloads and an existing output are
+refused. The daemon build uses a cryptographically random private cohort tag;
+the requested archive tag is never inspected, created, or removed in the
+daemon. The validator requires that exact input cohort tag, then deterministically
+emits the requested tag in `manifest.json` and `repositories`. The finalizer
+writes and fsyncs a private temporary archive, publishes with the platform's
+atomic exclusive rename, fsyncs the directory, and normalizes only outer
+transport metadata plus those two tag records. A published output is never
+rolled back or deleted. A pre-publication interruption can leave a randomized
+hidden partial beside the requested output; this avoids any checked-path unlink
+race and is not a valid artifact. Image config and `layer.tar` bytes are never
+rewritten. Cleanup removes the private cohort before publication and only while
+it still resolves to the recorded owned image ID; a foreign replacement is
+reported and preserved, and no final artifact is published on cleanup failure.
+
+For reproducibility evidence, repeat the command from a second independent
+tracked-clean checkout of the same commit with a fresh output path, then require
+both the printed image ID and complete archive SHA-256 to match byte-for-byte.
+Load and exercise only the verified archive:
+
+```sh
+cmp first/teslatlas-hub.docker.tar second/teslatlas-hub.docker.tar
+sha256sum first/teslatlas-hub.docker.tar second/teslatlas-hub.docker.tar
+docker image load --input first/teslatlas-hub.docker.tar
+```
+
+Only matching bytes establish reproducibility for the recorded toolchain and
+inputs. A single candidate archive does not. Matching bytes prove only
+deterministic construction from those recorded inputs.
+Source readback, Compose health/security/persistence and the remaining upgrade,
+rollback, backup/restore, failed-candidate and removal gates still need retained
+runtime evidence.
 
 Replace the placeholders from a protected local secret source. Do not put the
 tokens in Compose environment values, build arguments, command history, the
@@ -182,8 +261,9 @@ credentials, and unredacted logs must never enter its input.
 ## Current acceptance boundary
 
 The checked-in packaging script validates immutable base references, absence of
-runtime package-manager inputs, legacy-builder-compatible copy/permission
-steps, source binding, the health command, adversarial sentinel preservation,
+runtime package-manager inputs, explicit copy/permission steps, mandatory
+BuildKit epoch/source binding, the health command, adversarial sentinel
+preservation,
 and the rendered Compose dependency/security topology without creating
 containers. The first exact-export ARM64 runtime attempt was rejected after
 cleanup because its raw evidence was not retained for independent inspection

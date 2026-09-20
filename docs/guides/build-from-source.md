@@ -95,6 +95,33 @@ compatible companions and their evidence bundles; see
 [Fleet setup](fleet-setup.md) and the packaging script's options. Do not replace
 an existing Fleet deployment with a core-only package.
 
+## Linux ARM64 container archive
+
+Docker 26 with its Buildx CLI component and classic image store provides the
+candidate local container path. From a tracked-clean checkout at an exact
+pushed commit, use the fail-closed builder described in
+[Run Hub with Docker Compose](install-docker.md#create-a-reproducibility-candidate-local-image-archive):
+
+```sh
+mkdir -p dist
+./scripts/build-container-image.sh \
+  --tag teslatlas-hub:2026.36.2-arm64 \
+  --output dist/teslatlas-hub_2026.36.2_linux-arm64.docker.tar
+```
+
+The wrapper obtains the commit and its `SOURCE_DATE_EPOCH` directly from Git,
+requires the fixed official GitHub `main` tip to contain it, rejects Git object
+replacement and Git repository/configuration selection environment, builds only
+a fresh exact `git archive` context with every mtime normalized to the commit
+epoch, and uses `docker buildx build --load` with a Dockerfile-level legacy
+fallback rejection. The Dockerfile assembles one staged rootfs whose
+ownership, modes and mtimes are explicit. The canonicalizer changes only the
+outer transport tar metadata and rebinds the random private build-cohort tag to
+the requested archive tag; it fails if the preserved application-layer bytes,
+member mtimes, image config and rootfs do not match the recorded source epoch
+and immutable inputs. Reproducibility is established only by matching two
+independent no-cache candidate builds.
+
 ## Keep your build identifiable
 
 An ordinary `cargo build` without `TESLATLAS_HUB_SOURCE_COMMIT` remains useful

@@ -18,7 +18,10 @@
       "index_digest": "sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a",
       "linux_arm64_manifest_digest": "sha256:da496358bd6934d2bd6a563a33176a2e50eff5490c54b4ac6fb051b69fef4071",
       "linux_arm64_config_digest": "sha256:3fde68c8327d49ce5f747c72d9742ec63d27dee28515807ef0ca5259c3e01120",
-      "linux_arm64_config_created": "2026-09-18T00:00:00Z"
+      "linux_arm64_config_created": "2026-09-18T00:00:00Z",
+      "linux_arm64_rootfs_diff_ids": [
+        "sha256:8227a1264c7ff2f8bd125b585e62c1cec77dd2099c985c33e08d34292d06144f"
+      ]
     }
   }
 }

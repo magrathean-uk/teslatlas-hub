@@ -37,6 +37,28 @@ The Debian metadata must report package `teslatlas-hub`, version
 sidecars. Its product-version source route does not replace the separately
 recorded exact source commit and source-export checksum.
 
+## Current source-built 2026.36.2 Linux ARM64 container
+
+There is no prebuilt container download. On Docker Engine 26 with its Buildx CLI
+component and classic image store, build a local candidate archive with the
+repository's fail-closed BuildKit wrapper, then retain its one-line JSON result
+and checksum:
+
+```sh
+mkdir -p dist
+./scripts/build-container-image.sh \
+  --tag teslatlas-hub:2026.36.2-arm64 \
+  --output dist/teslatlas-hub_2026.36.2_linux-arm64.docker.tar \
+  | tee dist/teslatlas-hub_2026.36.2_linux-arm64.json
+sha256sum dist/teslatlas-hub_2026.36.2_linux-arm64.docker.tar
+```
+
+The JSON must bind the selected 40-hex source commit, its Unix commit epoch,
+`linux/arm64`, the exact image ID, ordered rootfs diffIDs, archive size and
+archive SHA-256. Independent reproducibility requires a second no-cache build
+from the same exact commit whose image ID and full canonical archive bytes are
+identical. A single successful build or load is not reproducibility evidence.
+
 ## Historical 2026.36.1 package verification
 
 GitHub release downloads are no longer provided. The instructions below apply

@@ -15,22 +15,29 @@ test -s docs/guides/install-docker.md
 test -x packaging/docker/prepare-volumes.sh
 test -x packaging/docker/initialize-volume.sh
 test -x scripts/finalize-container-runtime-evidence.py
+test -x scripts/build-container-image.sh
+test -x scripts/canonicalize-docker-archive.py
+test -x scripts/normalize-tree-mtimes.py
 
 # Compose is optional on source-build hosts; when present, validate the
 # resolved service definition without creating containers or touching volumes.
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    SOURCE_DATE_EPOCH=1700000000 \
     TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker compose -f compose.yaml config --quiet
     TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    SOURCE_DATE_EPOCH=1700000000 \
     TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker compose -f compose.yaml config --format json \
         | python3 scripts/check-docker-compose-render.py
 elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
     TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    SOURCE_DATE_EPOCH=1700000000 \
     TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker-compose -f compose.yaml config --quiet
     TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
+    SOURCE_DATE_EPOCH=1700000000 \
     TESLATLAS_HUB_TLS_SERVER_NAME=hub.example.invalid \
         docker-compose -f compose.yaml config --format json \
         | python3 scripts/check-docker-compose-render.py
@@ -59,6 +66,11 @@ for stage, image in expected.items():
     reference = f'{image}:{record["tag"]}@{record["index_digest"]}'
     assert f"FROM {reference} AS {stage}" in dockerfile
 
+runtime_diff_ids = locked["images"]["runtime"]["linux_arm64_rootfs_diff_ids"]
+assert runtime_diff_ids == [
+    "sha256:8227a1264c7ff2f8bd125b585e62c1cec77dd2099c985c33e08d34292d06144f"
+]
+
 from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM ")]
 assert len(from_lines) == 2
 assert all(re.fullmatch(r"FROM [^ ]+@sha256:[0-9a-f]{64} AS (builder|runtime)", line) for line in from_lines)
@@ -76,6 +88,7 @@ context_root=$(mktemp -d)
 trap 'find "$context_root" -depth -delete' EXIT HUP INT TERM
 mkdir -p "$context_root/fixtures/teslamate-corpus/v1" "$context_root/packaging/docker"
 cp Cargo.toml Cargo.lock build.rs source_identity.rs "$context_root/"
+cp LICENSE NOTICE "$context_root/"
 cp -R src examples tests "$context_root/"
 cp fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql \
     "$context_root/fixtures/teslamate-corpus/v1/"
@@ -86,20 +99,102 @@ TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     cargo check --locked --offline --manifest-path "$context_root/Cargo.toml" \
     --bin teslatlas-hub --quiet
 
-grep -F 'COPY Cargo.toml Cargo.lock build.rs source_identity.rs ./' Dockerfile >/dev/null
-grep -F 'COPY fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql ./fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql' Dockerfile >/dev/null
-grep -F 'COPY packaging/com.teslatlas.hub.plist.in ./packaging/com.teslatlas.hub.plist.in' Dockerfile >/dev/null
-grep -F 'TESLATLAS_HUB_SOURCE_COMMIT="${TESLATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
-grep -F 'cargo build --locked --release --bin teslatlas-hub' Dockerfile >/dev/null
-grep -F 'COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt' Dockerfile >/dev/null
-grep -F 'COPY packaging/docker/initialize-volume.sh /usr/local/libexec/teslatlas-hub-initialize-volume' Dockerfile >/dev/null
-if grep -F -- '--chmod=' Dockerfile >/dev/null; then
-    printf '%s\n' 'Dockerfile must remain compatible with the retained legacy builder' >&2
+# Repository-selection variables must not redirect the wrapper into an
+# alternate checkout even when that checkout advertises the official URL.
+alternate_repository="$context_root/alternate-repository"
+mkdir "$alternate_repository"
+git -C "$alternate_repository" init -q
+git -C "$alternate_repository" remote add origin \
+    https://github.com/magrathean-uk/teslatlas-hub.git
+if GIT_DIR="$alternate_repository/.git" GIT_WORK_TREE="$alternate_repository" \
+    ./scripts/build-container-image.sh \
+        --output "$context_root/redirected.tar" \
+        --tag teslatlas-hub:redirected \
+        2>"$context_root/redirected.err"; then
+    printf '%s\n' 'container artifact builder accepted redirected Git repository state' >&2
     exit 1
 fi
-grep -F 'RUN chown 0:0' Dockerfile >/dev/null
-grep -F 'chmod 0755' Dockerfile >/dev/null
+grep -F 'Git repository selection environment is not allowed: GIT_DIR' \
+    "$context_root/redirected.err" >/dev/null
+test ! -e "$context_root/redirected.tar"
+if GIT_EXEC_PATH="$alternate_repository" \
+    ./scripts/build-container-image.sh \
+        --output "$context_root/fabricated-remote.tar" \
+        --tag teslatlas-hub:fabricated-remote \
+        2>"$context_root/fabricated-remote.err"; then
+    printf '%s\n' 'container artifact builder accepted redirected Git helper path' >&2
+    exit 1
+fi
+grep -F 'Git repository selection environment is not allowed: GIT_EXEC_PATH' \
+    "$context_root/fabricated-remote.err" >/dev/null
+test ! -e "$context_root/fabricated-remote.tar"
+
+grep -F 'COPY Cargo.toml Cargo.lock build.rs source_identity.rs ./' Dockerfile >/dev/null
+grep -F 'COPY LICENSE NOTICE ./' Dockerfile >/dev/null
+grep -F 'COPY fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql ./fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql' Dockerfile >/dev/null
+grep -F 'COPY packaging/com.teslatlas.hub.plist.in ./packaging/com.teslatlas.hub.plist.in' Dockerfile >/dev/null
+grep -F 'COPY packaging/docker/initialize-volume.sh ./packaging/docker/initialize-volume.sh' Dockerfile >/dev/null
+grep -F 'TESLATLAS_HUB_SOURCE_COMMIT="${TESLATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
+grep -F 'ARG SOURCE_DATE_EPOCH' Dockerfile >/dev/null
+grep -F -- 'RUN --mount=type=tmpfs,target=/tmp/teslatlas-buildkit-required' Dockerfile >/dev/null
+grep -F 'SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}"' Dockerfile >/dev/null
+grep -F 'org.opencontainers.image.revision="${TESLATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
+grep -F 'cargo build --locked --release --bin teslatlas-hub' Dockerfile >/dev/null
+grep -F 'official_repository=https://github.com/magrathean-uk/teslatlas-hub.git' scripts/build-container-image.sh >/dev/null
+grep -F 'cd -P -- "$(dirname -- "$0")/.." && pwd -P' scripts/build-container-image.sh >/dev/null
+grep -F 'git rev-parse --show-toplevel' scripts/build-container-image.sh >/dev/null
+grep -F 'GIT_ALTERNATE_OBJECT_DIRECTORIES' scripts/build-container-image.sh >/dev/null
+grep -F 'GIT_EXEC_PATH' scripts/build-container-image.sh >/dev/null
+grep -F 'GIT_CONFIG_PARAMETERS' scripts/build-container-image.sh >/dev/null
+grep -F "'^GIT_CONFIG_[A-Za-z0-9_]*='" scripts/build-container-image.sh >/dev/null
+grep -F 'git ls-remote --exit-code "$official_repository" refs/heads/main' scripts/build-container-image.sh >/dev/null
+grep -F 'export GIT_NO_REPLACE_OBJECTS=1' scripts/build-container-image.sh >/dev/null
+grep -F "refs/replace/" scripts/build-container-image.sh >/dev/null
+grep -F 'info/grafts' scripts/build-container-image.sh >/dev/null
+grep -F 'git merge-base --is-ancestor "$source_commit" "$remote_main"' scripts/build-container-image.sh >/dev/null
+grep -F 'git archive --format=tar "$source_commit" | tar -xf - -C "$source_root"' scripts/build-container-image.sh >/dev/null
+grep -F 'normalize-tree-mtimes.py' scripts/build-container-image.sh >/dev/null
+grep -F '    "$source_root"' scripts/build-container-image.sh >/dev/null
+if grep -Fx '    .' scripts/build-container-image.sh >/dev/null; then
+    printf '%s\n' 'container artifact builder must not expose the live checkout to Docker' >&2
+    exit 1
+fi
+grep -F 'find /image-root -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +' Dockerfile >/dev/null
+grep -F 'COPY --from=builder /image-root/ /' Dockerfile >/dev/null
+if grep -F -- '--chmod=' Dockerfile >/dev/null; then
+    printf '%s\n' 'Dockerfile must keep explicit reviewed runtime ownership and mode steps' >&2
+    exit 1
+fi
+grep -F 'install -d -o 10001 -g 10001 -m 0755 /image-root/var/lib/teslatlas-hub' Dockerfile >/dev/null
+grep -F 'the reproducible artifact path requires Docker Engine 26' scripts/build-container-image.sh >/dev/null
+grep -F 'docker buildx version' scripts/build-container-image.sh >/dev/null
+grep -F 'DOCKER_BUILDKIT=1 docker buildx build' scripts/build-container-image.sh >/dev/null
+grep -F '    --load' scripts/build-container-image.sh >/dev/null
+grep -F "io.containerd.snapshotter.v1" scripts/build-container-image.sh >/dev/null
+grep -F 'secrets.token_hex(16)' scripts/build-container-image.sh >/dev/null
+grep -F 'random private cohort tag already exists in the Docker daemon' scripts/build-container-image.sh >/dev/null
+grep -F 'docker image save --output "$raw_archive" "$cohort_tag"' scripts/build-container-image.sh >/dev/null
+grep -F -- '--input-repository-tag "$cohort_tag"' scripts/build-container-image.sh >/dev/null
+grep -F -- '--output-repository-tag "$tag"' scripts/build-container-image.sh >/dev/null
+grep -F '[ "$current_image_id" = "$owned_image_id" ]' scripts/build-container-image.sh >/dev/null
+grep -F 'docker image rm "$owned_image_id"' scripts/build-container-image.sh >/dev/null
+grep -F 'private cohort tag was replaced during cleanup and was preserved' scripts/build-container-image.sh >/dev/null
+grep -F 'docker image save --output "$raw_archive" "$cohort_tag"' scripts/build-container-image.sh >/dev/null
+test "$(grep -nE 'remove_owned_cohort|canonicalize-docker-archive.py' scripts/build-container-image.sh \
+    | tail -n 2 | sed -n '1s/:.*//p')" -lt \
+    "$(grep -n 'canonicalize-docker-archive.py' scripts/build-container-image.sh | cut -d: -f1)"
+grep -F 'atomic_publish_noreplace(parent_descriptor, temporary_name, output_name)' \
+    scripts/canonicalize-docker-archive.py >/dev/null
+if grep -F 'unlink_if_identity' scripts/canonicalize-docker-archive.py >/dev/null; then
+    printf '%s\n' 'container archive publication must not use checked-path unlink cleanup' >&2
+    exit 1
+fi
+if grep -E 'docker image (inspect|rm|save).*(^|[^a-z_])"?\$tag"?' scripts/build-container-image.sh >/dev/null; then
+    printf '%s\n' 'container artifact builder must not touch the requested tag in Docker' >&2
+    exit 1
+fi
 grep -F 'TESLATLAS_HUB_SOURCE_COMMIT: ${TESLATLAS_HUB_SOURCE_COMMIT:?' compose.yaml >/dev/null
+grep -F 'SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:?' compose.yaml >/dev/null
 grep -F 'USER ${HUB_UID}:${HUB_GID}' Dockerfile >/dev/null
 grep -F 'read_only: true' compose.yaml >/dev/null
 grep -F 'cap_drop: ["ALL"]' compose.yaml >/dev/null
@@ -141,4 +236,6 @@ grep -Fx '*.p12' .dockerignore >/dev/null
 grep -Fx '*.pfx' .dockerignore >/dev/null
 grep -Fx 'target/' .dockerignore >/dev/null
 python3 -m unittest scripts/test_finalize_container_runtime_evidence.py
+python3 -m unittest scripts/test_canonicalize_docker_archive.py
+python3 -m unittest scripts/test_normalize_tree_mtimes.py
 printf '%s\n' 'docker packaging static checks passed'

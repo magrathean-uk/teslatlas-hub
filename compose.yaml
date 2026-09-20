@@ -8,6 +8,7 @@ services:
       dockerfile: Dockerfile
       args:
         TESLATLAS_HUB_SOURCE_COMMIT: ${TESLATLAS_HUB_SOURCE_COMMIT:?set TESLATLAS_HUB_SOURCE_COMMIT to the exact pushed 40-hex Hub commit}
+        SOURCE_DATE_EPOCH: ${SOURCE_DATE_EPOCH:?set SOURCE_DATE_EPOCH to the exact pushed Hub commit timestamp}
     image: teslatlas-hub:local
     depends_on:
       volume-init:
