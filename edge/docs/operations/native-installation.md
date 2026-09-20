@@ -151,6 +151,18 @@ rejects a loopback Hub-delivery bind. Keep the receiver and health/readiness
 binds on loopback. Do not use `0.0.0.0` in a shared Hub handoff; restrict the
 private address with the host firewall.
 
+For the bounded local source-run composition only, the app-managed Hub and
+Edge may share one Mac without opening a LAN listener. Set `hub_bind` to an
+exact loopback address and add:
+
+```toml
+allow_local_source_run_hub_loopback = true
+```
+
+The option defaults to false. Edge rejects a loopback Hub bind without it and
+also rejects the option when `hub_bind` is non-loopback. Do not carry this
+development-only setting into an installed or remote-Hub configuration.
+
 ```bash
 /usr/local/libexec/teslatlas-edge/teslatlas-edge \
   --config /Users/Shared/TeslatlasEdge/config.toml init

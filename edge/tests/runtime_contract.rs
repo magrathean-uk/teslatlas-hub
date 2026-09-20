@@ -61,6 +61,16 @@ fn make_server_identity(temp: &TempDir) {
 }
 
 fn make_config(temp: &TempDir, receiver_port: u16, hub_port: u16) -> EdgeConfig {
+    make_config_with_hub_bind(temp, receiver_port, hub_port, "0.0.0.0", false)
+}
+
+fn make_config_with_hub_bind(
+    temp: &TempDir,
+    receiver_port: u16,
+    hub_port: u16,
+    hub_host: &str,
+    allow_local_source_run_hub_loopback: bool,
+) -> EdgeConfig {
     private_file(
         &temp.path().join("receiver-token"),
         b"receiver-token-0123456789",
@@ -72,12 +82,17 @@ fn make_config(temp: &TempDir, receiver_port: u16, hub_port: u16) -> EdgeConfig 
     );
     make_server_identity(temp);
     let root = temp.path();
+    let local_source_run_opt_in = if allow_local_source_run_hub_loopback {
+        "allow_local_source_run_hub_loopback = true\n"
+    } else {
+        ""
+    };
     let text = format!(
         r#"version = 1
 state_directory = "{}"
 receiver_bind = "127.0.0.1:{receiver_port}"
-hub_bind = "0.0.0.0:{hub_port}"
-receiver_bearer_path = "{}"
+hub_bind = "{hub_host}:{hub_port}"
+{local_source_run_opt_in}receiver_bearer_path = "{}"
 spool_key_path = "{}"
 credential_store_path = "{}"
 hub_server_certificate_path = "{}"
@@ -101,6 +116,56 @@ batch_max_records = 8
     );
     std::fs::write(root.join("config.toml"), &text).unwrap();
     EdgeConfig::from_toml(text.as_bytes()).unwrap()
+}
+
+#[tokio::test]
+async fn explicit_local_source_run_binds_both_edge_listeners_to_loopback() {
+    let temp = TempDir::new().unwrap();
+    let receiver_port = unused_port();
+    let mut hub_port = unused_port();
+    while hub_port == receiver_port {
+        hub_port = unused_port();
+    }
+    let config = make_config_with_hub_bind(&temp, receiver_port, hub_port, "127.0.0.1", true);
+    assert!(config.receiver_bind.ip().is_loopback());
+    assert!(config.hub_bind.ip().is_loopback());
+    assert!(config.allow_local_source_run_hub_loopback);
+
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    let runtime = tokio::spawn(async move {
+        run_until_shutdown(config, async move {
+            let _ = shutdown_rx.await;
+        })
+        .await
+    });
+
+    let receiver_url = format!("http://127.0.0.1:{receiver_port}/healthz");
+    let client = reqwest::Client::new();
+    let mut receiver_ready = false;
+    let mut hub_ready = false;
+    for _ in 0..100 {
+        receiver_ready = client
+            .get(&receiver_url)
+            .send()
+            .await
+            .is_ok_and(|response| response.status().is_success());
+        hub_ready = tokio::net::TcpStream::connect(("127.0.0.1", hub_port))
+            .await
+            .is_ok();
+        if receiver_ready && hub_ready {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(receiver_ready);
+    assert!(hub_ready);
+
+    shutdown_tx.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(6), runtime)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]

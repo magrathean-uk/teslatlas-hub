@@ -31,6 +31,8 @@ pub struct EdgeConfig {
     pub state_directory: PathBuf,
     pub receiver_bind: SocketAddr,
     pub hub_bind: SocketAddr,
+    #[serde(default)]
+    pub allow_local_source_run_hub_loopback: bool,
     pub receiver_bearer_path: PathBuf,
     pub spool_key_path: PathBuf,
     pub credential_store_path: PathBuf,
@@ -137,7 +139,7 @@ impl EdgeConfig {
             return Err(ConfigError::InvalidPath);
         }
         if !self.receiver_bind.ip().is_loopback()
-            || self.hub_bind.ip().is_loopback()
+            || self.hub_bind.ip().is_loopback() != self.allow_local_source_run_hub_loopback
             || self.receiver_bind.port() == 0
             || self.hub_bind.port() == 0
             || self.receiver_bind.port() == self.hub_bind.port()

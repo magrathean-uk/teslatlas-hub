@@ -95,6 +95,44 @@ fn strict_configuration_rejects_unknown_keys_and_unsafe_network_shapes() {
 }
 
 #[test]
+fn local_source_run_loopback_hub_bind_is_explicit_and_fail_closed() {
+    let temp = TempDir::new().unwrap();
+    let valid = config_text(&temp);
+    let loopback_hub = valid.replace("0.0.0.0:18443", "127.0.0.1:18443");
+    let opted_in_loopback_hub = loopback_hub.replace(
+        "hub_bind = \"127.0.0.1:18443\"",
+        "hub_bind = \"127.0.0.1:18443\"\nallow_local_source_run_hub_loopback = true",
+    );
+    let local_source_run = EdgeConfig::from_toml(opted_in_loopback_hub.as_bytes()).unwrap();
+    assert!(local_source_run.hub_bind.ip().is_loopback());
+    assert!(local_source_run.allow_local_source_run_hub_loopback);
+
+    let stray_loopback_opt_in = valid.replace(
+        "hub_bind = \"0.0.0.0:18443\"",
+        "hub_bind = \"0.0.0.0:18443\"\nallow_local_source_run_hub_loopback = true",
+    );
+    assert_eq!(
+        EdgeConfig::from_toml(stray_loopback_opt_in.as_bytes()).unwrap_err(),
+        ConfigError::UnsafeBind
+    );
+
+    let public_receiver = opted_in_loopback_hub.replace("127.0.0.1:18080", "0.0.0.0:18080");
+    assert_eq!(
+        EdgeConfig::from_toml(public_receiver.as_bytes()).unwrap_err(),
+        ConfigError::UnsafeBind
+    );
+
+    let colliding_loopback_ports = opted_in_loopback_hub.replace(
+        "hub_bind = \"127.0.0.1:18443\"",
+        "hub_bind = \"127.0.0.1:18080\"",
+    );
+    assert_eq!(
+        EdgeConfig::from_toml(colliding_loopback_ports.as_bytes()).unwrap_err(),
+        ConfigError::UnsafeBind
+    );
+}
+
+#[test]
 fn configuration_rejects_colliding_runtime_paths_before_initialization() {
     let temp = TempDir::new().unwrap();
     let valid = config_text(&temp);

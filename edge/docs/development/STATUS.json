@@ -1,21 +1,29 @@
 {
   "schema_version": 2,
   "product": "Edge",
-  "updated_at": "2026-09-19T20:41:49Z",
-  "update_scope": "f6_current_source_handoff_review_accepted_metadata_delta_pending",
+  "updated_at": "2026-09-20T19:31:53.516065+00:00",
+  "update_scope": "Owner-requested post-completion review and repair planning only; no code/runtime changes or publication",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
-  "state": "G3_G5_ACCEPTED",
-  "source_objective_state": "DURABLE_FORWARDING_AND_BINDING_ACCEPTED",
-  "current_gate_ids": ["F6"],
-  "completion_gate_ids": ["F0", "F2", "F5", "F6", "F7"],
+  "state": "MACOS_WORKING_PRODUCT_ACCEPTED",
+  "source_objective_state": "BOUNDED_PRIOR_RESULTS_RETAINED_REVIEW_FOLLOWUP_PENDING",
+  "current_gate_ids": [
+    "MR-1",
+    "MR-3"
+  ],
+  "completion_gate_ids": [
+    "MR-1",
+    "MR-3"
+  ],
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": [
     "G3",
-    "G5"
+    "G5",
+    "MAC-2",
+    "MAC-5"
   ],
-  "planning_state": "FULL_PRODUCT_READY_F6_WAITING_FOR_F1",
-  "objective": "Complete the optional Edge and pinned receiver across documented native/container ARM64 and Apple-silicon behavior, recovery, passive evidence, distribution and combined installed acceptance.",
+  "planning_state": "DRAFT_NOT_SENT",
+  "objective": "Edge \u2014 prove the complete native receiver-to-Hub path; close assigned MR-0\u2013MR-3 work on current Mac only.",
   "source": {
     "head": "c9965cd2584ed87ab7fbb7fdb0e66084092e9629",
     "branch": "main",
@@ -37,56 +45,66 @@
       "independent_review": "ACCEPTED_NO_FINDINGS",
       "review_timestamp_caveat": "Commit 3430f70 was created and frozen before independent review; review accepted those immutable unpushed bytes. This metadata-only delta is pending same-reviewer confirmation.",
       "f6_accepted": false
-    }
+    },
+    "record_scope": "Historical accepted source/publication fields, retained unchanged; use current_source_observation for current reviewed worktree."
   },
   "current_worker": null,
   "model_policy": {
-    "implementation": "gpt-5.6-sol/high",
-    "exploration": "gpt-5.6-luna/max",
-    "coordinator": "gpt-5.6-sol/max",
-    "fast_mode": false
+    "coordinator": "gpt-5.6-sol/high",
+    "implementation_default": "gpt-5.6-sol/medium",
+    "integration_and_review": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/medium",
+    "mechanical_extraction": "gpt-5.6-luna/low",
+    "escalation": "xhigh/max only for demonstrated difficulty or explicit request",
+    "fast_mode": false,
+    "authority": "AGENTS.md"
   },
-  "evidence_summary": [
-    "r11 exact source/preparation was independently accepted as inactive; no guest runtime or event exists for that cohort.",
-    "F6 current-source preparation freezes exact reachable commit c9965cd2584ed87ab7fbb7fdb0e66084092e9629 as a reproducible complete 134-file export and manifest; it creates no Edge catalog artifact and proves no runtime or lifecycle gate.",
-    "Independent Sol/high review accepted frozen unpushed commit 3430f706223f8f3eeeddbfba613a1dea4a88c0de with no findings after recomputing all source-handoff identities; the commit-before-review sequence is explicit and the review-metadata delta awaits same-reviewer confirmation.",
-    "Prior narrow forwarding/recovery results remain historical; expired r11 credentials and closed cohorts cannot be reused.",
-    "G5 accepted on fresh Debian 13 ARM64 cohort r5: exactly one guarded V event produced one encrypted admission, survived Hub outage and Edge restart with stable batch/record identity, committed before occurrence-bound ACK, projected one synthetic-b2 vehicle, advanced frontier 0 to 1, drained pending/gaps to zero, and remained durable through Hub restart.",
-    "The r4 helper/receiver mismatch was closed without replay; the exact pinned empty-MessageID ACK contract and lane-only V mapping passed focused Go and live receiver/bridge tests before r5.",
-    "G3 final admission retains Edge's distinct edge-delivery-v2@2.0.0 binding e304fb6e...d224 for product 2026.36.2 and binds it to the accepted content-bound G5 Hub fingerprint and both G5 receipts; scoped admission/readback passes under r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865."
-  ],
+  "evidence_summary": "The current native receiver bridge and Edge-to-Hub fault/restart tests passed separately. Their own receipt explicitly excludes a continuous receiver-to-Hub chain; the required combined runtime proof remains open.",
   "evidence_paths": [
     "docs/development/edge-macos-one-event-r11-concrete-profile-acceptance-2026-09-18.json",
     "docs/development/edge-macos-one-event-r11-restart-cross-owner-acceptance-2026-09-18.json",
     "docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
     "docs/development/f6-current-source-handoff-2026-09-19-r1.json",
     "docs/development/f6-current-source-manifest-c9965cd-2026-09-19.json",
-    "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json"
+    "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+    "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/mac2-current-source-20260920-r1/evidence/mac2-runtime-summary-r2.json"
   ],
-  "remaining": [
-    "F0 accepted: the independently reviewed workspace ledger maps every Edge, receiver, spool, service, container and recovery claim.",
-    "F2: prove complete optional delivery and fault recovery against the exact F1 Hub.",
-    "F5: a fresh authorized passive capture is mandatory external input for real mapping/parity evidence.",
-    "F6 current-source handoff is prepared; clean exported-source build/install and Debian ARM64, Apple-silicon and ARM64 container lifecycle evidence remain open. F7 final combined installation remains open."
-  ],
-  "next_goal_draft": {
-    "id": "FULL_EDGE_RECEIVER_F0_F7",
-    "state": "READY_F6_WAITING_FOR_F1",
-    "objective": "Complete Edge and the pinned receiver across documented delivery, recovery, native/container distribution, passive evidence and final installed integration.",
-    "prerequisites": [
-      "F0 ledger and exact receiver source/version/toolchain/configuration audit",
-      "Accepted F1 Hub and fresh Hub-owned handoffs",
-      "Fresh one-use synthetic cohorts and separately authorized passive input"
-    ],
-    "acceptance_evidence": [
-      "F0 feature/support ledger",
-      "F2 complete ACK/deduplication/outage/restart/backpressure/recovery receipt",
-      "F5 passive mapping and redaction receipt",
-      "F6 native/container install, upgrade, backup/restore, rollback, removal and catalog receipts",
-      "F7 combined installed ecosystem receipt"
-    ],
-    "execution_authorized": true
+  "mac5_synthetic_handoff": {
+    "state": "INDEPENDENTLY_ACCEPTED_SYNTHETIC_HANDOFF",
+    "authoritative_private_cross_consumer_receipt_sha256": "f6d4e7fe2bf0eb34127883fb65095b50b50d69b410184dc8a8c70807d33cfda3",
+    "superseded_retained_r1_receipt_sha256": "36bfdeccbf953a251d0309bb17e954da42d458226b8bfa753e3f8d26bb0cccc5",
+    "canonical_semantic_sha256": "20b164b499673ba207136dcb0107d8c8d74170029721125442914b99f3ae173a",
+    "node_firefox_swift_equality": "EXACT",
+    "home_assistant_binding": "HONEST_SUPPORTED_SUBSET",
+    "swift_pairing_lifecycle": "FRESH_CREATE_AND_REVOKE_RETURNED_ACTIVE_DEVICE_COUNT_3",
+    "final_binary_recovery_receipt_sha256": "c5831538536f48f82e6ef69d9772307365166bc2e93dda2c1ba83ac0fb007fa6",
+    "operator_guide": "INDEPENDENTLY_ACCEPTED_EXACT",
+    "acceptance_limit": "Synthetic comparison, recovery and handoff only; this slice did not accept MAC-5 until the later real-data acceptance recorded in mac5_real_acceptance."
   },
+  "mac5_real_acceptance": {
+    "state": "ACCEPTED_CURRENT_MAC_READ_ONLY_REAL_DATA",
+    "owner_only_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/macos-realdata-20260920/mac5-real-acceptance.private.json",
+    "owner_only_receipt_sha256": "a98bebe3aa828ceed3bde30b381690133b6019f44552d75d7a71b3b150e699db",
+    "source_dump_sha256": "ff78fefa7396fe2aac356cda702d7a2b55b70cdc112b94cd43ab13762f12cb09",
+    "source_dump_bytes": 787728,
+    "source_rows": "cars=1 drives=4 positions=5278 states=4 charging=0",
+    "source_safety": "TESLAMATE_PAUSED_READ_ONLY_NEVER_WRITTEN_HEALTHY_WITHIN_15_SECONDS; TEMP_DATABASE_ROLE_AND_TUNNELS_REMOVED",
+    "final_hub_binary_sha256": "4749ad918414664d2a55f8bf7c07c23b2cae39ea1789a68e5034b47d752c603e",
+    "canonical_semantic_sha256": "621d88a12417871a8b28d33933083b4e1a7376a4b7e9049d9381bdcc699ba8c8",
+    "canonical_semantic_bytes": 3429,
+    "consumer_result": "NODE_FIREFOX_SWIFT_RESTORED_NODE_EXACT; VEHICLES=4; DRIVE_COUNTS=[4,0,0,0]; BOUNDARY=[3,1]",
+    "home_assistant_result": "2026.8.3; 52 enabled entities; primary offline plus 12 unknown; Container restart pass; exact 7-entry/3-device/17-entity removal baseline",
+    "recovery": "BACKUP_VERIFY_RESTORE_EXACT_SEMANTIC_DIGEST_AFTER_FRESH_PAIRING; TEMPORARY_RECOVERY_SECRETS_REMOVED",
+    "runtime_cleanup": "REAL_TEST_RUNTIME_STOPPED; RETAINED_SYNTHETIC_21444_ACTIVE",
+    "independent_review": "ACCEPT_NO_P1_P2_P3",
+    "acceptance_limit": "Current Apple-silicon Mac source-run product only; full-solution and cross-platform acceptance remain open."
+  },
+  "remaining": [
+    "Coordinate one fresh pinned receiver \u2192 actual encrypted spool \u2192 app-managed Hub event path with the Hub owner.",
+    "Prove bounded quota/backpressure, credential rotation, status/doctor and affected recovery at runtime; reuse matching unchanged fault/ACK tests.",
+    "Record exact current native artifacts and the bounded MAC2 receipt separately from historical G5 identities."
+  ],
+  "current_goal": null,
   "last_acceptance": {
     "gate_id": "G5",
     "state": "ACCEPTED",
@@ -110,13 +128,159 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G5 r5 closed after receiver-first/Edge/Hub stop; G3 metadata admitted; exact private root and runtime scripts removed; Debian guest stopped; no current handoff",
+  "runtime_state": {
+    "state": "NOT_RETESTED_BY_REVIEW",
+    "shared_hub": "Documented21444 LaunchAgent/listener absent at review; final prior transcript showed running at15:48:09Z; ownership/restart reconciliation pending."
+  },
   "acceptance_limits": [
+    "Overall current-Mac acceptance is reopened for the specific post-completion findings; historical accepted slices remain bounded evidence.",
+    "The owner-authorized read-only real-data import/consumer/recovery observation remains accepted within its exact receipt; it proves neither live Tesla collection nor production or broader full-solution acceptance.",
+    "Packaging/distribution, additional platforms and older OS floors remain deferred; app/Viewer and paused architectures remain excluded.",
+    "No new remote data access, closed credentials, Keychain/Touch ID, signing or public ingress is authorized by this review.",
+    "Edge ingress remains synthetic evidence; downstream read-only import acceptance does not prove real Edge telemetry."
+  ],
+  "reassessment_previous_planning": {
+    "state": "G3_G5_ACCEPTED",
+    "planning_state": "FULL_PRODUCT_READY_F6_WAITING_FOR_F1",
+    "current_gate_ids": [
+      "F6"
+    ],
+    "completion_gate_ids": [
+      "F0",
+      "F2",
+      "F5",
+      "F6",
+      "F7"
+    ],
+    "remaining": [
+      "F0 accepted: the independently reviewed workspace ledger maps every Edge, receiver, spool, service, container and recovery claim.",
+      "F2: prove complete optional delivery and fault recovery against the exact F1 Hub.",
+      "F5: a fresh authorized passive capture is mandatory external input for real mapping/parity evidence.",
+      "F6 current-source handoff is prepared; clean exported-source build/install and Debian ARM64, Apple-silicon and ARM64 container lifecycle evidence remain open. F7 final combined installation remains open."
+    ],
+    "next_goal_draft": {
+      "id": "FULL_EDGE_RECEIVER_F0_F7",
+      "state": "READY_F6_WAITING_FOR_F1",
+      "objective": "Complete Edge and the pinned receiver across documented delivery, recovery, native/container distribution, passive evidence and final installed integration.",
+      "prerequisites": [
+        "F0 ledger and exact receiver source/version/toolchain/configuration audit",
+        "Accepted F1 Hub and fresh Hub-owned handoffs",
+        "Fresh one-use synthetic cohorts and separately authorized passive input"
+      ],
+      "acceptance_evidence": [
+        "F0 feature/support ledger",
+        "F2 complete ACK/deduplication/outage/restart/backpressure/recovery receipt",
+        "F5 passive mapping and redaction receipt",
+        "F6 native/container install, upgrade, backup/restore, rollback, removal and catalog receipts",
+        "F7 combined installed ecosystem receipt"
+      ],
+      "execution_authorized": true
+    }
+  },
+  "macos_working_product_state": "MACOS_REPAIR_RUNTIME_RETAINED_MR3_HANDOFF_PENDING",
+  "immediate_objective": "Edge \u2014 prove the complete native receiver-to-Hub path",
+  "next_ready_action": "Close MR-3 handoff after independent review: source-only commit/push of repair files; live consumer pairing remains app-owned while Serve holds the lifetime lock.",
+  "workspace_observation": {
+    "checked_at": "2026-09-20T16:07:22.852911+00:00",
+    "head": "bd632c8f800dbf813cc7c1f69968ab4e61153b17",
+    "branch": "main",
+    "dirty": true,
+    "source_snapshot": "docs/development/archive/2026-09-20-post-completion-review/review-source-snapshot.json",
+    "scope": "Current review identity only; does not retroactively bind earlier runtime receipts. No source commit or push performed by this review."
+  },
+  "last_recorded_runtime_state": "MAC-2 current-source native runtime acceptance passed. Both exact Edge tests complete from the repaired current Hub fixture; redacted mode-0600 receipts are retained under mac2-current-source-20260920-r1, all task-owned processes are stopped, port 8080 is closed and the shared heavy-build lock is absent. Final independent review found no implementation finding.",
+  "previous_mac_completion_record": {
+    "recorded_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
+    "original_goal": {
+      "id": "MACOS_FIRST_WORKING_PRODUCT",
+      "state": "COMPLETED_ACCEPTED",
+      "prompt": "../../../docs/development/archive/2026-09-20-post-completion-review/docs/development/GOAL_PROMPT.md",
+      "milestones": [
+        "MAC-2",
+        "MAC-5"
+      ],
+      "execution_authorized": true,
+      "note": "MAC-2 and MAC-5 are accepted for the current Mac source-run product; the full solution and cross-platform programme remain unaccepted.",
+      "review_disposition": "Historical native goal completed; aggregate acceptance subsequently reopened."
+    },
+    "original_gate_ids": [
+      "MAC-2",
+      "MAC-5"
+    ],
+    "original_evidence_summary": [
+      "r11 exact source/preparation was independently accepted as inactive; no guest runtime or event exists for that cohort.",
+      "F6 current-source preparation freezes exact reachable commit c9965cd2584ed87ab7fbb7fdb0e66084092e9629 as a reproducible complete 134-file export and manifest; it creates no Edge catalog artifact and proves no runtime or lifecycle gate.",
+      "Independent Sol/high review accepted frozen unpushed commit 3430f706223f8f3eeeddbfba613a1dea4a88c0de with no findings after recomputing all source-handoff identities; the commit-before-review sequence is explicit and the review-metadata delta awaits same-reviewer confirmation.",
+      "Prior narrow forwarding/recovery results remain historical; expired r11 credentials and closed cohorts cannot be reused.",
+      "G5 accepted on fresh Debian 13 ARM64 cohort r5: exactly one guarded V event produced one encrypted admission, survived Hub outage and Edge restart with stable batch/record identity, committed before occurrence-bound ACK, projected one synthetic-b2 vehicle, advanced frontier 0 to 1, drained pending/gaps to zero, and remained durable through Hub restart.",
+      "The r4 helper/receiver mismatch was closed without replay; the exact pinned empty-MessageID ACK contract and lane-only V mapping passed focused Go and live receiver/bridge tests before r5.",
+      "G3 final admission retains Edge's distinct edge-delivery-v2@2.0.0 binding e304fb6e...d224 for product 2026.36.2 and binds it to the accepted content-bound G5 Hub fingerprint and both G5 receipts; scoped admission/readback passes under r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865."
+    ],
+    "original_runtime_state": "MAC-2 is accepted for the current native Mac source-run scope. Current ARM64 Edge SHA-256 7177bb4a683938fcb38bf6309a36bee69b0ede12b6f36d59f5c21503de15d848 and exact-Go-1.27 receiver SHA-256 8abeeb2a4e0655a54f3235ca18e43b8a91ce044955a712af381b7636b4f568d1 pass the synthetic one-event bridge and the full Hub-owned mTLS/bearer delivery, wrong-identity, duplicate/replay, gap, five transaction-error, pre-commit, lost-ACK, offline recovery, restart-parity and SIGTERM matrix. Final ledger is 7 applications, 10 sequences, ACK frontier 10, zero pending publications and five sync packs; Edge spool is empty after ACK. Owned processes and listeners are stopped.",
+    "archive": "docs/development/archive/2026-09-20-post-completion-review/teslatlas-edge/docs/development/STATUS.json",
+    "scope": "Historical completion declaration, now qualified by the independent review; native goal state was not changed."
+  },
+  "completed_goal": {
+    "id": "MACOS_FIRST_WORKING_PRODUCT",
+    "state": "COMPLETED_ACCEPTED",
+    "prompt": "../../../docs/development/archive/2026-09-20-post-completion-review/docs/development/GOAL_PROMPT.md",
+    "milestones": [
+      "MAC-2",
+      "MAC-5"
+    ],
+    "execution_authorized": true,
+    "note": "MAC-2 and MAC-5 are accepted for the current Mac source-run product; the full solution and cross-platform programme remain unaccepted.",
+    "review_disposition": "Historical native goal completed; aggregate acceptance subsequently reopened."
+  },
+  "next_goal_draft": {
+    "id": "MACOS_POST_COMPLETION_REPAIR",
+    "state": "DRAFT_NOT_SENT",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "high",
+    "prompt": "../../../docs/development/GOAL_PROMPT.md",
+    "milestones": [
+      "MR-1",
+      "MR-3"
+    ],
+    "execution_started": false
+  },
+  "historical_acceptance_limits": [
     "No App integration acceptance",
     "No real-data parity or production acceptance",
     "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
     "The current-source export and complete manifest are source-only preparation; no Edge artifact belongs in the Hub catalog and F6 remains open",
     "Independent acceptance is bounded to the exact source-only handoff/catalog input; it does not admit an Edge package or satisfy runtime, lifecycle, F2, F6 or F7 acceptance",
     "Viewer excluded; x86/Intel paused"
-  ]
+  ],
+  "historical_remaining": [
+    "The wider F2/F5/F6/F7 package, installer, container, predecessor lifecycle, additional-target and production-admission work remains deferred backlog."
+  ],
+  "current_source_observation": {
+    "checked_at": "2026-09-20T16:07:22.852911+00:00",
+    "head": "bd632c8f800dbf813cc7c1f69968ab4e61153b17",
+    "branch": "main",
+    "dirty": true,
+    "source_snapshot": "docs/development/archive/2026-09-20-post-completion-review/review-source-snapshot.json",
+    "scope": "Current review identity only; does not retroactively bind earlier runtime receipts. No source commit or push performed by this review."
+  },
+  "post_completion_review": {
+    "state": "REPAIR_DIRECTIVE_DRAFTED",
+    "report": "docs/development/POST_COMPLETION_REVIEW.md",
+    "findings": [
+      "MR-F3",
+      "MR-F6",
+      "MR-F7"
+    ],
+    "retained_evidence": "The current native receiver bridge and Edge-to-Hub fault/restart tests passed separately. Their own receipt explicitly excludes a continuous receiver-to-Hub chain; the required combined runtime proof remains open.",
+    "runtime_retested": false,
+    "native_goal_modified": false
+  },
+  "current_mac2_bounded_evidence": {
+    "receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/mac2-current-source-20260920-r1/evidence/mac2-runtime-summary-r2.json",
+    "sha256": "39fc465999ae699ccfe114158c4fe48e48263c38248454235ebf271d5ce5bfb3",
+    "edge_source_head": "bd632c8f800dbf813cc7c1f69968ab4e61153b17",
+    "scope": "Separate native receiver bridge and Edge-to-Hub fault/restart lanes; not full combined MAC2 acceptance."
+  },
+  "historical_full_programme_objective": "Complete the optional Edge and pinned receiver across documented native/container ARM64 and Apple-silicon behavior, recovery, passive evidence, distribution and combined installed acceptance.",
+  "historical_source_objective_state": "DURABLE_FORWARDING_AND_BINDING_ACCEPTED"
 }

@@ -1,8 +1,9 @@
 # Teslatlas edge
 
-Current coordination authority: `../docs/development/COORDINATION.md` (2026-09-18).
-Sol 5.6/max coordinator, Sol 5.6/high implementation/review, Luna exploration; no fast mode.
-Legacy chats are archived. Use this product's current PLAN; no App or Viewer work.
+Follow `../AGENTS.md`, `../WORKSPACE_AUTHORITY.md` and
+`../docs/development/COORDINATION.md`, then this product's `docs/development/PLAN.md`
+and `STATUS.json`. Sol is the default implementation/review model; use the shared
+role-based effort policy. Work only on the assigned scope; App and Viewer are excluded.
 
 This repository owns a narrow user-operated Fleet Telemetry ingress.
 
