@@ -1,20 +1,29 @@
 {
   "schema_version": 2,
   "product": "Protocol",
-  "updated_at": "2026-09-20T06:11:27Z",
-  "update_scope": "f3_f6_pro04_current_source_cold_cache_offline_reinstall_publication_readback",
+  "updated_at": "2026-09-20T16:07:22.852911+00:00",
+  "update_scope": "Owner-requested post-completion review and repair planning only; no code/runtime changes or publication",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
-  "state": "G3_ACCEPTED",
-  "source_objective_state": "HUB_COMPATIBLE_CURRENT_SOURCE_HANDOFF_PREPARED_REMAINING_F3_F6_OPEN",
-  "current_gate_ids": ["F3", "F6"],
-  "completion_gate_ids": ["F0", "F3", "F5", "F6", "F7"],
+  "state": "MACOS_WORKING_PRODUCT_ACCEPTED",
+  "source_objective_state": "BOUNDED_PRIOR_RESULTS_RETAINED_REVIEW_FOLLOWUP_PENDING",
+  "current_gate_ids": [
+    "MR-2",
+    "MR-3"
+  ],
+  "completion_gate_ids": [
+    "MR-2",
+    "MR-3"
+  ],
   "accepted_receipts_immutable": true,
   "full_solution_state": "NOT_ACCEPTED",
   "accepted_gate_ids": [
-    "G3"
+    "G3",
+    "MAC-2",
+    "MAC-3",
+    "MAC-5"
   ],
-  "planning_state": "F3_F6_NATIVE_DOCKER_AND_CURRENT_SOURCE_CACHE_PROVENANCE_SLICES_ACCEPTED_SOURCE_HANDOFF_PREPARED_REMAINING_GATES_OPEN",
-  "objective": "Complete every documented Protocol profile and conformance surface, real-input semantic evidence, reproducible developer distribution and final ecosystem admission.",
+  "planning_state": "DRAFT_NOT_SENT",
+  "objective": "Protocol \u2014 retain contracts and verify affected integration; close assigned MR-0\u2013MR-3 work on current Mac only.",
   "source": {
     "review_base_head": "6d79d4660f0c8495db7344def4ad274d79bac18d",
     "branch": "main",
@@ -27,38 +36,21 @@
     "catalog_cohort_source_commit": "53b5c6483990db84e5214176755f398e93d87b1b",
     "catalog_cohort_source_tree": "931507b56c641d330d3a75513f3eb1f88f24e219",
     "review_base_is_evidence_only": "e82ed205f728cff3cf1e2ceab0ceb40692c562d6 records later PLAN, STATUS and r2 receipt evidence; it and this metadata-only handoff delta do not replace the accepted Docker runtime source",
-    "public_remote_verified_without_credentials": true
+    "public_remote_verified_without_credentials": true,
+    "record_scope": "Historical accepted source/publication fields, retained unchanged; use current_source_observation for current reviewed worktree."
   },
   "current_worker": null,
   "model_policy": {
-    "implementation": "gpt-5.6-sol/high",
-    "exploration": "gpt-5.6-luna/max",
-    "coordinator": "gpt-5.6-sol/max",
-    "fast_mode": false
+    "coordinator": "gpt-5.6-sol/high",
+    "implementation_default": "gpt-5.6-sol/medium",
+    "integration_and_review": "gpt-5.6-sol/high",
+    "exploration": "gpt-5.6-luna/medium",
+    "mechanical_extraction": "gpt-5.6-luna/low",
+    "escalation": "xhigh/max only for demonstrated difficulty or explicit request",
+    "fast_mode": false,
+    "authority": "AGENTS.md"
   },
-  "evidence_summary": [
-    "Prior local contract gate recorded 134 Protocol tests plus 31 rich-profile cases; ARM64 current-profile fixture recorded 24/24.",
-    "The independently accepted native developer-bundle foundation remains bounded source/package evidence; it does not by itself close F3 or F6.",
-    "G3 accepted the exact product 2026.36.2 bindings from final G2/G4, G5 and G6 evidence: hub-http-v1@1.0.0 remains b80d940e...d926 across Protocol, TypeScript and Swift while Edge retains edge-delivery-v2@2.0.0 e304fb6e...d224.",
-    "All five compatibility records passed the scoped G3 admission/readback checker; its 6 focused cases prove active-only operation, idempotence and fail-closed identity/divergence handling without reading Viewer. The TypeScript vendored Protocol copy is byte-identical and its focused lock/readback check passes.",
-    "The repaired checker is bound by r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865.",
-    "A deterministic 172-member developer archive now closes 170 public source payload members plus its canonical manifest and checksum map; two post-review builds were byte-identical at SHA-256 6368e2f59303b8ed7623c7817492269fc869e77754909ab47bd4cc6aefb196ec.",
-    "A verified clean extraction on macOS 27 arm64 used Python 3.11.16 and uv 0.12.12: a fresh locked install seeded an isolated cache, then a deleted environment reinstalled with UV_OFFLINE=1 and passed 142 tests plus 31 rich-profile conformance runs.",
-    "The first independent review requested four verifier corrections. The frozen delta now rejects raw or concatenated gzip tails, decoded post-tar bytes, renamed extraction roots before destination creation, unknown/mutated/reordered manifest data, and setuid/setgid/sticky modes.",
-    "Archive verification also continues to fail closed on links, traversal, duplicate members, parent/file conflicts, non-canonical metadata or order, extra/missing members, changed modes, content divergence and dependency-lock divergence.",
-    "Independent Sol/high recheck returned ACCEPT after reproducing the final archive identity/counts, all eight focused regressions, the 142-test native gate and 31/31 conformance runs; the acceptance is explicitly bounded to the native bundle foundation.",
-    "The exact published commit 6686615c...a970 and archive 6368e2f5...96ec were reproduced in the native Debian 13 ARM64 guest, but the published Docker image collected 142 tests and ended with six errors because required bundle inputs were absent from the final image.",
-    "A minimal Dockerfile candidate now copies docs/, Dockerfile and THIRD-PARTY-NOTICES.md. Its deterministic archive is 8ac5ccfa...b8be and its native linux/arm64 image dc170e65...ece91 passed 142/142 tests plus 31/31 conformance as UID/GID 10001 with UV_OFFLINE=1 and --network none.",
-    "Independent Sol/high review returned ACCEPT with no findings for the bounded dirty-tree ARM64 Docker candidate and its calibrated receipt; this does not make the candidate reachable-source evidence.",
-    "The published runtime-source commit 53b5c648...d87b1b was staged only through its clean git archive. Two ARM64 guest builds reproduced bundle 8ac5ccfa...b8be and the digest-pinned native image 721f2ad8...58095 passed 142/142 tests plus 31/31 conformance as UID/GID 10001 with UV_OFFLINE=1 and --network none.",
-    "Independent Sol/high review returned ACCEPT with no findings for the exact published runtime-source 53b5c648...d87b1b native ARM64 Docker developer-bundle slice and its corrected r2 evidence chronology; the later evidence commit does not replace that runtime-source identity.",
-    "The guest returned to zero Docker images/containers/volumes/cache, its temporary context was removed, it was stopped, port 60022 closed and the heavy-build lock was released.",
-    "A deterministic clean export of accepted runtime-source commit 53b5c648...d87b1b binds all 188 regular files in the tracked complete manifest; the Hub algorithm includes 187 files, excludes only AGENTS.md, and reproducibly yields source_sha256 a4b68800...046c for product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926.",
-    "The source handoff intentionally contains no Protocol artifacts because the Hub catalog schema forbids them. It is prepared input only: Hub recomputation/admission and catalog lifecycle remain open, with no runtime or gate acceptance claimed.",
-    "Independent bounded review reproduced the clean archive, complete manifest aggregate, Hub source aggregate and profile digest; confirmed public unauthenticated main reachability and exact ancestry; found no remaining P1/P2 defects.",
-    "Exact runtime source 53b5c648 then passed a separate PRO-04 cache-provenance slice: one locked Python 3.11 seed from a genuinely empty task cache/environment installed 32 distributions and passed 142/142 tests plus 31/31 conformance; after environment deletion, UV_OFFLINE locked reinstall under enforced remote-network denial passed the same checker and reproduced bundle 8ac5ccfa byte-for-byte.",
-    "The 1,606-entry seeded cache manifest, including 1,342 files, remained identical at SHA-256 946223efa9759909e20bbdf5a8e43d9f160418e5ec37d8b32a8198fa3e6d5417. Independent Sol/high review returned ACCEPT with no P1/P2. This is not cold-cache offline installation because the bundle contains no wheels."
-  ],
+  "evidence_summary": "No new Protocol implementation defect was established. Current native reference and Hub checker results remain bounded evidence; aggregate product acceptance depends on the Hub/consumer repairs.",
   "evidence_paths": [
     "docs/development/g3-compatibility-admission-2026-09-19-r2.json",
     "docs/development/f3-f6-native-developer-bundle-foundation-2026-09-19-r1.json",
@@ -68,26 +60,42 @@
     "docs/development/f6-current-source-handoff-2026-09-19-r1.json",
     "docs/development/f3-f6-pro04-current-source-cold-cache-offline-reinstall-2026-09-20-r1.json"
   ],
-  "remaining": [
-    "F0 accepted: the independently reviewed workspace ledger maps every rich, current-Hub and Edge contract claim.",
-    "F3: the native bundle foundation is independently accepted; prove independent adapters and fail-closed compatibility for all final active consumers.",
-    "F5: mandatory fresh named-source and passive evidence must validate real semantics and any resulting contract delta.",
-    "F6: the exact-source native ARM64 Docker and current-source cache-provenance slices are independently accepted and the bounded Hub-compatible source candidate is prepared; Hub must independently recompute and admit it, then prove remote-wire smoke and catalog install/update/status/rollback/removal against exact admitted commits. Bundle-contained cold-cache offline installation remains unproved.",
-    "F7: admit exact final product artifacts and pass combined readback without validator weakening."
-  ],
-  "next_goal_draft": {
-    "id": "FULL_PROTOCOL_F0_F7",
-    "state": "READY_F3_F6",
-    "objective": "Complete all documented source-neutral profiles and conformance surfaces, real-input semantics, reproducible distribution and final ecosystem admission.",
-    "acceptance_evidence": [
-      "F0 conflict-free normative and machine-readable ledger",
-      "F3 independent adapter and compatibility receipts",
-      "F5 redacted real-source/import/passive semantic evidence",
-      "F6 reproducible native/Docker bundle and catalog lifecycle receipt",
-      "F7 exact final product admission/readback receipt"
-    ],
-    "execution_authorized": true
+  "mac5_synthetic_handoff": {
+    "state": "INDEPENDENTLY_ACCEPTED_SYNTHETIC_HANDOFF",
+    "authoritative_private_cross_consumer_receipt_sha256": "f6d4e7fe2bf0eb34127883fb65095b50b50d69b410184dc8a8c70807d33cfda3",
+    "superseded_retained_r1_receipt_sha256": "36bfdeccbf953a251d0309bb17e954da42d458226b8bfa753e3f8d26bb0cccc5",
+    "canonical_semantic_sha256": "20b164b499673ba207136dcb0107d8c8d74170029721125442914b99f3ae173a",
+    "node_firefox_swift_equality": "EXACT",
+    "home_assistant_binding": "HONEST_SUPPORTED_SUBSET",
+    "swift_pairing_lifecycle": "FRESH_CREATE_AND_REVOKE_RETURNED_ACTIVE_DEVICE_COUNT_3",
+    "final_binary_recovery_receipt_sha256": "c5831538536f48f82e6ef69d9772307365166bc2e93dda2c1ba83ac0fb007fa6",
+    "operator_guide": "INDEPENDENTLY_ACCEPTED_EXACT",
+    "acceptance_limit": "Synthetic comparison, recovery and handoff only; this slice did not accept MAC-5 until the later real-data acceptance recorded in mac5_real_acceptance."
   },
+  "mac5_real_acceptance": {
+    "state": "ACCEPTED_CURRENT_MAC_READ_ONLY_REAL_DATA",
+    "owner_only_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/macos-realdata-20260920/mac5-real-acceptance.private.json",
+    "owner_only_receipt_sha256": "a98bebe3aa828ceed3bde30b381690133b6019f44552d75d7a71b3b150e699db",
+    "source_dump_sha256": "ff78fefa7396fe2aac356cda702d7a2b55b70cdc112b94cd43ab13762f12cb09",
+    "source_dump_bytes": 787728,
+    "source_rows": "cars=1 drives=4 positions=5278 states=4 charging=0",
+    "source_safety": "TESLAMATE_PAUSED_READ_ONLY_NEVER_WRITTEN_HEALTHY_WITHIN_15_SECONDS; TEMP_DATABASE_ROLE_AND_TUNNELS_REMOVED",
+    "final_hub_binary_sha256": "4749ad918414664d2a55f8bf7c07c23b2cae39ea1789a68e5034b47d752c603e",
+    "canonical_semantic_sha256": "621d88a12417871a8b28d33933083b4e1a7376a4b7e9049d9381bdcc699ba8c8",
+    "canonical_semantic_bytes": 3429,
+    "consumer_result": "NODE_FIREFOX_SWIFT_RESTORED_NODE_EXACT; VEHICLES=4; DRIVE_COUNTS=[4,0,0,0]; BOUNDARY=[3,1]",
+    "home_assistant_result": "2026.8.3; 52 enabled entities; primary offline plus 12 unknown; Container restart pass; exact 7-entry/3-device/17-entity removal baseline",
+    "recovery": "BACKUP_VERIFY_RESTORE_EXACT_SEMANTIC_DIGEST_AFTER_FRESH_PAIRING; TEMPORARY_RECOVERY_SECRETS_REMOVED",
+    "runtime_cleanup": "REAL_TEST_RUNTIME_STOPPED; RETAINED_SYNTHETIC_21444_ACTIVE",
+    "independent_review": "ACCEPT_NO_P1_P2_P3",
+    "acceptance_limit": "Current Apple-silicon Mac source-run product only; full-solution and cross-platform acceptance remain open."
+  },
+  "remaining": [
+    "Retain existing rich/current-Hub/Edge reference results; no protocol expansion is planned.",
+    "Check changed Hub behavior against the existing current-Hub and Edge profiles; do not invent rich Hub endpoints.",
+    "Supply exact source/profile identity to the final combined run and reconcile status/publication."
+  ],
+  "current_goal": null,
   "current_f3_f6_pro04_cache_provenance_slice": {
     "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
     "receipt": "docs/development/f3-f6-pro04-current-source-cold-cache-offline-reinstall-2026-09-20-r1.json",
@@ -122,12 +130,164 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "The authorized retained Debian ARM64 guest was used and stopped. Exact-source containers ran only with --rm --network none; no service, published port, Teslatlas listener or private input was created. All lane images, containers, volumes, cache and temporary build context were removed, port 60022 closed and the heavy-build lock was released. The later macOS PRO-04 task removed its exact source export, environment, seeded cache, archives and temporary root without acquiring the shared lock; the original checkout remained unchanged except its pre-existing .serena cache.",
+  "runtime_state": {
+    "state": "NOT_RETESTED_BY_REVIEW",
+    "shared_hub": "Documented21444 LaunchAgent/listener absent at review; final prior transcript showed running at15:48:09Z; ownership/restart reconciliation pending."
+  },
   "acceptance_limits": [
+    "Overall current-Mac acceptance is reopened for the specific post-completion findings; historical accepted slices remain bounded evidence.",
+    "The owner-authorized read-only real-data import/consumer/recovery observation remains accepted within its exact receipt; it proves neither live Tesla collection nor production or broader full-solution acceptance.",
+    "Packaging/distribution, additional platforms and older OS floors remain deferred; app/Viewer and paused architectures remain excluded.",
+    "No new remote data access, closed credentials, Keychain/Touch ID, signing or public ingress is authorized by this review.",
+    "Protocol conformance is not itself a real-data consumer; separate rich, current-Hub and Edge profiles remain authoritative."
+  ],
+  "reassessment_previous_planning": {
+    "state": "G3_ACCEPTED",
+    "planning_state": "F3_F6_NATIVE_DOCKER_AND_CURRENT_SOURCE_CACHE_PROVENANCE_SLICES_ACCEPTED_SOURCE_HANDOFF_PREPARED_REMAINING_GATES_OPEN",
+    "current_gate_ids": [
+      "F3",
+      "F6"
+    ],
+    "completion_gate_ids": [
+      "F0",
+      "F3",
+      "F5",
+      "F6",
+      "F7"
+    ],
+    "remaining": [
+      "F0 accepted: the independently reviewed workspace ledger maps every rich, current-Hub and Edge contract claim.",
+      "F3: the native bundle foundation is independently accepted; prove independent adapters and fail-closed compatibility for all final active consumers.",
+      "F5: mandatory fresh named-source and passive evidence must validate real semantics and any resulting contract delta.",
+      "F6: the exact-source native ARM64 Docker and current-source cache-provenance slices are independently accepted and the bounded Hub-compatible source candidate is prepared; Hub must independently recompute and admit it, then prove remote-wire smoke and catalog install/update/status/rollback/removal against exact admitted commits. Bundle-contained cold-cache offline installation remains unproved.",
+      "F7: admit exact final product artifacts and pass combined readback without validator weakening."
+    ],
+    "next_goal_draft": {
+      "id": "FULL_PROTOCOL_F0_F7",
+      "state": "READY_F3_F6",
+      "objective": "Complete all documented source-neutral profiles and conformance surfaces, real-input semantics, reproducible distribution and final ecosystem admission.",
+      "acceptance_evidence": [
+        "F0 conflict-free normative and machine-readable ledger",
+        "F3 independent adapter and compatibility receipts",
+        "F5 redacted real-source/import/passive semantic evidence",
+        "F6 reproducible native/Docker bundle and catalog lifecycle receipt",
+        "F7 exact final product admission/readback receipt"
+      ],
+      "execution_authorized": true
+    }
+  },
+  "macos_working_product_state": "MACOS_REVIEW_REOPENED",
+  "immediate_objective": "Protocol \u2014 retain contracts and verify affected integration",
+  "next_ready_action": "Retain existing rich/current-Hub/Edge reference results; no protocol expansion is planned.",
+  "workspace_observation": {
+    "checked_at": "2026-09-20T16:07:22.852911+00:00",
+    "head": "c8a3ffab9183a428a61a4759c8d72bd405cbd2ca",
+    "branch": "main",
+    "dirty": true,
+    "source_snapshot": "docs/development/archive/2026-09-20-post-completion-review/review-source-snapshot.json",
+    "scope": "Current review identity only; does not retroactively bind earlier runtime receipts. No source commit or push performed by this review."
+  },
+  "last_recorded_runtime_state": "Current macOS reference checks and fresh actual-Hub 24-of-24 conformance pass with the exact Hub profile. The isolated Hub fixture exited zero and its port is closed. No Protocol service, persistent credential, guest workload or Keychain operation was created; final independent review found no implementation finding.",
+  "previous_mac_completion_record": {
+    "recorded_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
+    "original_goal": {
+      "id": "MACOS_FIRST_WORKING_PRODUCT",
+      "state": "COMPLETED_ACCEPTED",
+      "prompt": "../../../docs/development/archive/2026-09-20-post-completion-review/docs/development/GOAL_PROMPT.md",
+      "milestones": [
+        "MAC-2",
+        "MAC-3",
+        "MAC-5"
+      ],
+      "execution_authorized": true,
+      "note": "MAC-2, MAC-3 and MAC-5 are accepted for the current Mac source-run product; the full solution and cross-platform programme remain unaccepted.",
+      "review_disposition": "Historical native goal completed; aggregate acceptance subsequently reopened."
+    },
+    "original_gate_ids": [
+      "MAC-2",
+      "MAC-3",
+      "MAC-5"
+    ],
+    "original_evidence_summary": [
+      "Prior local contract gate recorded 134 Protocol tests plus 31 rich-profile cases; ARM64 current-profile fixture recorded 24/24.",
+      "The independently accepted native developer-bundle foundation remains bounded source/package evidence; it does not by itself close F3 or F6.",
+      "G3 accepted the exact product 2026.36.2 bindings from final G2/G4, G5 and G6 evidence: hub-http-v1@1.0.0 remains b80d940e...d926 across Protocol, TypeScript and Swift while Edge retains edge-delivery-v2@2.0.0 e304fb6e...d224.",
+      "All five compatibility records passed the scoped G3 admission/readback checker; its 6 focused cases prove active-only operation, idempotence and fail-closed identity/divergence handling without reading Viewer. The TypeScript vendored Protocol copy is byte-identical and its focused lock/readback check passes.",
+      "The repaired checker is bound by r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865.",
+      "A deterministic 172-member developer archive now closes 170 public source payload members plus its canonical manifest and checksum map; two post-review builds were byte-identical at SHA-256 6368e2f59303b8ed7623c7817492269fc869e77754909ab47bd4cc6aefb196ec.",
+      "A verified clean extraction on macOS 27 arm64 used Python 3.11.16 and uv 0.12.12: a fresh locked install seeded an isolated cache, then a deleted environment reinstalled with UV_OFFLINE=1 and passed 142 tests plus 31 rich-profile conformance runs.",
+      "The first independent review requested four verifier corrections. The frozen delta now rejects raw or concatenated gzip tails, decoded post-tar bytes, renamed extraction roots before destination creation, unknown/mutated/reordered manifest data, and setuid/setgid/sticky modes.",
+      "Archive verification also continues to fail closed on links, traversal, duplicate members, parent/file conflicts, non-canonical metadata or order, extra/missing members, changed modes, content divergence and dependency-lock divergence.",
+      "Independent Sol/high recheck returned ACCEPT after reproducing the final archive identity/counts, all eight focused regressions, the 142-test native gate and 31/31 conformance runs; the acceptance is explicitly bounded to the native bundle foundation.",
+      "The exact published commit 6686615c...a970 and archive 6368e2f5...96ec were reproduced in the native Debian 13 ARM64 guest, but the published Docker image collected 142 tests and ended with six errors because required bundle inputs were absent from the final image.",
+      "A minimal Dockerfile candidate now copies docs/, Dockerfile and THIRD-PARTY-NOTICES.md. Its deterministic archive is 8ac5ccfa...b8be and its native linux/arm64 image dc170e65...ece91 passed 142/142 tests plus 31/31 conformance as UID/GID 10001 with UV_OFFLINE=1 and --network none.",
+      "Independent Sol/high review returned ACCEPT with no findings for the bounded dirty-tree ARM64 Docker candidate and its calibrated receipt; this does not make the candidate reachable-source evidence.",
+      "The published runtime-source commit 53b5c648...d87b1b was staged only through its clean git archive. Two ARM64 guest builds reproduced bundle 8ac5ccfa...b8be and the digest-pinned native image 721f2ad8...58095 passed 142/142 tests plus 31/31 conformance as UID/GID 10001 with UV_OFFLINE=1 and --network none.",
+      "Independent Sol/high review returned ACCEPT with no findings for the exact published runtime-source 53b5c648...d87b1b native ARM64 Docker developer-bundle slice and its corrected r2 evidence chronology; the later evidence commit does not replace that runtime-source identity.",
+      "The guest returned to zero Docker images/containers/volumes/cache, its temporary context was removed, it was stopped, port 60022 closed and the heavy-build lock was released.",
+      "A deterministic clean export of accepted runtime-source commit 53b5c648...d87b1b binds all 188 regular files in the tracked complete manifest; the Hub algorithm includes 187 files, excludes only AGENTS.md, and reproducibly yields source_sha256 a4b68800...046c for product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926.",
+      "The source handoff intentionally contains no Protocol artifacts because the Hub catalog schema forbids them. It is prepared input only: Hub recomputation/admission and catalog lifecycle remain open, with no runtime or gate acceptance claimed.",
+      "Independent bounded review reproduced the clean archive, complete manifest aggregate, Hub source aggregate and profile digest; confirmed public unauthenticated main reachability and exact ancestry; found no remaining P1/P2 defects.",
+      "Exact runtime source 53b5c648 then passed a separate PRO-04 cache-provenance slice: one locked Python 3.11 seed from a genuinely empty task cache/environment installed 32 distributions and passed 142/142 tests plus 31/31 conformance; after environment deletion, UV_OFFLINE locked reinstall under enforced remote-network denial passed the same checker and reproduced bundle 8ac5ccfa byte-for-byte.",
+      "The 1,606-entry seeded cache manifest, including 1,342 files, remained identical at SHA-256 946223efa9759909e20bbdf5a8e43d9f160418e5ec37d8b32a8198fa3e6d5417. Independent Sol/high review returned ACCEPT with no P1/P2. This is not cold-cache offline installation because the bundle contains no wheels."
+    ],
+    "original_runtime_state": "MAC-3 Protocol evidence is current for the current Mac source-run scope: five generator checks, 142 unit tests, 31 rich-profile conformance cases and 39 focused Hub/Edge profile cases pass. A fresh real current-source Hub process passed all 24 current-Hub conformance cases against the exact b80d-profile and stopped cleanly. Protocol has no long-lived service; TypeScript and Swift live consumers separately pass against the same current Hub dataset.",
+    "archive": "docs/development/archive/2026-09-20-post-completion-review/teslatlas-protocol/docs/development/STATUS.json",
+    "scope": "Historical completion declaration, now qualified by the independent review; native goal state was not changed."
+  },
+  "completed_goal": {
+    "id": "MACOS_FIRST_WORKING_PRODUCT",
+    "state": "COMPLETED_ACCEPTED",
+    "prompt": "../../../docs/development/archive/2026-09-20-post-completion-review/docs/development/GOAL_PROMPT.md",
+    "milestones": [
+      "MAC-2",
+      "MAC-3",
+      "MAC-5"
+    ],
+    "execution_authorized": true,
+    "note": "MAC-2, MAC-3 and MAC-5 are accepted for the current Mac source-run product; the full solution and cross-platform programme remain unaccepted.",
+    "review_disposition": "Historical native goal completed; aggregate acceptance subsequently reopened."
+  },
+  "next_goal_draft": {
+    "id": "MACOS_POST_COMPLETION_REPAIR",
+    "state": "DRAFT_NOT_SENT",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "high",
+    "prompt": "../../../docs/development/GOAL_PROMPT.md",
+    "milestones": [
+      "MR-2",
+      "MR-3"
+    ],
+    "execution_started": false
+  },
+  "historical_acceptance_limits": [
     "No App integration acceptance",
     "No real-data parity or production acceptance",
     "The exact-source native ARM64 Docker and current-source cache-provenance slices are independently accepted and the source handoff is prepared only; Hub catalog admission/lifecycle, remote-wire smoke, bundle-contained cold-cache offline dependency installation, downstream final-product admission and F5 named/passive inputs remain open",
     "No cold-cache offline dependency install is claimed; the accepted current-source offline reinstall used an exact cache seeded once online from uv.lock",
     "Viewer excluded; x86/Intel paused"
-  ]
+  ],
+  "historical_remaining": [
+    "The wider F3/F5/F6/F7 remote-wire, catalog/distribution, bundle-contained cold-cache offline installation, additional-target and final-product work remains deferred backlog."
+  ],
+  "current_source_observation": {
+    "checked_at": "2026-09-20T16:07:22.852911+00:00",
+    "head": "c8a3ffab9183a428a61a4759c8d72bd405cbd2ca",
+    "branch": "main",
+    "dirty": true,
+    "source_snapshot": "docs/development/archive/2026-09-20-post-completion-review/review-source-snapshot.json",
+    "scope": "Current review identity only; does not retroactively bind earlier runtime receipts. No source commit or push performed by this review."
+  },
+  "post_completion_review": {
+    "state": "REPAIR_DIRECTIVE_DRAFTED",
+    "report": "docs/development/POST_COMPLETION_REVIEW.md",
+    "findings": [
+      "MR-F7"
+    ],
+    "retained_evidence": "No new Protocol implementation defect was established. Current native reference and Hub checker results remain bounded evidence; aggregate product acceptance depends on the Hub/consumer repairs.",
+    "runtime_retested": false,
+    "native_goal_modified": false
+  },
+  "historical_full_programme_objective": "Complete every documented Protocol profile and conformance surface, real-input semantic evidence, reproducible developer distribution and final ecosystem admission.",
+  "historical_source_objective_state": "HUB_COMPATIBLE_CURRENT_SOURCE_HANDOFF_PREPARED_REMAINING_F3_F6_OPEN"
 }
