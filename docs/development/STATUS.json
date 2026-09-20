@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-20T05:04:09Z",
-  "update_scope": "f1_f6_exact_debian_package_systemd_lifecycle_publication_readback",
+  "updated_at": "2026-09-20T05:30:13Z",
+  "update_scope": "f1_pairing_authority_backup_restore_independent_acceptance",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "538a5fc41dc8637b98e314a4071d11e88d10a2f9",
+    "head": "52a0e64ac7855d8741f579fd88dcec8a8e971143",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-20T05:04:09Z"
+    "checked_at": "2026-09-20T05:30:13Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -55,6 +55,8 @@
     "The fixed binary reports exact reachable public source https://github.com/magrathean-uk/teslatlas-hub/tree/1b6dc00379819869f4cd8ed8897c2f1f915023a2; no v2026.36.2 tag is claimed. Independent Sol/high review accepted the bounded reproducibility slice after closing two P2 claim-integrity findings. HUB-03, F1 and F6 remain open beyond this partial acceptance.",
     "The exact accepted reproducible package SHA-256 73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a then passed one fresh ordinary Debian 13 ARM64 dpkg/systemd lifecycle without rebuilding or downloading: package/binary/source binding, pristine strict-TLS first start, hardened unit, restart identity continuity, scoped data backup and separate-root restore, corrupt-envelope rejection and data-preserving ordinary removal all passed.",
     "The final 59-file package-systemd lifecycle bundle is deterministic at SHA-256 36251a9213258bcaba232dac89c5d6931fcaa36813231891401f26a6fc9e6ed2 with 58-entry manifest 2423f97d534be020906bfacec9ad60a74b8b8a6b1bd2e1a8271ab0535b53c910. Independent Sol/high review returned ACCEPT with no P1/P2 after direct Debian archive, payload, secret and cleanup revalidation. This synthetic no-credential slice excludes genuine update/rollback, credential/pairing recovery, real collection, retention/repair/migration, Fleet, public release and full F1/F6/F7.",
+    "The same exact package then passed a separate fresh pairing-authority lifecycle: single-use claim/replay rejection, bearer rotation, live listing/revocation, sealed data backup reducing 2 device rows/1 active device to zero pairing authority, pre-backup bearer rejection after separate-root restore, and fresh restored re-pairing all passed with installation/generation/schema/quick-check logical continuity.",
+    "The final 25-file pairing/restore bundle is deterministic at SHA-256 7336f2c989ece755eeb294dd5eaf46ae158cc683fd5a8ad4d554a2ed70df71d8 with 24-entry manifest 23d301d2ee380e7a755f38d0be4def3f7760b3f142bc1219579f85897f1ed2fc. Independent Sol/high review returned ACCEPT with no P1/P2. SQLite byte identity is not claimed; provider credential recovery, real data, update/rollback, clean-host recovery, Fleet and full F1/F6/F7 remain open.",
     "The F6 source/catalog foundation is independently accepted within its partial scope: bound builds require an explicit exact pushed 40-hex Hub commit, unbound developer builds are non-distributable, and native plus container build paths carry the same source identity without Git or current-directory inference.",
     "The shipped companion catalog now contains exactly Protocol 53b5c648, TypeScript SDK 56a07dd7, Swift SDK f98dde98, Home Assistant dfb2b050 and Edge c9965cd2 for 2026.36.2; Viewer is excluded and Hub remains the separately identified sixth repository. The cohort is truthfully local-unpublished despite exact anonymous public commit fetches.",
     "The exact current TypeScript package archive is retained at accepted SHA-256 070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7 with 88 members. Hub no longer admits the historical 42348d36 archive for current 56a07dd7 source.",
@@ -104,7 +106,8 @@
     "docs/development/f6-arm64-container-image-reproducibility-2026-09-20-r1.json",
     "docs/development/evidence/f6-arm64-container-image-reproducibility-2026-09-20-r1/evidence-manifest.sha256",
     "docs/development/f6-arm64-container-lifecycle-2026-09-20-r1.json",
-    "docs/development/f1-f6-debian13-arm64-package-systemd-lifecycle-2026-09-20-r1.json"
+    "docs/development/f1-f6-debian13-arm64-package-systemd-lifecycle-2026-09-20-r1.json",
+    "docs/development/f1-pairing-authority-backup-restore-debian13-arm64-2026-09-20-r1.json"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed claim-by-claim ledger is docs/development/F0_ACCEPTANCE_LEDGER.md at workspace root.",
@@ -404,6 +407,25 @@
     "independent_review": "ACCEPT by gpt-5.6-sol/high with no P1/P2 after direct Debian archive, payload, source identity, lifecycle, secret-scan and current-host cleanup revalidation.",
     "acceptance_limit": "Synthetic no-credential partial evidence for exact package installation, hardened systemd lifecycle, TLS, data-only backup/restore, rejected corrupt package and data-preserving ordinary removal. No genuine update/rollback, credential/pairing recovery, real collection, retention/repair/migration, Fleet, complete clean-host recovery, public production admission, F1, F6 or F7 acceptance."
   },
+  "current_f1_pairing_authority_backup_restore_slice": {
+    "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "receipt": "docs/development/f1-pairing-authority-backup-restore-debian13-arm64-2026-09-20-r1.json",
+    "metadata_commit": null,
+    "publication_state": "PENDING_RECEIPT_COMMIT",
+    "package_sha256": "73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a",
+    "binary_source_commit": "1b6dc00379819869f4cd8ed8897c2f1f915023a2",
+    "pairing_lifecycle": "Claim 200 and replay 401; rotate preserved device identity while old bearer became 401 and new bearer remained 200; live revoke reduced active devices to zero and invalidated the current bearer.",
+    "backup_restore_authority": "Source 0 invitations/2 devices/1 active became 0/0/0 in the sealed backup and restore. The pre-backup bearer returned 401 after restore; fresh restored claim and bearer returned 200 while replay returned 401.",
+    "identity_continuity": "Installation ID 0726b200-8e0b-492d-b467-22133b2cdfd4, backup generation 5297e113-f19c-4751-8607-1fc87a973f20, schema 59 and quick_check ok remained logically continuous; SQLite byte identity is false and not claimed.",
+    "evidence_bundle_sha256": "7336f2c989ece755eeb294dd5eaf46ae158cc683fd5a8ad4d554a2ed70df71d8",
+    "evidence_bundle_bytes": 5707,
+    "payload_hash_manifest_sha256": "23d301d2ee380e7a755f38d0be4def3f7760b3f142bc1219579f85897f1ed2fc",
+    "evidence_file_count": 25,
+    "calibrations": "Two zero-credit, fully cleaned harness calibrations established exclusive stop-create-start pairing sequencing and logical rather than SQLite page-byte restore identity; no product defect.",
+    "cleanup_complete": true,
+    "independent_review": "ACCEPT by gpt-5.6-sol/high with no P1/P2 after recomputing every evidence byte, reviewing lifecycle/source-contract claims, scanning secrets and rechecking exact current cleanup.",
+    "acceptance_limit": "Synthetic empty-data/data-only recovery partial evidence only. No provider credential recovery, real vehicles/data/collection, genuine update/rollback, complete clean-host recovery, Fleet, public admission, complete HUB-06/HUB-11, F1, F6 or F7 acceptance."
+  },
   "historical_status": {
     "path": "docs/development/archive/2026-09-18-reset/hub/docs/development/STATUS.json",
     "sha256": "3aca24b6bd9560dbd00c0635dbdb948034b9319600dfb3806c3a14dc819bfefe",
@@ -415,14 +437,14 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the earlier F1/F6 Debian package cohort is purged. The afae80a attempt remains rejected unauditable. The fresh 4102dce exact-export ARM64 ordinary synthetic Compose runtime and COMPLETE retained bundle are independently accepted only as a bounded foundation. The exact 0d5e63f installed storage/recovery cohort and calibrated COMPLETE evidence are independently accepted within their bounded runner-recorded limits. The bounded four-component macOS companion lifecycle is independently accepted. The subsequent exact-five Debian ARM64 lifecycle removed its replaceable release and HA link while preserving exact data/config plus unrelated HA state; its COMPLETE bundle is independently accepted bounded partial evidence and no active companion release remains. The package reproducibility candidate retained both identical packages and a COMPLETE redacted evidence bundle on the host, then removed its guest work root. The exact retained reproducible package then passed a separate bounded fresh Debian 13 ARM64 dpkg/systemd lifecycle and was fully purged with its accepted 59-file evidence bundle retained on the host. The e0b290e9 container reproducibility cohort retained one exact canonical archive plus a COMPLETE hash-verified evidence bundle on the host. A subsequent fresh synthetic no-credential lifecycle loaded that artifact once, passed bounded Compose/TLS/restart/data-backup/restore/failed-candidate/removal-recreate checks, retained a separately accepted 69-file evidence bundle, and removed its exact root, volume, network, containers, tags and image ID. No owned package, service user, Hub process or 8443/18443/18444 listener remains. debian13-arm64 is stopped, SSH port 60022 is closed and the heavy-build lock is absent. Pinned container bases, the disclosed anonymous builder-stage intermediate and retained Docker cache remain outside these cohorts.",
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the earlier F1/F6 Debian package cohort is purged. The afae80a attempt remains rejected unauditable. The fresh 4102dce exact-export ARM64 ordinary synthetic Compose runtime and COMPLETE retained bundle are independently accepted only as a bounded foundation. The exact 0d5e63f installed storage/recovery cohort and calibrated COMPLETE evidence are independently accepted within their bounded runner-recorded limits. The bounded four-component macOS companion lifecycle is independently accepted. The subsequent exact-five Debian ARM64 lifecycle removed its replaceable release and HA link while preserving exact data/config plus unrelated HA state; its COMPLETE bundle is independently accepted bounded partial evidence and no active companion release remains. The package reproducibility candidate retained both identical packages and a COMPLETE redacted evidence bundle on the host, then removed its guest work root. The exact retained reproducible package then passed separate bounded fresh Debian 13 ARM64 dpkg/systemd and pairing-authority backup/restore lifecycles; both were fully purged with their independently accepted evidence bundles retained on the host. The e0b290e9 container reproducibility cohort retained one exact canonical archive plus a COMPLETE hash-verified evidence bundle on the host. A subsequent fresh synthetic no-credential lifecycle loaded that artifact once, passed bounded Compose/TLS/restart/data-backup/restore/failed-candidate/removal-recreate checks, retained a separately accepted 69-file evidence bundle, and removed its exact root, volume, network, containers, tags and image ID. No owned package, service user, Hub process or 8443/18443/18444 listener remains. debian13-arm64 is stopped, SSH port 60022 is closed and the heavy-build lock is absent. Pinned container bases, the disclosed anonymous builder-stage intermediate and retained Docker cache remain outside these cohorts.",
   "acceptance_limits": [
     "G2 is source-built synthetic runtime evidence, not macOS installer/notarization/service acceptance",
     "Current macOS 27.0 was exercised; the documented macOS 13 minimum floor was not independently run",
     "No real account, vehicle, collection, named-source or production acceptance",
     "G5 is source-built synthetic runtime evidence, not package, installer or service-manager acceptance",
     "G6 is current macOS 27 arm64 external-consumer evidence; declared minimum floors were not independently exercised",
-    "The earlier F1/F6 package receipt plus the independently accepted bounded storage cohort cover exact current source-bound packaging, deliberate corruption/retention retry, separate credential/config/TLS/service restore and data-preserving removal. The later independently accepted package-byte reproducibility fix is published at source commit 1e6132aa826aaff83a7c4899604ee4c59e2f852e and proves exact ARM64 package bytes plus embedded public source identity. That exact retained package subsequently passed a separate bounded fresh Debian 13 ARM64 dpkg/systemd lifecycle with pristine strict-TLS start, restart, scoped data backup/restore, corrupt-envelope rejection and data-preserving removal. Genuine predecessor update/rollback, credentials/pairing, real collection, retention/repair/migration, Fleet, complete clean-host recovery, public production admission and the remaining F1/F6 behavior remain open",
+    "The earlier F1/F6 package receipt plus the independently accepted bounded storage cohort cover exact current source-bound packaging, deliberate corruption/retention retry, separate credential/config/TLS/service restore and data-preserving removal. The later independently accepted package-byte reproducibility fix is published at source commit 1e6132aa826aaff83a7c4899604ee4c59e2f852e and proves exact ARM64 package bytes plus embedded public source identity. That exact retained package subsequently passed separate bounded fresh Debian 13 ARM64 dpkg/systemd and pairing-authority data-backup/restore lifecycles. Genuine predecessor update/rollback, provider credential recovery, real collection, retention/repair/migration, Fleet, complete clean-host recovery, public production admission and the remaining F1/F6 behavior remain open",
     "The F6 source/catalog foundation, bounded four-component macOS lifecycle and local-unpublished exact-five Debian ARM64 lifecycle are independently accepted only within their separate bounded partial scopes; genuine predecessor update/rollback and ordinary public production admission remain pending",
     "The F6 container source/static receipt remains independently accepted and afae80a remains rejected unauditable. The 4102dce exact-export ordinary Compose runtime and retained COMPLETE bundle are independently accepted only as a bounded foundation. The later e0b290e9 native ARM64 Docker 26/Buildx image-byte reproducibility and load/readback slice is independently accepted separately, and its accepted artifact subsequently passed a bounded synthetic no-credential pristine-first-start TLS/Compose/restart/data-backup/restore/invalid-command/removal-recreate lifecycle. Genuine immutable update/rollback, credential/pairing and complete clean-host recovery, real collection, retention/migration, public production admission and full F6 remain pending",
     "The HUB-08 source fix and bounded installed retained-corruption/recovery cohort are independently accepted. The retained bundle proves final COMPLETE state and row-count transitions, not prior READY ordering or the exact one-hour cutoff timing; complete F1 and F6 acceptance remain open",

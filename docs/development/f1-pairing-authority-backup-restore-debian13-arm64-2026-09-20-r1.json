@@ -1,0 +1,154 @@
+{
+  "schema": "teslatlas.hub.f1-pairing-authority-backup-restore-debian13-arm64/v1",
+  "generated_at": "2026-09-20T05:30:13Z",
+  "receipt_id": "f1-pairing-authority-backup-restore-debian13-arm64-2026-09-20-r1",
+  "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+  "scope": {
+    "ledger_rows": ["HUB-06", "HUB-11"],
+    "target": "pairing-authority lifecycle and data-backup exclusion behavior of the accepted reproducible Debian GNU/Linux 13 ARM64 Hub package",
+    "proved": "The exact retained package passed one-time claim and replay rejection, bearer rotation and revocation, data-backup sealing that excluded pairing invitations and removed paired-device authority, rejection of a pre-backup bearer after separate-root restore, and fresh restored re-pairing with installation, generation and logical database continuity.",
+    "excluded": [
+      "provider credential export or recovery",
+      "real Tesla credentials, vehicles, observations or collection",
+      "genuine version update or rollback",
+      "complete clean-host recovery because configuration, TLS, keys and service state remain separate",
+      "Fleet sidecars",
+      "ordinary public release or binary publication",
+      "complete HUB-06, HUB-11, F1, F6 or F7 acceptance",
+      "App, Viewer, x86, Intel and Azure",
+      "CI, tag, release, signing and production"
+    ]
+  },
+  "artifact": {
+    "retained_host_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub/f1-f6-deb-repro-20260920-r1/raw/teslatlas-hub-fixed-a.deb",
+    "sha256": "73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a",
+    "package": "teslatlas-hub",
+    "version": "2026.36.2-1",
+    "architecture": "arm64",
+    "binary_sha256": "2b7c071614c9cb31e2fb3ac4b666b636ff8aae33035d661c09c4b935d5a0fd3c",
+    "binary_source_commit": "1b6dc00379819869f4cd8ed8897c2f1f915023a2",
+    "package_determinism_implementation_commit": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
+    "source_build_count": 0,
+    "package_download_count": 0,
+    "retained_artifact_unchanged_after_cleanup": true
+  },
+  "platform": {
+    "guest": "debian13-arm64",
+    "os": "Debian GNU/Linux 13 (trixie)",
+    "architecture": "arm64",
+    "service_manager": "systemd",
+    "tls": "separate one-use private CA and CA:FALSE DNS leaf",
+    "heavy_work_serialized": true
+  },
+  "accepted_pairing_lifecycle": {
+    "first_claim_http": 200,
+    "first_replay_http": 401,
+    "first_bearer_before_rotation_http": 200,
+    "rotation_http": 200,
+    "rotation_preserved_device_id": true,
+    "old_bearer_after_rotation_http": 401,
+    "new_bearer_after_rotation_http": 200,
+    "paired_devices_before_revoke_total": 1,
+    "paired_devices_before_revoke_active": 1,
+    "current_bearer_after_revoke_http": 401,
+    "paired_devices_after_revoke_total": 1,
+    "paired_devices_after_revoke_active": 0
+  },
+  "backup_restore_pairing_authority": {
+    "source_before_backup": {
+      "pairing_invitation_rows": 0,
+      "paired_device_rows": 2,
+      "active_paired_device_rows": 1
+    },
+    "sealed_backup": {
+      "pairing_invitation_rows": 0,
+      "paired_device_rows": 0,
+      "active_paired_device_rows": 0
+    },
+    "restore_before_start": {
+      "pairing_invitation_rows": 0,
+      "paired_device_rows": 0,
+      "active_paired_device_rows": 0
+    },
+    "pre_backup_bearer_primary_http": 200,
+    "pre_backup_bearer_restored_http": 401,
+    "fresh_restored_claim_http": 200,
+    "fresh_restored_replay_http": 401,
+    "fresh_restored_bearer_http": 200,
+    "restored_paired_devices_total": 1,
+    "restored_paired_devices_active": 1,
+    "installation_id": "0726b200-8e0b-492d-b467-22133b2cdfd4",
+    "backup_generation": "5297e113-f19c-4751-8607-1fc87a973f20",
+    "installation_identity_continuous": true,
+    "generation_identity_continuous": true,
+    "schema": 59,
+    "sqlite_quick_check": "ok",
+    "backup_and_restored_logical_database_facts_identical": true,
+    "backup_and_restored_database_bytes_identical": false,
+    "database_byte_identity_claimed": false,
+    "scope": "hub_data_without_pairing_or_keys",
+    "clean_host_ready": false,
+    "collector_authority": "absent"
+  },
+  "calibrations": [
+    {
+      "run": "r1",
+      "acceptance_credit": false,
+      "result": "The pairing command intentionally requires the exclusive Hub admission lock, so the harness was corrected from live invocation to ordinary stop-create-start sequencing.",
+      "product_defect": false,
+      "cleanup_complete": true
+    },
+    {
+      "run": "r2",
+      "acceptance_credit": false,
+      "result": "The harness was corrected to assert logical SQLite identity and integrity rather than page-byte identity across restore.",
+      "product_defect": false,
+      "cleanup_complete": true
+    }
+  ],
+  "evidence": {
+    "retained_directory": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-f1-pairing-backup-restore-20260920-r3/evidence",
+    "retained_bundle": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-f1-pairing-backup-restore-20260920-r3/evidence-bundle.tgz",
+    "bundle_sha256": "7336f2c989ece755eeb294dd5eaf46ae158cc683fd5a8ad4d554a2ed70df71d8",
+    "bundle_bytes": 5707,
+    "bundle_member_count_including_root_directory": 26,
+    "evidence_file_count": 25,
+    "payload_hash_manifest_entry_count": 24,
+    "payload_hash_manifest_sha256": "23d301d2ee380e7a755f38d0be4def3f7760b3f142bc1219579f85897f1ed2fc",
+    "payload_hashes_verified": true,
+    "deterministic_two_pass_bundle_match": true,
+    "secret_scan": "PASS",
+    "secret_boundary": "No invitation secret, raw bearer, private key or TLS private material is retained; only sanitized HTTP codes, identifiers, booleans and one-way bearer digests remain."
+  },
+  "cleanup": {
+    "package_state_absent": true,
+    "binary_absent": true,
+    "units_absent": true,
+    "service_user_and_group_absent": true,
+    "processes_and_listeners_absent": true,
+    "config_tls_data_backup_restore_and_private_roots_absent": true,
+    "guest": "stopped",
+    "ssh_port_60022_closed": true,
+    "shared_heavy_build_lock": "released and absent",
+    "retained_package_unchanged": true
+  },
+  "independent_review": {
+    "model": "GPT-5.6 Sol / high",
+    "result": "ACCEPT",
+    "reviewed_at": "2026-09-20T05:30:13Z",
+    "p1_findings_remaining": 0,
+    "p2_findings_remaining": 0,
+    "verification": "The reviewer recomputed every retained file, manifest and bundle member, inspected the sanitized lifecycle facts and source contract, scanned for secrets, verified exact package/source identity and rechecked the stopped guest, closed SSH port, absent shared lock and unchanged retained package."
+  },
+  "publication": {
+    "metadata_commit": null,
+    "state": "PENDING_RECEIPT_COMMIT"
+  },
+  "acceptance": {
+    "hub_06_pairing_authority_lifecycle": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "hub_11_pairing_authority_exclusion_and_repairing": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "f1": "OPEN",
+    "f6": "OPEN",
+    "f7": "OPEN"
+  }
+}

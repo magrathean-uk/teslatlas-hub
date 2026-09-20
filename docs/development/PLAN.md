@@ -393,6 +393,32 @@ complete clean-host recovery, public release, complete HUB-03/HUB-11, F1, F6 or 
 see
 `docs/development/f1-f6-debian13-arm64-package-systemd-lifecycle-2026-09-20-r1.json`.
 
+The same exact retained package then passed a separate fresh Debian 13 ARM64
+pairing-authority and data-backup boundary. A one-time claim succeeded and replay
+failed; rotation invalidated the old bearer while preserving device identity; live
+listing and revocation reduced active devices from one to zero and invalidated the
+current bearer. Before backup the source contained two paired-device rows with one
+active device. The sealed backup and separately restored data each contained zero
+pairing invitations, zero paired devices and zero active devices. The pre-backup
+bearer failed against the restored service, while a fresh restored invitation could
+be claimed once and its bearer worked. Installation ID, backup generation, schema 59
+and SQLite quick-check remained logically continuous; SQLite page-byte identity is
+explicitly not claimed.
+
+The deterministic 25-file evidence bundle is SHA-256
+`7336f2c989ece755eeb294dd5eaf46ae158cc683fd5a8ad4d554a2ed70df71d8`
+with 24-entry manifest
+`23d301d2ee380e7a755f38d0be4def3f7760b3f142bc1219579f85897f1ed2fc`.
+Independent Sol/high review returned `ACCEPT` with no P1/P2 after recomputing the
+bundle, inspecting the pairing/backup contract and sanitized facts, scanning for
+secrets and rechecking cleanup. Two fully cleaned zero-credit harness calibrations
+are disclosed: pairing creation requires the exclusive Hub lock, and restore proves
+logical database facts rather than identical SQLite pages. This is bounded synthetic
+HUB-06/HUB-11 evidence only; it excludes provider credential recovery, real
+vehicles/data/collection, genuine update/rollback, complete clean-host recovery,
+Fleet, public admission, complete HUB-06/HUB-11, F1, F6 and F7; see
+`docs/development/f1-pairing-authority-backup-restore-debian13-arm64-2026-09-20-r1.json`.
+
 The bounded native ARM64 container image-byte reproducibility slice is independently
 accepted at published implementation commit
 `e0b290e9d6d086ff75921596dcddfd497a077c7f`. Two distinct fresh official clones,
