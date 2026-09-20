@@ -64,6 +64,22 @@ chain, and the invitation values supplied by the Hub. Keep hostname
 verification and the configured TLS pin enabled. Do not use `ssl=False`, a
 plain HTTP pairing URL, or a copied bearer in Compose configuration.
 
+If the Hub uses a private CA, create a combined bundle containing the image's
+normal public roots plus that private CA under the persistent, owner-controlled
+`ha-config` tree. Mount it through `/config` and set both variables to the same
+container path before recreating the service:
+
+```yaml
+environment:
+  SSL_CERT_FILE: /config/teslatlas-private/ca-bundle.pem
+  REQUESTS_CA_BUNDLE: /config/teslatlas-private/ca-bundle.pem
+```
+
+Home Assistant's managed HTTP connector reads `REQUESTS_CA_BUNDLE`; the second
+variable is therefore required even when direct `curl` or Python probes already
+work with `SSL_CERT_FILE`. Do not replace the system trust store or use a
+fixture-only bundle that omits normal public roots.
+
 The normal supported flow is Home Assistant's Settings → Devices & services →
 Add integration → Teslatlas Hub. The invitation is used once to obtain the
 device credential; invitation material is not stored by the integration.

@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+
+ssh_config=${TESLATLAS_MAC_SSH_CONFIG:-"$HOME/dev/teslatlas-lab/access/ssh_config"}
+ssh_alias=${TESLATLAS_MAC_SSH_ALIAS:-teslatlas-debian13-arm64}
+host_port=${TESLATLAS_MAC_HUB_PORT:-18443}
+guest_port=${TESLATLAS_GUEST_HUB_PORT:-18443}
+
+test -f "$ssh_config" || {
+  printf '%s\n' "SSH config not found: $ssh_config" >&2
+  exit 2
+}
+
+validate_port() {
+  port_name=$1
+  port_value=$2
+  case "$port_value" in
+    ''|*[!0-9]*|0)
+      printf '%s\n' "$port_name must be an integer from 1 to 65535" >&2
+      exit 2
+      ;;
+  esac
+  if [ "$port_value" -gt 65535 ]; then
+    printf '%s\n' "$port_name must be an integer from 1 to 65535" >&2
+      exit 2
+  fi
+}
+
+validate_port TESLATLAS_MAC_HUB_PORT "$host_port"
+validate_port TESLATLAS_GUEST_HUB_PORT "$guest_port"
+
+exec ssh \
+  -F "$ssh_config" \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -N \
+  -R "127.0.0.1:${guest_port}:127.0.0.1:${host_port}" \
+  "$ssh_alias"
