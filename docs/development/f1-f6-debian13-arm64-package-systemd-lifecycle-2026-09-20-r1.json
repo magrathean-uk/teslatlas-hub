@@ -210,8 +210,9 @@
   "publication": {
     "binary_source_commit": "1b6dc00379819869f4cd8ed8897c2f1f915023a2",
     "package_determinism_implementation_commit": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
-    "metadata_commit": null,
-    "state": "PENDING_RECEIPT_COMMIT"
+    "metadata_commit": "538a5fc41dc8637b98e314a4071d11e88d10a2f9",
+    "read_back_from_origin_main_at": "2026-09-20T05:04:09Z",
+    "state": "RECEIPT_AND_STATUS_PUSHED_AND_READ_BACK"
   },
   "acceptance": {
     "hub_03_exact_package_systemd_lifecycle": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",

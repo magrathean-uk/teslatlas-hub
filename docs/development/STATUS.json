@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-20T05:01:25Z",
-  "update_scope": "f1_f6_exact_debian_package_systemd_lifecycle_independent_acceptance",
+  "updated_at": "2026-09-20T05:04:09Z",
+  "update_scope": "f1_f6_exact_debian_package_systemd_lifecycle_publication_readback",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "be7afcf3f76d2b6a3628bafd34a37383577fab04",
+    "head": "538a5fc41dc8637b98e314a4071d11e88d10a2f9",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-20T04:57:34Z"
+    "checked_at": "2026-09-20T05:04:09Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -385,13 +385,14 @@
   "current_f1_f6_debian_package_systemd_lifecycle_slice": {
     "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
     "receipt": "docs/development/f1-f6-debian13-arm64-package-systemd-lifecycle-2026-09-20-r1.json",
+    "metadata_commit": "538a5fc41dc8637b98e314a4071d11e88d10a2f9",
     "package_sha256": "73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a",
     "package_version": "2026.36.2-1",
     "package_architecture": "arm64",
     "binary_sha256": "2b7c071614c9cb31e2fb3ac4b666b636ff8aae33035d661c09c4b935d5a0fd3c",
     "binary_source_commit": "1b6dc00379819869f4cd8ed8897c2f1f915023a2",
     "package_determinism_implementation_commit": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
-    "publication_state": "PENDING_RECEIPT_COMMIT",
+    "publication_state": "RECEIPT_AND_STATUS_PUSHED_AND_READ_BACK",
     "lifecycle": "The exact retained reproducible package installed once without rebuilding or downloading, created the expected service identity and hardened unit, passed bootstrap plus pristine strict-TLS first start with zero retries, positive and wrong-name health, restart identity continuity, scoped data backup and separate-root restore, corrupt-envelope rejection without installed-state mutation, and data-preserving ordinary removal.",
     "backup_limit": "Data-only backup with cleanHostReady=false and collectorAuthority=absent; credentials, pairing authority, keys, TLS, configuration and service state are excluded.",
     "failed_candidate_limit": "Deliberately corrupted Debian ar magic in a copy of the accepted package was rejected without installed-state change; this is not genuine version update or rollback.",
