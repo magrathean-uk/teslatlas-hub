@@ -85,6 +85,14 @@
     "p2_findings": 0,
     "boundary": "No predecessor lifecycle, final Hub/browser journey, platform floor, publication, complete F6 or F7 claim was accepted."
   },
+  "publication": {
+    "implementation_commit": "3e9b8aa6bc4b93b87df8b0c1f9a905dc11e3e235",
+    "local_head_after_push": "3e9b8aa6bc4b93b87df8b0c1f9a905dc11e3e235",
+    "origin_main_after_push": "3e9b8aa6bc4b93b87df8b0c1f9a905dc11e3e235",
+    "live_remote_main_after_push": "3e9b8aa6bc4b93b87df8b0c1f9a905dc11e3e235",
+    "verified_at": "2026-09-20T00:43:52Z",
+    "state": "SOURCE_COMMIT_PUSHED_AND_READ_BACK"
+  },
   "acceptance": {
     "native_linux_arm64_docker_package_slice": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
     "f6": "OPEN",

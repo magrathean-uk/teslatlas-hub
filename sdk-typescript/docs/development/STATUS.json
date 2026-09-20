@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "TypeScript SDK",
-  "updated_at": "2026-09-20T00:41:26Z",
-  "update_scope": "f6_native_linux_arm64_docker_package_acceptance",
+  "updated_at": "2026-09-20T00:43:52Z",
+  "update_scope": "f6_native_linux_arm64_docker_package_publication_readback",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G3_G4_ACCEPTED",
   "source_objective_state": "PACKED_NODE_BROWSER_AND_BINDING_ACCEPTED",
@@ -14,14 +14,14 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F3_F6_NATIVE_DOCKER_ACCEPTED_PREDECESSOR_AND_FINAL_RUNTIME_GAPS_OPEN",
   "objective": "Complete every documented TypeScript SDK Node/browser contract, support claim, reproducible package lifecycle, mandatory real-input semantics and final installed consumer journey.",
   "source": {
-    "head": "21b7d316b62861f3b1f597c8f09aab376bb3d192",
+    "head": "3e9b8aa6bc4b93b87df8b0c1f9a905dc11e3e235",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "tracked_dirty_entries_at_check": 0,
     "reviewed_ts_02_source_commit": "3cc72520c6d857b20e10129be039965f4ca1f4ab",
     "accepted_runtime_source_head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
-    "checked_at": "2026-09-20T00:17:29Z"
+    "checked_at": "2026-09-20T00:43:52Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -51,7 +51,7 @@
     "Fresh external Node and browser imports plus removal passed against the exact candidate. The package-cleanliness harness now copies the packaged tools directory and reproduces the exact candidate hash for clean and stale builds.",
     "Independent GPT-5.6 Sol/high review accepted the exact candidate source/toolchain/archive/receipt/cleanup/claim-integrity slice with no P1/P2 findings. This is candidate-only admission and does not satisfy predecessor, catalog, Docker, browser-floor, final-Hub, F3, F5, F6 or F7 acceptance.",
     "The source-only F6 input candidate preserves the independently accepted 285-file receipt identity 546b517f...39d2b while reproducing Hub's fully bounded 284-file bootstrap identity b6c12d42...7052b from the same stable no-follow file reads. The exact 070906b5 package, e9625cc8 receipt and 96ada184 five-companion catalog admit together without Docker. Independent Sol/high review accepted the source slice after closing three P2 contract/stability/ledger findings; source commit 21b7d316 was pushed and read back exactly.",
-    "The exact admitted package/source/catalog tuple then passed the native Debian Linux ARM64 Docker lane with Node 26.7.0/npm 11.19.0 in the pinned official image. The runner now forces BuildKit rather than silently accepting the legacy builder; independent Sol/high review accepted the runtime slice with no P1/P2 findings. The task-owned gate tag, contexts, staging root, guest and shared lock were cleaned up."
+    "The exact admitted package/source/catalog tuple then passed the native Debian Linux ARM64 Docker lane with Node 26.7.0/npm 11.19.0 in the pinned official image. The runner now forces BuildKit rather than silently accepting the legacy builder; independent Sol/high review accepted the runtime slice with no P1/P2 findings. The task-owned gate tag, contexts, staging root, guest and shared lock were cleaned up; implementation commit 3e9b8aa6 was pushed and read back exactly."
   ],
   "evidence_paths": [
     "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
