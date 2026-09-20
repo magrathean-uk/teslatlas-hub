@@ -15,7 +15,8 @@ iOS 17, supported Linux ARM64, the other public Swift products, reproducible pac
 handoff, real-source semantics or final combined installation. Preserve all accepted
 receipts. `full_solution_state` is `NOT_ACCEPTED`; F0 passed independent review, the
 bounded F3/F6 source foundation and F3 platform harness preparation are published,
-and exact-floor execution remains open. Current public main also has an exact
+and the native Linux ARM64 package build-and-execute slice is independently
+accepted. Exact macOS 14 and iOS 17 execution remain open. Current public main also has an exact
 source-only F6 catalog handoff ready for independent Hub admission; no catalog or
 lifecycle action has occurred.
 
@@ -71,8 +72,8 @@ The accepted handoff regression suite passed 7/7, focused platform preparation
 checks passed 11/11, and the external platform consumer manifest parsed on
 macOS 27 arm64. This is not macOS 14, iOS 17, native Linux
 ARM64, live-Hub, catalog, F5, F3, F6 or F7 acceptance. See the
-[preparation notes](platform-gate-preparation.md) and the review-pending draft
-receipt.
+[preparation notes](platform-gate-preparation.md) and the
+[preparation receipt](f3-platform-gate-preparation-2026-09-19-r1.json).
 
 Initial independent Sol/high review rejected this preparation with one P1 and
 two P2 findings. The P1 was that the Linux command verified and discarded the
@@ -80,8 +81,9 @@ accepted handoff, then built the live repository with a consumer outside that
 identity. The corrected lane now materializes the immutable published source
 commit, reproduces the accepted identity, and supplies that canonical package
 plus the handoff's separately checksummed external consumer as the actual
-Docker context; both inputs are root-owned/read-only to the unprivileged build
-user and SwiftPM scratch is isolated under `/tmp`.
+Docker context; both admitted inputs are assigned to the unprivileged build user
+and made read-only, while SwiftPM scratch is isolated under `/tmp`. This ownership
+is required because SwiftPM preserves bundle-resource ownership when copying.
 
 The P2 documentation finding is closed by replacing superseded live-repo,
 multi-architecture, old-digest and two-example instructions in `README.md` and
@@ -92,6 +94,32 @@ source commit plus mutation regressions. The same reviewer accepted the frozen
 three-closure delta with no findings; no platform runtime ran. This accepts only
 the bounded platform-gate preparation, not macOS 14, iOS 17, Linux ARM64 runtime
 behavior, live Hub, catalog lifecycle, F5, F3, F6 or F7.
+
+## Accepted bounded native Linux ARM64 F3 slice
+
+The prepared Linux lane was executed in a native Debian ARM64 guest with Docker
+Engine 26.1.5. The outer gate runner and the package build both used the locked
+official Swift 6.0.3 Jammy ARM64 child
+`sha256:c84da0197afcc90ef90a64194d4d451be7c090a845bcbf632755f9c16334ba8f`
+from parent index
+`sha256:e2b0410500126d7f569d387b5817426cef5c38cc02dc494c3dc5edc8e10304d6`.
+The runner materialized published commit `d7ac4488fc5908015e8de55cd57983ea87172266`,
+reproduced the accepted `733071fc...` source identity and supplied only its
+canonical package and separately checksummed consumer to the build context.
+
+The image built as `linux/arm64`, ran as `swiftuser`, compiled all four public
+libraries from the read-only admitted input, and executed the external consumer.
+Its exact ordered output was
+`TeslatlasHubSDK,TeslatlasCommands,TeslatlasHubV1Compatibility,TeslatlasCurrentHub`.
+The owned image tag, container, temporary handoff and guest staging root were
+removed; the guest was stopped and the shared heavy-build lock released.
+
+Independent Sol/high review accepted this bounded evidence with no P1 or P2
+findings. It proves only native Linux ARM64 Swift 6.0.3 package build and consumer
+execution for the accepted four-product handoff. It does not prove live Hub,
+authentication/trust, reads or mutations, real-input semantics, macOS 14, iOS 17,
+catalog lifecycle, or final F3/F6/F7 acceptance. See the
+[Linux ARM64 receipt](f3-native-linux-arm64-platform-gate-2026-09-20-r1.json).
 
 ## Prepared current-source catalog handoff
 

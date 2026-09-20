@@ -9,6 +9,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 from typing import Any
 
@@ -18,6 +19,7 @@ import source_handoff
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "tools/platform-gates.json"
 PUBLIC_PRODUCTS = list(source_handoff.PUBLIC_PRODUCTS)
+LINUX_CONSUMER_OUTPUT = ",".join(PUBLIC_PRODUCTS)
 PROTOCOL_SOURCE_COMMIT = source_handoff.PROTOCOL_SOURCE_COMMIT
 SOURCE_IDENTITY = "733071fcd8c7db0e64b38547dab90dd354ad728dc2d9efee7fd2de438a14876e"
 SOURCE_COMMIT = "d7ac4488fc5908015e8de55cd57983ea87172266"
@@ -252,8 +254,11 @@ def verify_repository(root: Path = ROOT) -> dict[str, Any]:
         [
             f"FROM --platform={LINUX_PLATFORM} {LINUX_TAG}@{LINUX_ARM64_DIGEST}",
             f"Parent OCI index: {LINUX_INDEX_DIGEST}",
-            "COPY teslatlas-sdk-swift/",
-            "COPY external-four-library-consumer/",
+            "COPY --chown=swiftuser:swiftuser teslatlas-sdk-swift/",
+            "COPY --chown=swiftuser:swiftuser external-four-library-consumer/",
+            "RUN chmod -R a-w /workspace/teslatlas-sdk-swift /workspace/external-four-library-consumer",
+            "ENV HOME=/home/swiftuser",
+            'CMD ["swift", "run",',
         ],
         "Dockerfile",
     )
@@ -322,6 +327,23 @@ def _run(command: list[str], cwd: Path = ROOT) -> None:
         )
 
 
+def _run_capture(command: list[str], cwd: Path = ROOT) -> str:
+    completed = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True)
+    sys.stdout.write(completed.stdout)
+    sys.stderr.write(completed.stderr)
+    if completed.returncode != 0:
+        raise PlatformGateError(
+            f"command failed with exit {completed.returncode}: {' '.join(command)}"
+        )
+    return completed.stdout
+
+
+def _require_linux_consumer_output(output: str) -> None:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if not lines or lines[-1] != LINUX_CONSUMER_OUTPUT:
+        raise PlatformGateError("Linux consumer did not execute all four public products")
+
+
 def _require_native_darwin(required_major: int) -> None:
     actual_version = platform.mac_ver()[0]
     if platform.system() != "Darwin" or platform.machine() != "arm64":
@@ -361,7 +383,7 @@ def _require_ios_simulator(runtime_version: str, simulator_name: str) -> None:
         )
 
 
-def run_gate(gate: str, root: Path = ROOT) -> None:
+def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
     contract = load_contract(root / "tools/platform-gates.json")
     verify_repository(root)
     if gate == "macos14":
@@ -381,7 +403,7 @@ def run_gate(gate: str, root: Path = ROOT) -> None:
                 ],
                 root,
             )
-        return
+        return {"gate": gate, "passed": True}
     if gate == "ios17":
         _require_apple_silicon()
         if not shutil.which("xcodebuild"):
@@ -392,7 +414,7 @@ def run_gate(gate: str, root: Path = ROOT) -> None:
         )
         with tempfile.TemporaryDirectory(prefix="teslatlas-ios17-gate-") as temporary:
             _run(command_for(gate, root, Path(temporary)), root)
-        return
+        return {"gate": gate, "passed": True}
     if gate == "linux-arm64":
         native_arches = contract["linux_arm64"]["native_arches"]
         if platform.system() != "Linux" or platform.machine().lower() not in native_arches:
@@ -419,12 +441,37 @@ def run_gate(gate: str, root: Path = ROOT) -> None:
         )
         if existing.returncode == 0:
             raise PlatformGateError(f"owned Linux gate image tag already exists: {image}")
+        result: dict[str, Any] | None = None
         try:
             with tempfile.TemporaryDirectory(prefix="teslatlas-linux-arm64-gate-") as temporary:
                 handoff = Path(temporary) / "handoff"
                 _prepare_accepted_handoff(root, handoff, contract)
                 _run(command_for(gate, root, handoff), root)
-                _run(
+                image_details = subprocess.run(
+                    [
+                        "docker",
+                        "image",
+                        "inspect",
+                        "--format",
+                        "{{.Id}}|{{.Os}}/{{.Architecture}}|{{.Config.User}}",
+                        image,
+                    ],
+                    cwd=root,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                fields = image_details.stdout.strip().split("|")
+                if (
+                    image_details.returncode != 0
+                    or len(fields) != 3
+                    or not fields[0].startswith("sha256:")
+                    or len(fields[0]) != 71
+                    or fields[1] not in {"linux/arm64", "linux/aarch64"}
+                    or fields[2] != "swiftuser"
+                ):
+                    raise PlatformGateError("built Linux image identity is invalid")
+                runtime_output = _run_capture(
                     [
                         "docker",
                         "run",
@@ -435,6 +482,22 @@ def run_gate(gate: str, root: Path = ROOT) -> None:
                     ],
                     root,
                 )
+                _require_linux_consumer_output(runtime_output)
+                result = {
+                    "gate": gate,
+                    "passed": True,
+                    "docker_server_platform": server.stdout.strip(),
+                    "image_id": fields[0],
+                    "image_platform": fields[1],
+                    "image_user": fields[2],
+                    "swift_image_index_digest": contract["linux_arm64"][
+                        "parent_index_digest"
+                    ],
+                    "swift_image_arm64_digest": contract["linux_arm64"][
+                        "arm64_child_digest"
+                    ],
+                    "consumer_output": LINUX_CONSUMER_OUTPUT,
+                }
         finally:
             subprocess.run(
                 ["docker", "image", "rm", "--force", image],
@@ -443,7 +506,19 @@ def run_gate(gate: str, root: Path = ROOT) -> None:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        return
+            remaining = subprocess.run(
+                ["docker", "image", "inspect", image],
+                cwd=root,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if remaining.returncode == 0:
+                raise PlatformGateError("owned Linux gate image cleanup failed")
+        if result is None:
+            raise PlatformGateError("Linux gate produced no result")
+        result["cleanup"] = "owned image tag and temporary handoff removed"
+        return result
     raise PlatformGateError(f"unknown gate: {gate}")
 
 
@@ -466,8 +541,7 @@ def main() -> int:
         elif arguments.command == "command":
             output = {"gate": arguments.gate, "command": command_for(arguments.gate)}
         else:
-            run_gate(arguments.gate, ROOT)
-            output = {"gate": arguments.gate, "passed": True}
+            output = run_gate(arguments.gate, ROOT)
     except (OSError, PlatformGateError, source_handoff.HandoffError) as error:
         raise SystemExit(f"platform gate failed: {error}") from error
     print(json.dumps(output, indent=2, sort_keys=True))

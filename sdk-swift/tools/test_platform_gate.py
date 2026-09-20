@@ -71,6 +71,40 @@ class PlatformGateTests(unittest.TestCase):
         for forbidden in ("matrix_wire.py", "linux/amd64", "x86", "qemu"):
             self.assertNotIn(forbidden, joined)
 
+    def test_linux_container_assigns_the_unprivileged_user_home(self):
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("ENV HOME=/home/swiftuser", dockerfile)
+        self.assertIn(
+            "COPY --chown=swiftuser:swiftuser teslatlas-sdk-swift/", dockerfile
+        )
+        self.assertIn(
+            "COPY --chown=swiftuser:swiftuser external-four-library-consumer/",
+            dockerfile,
+        )
+        self.assertIn(
+            "RUN chmod -R a-w /workspace/teslatlas-sdk-swift "
+            "/workspace/external-four-library-consumer",
+            dockerfile,
+        )
+        self.assertIn(
+            'CMD ["swift", "run", "--package-path", '
+            '"/workspace/external-four-library-consumer"',
+            dockerfile,
+        )
+        self.assertLess(
+            dockerfile.index("ENV HOME=/home/swiftuser"),
+            dockerfile.index("USER swiftuser"),
+        )
+
+    def test_linux_consumer_output_requires_all_four_products_in_order(self):
+        platform_gate._require_linux_consumer_output(
+            "build output\n" + platform_gate.LINUX_CONSUMER_OUTPUT + "\n"
+        )
+        with self.assertRaisesRegex(platform_gate.PlatformGateError, "all four"):
+            platform_gate._require_linux_consumer_output(
+                "TeslatlasHubSDK,TeslatlasCommands\n"
+            )
+
     @mock.patch("platform_gate.platform.mac_ver", return_value=("27.0", ("", "", ""), ""))
     @mock.patch("platform_gate.platform.machine", return_value="arm64")
     @mock.patch("platform_gate.platform.system", return_value="Darwin")

@@ -75,8 +75,14 @@ Linux ARM64. It uses `--platform linux/arm64/v8`, never invokes
 context is the verified handoff itself: its canonical package and separately
 checksummed `external-four-library-consumer`, with no dependency on the live
 repository package tree. SwiftPM writes only to isolated `/tmp` scratch. The
-runner removes its temporary context and owned image tag and does not run a
-Hub. No Docker build or container was run for this preparation.
+unprivileged build user has its explicit `/home/swiftuser` home. Docker assigns
+the admitted context to that user and removes every write bit: SwiftPM preserves
+resource ownership while copying bundles, so root-owned resource inputs fail
+under the unprivileged user even when the destination scratch is writable. The
+container builds and executes the external consumer, whose only runtime output
+is the ordered names of all four imported public products. The runner removes
+its temporary context and owned image tag and does not run a Hub. No successful
+Docker build or container was recorded by the original preparation receipt.
 
 ## Still open
 

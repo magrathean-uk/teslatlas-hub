@@ -12,9 +12,13 @@ WORKDIR /workspace
 
 # The context must be a verified source_handoff.py output, never the live repo.
 # These are the separately checksummed canonical package and external consumer.
-COPY teslatlas-sdk-swift/ /workspace/teslatlas-sdk-swift/
-COPY external-four-library-consumer/ /workspace/external-four-library-consumer/
+# SwiftPM preserves resource ownership while copying bundles, so the unprivileged
+# build user must own the admitted inputs even though every input remains read-only.
+COPY --chown=swiftuser:swiftuser teslatlas-sdk-swift/ /workspace/teslatlas-sdk-swift/
+COPY --chown=swiftuser:swiftuser external-four-library-consumer/ /workspace/external-four-library-consumer/
+RUN chmod -R a-w /workspace/teslatlas-sdk-swift /workspace/external-four-library-consumer
 
+ENV HOME=/home/swiftuser
 USER swiftuser
 
-CMD ["swift", "build", "--package-path", "/workspace/external-four-library-consumer", "--scratch-path", "/tmp/teslatlas-platform-gate-build"]
+CMD ["swift", "run", "--package-path", "/workspace/external-four-library-consumer", "--scratch-path", "/tmp/teslatlas-platform-gate-build", "ExternalFourLibraryConsumer"]
