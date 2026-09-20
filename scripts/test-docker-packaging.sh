@@ -185,6 +185,10 @@ test "$(grep -nE 'remove_owned_cohort|canonicalize-docker-archive.py' scripts/bu
     "$(grep -n 'canonicalize-docker-archive.py' scripts/build-container-image.sh | cut -d: -f1)"
 grep -F 'atomic_publish_noreplace(parent_descriptor, temporary_name, output_name)' \
     scripts/canonicalize-docker-archive.py >/dev/null
+grep -F 'LayerSources' scripts/canonicalize-docker-archive.py >/dev/null
+grep -F 'OCI_MANIFEST_MEDIA_TYPE' scripts/canonicalize-docker-archive.py >/dev/null
+grep -F 'EMPTY_LAYER_DIGEST' scripts/canonicalize-docker-archive.py >/dev/null
+grep -F 'validate_legacy_metadata_chain' scripts/canonicalize-docker-archive.py >/dev/null
 if grep -F 'unlink_if_identity' scripts/canonicalize-docker-archive.py >/dev/null; then
     printf '%s\n' 'container archive publication must not use checked-path unlink cleanup' >&2
     exit 1

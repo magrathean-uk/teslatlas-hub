@@ -115,12 +115,15 @@ replacement and Git repository/configuration selection environment, builds only
 a fresh exact `git archive` context with every mtime normalized to the commit
 epoch, and uses `docker buildx build --load` with a Dockerfile-level legacy
 fallback rejection. The Dockerfile assembles one staged rootfs whose
-ownership, modes and mtimes are explicit. The canonicalizer changes only the
-outer transport tar metadata and rebinds the random private build-cohort tag to
-the requested archive tag; it fails if the preserved application-layer bytes,
-member mtimes, image config and rootfs do not match the recorded source epoch
-and immutable inputs. Reproducibility is established only by matching two
-independent no-cache candidate builds.
+ownership, modes and mtimes are explicit. Docker 26.1.5 with Buildx 0.13.1 and
+the classic store emits the supported hybrid OCI/Docker save envelope. The
+canonicalizer validates every content-addressed blob, both OCI descriptor
+graphs, `LayerSources`, the bounded three-record legacy metadata chain, the
+staged application layer, and the exact empty WORKDIR layer. It then emits the
+proven minimal loadable Docker archive: blob directories, unchanged
+config/layer blobs, and deterministic `manifest.json`/`repositories` with the
+requested tag. Reproducibility is established only by matching two independent
+no-cache candidate builds.
 
 ## Keep your build identifiable
 

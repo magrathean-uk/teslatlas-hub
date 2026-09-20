@@ -57,7 +57,9 @@ The JSON must bind the selected 40-hex source commit, its Unix commit epoch,
 `linux/arm64`, the exact image ID, ordered rootfs diffIDs, archive size and
 archive SHA-256. Independent reproducibility requires a second no-cache build
 from the same exact commit whose image ID and full canonical archive bytes are
-identical. A single successful build or load is not reproducibility evidence.
+identical. The supported input is the Docker 26.1.5/Buildx 0.13.1 classic-store
+hybrid OCI/Docker save envelope; the output is the validated minimal Docker
+archive. A single successful build or load is not reproducibility evidence.
 
 ## Historical 2026.36.1 package verification
 

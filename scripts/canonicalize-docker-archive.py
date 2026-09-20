@@ -4,9 +4,9 @@
 
 This tool deliberately does not rewrite image configuration or layer bytes.
 BuildKit and SOURCE_DATE_EPOCH must already have made those content-addressed
-objects reproducible. Only the transport tar's ordering and header metadata are
-canonicalized; Docker tag records are rebound from the private input cohort to
-the requested output tag.
+objects reproducible. The supported hybrid OCI/Docker envelope is validated,
+then reduced to the proven minimal Docker-load member set while Docker tag
+records are rebound from the private input cohort to the requested output tag.
 """
 
 from __future__ import annotations
@@ -32,7 +32,13 @@ from typing import Any, BinaryIO
 HEX64 = re.compile(r"[0-9a-f]{64}")
 COMMIT = re.compile(r"[0-9a-f]{40}")
 DIFF_ID = re.compile(r"sha256:[0-9a-f]{64}")
-LAYER_PATH = re.compile(r"([0-9a-f]{64})/layer\.tar")
+BLOB_PATH = re.compile(r"blobs/sha256/([0-9a-f]{64})")
+EMPTY_LAYER_DIGEST = "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+EMPTY_LAYER_BYTES = 1024
+OCI_CONFIG_MEDIA_TYPE = "application/vnd.oci.image.config.v1+json"
+OCI_INDEX_MEDIA_TYPE = "application/vnd.oci.image.index.v1+json"
+OCI_MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
+OCI_LAYER_MEDIA_TYPE = "application/vnd.oci.image.layer.v1.tar"
 MAX_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_MEMBERS = 4096
@@ -192,7 +198,15 @@ def validate_config(
     runtime = config.get("config")
     if not isinstance(runtime, dict):
         fail("image runtime config is missing")
-    expected_runtime_keys = {"Labels", "User", "Env", "Entrypoint", "Cmd", "WorkingDir"}
+    expected_runtime_keys = {
+        "Labels",
+        "User",
+        "Env",
+        "Entrypoint",
+        "Cmd",
+        "WorkingDir",
+        "ArgsEscaped",
+    }
     if set(runtime) != expected_runtime_keys:
         fail("image runtime config contains missing or unsupported fields")
     labels = runtime.get("Labels")
@@ -220,6 +234,8 @@ def validate_config(
     for key, value in expected_runtime.items():
         if runtime.get(key) != value:
             fail(f"image runtime config {key} does not match the supported contract")
+    if runtime.get("ArgsEscaped") is not True:
+        fail("image runtime config ArgsEscaped does not match the supported contract")
     rootfs = config.get("rootfs")
     if (
         not isinstance(rootfs, dict)
@@ -233,8 +249,8 @@ def validate_config(
     if diff_ids[: len(base_diff_ids)] != base_diff_ids:
         fail("image rootfs does not begin with the pinned Debian ARM64 base")
     application_layer_count = len(diff_ids) - len(base_diff_ids)
-    if application_layer_count != 1:
-        fail("image must contain exactly one staged Hub application layer")
+    if application_layer_count != 2 or diff_ids[-1] != EMPTY_LAYER_DIGEST:
+        fail("image must contain the staged Hub layer and canonical empty WORKDIR layer")
 
     history = config.get("history")
     if not isinstance(history, list) or not all(isinstance(item, dict) for item in history):
@@ -281,6 +297,130 @@ def validate_base_lock(path: Path) -> list[str]:
     ):
         fail("base image lock has invalid runtime rootfs diff IDs")
     return diff_ids
+
+
+def validate_descriptor(
+    value: Any,
+    *,
+    media_type: str,
+    digest: str,
+    size: int,
+    label: str,
+) -> None:
+    if not isinstance(value, dict) or set(value) != {"mediaType", "digest", "size"}:
+        fail(f"{label} descriptor has unsupported or missing fields")
+    if value != {"mediaType": media_type, "digest": digest, "size": size}:
+        fail(f"{label} descriptor does not match its content-addressed blob")
+
+
+def validate_empty_layer(source: BinaryIO, label: str) -> None:
+    data = source.read(EMPTY_LAYER_BYTES + 1)
+    if data != b"\0" * EMPTY_LAYER_BYTES:
+        fail(f"{label} is not the canonical 1024-byte empty tar layer")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as layer:
+            if layer.getmembers():
+                fail(f"{label} must contain zero members")
+    except tarfile.TarError as error:
+        fail(f"{label} is not a valid empty tar layer: {error}")
+
+
+def parse_legacy_timestamp(value: Any, label: str) -> dt.datetime:
+    if not isinstance(value, str):
+        fail(f"{label} must be a timestamp")
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        fail(f"{label} must be an ISO-8601 timestamp")
+    if parsed.utcoffset() is None:
+        fail(f"{label} must include an offset")
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def validate_legacy_metadata_chain(
+    blobs: list[dict[str, Any]], *, commit: str, epoch: int, version: str
+) -> None:
+    if len(blobs) != 3:
+        fail("hybrid archive must contain exactly three legacy metadata blobs")
+    empty_container_config = {
+        "Hostname": "",
+        "Domainname": "",
+        "User": "",
+        "AttachStdin": False,
+        "AttachStdout": False,
+        "AttachStderr": False,
+        "Tty": False,
+        "OpenStdin": False,
+        "StdinOnce": False,
+        "Env": None,
+        "Cmd": None,
+        "Image": "",
+        "Volumes": None,
+        "WorkingDir": "",
+        "Entrypoint": None,
+        "OnBuild": None,
+        "Labels": None,
+    }
+    by_id: dict[str, dict[str, Any]] = {}
+    for index, blob in enumerate(blobs):
+        identifier = blob.get("id") if isinstance(blob, dict) else None
+        if not isinstance(identifier, str) or not HEX64.fullmatch(identifier) or identifier in by_id:
+            fail(f"legacy metadata blob {index} has an invalid or duplicate ID")
+        if blob.get("container_config") != empty_container_config or blob.get("os") != "linux":
+            fail(f"legacy metadata blob {index} has unsupported container metadata")
+        by_id[identifier] = blob
+    roots = [blob for blob in blobs if "parent" not in blob]
+    if len(roots) != 1:
+        fail("legacy metadata must have exactly one chain root")
+    ordered = [roots[0]]
+    while len(ordered) < 3:
+        children = [blob for blob in blobs if blob.get("parent") == ordered[-1]["id"]]
+        if len(children) != 1:
+            fail("legacy metadata parent chain is incomplete or ambiguous")
+        ordered.append(children[0])
+    if len({blob["id"] for blob in ordered}) != 3:
+        fail("legacy metadata parent chain contains a cycle")
+
+    if set(ordered[0]) != {"id", "created", "container_config", "os"}:
+        fail("legacy root metadata has unsupported fields")
+    if set(ordered[1]) != {"id", "parent", "created", "container_config", "os"}:
+        fail("legacy middle metadata has unsupported fields")
+    if set(ordered[2]) != {
+        "id",
+        "parent",
+        "created",
+        "container_config",
+        "config",
+        "architecture",
+        "os",
+    }:
+        fail("legacy final metadata has unsupported fields")
+    for index, blob in enumerate(ordered[:2]):
+        if parse_legacy_timestamp(blob["created"], f"legacy metadata {index} created").timestamp() != 0:
+            fail("legacy base metadata timestamp must be the Unix epoch")
+    if parse_legacy_timestamp(ordered[2]["created"], "legacy final metadata created").timestamp() != epoch:
+        fail("legacy final metadata timestamp does not equal SOURCE_DATE_EPOCH")
+    expected_labels = {
+        "org.opencontainers.image.title": "Teslatlas Hub",
+        "org.opencontainers.image.version": version,
+        "org.opencontainers.image.source": SOURCE_URL,
+        "org.opencontainers.image.revision": commit,
+    }
+    expected_final_config = {
+        **empty_container_config,
+        "User": "10001:10001",
+        "Env": [
+            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
+        ],
+        "Cmd": ["--config", "/etc/teslatlas-hub/config.toml", "serve"],
+        "ArgsEscaped": True,
+        "WorkingDir": "/var/lib/teslatlas-hub",
+        "Entrypoint": ["/usr/local/bin/teslatlas-hub"],
+        "Labels": expected_labels,
+    }
+    if ordered[2].get("architecture") != "arm64" or ordered[2].get("config") != expected_final_config:
+        fail("legacy final metadata does not match the supported runtime contract")
 
 
 def add_member(
@@ -400,19 +540,35 @@ def canonicalize(args: argparse.Namespace) -> dict[str, Any]:
             if not isinstance(manifest, list) or len(manifest) != 1 or not isinstance(manifest[0], dict):
                 fail("input archive must contain exactly one image")
             image = manifest[0]
-            if set(image) != {"Config", "RepoTags", "Layers"}:
+            if set(image) != {"Config", "RepoTags", "Layers", "LayerSources"}:
                 fail("manifest has unsupported or missing fields")
             if image.get("RepoTags") != [args.input_repository_tag]:
                 fail("manifest repository tag does not match the private input cohort")
+            blob_members: dict[str, tarfile.TarInfo] = {}
+            blob_sizes: dict[str, int] = {}
+            for name, member in indexed.items():
+                match = BLOB_PATH.fullmatch(name)
+                if match is None:
+                    continue
+                if not member.isreg():
+                    fail(f"content-addressed blob is not regular: {name}")
+                digest = match.group(1)
+                stream = archive.extractfile(member)
+                if stream is None or sha256_stream(stream) != digest:
+                    fail(f"content-addressed blob digest does not match its path: {name}")
+                blob_members[digest] = member
+                blob_sizes[digest] = member.size
+
             config_name = image.get("Config")
-            if not isinstance(config_name, str) or not re.fullmatch(r"[0-9a-f]{64}\.json", config_name):
+            config_match = BLOB_PATH.fullmatch(config_name) if isinstance(config_name, str) else None
+            if config_match is None:
                 fail("manifest config path is invalid")
+            config_digest = config_match.group(1)
             config_member = indexed.get(config_name)
             if config_member is None:
                 fail("manifest config is missing")
             config_bytes = read_member(archive, config_member, "image config")
-            config_digest = hashlib.sha256(config_bytes).hexdigest()
-            if config_name != f"{config_digest}.json" or config_digest != image_id:
+            if config_digest != image_id:
                 fail("image config bytes, filename, and requested image ID disagree")
             config = parse_json(config_bytes, "image config")
             if not isinstance(config, dict):
@@ -421,32 +577,36 @@ def canonicalize(args: argparse.Namespace) -> dict[str, Any]:
             layer_names = image.get("Layers")
             if not isinstance(layer_names, list) or not layer_names:
                 fail("manifest layer list is missing")
-            layer_ids: list[str] = []
+            layer_digests: list[str] = []
             diff_ids: list[str] = []
             for layer_index, layer_name in enumerate(layer_names):
-                match = LAYER_PATH.fullmatch(layer_name) if isinstance(layer_name, str) else None
+                match = BLOB_PATH.fullmatch(layer_name) if isinstance(layer_name, str) else None
                 if match is None:
                     fail("manifest contains a non-canonical layer path")
-                layer_id = match.group(1)
-                if layer_id in layer_ids:
-                    fail("manifest contains a duplicate layer ID")
-                layer_ids.append(layer_id)
+                layer_digest = match.group(1)
+                if layer_digest in layer_digests:
+                    fail("manifest contains a duplicate layer digest")
+                layer_digests.append(layer_digest)
                 layer_member = indexed.get(layer_name)
                 if layer_member is None or not layer_member.isreg():
                     fail("manifest layer is missing or not regular")
-                stream = archive.extractfile(layer_member)
-                if stream is None:
-                    fail("manifest layer cannot be read")
-                diff_ids.append(f"sha256:{sha256_stream(stream)}")
-                if layer_index >= len(base_diff_ids):
+                diff_ids.append(f"sha256:{layer_digest}")
+                if layer_index == len(base_diff_ids):
                     validation_stream = archive.extractfile(layer_member)
                     if validation_stream is None:
                         fail("manifest application layer cannot be read")
                     validate_application_layer(
                         validation_stream,
-                        f"application layer {layer_index - len(base_diff_ids)}",
+                        "staged Hub application layer",
                         epoch,
                     )
+                elif layer_index == len(base_diff_ids) + 1:
+                    if layer_member.size != EMPTY_LAYER_BYTES or diff_ids[-1] != EMPTY_LAYER_DIGEST:
+                        fail("WORKDIR layer is not the canonical empty layer")
+                    validation_stream = archive.extractfile(layer_member)
+                    if validation_stream is None:
+                        fail("empty WORKDIR layer cannot be read")
+                    validate_empty_layer(validation_stream, "empty WORKDIR layer")
 
             validate_config(
                 config,
@@ -457,14 +617,129 @@ def canonicalize(args: argparse.Namespace) -> dict[str, Any]:
                 base_diff_ids=base_diff_ids,
             )
 
+            layer_sources = image.get("LayerSources")
+            if not isinstance(layer_sources, dict) or set(layer_sources) != set(diff_ids):
+                fail("manifest LayerSources does not exactly describe every layer")
+            for digest, name in zip(diff_ids, layer_names):
+                validate_descriptor(
+                    layer_sources[digest],
+                    media_type=OCI_LAYER_MEDIA_TYPE,
+                    digest=digest,
+                    size=indexed[name].size,
+                    label=f"manifest LayerSources {digest}",
+                )
+
+            layout_member = indexed.get("oci-layout")
+            index_member = indexed.get("index.json")
+            if layout_member is None or index_member is None:
+                fail("hybrid archive is missing OCI layout metadata")
+            layout = parse_json(read_member(archive, layout_member, "oci-layout"), "oci-layout")
+            if layout != {"imageLayoutVersion": "1.0.0"}:
+                fail("OCI layout version is unsupported")
+            oci_index = parse_json(read_member(archive, index_member, "index.json"), "index.json")
+            if (
+                not isinstance(oci_index, dict)
+                or set(oci_index) != {"schemaVersion", "mediaType", "manifests"}
+                or oci_index.get("schemaVersion") != 2
+                or oci_index.get("mediaType") != OCI_INDEX_MEDIA_TYPE
+                or not isinstance(oci_index.get("manifests"), list)
+                or len(oci_index["manifests"]) != 1
+            ):
+                fail("OCI index must contain exactly one supported image manifest")
+            oci_descriptor = oci_index["manifests"][0]
+            if not isinstance(oci_descriptor, dict) or set(oci_descriptor) != {
+                "mediaType",
+                "digest",
+                "size",
+                "annotations",
+            }:
+                fail("OCI index manifest descriptor has unsupported or missing fields")
+            expected_annotations = {
+                "io.containerd.image.name": f"docker.io/library/{args.input_repository_tag}",
+                "org.opencontainers.image.ref.name": input_tag,
+            }
+            if oci_descriptor.get("annotations") != expected_annotations:
+                fail("OCI index annotations do not bind the private input cohort")
+            oci_manifest_digest = oci_descriptor.get("digest")
+            if not isinstance(oci_manifest_digest, str) or not DIFF_ID.fullmatch(oci_manifest_digest):
+                fail("OCI index manifest digest is invalid")
+            oci_manifest_hash = oci_manifest_digest.removeprefix("sha256:")
+            oci_manifest_member = blob_members.get(oci_manifest_hash)
+            if oci_manifest_member is None:
+                fail("OCI image manifest blob is missing")
+            validate_descriptor(
+                {key: oci_descriptor[key] for key in ("mediaType", "digest", "size")},
+                media_type=OCI_MANIFEST_MEDIA_TYPE,
+                digest=oci_manifest_digest,
+                size=oci_manifest_member.size,
+                label="OCI index image manifest",
+            )
+            oci_manifest = parse_json(
+                read_member(archive, oci_manifest_member, "OCI image manifest"),
+                "OCI image manifest",
+            )
+            if not isinstance(oci_manifest, dict) or set(oci_manifest) != {
+                "schemaVersion",
+                "mediaType",
+                "config",
+                "layers",
+            } or oci_manifest.get("schemaVersion") != 2 or oci_manifest.get("mediaType") != OCI_MANIFEST_MEDIA_TYPE:
+                fail("OCI image manifest has unsupported or missing fields")
+            validate_descriptor(
+                oci_manifest.get("config"),
+                media_type=OCI_CONFIG_MEDIA_TYPE,
+                digest=f"sha256:{config_digest}",
+                size=config_member.size,
+                label="OCI image config",
+            )
+            oci_layers = oci_manifest.get("layers")
+            if not isinstance(oci_layers, list) or len(oci_layers) != len(layer_names):
+                fail("OCI image manifest layer list is invalid")
+            for descriptor_value, digest, name in zip(oci_layers, diff_ids, layer_names):
+                validate_descriptor(
+                    descriptor_value,
+                    media_type=OCI_LAYER_MEDIA_TYPE,
+                    digest=digest,
+                    size=indexed[name].size,
+                    label=f"OCI image layer {digest}",
+                )
+
             repositories_member = indexed.get("repositories")
             if repositories_member is None:
                 fail("input archive is missing repositories")
             repositories = parse_json(
                 read_member(archive, repositories_member, "repositories"), "repositories"
             )
-            if repositories != {input_repository: {input_tag: layer_ids[-1]}}:
+            if repositories != {input_repository: {input_tag: layer_digests[-1]}}:
                 fail("repositories does not bind the private input cohort to the final layer")
+
+            referenced_blob_hashes = {config_digest, oci_manifest_hash, *layer_digests}
+            legacy_blob_hashes = set(blob_members) - referenced_blob_hashes
+            legacy_blobs = [
+                parse_json(
+                    read_member(archive, blob_members[digest], f"legacy metadata blob {digest}"),
+                    f"legacy metadata blob {digest}",
+                )
+                for digest in sorted(legacy_blob_hashes)
+            ]
+            validate_legacy_metadata_chain(
+                legacy_blobs,
+                commit=args.source_commit,
+                epoch=epoch,
+                version=args.version,
+            )
+
+            expected_input = {
+                "blobs",
+                "blobs/sha256",
+                "index.json",
+                "manifest.json",
+                "oci-layout",
+                "repositories",
+                *(f"blobs/sha256/{digest}" for digest in blob_members),
+            }
+            if set(indexed) != expected_input:
+                fail("input archive contains missing, extra, or ambiguous members")
 
             output_manifest = json.dumps(
                 [
@@ -472,13 +747,14 @@ def canonicalize(args: argparse.Namespace) -> dict[str, Any]:
                         "Config": config_name,
                         "RepoTags": [args.output_repository_tag],
                         "Layers": layer_names,
+                        "LayerSources": layer_sources,
                     }
                 ],
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode("utf-8")
             output_repositories = json.dumps(
-                {output_repository: {output_tag: layer_ids[-1]}},
+                {output_repository: {output_tag: layer_digests[-1]}},
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode("utf-8")
@@ -487,39 +763,14 @@ def canonicalize(args: argparse.Namespace) -> dict[str, Any]:
                 "repositories": output_repositories,
             }
 
-            expected = {"manifest.json", "repositories", config_name}
-            for index, layer_id in enumerate(layer_ids):
-                expected.update(
-                    {
-                        layer_id,
-                        f"{layer_id}/VERSION",
-                        f"{layer_id}/json",
-                        f"{layer_id}/layer.tar",
-                    }
-                )
-                version_member = indexed.get(f"{layer_id}/VERSION")
-                if version_member is None:
-                    fail("layer VERSION is missing")
-                version_bytes = read_member(
-                    archive, version_member, f"layer {index} VERSION"
-                )
-                if version_bytes != b"1.0":
-                    fail("layer VERSION is not 1.0")
-                legacy_member = indexed.get(f"{layer_id}/json")
-                if legacy_member is None:
-                    fail("layer legacy JSON is missing")
-                legacy = parse_json(read_member(archive, legacy_member, "layer legacy JSON"), "layer legacy JSON")
-                if not isinstance(legacy, dict) or legacy.get("id") != layer_id:
-                    fail("layer legacy JSON ID does not match its directory")
-                parent = legacy.get("parent")
-                expected_parent = None if index == 0 else layer_ids[index - 1]
-                if expected_parent is None:
-                    if parent not in (None, ""):
-                        fail("layer legacy JSON parent chain is invalid")
-                elif parent != expected_parent:
-                    fail("layer legacy JSON parent chain is invalid")
-            if set(indexed) != expected:
-                fail("input archive contains missing or unreferenced members")
+            output_names = {
+                "blobs",
+                "blobs/sha256",
+                "manifest.json",
+                "repositories",
+                config_name,
+                *layer_names,
+            }
 
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
             descriptor = os.open(temporary_name, flags, 0o644, dir_fd=parent_descriptor)
@@ -527,7 +778,7 @@ def canonicalize(args: argparse.Namespace) -> dict[str, Any]:
             temporary_identity = (descriptor_info.st_dev, descriptor_info.st_ino)
             with os.fdopen(descriptor, "wb") as raw_output:
                 with tarfile.open(fileobj=raw_output, mode="w", format=tarfile.PAX_FORMAT) as output:
-                    for name in sorted(indexed):
+                    for name in sorted(output_names):
                         add_member(
                             output,
                             archive,
@@ -567,11 +818,11 @@ def canonicalize(args: argparse.Namespace) -> dict[str, Any]:
             "rootfs_diff_ids": diff_ids,
             "archive_sha256": archive_sha256,
             "archive_bytes": archive_bytes,
-            "normalization": "outer tar metadata normalized and requested tag rebound; config and layer payload bytes unchanged",
+            "normalization": "minimal Docker archive; outer metadata normalized, requested tag rebound, config and layer blobs unchanged",
         }
     except BaseException:
         # Never remove a path after an identity check: another process may have
-        # replaced it before unlink. Exclusive rename removes the private name
+        # replaced it before removal. Exclusive rename removes the private name
         # atomically on success; a randomized hidden partial may remain after a
         # pre-publication failure and is safer than deleting foreign state.
         try:

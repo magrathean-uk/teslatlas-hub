@@ -21,8 +21,9 @@ services available automatically.
 
 The Dockerfile deliberately avoids `COPY --chmod`, but the candidate
 distributable container path requires Docker 26, its Buildx CLI component, and
-the classic image store. Docker 26's optional containerd image store emits a
-different OCI save layout and is intentionally rejected. The wrapper uses
+the classic image store. Its supported Docker 26.1.5/Buildx 0.13.1 save output
+is a hybrid OCI/Docker envelope. Docker 26's optional containerd image store
+emits a different layout and is intentionally rejected. The wrapper uses
 `docker buildx build --load`; the BuildKit-only validation step prevents a
 legacy-builder fallback, and the selected pushed commit's exact timestamp is
 passed as `SOURCE_DATE_EPOCH`. The ordinary Compose runtime evidence remains
@@ -128,27 +129,30 @@ mkdir -p dist
   --output dist/teslatlas-hub_2026.36.2_linux-arm64.docker.tar
 ```
 
-The final validator requires exactly one tagged Docker image; Linux ARM64; the
-exact source, version and title labels; the pinned Debian base rootfs prefix;
-matching config, image ID, ordered layer diffIDs and legacy parent graph; and
-the selected commit epoch on the image and Hub application-history suffix. It
-also binds the runtime user, environment, entrypoint, command and working
-directory, and requires every regular/directory member in every Hub application
-layer to have the exact commit mtime. Links, special members, PAX metadata,
-duplicates, unsafe paths, unreferenced payloads and an existing output are
+The final validator requires the observed hybrid archive shape: exact
+`manifest.json` keys including `LayerSources`; content addresses for every
+`blobs/sha256` member; one exact OCI index/manifest/config/layer descriptor
+graph; the bounded three-record legacy metadata chain; one tagged Linux ARM64
+image; exact source/version/title labels and runtime config; and the pinned
+Debian base rootfs prefix. The application suffix must be exactly the staged Hub
+layer plus the 1024-byte, zero-member canonical WORKDIR layer. Every member of
+the staged layer must have the commit mtime. Links, special members, PAX
+metadata, duplicates, unsafe paths, extra blobs and an existing output are
 refused. The daemon build uses a cryptographically random private cohort tag;
 the requested archive tag is never inspected, created, or removed in the
 daemon. The validator requires that exact input cohort tag, then deterministically
 emits the requested tag in `manifest.json` and `repositories`. The finalizer
 writes and fsyncs a private temporary archive, publishes with the platform's
-atomic exclusive rename, fsyncs the directory, and normalizes only outer
-transport metadata plus those two tag records. A published output is never
-rolled back or deleted. A pre-publication interruption can leave a randomized
-hidden partial beside the requested output; this avoids any checked-path unlink
-race and is not a valid artifact. Image config and `layer.tar` bytes are never
-rewritten. Cleanup removes the private cohort before publication and only while
-it still resolves to the recorded owned image ID; a foreign replacement is
-reported and preserved, and no final artifact is published on cleanup failure.
+atomic exclusive rename and fsyncs the directory. OCI layout/index/manifest and
+the validated legacy metadata blobs are omitted; only blob directories,
+unchanged config/layer blobs, `manifest.json`, and `repositories` remain. A
+published output is never rolled back or deleted. A pre-publication interruption
+can leave a randomized hidden partial beside the requested output; this avoids
+any checked-path unlink race and is not a valid artifact. Image config and layer
+blob bytes are never rewritten. Cleanup removes the private cohort before
+publication and only while it still resolves to the recorded owned image ID; a
+foreign replacement is reported and preserved, and no final artifact is
+published on cleanup failure.
 
 For reproducibility evidence, repeat the command from a second independent
 tracked-clean checkout of the same commit with a fresh output path, then require
